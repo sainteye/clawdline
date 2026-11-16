@@ -179,3 +179,14 @@ func TestQuestionCountsDoNotPullInEarlierAssistantFragments(t *testing.T) {
 		t.Fatalf("%+v replies=%d complete=%v", messages, replies, complete)
 	}
 }
+
+func TestQuestionMessagesKeepQuestionsBeginningWithMarkup(t *testing.T) {
+	var page copilotQuestionPage
+	if err := json.Unmarshal([]byte(`{"entries":[{"role":"user","text":"<image>Compare the costs in this table."},{"role":"assistant","text":"A costs less under this assumption."}]}`), &page); err != nil {
+		t.Fatal(err)
+	}
+	messages, replies, complete := questionMessages([]copilotQuestionPage{page}, 1)
+	if !complete || replies != 1 || len(messages) != 2 || messages[0].Text != "<image>Compare the costs in this table." {
+		t.Fatalf("question lost: %+v, %d, %v", messages, replies, complete)
+	}
+}

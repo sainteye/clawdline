@@ -152,9 +152,15 @@ copy, rather than modifying stored snapshots.
 
 Click a file card to download its verified snapshot. An artifact card opens the
 newest published HTML, including when opened from an earlier card. **Library**
-in the conversation menu lists shared files and artifacts; multiple revisions
-of an artifact occupy one library row. Earlier messages can be loaded there
-without automatically draining the entire history. The original source may be
+in the conversation menu lists Bot outputs, files sent with messages and picture
+attachments, grouped by the viewer's local calendar date, newest first. Multiple
+revisions of an artifact occupy one library row. Shared-content changes in the
+chat refresh the snapshot; already loaded earlier rows remain available within
+the same source epoch. Earlier messages can be loaded there on demand without
+automatically draining the entire history. Input filenames are preserved; picture
+metadata has no original filename, so the library displays a picture label and a
+short content ID, and downloads use the complete ID plus the media extension.
+The original source may be
 edited or deleted, and a daemon restart does not change the saved bytes.
 
 Every authenticated output read names the Bot and conversation. A file also
@@ -170,7 +176,16 @@ navigation permission. The trusted outer frame's policy also blocks navigation
 of the inner frame. Inline CSS and JavaScript can provide local interaction.
 Links inside the document do not navigate the frame; **Open a link** offers its
 HTTP, HTTPS and mail links as explicit app-owned clicks. **Save as HTML** exports
-the original verified bytes. This adds no public links or automatic publishing.
+the original verified bytes. **Open in browser** opens a trusted local Blob
+document containing the same two sandboxed opaque-origin frames, with no opener;
+it does not open the raw HTML with application-origin privileges. The new tab is
+an offline copy of bytes already read, not a live authenticated view. This adds
+no public links or automatic publishing. All library transfers expose progress,
+cancel and a failure code with explicit retry. Picture reads use their existing
+single-response protocol and report completion after verification; they do not
+claim byte-by-byte streaming progress. Read-only devices can read and download.
+Artifact renaming still needs a new authenticated human mutation route; the
+library does not present a rename control until that route exists.
 
 Copying runs outside the Bot actor and SQL transactions. Current execution
 authority is checked during copying and again at publication; Stop, replaced
@@ -186,6 +201,17 @@ ACP subprocess and real MCP, SQLite and HTTP, with zero provider/model calls.
 For its optional real-browser run, supply `PLAYWRIGHT_MODULE`,
 `PLAYWRIGHT_BROWSERS_PATH` and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantOutputOwnedMCPHTTP$' -count=1`.
+
+Library coverage has a separate stored-snapshot fixture, without an ACP process:
+`go test ./internal/transport/http -run '^TestProjectAssistantLibraryReadOnlySnapshots$' -count=1`
+checks snapshot/history paging and reads of outputs, input files and pictures
+with a read-only credential. To exercise the real library and captured local/
+Cloud source clients in headless Chromium, set task-owned
+`CLAWDLINE_LIBRARY_E2E_DIR` and the existing `PLAYWRIGHT_BROWSERS_PATH` (or `CHROME`),
+then run `go test ./internal/transport/http -run '^TestProjectAssistantLibraryBrowser$' -count=1`.
+The browser fixture installs nothing and closes its own tabs/process/profile.
+It is synthetic transport acceptance, not production Cloud pairing or a native
+Agent publication receipt.
 
 ## Roster activity
 

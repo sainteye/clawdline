@@ -61,7 +61,7 @@ func TestProjectAssistantFallbackNetworkKeepsOneAcceptedInput(t *testing.T) {
 	if h.request(t, "GET", "/v1/project-assistants/"+f.key.BotID+"/export?machine_id="+f.key.MachineID, nil, &exported) != 200 {
 		t.Fatal("export failed")
 	}
-	if len(saved.Turns) != 1 || saved.Turns[0].ID != admission.ResourceID || saved.Turns[0].State != pa.TurnSucceeded || len(saved.Turns[0].Attempts) != 6 {
+	if len(saved.Turns) != 1 || saved.Turns[0].ID != admission.ResourceID || saved.Turns[0].State != pa.TurnSucceeded || fallbackAttemptStages(saved.Turns[0].Attempts) != fallbackRefusedThenAnswered {
 		t.Fatalf("logical turn changed: %+v", saved.Turns)
 	}
 	for _, attempt := range saved.Turns[0].Attempts {

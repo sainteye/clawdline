@@ -80,7 +80,7 @@ func questionMessages(pages []copilotQuestionPage, count int) ([]copilotQuestion
 	for n := len(pages) - 1; n >= 0; n-- {
 		for _, e := range pages[n].Entries {
 			text := strings.TrimSpace(e.Text)
-			if text == "" || (e.Role != "assistant" && e.Role != "user") || (e.Role == "user" && strings.HasPrefix(text, "<")) {
+			if text == "" || (e.Role != "assistant" && e.Role != "user") {
 				continue
 			}
 			rows = append(rows, copilotQuestionMessage{Role: e.Role, Text: text, At: e.At})

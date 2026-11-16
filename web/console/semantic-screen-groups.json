@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12630,
-  "riskKeys": 5476,
-  "nonRiskCount": 7154,
+  "englishContentKeys": 12657,
+  "riskKeys": 5480,
+  "nonRiskCount": 7177,
   "groups": [
     {
       "name": "acp / other",
@@ -4008,7 +4008,7 @@
     },
     {
       "name": "next / other",
-      "count": 1155,
+      "count": 1176,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5122,6 +5122,27 @@
         "next.voicePreparing",
         "next.voiceRetry",
         "next.voiceStopping",
+        "next.voiceTabSettings",
+        "next.voiceTabTools",
+        "next.voiceToolsCardJump",
+        "next.voiceToolsCardJumpHint",
+        "next.voiceToolsCategoryAll",
+        "next.voiceToolsCategorySession",
+        "next.voiceToolsCategoryStatus",
+        "next.voiceToolsCategoryTools",
+        "next.voiceToolsCategoryVoice",
+        "next.voiceToolsCollapseAll",
+        "next.voiceToolsCountSummary",
+        "next.voiceToolsEnumLabel",
+        "next.voiceToolsExpandAll",
+        "next.voiceToolsOptional",
+        "next.voiceToolsParameters",
+        "next.voiceToolsParamsCount",
+        "next.voiceToolsRequired",
+        "next.voiceToolsSearchPlaceholder",
+        "next.voiceToolsSectionDesc",
+        "next.voiceToolsSectionTriggers",
+        "next.voiceToolsTrySaying",
         "next.voiceTryPartial",
         "next.voiceWaitForAudio",
         "next.voiceWillSend",
@@ -5744,7 +5765,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 196,
+      "count": 198,
       "sources": [
         null
       ],
@@ -5817,6 +5838,8 @@
         "projectAssistants.jump",
         "projectAssistants.landed",
         "projectAssistants.library",
+        "projectAssistants.libraryCancel",
+        "projectAssistants.libraryPicture",
         "projectAssistants.loading",
         "projectAssistants.machine",
         "projectAssistants.memory",

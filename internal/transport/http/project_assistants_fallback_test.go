@@ -137,7 +137,7 @@ func TestProjectAssistantFallbackHTTPKeepsLogicalTurnAndDurableRest(t *testing.T
 		t.Fatalf("identity/result: %+v", x.Turns)
 	}
 	first := x.Turns[0]
-	if len(first.Attempts) != 6 || !pa.SafeAttemptClosed(pa.Turn{Attempts: first.Attempts[:3]}) || first.Attempts[3].Agent != pa.Codex || first.Attempts[3].Fence.Generation <= first.Attempts[0].Fence.Generation {
+	if got := fallbackAttemptStages(first.Attempts); got != fallbackRefusedThenAnswered || !pa.SafeAttemptClosed(pa.Turn{Attempts: first.Attempts[:3]}) || first.Attempts[3].Agent != pa.Codex || first.Attempts[3].Fence.Generation <= first.Attempts[0].Fence.Generation {
 		t.Fatalf("attempt ledger: %+v", first.Attempts)
 	}
 	counts := map[pa.MessageKind]int{}
@@ -598,4 +598,17 @@ func TestProjectAssistantFallbackHTTPWithOwnedOSProcesses(t *testing.T) {
 		t.Fatalf("process/SQLite outcome: %+v primary=%d alternate=%d closed=%v/%v", x.Turns, primarySends.Load(), alternateSends.Load(), primaryClosed.Load(), alternateClosed.Load())
 	}
 	t.Logf("real HTTP handler → Service → Engine → Host → owned OS fixtures → fresh SQLite; reaped PIDs=%v; primary Sends=0 alternate Sends=1; no native Agent constructed", processIDs)
+}
+
+// fallbackRefusedThenAnswered is the ledger of a primary that refused before
+// sending and an alternate that answered: each stage is a durable fact a
+// switch or resume decision reads, so the test names them instead of a count.
+const fallbackRefusedThenAnswered = "claude:opening claude:refused_before_send claude:closed codex:opening codex:opened codex:sending codex:sent codex:answered codex:closed"
+
+func fallbackAttemptStages(attempts []pa.AttemptFact) string {
+	out := make([]string, 0, len(attempts))
+	for _, a := range attempts {
+		out = append(out, string(a.Agent)+":"+string(a.Stage))
+	}
+	return strings.Join(out, " ")
 }

@@ -31,6 +31,17 @@ func (s *Store) AgentRest(ctx context.Context, machine string, agent pa.Agent) (
 }
 
 func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation) error {
+	if m.Turn != nil {
+		for _, fact := range m.Turn.Attempts {
+			if fact.ResumeBindingID == "" {
+				continue
+			}
+			b, ok := a.Bindings[fact.ResumeBindingID]
+			if !ok || b.Agent != fact.Agent || b.SessionSlot != "" || b.NativeSessionID == "" || b.Fence.Key != fact.Fence.Key || b.Fence.Project != fact.Fence.Project || b.Fence.ConversationID != fact.Fence.ConversationID || b.Fence.Generation >= fact.Fence.Generation || fact.CarryAfterSeq > a.Conversation.LastMessageSeq {
+				return failure(pa.ScopeDenied, "attempt_resume_provenance")
+			}
+		}
+	}
 	if m.AgentRest != nil {
 		rest := m.AgentRest
 		if rest.MachineID != a.Bot.Key.MachineID || m.Turn == nil || !pa.SafeAttemptClosed(*m.Turn) {
@@ -95,8 +106,11 @@ func checkAttemptFacts(next pa.Turn) error {
 		if f.Ordinal < 1 || f.Ordinal > pa.MaxFallbackAgents+1 || f.Agent != pa.ClaudeCode && f.Agent != pa.Codex || f.Fence.Key != next.Fence.Key || f.Fence.Project != next.Fence.Project || f.Fence.ConversationID != next.Fence.ConversationID {
 			return failure(pa.Invalid, "attempt")
 		}
+		if f.ToolActivity && !f.NativeActivity || f.SendReturned && !f.SendStarted || f.AnswerObserved && !f.SendReturned || f.CarryAfterSeq < 0 || f.CarryKind != "" && f.CarryKind != "recap" && f.CarryKind != "catch_up" || f.CarryKind == "catch_up" && f.ResumeBindingID == "" {
+			return failure(pa.Invalid, "attempt_observation")
+		}
 		if i == 0 {
-			if f.Ordinal != 1 || f.Stage != pa.AttemptOpening || f.SendStarted || f.CleanupConfirmed || f.Effect != "unknown" || f.Reason != "" {
+			if f.Ordinal != 1 || !validAttemptOpening(f) {
 				return failure(pa.Invalid, "attempt_start")
 			}
 			tried[f.Agent] = true
@@ -104,13 +118,13 @@ func checkAttemptFacts(next pa.Turn) error {
 		}
 		p := next.Attempts[i-1]
 		if f.Ordinal == p.Ordinal+1 {
-			if p.Stage != pa.AttemptClosed || !p.CleanupConfirmed || p.SendStarted || p.Effect != "none" || p.Reason == "" || f.Stage != pa.AttemptOpening || f.Fence.Generation <= p.Fence.Generation || f.Fence.BindingID == p.Fence.BindingID || tried[f.Agent] || f.SendStarted || f.CleanupConfirmed || f.Effect != "unknown" || f.Reason != "" {
+			if !pa.SafeAttemptClosed(pa.Turn{Attempts: []pa.AttemptFact{p}}) || !validAttemptOpening(f) || f.Fence.Generation <= p.Fence.Generation || f.Fence.BindingID == p.Fence.BindingID || tried[f.Agent] {
 				return failure(pa.ScopeDenied, "attempt_transition")
 			}
 			tried[f.Agent] = true
 			continue
 		}
-		if f.Ordinal != p.Ordinal || f.Agent != p.Agent || f.Fence != p.Fence || p.SendStarted && !f.SendStarted || p.CleanupConfirmed {
+		if f.Ordinal != p.Ordinal || f.Agent != p.Agent || f.Fence != p.Fence || p.SendStarted && !f.SendStarted || p.Opened && !f.Opened || p.SendReturned && !f.SendReturned || p.NativeActivity && !f.NativeActivity || p.ToolActivity && !f.ToolActivity || p.AnswerObserved && !f.AnswerObserved || p.ResumeBindingID != f.ResumeBindingID || p.CarryKind != f.CarryKind || p.CarryAfterSeq != f.CarryAfterSeq || p.CleanupConfirmed {
 			return failure(pa.ScopeDenied, "attempt_identity")
 		}
 		valid := validAttemptStage(p, f)
@@ -121,19 +135,37 @@ func checkAttemptFacts(next pa.Turn) error {
 	return nil
 }
 
+func validAttemptOpening(f pa.AttemptFact) bool {
+	return f.Stage == pa.AttemptOpening && !f.SendStarted && !f.Opened && !f.SendReturned && !f.NativeActivity && !f.ToolActivity && !f.AnswerObserved && !f.CleanupConfirmed && f.Effect == "unknown" && f.Reason == ""
+}
+
 func validAttemptStage(before, after pa.AttemptFact) bool {
+	// Native events append a sticky observation without changing the worker's
+	// lifecycle phase. Neither a tool title nor its claimed completion clears
+	// the unknown side-effect barrier.
+	if after.Stage == before.Stage && (!before.NativeActivity && after.NativeActivity || !before.ToolActivity && after.ToolActivity) {
+		copy := after
+		copy.NativeActivity, copy.ToolActivity, copy.Effect = before.NativeActivity, before.ToolActivity, before.Effect
+		return copy == before && after.Effect == "unknown" && before.Stage != pa.AttemptRefused && before.Stage != pa.AttemptClosed && before.Stage != pa.AttemptHeld
+	}
 	switch after.Stage {
 	case pa.AttemptHeld:
-		return before.Stage != pa.AttemptClosed && after.SendStarted == before.SendStarted && after.Effect == "unknown"
+		return before.Stage != pa.AttemptClosed && after.SendStarted == before.SendStarted && after.Effect == "unknown" && after.Opened == before.Opened && after.SendReturned == before.SendReturned && after.AnswerObserved == before.AnswerObserved
 	case pa.AttemptRefused:
-		return before.Stage == pa.AttemptOpening && !after.SendStarted && !after.CleanupConfirmed && after.Effect == "none" && after.Reason != ""
+		return before.Stage == pa.AttemptOpening && !after.SendStarted && !after.NativeActivity && !after.ToolActivity && !after.SendReturned && !after.AnswerObserved && !after.Opened && !after.CleanupConfirmed && after.Effect == "none" && after.Reason != ""
+	case pa.AttemptOpened:
+		return before.Stage == pa.AttemptOpening && after.Opened && !after.SendStarted && !after.SendReturned && !after.AnswerObserved && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
 	case pa.AttemptSending:
-		return before.Stage == pa.AttemptOpening && after.SendStarted && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
+		return (before.Stage == pa.AttemptOpening || before.Stage == pa.AttemptOpened) && after.SendStarted && !after.SendReturned && !after.AnswerObserved && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
+	case pa.AttemptSent:
+		return before.Stage == pa.AttemptSending && after.SendReturned && !after.AnswerObserved && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
+	case pa.AttemptAnswered:
+		return before.Stage == pa.AttemptSent && after.SendReturned && after.AnswerObserved && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
 	case pa.AttemptClosed:
-		if !after.CleanupConfirmed || after.SendStarted != before.SendStarted || after.Reason != before.Reason {
+		if !after.CleanupConfirmed || after.SendStarted != before.SendStarted || after.Opened != before.Opened || after.SendReturned != before.SendReturned || after.AnswerObserved != before.AnswerObserved || after.NativeActivity != before.NativeActivity || after.ToolActivity != before.ToolActivity || after.Reason != before.Reason {
 			return false
 		}
-		return before.Stage == pa.AttemptRefused && !after.SendStarted && after.Effect == "none" || before.Stage == pa.AttemptSending && after.SendStarted && after.Effect == "unknown"
+		return before.Stage == pa.AttemptRefused && !after.SendStarted && after.Effect == "none" || (before.Stage == pa.AttemptSending || before.Stage == pa.AttemptAnswered) && after.SendStarted && after.Effect == "unknown"
 	}
 	return false
 }

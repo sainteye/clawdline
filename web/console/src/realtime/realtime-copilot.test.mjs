@@ -1128,6 +1128,7 @@ test('both call engines reuse the exact analysis context and include its text-mo
   assert.equal(calls[0].context,undefined)
   assert.equal(calls[1].context,'context-one')
   assert.ok(f.c.getState().cost.usd>0)
+  if(live) assert.equal(f.c.getState().cost.live.backendUSD,f.c.questionUSD)
   await f.c.analyzeQuestion({...selected,conversation:'replacement'},'Why A?',3)
   assert.equal(calls[2].context,undefined,'context never crosses conversation identity')
  }

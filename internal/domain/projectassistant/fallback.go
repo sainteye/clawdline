@@ -20,11 +20,14 @@ const (
 type AttemptStage string
 
 const (
-	AttemptOpening AttemptStage = "opening"
-	AttemptRefused AttemptStage = "refused_before_send"
-	AttemptSending AttemptStage = "sending"
-	AttemptClosed  AttemptStage = "closed"
-	AttemptHeld    AttemptStage = "held_unknown"
+	AttemptOpening  AttemptStage = "opening"
+	AttemptOpened   AttemptStage = "opened"
+	AttemptRefused  AttemptStage = "refused_before_send"
+	AttemptSending  AttemptStage = "sending"
+	AttemptSent     AttemptStage = "sent"
+	AttemptAnswered AttemptStage = "answered"
+	AttemptClosed   AttemptStage = "closed"
+	AttemptHeld     AttemptStage = "held_unknown"
 )
 
 // AttemptFact is append-only. Opening and Sending deliberately mean unknown
@@ -38,6 +41,17 @@ type AttemptFact struct {
 	Effect           string       `json:"effect"`
 	CleanupConfirmed bool         `json:"cleanup_confirmed"`
 	Reason           string       `json:"reason,omitempty"`
+	Opened           bool         `json:"opened,omitempty"`
+	// SendReturned means Send returned a pending handle, not that a remote
+	// model acknowledged, executed or completed the prompt.
+	SendReturned   bool `json:"send_returned,omitempty"`
+	NativeActivity bool `json:"native_activity,omitempty"`
+	ToolActivity   bool `json:"tool_activity,omitempty"`
+	AnswerObserved bool `json:"answer_observed,omitempty"`
+	// ResumeBindingID names historical provenance, never an execution grant.
+	ResumeBindingID string `json:"resume_binding_id,omitempty"`
+	CarryKind       string `json:"carry_kind,omitempty"`
+	CarryAfterSeq   int64  `json:"carry_after_seq,omitempty"`
 }
 
 // AgentRest belongs to one machine's default login identity, never Bot memory.
@@ -108,7 +122,7 @@ func SafeAttemptClosed(t Turn) bool {
 		return false
 	}
 	f := t.Attempts[len(t.Attempts)-1]
-	return f.Stage == AttemptClosed && f.CleanupConfirmed && !f.SendStarted && f.Effect == "none" && f.Reason != ""
+	return f.Stage == AttemptClosed && f.CleanupConfirmed && !f.SendStarted && !f.SendReturned && !f.NativeActivity && !f.ToolActivity && !f.AnswerObserved && f.Effect == "none" && f.Reason != ""
 }
 
 // FallbackConfig keeps Bot's existing value semantics. The wire remains an

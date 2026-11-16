@@ -1581,7 +1581,7 @@ export class RealtimeCopilotClient {
   private updateLiveCost() {
     const elapsed = this.liveStarted ? (Date.now() - this.liveStarted) / 1000 : 0
     const { seconds, usd } = liveCost(elapsed, this.liveSeconds, this.liveBackendUsd + this.questionUSD)
-    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: this.questionCostKnown, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd } } })
+    this.updateState({ cost: { ...emptyCost(this.model), usd, priced: this.questionCostKnown, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd + this.questionUSD } } })
   }
 
   /** Runs one backend function call with the same tools a Realtime call has, and lets the backend continue after the last one. */
