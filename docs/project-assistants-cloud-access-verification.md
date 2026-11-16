@@ -59,21 +59,24 @@ Mutation checks were run in the task worktree and reverted: making every Cloud
 grant writable turns A2 red, and removing the Bridge's `ViewerReadOnly` refusal
 turns E3 red.
 
-## Defect candidate kept out of the green matrix
+## Fixed: a re-pair during runtime admission
 
-**D1-candidate — a fresh re-pair during runtime admission does not invalidate
-the in-flight send.** When the sender is re-paired (same device, new key and
+The matrix found that when the sender was re-paired (same device, new key and
 paired time, so the same principal and reader with a new authorization
-revision) while its send is inside the provider capability check, the send is
-accepted (`200`, receipt `accepted`) and later prompts. `Service` effects treat
-an authorization revision change as `pa_stale_version` (`effect_authorization`),
-but the runtime's post-capability recheck re-authorizes without comparing the
-revision admitted by `Service`. A downgrade or revocation at the same barrier
-is refused (B3, B4), so no permission is widened; the gap is that an old
-grant's in-flight request is not invalidated by a fresh grant. The reproducer
-and its output are private task artifacts; fixing it needs a production change
-outside this verification's write set, so it is reported to Root rather than
-asserted as green or blessed here.
+revision) while its send was inside the provider capability check, the send
+was accepted (`200`, receipt `accepted`). `Service` effects treat an
+authorization revision change as `pa_stale_version` (`effect_authorization`),
+but the runtime's post-capability recheck did not compare the revision
+`Service` had admitted. A downgrade or revocation at the same barrier was
+already refused (B3, B4), so no permission was widened.
+
+`Service.Send` now hands the runtime an `AuthorityCheck` that repeats the
+exact effect-authority comparison, and the runtime calls it after the slow
+admission reads and before it writes anything, including the acknowledgement
+of an unknown turn. `TestProjectAssistantCloudAccessDefectD1RePairDuringAdmission`
+(`internal/transport/http/project_assistants_cloud_repair_admission_test.go`)
+answered 200 before the change and is refused as `pa_stale_version` with no
+prompt after it.
 
 ## Still pending, not proved here
 

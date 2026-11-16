@@ -15,10 +15,14 @@ type Submission struct {
 	InputOwner InputOwner
 	// InputCheck revalidates the human grant after streaming and before admission.
 	InputCheck func(context.Context) error
-	Command    pa.Command
-	Message    pa.SendMessage
-	Feature    pa.FeatureState
-	Source     pa.SourceStatus
+	// AuthorityCheck revalidates the sender's exact grant revision after the
+	// slow admission reads and before anything is written. A re-pair, a
+	// downgrade or a revocation during those reads refuses the send.
+	AuthorityCheck func(context.Context) error
+	Command        pa.Command
+	Message        pa.SendMessage
+	Feature        pa.FeatureState
+	Source         pa.SourceStatus
 	// Notice marks a message Clawdline itself sends the agent, such as the
 	// resume prompt after a restart; it is shown as a notice, not as the
 	// person's words.

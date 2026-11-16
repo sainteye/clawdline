@@ -373,7 +373,11 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 			return ctx.Err()
 		}
 	}
-	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, Feature: a.Feature, Source: a.Source})
+	authorityCheck := func(ctx context.Context) error {
+		_, e := s.authorizeEffect(ctx, c.Key, true, a)
+		return e
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, AuthorityCheck: authorityCheck, Feature: a.Feature, Source: a.Source})
 }
 
 func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, error) {

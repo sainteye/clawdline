@@ -398,6 +398,14 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if bot, c, err = r.currentForStart(ctx, a.key, bot, c); err != nil {
 		return pa.Receipt{}, err
 	}
+	// The sender's grant can change while capabilities are read; nothing,
+	// not even an acknowledgement of an unknown turn, is written under the
+	// grant the request arrived with once it has been replaced.
+	if s.AuthorityCheck != nil {
+		if err = s.AuthorityCheck(ctx); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
 	if len(files) > 0 && bot.Instructions.Revision != owner.Revision {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "upload_configuration")
 	}
