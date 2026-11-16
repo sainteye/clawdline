@@ -124,5 +124,17 @@ cross-process round trip on 2026-11-16. `session/load` requires a feature-owned
 native-ID record scoped to this agent, Bot, full Project and privacy epoch;
 foreign, forgotten or changed-instruction sessions are not loaded. Missing
 native history still follows the existing typed filtered-handoff recovery.
+For a fresh main-chat session, that opening now also contains bounded,
+source-checked historical chat excerpts, separate from live memory. This
+preserves a recent URL or banner brief when the new input is only a short
+follow-up. Missing owner records remain a refusal to load the old native ID;
+the continuation does not manufacture native ownership. Forget and authority
+are checked again at the final send fence. Unknown work is historical
+information and never a replay request. The excerpt is limited to the latest
+12 eligible messages with at most 2,000 UTF-8 bytes each; truncation is marked.
+Both installed agents passed the fresh-continuation batch with four total
+prompt writes and no new durable memory. Production deployment and running
+dev acceptance remain separate. The opt-in batch is documented in the linked
+native qualification record.
 See [native qualification](project-assistants-native-acceptance.md) for the
 original context-loss failure, exact versions, request counts and limitations.

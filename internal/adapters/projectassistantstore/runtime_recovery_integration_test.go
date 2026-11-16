@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +13,76 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+func TestRuntimeSQLiteFreshContinuation(t *testing.T) {
+	for _, topic := range []string{"Research https://example.invalid/topic-alpha", "Banner: 1600 by 900, violet mountains, title Aurora"} {
+		for _, interleaved := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/interleaved=%t", topic, interleaved), func(t *testing.T) {
+				db, s, path := testDB(t)
+				b := seed(t, s, "continuation")
+				p := &recoveryPeer{sent: make(chan app.PromptRequest, 1), result: make(chan app.PromptResult, 1)}
+				r := recoveryEngine(t, s, b, p)
+				send := func(id, text string) app.PromptRequest {
+					t.Helper()
+					input := recoverySubmission(t, s, b, id)
+					input.Message.Text = text
+					receipt, err := r.Submit(testContext, input)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var q app.PromptRequest
+					select {
+					case q = <-p.sent:
+					case <-time.After(3 * time.Second):
+						t.Fatal("no actual provider prompt")
+					}
+					p.result <- app.PromptResult{FinalText: "Acknowledged " + id}
+					recoveryAwait(t, func() bool {
+						x, e := s.Export(testContext, b.Key)
+						if e != nil {
+							return false
+						}
+						for _, turn := range x.Turns {
+							if turn.ID == receipt.ResourceID {
+								return turn.State == pa.TurnSucceeded
+							}
+						}
+						return false
+					})
+					return q
+				}
+				send("topic", topic)
+				rounds := 2
+				followup := "Please start"
+				if interleaved {
+					send("unrelated", "Also, hello")
+					rounds++
+					followup = "Please start the earlier research or banner"
+				}
+				if err := r.Close(testContext); err != nil {
+					t.Fatal(err)
+				}
+				s = reopenRecoveryStore(t, db, path)
+				r = recoveryEngine(t, s, b, p)
+				q := send("followup", followup)
+				if q.Handoff == nil {
+					t.Fatal("fresh prompt omitted handoff")
+				}
+				opening, err := q.Handoff.Opening(q.Turn, q.Context)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(opening, topic) {
+					t.Fatalf("actual fresh provider prompt lost the earlier topic: %s", opening)
+				}
+				x, err := s.Export(testContext, b.Key)
+				if err != nil || len(x.MemoryEntries) != 0 || len(x.Messages) != rounds*2 || p.sends.Load() != int32(rounds) || p.dispatches.Load() != 0 {
+					t.Fatalf("continuation changed memory, replayed work or duplicated replies: messages=%d memory=%d sends=%d dispatches=%d err=%v", len(x.Messages), len(x.MemoryEntries), p.sends.Load(), p.dispatches.Load(), err)
+				}
+			})
+		}
+	}
+}
 
 // This peer never starts a vendor adapter or makes a model request.
 type recoveryPeer struct {

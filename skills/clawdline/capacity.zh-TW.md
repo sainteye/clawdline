@@ -61,6 +61,8 @@
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
+| `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |

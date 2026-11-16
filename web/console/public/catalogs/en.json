@@ -12454,5 +12454,9 @@
   "projectAssistants.routineScheduled": "Scheduled run",
   "projectAssistants.routineSaving": "Updating routines…",
   "projectAssistants.routineJournalUnreadable": "The saved action cannot be read. Its original record is preserved and routine changes are paused. You can still read run history.",
-  "projectAssistants.routineRefresh": "Refresh routines and runs"
+  "projectAssistants.routineRefresh": "Refresh routines and runs",
+  "capacityRow.bots.carry_messages.what": "Recent source-checked main-chat messages carried into one fresh Bot session (at most 12).",
+  "capacityRow.bots.carry_messages.full": "Older messages are omitted from the excerpt; this does not delete chat or authorize retrying unfinished work.",
+  "capacityRow.bots.carry_quote_bytes.what": "Largest UTF-8 excerpt of each historical chat message in a fresh Bot opening (2,000 bytes).",
+  "capacityRow.bots.carry_quote_bytes.full": "Longer quotes are cut at a character boundary and marked truncated; missing details must not be guessed."
 }
