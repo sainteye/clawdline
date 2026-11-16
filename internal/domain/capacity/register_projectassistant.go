@@ -56,6 +56,11 @@ const (
 	MaximumBotGroupPeerLineChars     = 2000
 	// Live Bots one manager may have created (chat/manage.rs MAX_CREATED).
 	MaximumBotManagerCreated = 20
+	// CodyNC chat/manage.rs: MAX_CARD_DETAIL (UTF-16 units), APPROVAL_TIMEOUT.
+	MaximumBotManagerCardUnits       = 2000
+	MaximumBotManagerApprovalSeconds = 270
+	// One waiting plan per manager; share the owned RPC concurrency ceiling.
+	MaximumBotManagerPending = MaximumBotRPCPending
 )
 
 // Group room rows. Names live here, beside the bounds they name.
@@ -67,6 +72,9 @@ const (
 	BotsGroupHistoryLines      = "bots.group_history_lines"
 	BotsGroupPeerLineChars     = "bots.group_peer_line_chars"
 	BotsManagerCreated         = "bots.manager_created"
+	BotsManagerCardUnits       = "bots.manager_card_units"
+	BotsManagerApprovalSeconds = "bots.manager_approval_seconds"
+	BotsManagerPending         = "bots.manager_pending"
 )
 
 // groupBounds: a room turn that reaches a bound ends or shows less; nothing
@@ -76,6 +84,9 @@ const (
 // than inventing a number; that row already covers it.
 func groupBounds() []Entry {
 	return []Entry{
+		{Name: BotsManagerCardUnits, Class: Buffer, Unit: Characters, Limit: MaximumBotManagerCardUnits, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerCardUnits"}},
+		{Name: BotsManagerApprovalSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotManagerApprovalSeconds, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerApprovalSeconds"}},
+		{Name: BotsManagerPending, Class: Buffer, Unit: Rows, Limit: MaximumBotManagerPending, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerPending"}},
 		{Name: BotsGroupRounds, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupRounds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupRounds"}},
 		{Name: BotsGroupReplies, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupReplies, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupReplies"}},
 		{Name: BotsGroupLateTurns, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupLateTurns, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupLateTurns"}},

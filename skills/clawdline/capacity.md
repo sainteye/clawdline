@@ -86,7 +86,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.manager_pending` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.memory_entries` | 256 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |

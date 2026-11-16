@@ -21,6 +21,7 @@ import (
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -282,7 +283,19 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(pa.Invalid), http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.limits.RPCTimeout)
+	timeout := s.limits.RPCTimeout
+	if f.Method == "tools/call" {
+		var tool struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(f.Params, &tool) == nil && (tool.Name == "create_bot" || tool.Name == "update_bot") {
+			// These calls wait for an explicit human decision for up to the
+			// upstream 270 seconds; the ordinary RPC deadline is shorter.
+			timeout = time.Duration(capacity.MaximumBotManagerApprovalSeconds)*time.Second + s.limits.WriteTimeout
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout))
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	result, err := s.request(ctx, f)
 	var reply frame
@@ -352,7 +365,11 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": mcpTools()}, nil
+		list := mcpTools()
+		if team, ok := s.tools.(app.TeamTools); ok && team.TeamAvailable(ctx) == nil {
+			list = append(list, mcpTeamTools()...)
+		}
+		return map[string]any{"tools": list}, nil
 	case "tools/call":
 		var q struct {
 			Name      string          `json:"name"`
@@ -369,7 +386,14 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if err != nil {
 			return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true), nil
 		}
-		return mcpToolResult(value, false), nil
+		result := mcpToolResult(value, false)
+		if q.Name == "list_team" || q.Name == "create_bot" || q.Name == "update_bot" {
+			encoded, err := json.Marshal(result)
+			if err != nil || len(encoded)+browserFrameMargin > s.limits.FrameBytes {
+				return mcpToolResult(map[string]string{"code": string(pa.CapacityFull), "field": "manager_reply_bytes"}, true), nil
+			}
+		}
+		return result, nil
 	default:
 		return nil, refusal(pa.Unsupported, "mcp_method")
 	}
@@ -387,6 +411,15 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
 	switch name {
+	case "list_team", "create_bot", "update_bot":
+		team, ok := s.tools.(app.TeamTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "manage_team")
+		}
+		if err := team.TeamAvailable(ctx); err != nil {
+			return nil, err
+		}
+		return team.Team(ctx, name, mcpEmpty(arguments))
 	case "list_bots":
 		tools, ok := s.tools.(app.CollaborationTools)
 		if !ok {
@@ -538,6 +571,23 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		return map[string]string{"state": "saved", "idempotency_key": q.ID}, nil
 	default:
 		return nil, refusal(pa.Unsupported, "mcp_tool")
+	}
+}
+
+func mcpTeamTools() []any {
+	text := func() any { return map[string]any{"type": "string"} }
+	tool := func(name, description string, properties map[string]any, required []string) any {
+		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
+	}
+	fields := func() map[string]any {
+		return map[string]any{"idempotency_key": map[string]any{"type": "string", "minLength": 1}, "name": text(), "instructions": text(), "avatarColor": text(), "avatarShape": text(), "hidden": map[string]any{"type": "boolean"}}
+	}
+	create, update := fields(), fields()
+	update["botId"] = map[string]any{"type": "string", "minLength": 1}
+	return []any{
+		tool("list_team", "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。", map[string]any{}, []string{}),
+		tool("create_bot", "Propose a Bot in your Project. It inherits your agent, approval policy, mode and team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 建立 Bot，繼承你的代理、允許方式、模式及管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
+		tool("update_bot", "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。", update, []string{"idempotency_key", "botId"}),
 	}
 }
 

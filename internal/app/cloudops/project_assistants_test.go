@@ -102,7 +102,7 @@ func projectAssistantOperationCases() []operationCase {
 		c.body = body
 		out = append(out, c)
 	}
-	return out
+	return append(out, projectAssistantGroupOperationCases()...)
 }
 
 func (f projectAssistantRouter) Do(ctx context.Context, req LocalRequest) (LocalResponse, error) {
@@ -121,7 +121,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 35 {
+	if len(out) != 45 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -285,8 +285,9 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				}
 				missing := cloneBody(base)
 				delete(missing, key)
-				// Pictures are optional on the new send-files word; null still is not.
-				if row.Op != "project-assistants.send-files" || key != "images" {
+				// Optional picture/reply targets may be absent; null still is not.
+				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && key == "reply_to_author"
+				if !optional {
 					mutations = append(mutations, missing)
 				}
 				null := cloneBody(base)
