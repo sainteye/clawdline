@@ -115,6 +115,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.read":            genDecodeProjectAssistantsRead,
 	"project-assistants.routine-delete":  genDecodeProjectAssistantsRoutineDelete,
 	"project-assistants.routine-enabled": genDecodeProjectAssistantsRoutineEnabled,
+	"project-assistants.routine-hook":    genDecodeProjectAssistantsRoutineHook,
 	"project-assistants.routine-runs":    genDecodeProjectAssistantsRoutineRuns,
 	"project-assistants.routine-save":    genDecodeProjectAssistantsRoutineSave,
 	"project-assistants.routine-test":    genDecodeProjectAssistantsRoutineTest,
@@ -2984,6 +2985,42 @@ func genDecodeProjectAssistantsRoutineEnabled(b body) (plan, LocalRequest, bool)
 	return p, req, true
 }
 
+// genDecodeProjectAssistantsRoutineHook is the `project-assistants.routine-hook` row's decode.
+func genDecodeProjectAssistantsRoutineHook(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "command", "expected_revision", "fence", "id", "request", "rotate", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"edit"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("rotate", genRule{kind: "bool"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/routines/" + segment(genText(b["id"])) + "/hook"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "expected_revision": genValue{from: "expected_revision"}, "fence": genValue{from: "fence"}, "id": genValue{from: "id"}, "rotate": genValue{from: "rotate"}})
+	return p, req, true
+}
+
 // genDecodeProjectAssistantsRoutineRuns is the `project-assistants.routine-runs` row's decode.
 func genDecodeProjectAssistantsRoutineRuns(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -3051,7 +3088,7 @@ func genDecodeProjectAssistantsRoutineSave(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("timeout_seconds", genRule{kind: "integer", min: genInt(1), max: genInt(86400)}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("triggers", genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"at": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "expression": genRule{kind: "string"}, "seconds": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "timeZone": genRule{kind: "string"}, "type": genRule{kind: "string", enum: []string{"interval", "once", "cron"}}}, required: []string{"type", "seconds", "at", "expression", "timeZone"}, closed: true}, minItems: genCount(1), maxItems: genCount(20)}) {
+	if !b.genValid("triggers", genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"at": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "event": genRule{kind: "string", maxBytes: 200}, "expression": genRule{kind: "string"}, "filters": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"key": genRule{kind: "string", maxBytes: 200}, "value": genRule{kind: "string", maxBytes: 4000}}, required: []string{"key", "value"}, closed: true}, maxItems: genCount(20)}, "seconds": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "source": genRule{kind: "string"}, "timeZone": genRule{kind: "string"}, "type": genRule{kind: "string", enum: []string{"interval", "once", "cron", "webhook", "event"}}}, required: []string{"type", "seconds", "at", "expression", "timeZone"}, closed: true}, minItems: genCount(1), maxItems: genCount(20)}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

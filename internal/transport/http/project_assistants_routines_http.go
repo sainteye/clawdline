@@ -7,6 +7,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -27,6 +28,9 @@ func paRoutineRoute(r *http.Request) (paHTTPRoute, bool) {
 	}
 	if len(parts) >= 3 && paHTTPSafeBotID(parts[2]) {
 		out.offer = parts[2]
+		if len(parts) == 4 && parts[3] == "hook" && r.Method == "POST" {
+			out.action = "routine-hook"
+		}
 		if len(parts) == 3 && r.Method == "DELETE" {
 			out.action = "routine-delete"
 		}
@@ -52,7 +56,19 @@ func paRoutineTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 func paRoutineTrigger(t pa.RoutineTrigger) contract.ProjectAssistantRoutineTrigger {
-	return contract.ProjectAssistantRoutineTrigger{Type: t.Type, Seconds: t.Seconds, At: t.At, Expression: t.Expression, TimeZone: t.TimeZone}
+	out := contract.ProjectAssistantRoutineTrigger{Type: t.Type, Seconds: t.Seconds, At: t.At, Expression: t.Expression, TimeZone: t.TimeZone}
+	if t.Type == "event" {
+		out.Source, out.Event = t.Source, t.Event
+	}
+	keys := make([]string, 0, len(t.Filters))
+	for key := range t.Filters {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		out.Filters = append(out.Filters, contract.ProjectAssistantRoutineEventFilter{Key: key, Value: t.Filters[key]})
+	}
+	return out
 }
 
 func (h *projectAssistantHTTP) readRoutines(r *http.Request, route paHTTPRoute) (any, error) {
@@ -85,7 +101,7 @@ func (h *projectAssistantHTTP) readRoutines(r *http.Request, route paHTTPRoute) 
 	}
 	out := contract.ProjectAssistantRoutineListResponse{ContractVersion: pa.ContractVersion, Source: source, Fence: paWireFence(result.Page.Fence), Definitions: []contract.ProjectAssistantRoutineDefinition{}, Runs: []contract.ProjectAssistantRoutineRun{}, NextCursor: result.Page.NextCursor}
 	for _, d := range result.Page.Definitions {
-		v := contract.ProjectAssistantRoutineDefinition{ID: d.ID, Key: paWireBotKey(d.Key), Project: paWireProjectScope(d.Project), ConversationID: d.ConversationID, Progress: d.Progress, Name: d.Name, Instruction: d.Instruction, TimeoutSeconds: d.TimeoutSeconds, Enabled: d.Enabled, Deleted: d.Deleted, NextDue: paRoutineTime(d.NextDue), Version: d.Version, Triggers: []contract.ProjectAssistantRoutineTrigger{}, NextRuns: []string{}}
+		v := contract.ProjectAssistantRoutineDefinition{ID: d.ID, Key: paWireBotKey(d.Key), Project: paWireProjectScope(d.Project), ConversationID: d.ConversationID, Progress: d.Progress, Name: d.Name, Instruction: d.Instruction, TimeoutSeconds: d.TimeoutSeconds, Enabled: d.Enabled, Deleted: d.Deleted, FollowUp: d.FollowUp, FollowUpChain: int64(d.FollowUpChain), NextDue: paRoutineTime(d.NextDue), Version: d.Version, Triggers: []contract.ProjectAssistantRoutineTrigger{}, NextRuns: []string{}}
 		for _, t := range d.ScheduleTriggers() {
 			v.Triggers = append(v.Triggers, paRoutineTrigger(t))
 		}
@@ -99,7 +115,7 @@ func (h *projectAssistantHTTP) readRoutines(r *http.Request, route paHTTPRoute) 
 	}
 	for _, item := range result.Page.Runs {
 		run := item.Run
-		v := contract.ProjectAssistantRoutineRun{ID: run.ID, RoutineID: run.RoutineID, Source: run.Source, State: contract.ProjectAssistantTurnState(run.State), TurnID: run.TurnID, CreatedAt: paRoutineTime(run.CreatedAt), Result: item.Result}
+		v := contract.ProjectAssistantRoutineRun{ID: run.ID, RoutineID: run.RoutineID, Source: run.Source, State: contract.ProjectAssistantTurnState(run.State), TurnID: run.TurnID, CreatedAt: paRoutineTime(run.CreatedAt), Result: item.Result, DeliveryID: run.DeliveryID, RetryCount: int64(run.RetryCount), NotBefore: paRoutineTime(run.NotBefore)}
 		if run.FinishedAt != nil {
 			v.FinishedAt = paRoutineTime(*run.FinishedAt)
 		}
@@ -167,6 +183,9 @@ func paPackRoutinePage(out contract.ProjectAssistantRoutineListResponse, cursors
 }
 
 func (h *projectAssistantHTTP) writeRoutine(w http.ResponseWriter, r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "routine-hook" {
+		return h.routineHook(w, r, route)
+	}
 	var cmd contract.ProjectAssistantCommand
 	var fence contract.ProjectAssistantFence
 	var revision int64
@@ -189,7 +208,22 @@ func (h *projectAssistantHTTP) writeRoutine(w http.ResponseWriter, r *http.Reque
 			return nil, paHTTPFailure(pa.Invalid, "routine_triggers")
 		}
 		for _, t := range v.Triggers {
-			q.Triggers = append(q.Triggers, pa.RoutineTrigger{Type: t.Type, Seconds: t.Seconds, At: t.At, Expression: t.Expression, TimeZone: t.TimeZone})
+			trigger := pa.RoutineTrigger{Type: t.Type, Seconds: t.Seconds, At: t.At, Expression: t.Expression, TimeZone: t.TimeZone}
+			trigger.Source = t.Source
+			trigger.Event = t.Event
+			if t.Filters != nil {
+				if len(t.Filters) > pa.MaxRoutineEventFilters {
+					return nil, paHTTPFailure(pa.Invalid, "routine_event_filters")
+				}
+				trigger.Filters = map[string]string{}
+				for _, filter := range t.Filters {
+					if _, exists := trigger.Filters[filter.Key]; exists {
+						return nil, paHTTPFailure(pa.Invalid, "routine_event_filter_key")
+					}
+					trigger.Filters[filter.Key] = filter.Value
+				}
+			}
+			q.Triggers = append(q.Triggers, trigger)
 		}
 	case "routine-enabled":
 		v, err := paDecodeHTTP[contract.ProjectAssistantRoutineEnabledRequest](w, r)

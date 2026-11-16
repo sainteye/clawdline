@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12536,
-  "riskKeys": 5442,
-  "nonRiskCount": 7094,
+  "englishContentKeys": 12569,
+  "riskKeys": 5459,
+  "nonRiskCount": 7110,
   "groups": [
     {
       "name": "acp / other",
@@ -419,7 +419,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 615,
+      "count": 629,
       "sources": [
         null
       ],
@@ -479,6 +479,10 @@
         "capacityRow.bots.event_rows.what",
         "capacityRow.bots.fallback_agents.what",
         "capacityRow.bots.feature_probe_bytes.what",
+        "capacityRow.bots.follow_up_chain.full",
+        "capacityRow.bots.follow_up_pending.what",
+        "capacityRow.bots.follow_up_seconds.what",
+        "capacityRow.bots.follow_up_tokens.what",
         "capacityRow.bots.group_history_lines.full",
         "capacityRow.bots.group_history_lines.what",
         "capacityRow.bots.group_late_turns.what",
@@ -517,16 +521,26 @@
         "capacityRow.bots.roster_seconds.what",
         "capacityRow.bots.roster_subs.what",
         "capacityRow.bots.routine_definitions.what",
+        "capacityRow.bots.routine_delivery_id_bytes.what",
+        "capacityRow.bots.routine_event_filters.what",
+        "capacityRow.bots.routine_event_name_bytes.what",
+        "capacityRow.bots.routine_filter_key_bytes.what",
+        "capacityRow.bots.routine_filter_value_bytes.what",
         "capacityRow.bots.routine_finished_runs.what",
+        "capacityRow.bots.routine_github_event_bytes.what",
+        "capacityRow.bots.routine_hook_secret_bytes.what",
         "capacityRow.bots.routine_instruction_bytes.what",
         "capacityRow.bots.routine_interval_seconds.what",
         "capacityRow.bots.routine_name_bytes.what",
         "capacityRow.bots.routine_pending.what",
         "capacityRow.bots.routine_progress_tokens.what",
+        "capacityRow.bots.routine_retry_attempts.what",
+        "capacityRow.bots.routine_retry_delay_seconds.what",
         "capacityRow.bots.routine_tick_ms.full",
         "capacityRow.bots.routine_tick_ms.what",
         "capacityRow.bots.routine_timeout_seconds.what",
         "capacityRow.bots.routine_triggers.what",
+        "capacityRow.bots.routine_webhook_body_bytes.what",
         "capacityRow.bots.rpc_ms.what",
         "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
@@ -7168,7 +7182,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 191,
+      "count": 193,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7286,6 +7300,8 @@
         "transparency.card.persistent-bot-review.title",
         "transparency.card.persistent-bot-routine-progress.summary",
         "transparency.card.persistent-bot-routine-progress.title",
+        "transparency.card.persistent-bot-routines-events.summary",
+        "transparency.card.persistent-bot-routines-events.title",
         "transparency.card.persistent-bot-routines.summary",
         "transparency.card.persistent-bot-routines.title",
         "transparency.card.persistent-bots.summary",

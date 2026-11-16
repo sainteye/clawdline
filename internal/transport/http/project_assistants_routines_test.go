@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -323,7 +324,7 @@ func routineHTTPMCPActorABA(t *testing.T, mode string) {
 			t.Fatal("calendar wake duplicated or lost intent", x.RoutineRuns, x.Routines)
 		}
 		for i, trigger := range triggers {
-			if x.Routines[0].Triggers[i] != trigger {
+			if !reflect.DeepEqual(x.Routines[0].Triggers[i], trigger) {
 				t.Fatal("saved trigger changed", x.Routines[0])
 			}
 			if trigger.Type == "once" && !x.Routines[0].NextRuns[i].IsZero() {

@@ -6273,6 +6273,8 @@ export interface ProjectAssistantRoutineDefinition {
   conversation_id: string
   deleted: boolean
   enabled: boolean
+  follow_up?: boolean
+  follow_up_chain?: number
   id: string
   instruction: string
   key: ProjectAssistantBotKey
@@ -6299,6 +6301,25 @@ export interface ProjectAssistantRoutineEnabledRequest {
   id: string
 }
 
+export interface ProjectAssistantRoutineEventFilter {
+  key: string
+  value: string
+}
+
+export interface ProjectAssistantRoutineHookRequest {
+  command: ProjectAssistantCommand
+  expected_revision: number
+  fence: ProjectAssistantFence
+  id: string
+  rotate: boolean
+}
+
+export interface ProjectAssistantRoutineHookResponse {
+  contract_version: string
+  key: string
+  url: string
+}
+
 export interface ProjectAssistantRoutineListRequest {
   conversation_id: string
   cursor: string
@@ -6319,10 +6340,13 @@ export interface ProjectAssistantRoutineListResponse {
 
 export interface ProjectAssistantRoutineRun {
   created_at: string
+  delivery_id?: string
   failure?: ProjectAssistantFailure
   finished_at: string
   id: string
+  not_before?: string
   result: string
+  retry_count?: number
   routine_id: string
   source: string
   state: ProjectAssistantTurnState
@@ -6343,8 +6367,11 @@ export interface ProjectAssistantRoutineSaveRequest {
 
 export interface ProjectAssistantRoutineTrigger {
   at: number
+  event?: string
   expression: string
+  filters?: ProjectAssistantRoutineEventFilter[]
   seconds: number
+  source?: string
   timeZone: string
   type: string
 }

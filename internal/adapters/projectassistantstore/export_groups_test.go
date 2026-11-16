@@ -32,7 +32,7 @@ func TestInstallSchemasAddsGroupTablesAfterTheFeature(t *testing.T) {
 		t.Fatalf("group schema %d %v", groups, err)
 	}
 	// Separately versioned: installing groups leaves the feature version alone.
-	if feature != 3 || groups != 1 {
+	if feature != pa.SchemaVersion || groups != 1 {
 		t.Fatalf("versions moved: feature %d groups %d", feature, groups)
 	}
 }

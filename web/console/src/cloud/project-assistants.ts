@@ -447,9 +447,9 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const command = fields.command
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
-  const routine=/^\/routines(?:\/([^/]+)(?:\/(enabled|runs))?)?$/.exec(tail)
+  const routine=/^\/routines(?:\/([^/]+)(?:\/(enabled|runs|hook))?)?$/.exec(tail)
   if(routine) {
-    const action=method==="DELETE"&&routine[1]&&!routine[2]?"routine-delete":method==="POST"&&!routine[1]?"routine-save":method==="POST"&&routine[2]==="enabled"?"routine-enabled":method==="POST"&&routine[2]==="runs"?"routine-test":null
+    const action=method==="DELETE"&&routine[1]&&!routine[2]?"routine-delete":method==="POST"&&!routine[1]?"routine-save":method==="POST"&&routine[2]==="enabled"?"routine-enabled":method==="POST"&&routine[2]==="runs"?"routine-test":method==="POST"&&routine[2]==="hook"?"routine-hook":null
     if(!action||(routine[1]&&decodeURIComponent(routine[1])!==fields.id))throw failure("pa_invalid")
     return {word:"project-assistants."+action,kind:"action" as const,fields,id:command.idempotency_key}
   }

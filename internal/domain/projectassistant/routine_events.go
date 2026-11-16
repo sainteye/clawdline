@@ -1,6 +1,9 @@
 package projectassistant
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -8,9 +11,8 @@ import (
 
 // RoutineEventSpec is the pinned Codync event trigger's body: an exact source,
 // an exact event name or "*", and filters that must all hold. It is the
-// "event" variant of the upstream tagged trigger, not a second schedule format,
-// and it is not yet accepted by RoutineTrigger.Validate: the schedule, store and
-// entry points refuse event triggers until the complete path is wired.
+// "event" variant of the upstream tagged trigger, not a second schedule format.
+// Source labels and filter matches confer no authority.
 type RoutineEventSpec struct {
 	Source  string            `json:"source"`
 	Event   string            `json:"event"`
@@ -78,6 +80,22 @@ func isRoutineEventSource(source string) bool { return slices.Contains(routineEv
 // RoutineEvent is normalized, untrusted event data: a decoded JSON object.
 // Its values are what the run may see; none of them grants anything.
 type RoutineEvent map[string]any
+
+// Persisted and exported events retain JSON number spelling, including IDs
+// outside float64's exact integer range. Every reader shares this decoder.
+func (e *RoutineEvent) UnmarshalJSON(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value map[string]any
+	if err := decoder.Decode(&value); err != nil {
+		return fail(Invalid, "routine_event_json")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return fail(Invalid, "routine_event_json")
+	}
+	*e = RoutineEvent(value)
+	return nil
+}
 
 // Matches is upstream Trigger::matches: exact source, exact event unless the
 // spec says "*", and every filter. A filter compares one top-level field that

@@ -1,7 +1,7 @@
 package projectassistant
 
 import (
-	"slices"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -44,7 +44,7 @@ func TestRoutineScheduleRetainsIntentAndExhaustsOnce(t *testing.T) {
 		t.Fatal(r, err)
 	}
 	advanced, err := AdvanceRoutineSchedule(r, now.Add(3*time.Minute+15*time.Second))
-	if err != nil || !advanced.NextRuns[0].IsZero() || !advanced.NextDue.Equal(now.Add(4*time.Minute)) || !slices.Equal(advanced.Triggers, triggers) {
+	if err != nil || !advanced.NextRuns[0].IsZero() || !advanced.NextDue.Equal(now.Add(4*time.Minute)) || !reflect.DeepEqual(advanced.Triggers, triggers) {
 		t.Fatal(advanced, err)
 	}
 	// An edit retains an already spent one-shot and the anchored next wakes.
@@ -81,7 +81,7 @@ func TestRoutineLegacyCadenceAndScheduleValidation(t *testing.T) {
 		{Type: "cron", Expression: "* * * * *", TimeZone: "not-a-zone"},
 		{Type: "cron", Expression: "CRON_TZ=UTC * * * * *", TimeZone: "Asia/Taipei"},
 		{Type: "cron", Expression: "* * * * * *", TimeZone: "UTC"},
-		{Type: "cron", Expression: "@every 1h", TimeZone: "UTC"}, {Type: "webhook"},
+		{Type: "cron", Expression: "@every 1h", TimeZone: "UTC"}, {Type: "webhook", Seconds: 1},
 	} {
 		if trigger.Validate() == nil {
 			t.Fatal("accepted invalid trigger", trigger)

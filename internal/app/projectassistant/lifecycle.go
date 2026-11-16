@@ -50,7 +50,35 @@ func (r *Engine) stopPendingLocked(ctx context.Context, a *runtimeActor) error {
 	if a.cancel != nil {
 		a.cancel()
 	}
-	return QuiesceHistoryFor(ctx, r.o.Repository, r.o.Clock, r.o.ID, a.key, r.unknownField())
+	if err := QuiesceHistoryFor(ctx, r.o.Repository, r.o.Clock, r.o.ID, a.key, r.unknownField()); err != nil {
+		return err
+	}
+	if r.unknownField() == RestartField {
+		return nil
+	}
+	return r.cancelDueFollowUpsLocked(ctx, a)
+}
+
+func (r *Engine) cancelDueFollowUpsLocked(ctx context.Context, a *runtimeActor) error {
+	x, err := r.o.Repository.Export(ctx, a.key)
+	if err != nil {
+		return err
+	}
+	for _, d := range x.Routines {
+		if !d.FollowUp || d.Deleted || d.NextDue.After(r.o.Clock()) {
+			continue
+		}
+		d.Deleted, d.Enabled = true, false
+		d.Version++
+		bot, e := r.o.Repository.Bot(ctx, a.key)
+		if e != nil {
+			return e
+		}
+		if _, e = r.mutate(ctx, bot, Mutation{Command: r.command(a.key, pa.EditOperation, "follow-up-stop-"+d.ID, d.ID), Routine: &d, Receipt: pa.Receipt{State: pa.EffectFailed, ResourceID: d.ID}}); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // QuiesceHistory stops durable chat work without constructing a Runtime or
@@ -73,6 +101,7 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 	if err != nil {
 		return err
 	}
+pendingTurns:
 	for _, t := range pending {
 		x, e := repo.Export(ctx, key)
 		if e != nil {
@@ -91,6 +120,16 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 		}
 		if t.State == pa.TurnUnknown {
 			continue
+		}
+		// A planned restart retains only the original queue identity whose
+		// execution has not started, or whose no-effect refusal was durably
+		// proved and cleaned up. Running/unknown work never takes this path.
+		if field == RestartField && t.State == pa.TurnQueued && t.RoutineRunID != "" {
+			for _, run := range x.RoutineRuns {
+				if run.ID == t.RoutineRunID && run.TurnID == t.ID && run.State == pa.TurnQueued && (t.StartedAt == nil || run.NotStartedProved) {
+					continue pendingTurns
+				}
+			}
 		}
 		if t.State != pa.TurnQueued && t.State != pa.TurnAccepted && t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 			continue
@@ -145,6 +184,7 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 				if v.ID == t.RoutineRunID {
 					copy := v
 					copy.State = state
+					copy.NotStartedProved = false
 					at := clock()
 					copy.FinishedAt = &at
 					copy.Published = state != pa.TurnUnknown

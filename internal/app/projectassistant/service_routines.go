@@ -2,8 +2,175 @@ package projectassistant
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+type RoutineHookRepository interface {
+	RoutineHook(context.Context, string) (pa.Routine, string, error)
+}
+
+type RoutineDelivery struct {
+	DeliveryID string
+	Event      pa.RoutineEvent
+	Ignored    bool
+}
+
+type RoutineDeliveryResult struct {
+	RunID   string `json:"run_id,omitempty"`
+	Ignored bool   `json:"ignored,omitempty"`
+}
+
+type RoutineHookResult struct {
+	URL string `json:"url"`
+	Key string `json:"key"`
+}
+
+func RoutineHookPath(id string) string { return "/hooks/routines/" + id }
+
+// ReceiveRoutineHook uses only the routine's capability and independently
+// supplied background policy. It never fabricates a human grant. Verification
+// must authenticate the original bytes before returning normalized event data.
+func (s *Service) ReceiveRoutineHook(ctx context.Context, id string, verify func(string) (RoutineDelivery, error), check func(context.Context, pa.BotKey, pa.ProjectScope) error) (RoutineDeliveryResult, error) {
+	repo, ok := s.opts.Repository.(RoutineHookRepository)
+	if !ok || verify == nil || check == nil {
+		return RoutineDeliveryResult{}, serviceFailure(pa.Unsupported, "routine_hook")
+	}
+	d, secret, err := repo.RoutineHook(ctx, id)
+	if err != nil && pa.Code(err) != pa.NotFound {
+		return RoutineDeliveryResult{}, err
+	}
+	in, authErr := verify(secret)
+	if authErr != nil {
+		return RoutineDeliveryResult{}, authErr
+	}
+	if err != nil || secret == "" {
+		return RoutineDeliveryResult{}, serviceFailure(pa.ScopeDenied, "routine_webhook_unauthorized")
+	}
+	if err = check(ctx, d.Key, d.Project); err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	bot, err := s.opts.Repository.Bot(ctx, d.Key)
+	if err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	if bot.Project != d.Project || bot.ConversationID != d.ConversationID {
+		return RoutineDeliveryResult{}, serviceFailure(pa.ScopeDenied, "routine_owner")
+	}
+	if err = s.routineProject(ctx, bot); err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	if !d.Enabled || d.Deleted {
+		return RoutineDeliveryResult{}, serviceFailure(pa.Revoked, "routine_paused")
+	}
+	// A delivery key identifies its first accepted run even if the sender later
+	// changes the body, or that run's bookkeeping has been reclaimed.
+	commandKey := "routine-delivery-" + s.opts.ID()
+	if in.DeliveryID != "" {
+		h := sha256.Sum256([]byte(d.ID + "\x00" + in.DeliveryID))
+		commandKey = "routine-delivery-" + hex.EncodeToString(h[:])
+	}
+	c, err := canonicalCommand(pa.Command{Key: d.Key, Operation: pa.EditOperation, IdempotencyKey: commandKey}, pa.EditOperation, "routine-webhook", struct{ Routine, Delivery string }{d.ID, in.DeliveryID})
+	if err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	if in.DeliveryID != "" {
+		if prior, e := s.replay(ctx, c); e != nil {
+			return RoutineDeliveryResult{}, e
+		} else if prior != nil {
+			return RoutineDeliveryResult{RunID: prior.ResourceID}, nil
+		}
+	}
+	if in.Ignored || !d.MatchesEvent(in.Event) {
+		return RoutineDeliveryResult{Ignored: true}, nil
+	}
+	x, err := s.opts.Repository.Export(ctx, d.Key)
+	if err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	for _, run := range x.RoutineRuns {
+		if in.DeliveryID != "" && run.RoutineID == d.ID && run.DeliveryID == in.DeliveryID {
+			return RoutineDeliveryResult{RunID: run.ID}, nil
+		}
+		if run.RoutineID == d.ID && (run.State == pa.TurnQueued || run.State == pa.TurnRunning || run.State == pa.TurnWaitingPermission || run.State == pa.TurnUnknown) {
+			return RoutineDeliveryResult{}, serviceFailure(pa.CapacityFull, "routine_busy")
+		}
+	}
+	for _, turn := range x.Turns {
+		if turn.State == pa.TurnUnknown {
+			return RoutineDeliveryResult{}, serviceFailure(pa.OutcomeUnknown, "routine_unknown")
+		}
+	}
+	current, currentSecret, err := repo.RoutineHook(ctx, id)
+	if err != nil || currentSecret != secret || current.Version != d.Version {
+		return RoutineDeliveryResult{}, serviceFailure(pa.StaleVersion, "routine_hook_changed")
+	}
+	if err = check(ctx, d.Key, d.Project); err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	if err = s.routineProject(ctx, bot); err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	run := pa.RoutineRun{ID: s.opts.ID(), RoutineID: d.ID, Source: "webhook", DeliveryID: in.DeliveryID, Event: in.Event, MemoryRevision: x.Memory.Revision, Key: d.Key, Project: d.Project, ConversationID: d.ConversationID, State: pa.TurnQueued, CreatedAt: s.opts.Clock(), TimeoutSeconds: d.TimeoutSeconds}
+	m := Mutation{Command: c, ExpectedVersion: bot.Version, RoutineRun: &run, Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: run.ID}}
+	bot.Version++
+	bot.UpdatedAt = s.opts.Clock()
+	m.Bot = &bot
+	receipt, err := s.opts.Repository.Commit(ctx, m)
+	if err != nil {
+		return RoutineDeliveryResult{}, err
+	}
+	return RoutineDeliveryResult{RunID: receipt.ResourceID}, nil
+}
+
+// HumanRoutineHook is separate from ordinary reads: even viewing the key
+// requires the same current write grant as changing the Bot.
+func (s *Service) HumanRoutineHook(ctx context.Context, q HumanRoutineCommand, rotate bool) (RoutineHookResult, error) {
+	if rotate {
+		q.Request.Action = "rotate_hook"
+		if _, err := s.HumanRoutine(ctx, q); err != nil {
+			return RoutineHookResult{}, err
+		}
+	}
+	a, err := s.authorize(ctx, q.Command.Key, true)
+	if err != nil {
+		return RoutineHookResult{}, err
+	}
+	repo, ok := s.opts.Repository.(RoutineHookRepository)
+	if !ok {
+		return RoutineHookResult{}, serviceFailure(pa.Unsupported, "routine_hook")
+	}
+	bot, err := s.opts.Repository.Bot(ctx, q.Command.Key)
+	if err != nil {
+		return RoutineHookResult{}, err
+	}
+	c, err := s.opts.Repository.Conversation(ctx, bot.Key, bot.ConversationID)
+	if err != nil {
+		return RoutineHookResult{}, err
+	}
+	if err = checkHumanRoutineFence(q.Fence, currentFence(bot, c)); err != nil {
+		return RoutineHookResult{}, err
+	}
+	d, secret, err := repo.RoutineHook(ctx, q.Request.ID)
+	if err != nil {
+		return RoutineHookResult{}, err
+	}
+	if d.Key != bot.Key || d.Project != bot.Project || d.ConversationID != c.ID || d.Deleted {
+		return RoutineHookResult{}, serviceFailure(pa.ScopeDenied, "routine_owner")
+	}
+	if !rotate && d.Version != q.ExpectedRevision {
+		return RoutineHookResult{}, serviceFailure(pa.StaleVersion, "routine_revision")
+	}
+	if err = s.routineProject(ctx, bot); err != nil {
+		return RoutineHookResult{}, err
+	}
+	if _, err = s.authorizeEffect(ctx, bot.Key, true, a); err != nil {
+		return RoutineHookResult{}, err
+	}
+	return RoutineHookResult{URL: RoutineHookPath(d.ID), Key: secret}, nil
+}
 
 type RoutineQuery struct {
 	Key                                                     pa.BotKey

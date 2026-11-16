@@ -34,7 +34,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -58,15 +58,17 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS project_assistant_roster_bot ON project_assistant_roster_changes(machine,bot,seq)`,
 		`INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed) SELECT b.machine,b.bot,json_extract(CAST(b.data AS TEXT),'$.Bot.project'),json_extract(CAST(b.data AS TEXT),'$.Conversation.id'),json_extract(CAST(b.data AS TEXT),'$.Conversation.generation'),json_extract(CAST(b.data AS TEXT),'$.Conversation.binding_id'),0 FROM project_assistant_bots b WHERE NOT EXISTS(SELECT 1 FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_routines (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, deleted INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_routine_hooks (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, secret TEXT NOT NULL, PRIMARY KEY(machine,bot,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_routine_runs (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, routine TEXT NOT NULL, state TEXT NOT NULL, published INTEGER NOT NULL, finished TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS project_assistant_routine_pending ON project_assistant_routine_runs(machine,bot,routine) WHERE state='queued'`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS project_assistant_routine_delivery ON project_assistant_routine_runs(machine,bot,routine,json_extract(CAST(data AS TEXT),'$.delivery_id')) WHERE json_extract(CAST(data AS TEXT),'$.delivery_id') IS NOT NULL`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_receipts (machine TEXT NOT NULL, bot TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, receipt_id TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,operation,command_key), UNIQUE(machine,bot,receipt_id))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
 			return err
 		}
 	}
-	// V3 protects aggregate fields and recovery semantics that older readers do
+	// V4 protects hook capabilities, follow-up provenance and retry state that older readers do
 	// not understand. No historical JSON, event or receipt is decoded/rebuilt.
 	// Keep the metadata update last so failure rolls back the additive DDL too.
 	if version < pa.SchemaVersion {
