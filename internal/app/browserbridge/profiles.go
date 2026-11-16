@@ -239,6 +239,19 @@ func (h *Profiles) selection(conversation string, policy browserpolicy.Policy) S
 }
 
 func (h *Profiles) DoSession(ctx context.Context, conversation, op string, args json.RawMessage, policy browserpolicy.Policy, requested string, explicit bool) (json.RawMessage, error) {
+	return h.doSession(ctx, conversation, op, args, policy, requested, explicit, false)
+}
+
+// DoOwned runs one command for a Host-derived owner that is not a terminal
+// Session (a Bot). It obeys the same policy, saved choice, stop, person
+// control, queue and audit as DoSession, but never takes an explicit choice
+// from its caller, acts only on tabs this owner opened in the chosen profile,
+// and never hands a host the command of a caller cancelled first.
+func (h *Profiles) DoOwned(ctx context.Context, owner, op string, args json.RawMessage, policy browserpolicy.Policy, requested string) (json.RawMessage, error) {
+	return h.doSession(ctx, owner, op, args, policy, requested, false, true)
+}
+
+func (h *Profiles) doSession(ctx context.Context, conversation, op string, args json.RawMessage, policy browserpolicy.Policy, requested string, explicit, strict bool) (json.RawMessage, error) {
 	h.mu.Lock()
 	if h.err != nil {
 		h.mu.Unlock()
@@ -318,6 +331,9 @@ func (h *Profiles) DoSession(ctx context.Context, conversation, op string, args 
 	if choice.Mode == browserpolicy.Native {
 		h.mu.Unlock()
 		return nil, NativeTools
+	}
+	if strict {
+		return b.DoOwnedWithAdmission(ctx, conversation, op, args, h.mu.Unlock)
 	}
 	return b.DoWithAdmission(ctx, conversation, op, args, h.mu.Unlock)
 }

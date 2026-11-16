@@ -126,6 +126,9 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		// of its own repository Project to a Claude worker that accepts
 		// edits. The Broker still owns claims, worktrees, quota and landing.
 		DispatchPolicy: projectAssistantDispatchPolicy,
+		// Browser tools use the same Profiles and Bridge as the CLI, under an
+		// owner Host derives from the Bot conversation; see project_assistants_browser.go.
+		Browser: s.projectAssistantBrowser(),
 	})
 	if err != nil {
 		p.mu.Lock()
