@@ -356,6 +356,10 @@
 .pa-output-overlay>button{align-self:flex-start}
 .pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
 .pa-output-overlay a{overflow-wrap:anywhere}
+.pa-library-group{margin-bottom:1.5rem}
+.pa-library-group>h3{font-size:.9rem;opacity:.75}
+.pa-library-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.pa-library-picture{max-width:100%;max-height:70vh;object-fit:contain;align-self:center}
 /* Loading placeholders. Bots time their own 150ms wait (PaLoading.tsx), so the shared
    CSS arrival delay is turned off here; the bars use the dark Bots surfaces. */
 .project-assistants .loading-skeleton,.project-assistants .pa-skeleton { --line:var(--pa-line); --card-hi:#232326; }
