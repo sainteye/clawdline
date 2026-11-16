@@ -281,6 +281,38 @@ type RoomState struct {
 	// StoppedAt is the epoch the last group Stop moved to: a late answer
 	// asked before it is dropped.
 	StoppedAt int64 `json:"stopped_at,omitempty"`
+	// Overdue are asks the room stopped waiting for (Codync's
+	// MEMBER_TIMEOUT): their answers still land, as late ones. At most one
+	// per member: asking it again replaces its entry.
+	Overdue []RoomTicket `json:"overdue,omitempty"`
+}
+
+// MarkOverdue: the room stops waiting for t; its answer may still land.
+func MarkOverdue(s RoomState, t RoomTicket) RoomState {
+	t.Late = true
+	s.Overdue = AskAgain(s.Overdue, t)
+	s.Revision++
+	return s
+}
+
+func (s RoomState) overdue(t RoomTicket) (int, bool) {
+	for i, o := range s.Overdue {
+		if o.Group == t.Group && o.Member == t.Member && o.Epoch == t.Epoch && o.JoinedRevision == t.JoinedRevision {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+// Landed removes a published answer's overdue entry, if any.
+func Landed(s RoomState, t RoomTicket) (RoomState, bool) {
+	i, ok := s.overdue(t)
+	if !ok {
+		return s, false
+	}
+	s.Overdue = slices.Delete(slices.Clone(s.Overdue), i, i+1)
+	s.Revision++
+	return s, true
 }
 
 // RoomTurn is a room turn to run. Late is the seq of the oldest late answer
@@ -373,6 +405,7 @@ func StopRoom(s RoomState, l GroupLimits) (RoomState, bool, error) {
 	s.Epoch++
 	s.StoppedAt = s.Epoch
 	s.Pending = 0
+	s.Overdue = nil
 	s.LateTurns = l.MaxLateTurns
 	s.Revision++
 	return s, true, nil
@@ -409,6 +442,9 @@ func CheckRoomTicket(g Group, s RoomState, t RoomTicket) error {
 	}
 	if t.Epoch < 1 || t.Epoch > s.Epoch {
 		return fail(Invalid, "room_epoch")
+	}
+	if _, ok := s.overdue(t); ok {
+		t.Late = true
 	}
 	if t.Late {
 		if s.StoppedAt != 0 && t.Epoch < s.StoppedAt {

@@ -582,3 +582,204 @@ func readMemberGroups(ctx context.Context, tx *sql.Tx, key pa.BotKey) ([]app.Gro
 	}
 	return out, nil
 }
+
+var _ app.RoomRepository = (*Store)(nil)
+
+func nextLineSeq(ctx context.Context, r reader, key pa.BotKey) (int64, error) {
+	var seq int64
+	err := r.QueryRowContext(ctx, `SELECT coalesce(max(seq),0) FROM project_assistant_group_lines WHERE machine=? AND grp=?`, key.MachineID, key.BotID).Scan(&seq)
+	return seq + 1, err
+}
+
+func writeLine(ctx context.Context, tx *sql.Tx, group pa.BotKey, e pa.RoomEntry) error {
+	raw, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_group_lines(machine,grp,seq,data) VALUES(?,?,?,?)`, group.MachineID, group.BotID, e.Seq, raw)
+	return err
+}
+
+func writeRoomTx(ctx context.Context, tx *sql.Tx, st pa.RoomState, prior int64) error {
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE project_assistant_group_rooms SET revision=?,data=? WHERE machine=? AND grp=? AND revision=?`, st.Revision, raw, st.Group.MachineID, st.Group.BotID, prior)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return errors.Join(err, failure(pa.StaleVersion, "room"))
+	}
+	return nil
+}
+
+// FinishRoomTurn commits a member's terminal room turn and, in the same
+// transaction, re-checks its ticket against the group, the room and the
+// member's own row and writes the room line. A ticket that no longer holds
+// withholds the line and still finishes the member's turn. A failed line
+// write rolls back everything, the member's terminal facts included.
+func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string) (app.RoomPublication, error) {
+	if m.Turn == nil || m.Turn.Room == nil {
+		return app.RoomPublication{}, failure(pa.Invalid, "room_finish")
+	}
+	t := *m.Turn
+	out := app.RoomPublication{Ticket: *t.Room, TurnID: t.ID, State: t.State}
+	unlock := s.lock(m.Command.Key)
+	defer unlock()
+	_, err := s.commitWith(ctx, m, func(ctx context.Context, tx *sql.Tx, a aggregate) error {
+		if t.State != pa.TurnSucceeded {
+			return nil
+		}
+		ticket := *t.Room
+		if a.Bot.Key != ticket.Member {
+			return failure(pa.ScopeDenied, "room_member")
+		}
+		g, err := groupRead(ctx, tx, ticket.Group)
+		if err != nil {
+			out.Refusal = &pa.Failure{Code: pa.Code(err), Field: "group"}
+			return nil
+		}
+		st, err := roomRead(ctx, tx, ticket.Group)
+		if err != nil {
+			return err
+		}
+		if g.Project != a.Bot.Project {
+			out.Refusal = &pa.Failure{Code: pa.ScopeDenied, Field: "group_member_project"}
+			return nil
+		}
+		seq, err := nextLineSeq(ctx, tx, ticket.Group)
+		if err != nil {
+			return err
+		}
+		entry, ok, err := pa.PublishRoomAnswer(g, st, ticket, seq, text)
+		if err != nil {
+			var f *pa.Failure
+			if errors.As(err, &f) {
+				out.Refusal = f
+				return nil
+			}
+			return err
+		}
+		if next, moved := pa.Landed(st, ticket); moved {
+			if err = writeRoomTx(ctx, tx, next, st.Revision); err != nil {
+				return err
+			}
+		}
+		if !ok {
+			return nil
+		}
+		if err = writeLine(ctx, tx, ticket.Group, entry); err != nil {
+			return err
+		}
+		if s.groupHook != nil {
+			if err = s.groupHook("line"); err != nil {
+				return err
+			}
+		}
+		out.Entry = &entry
+		return nil
+	})
+	if err != nil {
+		return app.RoomPublication{}, err
+	}
+	return out, nil
+}
+
+// PersonWrote writes the person's line and starts the room turn it asks
+// for, in one transaction under the room revision.
+func (s *GroupStore) PersonWrote(ctx context.Context, key pa.BotKey, expectedRevision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, pa.RoomState, pa.RoomTurn, error) {
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+	}
+	defer tx.Rollback()
+	g, err := groupRead(ctx, tx, key)
+	if err != nil {
+		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+	}
+	if replyToAuthor != (pa.BotKey{}) {
+		if _, ok := g.Member(replyToAuthor); !ok {
+			return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, failure(pa.Invalid, "reply_to_author")
+		}
+	}
+	st, err := roomRead(ctx, tx, key)
+	if err != nil {
+		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+	}
+	if st.Revision != expectedRevision {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, failure(pa.StaleVersion, "room")
+	}
+	next, turn, err := pa.StartRoomTurn(g, st)
+	if err != nil {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+	}
+	seq, err := nextLineSeq(ctx, tx, key)
+	if err != nil {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+	}
+	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, Text: text, ReplyToAuthor: replyToAuthor}
+	if err = writeLine(ctx, tx, key, entry); err != nil {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+	}
+	if err = s.at("line"); err != nil {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+	}
+	if err = s.writeRoom(ctx, tx, next, st.Revision); err != nil {
+		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+	}
+	return entry, next, turn, tx.Commit()
+}
+
+// Lines reads a room's lines with seq > after, oldest first, at most limit;
+// limit < 1 reads the newest page before before (when before > 0).
+func (s *GroupStore) Lines(ctx context.Context, key pa.BotKey, after int64, limit int) ([]pa.RoomEntry, error) {
+	if limit < 1 {
+		return nil, failure(pa.Invalid, "room_lines")
+	}
+	if _, err := groupRead(ctx, s.db, key); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT data FROM project_assistant_group_lines WHERE machine=? AND grp=? AND seq>? ORDER BY seq LIMIT ?`, key.MachineID, key.BotID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanLines(rows)
+}
+
+// LinesBefore reads the newest limit lines with seq < before (all when
+// before is 0), oldest first: the room's history page.
+func (s *GroupStore) LinesBefore(ctx context.Context, key pa.BotKey, before int64, limit int) ([]pa.RoomEntry, error) {
+	if limit < 1 {
+		return nil, failure(pa.Invalid, "room_lines")
+	}
+	if _, err := groupRead(ctx, s.db, key); err != nil {
+		return nil, err
+	}
+	if before < 1 {
+		before = 1 << 62
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT data FROM (SELECT seq,data FROM project_assistant_group_lines WHERE machine=? AND grp=? AND seq<? ORDER BY seq DESC LIMIT ?) ORDER BY seq`, key.MachineID, key.BotID, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanLines(rows)
+}
+
+func scanLines(rows *sql.Rows) ([]pa.RoomEntry, error) {
+	defer rows.Close()
+	var out []pa.RoomEntry
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var e pa.RoomEntry
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

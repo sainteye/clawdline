@@ -12,6 +12,9 @@ import (
 )
 
 type Submission struct {
+	// Room makes this a group member's room turn: Notice must be set and
+	// the ticket's member must be Command.Key. Only the room driver sets it.
+	Room       *pa.RoomTicket
 	InputOwner InputOwner
 	// InputCheck revalidates the human grant after streaming and before admission.
 	InputCheck func(context.Context) error
@@ -119,6 +122,35 @@ type CollaborationRepository interface {
 	PromoteExchangeReply(context.Context, pa.BotKey, time.Time) (bool, error)
 	DropExchangeReplies(context.Context, pa.BotKey, time.Time) error
 }
+
+// RoomRepository finishes a group member's room turn: the member's own
+// terminal facts, the final ticket check and the room line commit in one
+// transaction. A refused ticket still finishes the member's own turn; only
+// the room line is withheld. No IO or actor wait happens inside it.
+type RoomRepository interface {
+	FinishRoomTurn(context.Context, Mutation, string) (RoomPublication, error)
+}
+
+// RoomPublication is what a finished room turn did to the room. Entry is the
+// line written (nil for a pass, a refusal or an unsuccessful turn); Refusal
+// is the typed reason the ticket no longer held.
+type RoomPublication struct {
+	Ticket  pa.RoomTicket `json:"ticket"`
+	TurnID  string        `json:"turn_id"`
+	State   pa.TurnState  `json:"state"`
+	Entry   *pa.RoomEntry `json:"entry,omitempty"`
+	Refusal *pa.Failure   `json:"refusal,omitempty"`
+}
+
+// RoomGate is the room's say over a member's room turn. Admit runs when the
+// turn is dequeued and when a permission card of that turn is answered;
+// Finished is told every terminal outcome after it commits and must not
+// block or call back into the runtime synchronously.
+type RoomGate interface {
+	Admit(context.Context, pa.RoomTicket) error
+	Finished(RoomPublication)
+}
+
 type ExchangeAdmission struct {
 	SourceFence   pa.Fence
 	SourceTurnID  string

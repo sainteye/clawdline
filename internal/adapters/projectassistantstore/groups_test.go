@@ -305,3 +305,107 @@ func TestGroupWriteFailureRollsBackTheWholeMutation(t *testing.T) {
 		})
 	}
 }
+
+// finishing builds a member's terminal room turn as the runtime commits it,
+// with the notice that asked it.
+func finishing(t *testing.T, s *Store, b pa.Bot, ticket pa.RoomTicket, id string) app.Mutation {
+	t.Helper()
+	current, err := s.Bot(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Conversation(testContext, b.Key, b.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: b.ConversationID}
+	turn := pa.Turn{ID: id, Fence: fence, MessageID: "m-" + id, State: pa.TurnSucceeded, Origin: pa.HostNoticeOrigin, IdempotencyKey: id, Room: &ticket, MemoryRevision: 1, Instructions: b.Instructions}
+	c.LastMessageSeq++
+	notice := pa.Message{ID: turn.MessageID, Fence: fence, Seq: c.LastMessageSeq, TurnID: id, Kind: pa.NoticeMessage, Text: "room prompt", At: groupTime}
+	next := current
+	next.Version++
+	cmd := command(b.Key, pa.SendOperation, "runtime-finish-"+id)
+	return app.Mutation{Command: cmd, ExpectedVersion: current.Version, Bot: &next, Conversation: &c, Turn: &turn, Messages: []pa.Message{notice}, Receipt: pa.Receipt{ID: "r-" + id, Command: cmd, State: pa.EffectDelivered, ResourceID: id}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "e-" + id, Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}}
+}
+
+func TestRoomLineIsPublishedAtomicallyWithTheMembersTurn(t *testing.T) {
+	_, store, groups, _ := groupDB(t)
+	scope := pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}
+	a := seedIn(t, store, "a", scope, false)
+	b := seedIn(t, store, "b", scope, false)
+	d := pa.GroupDraft{Key: gk("g"), Project: scope, ConversationID: "room/g", Name: "Room", Members: []pa.BotKey{a.Key, b.Key}}
+	if _, err := groups.CreateGroup(testContext, groupCmd(d.Key, pa.CreateOperation, "create", "a,b"), d, groupLimits, groupTime); err != nil {
+		t.Fatal(err)
+	}
+	person, st, _, err := groups.PersonWrote(testContext, d.Key, 0, "hello @Bot a", pa.BotKey{})
+	if err != nil || person.Seq != 1 {
+		t.Fatalf("%+v %v", person, err)
+	}
+	g, _ := groups.Group(testContext, d.Key)
+	ticket, err := pa.TicketFor(g, st, a.Key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The line write fails: nothing commits, the member's turn included.
+	store.groupHook = func(stage string) error {
+		if stage == "line" {
+			return errors.New("injected")
+		}
+		return nil
+	}
+	if _, err = store.FinishRoomTurn(testContext, finishing(t, store, a, ticket, "t1"), "Here is my answer"); err == nil {
+		t.Fatal("publish committed past a failed line write")
+	}
+	if _, err = store.Turn(testContext, a.Key, "t1"); pa.Code(err) != pa.NotFound {
+		t.Fatalf("the member's turn committed without its line: %v", err)
+	}
+	if lines, _ := groups.LinesBefore(testContext, d.Key, 0, 10); len(lines) != 1 {
+		t.Fatalf("lines after rollback %+v", lines)
+	}
+	store.groupHook = nil
+	pub, err := store.FinishRoomTurn(testContext, finishing(t, store, a, ticket, "t1"), "Here is my answer")
+	if err != nil || pub.Entry == nil || pub.Entry.Author != a.Key || pub.Entry.Seq != 2 || pub.Refusal != nil {
+		t.Fatalf("publish %+v %v", pub, err)
+	}
+	if turn, err := store.Turn(testContext, a.Key, "t1"); err != nil || turn.Room == nil || turn.Room.Member != a.Key {
+		t.Fatalf("stored room turn %+v %v", turn, err)
+	}
+
+	// The person writes again; b's answer to the old epoch finishes b's own
+	// turn but the room refuses its line.
+	oldB, _ := pa.TicketFor(g, st, b.Key, false)
+	st, _ = groups.Room(testContext, d.Key)
+	if _, _, _, err = groups.PersonWrote(testContext, d.Key, st.Revision, "never mind", pa.BotKey{}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err = store.FinishRoomTurn(testContext, finishing(t, store, b, oldB, "t2"), "too late")
+	if err != nil || pub.Entry != nil || pub.Refusal == nil || pub.Refusal.Code != pa.StaleGeneration {
+		t.Fatalf("stale publish %+v %v", pub, err)
+	}
+	if turn, err := store.Turn(testContext, b.Key, "t2"); err != nil || turn.State != pa.TurnSucceeded {
+		t.Fatalf("b's own turn did not finish: %+v %v", turn, err)
+	}
+	if lines, _ := groups.LinesBefore(testContext, d.Key, 0, 10); len(lines) != 3 || lines[2].Kind != pa.RoomPersonEntry {
+		t.Fatalf("a stale line landed: %+v", lines)
+	}
+
+	// An overdue ask still lands, and its overdue entry is cleared.
+	st, _ = groups.Room(testContext, d.Key)
+	g, _ = groups.Group(testContext, d.Key)
+	cur, _ := pa.TicketFor(g, st, b.Key, false)
+	if _, err = groups.UpdateRoom(testContext, d.Key, st.Revision, func(_ pa.Group, s pa.RoomState) (pa.RoomState, error) { return pa.MarkOverdue(s, cur), nil }); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = groups.Room(testContext, d.Key)
+	if _, _, _, err = groups.PersonWrote(testContext, d.Key, st.Revision, "next topic", pa.BotKey{}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err = store.FinishRoomTurn(testContext, finishing(t, store, b, cur, "t3"), "overdue but useful")
+	if err != nil || pub.Entry == nil {
+		t.Fatalf("overdue answer %+v %v", pub, err)
+	}
+	if st, _ = groups.Room(testContext, d.Key); len(st.Overdue) != 0 {
+		t.Fatalf("overdue entry kept %+v", st.Overdue)
+	}
+}

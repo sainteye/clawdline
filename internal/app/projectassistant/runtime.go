@@ -27,6 +27,9 @@ type RuntimeOptions struct {
 	// Attachments reads a message's stored pictures for its prompt.
 	Attachments AttachmentReader
 	Inputs      InputReader
+	// Rooms gates group members' room turns; without it a room submission
+	// is unsupported. Its repository must implement RoomRepository.
+	Rooms RoomGate
 }
 
 // AttachmentReader returns the bytes stored for one attachment of a Bot.
@@ -258,6 +261,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err := pa.ValidateInputSend(s.Message.Text, s.Message.Attachments, s.Message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
 	}
+	if s.Room != nil {
+		if err := r.admitRoomSubmission(ctx, s); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
 
 	// Resolve and hash outside the actor. Receipt replay precedes file IO so an
 	// uncertain durable acknowledgement never submits another native effect.
@@ -435,6 +443,10 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.Notice {
 		kind = pa.NoticeMessage
 		turn.Origin = pa.HostNoticeOrigin
+	}
+	if s.Room != nil {
+		ticket := *s.Room
+		turn.Room = &ticket
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
 	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
@@ -734,6 +746,14 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if c.ActiveTurnID != "" && !(c.ActiveTurnID == t.ID && t.State == pa.TurnRunning && pa.SafeAttemptClosed(t)) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.OutcomeUnknown, "active_turn")
+	}
+	// A room turn runs only while the room still wants it: checked here,
+	// before any native effect, so a refusal ends a queued turn as failed.
+	if t.Room != nil && t.State == pa.TurnQueued {
+		if err = r.admitRoomTurn(ctx, *t.Room); err != nil {
+			a.mu.Unlock()
+			return err
+		}
 	}
 	resolution, err := r.o.ProjectResolver.Resolve(ctx, pa.ProjectSelection{MachineID: bot.Project.MachineID, ProjectID: bot.Project.ProjectID})
 	if err == nil {
@@ -1323,6 +1343,8 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 			return err
 		}
 		_, err = p.FinishExchange(ctx, m, text)
+	} else if t.Room != nil {
+		err = r.finishRoomTurn(ctx, bot, m, text)
 	} else {
 		_, err = r.mutate(ctx, bot, m)
 	}
@@ -1584,6 +1606,12 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	if err = pa.CheckPermission(p, q.Answer, pa.PermissionContext{Fence: currentFence(bot, c), ActiveTurnID: c.ActiveTurnID, BindingRevoked: b.Revoked, Now: r.o.Clock(), Source: s, Feature: f}); err != nil {
 		return pa.Receipt{}, err
 	}
+	// A card raised in a member's room turn is the member's own (its fence,
+	// checked above), and is answerable only while that room still wants
+	// the turn.
+	if err = r.recheckRoomCard(ctx, p); err != nil {
+		return pa.Receipt{}, err
+	}
 	if q.Command.Key != q.Answer.Fence.Key || a.session == nil || a.stopped {
 		return pa.Receipt{}, runtimeFailure(pa.StaleGeneration, "permission_session")
 	}
@@ -1665,6 +1693,11 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, e
 	}
 	for _, t := range pending {
 		if t.State == pa.TurnUnknown {
+			continue
+		}
+		// Codync's own-chat Stop keeps a late room turn queued: the member
+		// still owes that room its answer (pa.AfterOwnChatStop).
+		if keepsAfterOwnChatStop(t, a.turnID) {
 			continue
 		}
 		state := pa.TurnCancelled

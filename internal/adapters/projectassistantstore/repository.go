@@ -235,6 +235,13 @@ func (s *Store) Commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	return s.commit(ctx, m)
 }
 func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) {
+	return s.commitWith(ctx, m, nil)
+}
+
+// commitWith is commit with extra writes in the same transaction, run after
+// the aggregate is persisted and before the transaction commits. extra is
+// not called when the command was already committed (a replay).
+func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(context.Context, *sql.Tx, aggregate) error) (pa.Receipt, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -303,6 +310,11 @@ func (s *Store) commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) 
 	}
 	if err = writeReceipt(ctx, tx, result); err != nil {
 		return pa.Receipt{}, err
+	}
+	if extra != nil {
+		if err = extra(ctx, tx, a); err != nil {
+			return pa.Receipt{}, err
+		}
 	}
 	if err = s.commitRoster(ctx, tx, m.Command.Key.MachineID); err != nil {
 		return pa.Receipt{}, err
