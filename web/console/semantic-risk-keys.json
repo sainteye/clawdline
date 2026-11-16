@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12571,
+  "englishKeys": 12575,
   "counts": {
     "negation": 3390,
-    "state": 2119,
+    "state": 2121,
     "permission": 748,
     "deletion": 297,
     "uncertainty": 488
   },
-  "unionCount": 5459,
+  "unionCount": 5461,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5260,6 +5260,8 @@
       "projectAssistants.heldSend",
       "projectAssistants.heldUnreadable",
       "projectAssistants.heldUnsaved",
+      "projectAssistants.libraryCancelled",
+      "projectAssistants.libraryOpenBrowser",
       "projectAssistants.observed",
       "projectAssistants.openWork",
       "projectAssistants.outputFailed",
@@ -11848,6 +11850,8 @@
     "projectAssistants.hideBotHint",
     "projectAssistants.history_only",
     "projectAssistants.invalidFileName",
+    "projectAssistants.libraryCancelled",
+    "projectAssistants.libraryOpenBrowser",
     "projectAssistants.manageTitle",
     "projectAssistants.memory_unsafe",
     "projectAssistants.noCapabilities",
