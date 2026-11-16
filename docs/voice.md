@@ -520,3 +520,27 @@ Verification uses synthetic local and multi-machine transports, including a menu
 appearing between directory read and send. The tests do not establish live model
 comprehension, transcription accuracy or real audio acceptance. No provider call
 is needed for this regression suite.
+
+
+**Project identities in call questions.** The question menu uses an in-sheet radio
+picker instead of a platform select so Project pixel or SVG marks can appear beside
+the Session title, Project folder name and machine name. It preserves the directory's
+machine/Session/conversation identity; artwork is presentation metadata and is excluded
+from model routing instructions. Missing marks use a folder outline.
+
+**Locating call setup delays.** The call sheet names the current setup phase. Each
+`connection_stage` notice in the existing private call journal records `phase`,
+`previous`, `elapsed_ms` and `previous_ms` using the browser's monotonic clock, plus
+the selected engine. Stages distinguish settings, capability checks, the visible
+Session directory, microphone access, offer preparation, ICE gathering, provider
+handshake, transport setup and tool configuration/readiness. Entering a stage closes
+the previous stage's interval. `ready` means application configuration is ready, not
+proof that the person heard the first audio. Failed or cancelled calls retain the
+stages reached in their normal end/error flush. No SDP, credentials, transcript or
+extra provider call is added by these timing records.
+
+An existing call's start/end journal and a server success timestamp cannot apportion
+setup latency; timestamps on different devices also do not establish an exact elapsed
+time. A controlled slow-directory test demonstrated a possible serial wait before
+transport setup, but did not establish its frequency or contribution in a real phone
+call. The startup ordering and ICE policy remain unchanged pending measured stages.

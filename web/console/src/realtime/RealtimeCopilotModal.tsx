@@ -66,9 +66,9 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
   const isConnecting = copilotState.status === 'connecting'
 
   let stateLabel = nextWord('copilotReady')
-  if (isConnecting) stateLabel = nextWord('copilotConnecting')
+  if (isConnecting) stateLabel = nextWord(CONNECTION_WORDS[copilotState.connectionPhase ?? 'settings'])
   else if (isConnected) {
-    if (!copilotState.connectionReady) stateLabel=nextWord('copilotConfiguring')
+    if (!copilotState.connectionReady) stateLabel=nextWord(CONNECTION_WORDS[copilotState.connectionPhase ?? 'configuration'])
     else if (copilotState.toolCallLog) stateLabel = copilotState.toolCallLog
     else if (copilotState.speakingState === 'speaking') stateLabel = nextWord('copilotAnswering')
     else if (copilotState.speakingState === 'thinking') stateLabel = nextWord('copilotThinking')
@@ -307,3 +307,5 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     </div>
   )
 }
+
+const CONNECTION_WORDS = { settings: 'copilotConnectingSettings', capability: 'copilotConnectingCapability', directory: 'copilotConnectingDirectory', microphone: 'copilotConnectingMicrophone', offer: 'copilotConnectingOffer', ice: 'copilotConnectingICE', provider: 'copilotConnectingProvider', transport: 'copilotConnectingTransport', configuration: 'copilotConfiguring', ready: 'copilotConnectedReady' } as const

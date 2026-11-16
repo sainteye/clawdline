@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12732,
-  "riskKeys": 5506,
-  "nonRiskCount": 7226,
+  "englishContentKeys": 12740,
+  "riskKeys": 5508,
+  "nonRiskCount": 7232,
   "groups": [
     {
       "name": "acp / other",
@@ -4014,7 +4014,7 @@
     },
     {
       "name": "next / other",
-      "count": 1176,
+      "count": 1182,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4284,6 +4284,12 @@
         "next.copilotConfiguring",
         "next.copilotConnectedReady",
         "next.copilotConnecting",
+        "next.copilotConnectingCapability",
+        "next.copilotConnectingDirectory",
+        "next.copilotConnectingICE",
+        "next.copilotConnectingOffer",
+        "next.copilotConnectingSettings",
+        "next.copilotConnectingTransport",
         "next.copilotCost",
         "next.copilotDemoClose",
         "next.copilotDemoNote",

@@ -14,7 +14,12 @@ activateCatalog(words, lang)
 await loadStrings(async () => words)
 const mode = new URLSearchParams(location.search).get('mode')
 const state = { status: 'connected' as const, connectionReady: mode !== 'not-ready', speakingState: 'listening' as const, remembered: 0, logs: [], lastAssistantSpeech: lang === 'en' ? 'The Session is comparing options. Ask for a summary or an explanation.' : '這個 Session 正在比較不同方案。你可以問目前進度，也可以深入了解比較內容。' }
-const targets = [{ id: 'fixture-one', label: lang === 'en' ? 'Compare model options' : '比較模型方案', conversation: 'fixture-conversation' }]
+const targets = [
+  { id: 'fixture-one', label: lang === 'en' ? 'Compare model options' : '比較模型方案', project: 'Alpha', icon: { cells: [['#8edcb4','#8edcb4','#8edcb4'],['#8edcb4','','#8edcb4']] }, conversation: 'fixture-conversation' },
+  { id: 'fixture-two', label: lang === 'en' ? 'Compare model options' : '比較模型方案', project: 'Beta', machineName: lang === 'en' ? 'Other machine' : '另一台機器', icon: { svg: '<svg viewBox="0 0 24 24"><path fill="#f6b36c" d="M12 1 23 12 12 23 1 12Z"/></svg>' }, conversation: 'fixture-two-conversation' },
+  { id: 'fixture-three', label: lang === 'en' ? 'A longer Session title showing why the project and machine must be visible' : '較長的 Session 標題，確認手機也能看清楚所屬專案與工作內容', project: 'Gamma', conversation: 'fixture-three-conversation' },
+]
+
 RealtimeCopilotClient.prototype.getState = () => state
 RealtimeCopilotClient.prototype.subscribe = listener => { listener(state); return () => {} }
 RealtimeCopilotClient.prototype.questionTargets = async () => {

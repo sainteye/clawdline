@@ -36,8 +36,11 @@ export interface CopilotLogItem {
   text: string
 }
 
+export type ConnectionPhase = 'settings' | 'capability' | 'directory' | 'microphone' | 'offer' | 'ice' | 'provider' | 'transport' | 'configuration' | 'ready'
+
 export interface RealtimeCopilotState {
   status: 'disconnected' | 'connecting' | 'connected' | 'error'
+  connectionPhase?: ConnectionPhase
   connectionReady?: boolean
   speakingState: 'idle' | 'listening' | 'thinking' | 'speaking'
   lastTranscript?: string
@@ -255,6 +258,9 @@ export class RealtimeCopilotClient {
   private liveBackendUsd = 0
   /** When this GPT-Live call connected, for the call's running length and cost. */
   private liveStarted = 0
+  /** Monotonic setup timings; never compared with another device's clock. */
+  private connectionStarted = 0
+  private connectionStageAt = 0
   /** When this call connected (either system), for `get_call_status`; 0 before it has. */
   private connectedAt = 0
   /** Whether this call has read the screen once (`followScreen`). */
@@ -465,7 +471,7 @@ export class RealtimeCopilotClient {
   async questionTargets(): Promise<{ targets: QuestionTarget[]; current?: string }> {
     const read = await readRows(this.toolDeps())
     if ('error' in read) throw new Error(read.error)
-    return { targets: read.rows.map(row => ({ id: row.id, label: row.label, machine: row.machine, machineName: row.machineName, conversation: row.conversation })), current: this.focus }
+    return { targets: read.rows.map(row => ({ id: row.id, label: row.label, machine: row.machine, machineName: row.machineName, conversation: row.conversation, project: row.project, icon: row.icon })), current: this.focus }
   }
 
   private questionSending = false
@@ -544,7 +550,17 @@ export class RealtimeCopilotClient {
     return this.state
   }
 
+  /** Only phase names and elapsed time enter the journal; no SDP, key or content. */
+  private connectionStage(phase: ConnectionPhase) {
+    if (!this.connectionStarted) return
+    const now = performance.now()
+    this.journal('notice', 'connection_stage', { phase, previous: this.state.connectionPhase, elapsed_ms: Math.round(now-this.connectionStarted), previous_ms: Math.round(now-this.connectionStageAt), engine: this.state.engine })
+    this.connectionStageAt = now
+    this.updateState({ connectionPhase: phase })
+  }
+
   private updateState(patch: Partial<RealtimeCopilotState>) {
+    if (patch.connectionReady === true && !this.state.connectionReady) { this.connectionStage('ready'); this.flushJournal() }
     this.state = { ...this.state, ...patch }
     if(this.batchProposal&&(voiceWork.state?.id!==this.batchProposal.workspace||batchKey(voiceWork.continuation)!==batchKey(this.batchProposal.offer))){this.batchProposal=undefined;this.batchCandidate=undefined}
     if(this.messageProposal){const task=voiceWork.state?.tasks.find(task=>task.id===this.messageProposal?.id);if(!task||task.version!==this.messageProposal.version||task.status!=='waiting_confirmation'||voiceWork.state?.id!==this.messageProposal.workspace){this.messageProposal=undefined;this.proposalCandidate=undefined}}
@@ -661,6 +677,7 @@ export class RealtimeCopilotClient {
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
+    this.connectionStarted = performance.now(); this.connectionStageAt = this.connectionStarted
     // Which build and tools this call has: on 2026-11-13 a call could not be
     // told apart from one placed by a page loaded before the tool existed.
     window.addEventListener('hashchange', this.onScreenChange)
@@ -671,7 +688,8 @@ export class RealtimeCopilotClient {
     // The settings of the machine that will hold the call (a Mac when there is one), not the page's (`voice-call.ts`).
     const workspaceSettings = fetch('/v1/settings/copilot', { headers: { [VOICE_CALL_HEADER]: '1' } }).then(async res=>res.ok?await res.json():null).catch(()=>null)
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
-    this.updateState({ status: 'connecting', connectionReady:false, error: undefined, toolCallLog: undefined, remembered: this.memory.length })
+    this.updateState({ status: 'connecting', connectionReady:false, connectionPhase:undefined, engine:undefined, error: undefined, toolCallLog: undefined, remembered: this.memory.length })
+    this.connectionStage('settings')
     this.addLog('info', nextWord('copilotLogStarting'))
     if (meterRefused) this.addLog('info', nextWord('copilotLogNoMeter', { reason: meterRefused }))
 
@@ -690,6 +708,7 @@ export class RealtimeCopilotClient {
       let messageActions=false
       check()
       if (managed) {
+        this.connectionStage('capability')
         const ready = await fetch('/v1/voice/copilot-work')
         const body = await ready.json().catch(()=>null)
         check()
@@ -705,6 +724,7 @@ export class RealtimeCopilotClient {
       } else {
         // 0. The machine mints a short-lived client secret with its own key; the
         // key itself never reaches this browser (internal/transport/http/copilot.go).
+        this.connectionStage('provider')
         const opened = await fetch('/v1/voice/copilot-session', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: '{}',
         })
@@ -727,6 +747,7 @@ export class RealtimeCopilotClient {
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       // The briefing is the deciding machine's own Sessions; on a page showing
       // several machines the call reads every machine's list instead.
+      this.connectionStage('directory')
       const fleet = await fleetOnThisPage().catch(() => null)
       const machines = new Set((fleet ?? []).map((f) => f.machine))
       this.briefing = !managed && grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
@@ -745,6 +766,7 @@ export class RealtimeCopilotClient {
       }
       check()
       // 1. The microphone asked for in the tap.
+      this.connectionStage('microphone')
       own.stream = await microphone.catch((error: unknown) => {
         const name = error instanceof DOMException || error instanceof Error ? error.name : ''
         if (name === 'NotAllowedError') this.micRefused = true
@@ -781,6 +803,7 @@ export class RealtimeCopilotClient {
       this.setupDataChannel(this.dc)
 
       // 5. Create WebRTC Offer
+      this.connectionStage('offer')
       const offer = await own.pc.createOffer()
       check()
       await own.pc.setLocalDescription(offer)
@@ -789,10 +812,12 @@ export class RealtimeCopilotClient {
       let answerSdp: string
       if (live) {
         // 6. The machine posts the whole offer to /v1/live/sessions with its key (copilot_live.go).
+        this.connectionStage('ice')
         await iceGathered(own.pc)
         check()
         this.model = 'gpt-live-1'
         this.call.options = { ...this.call.options, language: consoleLanguage() }
+        this.connectionStage('provider')
         const opened = await fetch('/v1/voice/copilot-live', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
           body: JSON.stringify({ sdp: own.pc.localDescription?.sdp ?? offer.sdp, instructions: liveInstructions(this.call.options) }),
@@ -811,6 +836,7 @@ export class RealtimeCopilotClient {
         // 6. Connect with OpenAI Realtime API endpoint (GA)
         const baseUrl = 'https://api.openai.com/v1/realtime/calls'
         this.model = grant.model || 'gpt-realtime-mini'
+        this.connectionStage('provider')
         const response = await fetch(`${baseUrl}?model=${encodeURIComponent(this.model)}`, {
           method: 'POST',
           body: offer.sdp,
@@ -828,9 +854,11 @@ export class RealtimeCopilotClient {
         answerSdp = await response.text()
       }
       check()
+      this.connectionStage('transport')
       await own.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
       check()
 
+      this.connectionStage('configuration')
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', nextWord('copilotLogConnected'))
       this.connectedAt = Date.now()
@@ -1673,6 +1701,7 @@ export class RealtimeCopilotClient {
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
 
     this.journal('end', this.state.status)
+    this.connectionStarted = 0
     this.flushJournal()
     this.journalCall = ''
     this.attempt += 1

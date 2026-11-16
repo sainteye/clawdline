@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12732,
+  "englishKeys": 12740,
   "counts": {
     "negation": 3408,
-    "state": 2146,
-    "permission": 751,
+    "state": 2148,
+    "permission": 752,
     "deletion": 303,
     "uncertainty": 496
   },
-  "unionCount": 5506,
+  "unionCount": 5508,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4941,6 +4941,8 @@
       "next.copilotAskDecisionsAlt",
       "next.copilotAskHistory",
       "next.copilotClaimNotDone",
+      "next.copilotConnectingMicrophone",
+      "next.copilotConnectingProvider",
       "next.copilotDidClose",
       "next.copilotDidSend",
       "next.copilotEagernessHint",
@@ -6040,6 +6042,7 @@
       "next.cloudTerminalPermissionTitle",
       "next.codexAsyncChoiceHint",
       "next.copilotBriefingHint",
+      "next.copilotConnectingMicrophone",
       "next.copilotMicDenied",
       "next.devStackConfigNote",
       "next.devicesPairHelp",
@@ -10965,6 +10968,8 @@
     "next.copilotBriefingHint",
     "next.copilotClaimNotDone",
     "next.copilotConfigFailed",
+    "next.copilotConnectingMicrophone",
+    "next.copilotConnectingProvider",
     "next.copilotCostNote",
     "next.copilotCostUnpriced",
     "next.copilotDidClose",

@@ -178,6 +178,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   const c = new RealtimeCopilotClient()
   c.meter = { open: () => null, ring: () => () => {}, attachInput: () => null, close() {} }
   c.addLog = () => {}
+  c.state.engine = 'previous-call-engine'
   try {
     await c.start(origin)
     if (managed===null || managed && protocol!==3) {
@@ -186,6 +187,12 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
       return
     }
     assert.equal(c.state.status, 'connected')
+    const phases=c.journalLines.filter(entry=>entry.text==='connection_stage').map(entry=>entry.tool)
+    assert.equal(phases[0].phase,'settings')
+    assert.equal(phases[0].engine,undefined,'the new call cannot inherit the previous engine in diagnostics')
+    assert.ok(phases.some(entry=>entry.phase==='provider'))
+    assert.ok(phases.every(entry=>entry.elapsed_ms>=0&&entry.previous_ms>=0))
+    assert.ok(!JSON.stringify(phases).includes('synthetic-offer'),'timing records contain no SDP')
     if (engine === 'live') {
       const request = requests.find(r => r.path === '/v1/voice/copilot-live')
       assert.match(JSON.parse(request.init.body).instructions, /Speak noticeably faster/)
@@ -1073,12 +1080,17 @@ test('menu questions send visible text and explicit read routing in both engines
     const f=fixture(false)
     f.c.live=live
     f.c.state.status='connected';f.c.state.connectionReady=true
+    const original=f.c.toolDeps()
+    f.c.toolDeps=()=>({...original,fetch:async(path,init)=>path==='/v1/sessions'?Response.json({sessions:[{...row,project_key:'/synthetic/alpha',icon:{cells:[['#123456']]}}]}):original.fetch(path,init)})
     const menu=await f.c.questionTargets()
+    assert.equal(menu.targets[0].project,'alpha')
+    assert.deepEqual(menu.targets[0].icon,{cells:[['#123456']]})
     assert.equal(f.reads.filter(r=>r.path.includes('/v1/transcript')).length,0,'opening the menu is directory-only')
     await f.c.askQuestion('insights','Read the last five replies.',menu.targets.find(r=>r.id===origin.id))
     assert.match(f.c.getState().lastTranscript,/Read the last five replies/)
     const text=JSON.stringify(f.sent)
     assert.match(text,/explain_session_reply/)
+    assert.ok(!text.includes('#123456'),'project artwork stays out of model instructions')
     assert.match(text,/replies/)
     assert.match(text,/Read the last five replies/)
     assert.ok(f.reads.every(r=>!r.init?.method),'menu submission does not execute a mutation or planner call')

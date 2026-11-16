@@ -1,3 +1,4 @@
+import type { Icon } from '@clawdline/contract'
 /**
  * What the voice copilot's tools do, without a microphone or a peer connection.
  *
@@ -868,6 +869,7 @@ export interface CopilotSessionRow {
   execution?: string
   /** The Project's spoken name: its repository folder (`project_key`, else `cwd`). */
   project?: string
+  icon?: Icon
   /** Unix seconds, when present. */
   working_since?: number
   last_activity_at?: number
@@ -957,6 +959,7 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
       }
       const project = projectName(str(s.project_key) || str(s.cwd))
       if (project) row.project = project
+      if (s.icon && typeof s.icon === 'object') row.icon = s.icon as Icon
       if (typeof s.working_since === 'number' && s.working_since > 0) row.working_since = s.working_since
       const activity = s.activity as { at?: unknown; known?: unknown } | undefined
       if (activity && activity.known === true && typeof activity.at === 'number') row.last_activity_at = activity.at
