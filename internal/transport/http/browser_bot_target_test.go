@@ -218,7 +218,9 @@ func TestABotTargetReachesOnlyThatBotsTabsThroughTheRealHost(t *testing.T) {
 	tabA := f.botOpen(t, ownerA)
 	tabB := f.botOpen(t, ownerB)
 
-	st := decodeBotStatus(t, f.get(t, f.readonly, "/v1/browser/status", botTarget(f.key.BotID, f.convA)))
+	statusA := f.get(t, f.readonly, "/v1/browser/status", botTarget(f.key.BotID, f.convA))
+	t.Logf("sample targeted status: %s", statusA.Body)
+	st := decodeBotStatus(t, statusA)
 	if st.Owner != ownerA || st.BotID != f.key.BotID || st.Conversation != f.convA {
 		t.Fatalf("the daemon derived %q for Bot A, want %q (%+v)", st.Owner, ownerA, st)
 	}
@@ -238,7 +240,9 @@ func TestABotTargetReachesOnlyThatBotsTabsThroughTheRealHost(t *testing.T) {
 	// conversation is refused by the Host.
 	wantCode(t, f.get(t, f.local, "/v1/browser/status", url.Values{"bot_id": {f.key.BotID}}), 400, "browser_bad_request")
 	wantCode(t, f.get(t, f.local, "/v1/browser/status", url.Values{"conversation": {ownerA}}), 400, "browser_bad_request")
-	wantCode(t, f.get(t, f.local, "/v1/browser/status", botTarget(f.key.BotID, f.convB)), 409, string(pa.StaleVersion))
+	stale := f.get(t, f.local, "/v1/browser/status", botTarget(f.key.BotID, f.convB))
+	t.Logf("sample stale conversation: %d %s", stale.Code, stale.Body)
+	wantCode(t, stale, 409, string(pa.StaleVersion))
 	wantCode(t, f.get(t, f.local, "/v1/browser/status", botTarget("no-such-bot", f.convA)), 404, string(pa.NotFound))
 	wantCode(t, f.get(t, f.local, "/v1/browser/activity", url.Values{"bot_id": {f.key.BotID}, "conversation": {""}}), 400, "browser_bad_request")
 	// The machine token is not a person and cannot name a Bot.
