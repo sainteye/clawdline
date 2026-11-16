@@ -20,9 +20,18 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+// Snapshot transport fixture: real HTTP/Service/SQLite, no local SSE and no model.
+func TestProjectAssistantRosterCloudHTTP(t *testing.T) {
+	testProjectAssistantRosterStatusHTTP(t, true)
+}
+
 // The native event fixture publishes through the real Store and HTTP gate. It
 // starts no provider or model; the browser mounts the normal Bots component.
 func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
+	testProjectAssistantRosterStatusHTTP(t, false)
+}
+
+func testProjectAssistantRosterStatusHTTP(t *testing.T, cloud bool) {
 	f := newPAServerFixture(t, true)
 	f.enable(t)
 	st := store.New(f.s.store.ProjectAssistantDatabase())
@@ -58,6 +67,26 @@ func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
 		}
 		if m.Turn == nil {
 			return fmt.Errorf("no active fixture turn")
+		}
+		for _, offer := range x.Permissions {
+			if offer.State == pa.PermissionPending {
+				offer.State, offer.SelectedOptionID = pa.PermissionResolved, "allow"
+				m.Permissions = append(m.Permissions, offer)
+			}
+		}
+		if m.Turn.State == pa.TurnWaitingPermission && phase == "done" {
+			m.Turn.State = pa.TurnRunning
+			m.Conversation = &conversation
+			if _, err := st.Commit(context.Background(), m); err != nil {
+				return err
+			}
+			x, err = st.Export(context.Background(), key)
+			if err != nil {
+				return err
+			}
+			m.ExpectedVersion = x.Bot.Version
+			m.Command.IdempotencyKey += "-complete"
+			m.Receipt.ID = m.Command.IdempotencyKey
 		}
 		trace := pa.Trace{TurnID: m.Turn.ID, Category: "tool_call", Text: "Read notes.md"}
 		switch phase {
@@ -110,7 +139,24 @@ func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
 	if got["reading"].Status != "working" || got["reading"].Activity != "Read notes.md" || got["approval"].Status != "needsInput" || got["approval"].Activity != "Needs approval: Run unit tests" || got["failed"].Status != "error" || got["finished"].Status != "idle" || got["unknown"].Failure == nil || string(got["unknown"].Failure.Code) != "execution_effect_unknown" {
 		t.Fatalf("roster projection: %+v", got)
 	}
-	if dir := os.Getenv("CLAWDLINE_ROSTER_E2E_DIR"); dir != "" {
+	env, script := "CLAWDLINE_ROSTER_E2E_DIR", "roster-status.e2e.mjs"
+	if cloud {
+		env, script = "CLAWDLINE_ROSTER_CLOUD_E2E_DIR", "roster-cloud.e2e.mjs"
+		if err := change(f.key, "unknown"); err != nil {
+			t.Fatal(err)
+		}
+		if os.Getenv("BOTS_PAGINATION") == "1" {
+			for n := 0; n < 101; n++ {
+				f.key.BotID = fmt.Sprintf("z-extra%03d", n)
+				q := f.create()
+				q.Command.IdempotencyKey = "create-" + f.key.BotID
+				q.Settings.Name = "Pagination helper"
+				paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, q))
+			}
+			f.key.BotID = "reading"
+		}
+	}
+	if dir := os.Getenv(env); dir != "" {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -118,6 +164,16 @@ func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
 			if r.URL.Path == "/fixture/phase" {
 				if r.Method != "POST" {
 					w.WriteHeader(405)
+					return
+				}
+				if r.URL.Query().Get("phase") == "delete-extra" {
+					key := f.key
+					key.BotID = "z-extra100"
+					if err := st.DeleteBot(r.Context(), key); err != nil {
+						http.Error(w, err.Error(), 500)
+						return
+					}
+					w.WriteHeader(204)
 					return
 				}
 				if err := change(f.key, r.URL.Query().Get("phase")); err != nil {
@@ -130,8 +186,8 @@ func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
 			f.h.ServeHTTP(w, r)
 		}))
 		defer server.Close()
-		cmd := exec.Command("node", "../../../web/console/src/project-assistants/roster-status.e2e.mjs")
-		cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_MACHINE="+f.key.MachineID, "BOTS_ARTIFACTS="+dir)
+		cmd := exec.Command("node", "../../../web/console/src/project-assistants/"+script)
+		cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_READONLY_TOKEN="+f.readonly, "BOTS_MACHINE="+f.key.MachineID, "BOTS_ARTIFACTS="+dir)
 		log, err := cmd.CombinedOutput()
 		if e := os.WriteFile(filepath.Join(dir, "browser.log"), log, 0600); e != nil {
 			t.Fatal(e)

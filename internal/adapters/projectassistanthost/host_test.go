@@ -862,6 +862,7 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 	})
 	t.Run("shared writer deadline", func(t *testing.T) {
 		f := newHostFixture(t)
+		normalCleanup := f.o.Limits.CleanupTimeout
 		f.o.Limits.CleanupTimeout = 30 * time.Millisecond
 		f.start(t)
 		f.enable(t)
@@ -885,6 +886,23 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 		if e = tx.Rollback(); e != nil {
 			t.Fatal(e)
 		}
+		// Ordinary recovery can briefly wait for another legitimate writer.
+		// Keep the failure above on its deliberately short deadline.
+		f.h.o.Limits.CleanupTimeout = normalCleanup
+		recoveryWriter, e := f.o.Database.BeginTx(context.Background(), nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		released := make(chan error, 1)
+		go func() {
+			time.Sleep(60 * time.Millisecond)
+			released <- recoveryWriter.Rollback()
+		}()
+		t.Cleanup(func() {
+			if err := <-released; err != nil {
+				t.Error(err)
+			}
+		})
 		f.enable(t)
 		stored, e := f.h.store.Turn(context.Background(), b.Key, "queued-bot")
 		if e != nil || stored.State != pa.TurnCancelled {

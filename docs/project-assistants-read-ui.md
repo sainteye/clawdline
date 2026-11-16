@@ -341,3 +341,38 @@ A restart continuation is admitted by a notice message with its own turn and mes
 The roster now selects the most recent user or notice admission whose ID matches its turn's `MessageID`, excluding joined turns. Active execution still takes priority. Later log notices from an old turn do not become new admissions. A current unknown continuation remains an error; selecting a later completed continuation does not alter earlier turns, unknown receipts, permissions, execution policy or retry behavior. For restart continuations, this follows Codync's current-status roster semantics while retaining Clawdline's explicit uncertainty records. Routine notice admissions follow Clawdline's existing chat projection; Codync routine-lane parity has not been established.
 
 Focused counterexamples exercise the original failed/acknowledged turn followed by a successful notice continuation, later log notices, a current unknown continuation and a newer human turn. A real SQLite commit/read-view/roster case confirms the two projections agree and the original unknown receipt stays unknown. Production-state replay evidence is retained privately; no conversation content is included in this document.
+
+## Cloud snapshot roster refresh
+
+Nonlocal sources retain their existing status and List transport. Returning from
+chat reads the roster immediately. While the roster is visible, the existing
+conversation refresh cadence schedules the next read after completion. Refresh
+requests are serialized and coalesced; a slow read is allowed to finish instead
+of being repeatedly aborted. Backgrounding or pagehide stops the timer, and
+foreground/pageshow catches up immediately. Unmount and query or authorization
+changes cancel the old reader; terminal authority refusals clear retained rows.
+Read-only paired sources use the same read loop. Routine refreshes keep the
+existing rows visible without a loading message.
+
+A refresh starts with a fresh keyset cursor and sequentially rereads only the
+number of pages already loaded for that source and query. It replaces those
+rows atomically, including deletion, and retains the new continuation cursor.
+This follows ListForReader's machine/Bot ordering and avoids retaining deleted
+rows through a merge or losing loaded later pages through a first-page refresh.
+Selection, reader identity, draft storage and scroll containers are unchanged.
+Local API71 SSE continues to own its own connection without List polling.
+
+`snapshot-roster.test.ts` exercises loaded coverage, deletion, slow single-flight
+reads, late cancellation/authority changes and foreground/pagehide teardown.
+`TestProjectAssistantRosterCloudHTTP` optionally runs the actual Bots component
+and nonlocal ProjectAssistantSourceClient through real Go Host HTTP and SQLite,
+with synthetic Store mutations and no provider invocation. Its browser harness
+uses the configured Clawdline browser and records response bodies and operations.
+This is a snapshot transport fixture: it does not establish encrypted production
+Cloud relay behavior, physical-phone acceptance or native model execution.
+
+```sh
+CLAWDLINE_ROSTER_CLOUD_E2E_DIR=/absolute/task-owned/evidence-directory \
+BOTS_BROWSER_CLAWDLINE_DIR=/absolute/configured/browser-broker-directory \
+go test ./internal/transport/http -run '^TestProjectAssistantRosterCloudHTTP$' -count=1
+```
