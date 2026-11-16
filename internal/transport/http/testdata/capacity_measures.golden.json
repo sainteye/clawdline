@@ -321,6 +321,36 @@
     "Note": true
   },
   {
+    "Name": "bots.group_history_lines",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.group_late_turns",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.group_member_wait_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.group_peer_line_chars",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.group_replies",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.group_rounds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.input_bytes",
     "Known": true,
     "Note": true
@@ -342,6 +372,11 @@
   },
   {
     "Name": "bots.instruction_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.manager_created",
     "Known": true,
     "Note": true
   },
