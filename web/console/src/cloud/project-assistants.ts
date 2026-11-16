@@ -19,6 +19,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
+export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
 export const PROJECT_ASSISTANTS_ROSTER_API_LEVEL = 71
 export const PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL = 69
@@ -256,7 +257,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
     return answer
   }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key),s,r,"PATCH") }
+  canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key),s,r,"PATCH",true,r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)

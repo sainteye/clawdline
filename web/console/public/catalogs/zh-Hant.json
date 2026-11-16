@@ -12485,5 +12485,21 @@
   "transparency.card.voice-live-pacing.condition": "只適用於 GPT-Live 語音通話。新通話讀取機器已儲存的語速；通話中請副駕駛講快或慢一點，會選取另一個既有速度檔位。",
   "transparency.card.voice-live-pacing.summary": "將慢、稍慢、正常或稍快其中一檔提示詞加入發聲模型。中文通話使用台灣繁體中文提示詞；其他介面語言使用英文節奏指示，不改變原本選定的說話語言。",
   "transparency.card.voice-live-pacing.how": "建立通話時帶入所選提示詞。通話中改速，會另以 session.instructions.append 送出指示，帶唯一事件編號與空的 delegation id，與 Responses 後端更新分開。新提示詞明確取代先前的節奏要求，並儲存設定供後續通話使用。提示詞保留內容、回答長度、口音與插話規則。",
-  "transparency.card.voice-live-pacing.effect": "要求 GPT-Live 調整發音節奏與停頓。既有的 0.8、0.9、1.0、1.1 代表設定檔位，不是量測過的 Live 播放倍率。指示已送出或設定已儲存，不代表實際聲音已遵循。音質、各檔速度差異與反覆切換的穩定性仍需試聽驗收；這個機制不額外建立模型請求。"
+  "transparency.card.voice-live-pacing.effect": "要求 GPT-Live 調整發音節奏與停頓。既有的 0.8、0.9、1.0、1.1 代表設定檔位，不是量測過的 Live 播放倍率。指示已送出或設定已儲存，不代表實際聲音已遵循。音質、各檔速度差異與反覆切換的穩定性仍需試聽驗收；這個機制不額外建立模型請求。",
+  "projectAssistants.fallbacks": "替代 Agent",
+  "projectAssistants.fallbackIntro": "如果 {agent} 在送出任何內容前無法接手訊息，就由下列順序的下一個 Agent 在同一個對話接手。",
+  "projectAssistants.fallbackEmpty": "沒有替代 Agent。訊息只交給這個 Bot 自己的 Agent。",
+  "projectAssistants.fallbackOrder": "替代 Agent 順序",
+  "projectAssistants.fallbackStepWhat": "{previous} 在送出前無法開始時，由它接手這則訊息。",
+  "projectAssistants.fallbackUnknownAgent": "這個介面不認得這個 Agent。移除前會一直保留。",
+  "projectAssistants.fallbackAdd": "新增替代 Agent",
+  "projectAssistants.fallbackMoveUp": "將 {agent} 往上移",
+  "projectAssistants.fallbackMoveDown": "將 {agent} 往下移",
+  "projectAssistants.fallbackRemove": "移除 {agent}",
+  "projectAssistants.fallbackRemoveShort": "移除",
+  "projectAssistants.fallbackHint": "只有來源確認尚未送出且清理完成，才會嘗試替代 Agent。不確定的工作會保留，絕不自動重做。選擇 Agent 不代表已安裝的介接程式具備切換資格。",
+  "projectAssistants.fallbackUnavailable": "此來源需要 API 72 以上才能變更替代 Agent。已儲存的設定會保留。",
+  "projectAssistants.fallbackMode": "替代 Agent 目前需要 Auto 模式。已儲存的順序會保留；固定模式不會切換。",
+  "projectAssistants.fallbackSaveUnknown": "儲存結果未知。表單會保留，也不會重送。再次變更前，請關閉並重新開啟設定，向來源核對。",
+  "projectAssistants.fallbackSaveStale": "設定已在其他地方變更。表單會保留。請關閉並重新開啟設定，查看最新版本。"
 }

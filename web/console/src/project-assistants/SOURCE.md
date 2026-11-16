@@ -372,3 +372,19 @@ Navigation uses distinct `pagehide` pause and `pageshow` resume handlers. A page
 may still report visible while leaving; that state must never start a new
 event read during teardown. Draft flushing and owned read cancellation remain
 shared with ordinary visibility changes.
+
+## Explicit pre-send alternate settings
+
+The source-qualified existing-settings control follows the directly inspected
+Codync `9f67eb09` `Fallbacks.tsx` `FallbacksRow`/`FallbackRow`: ordered numbered rows,
+add/move/remove saved with the form, and distinct-login choices.
+`FallbackSourceScope` carries only the selected SourceClient from Bots into its
+settings descendant. An older injected client has no editing capability by
+default. API72 gating remains independent of installed-native qualification.
+The Add picker reuses `PaSelect`; rows reuse the `pa-rules` list style. Model,
+login profile, rest status and switch-back are not carried (see the doc).
+Original version/configuration are captured on mount; unchanged alternates are
+omitted, clearing is explicit, and uncertain saves retain a locked visible form.
+See [the fallback boundary](../../../../docs/project-assistants-fallback.md)
+for the real TCP/browser fixture, its known source-event projection limitation,
+and the native/status/switch-back work that this increment does not complete.

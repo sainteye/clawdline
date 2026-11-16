@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12485,
-  "riskKeys": 5415,
-  "nonRiskCount": 7070,
+  "englishContentKeys": 12501,
+  "riskKeys": 5425,
+  "nonRiskCount": 7076,
   "groups": [
     {
       "name": "acp / other",
@@ -5665,7 +5665,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 190,
+      "count": 196,
       "sources": [
         null
       ],
@@ -5713,6 +5713,12 @@
         "projectAssistants.failFull",
         "projectAssistants.failGeneric",
         "projectAssistants.failInvalid",
+        "projectAssistants.fallbackAdd",
+        "projectAssistants.fallbackMoveDown",
+        "projectAssistants.fallbackMoveUp",
+        "projectAssistants.fallbackOrder",
+        "projectAssistants.fallbackSaveStale",
+        "projectAssistants.fallbacks",
         "projectAssistants.filesUnavailable",
         "projectAssistants.fixBotsOff",
         "projectAssistants.fixCloudOff",
