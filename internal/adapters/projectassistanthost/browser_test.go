@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -376,4 +377,54 @@ func TestHostSealWithdrawsAQueuedCommandDuringNativeCleanup(t *testing.T) {
 	if n := chrome.serve(t); n != 0 || chrome.clicks[31] != 0 {
 		t.Fatalf("the host received %d commands during cleanup; clicks=%d", n, chrome.clicks[31])
 	}
+}
+
+// A source that went read-only (offline for writes) and a feature the person
+// turned off each refuse the next browser effect of the running turn, and the
+// host receives nothing.
+func TestHostBrowserRefusesAReadOnlySourceAndADisabledFeature(t *testing.T) {
+	f, _, chrome := browserFixture(t)
+	var offline atomic.Bool
+	source := f.o.Source
+	f.o.Source = func(ctx context.Context, key pa.BotKey, write bool) (pa.SourceStatus, error) {
+		s, err := source(ctx, key, write)
+		if offline.Load() {
+			s.State, s.Writable = pa.SourceOffline, false
+		}
+		return s, err
+	}
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	if _, e := f.send(t, b, "one"); e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	first := fixtureReceive(t, f.p.sessions)
+	tools := browserToolsOf(t, first)
+	if r := chrome.run(t, tools, "open", `{"url":"http://127.0.0.1:9/page"}`); r.err != nil {
+		t.Fatal(r.err)
+	}
+	refused := func(why string) {
+		t.Helper()
+		before := len(chrome.ops)
+		_, err := tools.BrowserCommand(context.Background(), app.BrowserCommand{Op: "click", Args: json.RawMessage(`{"label":"Pay"}`)})
+		if err == nil {
+			t.Fatalf("%s: the click was admitted", why)
+		}
+		if chrome.b.Status().Pending != 0 || len(chrome.ops) != before {
+			t.Fatalf("%s: the host received a command", why)
+		}
+		t.Logf("%s: %v", why, err)
+	}
+	offline.Store(true)
+	refused("read-only source")
+	if pa.Code(func() error { _, e := tools.BrowserStatus(context.Background()); return e }()) == "" {
+		t.Fatal("a read-only source still read the browser status")
+	}
+	offline.Store(false)
+	if err := f.h.Disable(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	refused("disabled feature")
 }
