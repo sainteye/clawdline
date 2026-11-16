@@ -31,13 +31,14 @@ import (
 )
 
 type schema struct {
-	Ref         string             `json:"$ref"`
-	Type        string             `json:"type"`
-	Description string             `json:"description"`
-	Enum        []string           `json:"enum"`
-	Properties  map[string]*schema `json:"properties"`
-	Required    []string           `json:"required"`
-	Items       *schema            `json:"items"`
+	Ref                  string             `json:"$ref"`
+	Type                 string             `json:"type"`
+	Description          string             `json:"description"`
+	Enum                 []string           `json:"enum"`
+	Properties           map[string]*schema `json:"properties"`
+	Required             []string           `json:"required"`
+	Items                *schema            `json:"items"`
+	AdditionalProperties json.RawMessage    `json:"additionalProperties"`
 	// Nullable says the key is always present and its value may be null. That
 	// is a different promise from an optional key, which may be absent
 	// entirely, and a client written against one breaks on the other.
@@ -335,10 +336,34 @@ func goType(s *schema, optional bool) string {
 		// and that is not the same as an absent element.
 		return "[]" + goType(s.Items, s.Items.Nullable)
 	case "object":
+		if value, ok := dictionaryValueType(s); ok {
+			return "map[string]" + value
+		}
 		fatal("inline object: give it a name under $defs")
 	}
 	fatal("unsupported type %q", s.Type)
 	return ""
+}
+
+// Only explicit dictionaries are inline objects. Closed objects and ordinary
+// records still require named definitions; no existing schema changes shape.
+func dictionaryValueType(s *schema) (string, bool) {
+	if len(s.Properties) != 0 || len(s.Required) != 0 || len(s.AdditionalProperties) == 0 {
+		return "", false
+	}
+	var open bool
+	if json.Unmarshal(s.AdditionalProperties, &open) == nil {
+		if open {
+			return "any", true
+		}
+		return "", false
+	}
+	var value schema
+	if json.Unmarshal(s.AdditionalProperties, &value) == nil && value.Type == "string" && value.Ref == "" && len(value.Enum) == 0 {
+		return "string", true
+	}
+	fatal("dictionary values must be strings or arbitrary JSON")
+	return "", false
 }
 
 func renderGo(names []string) []byte {
@@ -436,6 +461,12 @@ func tsType(s *schema) string {
 		}
 		return inner + "[]"
 	case "object":
+		if value, ok := dictionaryValueType(s); ok {
+			if value == "any" {
+				value = "unknown"
+			}
+			return "Record<string, " + value + ">"
+		}
 		fatal("inline object: give it a name under $defs")
 	}
 	fatal("unsupported type %q", s.Type)

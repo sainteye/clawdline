@@ -294,7 +294,14 @@ Default-off, disabled-with-data and removal are different operations:
 
 Exports include settings, conversations, messages, turns/bindings, permission
 states, memory entries/tombstones/context, work links, events, receipts and read
-cursors with contract/schema versions. PA-03 validates exact round trips and
+cursors with contract/schema versions. The downloaded JSON also includes stored
+routine definitions (schedule intent and progress notes), routine runs (event
+payloads and execution provenance), and groups with membership, room coordination
+state and their separate group schema version, matching the internal archive's
+data. Attachment and output metadata remain references: file bytes, webhook
+secrets and webhook authentication proofs are not included. The new export fields
+are additive and optional; the contract and storage schema versions are unchanged.
+PA-03 validates exact round trips and
 rejects unknown future versions. PA-05 owns the final removal, authorization,
 Cloud and cross-module failure-injection rehearsal; PA-04 returns for actual
 desktop/phone interaction acceptance after modules are integrated.

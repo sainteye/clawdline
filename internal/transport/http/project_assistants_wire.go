@@ -546,6 +546,28 @@ func paDomainMemoryEntry(value contract.ProjectAssistantMemoryEntry) pa.MemoryEn
 
 func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 	var out contract.ProjectAssistantExport
+	out.GroupSchemaVersion = int64(value.GroupSchemaVersion)
+	for _, routine := range value.Routines {
+		converted, err := paWireExportRoutine(routine)
+		if err != nil {
+			return out, err
+		}
+		out.Routines = append(out.Routines, converted)
+	}
+	for _, run := range value.RoutineRuns {
+		converted, err := paWireExportRoutineRun(run)
+		if err != nil {
+			return out, err
+		}
+		out.RoutineRuns = append(out.RoutineRuns, converted)
+	}
+	for _, group := range value.Groups {
+		converted, err := paWireExportGroup(group)
+		if err != nil {
+			return out, err
+		}
+		out.Groups = append(out.Groups, converted)
+	}
 	for _, x := range value.Exchanges {
 		out.Exchanges = append(out.Exchanges, paWireExchange(x))
 	}
@@ -606,6 +628,89 @@ func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 	out.WorkLinks = make([]contract.ProjectAssistantWorkLink, len(value.WorkLinks))
 	for i := range value.WorkLinks {
 		out.WorkLinks[i] = paWireWorkLink(value.WorkLinks[i])
+	}
+	return out, nil
+}
+
+// Export retains the stored schedule, unlike the routine list's display
+// projection, which normalizes legacy intervals and omits execution provenance.
+func paWireExportRoutine(value pa.Routine) (contract.ProjectAssistantExportRoutine, error) {
+	out := contract.ProjectAssistantExportRoutine{
+		ID: value.ID, Key: paWireBotKey(value.Key), Project: paWireProjectScope(value.Project),
+		ConversationID: value.ConversationID, Name: value.Name, Instruction: value.Instruction,
+		IntervalSeconds: value.IntervalSeconds, TimeoutSeconds: value.TimeoutSeconds,
+		Enabled: value.Enabled, Deleted: value.Deleted, Version: value.Version,
+		Progress: value.Progress, ProgressRevision: value.ProgressRevision,
+		FollowUp: value.FollowUp, FollowUpChain: int64(value.FollowUpChain), MemoryRevision: value.MemoryRevision,
+	}
+	var err error
+	if out.NextDue, err = paWireTime(value.NextDue); err != nil {
+		return out, err
+	}
+	for _, trigger := range value.Triggers {
+		out.Triggers = append(out.Triggers, contract.ProjectAssistantExportRoutineTrigger{
+			Type: trigger.Type, Seconds: trigger.Seconds, At: trigger.At, Expression: trigger.Expression,
+			TimeZone: trigger.TimeZone, Source: trigger.Source, Event: trigger.Event, Filters: trigger.Filters,
+		})
+	}
+	for _, next := range value.NextRuns {
+		text, err := paWireTime(next)
+		if err != nil {
+			return out, err
+		}
+		out.NextRuns = append(out.NextRuns, text)
+	}
+	return out, nil
+}
+
+func paWireExportRoutineRun(value pa.RoutineRun) (contract.ProjectAssistantExportRoutineRun, error) {
+	out := contract.ProjectAssistantExportRoutineRun{
+		ID: value.ID, RoutineID: value.RoutineID, Source: value.Source,
+		Key: paWireBotKey(value.Key), Project: paWireProjectScope(value.Project), ConversationID: value.ConversationID,
+		TurnID: value.TurnID, BindingID: value.BindingID, State: contract.ProjectAssistantTurnState(value.State),
+		Instruction: value.Instruction, TimeoutSeconds: value.TimeoutSeconds, Published: value.Published,
+		MemoryRevision: value.MemoryRevision, RetryCount: int64(value.RetryCount), NotStartedProved: value.NotStartedProved,
+		DeliveryID: value.DeliveryID, Event: value.Event,
+	}
+	var err error
+	if out.CreatedAt, err = paWireTime(value.CreatedAt); err != nil {
+		return out, err
+	}
+	if !value.NotBefore.IsZero() {
+		if out.NotBefore, err = paWireTime(value.NotBefore); err != nil {
+			return out, err
+		}
+	}
+	if value.FinishedAt != nil {
+		if out.FinishedAt, err = paWireTime(*value.FinishedAt); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+func paWireExportGroup(value app.GroupExport) (contract.ProjectAssistantExportGroupState, error) {
+	g, room := value.Group, value.Room
+	out := contract.ProjectAssistantExportGroupState{
+		Group: contract.ProjectAssistantExportGroup{Key: paWireBotKey(g.Key), Project: paWireProjectScope(g.Project),
+			ConversationID: g.ConversationID, Name: g.Name, MembershipRevision: g.MembershipRevision,
+			Version: g.Version, Deleted: g.Deleted, Members: []contract.ProjectAssistantExportGroupMember{}},
+		Room: contract.ProjectAssistantExportRoomState{Group: paWireBotKey(room.Group), Revision: room.Revision,
+			Epoch: room.Epoch, Running: room.Running, Pending: room.Pending, LateTurns: int64(room.LateTurns), StoppedAt: room.StoppedAt},
+	}
+	var err error
+	if out.Group.CreatedAt, err = paWireTime(g.CreatedAt); err != nil {
+		return out, err
+	}
+	if out.Group.UpdatedAt, err = paWireTime(g.UpdatedAt); err != nil {
+		return out, err
+	}
+	for _, member := range g.Members {
+		out.Group.Members = append(out.Group.Members, contract.ProjectAssistantExportGroupMember{Key: paWireBotKey(member.Key), JoinedRevision: member.JoinedRevision})
+	}
+	for _, ticket := range room.Overdue {
+		out.Room.Overdue = append(out.Room.Overdue, contract.ProjectAssistantExportRoomTicket{Group: paWireBotKey(ticket.Group),
+			Member: paWireBotKey(ticket.Member), Epoch: ticket.Epoch, JoinedRevision: ticket.JoinedRevision, Late: ticket.Late})
 	}
 	return out, nil
 }

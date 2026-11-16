@@ -5531,6 +5531,10 @@ export interface ProjectAssistantExecutionBinding {
 /**
  * Authenticated export only, never roster cache. SQLite remains authoritative.
  * Restore refuses unsupported versions and retains receipt/tombstone identities.
+ * Routines retain stored schedule intent, progress and runs; groups retain
+ * membership and room state with a separate group_schema_version. Attachment/output
+ * file bytes and webhook secrets or proofs are never included. New fields are
+ * optional for older exports.
  */
 export interface ProjectAssistantExport {
   bindings: ProjectAssistantExecutionBinding[]
@@ -5540,15 +5544,117 @@ export interface ProjectAssistantExport {
   conversation: ProjectAssistantConversation
   events: ProjectAssistantEvent[]
   exchanges?: ProjectAssistantExchange[]
+  group_schema_version?: number
+  groups?: ProjectAssistantExportGroupState[]
   memory: ProjectAssistantMemoryRevision
   memory_entries: ProjectAssistantMemoryEntry[]
   messages: ProjectAssistantMessage[]
   permissions: ProjectAssistantPermissionOffer[]
   read_cursors: ProjectAssistantReadCursor[]
   receipts: ProjectAssistantReceipt[]
+  routine_runs?: ProjectAssistantExportRoutineRun[]
+  routines?: ProjectAssistantExportRoutine[]
   schema_version: number
   turns: ProjectAssistantTurn[]
   work_links: ProjectAssistantWorkLink[]
+}
+
+export interface ProjectAssistantExportGroup {
+  conversation_id: string
+  created_at: string
+  deleted?: boolean
+  key: ProjectAssistantBotKey
+  members: ProjectAssistantExportGroupMember[]
+  membership_revision: number
+  name: string
+  project: ProjectAssistantProjectScope
+  updated_at: string
+  version: number
+}
+
+export interface ProjectAssistantExportGroupMember {
+  joined_revision: number
+  key: ProjectAssistantBotKey
+}
+
+export interface ProjectAssistantExportGroupState {
+  group: ProjectAssistantExportGroup
+  room: ProjectAssistantExportRoomState
+}
+
+export interface ProjectAssistantExportRoomState {
+  epoch: number
+  group: ProjectAssistantBotKey
+  late_turns: number
+  overdue?: ProjectAssistantExportRoomTicket[]
+  pending?: number
+  revision: number
+  running?: number
+  stopped_at?: number
+}
+
+export interface ProjectAssistantExportRoomTicket {
+  epoch: number
+  group: ProjectAssistantBotKey
+  joined_revision: number
+  late?: boolean
+  member: ProjectAssistantBotKey
+}
+
+export interface ProjectAssistantExportRoutine {
+  conversation_id: string
+  deleted: boolean
+  enabled: boolean
+  follow_up?: boolean
+  follow_up_chain?: number
+  id: string
+  instruction: string
+  interval_seconds: number
+  key: ProjectAssistantBotKey
+  memory_revision?: number
+  name: string
+  next_due: string
+  next_runs?: string[]
+  progress?: string
+  progress_revision?: number
+  project: ProjectAssistantProjectScope
+  timeout_seconds: number
+  triggers?: ProjectAssistantExportRoutineTrigger[]
+  version: number
+}
+
+export interface ProjectAssistantExportRoutineRun {
+  binding_id?: string
+  conversation_id: string
+  created_at: string
+  delivery_id?: string
+  event?: Record<string, unknown>
+  finished_at?: string
+  id: string
+  instruction?: string
+  key: ProjectAssistantBotKey
+  memory_revision?: number
+  not_before?: string
+  not_started_proved?: boolean
+  project: ProjectAssistantProjectScope
+  published: boolean
+  retry_count?: number
+  routine_id: string
+  source: string
+  state: ProjectAssistantTurnState
+  timeout_seconds: number
+  turn_id?: string
+}
+
+export interface ProjectAssistantExportRoutineTrigger {
+  at?: number
+  event?: string
+  expression?: string
+  filters?: Record<string, string>
+  seconds?: number
+  source?: string
+  timeZone?: string
+  type: string
 }
 
 export interface ProjectAssistantFailure {
