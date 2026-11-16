@@ -27,16 +27,19 @@ func waitQueued(t *testing.T, b *Bridge, n int) {
 // It answers browser_cancelled: the daemon knows it never left.
 func TestACancelledOwnedCommandIsNeverPolled(t *testing.T) {
 	b, _ := connected(t)
-	b.timeout = 300 * time.Millisecond
 	b.mu.Lock()
 	b.owner[4] = "bot-a"
 	b.mu.Unlock()
 	// The caller is cancelled but has not woken yet (its Done is not seen):
 	// the poll is the only thing between the cancellation and the effect.
-	ctx := &cancelledUnseen{Context: context.Background()}
+	caller, wakeCaller := context.WithCancel(context.Background())
+	t.Cleanup(wakeCaller)
+	ctx := &cancelledUnseen{Context: caller}
+	readCtx, stopRead := context.WithCancel(context.Background())
+	t.Cleanup(stopRead)
 	done, other := make(chan error, 1), make(chan error, 1)
 	go func() {
-		_, err := b.DoOwnedWithAdmission(context.Background(), "bot-a", "read", json.RawMessage(`{"tab":4}`), func() {})
+		_, err := b.DoOwnedWithAdmission(readCtx, "bot-a", "read", json.RawMessage(`{"tab":4}`), func() {})
 		other <- err
 	}()
 	waitQueued(t, b, 1)
@@ -52,17 +55,44 @@ func TestACancelledOwnedCommandIsNeverPolled(t *testing.T) {
 	if len(polled) != 1 || polled[0].Op != "read" {
 		t.Fatalf("a cancelled command was handed out: %+v", polled)
 	}
+	// Poll has observed Err while Done was still open; now let the caller wake.
+	wakeCaller()
 	if err := <-done; err != Cancelled {
 		t.Fatalf("err = %v, want %s", err, Cancelled)
 	}
+	// Finish the surviving read before checking the cancellation record.
+	if err := b.Deliver([]Result{{ID: polled[0].ID, OK: true, Tab: 4, Value: json.RawMessage(`{"ok":true}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-other; err != nil {
+		t.Fatalf("surviving read = %v", err)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	last := b.audit[len(b.audit)-1]
-	if last.Op != "click" || last.OK || last.Error != string(Cancelled) {
+	if len(b.audit) != 2 {
 		t.Fatalf("audit = %+v", b.audit)
 	}
-	if len(b.withheld) != 0 || len(b.waiting) != 0 {
-		t.Fatalf("leaked bookkeeping: withheld %v waiting %v", b.withheld, b.waiting)
+	seen := map[string]bool{}
+	for _, row := range b.audit {
+		if seen[row.Op] {
+			t.Fatalf("duplicate audit operation = %+v", b.audit)
+		}
+		seen[row.Op] = true
+		switch row.Op {
+		case "click":
+			if row.OK || row.Error != string(Cancelled) {
+				t.Fatalf("cancelled click audit = %+v", row)
+			}
+		case "read":
+			if !row.OK || row.Error != "" {
+				t.Fatalf("surviving read audit = %+v", row)
+			}
+		default:
+			t.Fatalf("unexpected audit = %+v", row)
+		}
+	}
+	if len(b.withheld) != 0 || len(b.waiting) != 0 || len(b.inflight) != 0 || len(b.queue) != 0 {
+		t.Fatalf("leaked bookkeeping: withheld %v waiting %v inflight %v queue %v", b.withheld, b.waiting, b.inflight, b.queue)
 	}
 }
 
