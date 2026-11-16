@@ -538,6 +538,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return app.BrowserResult{}, e
 		}
 		defer cancel()
+		// A Bot hands a page to the person by keeping its tab: release would
+		// drop the Bot as owner, and the person could no longer reach the tab
+		// from the Bot's chat. Close still ends a tab the Bot is done with.
+		if command.Op == "release" {
+			return app.BrowserResult{Value: botTabKept}, nil
+		}
 		return browser.Command(ctx, owner, command)
 	}
 	tools.send = func(ctx context.Context, id, text string) error {
@@ -579,3 +585,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	}
 	return life, tools, nil
 }
+
+// botTabKept answers a Bot's release: the tab stays the Bot's, and the person
+// takes it over from the Bot's chat.
+var botTabKept = json.RawMessage(`{"kept":true,"note":"The tab stays yours so the person can take it over from your chat's browser and hand it back. Tell them what to do there; use close when you no longer need the tab."}`)

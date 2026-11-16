@@ -31,6 +31,21 @@ const WORDS = {
     emailsDelivered: 'Order emails render in dark mode, the Outlook logo is fixed, and 14 tests cover them.',
     searchDelivered: 'Meilisearch search is live for every shopper and the old SQL search is removed.',
     send: "Fix the three iPad UI tests first; don't skip them.",
+    // A GPT-Live take's Release 2.4 has a long, tangled run behind it, too much to
+    // read on a phone, so the call's summary of it is worth having (asked for on
+    // 2026-11-17: two short messages could simply be read).
+    releaseWork: [
+      ['assistant', 'Bumped CFBundleShortVersionString and the build number to 2.4.0 (2403) in all four targets, and drafted the release notes from the 31 merged PRs since 2.3.2.', 2900],
+      ['tool', 'xcodebuild test -scheme StorefrontUITests -destination "platform=iOS Simulator,name=iPhone 17" -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)"', 2700],
+      ['tool', 'Test Suite StorefrontUITests: 184 tests, 7 failures (iPhone 17: 2, iPad Pro 13-inch: 7)', 2400],
+      ['assistant', 'First run: 7 failures. Going through them one by one. CartBadgeTests and OrderHistoryTests fail on both devices: their snapshots still show the old tab bar from PR #412. Re-recording those snapshots.', 2300],
+      ['tool', 'swift run snapshot-tool record --tests CartBadgeTests,OrderHistoryTests --devices all', 2100],
+      ['assistant', 'Snapshots updated. CheckoutFlowTests and SearchResultsTests time out at random: they tap before the list finishes animating. Tried a fixed 0.5 s wait first, which made SearchResultsTests pass but slowed the suite by 40 s, so I reverted it and wait for the list to report it is idle instead.', 1800],
+      ['tool', 'git diff --stat: 6 files changed, 48 insertions(+), 19 deletions(-)', 1700],
+      ['user', 'Keep going, I want 2.4 out on Thursday.', 1500],
+      ['tool', 'Test Suite StorefrontUITests: 184 tests, 3 failures (iPad Pro 13-inch: 3)', 900],
+    ],
+    releaseFailure: 'Second run: iPhone passes everything; 3 tests still fail on iPad only, each for its own reason. CheckoutSheet: on iPad the checkout opens as a centred form sheet instead of a bottom sheet, so the test cannot find the drag handle; the sheet itself works. PhotoPicker: on iPadOS 19 the photo permission alert appears about a second later, and the test taps before it is there. SettingsSplit: in split view the sidebar is collapsed at compact width, so the Account row is hidden. None of them is a crash or data loss. Fixing all three properly is about half a day and moves the release to Friday; skipping them ships Thursday with three known issues for iPad. I lean towards fixing PhotoPicker at least, since real iPad users would see that delay too.\n\n{releaseQ}',
     // A GPT-Live take starts before Release 2.4's UI suite has finished (story({ live })).
     liveBriefing: 'One Session needs you: Checkout redesign is done and asks whether to merge into main now or wait for the design review. Release 2.4 has bumped its versions and is running the full UI suite on iPhone and iPad. Payment webhooks is building the retry queue; Offline sync is writing conflict resolution. Order emails and Search rebuild have delivered.',
     releaseRunning: 'Versions are bumped to 2.4.0 and the release notes are drafted. Running the full UI suite on iPhone and iPad now.',
@@ -67,9 +82,11 @@ const WORDS = {
       emails: { kept: 'Order emails delivered: they render in dark mode, the Outlook logo has a PNG fallback, and 14 snapshot tests cover Gmail, Outlook and Apple Mail.' },
       // Kept from before the UI suite finished, so the latest one has news to add.
       release: { kept: 'Release 2.4 bumped the versions to 2.4.0, drafted the release notes and is running the full UI suite on iPhone and iPad.',
+        latestLive: 'Release 2.4 got from seven failing UI tests to three: it re-recorded two stale snapshots and fixed two flaky timings. iPhone passes everything; three tests still fail on iPad only, for three different reasons, none a crash. Fixing them takes about half a day and moves the release from Thursday to Friday; skipping ships Thursday with three known iPad issues. It leans towards fixing at least the photo permission one. It is waiting for you to choose.',
         latest: 'Release 2.4 has bumped every version to 2.4.0 and drafted the notes. The UI suite passes on iPhone; CheckoutSheet, PhotoPicker and SettingsSplit fail on iPad only. It is waiting for you to choose: skip them for 2.4, or fix them first.',
         sent: 'Release 2.4 got your message and is fixing the three iPad UI tests now; the release waits until they pass.' },
-      sync: { kept: 'Offline sync queues edits on disk and is writing conflict resolution for edits made on two devices. Nothing for you yet.' },
+      sync: { kept: 'Offline sync queues edits on disk and is writing conflict resolution for edits made on two devices. Nothing for you yet.',
+        latest: 'Offline sync finished conflict resolution for text: the newer edit wins and the other is kept as a copy, with 18 tests passing. It is now doing the same for photos. Nothing for you yet.' },
       search: { kept: 'Search rebuild delivered: Meilisearch is live for every shopper and the old SQL search is gone.',
         latest: 'Search rebuild replaced the slow SQL search with Meilisearch, kept the index in sync within two seconds, added typo tolerance and size and color filters, and cut p95 latency from 1.8 s to 120 ms under load. It shipped to 10% of shoppers, then to everyone, and removed 1,240 lines of old search code. Nothing is waiting for you.' },
     },
@@ -109,6 +126,18 @@ const WORDS = {
     emailsDelivered: '訂單通知信在深色模式下顯示正常，修好 Outlook 的 Logo，並補上 14 個測試。',
     searchDelivered: 'Meilisearch 搜尋已對所有顧客上線，舊的 SQL 搜尋已移除。',
     send: '先把三個 iPad UI 測試修好，不要略過。',
+    releaseWork: [
+      ['assistant', '四個 target 的版本號和組建號都改成 2.4.0（2403），發布說明依 2.3.2 之後合併的 31 個 PR 寫好草稿。', 2900],
+      ['tool', 'xcodebuild test -scheme StorefrontUITests -destination "platform=iOS Simulator,name=iPhone 17" -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)"', 2700],
+      ['tool', 'Test Suite StorefrontUITests: 184 tests, 7 failures (iPhone 17: 2, iPad Pro 13-inch: 7)', 2400],
+      ['assistant', '第一輪有 7 個失敗，我一個一個看。CartBadgeTests 和 OrderHistoryTests 兩台都失敗：它們的快照還是 PR #412 之前的舊分頁列，我重錄這兩組快照。', 2300],
+      ['tool', 'swift run snapshot-tool record --tests CartBadgeTests,OrderHistoryTests --devices all', 2100],
+      ['assistant', '快照更新好了。CheckoutFlowTests 和 SearchResultsTests 會隨機逾時：清單動畫還沒跑完就去點。我先試了固定等 0.5 秒，SearchResultsTests 過了，但整套測試慢了 40 秒，所以退回去，改成等清單回報閒置再點。', 1800],
+      ['tool', 'git diff --stat：6 個檔案變更，新增 48 行，刪除 19 行', 1700],
+      ['user', '繼續，2.4 我想週四發。', 1500],
+      ['tool', 'Test Suite StorefrontUITests: 184 tests, 3 failures (iPad Pro 13-inch: 3)', 900],
+    ],
+    releaseFailure: '第二輪：iPhone 全部通過；還有 3 個只在 iPad 上失敗，原因各不一樣。CheckoutSheet：在 iPad 上結帳畫面是置中的表單，不是從底部拉起來的面板，測試找不到拖曳把手；畫面本身是正常的。PhotoPicker：iPadOS 19 的相片權限提示大約晚一秒才出現，測試在它出現前就點下去了。SettingsSplit：分割畫面在窄寬度時側邊欄會收起來，「帳號」那一列被藏住。三個都不是當機或資料遺失。三個都好好修大約要半天，發布會延到週五；略過的話週四照常發，iPad 上留三個已知問題。我傾向至少修 PhotoPicker，因為真的 iPad 使用者也會遇到那個延遲。\n\n{releaseQ}',
     liveBriefing: '有一個 Session 在等你：結帳改版已經完成，在問要現在合併到 main 還是等設計審查。2.4 版發布已經更新版本號，正在 iPhone 和 iPad 上跑完整的 UI 測試。金流 Webhook 正在做重試佇列；離線同步正在寫衝突處理。訂單通知信和搜尋重建都已經交付。',
     releaseRunning: '版本號已更新到 2.4.0，發布說明也寫好了。正在 iPhone 和 iPad 上跑完整的 UI 測試。',
     briefing: '有兩個 Session 在等你。結帳改版已經完成，在問要現在合併到 main 還是等設計審查。2.4 版發布有三個 UI 測試只在 iPad 上失敗，在問 2.4 要先略過還是先修好。金流 Webhook 正在做重試佇列；離線同步正在寫衝突處理。訂單通知信和搜尋重建都已經交付。',
@@ -140,9 +169,11 @@ const WORDS = {
       webhooks: { kept: '金流 Webhook 已經讓 Stripe 的處理可以重複執行，正在做指數退避的重試佇列。目前不需要你處理。' },
       emails: { kept: '訂單通知信已經交付：深色模式顯示正常，Outlook 的 Logo 用 PNG 備援修好，還補了 14 個涵蓋 Gmail、Outlook 和 Apple Mail 的快照測試。' },
       release: { kept: '2.4 版發布把版本號改成 2.4.0、寫好發布說明，正在 iPhone 和 iPad 上跑完整的 UI 測試。',
+        latestLive: '2.4 版發布把 UI 測試從 7 個失敗修到剩 3 個：重錄了兩組過時的快照、修掉兩個時序不穩的測試。iPhone 全部通過；還有 3 個只在 iPad 上失敗，原因各不相同，都不是當機。全部修好約要半天，發布會從週四延到週五；略過就週四照常發，iPad 留三個已知問題。它傾向至少修好相片權限那一個。現在等你決定。',
         latest: '2.4 版發布已經把版本號都改成 2.4.0，發布說明也寫好了。UI 測試在 iPhone 上全過，CheckoutSheet、PhotoPicker 和 SettingsSplit 只在 iPad 上失敗。現在等你決定：2.4 先略過，還是先修好。',
         sent: '2.4 版發布收到你的訊息，正在修那三個 iPad UI 測試，測試通過前先不發布。' },
-      sync: { kept: '離線同步已經把修改存進磁碟佇列，正在寫兩台裝置同時修改的衝突處理。目前不需要你處理。' },
+      sync: { kept: '離線同步已經把修改存進磁碟佇列，正在寫兩台裝置同時修改的衝突處理。目前不需要你處理。',
+        latest: '離線同步把文字的衝突處理做好了：保留較新的修改，另一份存成副本，18 個測試都通過。現在在做照片的衝突處理。目前不需要你處理。' },
       search: { kept: '搜尋重建已經交付：Meilisearch 對所有顧客上線，舊的 SQL 搜尋已經移除。',
         latest: '搜尋重建把很慢的 SQL 搜尋換成 Meilisearch，商品變動兩秒內同步到索引，加上錯字容忍和尺寸、顏色篩選；壓力測試下 p95 延遲從 1.8 秒降到 120 毫秒。先開給一成顧客，再全面上線，舊的搜尋程式刪了 1,240 行。沒有在等你的事。' },
     },
@@ -197,7 +228,18 @@ export const LIVE_SCRIPTS = {
     { call: true }, { say: 'pT' }, { minimize: true }, { open: 'release' },
     { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
   ],
-  // The default since 2026-11-16: a call from the list reports the Sessions by
+  // The default since 2026-11-17: after the call's own report, the person opens
+  // three Sessions it did not cover, each in another state, and hears each one
+  // told differently: a finished one's story (Search rebuild, its conversation
+  // read down), a working one's news (Offline sync), and one that has just
+  // stopped for a decision (Release 2.4). A single Session that wanted a
+  // decision showed none of that.
+  tour: [
+    { call: true, report: true }, { minimize: true },
+    { open: 'search', read: true }, { open: 'sync' }, { open: 'release' },
+    { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
+  ],
+  // A call from the list reports the Sessions by
   // itself, waiting ones first and then what the working ones are doing
   // (f3a2270ae), so the person does not open by asking what needs them.
   auto: [
@@ -237,7 +279,7 @@ export function story(lang, { live = false } = {}) {
   const latest = (key) => {
     const r = w.recaps?.[key]
     if (!r) return ''
-    return key === 'release' && state.releaseSent ? r.sent : (r.latest ?? r.kept)
+    return key === 'release' && state.releaseSent ? r.sent : ((live && r.latestLive) || r.latest || r.kept)
   }
   return {
     latest(id) {
@@ -259,10 +301,13 @@ export function story(lang, { live = false } = {}) {
     ],
     transcript(id) {
       const key = Object.keys(IDS).find((k) => IDS[k] === id)
-      const said = key === 'release' && !state.releaseFailed ? [w.transcripts.release[0], ['assistant', w.releaseRunning, 480]] : w.transcripts[key]
+      const said = key === 'release' && live
+        ? [w.transcripts.release[0], ...w.releaseWork, state.releaseFailed ? ['assistant', w.releaseFailure, 240] : ['assistant', w.releaseRunning, 480]]
+        : key === 'release' && !state.releaseFailed ? [w.transcripts.release[0], ['assistant', w.releaseRunning, 480]] : w.transcripts[key]
       const entries = (said ?? []).map(([role, text, ago]) => role === 'report'
         // A delivery as the transcript records it: the Session ran `clawdline session report`.
         ? { role: 'tool', text: `clawdline session report --summary "${fill(text)}"`, at: now - ago, kind: 'tool' }
+        : role === 'tool' ? { role: 'tool', text: fill(text), at: now - ago, kind: 'tool' }
         : { role, text: fill(text), at: now - ago, kind: 'message' })
       if (key === 'release' && state.releaseSent) entries.push({ role: 'user', text: state.sentText, at: Math.floor(Date.now() / 1000), kind: 'message' })
       return entries
