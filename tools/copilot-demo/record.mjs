@@ -373,7 +373,8 @@ if (LIVE) {
       await until(`[...document.querySelectorAll('li.row')].some((li) => li.offsetParent)`, 10000)
       await sleep(600)
     }
-    await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
+    // The row on screen: a phone page also carries hidden copies of the list.
+    await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.offsetParent && li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); document.querySelectorAll('[data-demo-row]').forEach((e) => e.removeAttribute('data-demo-row')); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
     await click(`[data-demo-row="${id}"]`)
     await run('window.__demo.mark()')
   }
