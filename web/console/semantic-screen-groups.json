@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12472,
-  "riskKeys": 5406,
-  "nonRiskCount": 7066,
+  "englishContentKeys": 12480,
+  "riskKeys": 5410,
+  "nonRiskCount": 7070,
   "groups": [
     {
       "name": "acp / other",
@@ -383,11 +383,12 @@
     },
     {
       "name": "capacity / other",
-      "count": 1,
+      "count": 2,
       "sources": [
         null
       ],
       "keys": [
+        "capacity.estimatedTokens",
         "capacity.milliseconds"
       ]
     },
@@ -406,7 +407,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 603,
+      "count": 604,
       "sources": [
         null
       ],
@@ -498,6 +499,7 @@
         "capacityRow.bots.routine_interval_seconds.what",
         "capacityRow.bots.routine_name_bytes.what",
         "capacityRow.bots.routine_pending.what",
+        "capacityRow.bots.routine_progress_tokens.what",
         "capacityRow.bots.routine_tick_ms.full",
         "capacityRow.bots.routine_tick_ms.what",
         "capacityRow.bots.routine_timeout_seconds.what",
@@ -7138,7 +7140,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 184,
+      "count": 186,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7251,6 +7253,8 @@
         "transparency.card.persistent-bot-outputs.title",
         "transparency.card.persistent-bot-review.summary",
         "transparency.card.persistent-bot-review.title",
+        "transparency.card.persistent-bot-routine-progress.summary",
+        "transparency.card.persistent-bot-routine-progress.title",
         "transparency.card.persistent-bot-routines.summary",
         "transparency.card.persistent-bot-routines.title",
         "transparency.card.persistent-bots.summary",

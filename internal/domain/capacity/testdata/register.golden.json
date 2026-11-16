@@ -2077,6 +2077,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_progress_tokens",
+    "Class": "buffer",
+    "Unit": "tokens",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineProgressTokens"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.routine_tick_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

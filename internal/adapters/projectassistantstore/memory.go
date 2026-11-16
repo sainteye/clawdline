@@ -192,6 +192,11 @@ func (s *Store) changeMemory(ctx context.Context, cmd pa.Command, change func(*a
 	if reflect.DeepEqual(old, a.Memory) {
 		return old, failure(pa.Invalid, "memory_change")
 	}
+	if a.Memory.ForgottenThrough > old.ForgottenThrough {
+		if err = clearRoutineProgress(ctx, tx, a); err != nil {
+			return old, err
+		}
+	}
 	expected := a.Bot.Version
 	a.Bot.Version++
 	if err = validateAggregate(a); err != nil {

@@ -591,3 +591,14 @@ Session and child executions. Its own card explains local search of recommended
 and saved sources, the explicit proposal and agreement boundary, and unchanged
 existing/resumed conversations. It grants no tool installation, API spending or
 workflow authority. The CLI search reads metadata only.
+
+
+Routine progress now has its own conditional entry. The host supplies a
+JSON-quoted prior note as untrusted data to an isolated routine prompt and
+instructions for saving the whole updated stopping point. Both language cards
+describe the exact trigger, deterministic content/token checks, separate routine
+storage, atomic clearing on memory forget and stale-execution refusal. The
+existing schedule card no longer claims that the supplied Codex adapter reports
+no resume support; installed native routine A/B/A remains separately unqualified.
+The public website snapshot must import this reviewed product revision after it
+lands. A refreshed source receipt alone is not website acceptance.

@@ -54,7 +54,7 @@ The exact pending command is stored in this tab before transport. An unreadable,
 
 All six Cloud words route through the captured SourceClient and paired principal's existing read/write ceilings. They do not use a selected-machine singleton or a phone-specific read-only mode. Sources below API 73 are honestly unsupported. Local transport and projection fixtures establish the code path, not deployment of the Cloud console/API/relay or acceptance on a physical phone.
 
-The focused human TCP fixture exercises the production Server, Host, service and SQLite with a scripted provider: create/edit, unchanged schedule values, stale revision, save/test replay, actual result/history, pause/enable/delete, read-only/disabled sources, revocation during admission and final publication, and main A / isolated B / main A. The browser harness mounts production Chat and SourceClient against that same TCP source, operates More actions through the actual Clawdline browser CLI, and captures desktop English and mobile Taiwan Traditional Chinese create/edit/test/result/pause/enable/delete/history. It does not install or prompt a native agent. Its two explicit browser tests produce two scripted routine sends; separate main-before/main-after sends prove isolation. External vendor/model/native requests are zero. The run panel refresh is explicit; live run updates, webhook/event delivery, progress, follow-ups, automatic retries, native recovery, and interaction with future group/Bot exchange features remain unqualified.
+The focused human TCP fixture exercises the production Server, Host, service and SQLite with a scripted provider: create/edit, unchanged schedule values, stale revision, save/test replay, actual result/history, pause/enable/delete, read-only/disabled sources, revocation during admission and final publication, and main A / isolated B / main A. The browser harness mounts production Chat and SourceClient against that same TCP source, operates More actions through the actual Clawdline browser CLI, and captures desktop English and mobile Taiwan Traditional Chinese create/edit/test/result/pause/enable/delete/history. It does not install or prompt a native agent. Its two explicit browser tests produce two scripted routine sends; separate main-before/main-after sends prove isolation. External vendor/model/native requests are zero. The run panel refresh is explicit; live run updates, webhook/event delivery, native progress qualification, follow-ups, automatic retries, native recovery, and interaction with future group/Bot exchange features remain unqualified.
 
 ### Pinned upstream comparison
 
@@ -84,3 +84,45 @@ reload and is resolved only through the explicitly labelled original action.
 The acceptance uses two explicit routine tests and main A before/after: four
 scripted provider sends, zero native/vendor/model/API requests. It does not
 prove an installed native adapter or production Cloud.
+
+
+## Progress between isolated runs
+
+The execution-bound MCP now advertises `save_progress` and `read_progress`.
+A note belongs to exactly one nondeleted routine in the current Bot, complete
+Project and conversation. `save_progress` requires an idempotency key and the
+entire `content` string; an explicitly empty string clears it. Missing or null
+content is refused. A repeated command returns its original receipt, while a
+changed payload under the same key conflicts. Saving a definition preserves its
+note and saving a note preserves the definition's schedule, instruction and
+native history. Neither operation starts a test run. Human routine listings
+expose the saved `progress` through their existing scoped read path.
+
+This follows CodyNC `9f67eb09084db61b3cca9c84a11bc03df9de29b7`,
+`host/src/routines/progress.rs`, `kept.rs` and
+`host/crates/memory/src/{tokens,check}.rs`: replace the whole note, clear on empty,
+refuse rather than truncate above 2,000 estimated tokens, and reject hidden
+characters, prompt-carrying links, planted instruction phrases and secret-like
+content. The estimate counts one token per CJK rune and one per four other
+runes, rounded up. These are deterministic checks, not proof that accepted text
+is trustworthy. A run receives the note as a JSON-quoted string explicitly
+labelled untrusted data, followed by the host's instructions for leaving its
+next stopping point. It is routine-local state, separate from long-term memory.
+
+Clawdline additionally records the memory revision that produced each note.
+A forget operation conservatively clears every routine note for that Bot in the
+same SQLite transaction as its memory tombstones and receipt, because the
+compacted note has no per-source attribution. It increments changed definition
+versions so an old human editor cannot restore the note. A failed transaction
+retains the entire previous state. An execution from before the forget boundary
+cannot save a replacement note; a stale note cannot be imported or committed
+into a newer memory state. The send boundary still uses `WithCurrent`, source
+revocation, the active execution fence and the existing unknown-effect barrier.
+
+The focused scripted HTTP/ACP/MCP path checks receipt replay and conflict,
+foreign routine refusal, rejected planted text, explicit clearing, replacement,
+actual prompt data, HTTP readback, and main A / routine B / main A isolation.
+SQLite checks cover failed-forget rollback, receipt replay without resurrection,
+restart and archive transfer. These local fixtures make zero vendor/model
+requests; installed-native and production Cloud qualification remain separate.
+Webhook/event triggers, follow-ups and execution retries are still pending.

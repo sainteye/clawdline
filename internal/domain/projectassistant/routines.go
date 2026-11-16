@@ -15,25 +15,28 @@ const (
 	MaxRoutineTimeoutSeconds       = 86400
 	MaxRoutineFinishedRuns         = 1000
 	MaxRoutineTriggers             = 20
+	MaxRoutineProgressTokens       = 2000
 )
 
 // Routine belongs to one source Bot, canonical Project and conversation.
 // Legacy interval rows keep their cadence when read or edited.
 type Routine struct {
-	ID              string           `json:"id"`
-	Key             BotKey           `json:"key"`
-	Project         ProjectScope     `json:"project"`
-	ConversationID  string           `json:"conversation_id"`
-	Name            string           `json:"name"`
-	Instruction     string           `json:"instruction"`
-	IntervalSeconds int64            `json:"interval_seconds"`
-	Triggers        []RoutineTrigger `json:"triggers,omitempty"`
-	NextRuns        []time.Time      `json:"next_runs,omitempty"`
-	TimeoutSeconds  int64            `json:"timeout_seconds"`
-	Enabled         bool             `json:"enabled"`
-	Deleted         bool             `json:"deleted"`
-	NextDue         time.Time        `json:"next_due"`
-	Version         int64            `json:"version"`
+	ID               string           `json:"id"`
+	Key              BotKey           `json:"key"`
+	Project          ProjectScope     `json:"project"`
+	ConversationID   string           `json:"conversation_id"`
+	Name             string           `json:"name"`
+	Instruction      string           `json:"instruction"`
+	IntervalSeconds  int64            `json:"interval_seconds"`
+	Triggers         []RoutineTrigger `json:"triggers,omitempty"`
+	NextRuns         []time.Time      `json:"next_runs,omitempty"`
+	TimeoutSeconds   int64            `json:"timeout_seconds"`
+	Enabled          bool             `json:"enabled"`
+	Deleted          bool             `json:"deleted"`
+	NextDue          time.Time        `json:"next_due"`
+	Progress         string           `json:"progress,omitempty"`
+	ProgressRevision int64            `json:"progress_revision,omitempty"`
+	Version          int64            `json:"version"`
 }
 
 type RoutineRun struct {
@@ -59,6 +62,12 @@ func ValidateRoutine(r Routine) error {
 	}
 	if strings.TrimSpace(r.Name) == "" || len(r.Name) > MaxRoutineNameBytes || strings.TrimSpace(r.Instruction) == "" || len(r.Instruction) > MaxRoutineInstructionBytes {
 		return &Failure{Code: Invalid, Field: "routine_text"}
+	}
+	if err := ValidateRoutineProgress(r.Progress); err != nil {
+		return err
+	}
+	if r.ProgressRevision < 0 || r.Progress != "" && r.ProgressRevision < 1 {
+		return &Failure{Code: Invalid, Field: "routine_progress_revision"}
 	}
 	if r.TimeoutSeconds < 1 || r.TimeoutSeconds > MaxRoutineTimeoutSeconds {
 		return &Failure{Code: Invalid, Field: "routine_interval_timeout"}

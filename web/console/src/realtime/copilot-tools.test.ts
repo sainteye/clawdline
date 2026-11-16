@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, asksToEndCall, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { SpokenSessions } from "./copilot-reports.ts"
 
@@ -189,7 +189,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -551,6 +551,37 @@ test("a choice that names no single option presses nothing", async () => {
   assert.equal(calls.some((c) => c.path.endsWith("/key")), false)
   const idle = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%2","session_label":"Prepare screenshots","choice":"1"}', deps)).output)
   assert.match(idle.error, /沒有在等問題的答案/)
+})
+
+test("get_call_status answers how long the call has lasted and what it has cost", async () => {
+  const { deps } = fakeMachine({})
+  Object.assign(deps, { callStatus: () => ({ engine: "live", model: "gpt-live-1", seconds: 125.4, usd: 0.10456, priced: true }) })
+  const out = JSON.parse((await runCopilotTool("get_call_status", "{}", deps)).output)
+  assert.equal(out.engine, "GPT-Live")
+  assert.equal(out.duration_seconds, 125)
+  assert.equal(out.minutes, 2)
+  assert.equal(out.and_seconds, 5)
+  assert.equal(out.cost_usd, 0.1046)
+  assert.equal(out.cost_is_a_floor, undefined)
+  const none = JSON.parse((await runCopilotTool("get_call_status", "{}", fakeMachine({}).deps)).output)
+  assert.ok(none.error, "a screen without the call's state says so instead of inventing figures")
+})
+
+test("end_call hangs up only when the person asked to end the call", async () => {
+  for (const words of ["我們這一次的對話已經結束了，可以關閉", "好，掛掉吧", "先這樣，結束通話", "OK, you can hang up now", "Let's end the call."])
+    assert.equal(asksToEndCall(words), true, words)
+  for (const words of ["把結帳改版那個 Session 關閉", "Close the Release 2.4 session", "它的工作結束了嗎", "幫我看一下最新狀況"])
+    assert.equal(asksToEndCall(words), false, words)
+  let ended = 0
+  const { deps } = fakeMachine({})
+  Object.assign(deps, { endCall: () => { ended++ }, heard: () => "把結帳改版那個 Session 關閉" })
+  const refused = JSON.parse((await runCopilotTool("end_call", '{"said":"結束通話"}', deps)).output)
+  assert.equal(refused.error, "voice_end_not_asked", "the person's own words decide, not the copilot's paraphrase")
+  assert.equal(ended, 0)
+  Object.assign(deps, { heard: () => "我們這一次的對話已經結束了，可以關閉" })
+  const ending = JSON.parse((await runCopilotTool("end_call", '{"said":"我們這一次的對話已經結束了，可以關閉"}', deps)).output)
+  assert.equal(ending.ending, true)
+  assert.equal(ended, 1)
 })
 
 test("spoken choices find their option", () => {

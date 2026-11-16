@@ -829,7 +829,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 			a.mu.Unlock()
 			return runtimeFailure(pa.OutcomeUnknown, "routine_run")
 		}
-		input.Text = d.Instruction
+		input.Text = routinePrompt(d, current)
 		run.Instruction = d.Instruction
 		run.TimeoutSeconds = d.TimeoutSeconds
 		routineRun = &run

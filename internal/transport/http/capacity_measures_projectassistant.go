@@ -102,6 +102,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		},
 		capacity.BotsErrorKindBytes:          pure,
 		capacity.BotsRoutineDefinitions:      unobserved,
+		capacity.BotsRoutineProgressTokens:   pure,
 		capacity.BotsRoutineTriggers:         pure,
 		capacity.BotsRoutineTickMilliseconds: pure,
 		capacity.BotsRoutinePending:          unobserved,

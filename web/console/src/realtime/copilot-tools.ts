@@ -116,6 +116,22 @@ export interface ToolDeps {
   /** This call's speed and answer length now, and a way to change them for this call and the next. */
   delivery?: () => { speed: string; brief: boolean }
   adjust?: (change: { speed?: string; brief?: boolean }) => Promise<{ saved: boolean }>
+  /** This call's own state: how it is carried, how long it has lasted and what it has cost so far. */
+  callStatus?: () => CallStatus
+  /** Ends this call once the copilot has said goodbye (`end_call`). */
+  endCall?: () => void
+}
+
+/** What `get_call_status` reads of the call in progress. */
+export interface CallStatus {
+  engine: 'realtime' | 'live'
+  model: string
+  /** Seconds since the call connected. */
+  seconds: number
+  /** What the call has cost so far, in US dollars, at the rates the cost line uses. */
+  usd: number
+  /** False when a response's model has no rate here: the dollars are then a floor. */
+  priced: boolean
 }
 
 export interface ToolResult {
@@ -207,6 +223,8 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - get_session_updates：某個 Session 從你上次跟使用者匯報它之後，新增的所有紀錄（使用者交代、它的回報與說明、它做了什麼、現在在等什麼）。使用者問「後來呢」「有什麼新進展」「從上次之後怎樣」「有什麼我該知道的」時用這個；沒填 session_id 就是正在討論的那個（使用者畫面上打開的 Session）。見【上次之後的新進展】。
 - get_session_notes：讀 Session 留給使用者的便條紙。
 - list_snippets、open_snippets、run_snippet：Session 的 Snippet（存好的常用文字）與 Playbook（存好的工作流程）。使用者要「打開 snippet／playbook 列表」就呼叫 open_snippets；要你「執行某某」就先用 list_snippets 找出它的完整名稱（依使用者說的意思自己判斷是哪一個，找不到就說找不到並唸兩三個最接近的），再講「要在『Session 名稱』執行『名稱』，對嗎？」，使用者說好才呼叫 run_snippet；使用者一句話已經講清楚 Session 和名稱的，照只確認一次的規則直接執行。
+- get_call_status：使用者問這通電話打多久了、花了多少錢、用的是哪個語音系統時呼叫，照查到的回答；時間用「幾分幾秒」，金額用美元、四捨五入到分（不到一分就說「不到一美分」）。不要自己估算。
+- end_call：使用者明確說要結束或掛斷這通電話（例如「我們這一次的對話已經結束了，可以關閉」「掛掉吧」「先這樣，掛了」）時呼叫，不必再確認；呼叫後只說一句很短的道別，電話會在你說完後自動掛斷。說的是關閉某個 Session、或只是在講某件事結束了，都不是要掛電話，不要呼叫。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - smart_rename_sessions：用 Clawdline 的「智慧命名」替一個或幾個 Session 重新取名（機器上的助理依它的對話內容取名）。見下面【智慧命名】。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
@@ -549,6 +567,22 @@ export const COPILOT_TOOLS = [
   },
   {
     type: 'function',
+    name: 'get_call_status',
+    description: '查這通電話自己的狀況：用的是哪個語音系統、已經打了多久（秒）、到目前為止花了多少錢（美元）。使用者問「打多久了」「花了多少錢」時呼叫。',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function',
+    name: 'end_call',
+    description: '結束這通電話：你說完一句道別後自動掛斷。只有使用者明確說要結束、關閉或掛斷這通電話時才呼叫。',
+    parameters: {
+      type: 'object',
+      properties: { said: { type: 'string', description: '使用者要求結束通話的那句原話，照他說的填' } },
+      required: ['said'],
+    },
+  },
+  {
+    type: 'function',
     name: 'smart_rename_sessions',
     description: '用 Clawdline 的「智慧命名」替 Session 重新取名：機器上的助理依每個 Session 的對話內容各取一個新名稱並直接套用，每個要幾秒。只有在你已經用名稱唸出要改哪幾個、使用者說好之後才呼叫，並帶 confirmed: true。',
     parameters: {
@@ -624,7 +658,7 @@ export const COPILOT_TOOLS = [
 ] as const
 
 /** Closed immediate read path. Changes stay owned by the durable executor. */
-const IMMEDIATE_READS = new Set(['get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
+const IMMEDIATE_READS = new Set(['get_call_status','get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
 export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
   return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
 }
@@ -633,7 +667,8 @@ export function immediateVoiceRead(name:string,args:Record<string,unknown>):bool
  * managed call does them at once. On 2026-11-13 「幫我開啟…那個 Session」 was
  * turned into planned work awaiting confirmation twice and never opened.
  */
-const IMMEDIATE_VIEW_ACTIONS = new Set(['open_session','open_snippets'])
+// Ending the call changes nothing on the machine either: it only hangs up this browser's call.
+const IMMEDIATE_VIEW_ACTIONS = new Set(['open_session','open_snippets','end_call'])
 export function immediateVoiceAction(name:string):boolean { return IMMEDIATE_VIEW_ACTIONS.has(name) }
 export const CALL_WORK_TOOLS = [
   ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)||IMMEDIATE_VIEW_ACTIONS.has(tool.name)),
@@ -2576,6 +2611,47 @@ async function setLength(deps: ToolDeps, logs: ToolLog[], brief: unknown): Promi
   return { brief, saved_for_next_calls: saved }
 }
 
+function callStatusOf(deps: ToolDeps, logs: ToolLog[]): unknown {
+  if (!deps.callStatus) return { error: '這個畫面讀不到通話的狀況' }
+  const s = deps.callStatus()
+  const seconds = Math.max(0, Math.round(s.seconds))
+  logs.push({ level: 'info', text: say(`Read the call's own status: ${seconds} s, US$${s.usd.toFixed(4)}`, `讀了這通電話的狀況：${seconds} 秒、US$${s.usd.toFixed(4)}`) })
+  return {
+    engine: s.engine === 'live' ? 'GPT-Live' : 'Realtime API', model: s.model,
+    duration_seconds: seconds, minutes: Math.floor(seconds / 60), and_seconds: seconds % 60,
+    cost_usd: Math.round(s.usd * 10000) / 10000,
+    ...(s.priced ? {} : { cost_is_a_floor: true }),
+    billing: s.engine === 'live' ? "GPT-Live is billed by the second, plus its backend model's tokens." : 'Realtime is billed by the tokens each answer uses.',
+  }
+}
+
+/**
+ * Whether a sentence asks to end the call itself: it names ending, closing
+ * or hanging up, and is not about closing a Session.
+ */
+export function asksToEndCall(text: string): boolean {
+  const t = text.trim()
+  const call = /(通話|通话|電話|电话|對話|对话|聊天|\bcall\b|\bconversation\b)/i
+  // "Close that Session" is close_session's work, not a goodbye.
+  if (/session|工作階段/i.test(t) && !call.test(t)) return false
+  if (/(掛斷|挂断|掛掉|挂掉|掛了|挂了|掛電話|挂电话|收線|收线|\bhang\s*up\b|\bend (?:the|this|our) (?:call|conversation)\b|\bclose (?:the|this) call\b)/i.test(t)) return true
+  // 「可以關閉」 closes the call; 「結束」 only with the call named beside it (「它的工作結束了嗎」 is a question).
+  if (/(關閉|关闭|關掉|关掉)/.test(t)) return true
+  return /(通話|通话|電話|电话|對話|对话|聊天).{0,12}(結束|结束)|(結束|结束).{0,4}(通話|通话|電話|电话|對話|对话|聊天)/.test(t)
+}
+
+function endCallTool(deps: ToolDeps, logs: ToolLog[], said: string): unknown {
+  if (!deps.endCall) return { error: '這個畫面不能由副駕駛掛斷通話' }
+  // The person's own words decide, not the copilot's paraphrase.
+  const words = (deps.heard?.() ?? '').trim() || said
+  if (!asksToEndCall(words)) {
+    return { error: 'voice_end_not_asked', heard: words, meaning: 'The person has not asked to end this call. Do not end it; if unsure, ask whether they want to hang up.' }
+  }
+  deps.endCall()
+  logs.push({ level: 'info', text: say('Ending the call after the goodbye', '說完道別就掛斷通話') })
+  return { ending: true, next: "Say one short goodbye in the person's language now. The call hangs up by itself when you finish; do not ask anything else." }
+}
+
 /**
  * The part of the configuration an in-call change sends: the instructions
  * rebuilt for the new answer length, and the playback rate. Never the voice,
@@ -2900,6 +2976,8 @@ export async function runCopilotTool(name: string, argsJson: string, deps: ToolD
     else if (name === 'run_snippet') result = await runSnippet(deps, logs, str(args.session_id), str(args.name), str(args.session_label), args.switch_confirmed === true)
     else if (name === 'set_speaking_speed') result = await setSpeed(deps, logs, str(args.speed))
     else if (name === 'set_answer_length') result = await setLength(deps, logs, args.brief)
+    else if (name === 'get_call_status') result = callStatusOf(deps, logs)
+    else if (name === 'end_call') result = endCallTool(deps, logs, str(args.said))
     else if (name === 'smart_rename_sessions') result = await smartRenameSessions(deps, logs, Array.isArray(args.sessions) ? args.sessions.map(str) : [], args.confirmed === true)
     else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true)
     else if (name === 'list_machines') result = await listMachines(deps, logs)

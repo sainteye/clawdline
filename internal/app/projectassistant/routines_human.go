@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"strings"
 	"time"
 )
 
@@ -88,6 +89,18 @@ func prepareRoutineMutation(f pa.Fence, q RoutineRequest, cmd pa.Command, defini
 		if err = pa.ValidateRoutine(d); err != nil {
 			return Mutation{}, err
 		}
+		m.Routine = &d
+		m.Receipt.ResourceID = d.ID
+	case "save_progress":
+		if !found {
+			return Mutation{}, runtimeFailure(pa.NotFound, "routine")
+		}
+		content := strings.TrimSpace(q.Content)
+		if err := pa.ValidateRoutineProgress(content); err != nil {
+			return Mutation{}, err
+		}
+		d.Progress = content
+		d.Version++
 		m.Routine = &d
 		m.Receipt.ResourceID = d.ID
 	case "enable", "delete":

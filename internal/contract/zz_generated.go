@@ -2158,13 +2158,14 @@ type CapacityUnit string
 const (
 	CapacityUnitBytes        CapacityUnit = "bytes"
 	CapacityUnitCharacters   CapacityUnit = "characters"
+	CapacityUnitTokens       CapacityUnit = "tokens"
 	CapacityUnitRows         CapacityUnit = "rows"
 	CapacityUnitSeconds      CapacityUnit = "seconds"
 	CapacityUnitMilliseconds CapacityUnit = "milliseconds"
 )
 
 // CapacityUnitValues is every value the contract allows, in contract order.
-var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds, CapacityUnitMilliseconds}
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitTokens, CapacityUnitRows, CapacityUnitSeconds, CapacityUnitMilliseconds}
 
 type CatalogError struct {
 	Code    string `json:"code"`
@@ -5426,15 +5427,19 @@ type ProjectAssistantRoutineActionRequest struct {
 }
 
 type ProjectAssistantRoutineDefinition struct {
-	ConversationID string                           `json:"conversation_id"`
-	Deleted        bool                             `json:"deleted"`
-	Enabled        bool                             `json:"enabled"`
-	ID             string                           `json:"id"`
-	Instruction    string                           `json:"instruction"`
-	Key            ProjectAssistantBotKey           `json:"key"`
-	Name           string                           `json:"name"`
-	NextDue        string                           `json:"next_due"`
-	NextRuns       []string                         `json:"next_runs"`
+	ConversationID string                 `json:"conversation_id"`
+	Deleted        bool                   `json:"deleted"`
+	Enabled        bool                   `json:"enabled"`
+	ID             string                 `json:"id"`
+	Instruction    string                 `json:"instruction"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	Name           string                 `json:"name"`
+	NextDue        string                 `json:"next_due"`
+	NextRuns       []string               `json:"next_runs"`
+
+	// Untrusted factual progress from previous runs. Empty after clearing or
+	// forgetting. Separate from long-term memory.
+	Progress       string                           `json:"progress,omitempty"`
 	Project        ProjectAssistantProjectScope     `json:"project"`
 	TimeoutSeconds int64                            `json:"timeout_seconds"`
 	Triggers       []ProjectAssistantRoutineTrigger `json:"triggers"`

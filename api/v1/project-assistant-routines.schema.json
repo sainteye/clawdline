@@ -78,6 +78,10 @@
         },
         "version": {
           "type": "integer"
+        },
+        "progress": {
+          "type": "string",
+          "description": "Untrusted factual progress from previous runs. Empty after clearing or forgetting. Separate from long-term memory."
         }
       },
       "required": [
