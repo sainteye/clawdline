@@ -862,6 +862,7 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 	})
 	t.Run("shared writer deadline", func(t *testing.T) {
 		f := newHostFixture(t)
+		cleanupBudget := f.o.Limits.CleanupTimeout
 		f.o.Limits.CleanupTimeout = 30 * time.Millisecond
 		f.start(t)
 		f.enable(t)
@@ -885,6 +886,9 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 		if e = tx.Rollback(); e != nil {
 			t.Fatal(e)
 		}
+		// The short deadline above injects a blocked writer failure. Recovery
+		// on this same host uses the fixture's normal durable cleanup budget.
+		f.h.o.Limits.CleanupTimeout = cleanupBudget
 		f.enable(t)
 		stored, e := f.h.store.Turn(context.Background(), b.Key, "queued-bot")
 		if e != nil || stored.State != pa.TurnCancelled {

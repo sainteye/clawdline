@@ -733,8 +733,17 @@ func TestNativeBackgroundTaskAndTheTurnItWakesAreShown(t *testing.T) {
 		last := p.Entries[len(p.Entries)-1]
 		return toolStatus(p, "native:"+native+":5:0") == "completed" && last.Role == "assistant" && last.Text == "Deployed and healthy."
 	})
+	// The final native row makes the turn idle before followBackground retires
+	// its watch under the next lock. Wait for both observable effects.
+	settled := func() bool {
+		idle := state() == session.StateIdle
+		c.mu.Lock()
+		watching := c.watch != nil
+		c.mu.Unlock()
+		return idle && !watching
+	}
 	deadline := time.Now().Add(3 * time.Second)
-	for state() != session.StateIdle && time.Now().Before(deadline) {
+	for !settled() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := state(); got != session.StateIdle {
