@@ -308,3 +308,72 @@ func TestBrowserToolsRefuseRoutineSlotsAndBotTurns(t *testing.T) {
 		t.Fatal("the person's own turn was refused")
 	}
 }
+
+// slowCleanup holds a session's native cleanup open, as a process that is
+// still exiting does. The runtime closes a session before it cancels the
+// turn's context, so this is the interval in which only the seal acts.
+type slowCleanup struct {
+	app.Provider
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *slowCleanup) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	s, err := p.Provider.Open(ctx, q, sink)
+	if s == nil {
+		return s, err
+	}
+	return &slowSession{ProviderSession: s, p: p}, err
+}
+
+type slowSession struct {
+	app.ProviderSession
+	p *slowCleanup
+}
+
+func (s *slowSession) Close(ctx context.Context) error {
+	close(s.p.started)
+	<-s.p.release
+	return s.ProviderSession.Close(ctx)
+}
+
+// While native cleanup is still running the turn's context is alive; the seal
+// alone must withdraw a command that is still waiting for the host, so the
+// host cannot pick it up during cleanup.
+func TestHostSealWithdrawsAQueuedCommandDuringNativeCleanup(t *testing.T) {
+	f, _, chrome := browserFixture(t)
+	slow := &slowCleanup{Provider: f.p, started: make(chan struct{}), release: make(chan struct{})}
+	f.o.Provider = func() (app.Provider, error) { return slow, nil }
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	if _, e := f.send(t, b, "one"); e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	first := fixtureReceive(t, f.p.sessions)
+	tools := browserToolsOf(t, first)
+	if r := chrome.run(t, tools, "open", `{"url":"http://127.0.0.1:9/page"}`); r.err != nil {
+		t.Fatal(r.err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := tools.BrowserCommand(context.Background(), app.BrowserCommand{Op: "click", Args: json.RawMessage(`{"label":"Pay"}`)})
+		done <- err
+	}()
+	fixtureEventually(t, func() bool { return chrome.b.Status().Pending == 1 })
+	first.reply <- app.PromptResult{FinalText: "Done"}
+	fixtureReceive(t, slow.started)
+	defer close(slow.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, browserbridge.Cancelled) {
+			t.Fatalf("err = %v, want %s", err, browserbridge.Cancelled)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the queued click outlived the closed session")
+	}
+	if n := chrome.serve(t); n != 0 || chrome.clicks[31] != 0 {
+		t.Fatalf("the host received %d commands during cleanup; clicks=%d", n, chrome.clicks[31])
+	}
+}
