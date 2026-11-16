@@ -145,3 +145,31 @@ Run `plugins/labels-time.acceptance.mjs` with existing `PLAYWRIGHT_MODULE` and
 `PLUGIN_ARTIFACTS`. `BEFORE_ARCHIVES` may point to retained `orrery-before.zip`
 and `departures-before.zip` to reproduce the original overlap and blank-time
 failures without reverting the working tree. No real Session data is required.
+
+## Raster scene interaction in 0.2.0
+
+Kaiju follows the original idle-in-roster rule and original two-to-four stand
+points per building. Overflow within a Project uses explicit casts rather than
+stacking every Session at the same points. The city keeps the original plate,
+building layers, depth and damage metaphor; reported completion still represents
+ruins, never accepted work or actual project damage. Building selection and the
+Project strip expose all Project Sessions and cast controls, including Sessions
+not currently on stage. The existing district navigation still reaches every
+Project after the first eight.
+
+Codecraft restores the original left command panel and minimap, with the village
+on the right at the original artwork scale. It keeps terrain foreground occlusion
+for heroes, while selection
+names and status annotations stay above terrain. The selected title is framed
+inside the visible scene; attention/completion targets avoid each other and the
+HUD, retain original marker art, and show counts with an explicit chooser when
+there is no free room. Full Unicode names remain available in the register and
+selection detail. Dense marker counts do not imply that work has been accepted.
+
+Both ports keep desktop stage height independent of the roster. A phone selection
+opens a focus-contained native dialog with the complete title, freshness and Open
+Session action; closing it restores the detail section and keeps the selection.
+No new runtime capability or automatic navigation is introduced. Real browser
+regressions cover a single Project with nine active and two idle/unknown readings,
+256 attention readings, marker geometry and phone action visibility in Chromium
+and WebKit. These fixtures do not replace physical-phone acceptance.

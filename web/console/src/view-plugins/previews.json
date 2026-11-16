@@ -102,41 +102,41 @@
   {
     "id": "com.clawdline.session-codecraft",
     "language": "en",
-    "src": "/view-plugins/previews/session-codecraft-en-e7ef34df8d2a.webp",
+    "src": "/view-plugins/previews/session-codecraft-en-e235ba4e8fa6.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
-    "sha256": "e7ef34df8d2aacb41fe002bdd9242ed07a1059c8983220f11e956bd3df0a9762"
+    "packageVersion": "0.2.0",
+    "packageDigest": "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c",
+    "sha256": "e235ba4e8fa6f4200e73017de8e2f6a81e7a4bfa651ae14f234a38c9de39c685"
   },
   {
     "id": "com.clawdline.session-codecraft",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-codecraft-zh-Hant-4a8c6464a416.webp",
+    "src": "/view-plugins/previews/session-codecraft-zh-Hant-92a82c48c998.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
-    "sha256": "4a8c6464a41620794efc136290097c39480b69e609324b4914173df3200b7d61"
+    "packageVersion": "0.2.0",
+    "packageDigest": "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c",
+    "sha256": "92a82c48c9981815632f20f8bab4ebad457b671fd9dc134b11aa10d7138409d0"
   },
   {
     "id": "com.clawdline.session-kaiju",
     "language": "en",
-    "src": "/view-plugins/previews/session-kaiju-en-1ec5def63b52.webp",
+    "src": "/view-plugins/previews/session-kaiju-en-087153651d0d.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2",
-    "sha256": "1ec5def63b52dd340e569e99ab63f823f060a95e7ace6d846df539972d9568b2"
+    "packageVersion": "0.2.0",
+    "packageDigest": "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
+    "sha256": "087153651d0d0a34de8539188e2dcb30b4a84414afca655ec2ebd9be2f9c5afd"
   },
   {
     "id": "com.clawdline.session-kaiju",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-kaiju-zh-Hant-68493248ab0f.webp",
+    "src": "/view-plugins/previews/session-kaiju-zh-Hant-f3c7375ddc7f.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2",
-    "sha256": "68493248ab0f77f86e006cc22d121406d632c9f90cca71df13771aee339f1475"
+    "packageVersion": "0.2.0",
+    "packageDigest": "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
+    "sha256": "f3c7375ddc7f6b30056c176544565c17350f0e253ac271fd5a397aae79998edd"
   }
 ]

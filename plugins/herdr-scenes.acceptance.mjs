@@ -22,31 +22,77 @@ const server=createServer((req,res)=>{const u=new URL(req.url,'http://local');co
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,pw=await import(pathToFileURL(pwPath).href),reports=[]
 const slugs=(process.env.SCENE_VIEWS||'codecraft,kaiju').split(','),engines=(process.env.SCENE_ENGINES||'chromium,webkit').split(','),widths=(process.env.SCENE_WIDTHS||'1440,390').split(',').map(Number)
 try{for(const slug of slugs)for(const engine of engines)for(const width of widths){
- const lang=width===390?'zh-Hant':'en',zh=lang!=='en',browser=await pw[engine].launch({headless:true}),page=await browser.newPage({viewport:{width,height:1000},reducedMotion:'reduce'}),errors=[],requests=[]
+ const lang=width===390?'zh-Hant':'en',zh=lang!=='en',browser=await pw[engine].launch({headless:true}),page=await browser.newPage({viewport:{width,height:width===390?720:1000},reducedMotion:'reduce'}),errors=[],requests=[]
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!r.url().startsWith(origin)&&!r.url().startsWith('data:'))requests.push(r.url())})
  const prefix=slug+'-'+engine+'-'+width
  try{
   await page.goto(origin+'/?lang='+lang);await page.locator('#manager').click();await page.locator('input[type=file]:not([disabled])').waitFor()
-  await page.locator('input[type=file]').setInputFiles({name:slug+'.zip',mimeType:'application/zip',buffer:await readFile(root+'web/console/public/view-plugins/session-'+slug+'.zip')})
+  await page.locator('input[type=file]').setInputFiles({name:slug+'.zip',mimeType:'application/zip',buffer:await readFile((process.env.SCENE_PACKAGE_ROOT||root+'web/console/public/view-plugins/')+'session-'+slug+'.zip')})
   await page.getByRole('button',{name:zh?'安裝套件':'Install package',exact:true}).click()
   const name=slug==='codecraft'?(zh?'奇幻村莊':'World of Codecraft'):(zh?'怪獸城市':'Kaiju City')
   await page.locator('.vp-installed').filter({hasText:name}).getByRole('button',{name:zh?'開啟':'Open',exact:true}).click()
   const f=page.frameLocator('iframe'),body=f.locator('body');await f.locator('body[data-art-ready=true]').waitFor({timeout:30000});await f.locator('.row').nth(9).waitFor()
+  const dismiss=async()=>{if(await f.locator('#selection[open]').count())await f.locator('#dismiss-selection').click()}
+  const selectRow=async title=>{await dismiss();await f.locator('.row').filter({hasText:title}).click()}
+  if(process.env.SCENE_FIT_ONLY){
+   await page.evaluate(slug=>{fixture.rows=Array.from({length:11},(_,i)=>({key:'crowd-'+i,title:'Crowded Session '+i+' 星圖 Ω — a complete descriptive title',project:{key:'one',label:'One Project'},workState:i<9?(slug==='kaiju'?'working':'waiting_you'):i===9?'ready':'unknown',freshness:'fresh'}));fixture.change()},slug)
+   await f.locator('.row').nth(10).waitFor()
+   if(slug==='kaiju'){
+    await page.waitForTimeout(100)
+    assert.equal(Number(await f.locator('#scene').getAttribute('data-characters')),2,'Only the original two standing points appear for this Project; overflow stays reachable')
+    await f.locator('.project-marker').getByText('One Project',{exact:false}).click()
+    assert.equal(await f.locator('.project-member').count(),11)
+    await f.getByRole('button',{name:zh?'下一批怪獸':'Next monsters',exact:true}).click()
+    assert.match(await f.locator('.cast-controls p').innerText(),/3–4 \/ 9/)
+    await f.locator('.project-member').filter({hasText:'Crowded Session 8'}).click()
+    assert.match(await f.locator('.cast-controls p').innerText(),/9–9 \/ 9/)
+    await page.waitForTimeout(100);assert.equal(Number(await f.locator('#scene').getAttribute('data-characters')),1)
+
+   }else{
+    await selectRow('Crowded Session 8')
+   }
+   if(slug==='codecraft')assert.equal(await f.locator('#scene-label').isVisible(),true,'The selected full name has a readable foreground label')
+   if(width===390){
+    const rect=await f.locator('#open-session').evaluate(e=>{const b=e.getBoundingClientRect();return{top:b.top,bottom:b.bottom,height:innerHeight}})
+    assert.ok(rect.top>=0&&rect.bottom<=rect.height,'A phone selection exposes its Open Session action inside the visible frame')
+    await page.screenshot({path:output+'/'+prefix+'-selection.png',fullPage:true})
+    await f.locator('#dismiss-selection').click()
+   }
+   if(slug==='codecraft'){
+    await f.locator('#scene-label').waitFor({state:'visible'})
+    const label=await f.locator('#scene-label').evaluate(e=>{const b=e.getBoundingClientRect(),v=document.querySelector('.viewport').getBoundingClientRect();return{text:e.textContent,left:b.left,right:b.right,top:b.top,bottom:b.bottom,v:{left:v.left,right:v.right,top:v.top,bottom:v.bottom}}})
+    assert.match(label.text,/Crowded Session 8.*星圖 Ω/)
+    assert.ok(label.left>=label.v.left&&label.right<=label.v.right&&label.top>=label.v.top&&label.bottom<=label.v.bottom,'Selected name stays inside the village viewport')
+    assert.ok(await f.locator('.status-marker').count()>0,'Attention markers remain visible')
+    const boxes=await f.locator('.status-marker').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}}))
+    for(let i=0;i<boxes.length;i++)for(let j=0;j<i;j++){const a=boxes[i],b=boxes[j];assert.ok(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y,'Status labels do not cover each other')}
+   }
+   if(slug==='codecraft'){
+    await page.evaluate(()=>{fixture.rows=Array.from({length:256},(_,i)=>({key:'notice-'+i,title:'Attention Session '+i+' 完整名稱',project:{key:'dense',label:'Dense Project'},workState:'waiting_you',freshness:'fresh'}));fixture.change()})
+    await f.locator('.row').nth(255).waitFor();await selectRow('Attention Session 128 完整名稱');await dismiss();await f.locator('#scene').scrollIntoViewIfNeeded();await page.waitForTimeout(100)
+    const geometry=await f.locator('.status-marker').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}}))
+    assert.ok(geometry.length>0)
+    for(let i=0;i<geometry.length;i++)for(let j=0;j<i;j++){const a=geometry[i],b=geometry[j];assert.ok(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y,'Dense attention markers remain disjoint: '+JSON.stringify({a,b}))}
+    await f.locator('.status-marker').first().click();assert.ok(await f.locator('#selection[open]').count()||await f.locator('#open-session').count());await dismiss()
+   }
+   await page.screenshot({path:output+'/'+prefix+'-fit.png',fullPage:true})
+   reports.push({slug,engine,width,passed:true,cases:['single-project-density','visible-phone-selection','world-name-framing','nonoverlapping-status-markers']});console.log(prefix+' fit passed');continue
+  }
   assert.equal(await page.locator('iframe').getAttribute('sandbox'),'allow-scripts')
   assert.equal(await f.locator('.row').count(),10);assert.equal(await f.locator('#legend span').count(),8)
   assert.equal(await body.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true)
   assert.equal(await f.locator('.row').evaluateAll(es=>es.every(e=>e.getBoundingClientRect().height>=44)),true)
   const decoded=await body.evaluate(()=>[...document.images].filter(i=>!i.complete||i.naturalWidth===0).length);assert.equal(decoded,0)
-  await f.locator('.row').filter({hasText:'Package ready for review'}).click()
+  await selectRow('Package ready for review')
   assert.match(await f.locator('#detail').innerText(),zh?/不代表已驗收/:/not acceptance/)
   assert.deepEqual(await page.evaluate(()=>fixture.navigations),[])
-  await f.locator('.row').filter({hasText:'<img src=x'}).click();assert.equal(await f.locator('#open-session').isDisabled(),true)
+  await selectRow('<img src=x');assert.equal(await f.locator('#open-session').isDisabled(),true)
   assert.equal(await f.locator('img[src=x]').count(),0)
-  await f.locator('.row').filter({hasText:'Unknown reading'}).click();assert.equal(await f.locator('#open-session').isDisabled(),true)
-  await f.locator('.row').filter({hasText:'Freshness unknown'}).click();assert.equal(await f.locator('#open-session').isDisabled(),true)
-  await f.locator('.row').filter({hasText:'Build the village'}).click();assert.equal(await f.locator('#open-session').isDisabled(),false)
-  await f.locator('#lighting').click();await page.waitForTimeout(150)
-  const canvas=f.locator('#scene');assert.ok(Number(await canvas.getAttribute('data-characters'))===10)
+  await selectRow('Unknown reading');assert.equal(await f.locator('#open-session').isDisabled(),true)
+  await selectRow('Freshness unknown');assert.equal(await f.locator('#open-session').isDisabled(),true)
+  await selectRow('Build the village');assert.equal(await f.locator('#open-session').isDisabled(),false)
+  await dismiss();await f.locator('#lighting').click();await page.waitForTimeout(150)
+  const canvas=f.locator('#scene');assert.ok(Number(await canvas.getAttribute('data-characters'))===(slug==='kaiju'?6:10))
   await page.screenshot({path:output+'/'+prefix+'-night.png',fullPage:true})
   await f.locator('#lighting').click();await page.waitForTimeout(150)
   await page.screenshot({path:output+'/'+prefix+'-day.png',fullPage:true})
@@ -64,11 +110,11 @@ try{for(const slug of slugs)for(const engine of engines)for(const width of width
   await page.emulateMedia({reducedMotion:'reduce'})
   await page.evaluate(()=>{fixture.saved=[...fixture.rows];fixture.rows=Array.from({length:256},(_,i)=>({key:'dense-'+i,title:'Complete Unicode Session '+i+' 星圖 Ω',project:{key:'project-'+i%12,label:'District '+i%12},workState:i%4?'working':'waiting_you',freshness:'fresh'}));fixture.change()})
   await f.locator('.row').nth(255).waitFor();assert.equal(await f.locator('.row').count(),256)
-  if(slug==='kaiju'){assert.equal(await f.locator('#next').isDisabled(),false);await f.locator('#next').click();assert.match(await f.locator('#district-label').innerText(),/2 \/ 2/);assert.equal(await f.locator('#next').isDisabled(),true);await f.locator('.row').filter({hasText:'Complete Unicode Session 11 星圖 Ω'}).click();assert.match(await f.locator('#district-label').innerText(),/2 \/ 2/)}
-  await page.screenshot({path:output+'/'+prefix+'-dense.png',fullPage:true})
+  if(slug==='kaiju'){assert.equal(await f.locator('#next').isDisabled(),false);await f.locator('#next').click();assert.match(await f.locator('#district-label').innerText(),/2 \/ 2/);assert.equal(await f.locator('#next').isDisabled(),true);await selectRow('Complete Unicode Session 11 星圖 Ω');assert.match(await f.locator('#district-label').innerText(),/2 \/ 2/)}
+  await dismiss();await page.screenshot({path:output+'/'+prefix+'-dense.png',fullPage:true})
   assert.equal(await body.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true)
   await page.evaluate(()=>{fixture.rows=[];fixture.change()});await f.locator('#empty').waitFor();assert.equal(await f.locator('.row').count(),0)
-  await page.evaluate(()=>{fixture.rows=fixture.saved;fixture.change()});await f.locator('.row').nth(9).waitFor();await f.locator('.row').filter({hasText:'Build the village'}).click();await f.locator('#open-session').click()
+  await page.evaluate(()=>{fixture.rows=fixture.saved;fixture.change()});await f.locator('.row').nth(9).waitFor();await selectRow('Build the village');await f.locator('#open-session').click()
   await page.locator('.vp-host').waitFor({state:'hidden'});await page.waitForFunction(()=>fixture.navigations.length===1);assert.deepEqual(await page.evaluate(()=>fixture.navigations),['s0'])
   assert.deepEqual(errors,[]);assert.deepEqual(requests,[])
   reports.push({slug,engine,width,lang,passed:true,cases:['production-import','original-art-loaded','all-eight-states','unicode-text-safety','stale-unknown-navigation-refusal','selection-before-navigation','day-night','list-parity','animated-frames','still','reduced','hidden','disconnect-reconnect','256-sessions','project-overflow','empty-replacement','explicit-navigation','no-network','no-page-overflow']});console.log(prefix+' passed')

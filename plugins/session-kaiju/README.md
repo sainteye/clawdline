@@ -4,7 +4,11 @@ A browser port of Jiqize's original isometric city. Original plates, eight
 building slots and damage layers, all eight monsters and five poses, day/night
 assets, depth ordering, dust, sirens and status-dependent motion are retained.
 Projects beyond eight appear in further districts rather than disappearing.
-All Sessions, including idle and unknown readings, remain selectable in the
+Idle and unknown states stay in the register, following the original city display.
+Each building uses its original two to four stand points. Additional active
+monsters appear in explicit batches; selecting any registered Session brings its
+batch into view. Building hits and the Project strip expose the complete Project
+roster. All Sessions remain selectable in the
 complete searchable register. Selection does not navigate; Open Session does.
 
 Building wear uses optional trusted working-turn timestamps only. Missing times
@@ -27,3 +31,8 @@ reduced motion, hidden host and disconnected state stop movement. There are no
 external resources or native commands. Installation is explicit and browser-local.
 
 See [PROVENANCE.md](PROVENANCE.md).
+
+On narrow screens, selecting a monster or roster entry opens an accessible detail
+sheet with the full title, reading status and explicit Open Session action. The
+scene fits its viewport independently of roster height. Selection never opens a
+Session, sends a message or accepts reported completion by itself.

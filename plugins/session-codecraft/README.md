@@ -30,3 +30,12 @@ two-file STORE format, manifest/cover validation, CSP, scoped Session permission
 and all bridge bounds remain enforced. Installation is per browser and explicit.
 
 See [PROVENANCE.md](PROVENANCE.md) and [the shared source-port record](../../docs/plugins/herdr-source-ports.md).
+
+In 0.2.0, the left command panel and minimap match the original composition.
+The selected full title is a readable foreground control inside the
+village viewport, outside the building cut-out layers. Original attention and
+completion markers use separate non-overlapping touch targets; displaced markers
+have leaders and crowded readings share an explicit count and selection list.
+The complete title remains in the register and detail sheet. Phone selections
+show the full title and explicit Open Session action in a modal sheet. The
+landscape and original hero depth occlusion remain unchanged.
