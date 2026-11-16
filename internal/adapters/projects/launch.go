@@ -242,6 +242,8 @@ func codexDeveloperArgs(instructions ...string) []string {
 
 const codexNoteInstruction = "When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Codex's non-blocking request_user_input_async, also create one answer Note with the same question and complete replies so the person can return to it later. A blocking question prompt already waits for an answer and needs no duplicate Note. Never act on a suggested or preselected option before the person sends an answer."
 
+const antigravityNoteInstruction = "When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Gemini (Antigravity), when asking multiple-choice questions or offering concrete options, create one answer Note with the question and complete suggested replies (with label and draft for each option) using `clawdline note create` so the person can choose from the Note buttons. Do not rely on plain chat text or the native ask_question tool alone. Never act on a suggested or preselected option before the person sends an answer."
+
 // TOMLString is value as a TOML basic string: quoted, with the backslash, the
 // double quote and every control character escaped.
 func TOMLString(value string) string {

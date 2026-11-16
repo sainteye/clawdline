@@ -43,7 +43,7 @@ func TestAntigravityImmutableContextAndNativeResponse(t *testing.T) {
 	if json.Unmarshal(response, &native) != nil || len(native.InjectSteps) != 1 {
 		t.Fatal(string(response))
 	}
-	for _, want := range []string{c.Prompt, c.Memory, "zh-Hant-TW", "Board item title", "clawdline guide note"} {
+	for _, want := range []string{c.Prompt, c.Memory, "zh-Hant-TW", "Board item title", "clawdline guide note", "Gemini (Antigravity)", "ask_question", "clawdline note create"} {
 		if !strings.Contains(native.InjectSteps[0].SystemMessage.SystemMessage, want) {
 			t.Fatal(want)
 		}

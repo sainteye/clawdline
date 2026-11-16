@@ -139,7 +139,7 @@ func (c AntigravityContext) Instructions() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	parts = append(parts, codexNoteInstruction)
+	parts = append(parts, antigravityNoteInstruction)
 	return strings.Join(parts, "\n\n")
 }
 
