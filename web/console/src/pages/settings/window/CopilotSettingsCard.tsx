@@ -199,15 +199,13 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <h4>{nextWord("copilotSourceTools")}</h4>
         <div className="sw-copilot-tools-nav-box">
           <p className="sw-hint">{nextWord("voiceToolsCardJumpHint")}</p>
-          <button
-            type="button"
-            className="sw-copilot-tools-nav-btn"
+          <Chip
             onClick={() => {
               window.location.hash = "#page=voice-assistant&tab=tools"
             }}
           >
             {nextWord("voiceToolsCardJump", { count: String(COPILOT_TOOLS.length) })}
-          </button>
+          </Chip>
         </div>
       </details>
 

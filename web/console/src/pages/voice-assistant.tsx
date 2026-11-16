@@ -45,7 +45,7 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
         </button>
       </header>
 
-      <div className="voice-work-tabs" role="tablist" aria-label={W('voiceWorkTitle')}>
+      <div className="voice-work-tabs settings-tabs" role="tablist" aria-label={W('voiceWorkTitle')}>
         <button
           type="button"
           role="tab"
@@ -55,8 +55,7 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
           className={`voice-work-tab-btn ${tab === 'settings' ? 'active' : ''}`}
           onClick={() => switchTab('settings')}
         >
-          <span>⚙️</span>
-          <span>{W('voiceTabSettings')}</span>
+          {W('voiceTabSettings')}
         </button>
         <button
           type="button"
@@ -67,9 +66,8 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
           className={`voice-work-tab-btn ${tab === 'tools' ? 'active' : ''}`}
           onClick={() => switchTab('tools')}
         >
-          <span>⚡</span>
           <span>{W('voiceTabTools')}</span>
-          <span className="voice-work-tab-badge">27</span>
+          <span className="voice-work-tab-count">27</span>
         </button>
       </div>
 
