@@ -41,7 +41,7 @@ const KEEP = arg('keep')
 const PHONE = process.argv.includes('--phone')
 const LIVE = process.argv.includes('--live')
 // Which LIVE_SCRIPTS a GPT-Live take follows.
-const SCRIPT = arg('script', 'auto')
+const SCRIPT = arg('script', 'tour')
 if (LIVE && !LIVE_SCRIPTS[SCRIPT]) { console.error(`no script ${SCRIPT}; have ${Object.keys(LIVE_SCRIPTS).join(', ')}`); process.exit(2) }
 // The page as it is drawn, the screencast's largest frame, and the film's size.
 // Chrome's screencast sends frames in CSS pixels whatever the emulated device
@@ -367,6 +367,12 @@ if (LIVE) {
   // The person opens Sessions from the list with the pointer or a finger; the
   // copilot tells each one's state without being asked (a call that follows the screen).
   const openRow = async (id) => {
+    // A phone shows one Session at a time: go back to the list first.
+    if (PHONE && !(await run(`[...document.querySelectorAll('li.row')].some((li) => li.offsetParent)`))) {
+      await click('#back')
+      await until(`[...document.querySelectorAll('li.row')].some((li) => li.offsetParent)`, 10000)
+      await sleep(600)
+    }
     await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
     await click(`[data-demo-row="${id}"]`)
     await run('window.__demo.mark()')
