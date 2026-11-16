@@ -55,6 +55,13 @@ func prepareRoutineMutation(f pa.Fence, q RoutineRequest, cmd pa.Command, defini
 	}
 	m := Mutation{Command: cmd, Receipt: pa.Receipt{State: pa.EffectDelivered}}
 	switch q.Action {
+	case "rotate_hook":
+		if !found || !d.HasHook() {
+			return Mutation{}, runtimeFailure(pa.NotFound, "routine_hook")
+		}
+		d.Version++
+		m.Routine, m.RotateRoutineHook = &d, true
+		m.Receipt.ResourceID = d.ID
 	case "save":
 		if !found {
 			d = pa.Routine{ID: id(), Key: f.Key, Project: f.Project, ConversationID: f.ConversationID, Enabled: true}
@@ -103,11 +110,21 @@ func prepareRoutineMutation(f pa.Fence, q RoutineRequest, cmd pa.Command, defini
 		d.Version++
 		m.Routine = &d
 		m.Receipt.ResourceID = d.ID
-	case "enable", "delete":
+	case "enable", "delete", "cancel_follow_up":
 		if !found {
 			return Mutation{}, runtimeFailure(pa.NotFound, "routine")
 		}
-		if q.Action == "delete" {
+		if q.Action == "cancel_follow_up" && !d.FollowUp {
+			return Mutation{}, runtimeFailure(pa.NotFound, "follow_up")
+		}
+		if q.Action == "cancel_follow_up" {
+			for _, run := range runs {
+				if run.RoutineID == d.ID && run.State != pa.TurnQueued {
+					return Mutation{}, runtimeFailure(pa.NotFound, "follow_up")
+				}
+			}
+		}
+		if q.Action == "delete" || q.Action == "cancel_follow_up" {
 			d.Deleted = true
 			d.Enabled = false
 		} else {

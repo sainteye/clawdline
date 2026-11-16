@@ -70,6 +70,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.fallback_agents` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.follow_up_chain` | 24 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.follow_up_pending` | 10 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.follow_up_seconds` | 2592000 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.follow_up_tokens` | 500 | `tokens` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.group_history_lines` | 24 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_late_turns` | 3 | `rows` | `coalesce` | `diagnostics` | — |
@@ -110,15 +114,25 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.roster_subs` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.roster_wakes` | 1 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.routine_definitions` | 1000 | `rows` | `refuse` | `diagnostics, health, sender` | — |
+| `bots.routine_delivery_id_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_event_filters` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_event_name_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_filter_key_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_filter_value_bytes` | 4000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_finished_runs` | 1000 | `rows` | `evict_oldest` | `diagnostics, sender` | — |
+| `bots.routine_github_event_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_hook_secret_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_instruction_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_interval_seconds` | 31536000 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_name_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_pending` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_progress_tokens` | 2000 | `tokens` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_retry_attempts` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_retry_delay_seconds` | 900 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_tick_ms` | 1000 | `milliseconds` | `coalesce` | `diagnostics` | — |
 | `bots.routine_timeout_seconds` | 86400 | `seconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.routine_triggers` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_webhook_body_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.rpc_ms` | 120000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |

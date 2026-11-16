@@ -382,7 +382,8 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 			if (capture || switching) && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
 				return failure(pa.ContextStale, "turn_capture")
 			}
-			if old.State != t.State && !pa.CanTransition(old.State, t.State) {
+			retryNotStarted := m.RoutineNotStarted && m.RoutineRun != nil && m.RoutineRun.ID == t.RoutineRunID && old.State == pa.TurnRunning && t.State == pa.TurnQueued && m.RoutineRun.NotStartedProved && m.RoutineRun.State == pa.TurnQueued && len(old.Attempts) == 0
+			if old.State != t.State && !pa.CanTransition(old.State, t.State) && !retryNotStarted {
 				return failure(pa.StaleVersion, "turn_state")
 			}
 			// The running turn may end while the agent answers a steer, so a
@@ -960,7 +961,7 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return failure(pa.NotFound, "bot")
 	}
-	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs"} {
+	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
 			return err
 		}

@@ -82,22 +82,24 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
-	AgentRest       *pa.AgentRest
-	ClearAgentRest  pa.Agent
-	Routine         *pa.Routine
-	RoutineRun      *pa.RoutineRun
-	Command         pa.Command
-	ExpectedVersion int64
-	Receipt         pa.Receipt
-	Bot             *pa.Bot
-	Conversation    *pa.Conversation
-	Turn            *pa.Turn
-	Binding         *pa.ExecutionBinding
-	Messages        []pa.Message
-	Permissions     []pa.PermissionOffer
-	WorkLinks       []pa.WorkLink
-	Memory          *pa.MemoryRevision
-	Events          []pa.Event
+	AgentRest         *pa.AgentRest
+	ClearAgentRest    pa.Agent
+	Routine           *pa.Routine
+	RotateRoutineHook bool
+	RoutineNotStarted bool
+	RoutineRun        *pa.RoutineRun
+	Command           pa.Command
+	ExpectedVersion   int64
+	Receipt           pa.Receipt
+	Bot               *pa.Bot
+	Conversation      *pa.Conversation
+	Turn              *pa.Turn
+	Binding           *pa.ExecutionBinding
+	Messages          []pa.Message
+	Permissions       []pa.PermissionOffer
+	WorkLinks         []pa.WorkLink
+	Memory            *pa.MemoryRevision
+	Events            []pa.Event
 }
 type Repository interface {
 	Bot(context.Context, pa.BotKey) (pa.Bot, error)

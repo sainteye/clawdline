@@ -14,6 +14,15 @@ const grant=():AssistantGrant=>({accountKey:"account",readerID:"reader",machineI
 const sourceStatus=()=>({machine_id:key.machine_id,state:"online",access:"interactive",fresh:true,readable:true,writable:true,observed_at:"",capabilities:[]})
 const page=()=>({contract_version:"project-assistants.v1",source:sourceStatus(),fence,definitions:[],runs:[],next_cursor:""})
 
+test("routine hook relay keeps its captured source and stable command",()=>{
+ const request={command:command(key,"edit","hook-key"),fence,id:"synthetic-routine",expected_revision:1,rotate:true}
+ const routed=assistantRelayRequest(`/v1/project-assistants/${encodeURIComponent(key.bot_id)}/routines/synthetic-routine/hook`,{method:"POST",headers:{"Idempotency-Key":"hook-key"},body:JSON.stringify(request)})
+ assert.equal(routed.word,"project-assistants.routine-hook")
+ assert.equal(routed.id,"hook-key")
+ assert.deepEqual(routed.fields,request)
+ assert.throws(()=>assistantRelayRequest(`/v1/project-assistants/${encodeURIComponent(key.bot_id)}/routines/other/hook`,{method:"POST",headers:{"Idempotency-Key":"hook-key"},body:JSON.stringify(request)}),e=>errorCode(e)==="pa_invalid")
+})
+
 test("routine management negotiates API73 before transport and keeps captured Project scope",async()=>{
   let calls=0;const old={...grant(),apiLevel:72},source=new ProjectAssistantSourceClient(old,async()=>{calls++;return Response.json(page())},()=>old)
   assert.equal(source.canRoutines(),false)

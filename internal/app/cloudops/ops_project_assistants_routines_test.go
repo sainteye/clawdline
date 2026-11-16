@@ -11,7 +11,7 @@ import (
 func TestHumanRoutineCloudWordsPreserveScopeCommandsAndCeilings(t *testing.T) {
 	// The vocabulary examples are executable requests, not hand-maintained
 	// copies of their expected decoder source.
-	for _, word := range []string{"routines", "routine-runs", "routine-save", "routine-enabled", "routine-delete", "routine-test"} {
+	for _, word := range []string{"routines", "routine-runs", "routine-save", "routine-enabled", "routine-delete", "routine-test", "routine-hook"} {
 		t.Run(word, func(t *testing.T) {
 			var b body
 			operations, err := cloudvocab.Operations()

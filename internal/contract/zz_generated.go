@@ -5430,6 +5430,8 @@ type ProjectAssistantRoutineDefinition struct {
 	ConversationID string                 `json:"conversation_id"`
 	Deleted        bool                   `json:"deleted"`
 	Enabled        bool                   `json:"enabled"`
+	FollowUp       bool                   `json:"follow_up,omitempty"`
+	FollowUpChain  int64                  `json:"follow_up_chain,omitempty"`
 	ID             string                 `json:"id"`
 	Instruction    string                 `json:"instruction"`
 	Key            ProjectAssistantBotKey `json:"key"`
@@ -5454,6 +5456,25 @@ type ProjectAssistantRoutineEnabledRequest struct {
 	ID               string                  `json:"id"`
 }
 
+type ProjectAssistantRoutineEventFilter struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type ProjectAssistantRoutineHookRequest struct {
+	Command          ProjectAssistantCommand `json:"command"`
+	ExpectedRevision int64                   `json:"expected_revision"`
+	Fence            ProjectAssistantFence   `json:"fence"`
+	ID               string                  `json:"id"`
+	Rotate           bool                    `json:"rotate"`
+}
+
+type ProjectAssistantRoutineHookResponse struct {
+	ContractVersion string `json:"contract_version"`
+	Key             string `json:"key"`
+	URL             string `json:"url"`
+}
+
 type ProjectAssistantRoutineListRequest struct {
 	ConversationID string                       `json:"conversation_id"`
 	Cursor         string                       `json:"cursor"`
@@ -5474,10 +5495,13 @@ type ProjectAssistantRoutineListResponse struct {
 
 type ProjectAssistantRoutineRun struct {
 	CreatedAt  string                    `json:"created_at"`
+	DeliveryID string                    `json:"delivery_id,omitempty"`
 	Failure    *ProjectAssistantFailure  `json:"failure,omitempty"`
 	FinishedAt string                    `json:"finished_at"`
 	ID         string                    `json:"id"`
+	NotBefore  string                    `json:"not_before,omitempty"`
 	Result     string                    `json:"result"`
+	RetryCount int64                     `json:"retry_count,omitempty"`
 	RoutineID  string                    `json:"routine_id"`
 	Source     string                    `json:"source"`
 	State      ProjectAssistantTurnState `json:"state"`
@@ -5497,11 +5521,14 @@ type ProjectAssistantRoutineSaveRequest struct {
 }
 
 type ProjectAssistantRoutineTrigger struct {
-	At         int64  `json:"at"`
-	Expression string `json:"expression"`
-	Seconds    int64  `json:"seconds"`
-	TimeZone   string `json:"timeZone"`
-	Type       string `json:"type"`
+	At         int64                                `json:"at"`
+	Event      string                               `json:"event,omitempty"`
+	Expression string                               `json:"expression"`
+	Filters    []ProjectAssistantRoutineEventFilter `json:"filters,omitempty"`
+	Seconds    int64                                `json:"seconds"`
+	Source     string                               `json:"source,omitempty"`
+	TimeZone   string                               `json:"timeZone"`
+	Type       string                               `json:"type"`
 }
 
 // Revokes one standing rule for the Bot's Project (API level 66).
