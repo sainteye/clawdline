@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -688,48 +689,60 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 }
 
 // PersonWrote writes the person's line and starts the room turn it asks
-// for, in one transaction under the room revision.
-func (s *GroupStore) PersonWrote(ctx context.Context, key pa.BotKey, expectedRevision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, pa.RoomState, pa.RoomTurn, error) {
+// for, in one transaction under the room revision, with the command's
+// receipt. A replay returns the stored line's seq and starts nothing.
+func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
-		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, pa.RoomState{}, nil, err
 	}
 	defer tx.Rollback()
+	key := c.Key
+	if r, err := replayed(ctx, tx, c, pa.SendOperation); err != nil {
+		return pa.RoomEntry{}, pa.RoomState{}, nil, err
+	} else if r != nil {
+		seq, _ := strconv.ParseInt(r.ResourceID, 10, 64)
+		st, err := roomRead(ctx, tx, key)
+		return pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, Text: text, ReplyToAuthor: replyToAuthor}, st, nil, err
+	}
 	g, err := groupRead(ctx, tx, key)
 	if err != nil {
-		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, pa.RoomState{}, nil, err
 	}
 	if replyToAuthor != (pa.BotKey{}) {
 		if _, ok := g.Member(replyToAuthor); !ok {
-			return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, failure(pa.Invalid, "reply_to_author")
+			return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "reply_to_author")
 		}
 	}
 	st, err := roomRead(ctx, tx, key)
 	if err != nil {
-		return pa.RoomEntry{}, pa.RoomState{}, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, pa.RoomState{}, nil, err
 	}
 	if st.Revision != expectedRevision {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, failure(pa.StaleVersion, "room")
+		return pa.RoomEntry{}, st, nil, failure(pa.StaleVersion, "room")
 	}
 	next, turn, err := pa.StartRoomTurn(g, st)
 	if err != nil {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, st, nil, err
 	}
 	seq, err := nextLineSeq(ctx, tx, key)
 	if err != nil {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, st, nil, err
 	}
 	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, Text: text, ReplyToAuthor: replyToAuthor}
 	if err = writeLine(ctx, tx, key, entry); err != nil {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, st, nil, err
 	}
 	if err = s.at("line"); err != nil {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, st, nil, err
 	}
 	if err = s.writeRoom(ctx, tx, next, st.Revision); err != nil {
-		return pa.RoomEntry{}, st, pa.RoomTurn{}, err
+		return pa.RoomEntry{}, st, nil, err
 	}
-	return entry, next, turn, tx.Commit()
+	if _, err = s.finish(ctx, tx, c, strconv.FormatInt(seq, 10)); err != nil {
+		return pa.RoomEntry{}, st, nil, err
+	}
+	return entry, next, &turn, nil
 }
 
 // Lines reads a room's lines with seq > after, oldest first, at most limit;

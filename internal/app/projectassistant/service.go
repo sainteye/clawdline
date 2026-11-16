@@ -41,7 +41,11 @@ type ServiceOptions struct {
 	// Rules is optional; without it the rules routes answer unsupported.
 	Rules RuleStore
 	// Deleter removes a Bot's stored records; without it Delete is unsupported.
-	Deleter   BotDeleter
+	Deleter BotDeleter
+	// Groups and Rooms are optional; without them the group operations
+	// answer unsupported (service_groups.go).
+	Groups    *GroupRooms
+	Rooms     *RoomDriver
 	Authorize func(context.Context, pa.BotKey, bool) (Authority, error)
 	Clock     func() time.Time
 	ID        func() string

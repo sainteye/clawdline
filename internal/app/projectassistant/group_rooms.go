@@ -35,7 +35,7 @@ type GroupRoomStore interface {
 	CheckTicket(context.Context, pa.RoomTicket) error
 	// PersonWrote writes the person's line and starts its room turn in one
 	// transaction under the room revision.
-	PersonWrote(context.Context, pa.BotKey, int64, string, pa.BotKey) (pa.RoomEntry, pa.RoomState, pa.RoomTurn, error)
+	PersonWrote(context.Context, pa.Command, int64, string, pa.BotKey) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
 	Lines(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	LinesBefore(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	Groups(context.Context, string) ([]pa.Group, error)
@@ -82,7 +82,13 @@ func (r *GroupRooms) Create(ctx context.Context, who PersonAuthority, c pa.Comma
 	if err := who.check(d.Key); err != nil {
 		return pa.Receipt{}, err
 	}
-	c, err := canonicalCommand(c, pa.CreateOperation, who.Principal, d)
+	// The person's intent, not the host-generated conversation ID, so a
+	// retried create replays instead of conflicting.
+	c, err := canonicalCommand(c, pa.CreateOperation, who.Principal, struct {
+		Project pa.ProjectScope `json:"project"`
+		Name    string          `json:"name"`
+		Members []pa.BotKey     `json:"members"`
+	}{d.Project, d.Name, d.Members})
 	if err != nil {
 		return pa.Receipt{}, err
 	}
@@ -130,19 +136,23 @@ func (r *GroupRooms) step(ctx context.Context, key pa.BotKey, revision int64, f 
 
 // Send writes the person's message into the room and starts the room turn it
 // asks for, replacing the one running. replyToAuthor is the stored author of
-// a quoted line, or zero.
-func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, key pa.BotKey, revision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
-	if err := who.check(key); err != nil {
+// a quoted line, or zero. A replayed command starts nothing (Turn nil).
+func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+	if err := who.check(c.Key); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
 	if err := pa.ValidateMessage(text); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	e, st, t, err := r.store.PersonWrote(ctx, key, revision, text, replyToAuthor)
+	c, err := canonicalCommand(c, pa.SendOperation, who.Principal, struct {
+		Text          string    `json:"text"`
+		ReplyToAuthor pa.BotKey `json:"reply_to_author"`
+	}{text, replyToAuthor})
 	if err != nil {
-		return e, RoomStep{State: st}, err
+		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	return e, RoomStep{State: st, Turn: &t}, nil
+	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, replyToAuthor)
+	return e, RoomStep{State: st, Turn: t}, err
 }
 
 // MarkOverdue: the room stops waiting for t; its answer still lands late.

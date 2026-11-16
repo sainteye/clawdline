@@ -293,22 +293,29 @@ func (d *RoomDriver) retryStale(ctx context.Context, key pa.BotKey, f func(rev i
 	return err
 }
 
-// Send is the person's message: written and its room turn started.
-func (d *RoomDriver) Send(ctx context.Context, who PersonAuthority, key pa.BotKey, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+// Send is the person's message: written and its room turn started. check,
+// when set, re-establishes the person's authority after the room read and
+// immediately before the write (the AuthorityCheck pattern of Service.Send).
+func (d *RoomDriver) Send(ctx context.Context, who PersonAuthority, c pa.Command, text string, replyToAuthor pa.BotKey, check func(context.Context) error) (pa.RoomEntry, RoomStep, error) {
 	if _, err := d.runtime(); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
 	var entry pa.RoomEntry
 	var step RoomStep
-	err := d.retryStale(ctx, key, func(rev int64) error {
+	err := d.retryStale(ctx, c.Key, func(rev int64) error {
+		if check != nil {
+			if e := check(ctx); e != nil {
+				return e
+			}
+		}
 		var e error
-		entry, step, e = d.o.Rooms.Send(ctx, who, key, rev, text, replyToAuthor)
+		entry, step, e = d.o.Rooms.Send(ctx, who, c, rev, text, replyToAuthor)
 		return e
 	})
-	if err != nil {
+	if err != nil || step.Turn == nil {
 		return entry, step, err
 	}
-	d.start(key, *step.Turn)
+	d.start(c.Key, *step.Turn)
 	return entry, step, nil
 }
 
@@ -319,17 +326,26 @@ func (d *RoomDriver) Stop(ctx context.Context, who PersonAuthority, key pa.BotKe
 	if err := who.check(key); err != nil {
 		return GroupStop{}, err
 	}
-	m, err := d.runtime()
-	if err != nil {
+	if _, err := d.runtime(); err != nil {
 		return GroupStop{}, err
 	}
 	var out GroupStop
-	if err = d.retryStale(ctx, key, func(rev int64) error {
+	if err := d.retryStale(ctx, key, func(rev int64) error {
 		var e error
 		out, e = d.o.Rooms.Stop(ctx, key, rev)
 		return e
 	}); err != nil {
 		return out, err
+	}
+	return out, d.cancelMembers(ctx, key, out.Cancel)
+}
+
+// cancelMembers ends the running room loop and the named members' turns in
+// this room: queued ones are dropped, an active one here is stopped.
+func (d *RoomDriver) cancelMembers(ctx context.Context, key pa.BotKey, members []pa.BotKey) error {
+	m, err := d.runtime()
+	if err != nil {
+		return err
 	}
 	d.mu.Lock()
 	if cancel := d.running[key]; cancel != nil {
@@ -344,15 +360,15 @@ func (d *RoomDriver) Stop(ctx context.Context, who PersonAuthority, key pa.BotKe
 	}
 	d.mu.Unlock()
 	var errs []string
-	for _, member := range out.Cancel {
+	for _, member := range members {
 		if e := m.CancelRoomTurns(ctx, key, member, true); e != nil {
 			errs = append(errs, e.Error())
 		}
 	}
 	if len(errs) > 0 {
-		return out, fmt.Errorf("group stop: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("group stop: %s", strings.Join(errs, "; "))
 	}
-	return out, nil
+	return nil
 }
 
 func (d *RoomDriver) start(key pa.BotKey, turn pa.RoomTurn) {
