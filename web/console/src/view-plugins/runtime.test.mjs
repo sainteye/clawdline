@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { createHash } from "node:crypto"
 import { readFile, writeFile, readdir, mkdtemp, rm } from "node:fs/promises"
+import { writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "esbuild"
@@ -31,9 +32,15 @@ test('Original-art packages retain the bounded archive refusal before installati
  }
 })
 const tick = () => new Promise(r => setTimeout(r,15))
+function runPython(args, options={}) {
+ const result=spawnSync("python3",args,{...options,stdio:["ignore","pipe","pipe"],timeout:15000,killSignal:"SIGKILL",maxBuffer:PLUGIN_LIMITS.archiveBytes*2})
+ assert.ifError(result.error && new Error(`Python fixture failed (${args[0]}): ${result.error.code}; timeout is 15000ms`,{cause:result.error}))
+ assert.equal(result.signal,null,`Python fixture terminated by ${result.signal}: ${args[0]}`)
+ return result
+}
 function changedManifest(archive, patch) {
  const script=`import sys,json,io,base64,zipfile
-p=json.load(sys.stdin)
+with open(sys.argv[1]) as source: p=json.load(source)
 with zipfile.ZipFile(io.BytesIO(base64.b64decode(p['zip']))) as z:
  files={n:z.read(n) for n in z.namelist()}
 m=json.loads(files['manifest.json'])
@@ -45,7 +52,9 @@ out=io.BytesIO()
 with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:
  for n,b in files.items(): z.writestr(n,b)
 sys.stdout.buffer.write(out.getvalue())`
- const run=spawnSync("python3",["-c",script],{input:JSON.stringify({zip:Buffer.from(archive).toString("base64"),patch})})
+ const input=join(scratch,"manifest-input.json")
+ writeFileSync(input,JSON.stringify({zip:Buffer.from(archive).toString("base64"),patch}))
+ const run=runPython(["-c",script,input])
  assert.equal(run.status,0,run.stderr.toString());return run.stdout
 }
 test("Retired built-in views cannot be imported or executed from old archives",async()=>{
@@ -87,19 +96,19 @@ test("The packer refuses missing covers and does not overwrite an existing archi
  await writeFile(join(source,"manifest.json"),JSON.stringify(manifest));await writeFile(join(source,manifest.entry),"<!doctype html><title>Example</title>")
  await writeFile(output,"keep existing archive")
  const packer=fileURLToPath(new URL("../../../../tools/pack-view-plugin.py",import.meta.url))
- const rejected=spawnSync("python3",[packer,source,output])
+ const rejected=runPython([packer,source,output])
  assert.notEqual(rejected.status,0);assert.match(rejected.stderr.toString(),/cover/i)
  assert.equal(await readFile(output,"utf8"),"keep existing archive")
  for(const cover of ["https://example.invalid/art.png",coverPNG(257),coverPNG(2,2,0,{badCRC:true}),coverPNG(2,2,0,{badDeflate:true}),coverPNG(2,2,0,{extraBytes:1}),coverPNG(2,2,0,{animated:true})]) {
   manifest.cover=cover;await writeFile(join(source,"manifest.json"),JSON.stringify(manifest))
-  const invalid=spawnSync("python3",[packer,source,output]);assert.notEqual(invalid.status,0);assert.match(invalid.stderr.toString(),/cover/i)
+  const invalid=runPython([packer,source,output]);assert.notEqual(invalid.status,0);assert.match(invalid.stderr.toString(),/cover/i)
   assert.equal(await readFile(output,"utf8"),"keep existing archive")
  }
  await writeFile(join(source,"manifest.json"),JSON.stringify({...manifest,cover:coverPNG(),name:{en:"x".repeat(8193),"zh-Hant":"Example"}}))
- const oversized=spawnSync("python3",[packer,source,output]);assert.notEqual(oversized.status,0);assert.match(oversized.stderr.toString(),/manifest/i)
+ const oversized=runPython([packer,source,output]);assert.notEqual(oversized.status,0);assert.match(oversized.stderr.toString(),/manifest/i)
  assert.equal(await readFile(output,"utf8"),"keep existing archive")
  manifest.cover=coverPNG();await writeFile(join(source,"manifest.json"),JSON.stringify(manifest))
- const accepted=spawnSync("python3",[packer,source,output]);assert.equal(accepted.status,0,accepted.stderr.toString())
+ const accepted=runPython([packer,source,output]);assert.equal(accepted.status,0,accepted.stderr.toString())
  assert.equal((await parsePackage(await readFile(output))).manifest.cover,manifest.cover)
 })
 test("Published examples have real covers and exact legacy archives gain artwork without replacing code",async()=>{
@@ -162,8 +171,16 @@ function fixture(capabilities=["sessions.read","sessions.open"], initial=reading
   const channel = new MessageChannel(), answers=[], opened=[], faults=[]; let closes=0
   channel.port2.onmessage = e => answers.push(e.data)
   const bridge = pluginBridge({port:channel.port1,instanceId:"instance",capabilities,reading:initial,context,open:async key => {opened.push(key)},close:()=>closes++,fault:e=>faults.push(e)})
-  const send = (method,params={},extra={}) => channel.port2.postMessage({v:1,instanceId:"instance",id:"r"+Math.random(),method,params,...extra})
-  return {channel,bridge,answers,opened,faults,send,get closes(){return closes},dispose(){bridge.dispose();channel.port2.close()}}
+  const send = (method,params={},extra={}) => {const id="r"+Math.random();channel.port2.postMessage({v:1,instanceId:"instance",id,method,params,...extra});return id}
+  const answer = id => new Promise((resolve,reject)=>{
+    const found=answers.find(message=>message.id===id)
+    if(found){resolve(found);return}
+    const cleanup=()=>{clearTimeout(timer);channel.port2.removeEventListener("message",receive)}
+    const receive=event=>{if(event.data.id===id){cleanup();resolve(event.data)}}
+    const timer=setTimeout(()=>{cleanup();reject(new Error(`No bridge answer for ${id} within 2000ms`))},2000)
+    channel.port2.addEventListener("message",receive)
+  })
+  return {channel,bridge,answers,opened,faults,send,answer,get closes(){return closes},dispose(){bridge.dispose();channel.port2.close()}}
 }
 test("The shipped ZIP parses as an independent self-contained package",async()=>{
   const pkg=await parsePackage(await readFile(packageURL))
@@ -264,7 +281,7 @@ test("The archive refuses traversal names, aliased entries and symlinks",async()
 test("The public packer reproduces all supplied ZIPs from author sources and the SDK",async()=>{
  const root=fileURLToPath(new URL("../../../../",import.meta.url))
  for(const id of ["session-galaxy"]){
-  const out=join(scratch,id+".zip"),result=spawnSync("python3",["tools/pack-view-plugin.py","plugins/"+id,out],{cwd:root,encoding:"utf8"})
+  const out=join(scratch,id+".zip"),result=runPython(["tools/pack-view-plugin.py","plugins/"+id,out],{cwd:root,encoding:"utf8"})
   assert.equal(result.status,0,result.stderr)
   assert.deepEqual(await readFile(out),await readFile(new URL("../../public/view-plugins/"+id+".zip",import.meta.url)))
  }
@@ -286,7 +303,7 @@ test("The fleet combines all machines and Projects without colliding local ident
  let calls=0;const a=()=>calls++,b=()=>calls++;one.subscribe=fn=>{events.add(a);return()=>events.delete(a)};two.subscribe=fn=>{events.add(b);return()=>events.delete(b)}
  const stop=fleet.subscribe(()=>{});assert.equal(events.size,2);for(const event of events)event();assert.equal(calls,2);stop();assert.equal(events.size,0)
  const f=fixture(undefined,value)
- try{f.send("sessions.subscribe");await tick();const payload=f.answers[0].result
+ try{const payload=(await f.answer(f.send("sessions.subscribe"))).result
   assert.notEqual(payload.sessions[0].ref,payload.sessions[1].ref)
   assert.notEqual(payload.sessions[0].project.ref,payload.sessions[1].project.ref)
   assert.ok(!JSON.stringify(payload).includes("machine-one"));assert.ok(!JSON.stringify(payload).includes("private"))

@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 real_node=$(command -v node)
+real_python=$(command -v python3)
 scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 mkdir -p "$scratch/repo/tools" "$scratch/repo/web/console/tools" "$scratch/bin"
@@ -41,24 +42,52 @@ case "$1" in
   tools/check-plan.mjs|tools/check-scope.mjs)
     [ -f "$CALLS.deps" ] || exit 31
     if [ "${BROKEN_PLAN:-0}" = 1 ]; then printf 'invalid\n'; exit 0; fi
+    if [ "${HANG_STEP:-}" != '' ] && [ "${2:-}" = --out ]; then
+      exec "$REAL_NODE" -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({full:false,reason:"hanging test fixture",go:{runs:[],compile:[]},paths:[],web:process.env.HANG_STEP==="web",webTests:["web/console/hang.test.mjs"],guards:{format:false,capacity:false,contract:false,legacy:false,borders:false,machine:false,shell:false,tooling:process.env.HANG_STEP==="tooling"}}))' "$3"
+    fi
     exec "$REAL_NODE" "$@" ;;
   tools/check-profile.mjs) exec "$REAL_NODE" "$@" ;;
 esac
+if [ "${HANG_STEP:-}" != '' ] && [[ " $* " = *' --test '* ]]; then
+  args=()
+  deadline_seen=no
+  for arg in "$@"; do
+    # Exercise the real runner with a shorter deadline in this fixture only.
+    if [ "$arg" = --test-timeout=120000 ]; then arg=--test-timeout=150; deadline_seen=yes; fi
+    args+=("$arg")
+  done
+  [ "$deadline_seen" = yes ] || { echo 'Node test deadline missing' >&2; exit 41; }
+  exec "$REAL_NODE" ${args[@]+"${args[@]}"}
+fi
 exit 0
 MOCK
 cat > "$scratch/bin/npm" <<'MOCK'
 #!/bin/bash
 printf 'npm %s\n' "$*" >> "$CALLS"
+if [ "${HANG_NPM:-0}" = 1 ] && [ "$*" = test ]; then
+  echo 'starting console/hang.test.mjs' >&2
+  exec "$REAL_NODE" console/hang.test.mjs
+fi
 MOCK
 cat > "$scratch/bin/python3" <<'MOCK'
 #!/bin/bash
+if [ "${1:-}" = -c ]; then
+  script=$2
+  shift 2
+  # Keep the wrapper and cleanup real, shortening only the fixture deadline.
+  if [ "${HANG_STEP:-}" != '' ] || [ "${HANG_NPM:-0}" = 1 ]; then
+    shift
+    set -- 0.5 "$@"
+  fi
+  exec "$REAL_PYTHON" -c "$script" "$@"
+fi
 [ "$*" = tools/test-workflow-eval.py ] || exit 32
 printf 'workflow-evaluation\n' >> "$CALLS"
 exit "${FAIL_WORKFLOW:-0}"
 MOCK
 printf '#!/bin/sh\nexit 0\n' > "$scratch/bin/gofmt"
 chmod +x "$scratch/bin/"*
-export PATH="$scratch/bin:$PATH" TMPDIR="$scratch" CALLS="$scratch/calls" REAL_NODE="$real_node" CLAWDLINE_CHECK_WRAPPED=1
+export PATH="$scratch/bin:$PATH" TMPDIR="$scratch" CALLS="$scratch/calls" REAL_NODE="$real_node" REAL_PYTHON="$real_python" CLAWDLINE_CHECK_WRAPPED=1
 unset CLAWDLINE_HEAVY
 cd "$scratch/repo"
 git init -q -b main
@@ -137,4 +166,44 @@ test -f "$CALLS.deps"
 if FAIL_DEPS=1 bash tools/check.sh --plan > /dev/null 2>&1; then exit 1; else [ "$?" = 2 ]; fi
 [ ! -s "$CALLS" ]
 "$REAL_NODE" -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1]));if(p.full || p.web)process.exit(1)' "$scratch/plan.json"
+# A broken gate deadline must fail this regression test, not hang CI itself.
+run_hanging_gate() {
+  "$REAL_PYTHON" -c '
+import os, signal, subprocess, sys
+child = subprocess.Popen(["bash", "tools/check.sh", *sys.argv[1:]], start_new_session=True)
+try:
+    sys.exit(child.wait(timeout=10))
+except subprocess.TimeoutExpired:
+    os.killpg(child.pid, signal.SIGKILL)
+    child.wait()
+    print("check modes: gate failed to enforce its own deadline", file=sys.stderr)
+    sys.exit(125)
+' "$@"
+}
+# Real hanging test files must fail through both direct node --test steps.
+for mode in async sync; do
+  if [ "$mode" = async ]; then
+    printf 'import test from "node:test"; test("deliberate hang", async()=>{await new Promise(()=>setInterval(()=>{},1000))})\n' > web/console/hang.test.mjs
+  else
+    printf 'import test from "node:test"; test("deliberate sync hang", ()=>{while(true){}})\n' > web/console/hang.test.mjs
+  fi
+  if HANG_STEP=web run_hanging_gate > "$scratch/hang-$mode.log" 2>&1; then exit 1; else [ "$?" = 1 ]; fi
+  grep -q 'FAIL  web: affected tests' "$scratch/hang-$mode.log"
+  grep -q 'hang.test.mjs' "$scratch/hang-$mode.log"
+  grep -q 'test step exceeded\|testTimeoutFailure\|timed out' "$scratch/hang-$mode.log"
+  cat "$scratch/hang-$mode.log"
+done
+cp web/console/hang.test.mjs tools/check-plan.test.mjs
+touch tools/check-profile.test.mjs tools/check-scope.test.mjs
+if HANG_STEP=tooling run_hanging_gate > "$scratch/hang-tooling.log" 2>&1; then exit 1; else [ "$?" = 1 ]; fi
+grep -q 'FAIL  check planning and profiling tests' "$scratch/hang-tooling.log"
+grep -q 'check-plan.test.mjs' "$scratch/hang-tooling.log"
+cat "$scratch/hang-tooling.log"
+# Nested npm runners have an overall bound that also kills their descendants.
+printf 'setInterval(()=>{},1000)\n' > web/console/hang.test.mjs
+if HANG_NPM=1 run_hanging_gate --full > "$scratch/hang-npm.log" 2>&1; then exit 1; else [ "$?" = 1 ]; fi
+grep -q 'test step exceeded' "$scratch/hang-npm.log"
+grep -q 'FAIL  web: npm test  (exit 124' "$scratch/hang-npm.log"
+grep -q 'console/hang.test.mjs' "$scratch/hang-npm.log"
+cat "$scratch/hang-npm.log"
 echo 'check modes integration: PASS'
