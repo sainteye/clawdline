@@ -119,7 +119,24 @@ capacity failure. These are reproducible fixture sizes, not measurements of
 a person's data or a claim about daily traffic. Export is a whole source
 snapshot, so exceeding the transport ceiling remains an explicit limitation.
 
+The downloaded export carries the same stored routines, routine runs and group
+membership/room state as the internal archive, including progress notes and the
+separate `group_schema_version`. These are optional additive fields; older exports
+and viewers keep their existing contract/schema versions. The Cloud Bridge and
+captured browser SourceClient retain the complete export JSON without projecting
+away these fields. Attachment/output file bytes, webhook secrets and webhook
+authentication proofs are not included; attachment and output metadata remain
+references. The existing 8 MiB reply limit still applies to the whole export.
+
 ## Verification
+
+`TestProjectAssistantExportIncludesStoredRoutinesAndGroupsWithoutSecrets` seeds
+an empty synthetic store with a webhook routine, its progress note, an event run
+and group membership/room state. It compares each exported field with
+`Store.Export` over real loopback HTTP and through the actual Cloud Bridge,
+checks the stored webhook secret is absent, and exercises an older viewer's
+known-field decoder. The browser SourceClient export test separately checks
+that the captured read path preserves nested JSON under read-only authority.
 
 `TestProjectAssistantCapturedSourceRoundTrip` runs the actual TypeScript
 SourceClient and captured connection adapter with Node, then drives their

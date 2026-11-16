@@ -1723,7 +1723,7 @@
     "ProjectAssistantExport": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Authenticated export only, never roster cache. SQLite remains authoritative. Restore refuses unsupported versions and retains receipt/tombstone identities.",
+      "description": "Authenticated export only, never roster cache. SQLite remains authoritative. Restore refuses unsupported versions and retains receipt/tombstone identities. Routines retain stored schedule intent, progress and runs; groups retain membership and room state with a separate group_schema_version. Attachment/output file bytes and webhook secrets or proofs are never included. New fields are optional for older exports.",
       "properties": {
         "contract_version": {
           "type": "string"
@@ -1802,6 +1802,27 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantExchange"
           }
+        },
+        "routines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportRoutine"
+          }
+        },
+        "routine_runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportRoutineRun"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportGroupState"
+          }
+        },
+        "group_schema_version": {
+          "type": "integer"
         }
       },
       "required": [
@@ -3007,6 +3028,352 @@
         "outcome",
         "revision",
         "hops"
+      ]
+    },
+    "ProjectAssistantExportRoutineTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "timeZone": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "ProjectAssistantExportRoutine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "follow_up": {
+          "type": "boolean"
+        },
+        "follow_up_chain": {
+          "type": "integer"
+        },
+        "memory_revision": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "interval_seconds": {
+          "type": "integer"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportRoutineTrigger"
+          }
+        },
+        "next_runs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "next_due": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "string"
+        },
+        "progress_revision": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "project",
+        "conversation_id",
+        "name",
+        "instruction",
+        "interval_seconds",
+        "timeout_seconds",
+        "enabled",
+        "deleted",
+        "next_due",
+        "version"
+      ]
+    },
+    "ProjectAssistantExportRoutineRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "memory_revision": {
+          "type": "integer"
+        },
+        "retry_count": {
+          "type": "integer"
+        },
+        "not_before": {
+          "type": "string"
+        },
+        "not_started_proved": {
+          "type": "boolean"
+        },
+        "delivery_id": {
+          "type": "string"
+        },
+        "event": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "id": {
+          "type": "string"
+        },
+        "routine_id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "binding_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantTurnState"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "published": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "routine_id",
+        "source",
+        "key",
+        "project",
+        "conversation_id",
+        "state",
+        "timeout_seconds",
+        "created_at",
+        "published"
+      ]
+    },
+    "ProjectAssistantExportGroupMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "joined_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "joined_revision"
+      ]
+    },
+    "ProjectAssistantExportGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportGroupMember"
+          }
+        },
+        "membership_revision": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "conversation_id",
+        "name",
+        "members",
+        "membership_revision",
+        "version",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "ProjectAssistantExportRoomTicket": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "member": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "joined_revision": {
+          "type": "integer"
+        },
+        "late": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "group",
+        "member",
+        "epoch",
+        "joined_revision"
+      ]
+    },
+    "ProjectAssistantExportRoomState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "epoch": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "integer"
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "late_turns": {
+          "type": "integer"
+        },
+        "stopped_at": {
+          "type": "integer"
+        },
+        "overdue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExportRoomTicket"
+          }
+        }
+      },
+      "required": [
+        "group",
+        "revision",
+        "epoch",
+        "late_turns"
+      ]
+    },
+    "ProjectAssistantExportGroupState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/ProjectAssistantExportGroup"
+        },
+        "room": {
+          "$ref": "#/$defs/ProjectAssistantExportRoomState"
+        }
+      },
+      "required": [
+        "group",
+        "room"
       ]
     }
   }

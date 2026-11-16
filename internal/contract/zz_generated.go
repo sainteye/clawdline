@@ -4751,24 +4751,129 @@ type ProjectAssistantExecutionBinding struct {
 
 // Authenticated export only, never roster cache. SQLite remains authoritative.
 // Restore refuses unsupported versions and retains receipt/tombstone
-// identities.
+// identities. Routines retain stored schedule intent, progress and runs; groups
+// retain membership and room state with a separate group_schema_version.
+// Attachment/output file bytes and webhook secrets or proofs are never
+// included. New fields are optional for older exports.
 type ProjectAssistantExport struct {
-	Bindings        []ProjectAssistantExecutionBinding `json:"bindings"`
-	Bot             ProjectAssistantBot                `json:"bot"`
-	Context         ProjectAssistantContextSnapshot    `json:"context"`
-	ContractVersion string                             `json:"contract_version"`
-	Conversation    ProjectAssistantConversation       `json:"conversation"`
-	Events          []ProjectAssistantEvent            `json:"events"`
-	Exchanges       []ProjectAssistantExchange         `json:"exchanges,omitempty"`
-	Memory          ProjectAssistantMemoryRevision     `json:"memory"`
-	MemoryEntries   []ProjectAssistantMemoryEntry      `json:"memory_entries"`
-	Messages        []ProjectAssistantMessage          `json:"messages"`
-	Permissions     []ProjectAssistantPermissionOffer  `json:"permissions"`
-	ReadCursors     []ProjectAssistantReadCursor       `json:"read_cursors"`
-	Receipts        []ProjectAssistantReceipt          `json:"receipts"`
-	SchemaVersion   int64                              `json:"schema_version"`
-	Turns           []ProjectAssistantTurn             `json:"turns"`
-	WorkLinks       []ProjectAssistantWorkLink         `json:"work_links"`
+	Bindings           []ProjectAssistantExecutionBinding `json:"bindings"`
+	Bot                ProjectAssistantBot                `json:"bot"`
+	Context            ProjectAssistantContextSnapshot    `json:"context"`
+	ContractVersion    string                             `json:"contract_version"`
+	Conversation       ProjectAssistantConversation       `json:"conversation"`
+	Events             []ProjectAssistantEvent            `json:"events"`
+	Exchanges          []ProjectAssistantExchange         `json:"exchanges,omitempty"`
+	GroupSchemaVersion int64                              `json:"group_schema_version,omitempty"`
+	Groups             []ProjectAssistantExportGroupState `json:"groups,omitempty"`
+	Memory             ProjectAssistantMemoryRevision     `json:"memory"`
+	MemoryEntries      []ProjectAssistantMemoryEntry      `json:"memory_entries"`
+	Messages           []ProjectAssistantMessage          `json:"messages"`
+	Permissions        []ProjectAssistantPermissionOffer  `json:"permissions"`
+	ReadCursors        []ProjectAssistantReadCursor       `json:"read_cursors"`
+	Receipts           []ProjectAssistantReceipt          `json:"receipts"`
+	RoutineRuns        []ProjectAssistantExportRoutineRun `json:"routine_runs,omitempty"`
+	Routines           []ProjectAssistantExportRoutine    `json:"routines,omitempty"`
+	SchemaVersion      int64                              `json:"schema_version"`
+	Turns              []ProjectAssistantTurn             `json:"turns"`
+	WorkLinks          []ProjectAssistantWorkLink         `json:"work_links"`
+}
+
+type ProjectAssistantExportGroup struct {
+	ConversationID     string                              `json:"conversation_id"`
+	CreatedAt          string                              `json:"created_at"`
+	Deleted            bool                                `json:"deleted,omitempty"`
+	Key                ProjectAssistantBotKey              `json:"key"`
+	Members            []ProjectAssistantExportGroupMember `json:"members"`
+	MembershipRevision int64                               `json:"membership_revision"`
+	Name               string                              `json:"name"`
+	Project            ProjectAssistantProjectScope        `json:"project"`
+	UpdatedAt          string                              `json:"updated_at"`
+	Version            int64                               `json:"version"`
+}
+
+type ProjectAssistantExportGroupMember struct {
+	JoinedRevision int64                  `json:"joined_revision"`
+	Key            ProjectAssistantBotKey `json:"key"`
+}
+
+type ProjectAssistantExportGroupState struct {
+	Group ProjectAssistantExportGroup     `json:"group"`
+	Room  ProjectAssistantExportRoomState `json:"room"`
+}
+
+type ProjectAssistantExportRoomState struct {
+	Epoch     int64                              `json:"epoch"`
+	Group     ProjectAssistantBotKey             `json:"group"`
+	LateTurns int64                              `json:"late_turns"`
+	Overdue   []ProjectAssistantExportRoomTicket `json:"overdue,omitempty"`
+	Pending   int64                              `json:"pending,omitempty"`
+	Revision  int64                              `json:"revision"`
+	Running   int64                              `json:"running,omitempty"`
+	StoppedAt int64                              `json:"stopped_at,omitempty"`
+}
+
+type ProjectAssistantExportRoomTicket struct {
+	Epoch          int64                  `json:"epoch"`
+	Group          ProjectAssistantBotKey `json:"group"`
+	JoinedRevision int64                  `json:"joined_revision"`
+	Late           bool                   `json:"late,omitempty"`
+	Member         ProjectAssistantBotKey `json:"member"`
+}
+
+type ProjectAssistantExportRoutine struct {
+	ConversationID   string                                 `json:"conversation_id"`
+	Deleted          bool                                   `json:"deleted"`
+	Enabled          bool                                   `json:"enabled"`
+	FollowUp         bool                                   `json:"follow_up,omitempty"`
+	FollowUpChain    int64                                  `json:"follow_up_chain,omitempty"`
+	ID               string                                 `json:"id"`
+	Instruction      string                                 `json:"instruction"`
+	IntervalSeconds  int64                                  `json:"interval_seconds"`
+	Key              ProjectAssistantBotKey                 `json:"key"`
+	MemoryRevision   int64                                  `json:"memory_revision,omitempty"`
+	Name             string                                 `json:"name"`
+	NextDue          string                                 `json:"next_due"`
+	NextRuns         []string                               `json:"next_runs,omitempty"`
+	Progress         string                                 `json:"progress,omitempty"`
+	ProgressRevision int64                                  `json:"progress_revision,omitempty"`
+	Project          ProjectAssistantProjectScope           `json:"project"`
+	TimeoutSeconds   int64                                  `json:"timeout_seconds"`
+	Triggers         []ProjectAssistantExportRoutineTrigger `json:"triggers,omitempty"`
+	Version          int64                                  `json:"version"`
+}
+
+type ProjectAssistantExportRoutineRun struct {
+	BindingID        string                       `json:"binding_id,omitempty"`
+	ConversationID   string                       `json:"conversation_id"`
+	CreatedAt        string                       `json:"created_at"`
+	DeliveryID       string                       `json:"delivery_id,omitempty"`
+	Event            map[string]any               `json:"event,omitempty"`
+	FinishedAt       string                       `json:"finished_at,omitempty"`
+	ID               string                       `json:"id"`
+	Instruction      string                       `json:"instruction,omitempty"`
+	Key              ProjectAssistantBotKey       `json:"key"`
+	MemoryRevision   int64                        `json:"memory_revision,omitempty"`
+	NotBefore        string                       `json:"not_before,omitempty"`
+	NotStartedProved bool                         `json:"not_started_proved,omitempty"`
+	Project          ProjectAssistantProjectScope `json:"project"`
+	Published        bool                         `json:"published"`
+	RetryCount       int64                        `json:"retry_count,omitempty"`
+	RoutineID        string                       `json:"routine_id"`
+	Source           string                       `json:"source"`
+	State            ProjectAssistantTurnState    `json:"state"`
+	TimeoutSeconds   int64                        `json:"timeout_seconds"`
+	TurnID           string                       `json:"turn_id,omitempty"`
+}
+
+type ProjectAssistantExportRoutineTrigger struct {
+	At         int64             `json:"at,omitempty"`
+	Event      string            `json:"event,omitempty"`
+	Expression string            `json:"expression,omitempty"`
+	Filters    map[string]string `json:"filters,omitempty"`
+	Seconds    int64             `json:"seconds,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	TimeZone   string            `json:"timeZone,omitempty"`
+	Type       string            `json:"type"`
 }
 
 type ProjectAssistantFailure struct {
