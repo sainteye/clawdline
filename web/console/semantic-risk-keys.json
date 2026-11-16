@@ -3,7 +3,7 @@
   "englishKeys": 12575,
   "counts": {
     "negation": 3390,
-    "state": 2121,
+    "state": 2122,
     "permission": 748,
     "deletion": 297,
     "uncertainty": 488
@@ -5410,6 +5410,7 @@
       "transparency.card.persistent-bot-fallback.effect",
       "transparency.card.persistent-bot-group-rooms.effect",
       "transparency.card.persistent-bot-inputs.effect",
+      "transparency.card.persistent-bot-outputs.effect",
       "transparency.card.persistent-bot-outputs.how",
       "transparency.card.persistent-bot-review.effect",
       "transparency.card.persistent-bot-routine-progress.condition",
