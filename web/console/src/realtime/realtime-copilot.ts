@@ -25,7 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -378,7 +378,10 @@ export class RealtimeCopilotClient {
   /** Changes this call's speed or answer length now, and saves it on the machine for the next calls. */
   private async adjust(change: { speed?: string; brief?: boolean }): Promise<{ saved: boolean }> {
     this.call.options = { ...this.call.options, ...change }
-    if (this.live) this.sendLiveContext()
+    if (this.live) {
+      this.sendLiveContext()
+      if (change.speed !== undefined && this.dc?.readyState === 'open') this.dc.send(JSON.stringify(livePacingUpdate(this.call.options)))
+    }
     else if (this.dc && this.dc.readyState === 'open') {
       this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
     }
@@ -601,7 +604,7 @@ export class RealtimeCopilotClient {
       if (live) {
         // A GPT-Live call has no client secret: the machine opens the session
         // itself once the offer is ready (step 6), so the settings are the grant.
-        grant = { model: 'gpt-live-1', voice: configured.voice, brief: configured.brief, extra_instructions: configured.extra_instructions, briefing: configured.briefing, session_recaps: configured.session_recaps }
+        grant = { model: 'gpt-live-1', voice: configured.voice, speed: configured.speed, brief: configured.brief, extra_instructions: configured.extra_instructions, briefing: configured.briefing, session_recaps: configured.session_recaps }
       } else {
         // 0. The machine mints a short-lived client secret with its own key; the
         // key itself never reaches this browser (internal/transport/http/copilot.go).

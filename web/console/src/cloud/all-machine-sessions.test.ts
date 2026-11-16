@@ -432,4 +432,5 @@ test("the voice copilot's fleet rows keep each Session's Project folder", async 
   const grouped = groupByProject(rows)
   assert.deepEqual(grouped.map((r) => r.session), ["%1", "%3", "%2"])
   assert.equal(projectBatchSize(grouped), 2)
+  assert.ok(rows.every(row => row.execution === "g1"), "the question read must stay on the displayed execution")
 })

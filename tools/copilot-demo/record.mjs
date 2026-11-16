@@ -25,6 +25,17 @@ import { tighten } from './tighten.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const arg = (name, fallback) => { const i = process.argv.indexOf('--' + name); return i > 0 ? process.argv[i + 1] : fallback }
+// An argument it does not know is refused, not ignored: on 2026-11-16 a shell
+// passed "--person-voice cedar" as one word and the take was made in the
+// default voice without a word said.
+{
+  const VALUED = ['--lang', '--dist', '--out', '--keep', '--script', '--person-voice'], FLAGS = ['--phone', '--live', '--no-tighten']
+  for (let i = 2; i < process.argv.length; i++) {
+    const a = process.argv[i]
+    if (VALUED.includes(a)) { i++; continue }
+    if (!FLAGS.includes(a)) { console.error(`record.mjs: unknown argument ${JSON.stringify(a)}`); process.exit(2) }
+  }
+}
 const LANG = arg('lang', 'en'), DIST = resolve(arg('dist', join(here, '../../web/console/dist'))), OUT = arg('out')
 const KEEP = arg('keep')
 const PHONE = process.argv.includes('--phone')

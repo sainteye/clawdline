@@ -135,7 +135,7 @@ test('a queued opening is discarded when the person speaks while other audio pla
   assert.equal(f.responses().length, 0)
 })
 
-for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`the real start path validates mode and capability before a provider connection (managed=${managed}, protocol=${protocol})`, async () => {
+for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'],[true,2,'realtime'],[null,3,'realtime'],[false,3,'live']]) test(`the real start path validates mode and capability before a provider connection (managed=${managed}, protocol=${protocol}, engine=${engine})`, async () => {
   const oldFetch = globalThis.fetch
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   const oldDocument = globalThis.document, oldWindow = globalThis.window, oldPeer = globalThis.RTCPeerConnection
@@ -146,6 +146,7 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
   const listening = new Set()
   globalThis.window = { addEventListener(type) { listening.add(type) }, removeEventListener(type) { listening.delete(type) } }
   globalThis.RTCPeerConnection = class {
+    iceGatheringState = 'complete'
     addTrack() {}
     createDataChannel() { return this.channel = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} } }
     async createOffer() { return { type: 'offer', sdp: 'synthetic-offer' } }
@@ -155,7 +156,8 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
   }
   globalThis.fetch = async (path, init) => {
     requests.push({ path, init })
-    if (path === '/v1/settings/copilot') return managed===null?new Response('',{status:503}):Response.json({ work_enabled: managed })
+    if (path === '/v1/settings/copilot') return managed===null?new Response('',{status:503}):Response.json({ work_enabled: managed, engine, speed: '1.1' })
+    if (path === '/v1/voice/copilot-live') return Response.json({ sdp: 'synthetic-live-answer', session_id: 'synthetic-live-session' })
     if (path === '/v1/voice/copilot-session') return Response.json({ client_secret: 'fixture-not-a-key', work_enabled: managed })
     // This replaces the provider transport. No request leaves this process.
     if (String(path).startsWith('https://api.openai.com/v1/realtime/calls')) return new Response('synthetic-answer')
@@ -180,6 +182,13 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
       return
     }
     assert.equal(c.state.status, 'connected')
+    if (engine === 'live') {
+      const request = requests.find(r => r.path === '/v1/voice/copilot-live')
+      assert.match(JSON.parse(request.init.body).instructions, /Speak noticeably faster/)
+      assert.equal(c.call.options.speed, '1.1', 'the call keeps its saved speed for a later faster/slower request')
+      assert.ok(!requests.some(r => r.path === '/v1/voice/copilot-session'), 'Live does not open a Realtime call')
+      return
+    }
     // Pages change a Session's address with history.replaceState, which fires
     // no hashchange; the call has to hear their own signal (2026-11-13).
     assert.ok(listening.has('clawdline:session-address'), 'a call follows the Session the page moves to')
@@ -197,6 +206,35 @@ for (const [managed,protocol] of [[false,3],[true,3],[true,2],[null,3]]) test(`t
     else delete globalThis.navigator
     globalThis.document = oldDocument; globalThis.window = oldWindow; globalThis.RTCPeerConnection = oldPeer
   }
+})
+
+test('Live speed changes reach the speaking model and are saved, including a return to normal', async () => {
+  const f = fixture(false, null)
+  const oldFetch = globalThis.fetch
+  const saved = []
+  globalThis.fetch = async (path, init) => {
+    assert.equal(path, '/v1/settings/copilot')
+    saved.push(JSON.parse(init.body))
+    return Response.json({})
+  }
+  f.c.live = true
+  f.c.call.options = { language: 'en', speed: '0.9' }
+  try {
+    for (const [speed, phrase] of [['1.1', 'noticeably faster'], ['0.8', 'distinctly slow'], ['1.0', 'everyday conversational pace']]) {
+      f.sent.length = 0
+      assert.deepEqual(await f.c.adjust({ speed }), { saved: true })
+      const updates = f.sent.filter(e => e.type === 'session.instructions.append')
+      assert.equal(updates.length, 1)
+      assert.equal(updates[0].delegation_id, null)
+      assert.ok(updates[0].content.includes(phrase))
+      assert.match(updates[0].content, /supersedes all earlier pacing instructions/)
+      assert.ok(!f.sent.some(e => e.session?.audio), 'Live receives no unsupported Realtime audio speed event')
+    }
+    f.sent.length = 0
+    await f.c.adjust({ brief: false })
+    assert.ok(!f.sent.some(e => e.type === 'session.instructions.append'), 'an answer-length change does not resend pacing')
+    assert.deepEqual(saved, [{ speed: '1.1' }, { speed: '0.8' }, { speed: '1.0' }, { brief: false }])
+  } finally { globalThis.fetch = oldFetch }
 })
 
 

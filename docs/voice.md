@@ -406,9 +406,23 @@ are the same `runCopilotTool` a Realtime call runs.
   envelope; the browser runs it and returns `response.item.create`, then `response.create` once
   nothing is pending.
 - **What it does not do yet.** The background work list, the program-paced Session report
-  batches, the opening handover of a clicked Session and the speaking speed are Realtime-only;
+  batches and the opening handover of a clicked Session are Realtime-only;
   a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
   focus moves (`session.thinking.append`).
+
+**Speaking pace.** The machine’s saved speed also applies to GPT-Live. The four existing
+settings select slow (0.8), unhurried (0.9), normal (1.0) or quick (1.1) pacing instructions;
+these numbers are not measured Live playback multipliers. `livePacingInstructions` adds one
+common rule and one pace at startup, in Taiwan Traditional Chinese for Chinese calls and
+English otherwise. It changes articulation and pauses while preserving content, answer length,
+language, accent and interruption policy. An in-call `set_speaking_speed` also sends
+`session.instructions.append` to the speaking model, with a unique event id and
+`delegation_id: null`; updating the Responses backend alone cannot change its speech. Each
+new pacing instruction explicitly supersedes earlier pacing directions. The setting is saved
+for the next call. Instruction transport tests do not establish audible speed or compliance;
+listening acceptance remains separate. The protocol and prompting guidance are documented in
+[Managing GPT-Live sessions](https://developers.openai.com/api/docs/guides/live-conversations)
+and [Prompting GPT-Live](https://developers.openai.com/api/docs/guides/live-prompting#pace).
 
 **Switching per call.** A call button dials at once on the settings' engine, as before. While the call rings or runs, the sheet's header shows a `GPT-Live | Realtime API` toggle; pressing the other side calls `switchEngine(engine)`, which hangs up and places the call again on that system from the same Session, inside the tap iOS needs for the microphone. (A pick-before-dialing sheet shipped briefly on 2026-11-15 and was replaced at the person's request.)
 
@@ -466,3 +480,26 @@ and one next batch can read in parallel; an interruption pauses the presentation
 These controls are independent of durable work approval and automatic task
 allowance. See [the workspace's presentation contract](voice-assistant-workspace.md#spoken-session-references-and-presentation-batches)
 for limits and evidence gaps.
+
+**Pending decisions and spoken answers.** The directory treats `waiting_you`,
+`work_person_needed`, and unresolved attention Notes as reasons to check with the
+person, even if the terminal is idle or a milestone was delivered. Notes and the
+current reply still need reading; an old recap does not establish a new question.
+The fleet's presentation list deliberately omits menu content. A targeted question
+read uses that Session's machine, conversation and execution, with the existing
+bounded screen-read budget. It does not open a different Session or ask a paid
+model. Background planning hydrates waiting menus before sealing an answer.
+
+A normal send refused as `session_asking` returns the current question, choices
+and fingerprint where available, or names the missing question read. It never
+retries the write or presses a choice automatically. The copilot can map an
+explicit decision expressed by meaning to one current option; different approval
+scopes require clarification. `/key` still checks the exact question fingerprint.
+A spoken decision to reply is not permission for the voice copilot itself to
+perform the target Session's filesystem operation. Managed calls retain their
+existing exact-spec confirmation boundary.
+
+Verification uses synthetic local and multi-machine transports, including a menu
+appearing between directory read and send. The tests do not establish live model
+comprehension, transcription accuracy or real audio acceptance. No provider call
+is needed for this regression suite.

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 12480,
-  "riskKeys": 5410,
+  "englishContentKeys": 12485,
+  "riskKeys": 5415,
   "nonRiskCount": 7070,
   "groups": [
     {
@@ -3965,7 +3965,7 @@
     },
     {
       "name": "next / other",
-      "count": 1122,
+      "count": 1121,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4300,7 +4300,6 @@
         "next.copilotSourceSummary",
         "next.copilotSourceTools",
         "next.copilotSpeedCalm",
-        "next.copilotSpeedHint",
         "next.copilotSpeedLabel",
         "next.copilotSpeedNormal",
         "next.copilotSpeedQuick",
@@ -7140,7 +7139,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 186,
+      "count": 187,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7292,6 +7291,7 @@
         "transparency.card.tool-library.title",
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
+        "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
         "transparency.card.voice-work.title",
