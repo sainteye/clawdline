@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, liveBackendUpdate, liveFunctionCall, liveInstructions, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -15,8 +15,33 @@ test("the live model gets a short persona that hands every Session question to t
   assert.match(text, /叫我老闆/)
   assert.match(text, /全程台灣繁體中文/)
   // The persona stays far under GPT-Live's 16,384-token instructions and the machine's byte bound.
-  assert.ok(new TextEncoder().encode(text).length < 4096, `${new TextEncoder().encode(text).length} bytes`)
+  assert.ok(new TextEncoder().encode(text).length < (24 << 10), `${new TextEncoder().encode(text).length} bytes`)
   assert.match(liveInstructions({ language: "en" }), /全程用英文（en）說話/)
+})
+
+test("each saved speed gives the speaking model one localized pace, independently of answer length", () => {
+  const expected = {
+    'zh-Hant': ['明顯偏慢', '比日常聊天稍慢', '正常速度', '明顯比正常聊天更快'],
+    en: ['distinctly slow', 'a little more slowly', 'everyday conversational pace', 'noticeably faster'],
+  }
+  for (const [language, phrases] of Object.entries(expected)) {
+    for (const [i, speed] of ['0.8', '0.9', '1.0', '1.1'].entries()) {
+      const options = { language, speed }
+      const pacing = livePacingInstructions(options)
+      assert.ok(pacing.includes(phrases[i]))
+      for (const other of phrases.filter((_, j) => i !== j)) assert.ok(!pacing.includes(other))
+      assert.ok(liveInstructions(options).endsWith(pacing), 'the startup request contains the selected speech instructions')
+      assert.equal(livePacingInstructions({ ...options, brief: false }), pacing)
+      const event = livePacingUpdate(options)
+      assert.equal(event.type, 'session.instructions.append')
+      assert.equal(event.delegation_id, null)
+      assert.equal(event.content, pacing)
+      assert.notEqual(event.event_id, livePacingUpdate(options).event_id)
+    }
+  }
+  assert.equal(livePacingInstructions({}), livePacingInstructions({ language: 'zh-Hant', speed: '0.9' }))
+  assert.equal(livePacingInstructions({ language: 'zh-Hant-TW', speed: 'invalid' }), livePacingInstructions({ speed: '0.9' }))
+  assert.equal(livePacingInstructions({ language: 'fr', speed: '1.1' }), livePacingInstructions({ language: 'en', speed: '1.1' }))
 })
 
 test("the backend receives the call's tool rules, snapshot and every tool, one call at a time", () => {

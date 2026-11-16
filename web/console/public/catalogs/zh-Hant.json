@@ -9296,7 +9296,7 @@
   "next.copilotVoicePreviewCost": "這次試聽花了 {cost}。",
   "next.copilotVoicePreviewFailed": "試聽沒有播出來：{reason}",
   "next.copilotSpeedLabel": "語速",
-  "next.copilotSpeedHint": "副駕駛講話的速度，從下一通電話開始生效。這會直接放慢聲音；副駕駛也被交代句子之間要停一下。",
+  "next.copilotSpeedHint": "設定從下一通電話開始生效；通話中也能請副駕駛講快或慢一點。Realtime 調整聲音播放倍率；GPT-Live 使用語速指示，數字代表設定檔位，不保證精確倍速。",
   "next.copilotSpeedSlow": "慢（0.8 倍）",
   "next.copilotSpeedCalm": "稍慢（0.9 倍）",
   "next.copilotSpeedNormal": "正常（1.0 倍）",
@@ -12480,5 +12480,10 @@
   "transparency.card.persistent-bot-routine-progress.condition": "限已啟用 Bots 的開發版本，且新的隔離排程正要執行。只有目前已授權的原生回合，能對自己 Bot、完整 Project 與對話內的排程使用進度工具。",
   "transparency.card.persistent-bot-routine-progress.summary": "Clawdline 將排程上次留下的進度筆記作為不可信資料，加入下一輪隔離 prompt，並說明如何留下更新後的停留位置。",
   "transparency.card.persistent-bot-routine-progress.how": "Bot 自有 MCP 入口提供 save_progress 與 read_progress。儲存會整份取代事實筆記；明確空字串可清除。缺少內容、超過 2,000 個估計 token、隱藏字元、帶提示的連結、植入指令語句及機密型態都會整份拒絕，不會截斷。下一輪收到以 JSON 引述且標明為不可信資料、不是指令的筆記，之後才是系統要求僅於需要時儲存整份更新停留位置的說明。估算法為每個中日韓字元計一個 token，其他字元每四個計一個。人的排程清單沿用既有來源授權回傳已儲存筆記。",
-  "transparency.card.persistent-bot-routine-progress.effect": "進度與長期記憶分開保存，來源重啟後仍保留。儲存筆記不會啟動模型回合，也不會修改排程。忘記記憶時，會在同一交易保守地清除該 Bot 的所有排程筆記，較舊的執行不能寫回。內容檢查不代表通過的文字可信。既有來源撤權、Project、執行 fence 與未知作用邊界仍有效。安裝版原生與正式環境資格化須另外驗證，不能以本機腳本證據代替；公開 Release 仍隱藏 Bots。"
+  "transparency.card.persistent-bot-routine-progress.effect": "進度與長期記憶分開保存，來源重啟後仍保留。儲存筆記不會啟動模型回合，也不會修改排程。忘記記憶時，會在同一交易保守地清除該 Bot 的所有排程筆記，較舊的執行不能寫回。內容檢查不代表通過的文字可信。既有來源撤權、Project、執行 fence 與未知作用邊界仍有效。安裝版原生與正式環境資格化須另外驗證，不能以本機腳本證據代替；公開 Release 仍隱藏 Bots。",
+  "transparency.card.voice-live-pacing.title": "GPT-Live 說話節奏",
+  "transparency.card.voice-live-pacing.condition": "只適用於 GPT-Live 語音通話。新通話讀取機器已儲存的語速；通話中請副駕駛講快或慢一點，會選取另一個既有速度檔位。",
+  "transparency.card.voice-live-pacing.summary": "將慢、稍慢、正常或稍快其中一檔提示詞加入發聲模型。中文通話使用台灣繁體中文提示詞；其他介面語言使用英文節奏指示，不改變原本選定的說話語言。",
+  "transparency.card.voice-live-pacing.how": "建立通話時帶入所選提示詞。通話中改速，會另以 session.instructions.append 送出指示，帶唯一事件編號與空的 delegation id，與 Responses 後端更新分開。新提示詞明確取代先前的節奏要求，並儲存設定供後續通話使用。提示詞保留內容、回答長度、口音與插話規則。",
+  "transparency.card.voice-live-pacing.effect": "要求 GPT-Live 調整發音節奏與停頓。既有的 0.8、0.9、1.0、1.1 代表設定檔位，不是量測過的 Live 播放倍率。指示已送出或設定已儲存，不代表實際聲音已遵循。音質、各檔速度差異與反覆切換的穩定性仍需試聽驗收；這個機制不額外建立模型請求。"
 }

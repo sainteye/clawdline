@@ -14,7 +14,7 @@
  * live-conversations). Nothing here was checked against a live session yet.
  */
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { COPILOT_TOOLS, briefingSection, extraSection, instructionsFor, languageRule, originSection, type CallOptions } from './copilot-tools.ts'
+import { COPILOT_TOOLS, DEFAULT_SPEED, SPEEDS, briefingSection, extraSection, instructionsFor, languageRule, originSection, type CallOptions } from './copilot-tools.ts'
 
 /** The backend model the machine opens a session with (copilot.LiveBackendModel). */
 export const LIVE_BACKEND_MODEL = 'gpt-6-luna'
@@ -23,6 +23,40 @@ export const LIVE_BACKEND_MODEL = 'gpt-6-luna'
 export const LIVE_USD_PER_SECOND = 0.05 / 60
 /** The backend model's price per 1M tokens (gpt-6-luna, standard short context). */
 export const LIVE_BACKEND_RATES = { input: 0.1, cached: 0.01, output: 0.5 }
+
+/** Qualitative pacing for the existing speed choices; Live does not promise playback multipliers. */
+const LIVE_PACING = {
+  'zh-Hant': {
+    common: '這是目前語速設定，取代先前所有語速指示。以下指示只調整說話速度與停頓。保留原有的內容、回答長度、語言、口音與個性，不要靠刪減內容來加快，也不要靠重複內容來放慢。中文保持自然的台灣口語與清楚的聲調；英文保持自然的重音與連音。整段回答維持所選節奏，直到句尾。使用者插話時，依原有規則停下來聽。不要朗讀或解釋這些語速指示。',
+    speeds: {
+      '0.8': '用明顯偏慢、從容清楚的速度說話。每個詞的發音稍微放慢，按自然語意分組，在完整句子之間短暫停頓。保持語句連貫，不要逐字拆開，也不要用長時間沉默來製造慢速。',
+      '0.9': '用比日常聊天稍慢的速度說話，放鬆、清楚、容易跟上。詞語之間保持連貫，只在語意轉折與句尾稍作停頓。避免拖長單字或刻意拉開每個字的間隔。',
+      '1.0': '用自然日常聊天的正常速度說話，節奏流暢。按語意自然停頓，句尾俐落收束。中文不要逐字慢念；英文使用自然的連音，讓整句順暢地說完。',
+      '1.1': '用明顯比正常聊天更快、但仍輕鬆清楚的速度說話。加快詞句本身的發音節奏，縮短不必要的詞間與句間停頓，讓整句連貫流暢。每個字仍須清楚，尤其是姓名、數字與關鍵資訊；不要吞字，並維持快節奏直到句尾。',
+    },
+  },
+  en: {
+    common: 'This is the current speaking pace and supersedes all earlier pacing instructions. These instructions control speaking pace and pauses only. Preserve the intended content, response length, language, accent, and personality. Do not omit content to speak faster or repeat content to speak slower. Keep Mandarin tones clear and natural, and preserve natural English stress and connected speech. Maintain the selected pace through the end of each response. Follow the existing interruption policy when the user speaks. Do not read or explain these pacing instructions.',
+    speeds: {
+      '0.8': 'Speak at a distinctly slow, relaxed pace. Take more time to articulate each phrase, group words naturally, and pause briefly between complete sentences. Keep speech connected rather than separating every word. Achieve the slower pace through articulation, without adding long silences.',
+      '0.9': 'Speak a little more slowly than ordinary conversation, with relaxed, clear delivery. Keep words connected and allow small pauses at changes of thought and sentence endings. Avoid stretching individual words or spacing out every syllable.',
+      '1.0': 'Speak at a natural, everyday conversational pace with a smooth rhythm. Pause where the meaning calls for it and finish sentences cleanly. Keep Mandarin phrases flowing rather than reading character by character, and use natural connected speech in English.',
+      '1.1': 'Speak noticeably faster than ordinary conversation while staying relaxed and easy to understand. Increase the pace of articulation itself and shorten unnecessary gaps between words and sentences. Keep phrases flowing, pronounce every word clearly, especially names, numbers, and key facts, and sustain the brisk pace through the final sentence.',
+    },
+  },
+}
+
+export function livePacingInstructions(options: CallOptions = {}): string {
+  const locale = !options.language || /^zh(?:-|$)/i.test(options.language) ? 'zh-Hant' : 'en'
+  const pacing = LIVE_PACING[locale]
+  const speed = SPEEDS.includes(options.speed ?? '') ? options.speed! : String(DEFAULT_SPEED)
+  return ['Speaking pace:', pacing.common, pacing.speeds[speed as keyof typeof pacing.speeds]].join('\n')
+}
+
+/** Trusted, session-wide speech instructions; backend updates alone cannot change the speaking model. */
+export function livePacingUpdate(options: CallOptions): Record<string, unknown> {
+  return { type: 'session.instructions.append', event_id: `pace_${crypto.randomUUID()}`, delegation_id: null, content: livePacingInstructions(options) }
+}
 
 /** The spoken persona the live model starts with. Kept short: OpenAI caps it at 16,384 tokens and procedures belong to the backend. */
 export function liveInstructions(options: CallOptions = {}): string {
@@ -34,9 +68,10 @@ Personality: 你跟了他很久、很熟他的工作。親切、放鬆、反應�
 Speaking style: 這是對話，不是報告。${brief ? '一般回答一到三句，' : ''}講完重點就停，讓他接話；他想知道更多自然會問。說法自己決定、每次換著說，不要念稿。技術用語改說它對他的影響，不念 Session ID、路徑、指令或網址。
 Backchannel policy: Use moderate, brief and varied backchannels while the person is speaking.
 Interruption policy: Stop speaking when the person interrupts, and listen. Answer what they just said; do not go back to finish the old explanation.
-Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
+Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話、調整並保存語速，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
     languageRule(options.language ?? ''),
     extraSection(options.extra ?? ''),
+    livePacingInstructions(options),
   ].filter(Boolean).join('\n\n')
 }
 

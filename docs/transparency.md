@@ -615,3 +615,17 @@ fingerprint. A blocked send returns a read/answer route without retrying its wri
 Synthetic regressions cover changed identities, missing menus and changed questions;
 model comprehension and audio acceptance remain separate. The public website
 snapshot must import this reviewed product revision after it lands.
+
+
+## GPT-Live speaking pace (2026-11-16)
+
+The conditional `voice-live-pacing` entry records the existing four speed settings as
+localized speech instructions. Startup includes the selected pace; an in-call change
+also sends a trusted session-wide `session.instructions.append` to the speaking model.
+The latest instruction explicitly supersedes prior pace directions and preserves
+content, answer length, speaking language, accent and interruption behavior. The
+English and Taiwan Traditional Chinese explanations distinguish saved settings and
+sent instructions from audible compliance and exact playback multipliers. This
+OpenAI voice path is independent of the native-agent filters. Synthetic protocol
+checks require no provider call; listening acceptance remains separate. The public
+website snapshot must follow this reviewed product revision after it lands.

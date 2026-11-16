@@ -683,6 +683,19 @@ test("an in-call change sends the instructions and speed, never the voice", () =
   assert.equal("tools" in ev.session, false)
 })
 
+test("a Live speed result describes a pacing request rather than promising a measured multiplier", async () => {
+  const { deps } = fakeMachine({})
+  deps.delivery = () => ({ speed: '0.9', brief: true })
+  deps.adjust = async () => ({ saved: true })
+  deps.callStatus = () => ({ engine: 'live', model: 'gpt-live-1', seconds: 10, usd: 0, priced: true })
+  const answer = await runCopilotTool('set_speaking_speed', '{"speed":"faster"}', deps)
+  const result = JSON.parse(answer.output)
+  assert.equal(result.speed, '1.0')
+  assert.equal(result.saved_for_next_calls, true)
+  assert.match(result.note, /not an exact playback multiplier/)
+  assert.ok(!answer.logs.some(log => /倍|×/.test(log.text)))
+})
+
 test("times are said in words a person uses, never as a count of minutes", () => {
   const zone = "Asia/Taipei"
   const now = Date.UTC(2026, 10, 12, 6, 0, 0) / 1000 // 14:00 in Taipei

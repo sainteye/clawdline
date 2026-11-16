@@ -406,9 +406,23 @@ are the same `runCopilotTool` a Realtime call runs.
   envelope; the browser runs it and returns `response.item.create`, then `response.create` once
   nothing is pending.
 - **What it does not do yet.** The background work list, the program-paced Session report
-  batches, the opening handover of a clicked Session and the speaking speed are Realtime-only;
+  batches and the opening handover of a clicked Session are Realtime-only;
   a GPT-Live call greets once (`session.commentary.append`) and tells the live model when the
   focus moves (`session.thinking.append`).
+
+**Speaking pace.** The machine’s saved speed also applies to GPT-Live. The four existing
+settings select slow (0.8), unhurried (0.9), normal (1.0) or quick (1.1) pacing instructions;
+these numbers are not measured Live playback multipliers. `livePacingInstructions` adds one
+common rule and one pace at startup, in Taiwan Traditional Chinese for Chinese calls and
+English otherwise. It changes articulation and pauses while preserving content, answer length,
+language, accent and interruption policy. An in-call `set_speaking_speed` also sends
+`session.instructions.append` to the speaking model, with a unique event id and
+`delegation_id: null`; updating the Responses backend alone cannot change its speech. Each
+new pacing instruction explicitly supersedes earlier pacing directions. The setting is saved
+for the next call. Instruction transport tests do not establish audible speed or compliance;
+listening acceptance remains separate. The protocol and prompting guidance are documented in
+[Managing GPT-Live sessions](https://developers.openai.com/api/docs/guides/live-conversations)
+and [Prompting GPT-Live](https://developers.openai.com/api/docs/guides/live-prompting#pace).
 
 **Switching per call.** A call button dials at once on the settings' engine, as before. While the call rings or runs, the sheet's header shows a `GPT-Live | Realtime API` toggle; pressing the other side calls `switchEngine(engine)`, which hangs up and places the call again on that system from the same Session, inside the tap iOS needs for the microphone. (A pick-before-dialing sheet shipped briefly on 2026-11-15 and was replaced at the person's request.)
 

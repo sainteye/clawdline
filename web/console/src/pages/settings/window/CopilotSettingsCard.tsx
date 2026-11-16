@@ -4,6 +4,7 @@ import { onMachineChanged } from "../../../cloud/machine-switch.js"
 import { NeedsUpdate } from "../../../machine/NeedsUpdate.js"
 import { nextWord } from "../../../next-strings.js"
 import { COPILOT_TOOLS, sessionUpdateEvent } from "../../../realtime/copilot-tools.js"
+import { liveInstructions } from "../../../realtime/copilot-live.js"
 import { getProgressSounds, getStoredOpenAIKey, previewVoice, setProgressSounds, setStoredOpenAIKey } from "../../../realtime/realtime-copilot.js"
 import { formatUSD } from "../../../realtime/copilot-cost.js"
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettingsChange, type CopilotSettingsSnapshot } from "../api.js"
@@ -205,7 +206,9 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <summary>{snapshot.work_enabled ? nextWord("voiceWorkManagedSource") : nextWord("copilotSourceSummary", { tools: COPILOT_TOOLS.length })}</summary>
         <p className="sw-hint">{nextWord(snapshot.work_enabled ? "voiceWorkManagedSourceHint" : "copilotSourceHint")}</p>
         <h4>{nextWord("copilotSourceInstructions")}</h4>
-        <pre className="sw-copilot-pre">{String((sessionUpdateEvent("","",{workEnabled:snapshot.work_enabled,brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
+        <pre className="sw-copilot-pre">{snapshot.engine === "live"
+          ? liveInstructions({ speed: snapshot.speed, brief: snapshot.brief, extra: snapshot.extra_instructions, language: document.documentElement.lang })
+          : String((sessionUpdateEvent("","",{workEnabled:snapshot.work_enabled,brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
         {!snapshot.work_enabled ? <><h4>{nextWord("copilotSourceTools")}</h4>
         <ul className="sw-copilot-tools">
           {COPILOT_TOOLS.map((tool) => (

@@ -2667,6 +2667,10 @@ async function setSpeed(deps: ToolDeps, logs: ToolLog[], ask: string): Promise<u
     return { speed, changed: false, note: edge }
   }
   const { saved } = await deps.adjust({ speed })
+  if (deps.callStatus?.().engine === 'live') {
+    logs.push({ level: 'info', text: say(`Live speaking pace requested (setting ${speed})${saved ? ', and saved for the next call' : ' (this call only)'}`, `已送出 Live 語速指示（設定 ${speed}）${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}`) })
+    return { speed, changed: true, saved_for_next_calls: saved, note: 'Live uses pacing instructions, not an exact playback multiplier. The instruction was sent; actual speaking pace requires listening.' }
+  }
   logs.push({ level: 'info', text: say(`Speech speed set to ${speed}×${saved ? ', and saved for the next call' : ' (this call only)'}`, `語速調成 ${speed} 倍${saved ? '，並存成下次通話的設定' : '（只在這通電話）'}`) })
   return { speed, changed: true, saved_for_next_calls: saved }
 }

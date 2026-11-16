@@ -4005,6 +4005,76 @@
         "Fresh isolated routine prompt with JSON-quoted progress data",
         "Source SQLite routine state and atomic memory-forget transaction"
       ]
+    },
+    {
+      "id": "voice-live-pacing",
+      "scope": "conditional",
+      "agents": [],
+      "stages": [
+        "start",
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/realtime/copilot-live.ts",
+          "line": 28
+        },
+        {
+          "path": "web/console/src/realtime/realtime-copilot.ts",
+          "line": 379
+        },
+        {
+          "path": "web/console/src/realtime/copilot-tools.ts",
+          "line": 2661
+        },
+        {
+          "path": "web/console/src/pages/settings/window/CopilotSettingsCard.tsx",
+          "line": 206
+        }
+      ],
+      "original": [
+        "const LIVE_PACING = {",
+        "  'zh-Hant': {",
+        "    common: '這是目前語速設定，取代先前所有語速指示。以下指示只調整說話速度與停頓。保留原有的內容、回答長度、語言、口音與個性，不要靠刪減內容來加快，也不要靠重複內容來放慢。中文保持自然的台灣口語與清楚的聲調；英文保持自然的重音與連音。整段回答維持所選節奏，直到句尾。使用者插話時，依原有規則停下來聽。不要朗讀或解釋這些語速指示。',",
+        "    speeds: {",
+        "      '0.8': '用明顯偏慢、從容清楚的速度說話。每個詞的發音稍微放慢，按自然語意分組，在完整句子之間短暫停頓。保持語句連貫，不要逐字拆開，也不要用長時間沉默來製造慢速。',",
+        "      '0.9': '用比日常聊天稍慢的速度說話，放鬆、清楚、容易跟上。詞語之間保持連貫，只在語意轉折與句尾稍作停頓。避免拖長單字或刻意拉開每個字的間隔。',",
+        "      '1.0': '用自然日常聊天的正常速度說話，節奏流暢。按語意自然停頓，句尾俐落收束。中文不要逐字慢念；英文使用自然的連音，讓整句順暢地說完。',",
+        "      '1.1': '用明顯比正常聊天更快、但仍輕鬆清楚的速度說話。加快詞句本身的發音節奏，縮短不必要的詞間與句間停頓，讓整句連貫流暢。每個字仍須清楚，尤其是姓名、數字與關鍵資訊；不要吞字，並維持快節奏直到句尾。',",
+        "    },",
+        "  },",
+        "  en: {",
+        "    common: 'This is the current speaking pace and supersedes all earlier pacing instructions. These instructions control speaking pace and pauses only. Preserve the intended content, response length, language, accent, and personality. Do not omit content to speak faster or repeat content to speak slower. Keep Mandarin tones clear and natural, and preserve natural English stress and connected speech. Maintain the selected pace through the end of each response. Follow the existing interruption policy when the user speaks. Do not read or explain these pacing instructions.',",
+        "    speeds: {",
+        "      '0.8': 'Speak at a distinctly slow, relaxed pace. Take more time to articulate each phrase, group words naturally, and pause briefly between complete sentences. Keep speech connected rather than separating every word. Achieve the slower pace through articulation, without adding long silences.',",
+        "      '0.9': 'Speak a little more slowly than ordinary conversation, with relaxed, clear delivery. Keep words connected and allow small pauses at changes of thought and sentence endings. Avoid stretching individual words or spacing out every syllable.',",
+        "      '1.0': 'Speak at a natural, everyday conversational pace with a smooth rhythm. Pause where the meaning calls for it and finish sentences cleanly. Keep Mandarin phrases flowing rather than reading character by character, and use natural connected speech in English.',",
+        "      '1.1': 'Speak noticeably faster than ordinary conversation while staying relaxed and easy to understand. Increase the pace of articulation itself and shorten unnecessary gaps between words and sentences. Keep phrases flowing, pronounce every word clearly, especially names, numbers, and key facts, and sustain the brisk pace through the final sentence.',",
+        "    },",
+        "  },",
+        "}",
+        "",
+        "export function livePacingInstructions(options: CallOptions = {}): string {",
+        "  const locale = !options.language || /^zh(?:-|$)/i.test(options.language) ? 'zh-Hant' : 'en'",
+        "  const pacing = LIVE_PACING[locale]",
+        "  const speed = SPEEDS.includes(options.speed ?? '') ? options.speed! : String(DEFAULT_SPEED)",
+        "  return ['Speaking pace:', pacing.common, pacing.speeds[speed as keyof typeof pacing.speeds]].join('\\n')",
+        "}",
+        "",
+        "/** Trusted, session-wide speech instructions; backend updates alone cannot change the speaking model. */",
+        "export function livePacingUpdate(options: CallOptions): Record<string, unknown> {",
+        "  return { type: 'session.instructions.append', event_id: `pace_${crypto.randomUUID()}`, delegation_id: null, content: livePacingInstructions(options) }",
+        "}"
+      ],
+      "locations": [
+        "Voice assistant → Settings → Speaking speed",
+        "GPT-Live startup instructions",
+        "GPT-Live session.instructions.append",
+        "<state>/copilot.json"
+      ]
     }
   ],
   "sourceChecks": {
@@ -4164,8 +4234,9 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "46e1e824e7fb8006dc9a89e7069f8210129c1a217d0bf7c8d1e823303b126011",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "1afdb9ac0cb829663401472c1446af504870a8f7b6aebf1ee6528394f2d4eae0",
+    "web/console/src/next-strings.ts": "7e4b3edbaa2e454b6ab93d9cabaa6070695c4c8c7eb962b3b569d4d29b5583c5",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
+    "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "da5ce9a3e9d7ed63d16db49625cfe53419754df29ff24023c865f73453913862",
     "web/console/src/project-assistants/OutputCard.tsx": "41bf8737de8d646a2175e2aeb0b7ffbaebc68e5a66cbd955c01da5f36928d724",
     "web/console/src/project-assistants/Routines.tsx": "b4b06b9d501d12b7721d981b5f11e8e1e47c150cbf555a5bcd2d415fe93bb252",
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
@@ -4173,10 +4244,11 @@
     "web/console/src/project-assistants/routine-intent.ts": "3fe5a42378fd7adfc75895ff458e52693b18f90f9c27a1f849cb9b4f8dadf4fa",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
+    "web/console/src/realtime/copilot-live.ts": "b85516b1806e1cf9ef03a5ea239db37dc33eae38b019c993b9b4126ec3a4a1a1",
     "web/console/src/realtime/copilot-reports.ts": "7810e94b00ca6f0a8e230cdca071dcd606de9f661b9272bf035b84f4c0d9be20",
     "web/console/src/realtime/copilot-speech.ts": "693365864fd8f309d396aa5d9878e550e9de8d55811288779bb76aa70f5b312b",
-    "web/console/src/realtime/copilot-tools.ts": "70b8be15922cca5f6f153d271b64400088d7efd3dcff656fcc209384403a7449",
-    "web/console/src/realtime/realtime-copilot.ts": "b733403c3c578831f4826ea0e52de8f7ae7dc90feb2cff28c2bdb71e2e9b42cc",
+    "web/console/src/realtime/copilot-tools.ts": "50e16432c1e8224713cb962e19d7f89fbef91e41e2d741cadac46a439c89ec71",
+    "web/console/src/realtime/realtime-copilot.ts": "dd40ef951af09c10f34ca2c72d37814a73ef7d4cf6404abd84e13024110b7e1c",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -4192,7 +4264,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "199c3c678786a2f5bb85251dc813afced6955ff39a55d3f5235b4802b83be2a3",
-    "zh-Hant": "17064f5320f7623c3d1d77ce74b81369199ce0010ff460994e304d4a5ac2efc2"
+    "en": "dd32aa1b11aa00c1b7f617e1741d7ffa7ae54794ac909db4fffa0ce2df4ce2f9",
+    "zh-Hant": "003ac00c196ecf794f3746e92ad4e86c2c8df621722a716d9c39639b46b0cea1"
   }
 }
