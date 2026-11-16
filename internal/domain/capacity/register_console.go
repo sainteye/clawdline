@@ -10,7 +10,7 @@ const (
 // consoleBounds is every registered row named console.*.
 func baseConsoleBounds() []Entry {
 	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
-		{Name: "console.copilot_session_report_batch", Class: Buffer, Unit: Rows, Limit: 3, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		{Name: "console.copilot_session_report_batch", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_refs", Class: Cache, Unit: Rows, Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_sessions", Class: Buffer, Unit: Rows, Limit: 24, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},
 		{

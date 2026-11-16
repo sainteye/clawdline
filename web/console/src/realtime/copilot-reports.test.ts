@@ -82,8 +82,8 @@ test('an interruption pauses automatic presentation and a replaced report ignore
 })
 
 
-test('presentation batches use two or three where possible instead of leaving a final single Session',()=>{
- for(const [total,expected] of [[4,[2,2]],[5,[3,2]],[7,[3,2,2]],[8,[3,3,2]]]){
+test('presentation batches use at most two Sessions in every batch',()=>{
+ for(const [total,expected] of [[4,[2,2]],[5,[2,2,1]],[7,[2,2,2,1]],[8,[2,2,2,2]]]){
   const sizes:number[]=[];let left=total as number
   while(left){const size=sessionBatchSize(left);sizes.push(size);left-=size}
   assert.deepEqual(sizes,expected)

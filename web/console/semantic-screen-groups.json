@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12501,
-  "riskKeys": 5425,
-  "nonRiskCount": 7076,
+  "englishContentKeys": 12525,
+  "riskKeys": 5434,
+  "nonRiskCount": 7091,
   "groups": [
     {
       "name": "acp / other",
@@ -407,7 +407,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 604,
+      "count": 615,
       "sources": [
         null
       ],
@@ -467,12 +467,23 @@
         "capacityRow.bots.event_rows.what",
         "capacityRow.bots.fallback_agents.what",
         "capacityRow.bots.feature_probe_bytes.what",
+        "capacityRow.bots.group_history_lines.full",
+        "capacityRow.bots.group_history_lines.what",
+        "capacityRow.bots.group_late_turns.what",
+        "capacityRow.bots.group_member_wait_seconds.full",
+        "capacityRow.bots.group_member_wait_seconds.what",
+        "capacityRow.bots.group_peer_line_chars.full",
+        "capacityRow.bots.group_peer_line_chars.what",
+        "capacityRow.bots.group_replies.full",
+        "capacityRow.bots.group_replies.what",
+        "capacityRow.bots.group_rounds.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",
         "capacityRow.bots.inputs_per_bot.what",
         "capacityRow.bots.inputs_per_message.what",
         "capacityRow.bots.instruction_bytes.what",
+        "capacityRow.bots.manager_created.what",
         "capacityRow.bots.memory_entries.what",
         "capacityRow.bots.memory_search_results.full",
         "capacityRow.bots.memory_search_results.what",
@@ -7145,7 +7156,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 187,
+      "count": 191,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7251,6 +7262,9 @@
         "transparency.card.notice.title",
         "transparency.card.persistent-bot-fallback.summary",
         "transparency.card.persistent-bot-fallback.title",
+        "transparency.card.persistent-bot-group-rooms.condition",
+        "transparency.card.persistent-bot-group-rooms.summary",
+        "transparency.card.persistent-bot-group-rooms.title",
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
@@ -7297,6 +7311,7 @@
         "transparency.card.tool-library.title",
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
+        "transparency.card.voice-list-briefing.title",
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",

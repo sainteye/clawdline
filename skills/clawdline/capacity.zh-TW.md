@@ -364,7 +364,7 @@
 | `console.copilot_recent_idle_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_reply_characters` | 8000 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_screen_reads` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |
-| `console.copilot_session_report_batch` | 3 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.copilot_session_report_batch` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_session_report_refs` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
 | `console.copilot_session_report_sessions` | 24 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_smart_rename_sessions` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
