@@ -4239,7 +4239,7 @@
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
     "internal/adapters/projectassistantacp/session_configuration.go": "f5de7ac6654435e88248fee99602a496953ffef79ff723b8f58b96dcb9bbed0f",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
-    "internal/adapters/projectassistanthost/provider.go": "d05faa733a985ee82357ea07b4c51a30e0fd6d6295208cad168b66e0044c22bd",
+    "internal/adapters/projectassistanthost/provider.go": "07a14eaae8ef5dc9955a813c185ed7bc15753ac26d0734a604c47ea7880297a8",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
     "internal/adapters/projectassistantstore/fallback.go": "7cb4b1a9dda66fe0ab284863fa4859fa4c4678826715fc5708863e42576f20b3",
     "internal/adapters/projectassistantstore/groups.go": "be40b1957a7d4886a8447c6bd6eacd528a87d17c29a02fb6055fbf0f3e9d005e",
@@ -4386,7 +4386,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "2d81d4a1665f57986a07b2ebf884f6d783f97df6ec87fcad198be17b50fbf885",
-    "zh-Hant": "8c34617d336c6475e6226fc50efd494b9e6fb8a8dcb2548d8c7bfa77ddbe0d69"
+    "en": "c709ef6910905b96878cbde32b2f9629437dbb8810693e8186376c517efc14da",
+    "zh-Hant": "05abc9540a7e96445ece5f49558f8227cd06cfdf578f62fb02e5d2afd907f979"
   }
 }

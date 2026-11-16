@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -427,4 +428,43 @@ func TestHostBrowserRefusesAReadOnlySourceAndADisabledFeature(t *testing.T) {
 		t.Fatal(err)
 	}
 	refused("disabled feature")
+}
+
+// A Bot that hands a page to the person must keep the tab: release would drop
+// it as owner and the person could no longer reach it from the Bot's chat.
+func TestHostBotBrowserReleaseKeepsTheTabForThePerson(t *testing.T) {
+	f, _, chrome := browserFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	if _, e := f.send(t, b, "one"); e != nil {
+		t.Fatal(e)
+	}
+	fixtureReceive(t, f.p.sent)
+	first := fixtureReceive(t, f.p.sessions)
+	tools := browserToolsOf(t, first)
+	owner := BrowserOwner(first.q.Binding.Fence, first.q.Binding.ForgottenThrough)
+	if r := chrome.run(t, tools, "open", `{"url":"http://127.0.0.1:9/page"}`); r.err != nil {
+		t.Fatal(r.err)
+	}
+	before := len(chrome.ops)
+	r := chrome.run(t, tools, "release", "")
+	if r.err != nil {
+		t.Fatalf("release: %v", r.err)
+	}
+	if len(chrome.ops) != before {
+		t.Fatal("release reached the browser engine")
+	}
+	if got := chrome.b.OwnerOf(31); got != owner {
+		t.Fatalf("tab owner after release = %q, want the Bot's %q", got, owner)
+	}
+	if !strings.Contains(string(r.value), "kept") {
+		t.Fatalf("release answer does not say the tab was kept: %s", r.value)
+	}
+	status, err := tools.BrowserStatus(context.Background())
+	if err != nil || len(status.Tabs) != 1 {
+		t.Fatalf("status after release = %+v %v", status, err)
+	}
+	first.reply <- app.PromptResult{FinalText: "Done"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 }
