@@ -435,6 +435,12 @@ and [Prompting GPT-Live](https://developers.openai.com/api/docs/guides/live-prom
 
 **Opening on its Session.** A Live call placed from one Session does not greet: at `session.started` it says the recap the list already carries for that Session (`liveOpeningNote`, with its age). A recap at most `FRESH_RECAP_SECONDS` old is the latest, and nothing more is read. An older one is followed, while it is spoken, by two reads together: the latest recap (`forkedRecap` with `fresh`) and the Session's newest reports (`get_session_updates`, its last two assistant messages, at most `LIVE_UPDATE_CHARS` = 150 characters). The latest state is sent only once the opening has been said (`untilOpeningSaid`: the live model spoke and then fell silent for `liveQuietMs`, the person not speaking; at most `LIVE_OPENING_WAIT_MS` = 60 s), and it tells the live model to go on with only what is newer. Nothing new, no note. On 2026-11-15 a note sent while the opening was spoken was blended into it, and a fresh recap clipped to its first 400 characters recounted the Session's history; `clipRecap` keeps a recap's first sentence and its end, where it stands now, for every spoken note.
 
+**Appends fit.** OpenAI refuses a GPT-Live append over 500 tokens. A report batch from a call
+on the list went as one (rules, evidence and the rules again) and the call was silent on
+2026-11-16; the rules and evidence now go as `session.thinking.append` pieces of at most
+`LIVE_APPEND_TOKENS` (400) estimated tokens (`liveTokens`: CJK characters 1.3, others a third),
+and the spoken `session.commentary.append` is one short note naming the batch (`liveReportNote`).
+
 **Not news twice.** The latest state is said only when it adds something the call has not.
 On 2026-11-16 the overview said Release 2.4's three iPad failures and the latest recap of it,
 opened a minute later, said them again as "I just got the latest". The note now tells the live

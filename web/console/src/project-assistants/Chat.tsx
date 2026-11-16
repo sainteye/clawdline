@@ -27,7 +27,8 @@ import { PaMenu } from "./PaSelect"
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
 import { memoryOpener } from "./loading"
-import { BotBrowser, botBrowserWord } from "./BotBrowser"
+import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
+import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
 export const EventRefreshMs = 3000
 /** Covers every await of a permission attempt, including the second detail preflight. */
@@ -55,10 +56,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
   const permissionRows=useRef(permissions)
+  const [observedBrowserTraces,setObservedBrowserTraces]=useState<Record<string,W.ProjectAssistantTrace>>({})
   const [traceSummaries,setTraceSummaries]=useState<W.ProjectAssistantReadTraceSummary[]>([])
   const traceRows=useRef(traceSummaries)
   const [details,setDetails]=useState<Record<string,W.ProjectAssistantPermissionOffer|W.ProjectAssistantTrace>>({})
   const detailRows=useRef(details)
+  const requestedTraceReferences=useRef(new Map<string,string>())
+  const traceDetailTail=useRef(Promise.resolve())
   const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
   // A held send read back after a reload shows its own text and quote, locked, whatever the draft store says.
@@ -98,7 +102,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const flush=()=>setDraftDurable(view.flush(draftKey))
   const lock=useCallback(()=>{
     view.recoveryRequired.add(draftKey);recovery.current=true;setRecoveryRequired(true)
-    activeMutations.current.forEach(control=>control.abort());setTurns([]);setPermissions([]);permissionRows.current=[];setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
+    activeMutations.current.forEach(control=>control.abort());setTurns([]);setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     for(const control of reads.current)control.abort()
     if(timer.current){clearTimeout(timer.current);timer.current=null}
   },[view,draftKey])
@@ -127,7 +131,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     for(const control of reads.current)control.abort()
     reads.current.clear();collectionBusy.current.clear()
     collectionCursors.current={permissions:new Set(),traces:new Set()};historyCursors.current=new Set()
-    setPermissions([]);permissionRows.current=[];setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
+    setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
     const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
     const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows)
@@ -181,7 +185,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           for(const row of page.items){const event=row.event!
             if(!sameFence(event.fence,page.head.current_fence))continue
             if(event.turn&&sameFence(event.turn.fence,page.head.current_fence))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
-            if(event.trace){const now=activityOf(event.trace),id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
+            if(event.trace){if(browserToolTrace(event.trace)){const trace=event.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}const now=activityOf(event.trace),id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
             if(event.permission){const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)}
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
@@ -466,20 +470,39 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
 
   const loadRules=useCallback((signal:AbortSignal)=>source.rules!(key,signal).then(r=>r.rules),[source,key])
 
-  const detail=async(kind:"permission"|"trace",id:string,reference:string)=>{
+  const detail=async(kind:"permission"|"trace",id:string,reference:string,quiet=false)=>{
     const captured=headRef.current,capturedEpoch=epoch.current
     if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
     const control=new AbortController();reads.current.add(control);collectionBusy.current.set(reference,control)
     try{
       const page=await read(request("detail",reference,1),control.signal)
       if(!valid()||control.signal.aborted||recovery.current||capturedEpoch!==epoch.current||!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
-      if(!sameFence(page.head.current_fence,captured.current_fence)){lock();throw failure("pa_stale_generation")}
+      if(!sameFence(page.head.current_fence,captured.current_fence)){if(!quiet)lock();throw failure("pa_stale_generation")}
       const row=page.items[0]
       if(row.kind!==kind||kind==="permission"&&row.permission?.id!==id||kind==="trace"&&!traceSummaries.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category))throw failure("pa_invalid")
       adoptHead(page);const next={...detailRows.current,[id]:row.permission??row.trace!};detailRows.current=next;setDetails(next)
-    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
+      if(row.trace){requestedTraceReferences.current.set(id,reference);if(browserToolTrace(row.trace)){const trace=row.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}}
+    }catch(e){if(!quiet&&!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
     finally{reads.current.delete(control);if(collectionBusy.current.get(reference)===control)collectionBusy.current.delete(reference)}
   }
+  // Summaries contain no tool name. Read tool details serially within the existing
+  // bounded collection; leave thoughts and reply text behind the explicit Details action.
+  useEffect(()=>{
+    if(recoveryRequired||!botBrowserSupported(source))return
+    let cancelled=false
+    traceDetailTail.current=traceDetailTail.current.then(async()=>{
+      for(const row of traceSummaries){
+        if(cancelled||recovery.current)return
+        const value=detailRows.current[row.id]
+        if(!toolTraceCategory(row.category)||requestedTraceReferences.current.get(row.id)===row.detail_cursor||value&&"text" in value&&browserToolTrace(value))continue
+        // A failed background read is retried only when the source supplies a
+        // new reference, or through the person's explicit Details action.
+        requestedTraceReferences.current.set(row.id,row.detail_cursor)
+        await detail("trace",row.id,row.detail_cursor,true)
+      }
+    })
+    return()=>{cancelled=true}
+  },[traceSummaries,details,recoveryRequired,source])
   const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption)=>{
     let attempted=false
     try{
@@ -590,7 +613,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
   const sendingAdmitted=isSendingAdmitted(sending,messages,sendBaselineSeq.current)
   return <section className="pa-chat" aria-label={bot.name}>
-    <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36} mood={mood}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><PaMenu label={w.moreActions} items={[
+    <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36} mood={mood}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><BotBrowserChip source={source} current={current} bot={bot} hidden={browser||recoveryRequired} onOpen={()=>setBrowser(true)}/><PaMenu label={w.moreActions} items={[
       {id:"browser",label:botBrowserWord("open"),onSelect:()=>setBrowser(true)},
       {id:"library",label:w.library,onSelect:()=>setLibrary(true)},
       {id:"settings",label:w.settings,onSelect:()=>setSettings(true)},
@@ -600,7 +623,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={botBrowserSupported(source)?()=>setBrowser(true):undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
       <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)).map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}

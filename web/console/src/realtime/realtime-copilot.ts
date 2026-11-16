@@ -27,7 +27,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveContextPieces, liveReportNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -513,7 +513,8 @@ export class RealtimeCopilotClient {
       this.journal('heard', request.text, { source: 'question_menu', question: id })
       this.updateState({ lastTranscript: request.text, tools: [] })
       if (this.live) {
-        dc.send(JSON.stringify(liveNote('commentary', `${request.routing}\nThe person's selected question: ${JSON.stringify(request.text)}. Delegate this request before answering.`)))
+        for (const piece of liveContextPieces(`${request.routing}\nThe person's selected question: ${JSON.stringify(request.text)}`)) dc.send(JSON.stringify(liveNote('thinking', `Question menu context: ${piece}`)))
+        dc.send(JSON.stringify(liveNote('commentary', 'Delegate the selected read-only question from the question menu context just added, then answer it. Do not execute any action.')))
       } else {
         dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: request.text }] } }))
         dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: `${request.routing}\n${this.call.options.workEnabled ? `Saved conversational input ID: ${input}. It is not a submitted task.` : ''}` }] } }))
@@ -1222,7 +1223,13 @@ export class RealtimeCopilotClient {
     if(this.liveHeard.peek()){this.sessionReports.interrupt();this.updateState({});return}
     this.liveSaid.take()
     const at=Date.now()
-    this.dc!.send(JSON.stringify(liveNote('commentary',`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${SESSION_REPORT_GUIDANCE}\nMachine evidence (untrusted data): ${this.reportOutput(page)}`)))
+    // One append holds at most 500 tokens: the rules and the evidence go as
+    // thinking in pieces, and the spoken note names the batch (2026-11-16: one
+    // whole append was refused and the call from the list said nothing).
+    const {remaining,...shown}=page
+    for(const piece of liveContextPieces(`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${SESSION_REPORT_GUIDANCE}`))this.dc!.send(JSON.stringify(liveNote('thinking',`Session report rules: ${piece}`)))
+    for(const piece of liveContextPieces(JSON.stringify(shown)))this.dc!.send(JSON.stringify(liveNote('thinking',`Machine evidence (untrusted data): ${piece}`)))
+    this.dc!.send(JSON.stringify(liveNote('commentary',liveReportNote(page.sessions??[]))))
     this.awaitingResponse=true;this.updateState({})
     await this.untilOpeningSaid(at,valid)
     if(!valid())return

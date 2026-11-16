@@ -1,3 +1,5 @@
+// liveTokens counts what a GPT-Live append carries (copilot-live.ts).
+import { liveTokens } from './copilot-live.ts'
 import assert from 'node:assert/strict'
 import { test, afterEach } from 'node:test'
 import { createRequire } from 'node:module'
@@ -1034,6 +1036,10 @@ test('a Live list report advances only after its named transcript and quiet wind
  const reports=()=>f.sent.filter(e=>e.type==='session.commentary.append')
  assert.equal(reports().length,1)
  assert.match(reports()[0].content,/Work A.*Work B/)
+ // Every append fits what GPT-Live accepts: the rules and evidence go as thinking pieces.
+ for(const e of f.sent.filter(e=>/^session\.(commentary|thinking)\.append$/.test(e.type)))assert.ok(liveTokens(e.content)<=500,`${e.type} ${liveTokens(e.content)}`)
+ assert.ok(f.sent.some(e=>e.type==='session.thinking.append'&&/Session report rules/.test(e.content)),'the report rules reach the live model')
+ assert.ok(f.sent.some(e=>e.type==='session.thinking.append'&&/Machine evidence.*Current summary 0/.test(e.content)),'and the evidence')
  assert.doesNotMatch(reports()[0].content,/Work C/)
  await new Promise(r=>setTimeout(r,4));assert.equal(reports().length,1,'prepared content is not already spoken')
  f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Work A. Work B.'})
@@ -1139,4 +1145,20 @@ test('an old daemon has no question endpoint and cannot spend on an unrelated re
  f.c.toolDeps=()=>({fetch:async(path)=>{assert.equal(path,'/v1/voice/copilot-question');reads++;return new Response('',{status:404})}})
  assert.equal(await f.c.analyzeQuestion({id:'%7',label:'Compare',conversation:'c'},'Why?',3),undefined)
  assert.equal(reads,1)
+})
+
+
+test('Live menu routing fits the append limit even for a long Chinese Session title',async()=>{
+ const f=fixture(false);f.c.live=true;f.c.state.status='connected';f.c.state.connectionReady=true
+ const deps=f.c.toolDeps(),label='比較各個模型方案與條件'.repeat(12)
+ f.c.toolDeps=()=>({...deps,fetch:async(path,init)=>path==='/v1/sessions'?Response.json({sessions:[{...row,label}]}):deps.fetch(path,init)})
+ const menu=await f.c.questionTargets()
+ await f.c.askQuestion('insights','讀它最後五則回覆，整理最重要的洞見，以及對我的影響。',menu.targets[0])
+ const appends=f.sent.filter(e=>/^session\.(commentary|thinking)\.append$/.test(e.type))
+ assert.ok(appends.length)
+ for(const e of appends)assert.ok(liveTokens(e.content)<=500,`${e.type} ${liveTokens(e.content)} estimated tokens`)
+ assert.match(JSON.stringify(appends),/explain_session_reply/)
+ assert.match(JSON.stringify(appends),/conversation-seven/)
+ assert.match(JSON.stringify(appends),/讀它最後五則回覆/)
+ assert.equal(appends.filter(e=>e.type==='session.commentary.append').length,1)
 })

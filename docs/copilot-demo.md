@@ -49,7 +49,12 @@ the message is still unsent, since GPT-Live may act on the instruction at once o
 Session's question instead of sending it.
 
 What a take does is a script in `story.mjs` (`LIVE_SCRIPTS`, `--script <name>`), so it can be
-revised without touching the recorder. `triage`, the default since 2026-11-16, is what a person on
+revised without touching the recorder. `auto` is the default since a call from the list began
+reporting by itself: the person lets it tell the Sessions, waiting ones first and then what the
+working ones are doing, and the take goes on from there as `triage` does. It surfaced a defect:
+the report went to GPT-Live as one append of over 500 tokens, OpenAI refused it, and the call
+said nothing; the rules and evidence now go as thinking pieces (`liveContextPieces`, at most
+`LIVE_APPEND_TOKENS` = 400 estimated tokens) and the spoken note names the batch. `triage`, the default since 2026-11-16, is what a person on
 a phone wants from a call, one selling point a step: "Anything need me right now?" (the copilot
 picks out what waits on them), the finger opens Release 2.4 from the list (it tells that
 Session's state unasked, its kept recap and then the latest, which brings the iPad failures),
@@ -101,6 +106,15 @@ The recorder closes its Chrome and removes the profile however it ends, a failur
 SIGTERM or Ctrl-C included. Before 2026-11-16 it did so only after a take that succeeded; another
 Session found 155 headless Chromes from failed takes, orphaned for up to four days and loading the
 machine, which made later takes break up.
+
+Chrome's screencast sends frames in CSS pixels whatever the emulated device scale, so the phone
+film was 390 x 844 frames enlarged to 1080 x 2338 and its text broke into blocks. Chrome is now
+started at the device scale (`--force-device-scale-factor`): the phone at scale 2 (780 x 1688) and
+the desktop at 1600 x 900 CSS pixels and scale 1.5 (2400 x 1350), every other frame, scaled to
+1080 x 2338 and 1920 x 1080, JPEG at quality 95. Scale 3 and 2 at every frame were sharper but
+loaded the Chrome that also receives the copilot's voice, and take after take broke up. Frames
+go to disk as they arrive (held in memory as base64, high-resolution takes hit the heap limit),
+and a recorder first stops any demo Chrome a dead recorder left (a heap abort runs no handler).
 
 A real model chooses its own tools and words, so takes differ. The recorder exits 1 unless
 Release 2.4 received a message or an answer and no error was reported; it prints what the

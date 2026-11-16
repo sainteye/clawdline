@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12657,
+  "englishKeys": 12660,
   "counts": {
     "negation": 3397,
-    "state": 2131,
+    "state": 2133,
     "permission": 748,
     "deletion": 299,
     "uncertainty": 492
   },
-  "unionCount": 5480,
+  "unionCount": 5482,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3447,6 +3447,7 @@
       "bar.sessionWaiting",
       "bar.stackTip",
       "botBrowser.audit",
+      "botBrowser.openReply",
       "browserPairing.androidOpen",
       "browserPairing.approvalPage",
       "browserPairing.failed",
@@ -3731,6 +3732,7 @@
       "capacityRow.console.carrier_receive_bytes.what",
       "capacityRow.console.carrier_receive_rows.full",
       "capacityRow.console.carrier_receive_rows.what",
+      "capacityRow.console.copilot_live_append_tokens.full",
       "capacityRow.console.copilot_recap_pages.what",
       "capacityRow.console.copilot_recent_replies.full",
       "capacityRow.console.copilot_session_report_refs.full",
@@ -7241,6 +7243,7 @@
     "botBrowser.audit",
     "botBrowser.auditEmpty",
     "botBrowser.noTab",
+    "botBrowser.openReply",
     "botBrowser.readOnly",
     "botBrowser.refused",
     "botBrowser.stale",
@@ -7767,6 +7770,7 @@
     "capacityRow.console.copilot_kept_recap_seconds.full",
     "capacityRow.console.copilot_list_transcript_reads.full",
     "capacityRow.console.copilot_list_transcript_reads.what",
+    "capacityRow.console.copilot_live_append_tokens.full",
     "capacityRow.console.copilot_recap_pages.what",
     "capacityRow.console.copilot_recent_idle_seconds.full",
     "capacityRow.console.copilot_recent_replies.full",

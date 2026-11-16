@@ -262,6 +262,53 @@ export function newShare(next: string, said: string): number {
 /** Below this share of new words, the latest state is not said at all (`newShare`). */
 export const LIVE_NEWS_SHARE = 0.25
 
+/**
+ * The most a GPT-Live append carries, in estimated tokens; OpenAI refuses one
+ * over 500 ("Context append text must not exceed 500 tokens"), and on
+ * 2026-11-16 a call from the list was silent because its report went as one.
+ */
+export const LIVE_APPEND_TOKENS = 400
+
+/** A cautious token count for an append: CJK characters count 1.3, other characters a third. */
+export function liveTokens(text: string): number {
+  const wide = (text.match(/[⺀-鿿가-힯豈-﫿＀-￯]/g) ?? []).length
+  return Math.ceil(wide * 1.3 + (text.length - wide) / 3)
+}
+
+/** `text` cut into appends of at most `max` estimated tokens, at a space or line break where there is one. */
+export function liveContextPieces(text: string, max = LIVE_APPEND_TOKENS): string[] {
+  const pieces: string[] = []
+  let rest = text.trim()
+  while (rest) {
+    if (liveTokens(rest) <= max) { pieces.push(rest); break }
+    let end = 1
+    while (end < rest.length && liveTokens(rest.slice(0, end + 1)) <= max) end++
+    const space = Math.max(rest.lastIndexOf(' ', end), rest.lastIndexOf('\n', end))
+    const cut = space > end / 2 ? space : end
+    pieces.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut).trim()
+  }
+  return pieces
+}
+
+/**
+ * The spoken note of one Session report batch in a GPT-Live call: a short
+ * instruction and each Session's name with the start of its summary, within
+ * one append. The rules and the whole evidence go before it as thinking
+ * (`liveContextPieces`).
+ */
+export function liveReportNote(sessions: { label: string; [key: string]: unknown }[]): string {
+  // The fields get_sessions_summary gives a row, most telling first.
+  const say = (row: Record<string, unknown>) => {
+    const text = [row.recap, row.delivered, row.question, row.latest, row.goal].find((v): v is string => typeof v === 'string' && v.trim() !== '')
+    return text ?? (Array.isArray(row.recent) ? row.recent.filter((v) => typeof v === 'string').join(' ') : '')
+  }
+  const share = Math.max(60, Math.floor((LIVE_NOTE_CHARS - 80) / Math.max(1, sessions.length)))
+  const lines = sessions.map((row) => `"${row.label}": ${clipRecap(say(row), share)}`)
+  const note = `Report this Session batch now, following the Session report rules and the machine evidence just added as context, in this order: ${lines.join(' / ')}`
+  return liveContextPieces(note)[0] ?? note
+}
+
 /** The greeting the call opens with, as OpenAI's guide asks: once, after `session.started`. */
 export const LIVE_GREETING = 'Greet the person now in one short, warm sentence in their language and say you are ready to help. Do not report Sessions or list options. Then pause and listen.'
 
