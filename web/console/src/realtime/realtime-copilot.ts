@@ -250,6 +250,16 @@ export class RealtimeCopilotClient {
   private liveBackendUsd = 0
   /** When this GPT-Live call connected, for the call's running length and cost. */
   private liveStarted = 0
+  /** When this call connected (either system), for `get_call_status`; 0 before it has. */
+  private connectedAt = 0
+  /** When a Realtime call's voice was last playing (an audio delta, or its playback stopping). */
+  private spokeAt = 0
+  /** When the copilot was asked to hang up after its goodbye (`end_call`); 0 when it was not. */
+  private endingAt = 0
+  /** How long the goodbye may take before the call hangs up regardless. */
+  endGoodbyeMaxMs = 15000
+  /** How long the voice stays quiet before the goodbye counts as said: Realtime reports the end of playback, GPT-Live only its transcript. */
+  endQuietMs = { realtime: 800, live: 2500 }
   private liveTicker?: ReturnType<typeof setInterval>
 
   private state: RealtimeCopilotState = {
@@ -324,7 +334,37 @@ export class RealtimeCopilotClient {
       marks: browserMarks,
       delivery: () => ({ speed: this.call.options.speed ?? String(DEFAULT_SPEED), brief: this.call.options.brief !== false }),
       adjust: (change) => this.adjust(change),
+      callStatus: () => {
+        const cost = this.state.cost
+        return { engine: this.live ? 'live' : 'realtime', model: this.model, seconds: this.connectedAt ? (Date.now() - this.connectedAt) / 1000 : 0,
+          usd: cost?.usd ?? 0, priced: cost?.priced !== false }
+      },
+      endCall: () => { void this.endAfterGoodbye() },
     }
+  }
+
+  /**
+   * Hangs up once the copilot has said its goodbye (`end_call`, asked for on
+   * 2026-11-16): after it has spoken since the request and its voice has been
+   * quiet for `endQuietMs`, with no tool still running. A goodbye that never
+   * comes ends the call after 6 s; none waits past `endGoodbyeMaxMs`.
+   */
+  private async endAfterGoodbye() {
+    if (this.endingAt) return
+    const attempt = this.attempt
+    const at = this.endingAt = Date.now()
+    this.journal('notice', 'end_call: hanging up after the goodbye')
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (attempt !== this.attempt || this.state.status !== 'connected') return
+      const now = Date.now(), waited = now - at
+      const last = this.live ? this.liveSaidAt : this.spokeAt
+      const spoke = last > at
+      const quiet = now - last >= (this.live ? this.endQuietMs.live : this.endQuietMs.realtime) && (this.live || this.state.speakingState !== 'speaking')
+      const said = spoke && quiet && this.pendingTools.size === 0 && waited >= 1200
+      if (said || (!spoke && waited >= 6000) || waited >= this.endGoodbyeMaxMs) break
+    }
+    this.disconnect()
   }
 
   /** Changes this call's speed or answer length now, and saves it on the machine for the next calls. */
@@ -509,7 +549,7 @@ export class RealtimeCopilotClient {
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
-    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0
+    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.journalLines = []
@@ -685,6 +725,7 @@ export class RealtimeCopilotClient {
 
       this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
       this.addLog('info', nextWord('copilotLogConnected'))
+      this.connectedAt = Date.now()
     } catch (err) {
       // A call that did not start keeps no microphone, even one granted late.
       void microphone.then((stream) => { if (stream !== this.mediaStream) for (const track of stream.getTracks()) track.stop() }, () => undefined)
@@ -895,6 +936,7 @@ export class RealtimeCopilotClient {
         break
       case 'response.output_audio.delta':
       case 'response.audio.delta':
+        this.spokeAt = Date.now()
         if (this.state.speakingState !== 'speaking') this.updateState({ speakingState: 'speaking' })
         break
       case 'response.output_audio.done':
@@ -904,6 +946,7 @@ export class RealtimeCopilotClient {
         break
       case 'output_audio_buffer.stopped':
       case 'output_audio_buffer.cleared':
+        this.spokeAt = Date.now()
         this.updateState({speakingState:'listening'})
         break
       case 'response.output_audio_transcript.delta':
@@ -1318,6 +1361,7 @@ export class RealtimeCopilotClient {
     switch (event.type) {
       case 'session.started':
         this.addLog('info', nextWord('copilotLogConnected'))
+        this.connectedAt = Date.now()
         // The call's length and cost are shown from the start and move every second.
         this.liveStarted = Date.now()
         clearInterval(this.liveTicker)

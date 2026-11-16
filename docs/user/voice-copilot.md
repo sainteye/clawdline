@@ -41,6 +41,9 @@ use the page; drag the bubble aside, press it to open the call again, or press i
 - A Project's Dev Stack links, read aloud or shown in a window over the page you are on.
 - How to use Clawdline: it answers from this guide, and says so when the guide does not cover it.
 - To speak slower or faster, or to answer shorter or longer.
+- How long the call has lasted and what it has cost so far.
+- To end the call: say so ("we're done, you can hang up"). It says a short goodbye and hangs up
+  when it has finished. Asking it to close a Session does not end the call.
 
 ## Session recaps
 

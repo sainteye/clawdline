@@ -634,6 +634,48 @@ test('a cleared Session introduction exposes resume and reuses prepared content 
  })
 })
 
+test('in a call the copilot reads its own length and cost, and hangs up after its goodbye when asked', async (t) => {
+  globalThis.document = { documentElement: { lang: 'zh-Hant' } }
+  globalThis.location = { hash: '' }
+  const oldWindow = globalThis.window
+  globalThis.window = { addEventListener() {}, removeEventListener() {} }
+  const sent = []
+  const c = new RealtimeCopilotClient()
+  t.after(() => { clearInterval(c.liveTicker); globalThis.window = oldWindow })
+  Object.assign(c, { live: true, attempt: 1, journalCall: '', addLog: () => {}, model: 'gpt-live-1',
+    call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [],
+    dc: { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} } })
+  c.state = { ...c.state, status: 'connected', cost: { model: 'gpt-live-1', responses: 0, inputTokens: 0, outputTokens: 0, audioOutTokens: 0, usd: 0.0731, priced: true } }
+  c.connectedAt = Date.now() - 95_000
+  c.endQuietMs = { realtime: 20, live: 20 }
+  c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), fetch: async () => Response.json({}) })
+  const replyOf = (callID) => JSON.parse(sent.find(e => e.type === 'response.item.create' && e.item?.call_id === callID).item.output)
+
+  await c.runLiveTool('call_status', 'get_call_status', '{}')
+  const status = replyOf('call_status')
+  assert.equal(status.engine, 'GPT-Live')
+  assert.ok(status.duration_seconds >= 95 && status.duration_seconds < 100, String(status.duration_seconds))
+  assert.equal(status.cost_usd, 0.0731)
+
+  // Asked about closing a Session, the call stays up.
+  c.heardNow = '把結帳改版那個 Session 關閉'
+  await c.runLiveTool('call_end_1', 'end_call', JSON.stringify({ said: '結束通話' }))
+  assert.equal(replyOf('call_end_1').error, 'voice_end_not_asked')
+  await new Promise(r => setTimeout(r, 300))
+  assert.equal(c.state.status, 'connected')
+
+  // Asked to end the call, it says goodbye first and then hangs up.
+  c.heardNow = '我們這一次的對話已經結束了，可以關閉'
+  await c.runLiveTool('call_end_2', 'end_call', JSON.stringify({ said: c.heardNow }))
+  assert.equal(replyOf('call_end_2').ending, true)
+  await new Promise(r => setTimeout(r, 700))
+  assert.equal(c.state.status, 'connected', 'it does not hang up before the goodbye')
+  c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: '好，那我們下次再聊，掰掰！' })
+  for (let i = 0; i < 40 && c.state.status === 'connected'; i++) await new Promise(r => setTimeout(r, 100))
+  assert.notEqual(c.state.status, 'connected', 'the call ends once the goodbye has been said')
+  assert.ok(sent.some(e => e.type === 'session.close'), 'GPT-Live is told the session is over')
+})
+
 test('a GPT-Live call configures its backend after start, greets once, and answers the backend with the same tools', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
