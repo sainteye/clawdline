@@ -53,7 +53,7 @@ import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { outcomeOf, sitsUnsubmitted, waitsOnQuestion } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
-import { enter, look, pendingSends, resend, sendQueued } from "./send.js"
+import { enter, look, pendingSends, resend, sendQueued, steerQueued } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import { elapsedWords } from "./working-clock.js"
 import "./pending.css"
@@ -619,7 +619,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   // way never sends it, so the card says so and offers sending it by hand.
   const queueHeld = session?.state === "unknown"
   const queueWho = assistantLabel(session?.assistant)
-  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(card => pendingHTML(card, queueWho, queueHeld))
+  const sessionWorking = session?.state === "working" || session?.state === "waiting"
+  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(card => pendingHTML(card, queueWho, queueHeld, sessionWorking))
   const live = working ? <WorkingLine key="working" line={session?.line ?? ""} /> : null
   const heavy = heavyWork ? <HeavyWorkLine key="heavy" reason={heavyWork.reason} startedAt={heavyWork.started_at} /> : null
   // The working line is newer than any card: the turn it stands for is the
@@ -918,7 +919,7 @@ function technicalDetails(detail: string): ReactElement | null {
  * that may have gone — nothing answered, or the answer was lost — says it does
  * not know, beside "look" (F3).
  */
-function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false): ReactElement {
+function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, sessionWorking = false): ReactElement {
   const T = L.strings
   const esc = L.escapeHTML
   const n = card.pictures.length
@@ -943,13 +944,19 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false): Re
   // pictures cannot go with them and the same words under a new request would
   // be the message twice.
   const partial = card.partial ? '<span class="pending-partial">' + esc(nextWord("sendKeptWords")) + "</span>" : ""
+  const steerButton = (sessionWorking && !card.partial)
+    ? (card.steering
+        ? '<span class="pending-steering"><canvas class="spin"></canvas>' + esc(nextWord("sendSteering")) + "</span>"
+        : '<button type="button" class="go" data-pending-steer="' + esc(card.token) + '">' +
+          esc(nextWord("sendSteerNow")) + "</button>")
+    : ""
   if (card.state === "queued" && queueHeld) {
     const now = card.partial ? "" : '<button type="button" class="go" data-pending-send-queued="' + esc(card.token) + '">' +
       esc(nextWord("sendQueuedNow")) + "</button>"
     body += '<div class="pending-state" role="alert"><span>' + esc(nextWord("sendQueuedHeld", { assistant })) + '</span>' +
       partial + now + dismiss + '</div>'
   } else if (card.state === "queued") {
-    body += '<div class="pending-state" role="status"><span>' + esc(nextWord("sendQueuedHere", { assistant })) + '</span>' + partial + dismiss + '</div>'
+    body += '<div class="pending-state" role="status"><span>' + esc(nextWord("sendQueuedHere", { assistant })) + '</span>' + partial + steerButton + dismiss + '</div>'
   } else if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
@@ -1046,7 +1053,7 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false): Re
     body +=
       '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
       esc(card.state === "accepted" ? T.webPromptAccepted : T.webSending) +
-      "</span></div>"
+      "</span>" + (card.state === "accepted" ? steerButton : "") + "</div>"
   }
   return <PendingTurnFrame state={card.state} sentAt={card.sentAt} bodyHTML={body} onClick={pendingAction}
     key={"pending:" + card.token} />
@@ -1095,6 +1102,12 @@ function pendingAction(ev: MouseEvent<HTMLElement>) {
   const entered = target.closest?.("[data-pending-enter]")
   if (entered) {
     void enter(entered.getAttribute("data-pending-enter") ?? "")
+    return
+  }
+  const steer = target.closest?.("[data-pending-steer]")
+  if (steer) {
+    const token = steer.getAttribute("data-pending-steer") ?? ""
+    void steerQueued(token).catch(() => {})
     return
   }
   const queued = target.closest?.("[data-pending-send-queued]")

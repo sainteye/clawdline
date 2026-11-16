@@ -26,6 +26,7 @@ import { postCard, postEnter, readTranscript, Sender } from "./sender.js"
 import { captureMachineFetch, retryCloudConnection } from "../cloud/install.js"
 import { readWorkflowSettings, writeWorkflowSettings } from "../pages/settings/api.js"
 import { byId } from "../legacy/bridge.js"
+import { askInterrupt } from "../legacy/screen-bridge.js"
 import { itermConsent } from "./iterm-consent.js"
 import { NextMessages } from "./next-message.js"
 
@@ -151,6 +152,23 @@ export async function sendQueued(token: string): Promise<void> {
   const card = pendingSends.startQueued(token, Date.now())
   if (card) await deliverUntilSeen(card)
 }
+
+/** Steer an active queued or accepted card by interrupting the running turn with Esc, then sending if queued. */
+export async function steerQueued(token: string): Promise<void> {
+  const card = pendingSends.steering(token, true)
+  if (!card) return
+  const sessionID = card.session
+  try {
+    await askInterrupt(sessionID)
+    if (card.state === "queued") {
+      await sendQueued(token)
+    }
+  } catch (err) {
+    pendingSends.steering(token, false)
+    throw err
+  }
+}
+
 
 /** A `send_unsubmitted` card's "press Enter" (`Sender.enter`): the machine presses it only at the card's words. */
 export function enter(token: string): Promise<void> {
