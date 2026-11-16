@@ -1,7 +1,7 @@
 import { onMachineChanged } from '../cloud/machine-switch.js'
 import { VOICE_CALL_HEADER } from '../cloud/voice-call.js'
 import { fleetOnThisPage, machinesOnThisPage, openOnThisPage,titleSavedOnThisPage, openSnippetsOnThisPage, openDevStackOnThisPage } from '../realtime/copilot-open.js'
-import { COPILOT_TOOLS, readRows, runCopilotTool, type ToolDeps } from '../realtime/copilot-tools.js'
+import { COPILOT_TOOLS, readRows, readQuestionRow, runCopilotTool, type ToolDeps } from '../realtime/copilot-tools.js'
 import { menuFingerprint } from '../session/fingerprint.js'
 import { loadCopilotHelp } from '../realtime/copilot-help-loader.js'
 import { VoiceWorkRuntime, workRequest, type VoiceTask, type VoiceFocus } from './engine.js'
@@ -12,10 +12,18 @@ function workspaceTools():ToolDeps {
   return {fetch:(path,init)=>fetch(path,init),sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),fleet:fleetOnThisPage,machines:machinesOnThisPage,openSession:openOnThisPage,titleSaved:titleSavedOnThisPage,snippets:openSnippetsOnThisPage,devstack:openDevStackOnThisPage,help:loadCopilotHelp}
 }
 function tools():ToolDeps {return callDeps??workspaceTools()}
-export async function workDirectory(deps:ToolDeps=tools()) {
+export async function workDirectory(deps:ToolDeps=tools(), questions=false) {
   const read=await readRows(deps)
   if('error' in read)throw new Error(read.error)
-  return read.rows.map(r=>({id:r.id,label:r.label,state:r.state,assistant:r.assistant,conversation:r.conversation??'',machine:r.machine??'',question:r.question??'',options:(r.choices??[]).map(({n,label})=>({n,label})),menu_fingerprint:r.menu?menuFingerprint(r.menu as unknown as Parameters<typeof menuFingerprint>[0]):''}))
+  // The fleet list carries no menu. Hydrate only when submitting work, so a
+  // structured answer is sealed to the real question before planning.
+  if(questions) for(let i=0;i<read.rows.length;i++) {
+    const row=read.rows[i]
+    if(row.state!=='waiting'||row.menu)continue
+    const current=await readQuestionRow(deps,row)
+    if(!('error' in current))read.rows[i]=current
+  }
+  return read.rows.map(r=>({id:r.id,label:r.label,state:r.person_needed||r.work_state==='waiting_you'||r.notes?'needs_you':r.state,assistant:r.assistant,conversation:r.conversation??'',machine:r.machine??'',question:r.question??'',options:(r.choices??[]).map(({n,label})=>({n,label})),menu_fingerprint:r.menu?menuFingerprint(r.menu as unknown as Parameters<typeof menuFingerprint>[0]):''}))
 }
 export const voiceWork = new VoiceWorkRuntime({
   request:(change,signal)=>workRequest(fetch,change,signal),
@@ -97,12 +105,12 @@ export const voiceWork = new VoiceWorkRuntime({
 onMachineChanged(()=>{callDeps=undefined;callID='';voiceWork.switchMachine()})
 export async function receiveVoiceWork(text:string,call='',id:string=crypto.randomUUID()) {
   const received=await voiceWork.change({action:'input',id,call,text})
-  void workDirectory().then(sessions=>voiceWork.change({action:'plan',sessions,input_ids:[id],tool_contracts:COPILOT_TOOLS})).catch(error=>{voiceWork.failure=String(error)})
+  void workDirectory(tools(),true).then(sessions=>voiceWork.change({action:'plan',sessions,input_ids:[id],tool_contracts:COPILOT_TOOLS})).catch(error=>{voiceWork.failure=String(error)})
   return received
 }
 
 export async function retryVoicePlanning(inputIDs:string[]) {
-  const sessions=await workDirectory()
+  const sessions=await workDirectory(tools(),true)
   return voiceWork.change({action:'plan',sessions,input_ids:inputIDs,retry:true,tool_contracts:COPILOT_TOOLS})
 }
 
@@ -113,7 +121,7 @@ export async function receiveCallInput(text:string,call:string,id:string,focus?:
   return voiceWork.change({action:'input',id,call,text,deferred:true,...(focus?{focus}:{}),...(context?{context}:{})})
 }
 export async function queueVoiceInputs(ids:string[],retry=false) {
-  const sessions=await workDirectory()
+  const sessions=await workDirectory(tools(),true)
   return voiceWork.change({action:'plan',sessions,input_ids:ids,tool_contracts:COPILOT_TOOLS,...(retry?{retry:true}:{})})
 }
 export function answerVoiceInput(id:string,call:string) {

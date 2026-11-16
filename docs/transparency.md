@@ -602,3 +602,16 @@ existing schedule card no longer claims that the supplied Codex adapter reports
 no resume support; installed native routine A/B/A remains separately unqualified.
 The public website snapshot must import this reviewed product revision after it
 lands. A refreshed source receipt alone is not website acceptance.
+
+## Session decisions in voice calls (2026-11-16)
+
+The voice-work entry now explains person-owned waits, unresolved Notes, explicit
+answers expressed by meaning, and the distinction between replying to a Session
+and performing its filesystem operation. Both language explanations preserve the
+managed exact-spec confirmation boundary. The original excerpts include the
+updated planner and shared decision guidance. Fleet question reads retain machine,
+conversation and execution identity; every answer requires the earlier question
+fingerprint. A blocked send returns a read/answer route without retrying its write.
+Synthetic regressions cover changed identities, missing menus and changed questions;
+model comprehension and audio acceptance remain separate. The public website
+snapshot must import this reviewed product revision after it lands.

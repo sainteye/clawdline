@@ -258,19 +258,21 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 預設對象就是使用者目前正在跟你討論的那個 Session；不要因為名稱相近或助理種類相同就換成別的。
 - 使用者說的 Session 在清單裡找不到（例如已經關掉了），就直接說「找不到某某，它可能已經關閉了」，絕對不要改挑另一個 Session 來送。
 - 送出前先講「要送到『Session 名稱』：『內容』，對嗎？」，使用者說好才送。但同一件事只確認一次：使用者已經對這個 Session 和這段內容說過好（包括你前面問過、他答應了），或他自己一句話就講明了送到哪個 Session、送什麼（他一句話裡就講了是哪個 Session 和要送的話），就直接送，不要再問。只有對象或內容是你自己推測的、或跟他確認過的不一樣時，才再問一次。回答問題、關閉也一樣：已經確認過就直接做。
-- 工具說「目前在討論的不是這個」時，要先問使用者是不是要改到那個 Session，確認後才帶 switch_confirmed: true 再呼叫。
+- 工具說「目前在討論的不是這個」時，若使用者已明確指定這個 Session 或已對你剛唸出的對象確認，帶 switch_confirmed: true 接續，不要再重問；對象仍不清楚時才確認。
 - 查詢類工具（get_session_summary、get_session_recap、get_session_activity、explain_session_reply、get_session_screen、open_session、get_session_notes）的 session_id，填清單裡那個 Session 的完整名稱（label），一字不差照抄；名稱比 id 不容易填錯。送出、回答、關閉則填清單裡的 id，原樣照填（包含開頭的 % 符號）。還沒查過清單就先呼叫 list_sessions。
+- 使用者問有什麼要他決定時，waiting_you、work_person_needed、未解便條都算要查看的來源，不只終端 waiting。needs_you 是待查清單，不保證其他 Session 的最後回覆沒有提問；便條先讀 get_session_notes，只有摘要卻無目前問題時讀 get_session_summary／explain_session_reply，不能把過去已交付的摘要當新問題，也不能只因狀態 idle 就說不用回答。
 - 使用者問到某個 Session 的內容、進度、結果時，一定先呼叫查詢工具再回答，即使快照裡有它的名稱也一樣；快照只用來回答整體有哪些 Session。講某個 Session 的內容時，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱）時，查詢類工具的 said 照填他稱呼它的原話（session_id 填你認為的那個），工具會依他的原話判斷是哪一個；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
 【回答 Session 的問題】
-- Session 在等使用者回答時（needs_you 或 summary 裡有 question 與 options），先用口語唸出它在問什麼和每個選項的編號與意思，然後問使用者要選哪一個。
-- 只有在使用者明確說出選哪一個（例如「選 1」「選 Yes」「就第一個」）之後才呼叫 answer_session_question；使用者沒講清楚就再問一次，絕對不要自己替使用者選。按完用一句話說選了什麼；工具回報問題已經變了，就照實說並重新唸新的問題。
+- Session 在等使用者回答時（needs_you 或 summary 裡有 question 與 options），先讀清楚目前問題。使用者還沒作決定時才用口語唸出問題和選項，問要選哪一個；已明確作決定且唯一對應時就承接回答。
+- 使用者可以說編號、名稱，也可以用明確的意思回答，例如「可以，請刪掉」「同意部署」「先不要」。只要能唯一對應目前問題的一個選項，就以該選項的編號呼叫 answer_session_question；不要要求他再說「選一」，也不要重問已回答的同一件事。若有多個不同範圍的同意選項、限制不同或意思不明，才問他選哪個。按完只依工具收據說選了什麼；問題已變就重新讀取，舊同意不套到新題目。
+- 這是在替他回答另一個 Session，不是要求你自己刪檔或部署。遇到 session_asking 時照 next_tool 讀取現在的問題與選項，承接他剛剛的決定，不能只說你不能清硬碟或反覆重送文字。
 
 【便條紙】
 - Session 有 notes（便條數）時，回報那個 Session 要提一句「它留了幾張便條給你」。
-- 使用者問便條內容，或問有什麼要他處理時，呼叫 get_session_notes，唸出標題、要他做什麼和原因；有建議回覆就唸出選項，但不要替他回覆便條。
+- 使用者問便條內容，或問有什麼要他處理時，呼叫 get_session_notes，唸出標題、要他做什麼和原因；有建議回覆就唸出選項。使用者明確選擇後，將完整決定用 send_message_to_session 傳給該 Session；若它現在停在終端選單，改走 answer_session_question。尚未選擇時不可代選，也不可宣稱便條已解決。
 
 【整體匯報】
 - 使用者要整體狀況（「匯報現在的狀況」「現在怎麼樣」「有什麼要我處理」）時：指示裡有【整理好的現況匯報】就用它當資料；還沒有就呼叫 get_status_briefing。拿不到匯報才改用 list_sessions 自己整理。
@@ -444,11 +446,12 @@ export const COPILOT_TOOLS = [
       type: 'object',
       properties: {
         session_id: { type: 'string', description: '清單裡那個 Session 的完整名稱（label），一字不差照抄；或它的 id' },
-        choice: { type: 'string', description: '使用者選的選項：編號（例如 "1"）或選項文字' },
+        choice: { type: 'string', description: '使用者明確選擇的選項：編號或選項文字；也可將他明確的同意／拒絕意思對應到唯一同範圍的目前選項' },
+        expected_question: { type: 'string', description: '剛剛讀到且使用者正在回答的題目指紋，從工具的 expected_question 原樣傳入；題目變更時禁止套用舊答案' },
         session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
       },
-      required: ['session_id', 'choice', 'session_label'],
+      required: ['session_id', 'choice', 'session_label', 'expected_question'],
     },
   },
   {
@@ -677,6 +680,12 @@ export const CALL_WORK_TOOLS = [
   {type:'function',name:'retry_voice_work',description:'Retry the exact failed saved input IDs only when the person explicitly asks to retry. Read get_voice_work first. Never retry automatically or approve a mutation.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
 ]
 
+export const SESSION_DECISION_GUIDANCE = `# Current Session decisions
+A person-owned wait (waiting_you or work_person_needed) and unresolved notes need attention even when the terminal is idle. Read notes or the current reply before deciding what is pending; historical recaps and deliveries are not fresh questions.
+An explicit decision can name an option by meaning: "yes, delete it", "approve deployment", or "do not proceed". Match only one current option with the same scope and restrictions; do not demand an option number or ask the same confirmation again. If multiple options fit, ask which one. This is answering the target Session, not doing its filesystem operation yourself.
+When send_message_to_session returns session_asking, nothing was typed. Follow next_tool to read the current question, then use answer_session_question with the selected option and expected_question. Never automatically retry a send, select from stale text, or claim success without a receipt.
+If the person already named the exact recipient or confirmed it, switch_confirmed can acknowledge that decision; a background read of another Session does not undo the person's choice.`
+
 export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
 Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
 Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
@@ -789,7 +798,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
       type: 'realtime',
       output_modalities: ['audio'],
       // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -838,6 +847,8 @@ export interface CopilotSessionRow {
   assistant: string
   state: string
   work_state: string
+  person_needed?: boolean
+  execution?: string
   /** The Project's spoken name: its repository folder (`project_key`, else `cwd`). */
   project?: string
   /** Unix seconds, when present. */
@@ -922,6 +933,8 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         assistant: str(s.assistant),
         state: str(s.state),
         work_state: str(s.work_state),
+        ...(s.work_person_needed === true ? { person_needed: true } : {}),
+        ...(str(s.execution_generation) ? { execution: str(s.execution_generation) } : {}),
         // A Cloud status projection names a child's root on the row itself.
         ...(str(s.parent_session_id) && str(s.parent_session_id) !== str(s.id) ? { parent: str(s.parent_session_id) } : {}),
       }
@@ -955,7 +968,7 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
         row.menu = menu as Record<string, unknown>
         if (Array.isArray(menu.options)) {
           row.choices = menu.options
-            .filter((o): o is { n: number; label?: unknown } => !!o && typeof o === 'object' && typeof (o as { n?: unknown }).n === 'number')
+            .filter((o): o is { n: number; label?: unknown } => !!o && typeof o === 'object' && typeof (o as { n?: unknown }).n === 'number' && (o as { can?: unknown }).can !== false)
             .map((o) => ({ n: o.n, label: plainScreenText(str(o.label)) }))
         }
         if (str(menu.question)) row.question = plainScreenText(str(menu.question))
@@ -1306,7 +1319,7 @@ export function countSummary(total: number, kinds: [number, string][]): string {
 }
 
 function waits(r: CopilotSessionRow): boolean {
-  return r.state === 'waiting' || r.work_state === 'waiting' || !!r.question
+  return r.state === 'waiting' || r.work_state === 'waiting' || r.work_state === 'waiting_you' || r.person_needed === true || !!r.notes || !!r.question
 }
 
 /** When a Session last did something, for the newest-first order of a group summary. */
@@ -1412,7 +1425,9 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     needs_you: needs.map((r) => ({
       ...brief(r),
       ...(r.question ? { question: r.question } : {}),
-      ...(r.choices?.length ? { options: r.choices.map((c) => `${c.n}. ${c.label}`) } : r.options?.length ? { options: r.options } : {}),
+      ...(r.state === 'waiting' && !r.choices?.length ? { question_unavailable: true, next_tool: 'get_session_screen' } : {}),
+      ...(r.notes ? { notes_tool: 'get_session_notes' } : {}),
+      ...(r.choices?.length ? { options: r.choices.map((c) => `${c.n}. ${c.label}`), expected_question: menuFingerprint(r.menu as unknown as Parameters<typeof menuFingerprint>[0]) } : r.options?.length ? { options: r.options } : {}),
     })),
     working: working.map((r) => ({
       ...brief(r),
@@ -1475,6 +1490,9 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
     logs.push({ level: 'error', text: screen.error })
     return { error: screen.error }
   }
+  const current = row.state === 'waiting' && !row.menu ? await readQuestionRow(deps, row) : row
+  const question = 'error' in current ? { question_error: current.error } : current.menu && current.choices?.length ? questionRoute(current) : {}
+  const { error: _routeError, message_delivered: _sent, answered: _answered, ...questionFields } = question
   const tail = screenTail(screen.text)
   logs.push({
     level: 'info',
@@ -1486,6 +1504,7 @@ async function sessionScreen(deps: ToolDeps, logs: ToolLog[], wanted: string): P
     assistant: row.assistant,
     state: row.state,
     recent_screen_text: tail,
+    ...questionFields,
     ...(tail ? {} : { note: '終端畫面目前是空白的' }),
   }
 }
@@ -2052,7 +2071,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
     ...(lastReply ? { last_reply: lastReply } : {}),
     ...(workingFor(row.working_since, now) && row.state === 'working' ? { working_for: workingFor(row.working_since, now) } : {}),
     ...(row.question ? { question: row.question } : {}),
-    ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`) } : row.options?.length ? { options: row.options } : {}),
+    ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`), expected_question: menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0]) } : row.options?.length ? { options: row.options } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
     ...(!row.delivered && !lastReply && !recap ? { note: '這個 Session 沒有交付摘要也讀不到回覆，可改用 get_session_screen 看畫面' } : {}),
   }
@@ -2211,6 +2230,42 @@ export function writeGuard(deps: ToolDeps, row: CopilotSessionRow, said: string,
 /** A message that asks a Session to rename itself, which smart naming does instead. */
 export const ASKS_A_RENAME = /智慧命名|smart[\s-]?(?:naming|title)|(?:重新命名|改名|rename)[^。\n]{0,12}(?:session|名稱|名字)|session[^。\n]{0,8}(?:重新命名|改名|名稱)/i
 
+/** A menu is answered by its fingerprint, never by pasting approval into it. */
+function questionRoute(row: CopilotSessionRow): Record<string, unknown> {
+  const available = !!row.menu && !!row.choices?.length
+  return {
+    error: 'session_asking', session_id: row.id, session_label: row.label,
+    message_delivered: false, answered: false,
+    ...(available ? { next_tool: 'answer_session_question', question: row.question ?? '',
+      options: row.choices!.map(c => `${c.n}. ${c.label}`),
+      expected_question: menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0]),
+    } : { next_tool: 'get_session_screen', question_unavailable: true }),
+    meaning: say('Nothing was typed. Match the person’s explicit decision to one current option and use answer_session_question. If the intended option is ambiguous, ask once. Never retry the message under this dialog.', '沒有鍵入文字。請將使用者明確的決定對應到目前唯一的選項，再用 answer_session_question 回答；無法唯一對應時才問一次。不要在這個選單下重送文字。'),
+  }
+}
+
+/** The fleet directory deliberately omits menu content. Ask only this Session's
+ * machine for a current rich row; never fall back to another machine or execution. */
+export async function readQuestionRow(deps: ToolDeps, row: CopilotSessionRow): Promise<CopilotSessionRow | { error: string }> {
+  const fetchRow = rowFetch(deps, row)
+  let response = await fetchRow(`/v1/sessions?look=${encodeURIComponent(sid(row))}`, NAMED_READ)
+  for (let attempt = 1; attempt <= SCREEN_READ_ATTEMPTS; attempt++) {
+    if (!response.ok) return { error: `voice_question_unavailable: ${await refusalText(response)}` }
+    const rows = rowsOf(await response.json())
+    const current = uniqueSessionID(rows, sid(row))
+    if (current) {
+      if (row.conversation && current.conversation !== row.conversation || row.execution && current.execution !== row.execution)
+        return { error: 'voice_session_identity_changed' }
+      if (current.menu && current.choices?.length) return { ...current, id: row.id, label: row.label, session: row.session, machine: row.machine }
+      if (current.state !== 'waiting') return { error: 'voice_question_unavailable' }
+    }
+    if (attempt === SCREEN_READ_ATTEMPTS) break
+    await deps.sleep(SCREEN_READ_INTERVAL_MS)
+    response = await fetchRow('/v1/sessions', NAMED_READ)
+  }
+  return { error: 'voice_question_unavailable' }
+}
+
 async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, message: string, said = '', switchConfirmed = false): Promise<unknown> {
   if (!message.trim()) return { error: '沒有要送出的內容' }
   const read = await readRows(deps)
@@ -2229,6 +2284,7 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: refused })
     return { error: refused }
   }
+  if (row.menu && row.choices?.length) return questionRoute(row)
   // On 2026-11-13, asked to smart-name a Session, the copilot typed "please
   // use smart naming to rename this Session" into it instead; the Session
   // then tried to drive the app's window. The machine renames, not a message.
@@ -2248,6 +2304,11 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     body: JSON.stringify({ text: message }),
   })
   if (!res.ok) {
+    const body = await res.clone().json().catch(() => null)
+    if (res.status === 409 && copilotRefusal(body, res.status).code === 'session_asking') {
+      const current = await readQuestionRow(deps, row)
+      return { ...questionRoute('error' in current ? row : current), ...('error' in current ? { question_error: current.error } : {}) }
+    }
     const why = await refusalText(res)
     const error = `送到「${row.label}」失敗 (HTTP ${res.status})${why ? `：${why}` : ''}`
     logs.push({ level: 'error', text: error })
@@ -2467,11 +2528,16 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     logs.push({ level: 'error', text: found.error })
     return { error: found.error, candidates: found.candidates, ...('many' in found ? { many: true } : {}) }
   }
-  const { row } = found
+  let { row } = found
   const refused = writeGuard(deps, row, said, switchConfirmed)
   if (refused) {
     logs.push({ level: 'error', text: refused })
     return { error: refused }
+  }
+  if ((!row.menu || !row.choices?.length) && (row.state === 'waiting' || row.machine)) {
+    const current = await readQuestionRow(deps, row)
+    if ('error' in current) return { ...questionRoute(row), question_error: current.error }
+    row = current
   }
   if (!row.menu || !row.choices?.length) {
     logs.push({ level: 'error', text: say(`"${row.label}" is not waiting for an answer now`, `「${row.label}」現在沒有在等問題的答案`) })
@@ -2485,6 +2551,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
   // The press names the question it answers; the machine refuses it if the
   // screen now asks something else.
   const currentQuestion = menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0])
+  if(!expectedQuestion) return questionRoute(row)
   if(expectedQuestion && expectedQuestion !== currentQuestion) return {error: 'voice_work_question_changed'}
   const expect = expectedQuestion || currentQuestion
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/key`, {
@@ -2498,6 +2565,7 @@ async function answerQuestion(deps: ToolDeps, logs: ToolLog[], wanted: string, s
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  deps.focus?.set(row.id)
   logs.push({ level: 'info', text: say(`Chose ${choice.n}. ${choice.label} for "${row.label}"`, `已替「${row.label}」選了 ${choice.n}. ${choice.label}`) })
   return { answered: true, label: row.label, question: row.question ?? '', chose: `${choice.n}. ${choice.label}` }
 }

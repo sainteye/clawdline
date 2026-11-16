@@ -466,3 +466,26 @@ and one next batch can read in parallel; an interruption pauses the presentation
 These controls are independent of durable work approval and automatic task
 allowance. See [the workspace's presentation contract](voice-assistant-workspace.md#spoken-session-references-and-presentation-batches)
 for limits and evidence gaps.
+
+**Pending decisions and spoken answers.** The directory treats `waiting_you`,
+`work_person_needed`, and unresolved attention Notes as reasons to check with the
+person, even if the terminal is idle or a milestone was delivered. Notes and the
+current reply still need reading; an old recap does not establish a new question.
+The fleet's presentation list deliberately omits menu content. A targeted question
+read uses that Session's machine, conversation and execution, with the existing
+bounded screen-read budget. It does not open a different Session or ask a paid
+model. Background planning hydrates waiting menus before sealing an answer.
+
+A normal send refused as `session_asking` returns the current question, choices
+and fingerprint where available, or names the missing question read. It never
+retries the write or presses a choice automatically. The copilot can map an
+explicit decision expressed by meaning to one current option; different approval
+scopes require clarification. `/key` still checks the exact question fingerprint.
+A spoken decision to reply is not permission for the voice copilot itself to
+perform the target Session's filesystem operation. Managed calls retain their
+existing exact-spec confirmation boundary.
+
+Verification uses synthetic local and multi-machine transports, including a menu
+appearing between directory read and send. The tests do not establish live model
+comprehension, transcription accuracy or real audio acceptance. No provider call
+is needed for this regression suite.

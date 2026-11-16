@@ -533,7 +533,7 @@ import { menuFingerprint } from "../session/fingerprint.ts"
 
 test("a chosen option is pressed with the fingerprint of the question it answers", async () => {
   const { deps, calls } = fakeMachine({})
-  const out = JSON.parse((await runCopilotTool("answer_session_question", '{"session_id":"%7","session_label":"Fix the flaky test","choice":"1"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool("answer_session_question", JSON.stringify({session_id:"%7",session_label:"Fix the flaky test",choice:"1",expected_question:menuFingerprint(ROWS[2].menu as never)}), deps)).output)
   assert.equal(out.answered, true)
   assert.equal(out.chose, "1. Yes")
   const press = calls.at(-1)!
@@ -759,11 +759,11 @@ test("a write goes to the Session under discussion unless the person confirmed a
   assert.match(other.error, /目前在討論的不是「Fix the login test」/)
   assert.equal(calls.some((c) => c.path.endsWith("/send")), false)
   const same = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%7","session_label":"Fix the flaky test","message":"push it"}', deps)).output)
-  assert.equal(same.sent_to, "Fix the flaky test")
+  assert.equal(same.error, "session_asking", "the focused Session needs a menu answer, not pasted text")
   const switched = JSON.parse((await runCopilotTool("send_message_to_session", '{"session_id":"%9","session_label":"Fix the login test","message":"push it","switch_confirmed":true}', deps)).output)
   assert.equal(switched.sent_to, "Fix the login test")
   assert.equal(focus(), "%9", "the Session a message went to is now the one under discussion")
-  assert.deepEqual(calls.filter((c) => c.path.endsWith("/send")).map((c) => c.path), ["/v1/sessions/%257/send", "/v1/sessions/%259/send"])
+  assert.deepEqual(calls.filter((c) => c.path.endsWith("/send")).map((c) => c.path), ["/v1/sessions/%259/send"])
 })
 
 test("a kind with no Session is not said", () => {
@@ -1169,16 +1169,19 @@ function sameNameFleet() {
 }
 
 test("same-name fleet tools select the second machine for reads, opens, writes and reusable actions", async () => {
-  const { deps, calls, opened } = sameNameFleet()
+  const { fleet, deps, calls, opened } = sameNameFleet()
   const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   const ids = list.needs_you.map((r: { id: string }) => r.id)
+  const menu = fleet[1].row.menu
+  fleet[1].row.menu = undefined as unknown as typeof menu
   const sent = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", message: "check second machine" }), deps)).output)
   assert.equal(sent.success, true)
   assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b", "selecting the second listed Session must send to the second machine")
   assert.notEqual(ids[0], ids[1], "two Office machines must have distinct tool IDs")
   for (const name of ["get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "get_session_notes", "list_snippets", "open_session", "open_snippets", "send_message_to_session", "answer_session_question", "close_session", "run_snippet"]) {
     calls.length = 0
-    const out = JSON.parse((await runCopilotTool(name, JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", message: "check", choice: "1", name: "Check" }), deps)).output)
+    fleet[1].row.menu = ["send_message_to_session", "run_snippet"].includes(name) ? undefined as unknown as typeof menu : menu
+    const out = JSON.parse((await runCopilotTool(name, JSON.stringify({ session_id: ids[1], session_label: "Review（Office）", message: "check", choice: "1", expected_question: menuFingerprint(menu as never), name: "Check" }), deps)).output)
     assert.equal(out.error, undefined, `${name}: ${JSON.stringify(out)}`)
     assert.equal(deps.focus?.get(), ids[1], `${name} keeps the canonical focus`)
     for (const call of calls) {
@@ -1210,6 +1213,7 @@ test("fleet IDs survive machine renames and refused sends can retry the same des
     if (init?.method === "POST" && refuse) { refuse = false; return new Response("", { status: 503 }) }
     return fetch(path, init)
   }
+  fleet[1].row.menu = undefined as unknown as typeof fleet[1]["row"]["menu"]
   const args = JSON.stringify({ session_id: before[1].id, session_label: after[1].label, message: "check" })
   assert.ok(JSON.parse((await runCopilotTool("send_message_to_session", args, deps)).output).error)
   assert.equal(JSON.parse((await runCopilotTool("send_message_to_session", args, deps)).output).success, true)
@@ -1265,6 +1269,7 @@ test("a call placed from a Session on every machine's page can write to it by th
   const { fleet, deps, calls } = sameNameFleet()
   const [first, second] = fleetRowsOf(fleet)
   deps.focus?.set(second.id)
+  fleet[1].row.menu = undefined as unknown as typeof fleet[1]["row"]["menu"]
   const sent = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({ session_id: "%2", session_label: "Review（Office）", message: "push and deploy" }), deps)).output)
   assert.equal(sent.success, true, JSON.stringify(sent))
   assert.equal((calls.at(-1)?.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-b")
@@ -1860,4 +1865,143 @@ test("dispatched children are counted under their root, not reported as Sessions
   const plain = JSON.parse((await runCopilotTool("list_sessions", "{}", { ...deps, tasks: async () => new Response("", { status: 403 }) })).output)
   assert.equal(plain.children, undefined)
   assert.equal(plain.working.length, 2)
+})
+
+
+test("person-owned waits and unresolved notes stay visible without a terminal menu", async () => {
+  const { deps, calls } = fakeMachine({})
+  const rows = [
+    { id: "%20", label: "Choose the rollout", state: "idle", work_state: "waiting_you" },
+    { id: "%21", label: "Check the device", state: "idle", work_state: "waiting_session", work_person_needed: true },
+    { id: "%22", label: "Choose a tool", state: "idle", work_state: "milestone_complete", attention_count: 1 },
+    { id: "%23", label: "Wait for another agent", state: "idle", work_state: "waiting_session", work_person_needed: false },
+  ]
+  deps.fleet = async () => rows.map(row => ({ machine: "machine-a", machineName: "Office", row }))
+  const out = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
+  assert.deepEqual(out.needs_you.map((r: { label: string }) => r.label), rows.slice(0, 3).map(r => r.label))
+  assert.equal(out.idle[0].label, rows[3].label)
+  assert.equal(calls.some(c => c.path.includes("transcript")), false)
+})
+
+test("a voice reply to a waiting menu returns its exact answer route before typing", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({
+    session_id: "%7", session_label: "Fix the flaky test", message: "Yes, proceed",
+  }), deps)).output)
+  assert.equal(out.error, "session_asking")
+  assert.equal(out.next_tool, "answer_session_question")
+  assert.equal(out.question, "Push to main?")
+  assert.deepEqual(out.options, ["1. Yes", "2. No"])
+  assert.equal(out.expected_question, menuFingerprint(ROWS[2].menu as never))
+  assert.equal(calls.some(c => c.init?.method === "POST"), false)
+})
+
+test("a fleet menu is read on its own machine before a voice answer", async () => {
+  const { deps, calls } = fakeMachine({})
+  const base = deps.fetch
+  deps.fleet = async () => [{ machine: "machine-a", machineName: "Office", row: {
+    id: "%7", label: "Fix the flaky test", state: "waiting", work_state: "waiting_you",
+    sessionId: "conversation-of-the-flaky-test",
+  } }]
+  deps.fetch = async (path, init) => {
+    if (path.startsWith("/v1/sessions?look=")) {
+      calls.push({ path, init })
+      return Response.json({ accepted: true })
+    }
+    return base(path, init)
+  }
+  const out = JSON.parse((await runCopilotTool("answer_session_question", JSON.stringify({
+    session_id: "fleet:machine-a:%257", session_label: "Fix the flaky test", choice: "Yes", expected_question: menuFingerprint(ROWS[2].menu as never),
+  }), deps)).output)
+  assert.equal(out.answered, true)
+  const press = calls.find(c => c.path.endsWith("/key"))!
+  assert.ok(press)
+  assert.equal((press.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"], "machine-a")
+  assert.equal(JSON.parse(String(press.init?.body)).expect, menuFingerprint(ROWS[2].menu as never))
+})
+
+test("a send refused by a newly opened dialog reports choices without retrying the write", async () => {
+  const { deps, calls } = fakeMachine({})
+  deps.fleet = async () => [{ machine: "machine-a", machineName: "Office", row: {
+    id: "%7", label: "Fix the flaky test", state: "idle", sessionId: "conversation-of-the-flaky-test",
+  } }]
+  const base = deps.fetch
+  deps.fetch = async (path, init) => {
+    if (path.endsWith("/send")) {
+      calls.push({ path, init })
+      return Response.json({ error: "session_asking" }, { status: 409 })
+    }
+    if (path.startsWith("/v1/sessions?look=")) {
+      calls.push({ path, init })
+      return Response.json({ accepted: true })
+    }
+    return base(path, init)
+  }
+  const out = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({
+    session_id: "fleet:machine-a:%257", session_label: "Fix the flaky test", message: "Yes, proceed",
+  }), deps)).output)
+  assert.equal(out.error, "session_asking")
+  assert.equal(out.next_tool, "answer_session_question")
+  assert.deepEqual(out.options, ["1. Yes", "2. No"])
+  assert.equal(calls.filter(c => c.path.endsWith("/send")).length, 1)
+  assert.equal(calls.some(c => c.path.endsWith("/key")), false)
+})
+
+test("voice question discovery refuses a different conversation or execution", async () => {
+  for (const changed of [{ sessionId: "other-conversation" }, { execution_generation: "run-2" }]) {
+    const { deps, calls } = fakeMachine({})
+    const row = { ...ROWS[2], execution_generation: "run-1" }
+    deps.fleet = async () => [{ machine: "machine-a", machineName: "Office", row: { ...row, menu: undefined } }]
+    deps.fetch = async (path, init) => {
+      calls.push({ path, init })
+      return Response.json({ sessions: [{ ...row, ...changed }] })
+    }
+    const out = JSON.parse((await runCopilotTool("answer_session_question", JSON.stringify({
+      session_id: "fleet:machine-a:%257", session_label: row.label, choice: "1",
+    }), deps)).output)
+    assert.equal(out.question_error, "voice_session_identity_changed")
+    assert.equal(calls.some(c => c.init?.method === "POST"), false)
+  }
+})
+
+test("missing voice choices have a bounded read and never become an answer", async () => {
+  const { deps, calls, sleeps } = fakeMachine({})
+  const row = { ...ROWS[2], menu: undefined }
+  deps.fleet = async () => [{ machine: "machine-a", machineName: "Office", row }]
+  deps.fetch = async (path, init) => { calls.push({ path, init }); return Response.json({ sessions: [row] }) }
+  const out = JSON.parse((await runCopilotTool("answer_session_question", JSON.stringify({
+    session_id: "fleet:machine-a:%257", session_label: row.label, choice: "1",
+  }), deps)).output)
+  assert.equal(out.answered, false)
+  assert.equal(out.question_error, "voice_question_unavailable")
+  assert.equal(calls.length, SCREEN_READ_ATTEMPTS)
+  assert.equal(sleeps.length, SCREEN_READ_ATTEMPTS - 1)
+  assert.equal(calls.some(c => c.init?.method === "POST"), false)
+  assert.ok(calls.every(c => (c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"] === "machine-a"))
+})
+
+test("a decision recovered from a send refusal remains sealed until the answer", async () => {
+  const { deps, calls } = fakeMachine({})
+  const proposal = JSON.parse((await runCopilotTool("send_message_to_session", JSON.stringify({
+    session_id: "%7", session_label: "Fix the flaky test", message: "Yes, proceed",
+  }), deps)).output)
+  const base = deps.fetch
+  deps.fetch = async (path, init) => path === "/v1/sessions"
+    ? Response.json({ sessions: [{ ...ROWS[2], menu: { ...ROWS[2].menu, question: "Run a different action?" } }] })
+    : base(path, init)
+  const out = JSON.parse((await runCopilotTool(proposal.next_tool, JSON.stringify({
+    session_id: proposal.session_id, session_label: proposal.session_label, choice: "1", expected_question: proposal.expected_question,
+  }), deps)).output)
+  assert.equal(out.error, "voice_work_question_changed")
+  assert.equal(calls.some(c => c.init?.method === "POST"), false)
+})
+
+test("an unsealed voice answer first reads back the question without pressing", async () => {
+  const { deps, calls } = fakeMachine({})
+  const out = JSON.parse((await runCopilotTool("answer_session_question", JSON.stringify({
+    session_id: "%7", session_label: "Fix the flaky test", choice: "1",
+  }), deps)).output)
+  assert.equal(out.answered, false)
+  assert.equal(out.expected_question, menuFingerprint(ROWS[2].menu as never))
+  assert.equal(calls.some(c => c.path.endsWith("/key")), false)
 })
