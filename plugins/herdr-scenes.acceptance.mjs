@@ -12,7 +12,7 @@ const built=await build({stdin:{contents:`
 import React from 'react';import{createRoot}from'react-dom/client';import{useViewPlugins}from'./view-plugins/Host';
 const states=['working','waiting_you','milestone_complete','ready','holding','waiting_session','unknown','work_complete'];
 const titles=['Build the village','Review the new artwork','Package ready for review','Prepare next task','Hold the design','Wait for integration','Unknown reading','Reported completion'];
-const rows=states.map((workState,i)=>({key:'s'+i,title:titles[i],project:{key:'p'+i%3,label:['Design','Console','Research'][i%3]},workState,freshness:'fresh',...(i===0?{stateTime:{at:Date.now()-180000,basis:'turn'}}:{})}));
+const rows=states.map((workState,i)=>({key:'s'+i,title:titles[i],project:{key:'p'+i%3,label:['Design','Console','Research'][i%3]},workState,freshness:'fresh',...(i===0?{focused:true}:{}),...(i===0?{stateTime:{at:Date.now()-180000,basis:'turn'}}:{})}));
 rows.push({key:'old',title:'<img src=x onerror=alert(1)> 星圖 Ω café',project:null,workState:'working',freshness:'stale'},{key:'unknown',title:'Freshness unknown',project:null,workState:'working',freshness:'unknown'});
 let listeners=new Set();window.fixture={rows,connected:true,navigations:[],change(){for(const fn of listeners)fn()},hidden(value){Object.defineProperty(document,'visibilityState',{configurable:true,value:value?'hidden':'visible'});document.dispatchEvent(new Event('visibilitychange'))}};
 function Host(){const api=useViewPlugins([{key:'synthetic-scenes',label:'Synthetic only',async read(){return{sessions:fixture.rows,connected:fixture.connected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>fixture.navigations.push(key)}}],document.documentElement.lang);return <><button id='manager' onClick={e=>api.openManager(e.currentTarget)}>Manager</button>{api.content}</>};createRoot(document.getElementById('root')).render(<Host/>);
@@ -34,6 +34,48 @@ try{for(const slug of slugs)for(const engine of engines)for(const width of width
   const f=page.frameLocator('iframe'),body=f.locator('body');await f.locator('body[data-art-ready=true]').waitFor({timeout:30000});await f.locator('.row').nth(9).waitFor()
   const dismiss=async()=>{if(await f.locator('#selection[open]').count())await f.locator('#dismiss-selection').click()}
   const selectRow=async title=>{await dismiss();await f.locator('.row').filter({hasText:title}).click()}
+  if(process.env.SCENE_SELECTION_ONLY&&slug==='codecraft'){
+   await f.locator('#scene-label').filter({hasText:'Build the village'}).waitFor({timeout:3000})
+   await selectRow('Prepare next task')
+   assert.equal(await f.locator('#selection[open]').count(),0,'Selecting a hero keeps the village interactive on phones')
+   const label=f.locator('#scene-label')
+   assert.match(await label.innerText(),/Prepare next task/)
+   const framing=await label.evaluate(e=>{const a=e.getBoundingClientRect(),v=e.parentElement.getBoundingClientRect();return{left:a.left,right:a.right,top:a.top,bottom:a.bottom,v:{left:v.left,right:v.right,top:v.top,bottom:v.bottom}}})
+   assert.ok(framing.left>=framing.v.left&&framing.right<=framing.v.right&&framing.top>=framing.v.top&&framing.bottom<=framing.v.bottom)
+   await f.locator('#scene').scrollIntoViewIfNeeded()
+   const camera=()=>f.locator('#scene').evaluate(e=>({x:Number(e.dataset.cameraX),y:Number(e.dataset.cameraY)}))
+   const before=await camera()
+   await page.emulateMedia({reducedMotion:'no-preference'})
+   await selectRow('Build the village')
+   await page.waitForTimeout(150);const midway=await camera()
+   await page.waitForTimeout(700);const after=await camera()
+   assert.ok(Math.abs(before.x-midway.x)>1&&Math.abs(midway.x-after.x)>1,'Camera glides instead of jumping')
+   await page.evaluate(()=>{fixture.rows=fixture.rows.map(r=>r.key==='s0'?{...r,workState:'ready'}:r);fixture.change()})
+   await page.waitForTimeout(1400);const walked=await camera()
+   assert.ok(Math.abs(after.x-walked.x)>1,'Camera follows the selected walking hero')
+   await f.locator('#scene').hover({position:{x:10,y:100}});await page.mouse.wheel(120,0);await page.waitForTimeout(150)
+   const manual=await camera();await page.waitForTimeout(500)
+   assert.deepEqual(await camera(),manual,'Manual exploration stops following')
+   await selectRow('Review the new artwork');await page.waitForTimeout(750)
+   assert.notDeepEqual(await camera(),manual,'Selecting another hero resumes camera focus')
+   await page.evaluate(()=>{fixture.rows=fixture.rows.map(r=>({...r,focused:r.key==='s3'}));fixture.change()})
+   await label.filter({hasText:'Prepare next task'}).waitFor()
+   await page.emulateMedia({reducedMotion:'reduce'});await selectRow('Build the village');await page.waitForTimeout(80)
+   const reduced=await camera();await page.waitForTimeout(150);assert.deepEqual(await camera(),reduced)
+   assert.equal(await f.locator('#selection[open]').count(),0)
+   await f.locator('#scene').press('Escape');await label.waitFor({state:'hidden'})
+   const sceneBox=await f.locator('#scene').boundingBox()
+   await f.locator('#scene').click({position:{x:sceneBox.width/2,y:sceneBox.height/2+20}})
+   await label.filter({hasText:'Build the village'}).waitFor()
+   assert.equal(await f.locator('#selection[open]').count(),0,'Clicking the actual sprite does not open a sheet')
+   await f.locator('#scene').scrollIntoViewIfNeeded()
+   await page.screenshot({path:output+'/'+prefix+'-selection.png',fullPage:true})
+   await label.getByRole('button',{name:zh?'開啟 Session':'Open Session',exact:true}).click()
+   await page.waitForFunction(()=>fixture.navigations.length===1)
+   assert.deepEqual(await page.evaluate(()=>fixture.navigations),['s0'])
+   assert.deepEqual(errors,[])
+   reports.push({slug,engine,width,passed:true,cases:['host-focus','anchored-title','no-auto-sheet','camera-glide','walk-follow','manual-stop','new-selection-resume','host-focus-change','reduced-motion','explicit-open']});console.log(prefix+' selection passed');continue
+  }
   if(process.env.SCENE_FIT_ONLY){
    await page.evaluate(slug=>{fixture.rows=Array.from({length:11},(_,i)=>({key:'crowd-'+i,title:'Crowded Session '+i+' 星圖 Ω — a complete descriptive title',project:{key:'one',label:'One Project'},workState:i<9?(slug==='kaiju'?'working':'waiting_you'):i===9?'ready':'unknown',freshness:'fresh'}));fixture.change()},slug)
    await f.locator('.row').nth(10).waitFor()
@@ -52,7 +94,7 @@ try{for(const slug of slugs)for(const engine of engines)for(const width of width
     await selectRow('Crowded Session 8')
    }
    if(slug==='codecraft')assert.equal(await f.locator('#scene-label').isVisible(),true,'The selected full name has a readable foreground label')
-   if(width===390){
+   if(width===390&&slug!=='codecraft'){
     const rect=await f.locator('#open-session').evaluate(e=>{const b=e.getBoundingClientRect();return{top:b.top,bottom:b.bottom,height:innerHeight}})
     assert.ok(rect.top>=0&&rect.bottom<=rect.height,'A phone selection exposes its Open Session action inside the visible frame')
     await page.screenshot({path:output+'/'+prefix+'-selection.png',fullPage:true})

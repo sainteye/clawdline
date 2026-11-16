@@ -4,16 +4,16 @@ import type { ViewSource } from "./bridge.js"
 import { localPluginRows } from "./sources.js"
 import { PluginError } from "./package.js"
 
-export function useLocalPluginSource(rows: readonly SessionRow[], connected: boolean, loaded: boolean, open: (id: string) => void): ViewSource {
-  const latest = useRef({ rows, connected, loaded, open }); latest.current = { rows, connected, loaded, open }
+export function useLocalPluginSource(rows: readonly SessionRow[], connected: boolean, loaded: boolean, open: (id: string) => void, focused?: string | null): ViewSource {
+  const latest = useRef({ rows, connected, loaded, open, focused }); latest.current = { rows, connected, loaded, open, focused }
   const listeners = useRef(new Set<() => void>())
-  useEffect(() => { for (const fn of listeners.current) fn() }, [rows, connected, loaded])
+  useEffect(() => { for (const fn of listeners.current) fn() }, [rows, connected, loaded, focused])
   return useMemo(() => ({
     key: "local", label: location.host,
     async read() {
       const current = latest.current
       if (!current.loaded) throw new PluginError("host_unavailable")
-      return { sessions: localPluginRows(current.rows, current.connected), connected: current.connected }
+      return { sessions: localPluginRows(current.rows, current.connected, current.focused), connected: current.connected }
     },
     subscribe(fn) { listeners.current.add(fn); return () => { listeners.current.delete(fn) } },
     async prepareOpen(key) {

@@ -53,7 +53,7 @@ def build(slug, kind, en, zh, cover_source):
             chunks.append(raw[at:end])
         at = end
     cover.write_bytes(b''.join(chunks))
-    manifest = {'manifestVersion': 1, 'id': 'com.clawdline.' + slug, 'version': '0.2.0', 'hostApi': 1,
+    manifest = {'manifestVersion': 1, 'id': 'com.clawdline.' + slug, 'version': '0.3.0' if kind == 'world' else '0.2.1', 'hostApi': 1,
                 'name': {'en': en, 'zh-Hant': zh}, 'entry': 'index.html',
                 'capabilities': ['sessions.read', 'sessions.open'],
                 'cover': 'data:image/png;base64,' + base64.b64encode(cover.read_bytes()).decode()}

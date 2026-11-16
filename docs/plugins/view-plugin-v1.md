@@ -1,6 +1,6 @@
 # View Plugin v1
 
-Revision 8 describes the **experimental browser-local runtime** implemented in
+Revision 9 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
 Session Departures, Session Territory, World of Codecraft and Kaiju City. Public Release acceptance is separate from source and Cloud delivery.
 The earlier revision proposed machine-owned installation; that transport is deferred.
@@ -192,6 +192,13 @@ authorization result.
   "freshness": "fresh"
 }
 ```
+
+`focused` is an optional boolean identifying the host's currently open Session.
+Local and Cloud hosts compare their own execution-scoped identities before projecting
+this flag; no raw identity crosses the bridge. Older hosts omit it. Views may use a
+changed focus to select and frame the corresponding character. Local exploration
+must not navigate or acknowledge work. The host still closes the view on explicit
+`sessions.open`; an embedded terminal remains outside this contract.
 
 `stateTime` is optional additive metadata: `{ "at": 1700000000000, "basis": "declaration" }`.
 `at` is Unix milliseconds. `declaration` means the current self-declared state's

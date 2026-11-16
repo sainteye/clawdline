@@ -14,15 +14,16 @@ const stateTime = (row: Partial<SessionRow> | undefined): StateTime | undefined 
   if (!basis || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(new Date(seconds * 1000).getTime())) return
   return { at: seconds * 1000, basis }
 }
-export function localPluginRows(rows: readonly SessionRow[], connected: boolean): SourceSession[] {
+export function localPluginRows(rows: readonly SessionRow[], connected: boolean, focused?: string | null): SourceSession[] {
   return rows.map(row => ({ key: JSON.stringify([row.id, row.execution_generation ?? row.sessionId ?? ""]),
     title: row.label || "Session", project: project(row.project_key), workState: state(row.work_state),
-    stateTime: stateTime(row),
+    stateTime: stateTime(row), ...(focused !== undefined ? { focused: row.id === focused } : {}),
     freshness: !connected ? "stale" : row.evidence === "none" ? "unknown" : "fresh" }))
 }
-export function cloudPluginRows(rows: readonly MachineListPresentation[]): SourceSession[] {
+export function cloudPluginRows(rows: readonly MachineListPresentation[], focused?: SessionDestination | null): SourceSession[] {
   return rows.map(p => ({ key: destinationKey(p.destination), title: p.title, project: project(p.projectKey),
     workState: state(p.status?.work_state), stateTime: stateTime(p.status),
+    ...(focused !== undefined ? { focused: !!focused && destinationKey(p.destination) === destinationKey(focused) } : {}),
     freshness: p.projection?.freshness === "current" && p.observedAt !== undefined ? "fresh" :
       p.projection?.freshness === "stale" ? "stale" : "unknown" }))
 }
@@ -33,6 +34,7 @@ export function cloudPluginSources(options: {
   machines: readonly { id: string; label: string; name?: string; pairing: string; selectable: boolean; operationAllowed?: boolean | null }[]
   source: SessionProjectionSource
   current: (key: string) => boolean
+  focused?: () => SessionDestination | null
   open: (destination: SessionDestination) => void
 }): ViewSource[] {
   return options.machines.filter(m => m.pairing === "paired" && m.selectable && m.operationAllowed === true).map(machine => {
@@ -48,7 +50,7 @@ export function cloudPluginSources(options: {
         const rows = await options.source.readMachinePresentations?.(machine.id, signal)
         valid()
         if (!rows) throw new PluginError("permission_denied")
-        return { sessions: cloudPluginRows(rows), connected: true }
+        return { sessions: cloudPluginRows(rows, options.focused?.()), connected: true }
       },
       subscribe(fn) { return options.source.subscribe(e => { if (e.machineID === machine.id && e.kind !== "detail_changed") fn() }) },
       async prepareOpen(ref, signal) {
