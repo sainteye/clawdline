@@ -1,6 +1,7 @@
 package projectassistantacp
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -215,5 +216,127 @@ func TestRoutineHistorySlotPreservesLegacyMainAndRejectsSiblingOwner(t *testing.
 	legacy, e := historyForRequest(state, q)
 	if e != nil || legacy.Identity != main.Identity || legacy.verifyID(ownedSessionID) != nil {
 		t.Fatal("main legacy identity changed", e)
+	}
+}
+
+// A native session belongs to one agent and one privacy epoch, even when its
+// full Bot and Project identities happen to be equal.
+func TestNativeHistorySeparatesAgentsAndEveryPrivacyEpoch(t *testing.T) {
+	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
+		t.Run(string(agent), func(t *testing.T) {
+			q := historyRequest()
+			q.Bot.Agent, q.Binding.Agent = agent, agent
+			state, owner := preparedHistory(t, q)
+			if err := owner.recordID(ownedSessionID); err != nil {
+				t.Fatal(err)
+			}
+			for name, change := range map[string]func(*app.OpenRequest){
+				"agent": func(q *app.OpenRequest) {
+					if agent == pa.Codex {
+						q.Bot.Agent, q.Binding.Agent = pa.ClaudeCode, pa.ClaudeCode
+					} else {
+						q.Bot.Agent, q.Binding.Agent = pa.Codex, pa.Codex
+					}
+				},
+				"forget":       func(q *app.OpenRequest) { q.Binding.ForgottenThrough++ },
+				"instructions": func(q *app.OpenRequest) { q.Binding.InstructionRevision++; q.Bot.Instructions.Revision++ },
+				"conversation": func(q *app.OpenRequest) { q.Binding.Fence.ConversationID = "other"; q.Bot.ConversationID = "other" },
+				"project": func(q *app.OpenRequest) {
+					q.Binding.Fence.Project.CanonicalID = "other"
+					q.Bot.Project.CanonicalID = "other"
+				},
+				"slot": func(q *app.OpenRequest) { q.Binding.SessionSlot = "routine-other" },
+			} {
+				t.Run(name, func(t *testing.T) {
+					other := q
+					change(&other)
+					h, err := historyForRequest(state, other)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if h.Identity == owner.Identity {
+						t.Fatal("native owner crossed agent or privacy epoch")
+					}
+					if err = h.verifyID(ownedSessionID); pa.Code(err) != pa.ResumeUnsupported {
+						t.Fatal("unowned native session admitted", err)
+					}
+					if err = privateDirectory(state, h.Owners); err != nil {
+						t.Fatal(err)
+					}
+					data, err := os.ReadFile(filepath.Join(owner.Owners, ownedSessionID+".json"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = os.WriteFile(filepath.Join(h.Owners, ownedSessionID+".json"), data, 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err = h.verifyID(ownedSessionID); pa.Code(err) != pa.ScopeDenied {
+						t.Fatal("copied owner admitted", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCodexResumeRejectsUnownedHistoryBeforeNativeSetup(t *testing.T) {
+	for _, name := range []string{"unrecorded", "forgotten", "instructions", "copied-agent", "revoked"} {
+		t.Run(name, func(t *testing.T) {
+			q := historyRequest()
+			q.Bot.Agent, q.Binding.Agent = pa.Codex, pa.Codex
+			state, h := preparedHistory(t, q)
+			q.Directory = t.TempDir()
+			q.Resume = true
+			q.Binding.NativeSessionID = ownedSessionID
+			want := pa.ResumeUnsupported
+			if name != "unrecorded" {
+				if err := h.recordID(ownedSessionID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch name {
+			case "forgotten":
+				q.Binding.ForgottenThrough++
+			case "instructions":
+				q.Binding.InstructionRevision++
+				q.Bot.Instructions.Revision++
+			case "revoked":
+				q.Binding.Revoked = true
+				want = pa.ScopeDenied
+			case "copied-agent":
+				q.Bot.Agent, q.Binding.Agent = pa.ClaudeCode, pa.ClaudeCode
+				other, err := historyForRequest(state, q)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = privateDirectory(state, other.Owners); err != nil {
+					t.Fatal(err)
+				}
+				if err = other.recordID(ownedSessionID); err != nil {
+					t.Fatal(err)
+				}
+				data, err := os.ReadFile(filepath.Join(other.Owners, ownedSessionID+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(filepath.Join(h.Owners, ownedSessionID+".json"), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				q.Bot.Agent, q.Binding.Agent = pa.Codex, pa.Codex
+				want = pa.ScopeDenied
+			}
+			session, err := (&installedCodex{state: state}).Open(context.Background(), q, func(context.Context, app.ProtocolEvent) error {
+				t.Error("rejected history reached native sink")
+				return nil
+			})
+			if session != nil || pa.Code(err) != want {
+				t.Fatal("unowned resume reached native setup", session, err)
+			}
+			for _, path := range []string{"adapters", "runtime", "codex-installation.json"} {
+				if _, err = os.Stat(filepath.Join(state, "project-assistants", path)); !os.IsNotExist(err) {
+					t.Fatal("refused resume initialized native installation", path, err)
+				}
+			}
+		})
 	}
 }

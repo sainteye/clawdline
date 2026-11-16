@@ -1,101 +1,80 @@
-# Installed agents: bounded qualification
+# Installed agents: native qualification
 
-This record is **incomplete native acceptance**, not a claim that either vendor
-completed the Bot flow. The only requested native qualification command was
-rejected by automatic approval review before it executed. No workaround or
-native retry was attempted. Integration, Board acceptance and deployment remain
-with the owning root.
+The common Bot flow has real installed-agent evidence for Claude Code and
+Codex. A first Codex follow-up exposed a context-loss defect: every execution
+opened a fresh native session, whose provenance-filtered handoff contained
+approved memory and a history bookmark, not the prior conversation text. The
+second native prompt therefore could not produce its requested conversation-only
+token. This was an assertion failure after a completed turn, not a quota,
+authentication or transport failure. The original receipt and observations are
+retained privately; no unknown turn was acknowledged or resent.
 
-## Fixed inputs and authorization boundary
+## Verified inputs and results
 
-The inspected Clawdline source is
-`fc00d608991cf75ac19c41b92031b3008dca53a5`. The read-only Codync reference is
-`9f67eb09084db61b3cca9c84a11bc03df9de29b7`, independently checked with
-`git rev-parse HEAD`. Relevant upstream boundaries are `host/src/chat/context.rs`
-(context and memory revision), `host/src/agent/bot/launch.rs` (mode, settings and
-session lifecycle), and `host/src/agent/own_memory.rs` (native memory). No upstream
-build or program was run.
-
-The task authorizes at most four native prompts total: an initial and a follow-up
-for each installed agent, through the production Host, SQLite and
-`projectassistantacp.InstalledProvider`. It prohibits separate usage-priced API
-calls, automatic native retries, CLI upgrades, global settings changes and use
-of an existing Session. The supplied adapters are the repository's locked
-dependencies, rather than globally installed replacements.
-
-Automatic approval review rejected the opt-in command because it considered the
-installed CLI model usage insufficiently covered by a provider-specific monetary
-cap. The briefing explicitly authorizes native CLI qualification without separate
-quota approval, but the reviewer did not accept that basis. The next owner must
-resolve that approval boundary once before running the native command. This
-record does not infer pricing, account access or available quota from a local
-version probe.
-
-## Compatibility matrix
-
-Local version probes ran on 2026-11-15 UTC (2026-11-16 Taiwan time), on
-Darwin/arm64 with Go 1.27.1 and Node 24.1.0. A version response establishes local
-installation only.
+The initial run used source `284034701e4fe8eb7f22e8bf2a5b50341b46b892`.
+It sent two prompts to each agent. Claude passed both; Codex passed its first
+turn and failed the follow-up assertion. The correction was then exercised
+with two new Codex prompts on the candidate, through the production Host,
+SQLite, owned HTTP MCP and installed ACP provider. No existing Bot, native
+Session or user conversation was used.
 
 | Boundary | Claude Code | Codex |
 | --- | --- | --- |
-| Installed CLI response | 2.1.325 | 0.166.0; a sandbox PATH-alias warning was also printed |
-| Supplied ACP adapter | 0.106.0 in bundled lockfile; private installation not executed | 2.6.0 in bundled lockfile; private installation not executed |
-| Production factory | `InstalledProvider` routes to `installedClaude` | `InstalledProvider` routes to `installedCodex` |
-| Auto/default mode, source inspection | Native `auto`; existing adapter fallback to `acceptEdits` on an unsupported model is retained | Public Auto maps to native `agent` |
-| Native memory, source inspection | Auto memory and dreaming disabled per launch; existing native settings/login remain authoritative | Existing native home/login retained; `codex features list` must report `memories=false`, otherwise typed `memory_isolation_unverified` |
-| MCP descriptor/runtime tool use | Not observed natively | Not observed natively |
-| Empty memory and durable nonce | Not executed | Not executed |
-| Approved memory and context follow-up | Not executed | Not executed |
-| Native resume | Production capability is qualified; this run did not exercise it | Intentionally `Resume=false`; follow-up must use fresh-session filtered handoff |
-| Routines | Not exercised in this run | Main-session routines are unsupported while native resume is unqualified |
-| Native permission metadata/four kinds | No native permission request observed; no fabricated offer or answer | No native permission request observed; no fabricated offer or answer |
-| Native opens / prompt writes in this task | 0 / 0, blocked before process execution | 0 / 0, blocked before process execution |
+| Installed CLI observed on 2026-11-16 | 2.1.325 | 0.166.0 |
+| Supplied, digest-sealed adapter | 0.106.0 | 2.6.0 |
+| Common-flow native prompts | 2, both passed | 4 including the original failed follow-up assertion; corrected pair both passed |
+| Empty then approved Bot memory | Two actual `read_memory` calls | Two actual reads in each pair |
+| Fixed visible MCP replies | Two, independently reopened from SQLite | Two in the corrected pair; one in the original pair |
+| Cross-process native session identity | Same ID; fresh then resume | Same ID in the corrected pair; fresh then resume |
+| Conversation-only prior token | Recovered on follow-up | Recovered on corrected follow-up, without adding it to Bot memory |
+| Native memory | Auto memory/dreaming disabled by launch settings | Existing CLI reports `memories=false`; otherwise admission refuses |
+| Native configuration/login | Existing account and settings retained | Existing account and settings retained |
+| Native permission offers/four option kinds | Not exercised by this read/send-only batch | Not exercised by this batch |
+| Routines, fallback switching and team flows | Not qualified by this batch | Not qualified by this batch |
 
-These are counts at Clawdline's native session/prompt boundary, not a claim of
-zero internal model calls during a successful qualification. Provider-internal
-requests, retries and billing were not observed. No direct paid API call was
-made, and no measured provider billing amount is available.
+Across the two batches: six native opens, six prompt writes, six memory reads
+and five successful MCP `send_message` calls. These are Clawdline boundary
+counts. Provider-internal model requests, retries and billing were not measured;
+no zero-cost claim is made. The person explicitly authorized both installed
+native CLIs before execution. No direct paid API or additional purchase was made.
 
-The production code supports tool descriptors for chat, work and memory;
-`sessionParameters` carries the owned HTTP MCP descriptor and agent-specific
-system prompt. This is source evidence only. Existing
-[permission evidence](project-assistants-native-permissions.md) records inspected
-adapter envelopes and scripted cancellation/fencing controls. Domain option
-kinds are `allow_once`, `reject_once`, `allow_always`, and `reject_always`; their
-existence in source is not a native observation or approval to create a standing
-rule. Actual permission action metadata must come from an actual native request.
+The first native batch establishes Claude's result on the named base. The Codex
+correction used an isolated Go compile overlay with its resume capability on;
+normal source retained `Resume=false` until that actual round trip passed.
+The promoted Codex provider file is byte-identical to the compiled probe, with
+SHA256 `a0a718e46dbbe119abe7828e395f775bcfd5bb5193411c517e025d1d1ae22de9`.
+The two unchanged Claude prompts were not rerun merely to inflate coverage.
 
-## What was verified without models
+## Resume follows the adapter and source ownership
 
-The existing
-`TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration` passed:
-an owned Go ACP peer followed the real HTTP MCP descriptor into the production
-Host, real SQLite, Broker and isolated fixture worktree, with one durable chat
-result. This is a scripted transport/control receipt, not vendor qualification.
+Pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`,
+`host/src/agent/bot/launch.rs`, chooses `session/load` when initialize advertises
+`loadSession`. The supplied Codex adapter implements that route using native
+thread resume. Clawdline's client already checks the advertised capability,
+loads the requested native ID and rejects an answer naming a different ID.
+It does not turn loaded history notifications into a new turn's messages.
 
-Its first restricted-sandbox execution failed with an unknown execution outcome.
-A minimal independent census probe then showed `/bin/ps` was denied. The same
-read-only census succeeded with the required permission, and the same scripted
-Host test passed with that permission. Neither attempt launched a vendor CLI or
-consumed the native prompt allowance. Unknown execution fencing was not weakened.
+The installed Codex provider now uses feature-owned native-ID records before
+loading and records a newly opened ID only after successful initialization.
+Records bind the agent, full Bot/Project identity, conversation, forgotten
+revision, instructions and routine slot. A new execution generation or added
+memory keeps the same owner; forgetting or changed instructions gets a new
+epoch. Existing Claude identity bytes and record policy are retained.
 
-`TestInstalledAgentsNativeQualification` compiles and skips without its exact
-task-specific flag. The ordinary `tools/check.sh` was run once with both native
-qualification variables explicitly unset and reported every selected check
-passed. The later focused scripted control checks the harness's independent
-query-only SQLite readback and distinguishes the accepted user-input fence from
-the new native execution fence. It passed together with
-`TestHostDefaultOffAndMetadataNeverInitializeProvider`; the native test skipped
-in that same focused run. The final two files also passed the scoped privacy
-check. The ordinary gate preceded that final assertion/document refinement, so
-the integrating root still owns the final-tree commit gate.
-Complete CI and native acceptance are still pending.
+A new scripted red/green test exposed the old shared agent identity before the
+correction. Negative controls cover copied cross-agent records, foreign Project,
+conversation, forgotten revision, instructions and routine slots. Unrecorded,
+forgotten, changed-instruction, copied-agent and revoked Codex loads are refused
+before adapter setup or native execution. No new queue, history limit, wire
+protocol or conversation replay was introduced. A genuinely missing native
+session still uses the existing typed `resume_unsupported` recovery; retained
+transcripts never bypass memory provenance or forgetting.
 
-## Rerunnable native route
+## Rerunnable common native route
 
-Only after the approval boundary is resolved, use a new, nonexistent task-owned
-state directory and a task-owned temporary directory/cache:
+The test is opt-in and skipped by ordinary CI/checks. Obtain native-use
+authorization and choose a nonexistent private state root plus owned temporary
+and cache directories:
 
 ```sh
 CLAWDLINE_NATIVE_QUALIFICATION_07DDAF71=four-prompts-once \
@@ -105,42 +84,23 @@ go test ./internal/adapters/projectassistanthost \
   -run '^TestInstalledAgentsNativeQualification$' -count=1 -timeout=45m -v
 ```
 
-`TASK_WORK` must name the authorized task's private working directory. Do not run
-this command from CI or put its flag in a persistent environment. The test
-refuses an existing state root. SQLite and synthetic repositories are fresh Go
-test directories under `TMPDIR`, outside the adapter state root. The normal Host
-limits come from the production capacity register: a ten-minute prompt and
-five-second cleanup, rather than the fault fixture's short budgets.
+Each run caps native opens and prompt writes at four independently, even when
+broader native testing is authorized. Failure, unknown outcome, cancellation or
+a real permission wait stops that batch; no automatic native retry occurs.
+`-run '^TestInstalledAgentsNativeQualification$/^codex$'` selects the corrected
+Codex pair while retaining both installed-tool preflights.
 
-For each agent the test creates a stored Bot in Auto/default mode with ask-mode
-Host permission handling. The initial prompt reads empty Bot memory and sends
-one fixed nonce. A literal approved memory entry is saved through the human
-Service endpoint. The follow-up must read that entry and combine its token with
-a token present only in the prior conversation. Claude must follow its supported
-resume path; Codex must open a different fresh native session. No standing rule
-or permission answer is created.
+Each Bot starts in Auto/default mode. The first prompt reads empty memory and
+sends a nonce while retaining a conversation-only token. A literal approved
+memory entry is saved through Service. The second prompt must read it and send
+the nonce plus both tokens exactly once. Separate query-only SQLite connections
+verify each accepted user input, receipt, source scope, admission fence,
+creation event and actual execution fence. Open observations require the same
+native ID across two processes and the second request to be a resume.
 
-The observer delegates to the actual installed provider and Host-bound tools.
-It records session opens, prompt writes, tool reads and sends, refuses a repeated
-open for the same binding (including automatic resume fallback), and caps opens
-and prompt writes independently at four. Polling observes durable state only; it
-never resends. A failed, unknown, cancelled or permission-waiting outcome stops
-the whole run before another agent is attempted.
-
-After each successful turn a separate query-only SQLite connection reopens the
-source data. Assertions require exactly one accepted user send, one visible
-nonce, its durable receipt, full Project/Bot scope, the accepted input fence and
-its creation event, and the assistant's actual execution fence. The first
-admission initializes a binding before execution advances its generation;
-later inputs must preserve the submitted fence. The test also checks empty then approved
-memory, native session IDs and the factory's unchanged resume capability.
-
-Private evidence includes capabilities, opened requests (without tool authority
-or credentials), prompt/context snapshots, MCP observations and reopened durable
-aggregates. Copy these JSON files out of temporary work before task cleanup.
-Preserve typed failures and the original log; do not acknowledge/resend an
-unknown turn or relabel setup/source inspection as native acceptance.
-
-No full fallback, teams, Cloud, physical phone, production UI or public Release
-acceptance is established here. Original line avatars and public Release-hidden
-behavior were outside the write scope and were not changed.
+Private artifacts retain capability versions, Open/Send requests, tool reads,
+reopened aggregates, original failures, source manifests and the exact overlay.
+The scripted durable-readback control remains a control, not native evidence.
+These results do not establish production Cloud, physical-phone, cross-platform,
+permission-offer, routine, team or fallback acceptance. Those remain separately
+tracked; no unsupported behavior is relabeled as verified.
