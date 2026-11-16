@@ -1,0 +1,169 @@
+package projectassistant_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"fmt"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	_ "modernc.org/sqlite"
+)
+
+var roomCtx = context.Background()
+var roomAt = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+
+// Codync's room values; MaxMembers is this test's own bound.
+var roomLimits = pa.GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
+
+func openRoomDB(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	if err = (projectassistantstore.Installer{}).Install(roomCtx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err = (projectassistantstore.GroupInstaller{}).Install(roomCtx, db); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func roomCommand(key pa.BotKey, op pa.Operation, id string) pa.Command {
+	return pa.Command{Key: key, Operation: op, IdempotencyKey: id, ContentHash: fmt.Sprintf("%x", sha256.Sum256([]byte(id)))}
+}
+
+func storeBot(t *testing.T, s *projectassistantstore.Store, id, name string, scope pa.ProjectScope) pa.Bot {
+	t.Helper()
+	b := pa.Bot{Key: pa.BotKey{MachineID: scope.MachineID, BotID: id}, Project: scope, ConversationID: "chat/" + id, Name: name, Appearance: pa.Appearance{Shape: pa.Blob, Color: "#e39567"}, Agent: pa.ClaudeCode, PermissionPolicy: pa.Ask, Instructions: pa.InstructionSnapshot{Revision: 1}, Version: 1, CreatedAt: roomAt, UpdatedAt: roomAt}
+	c := pa.Conversation{Key: b.Key, ID: b.ConversationID, Version: 1, MemoryRevision: 1}
+	summary := pa.BotSummary{Bot: b}
+	_, err := s.Commit(roomCtx, app.Mutation{Command: roomCommand(b.Key, pa.CreateOperation, "create/"+id), Bot: &b, Conversation: &c, Receipt: pa.Receipt{ID: "created/" + id, State: pa.EffectDelivered, ResourceID: id}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "created/" + id, Fence: pa.Fence{Key: b.Key, Project: b.Project, ConversationID: b.ConversationID}, Kind: pa.BotCreated, Bot: &summary}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// Real Bot rows, membership validation, group state, a whole room turn with
+// serial speakers and passes, then reopening the database.
+func TestGroupRoomFromStoredBotsThroughReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rooms.db")
+	db := openRoomDB(t, path)
+	bots := projectassistantstore.New(db)
+	scope := pa.ProjectScope{MachineID: "m", ProjectID: "p", CanonicalID: "repo", Kind: pa.RepositoryProject}
+	alice := storeBot(t, bots, "a", "Alice", scope)
+	bob := storeBot(t, bots, "b", "Bob", scope)
+	rooms, err := app.NewGroupRooms(projectassistantstore.NewGroupStore(db), roomLimits, func() time.Time { return roomAt })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = app.NewGroupRooms(projectassistantstore.NewGroupStore(db), pa.GroupLimits{}, time.Now); pa.Code(err) != pa.Invalid {
+		t.Fatal("rooms without supplied limits")
+	}
+	person := app.PersonAuthority{Principal: "person", Machine: "m"}
+	gkey := pa.BotKey{MachineID: "m", BotID: "g"}
+	draft := pa.GroupDraft{Key: gkey, Project: scope, ConversationID: "room/g", Name: "Pair", Members: []pa.BotKey{alice.Key, bob.Key}}
+	if _, err = rooms.Create(roomCtx, app.PersonAuthority{}, roomCommand(gkey, pa.CreateOperation, "c"), draft); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("create without the person's authority: %v", err)
+	}
+	r, err := rooms.Create(roomCtx, person, roomCommand(gkey, pa.CreateOperation, "c"), draft)
+	if err != nil || r.ResourceID != "g" {
+		t.Fatal(err)
+	}
+	other := draft
+	other.Name = "Changed"
+	if _, err = rooms.Create(roomCtx, person, roomCommand(gkey, pa.CreateOperation, "c"), other); pa.Code(err) != pa.IdempotencyConflict {
+		t.Fatalf("changed payload under the same key: %v", err)
+	}
+
+	// One room turn: round 0 asks both; Alice names Bob, but Bob was shown
+	// that line when asked and passed, so round 1 asks nobody and ends it.
+	step, err := rooms.PersonWrote(roomCtx, gkey, 0)
+	if err != nil || step.Turn == nil {
+		t.Fatal(err)
+	}
+	group, _ := projectassistantstore.NewGroupStore(db).Group(roomCtx, gkey)
+	catalog := pa.GroupCatalog{Bots: map[pa.BotKey]pa.Bot{alice.Key: alice, bob.Key: bob}}
+	speakers := pa.RoomSpeakers(group, catalog)
+	room := []pa.RoomEntry{{Seq: 1, Kind: pa.RoomPersonEntry, Text: "Plan the release"}}
+	asked := map[pa.BotKey]int64{}
+	answers := map[pa.BotKey][]string{alice.Key: {"Draft ready, @bob please review"}, bob.Key: {"(pass)"}}
+	var run pa.RoomRun
+	seq := int64(1)
+	for !run.Done {
+		for _, sp := range pa.RoomSpeakersFor(speakers, room, false, run.Round, asked) {
+			ticket, err := rooms.Ask(roomCtx, gkey, sp.Key, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = rooms.Admit(roomCtx, ticket); err != nil {
+				t.Fatal(err)
+			}
+			asked[sp.Key] = seq
+			text := answers[sp.Key][0]
+			answers[sp.Key] = answers[sp.Key][1:]
+			seq++
+			entry, ok, err := rooms.Publish(roomCtx, ticket, seq, text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var said *pa.RoomEntry
+			if ok {
+				room = append(room, entry)
+				said = &entry
+			}
+			if !run.Answered(said, roomLimits) {
+				break
+			}
+		}
+		run.EndRound(roomLimits)
+	}
+	if run.Round != 1 || run.Replies != 1 || run.Last == nil || run.Last.Author != alice.Key {
+		t.Fatalf("run %+v", run)
+	}
+	if len(answers[bob.Key]) != 0 {
+		t.Fatal("Bob was not asked")
+	}
+	step, err = rooms.TurnEnded(roomCtx, gkey, step.State.Revision, step.Turn.Epoch)
+	if err != nil || step.Turn != nil {
+		t.Fatal(err)
+	}
+
+	// A busy member's late ticket, then the group's Stop, survive reopen.
+	late, err := rooms.Ask(roomCtx, gkey, bob.Key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := rooms.Stop(roomCtx, gkey, step.State.Revision)
+	if err != nil || !stop.Stopped || len(stop.Cancel) != 2 {
+		t.Fatalf("stop %+v %v", stop, err)
+	}
+	db.Close()
+	db = openRoomDB(t, path)
+	defer db.Close()
+	rooms, _ = app.NewGroupRooms(projectassistantstore.NewGroupStore(db), roomLimits, func() time.Time { return roomAt })
+	if _, _, err = rooms.Publish(roomCtx, late, 99, "done at last"); pa.Code(err) != pa.StaleGeneration {
+		t.Fatalf("late answer after group Stop and reopen: %v", err)
+	}
+	if _, err = rooms.LateAnswer(roomCtx, gkey, stop.State.Revision, 10); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := rooms.Create(roomCtx, person, roomCommand(gkey, pa.CreateOperation, "c"), draft); err != nil || again != r {
+		t.Fatalf("replay after reopen: %+v %v", again, err)
+	}
+	if _, err = rooms.Delete(roomCtx, person, roomCommand(gkey, pa.DeleteOperation, "d"), 1); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := projectassistantstore.New(db).Bot(roomCtx, alice.Key); err != nil || b.ConversationID != alice.ConversationID {
+		t.Fatalf("member after group delete: %v", err)
+	}
+}
