@@ -1695,6 +1695,8 @@ const words = {
     sendQueuedHere: "Queued in this browser. It will send when {assistant} finishes the current turn and this page is open.",
     sendQueuedHeld: "{assistant}'s turn did not finish, so this queued message was not sent. Read the conversation first, then send it or close it.",
     sendQueuedNow: "Send now",
+    sendSteerNow: "Send now (Esc)",
+    sendSteering: "Steering…",
     sendQueueFull: "This browser has reached its pending message limit. Finish or dismiss a pending message first.",
     sendInterrupted: "This page was reloaded while this was being sent, so it is not known whether it reached the machine.",
     sendKeptWords:
@@ -4659,6 +4661,8 @@ const words = {
     sendQueuedHere: "已在此瀏覽器排隊；{assistant} 完成目前回合且此頁面開啟時會送出。",
     sendQueuedHeld: "{assistant} 這一回合沒有正常結束，這則排隊的訊息還沒送出。先看過對話，再決定要送出或關掉。",
     sendQueuedNow: "現在送出",
+    sendSteerNow: "插話／馬上送出",
+    sendSteering: "正在插話…",
     sendQueueFull: "此瀏覽器的待處理訊息已滿，請先完成或取消一則訊息。",
     sendInterrupted: "送出到一半這一頁被重新載入了，不知道有沒有送到那台機器。",
     sendKeptWords: "重新載入時這一頁留住了文字，但沒有留住圖片，所以這一則不能從這裡再送一次。",

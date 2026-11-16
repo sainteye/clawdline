@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 3
+	SchemaVersion       = 4
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10

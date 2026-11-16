@@ -3,9 +3,8 @@
 // routine event, as the pinned Codync hooks.rs does.
 //
 // It makes no network or provider call, stores no credential, and neither
-// queues, deduplicates nor executes anything. Nothing routes to it yet: the
-// caller wires authentication, admission, durable delivery dedupe and the run
-// itself, and registers the bounds it passes in Limits.
+// queues, deduplicates nor executes anything. The caller owns admission,
+// durable delivery dedupe and execution, and registers the bounds in Limits.
 package projectassistantwebhook
 
 import (

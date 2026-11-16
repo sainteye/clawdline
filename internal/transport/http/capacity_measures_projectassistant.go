@@ -68,6 +68,20 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		}
 	}
 	return map[string]func() capacity.Reading{
+		"bots.routine_event_name_bytes":     pure,
+		"bots.routine_event_filters":        pure,
+		"bots.routine_filter_key_bytes":     pure,
+		"bots.routine_filter_value_bytes":   pure,
+		"bots.routine_webhook_body_bytes":   pure,
+		"bots.routine_delivery_id_bytes":    pure,
+		"bots.routine_github_event_bytes":   pure,
+		"bots.routine_hook_secret_bytes":    unobserved,
+		"bots.follow_up_pending":            unobserved,
+		"bots.follow_up_seconds":            pure,
+		"bots.follow_up_chain":              pure,
+		"bots.follow_up_tokens":             pure,
+		"bots.routine_retry_attempts":       unobserved,
+		"bots.routine_retry_delay_seconds":  pure,
 		capacity.BotsContinuationMessages:   pure,
 		capacity.BotsContinuationQuoteBytes: pure,
 		capacity.BotsReviewPending:          reviews(false),

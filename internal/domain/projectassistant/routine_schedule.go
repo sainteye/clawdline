@@ -1,6 +1,7 @@
 package projectassistant
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -12,16 +13,29 @@ import (
 // RoutineTrigger retains the person's schedule, independently of its next wake.
 // At is Unix milliseconds, as in the pinned Codync routine contract.
 type RoutineTrigger struct {
-	Type       string `json:"type"`
-	Seconds    int64  `json:"seconds,omitempty"`
-	At         int64  `json:"at,omitempty"`
-	Expression string `json:"expression,omitempty"`
-	TimeZone   string `json:"timeZone,omitempty"`
+	Type       string            `json:"type"`
+	Seconds    int64             `json:"seconds,omitempty"`
+	At         int64             `json:"at,omitempty"`
+	Expression string            `json:"expression,omitempty"`
+	TimeZone   string            `json:"timeZone,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	Event      string            `json:"event,omitempty"`
+	Filters    map[string]string `json:"filters,omitempty"`
 }
 
 func (t RoutineTrigger) Validate() error {
 	bad := func(field string) error { return &Failure{Code: Invalid, Field: field} }
+	if t.Type != "event" && (t.Source != "" || t.Event != "" || len(t.Filters) != 0) {
+		return bad("routine_event_fields")
+	}
 	switch t.Type {
+	case "webhook", "event":
+		if t.Seconds != 0 || t.At != 0 || t.Expression != "" || t.TimeZone != "" {
+			return bad("routine_hook_schedule")
+		}
+		if t.Type == "event" {
+			return t.EventSpec().Validate(DefaultRoutineEventLimits())
+		}
 	case "interval":
 		if t.Seconds < 1 || t.Seconds > MaxRoutineIntervalSeconds || t.At != 0 || t.Expression != "" || t.TimeZone != "" {
 			return bad("routine_interval")
@@ -69,6 +83,8 @@ func (t RoutineTrigger) Next(after time.Time) (time.Time, error) {
 		return time.Time{}, err
 	}
 	switch t.Type {
+	case "webhook", "event":
+		return time.Time{}, nil
 	case "interval":
 		return after.Add(time.Duration(t.Seconds) * time.Second), nil
 	case "once":
@@ -102,7 +118,7 @@ func earliestRoutineRun(runs []time.Time) time.Time {
 
 func (r Routine) ScheduleTriggers() []RoutineTrigger {
 	if len(r.Triggers) != 0 {
-		return slices.Clone(r.Triggers)
+		return cloneRoutineTriggers(r.Triggers)
 	}
 	return []RoutineTrigger{{Type: "interval", Seconds: r.IntervalSeconds}}
 }
@@ -117,13 +133,13 @@ func SetRoutineSchedule(r, old Routine, triggers []RoutineTrigger, now time.Time
 		if err := trigger.Validate(); err != nil {
 			return r, err
 		}
-		if trigger.Type == "once" && !time.UnixMilli(trigger.At).After(now) && !slices.Contains(old.ScheduleTriggers(), trigger) {
+		if trigger.Type == "once" && !time.UnixMilli(trigger.At).After(now) && !slices.ContainsFunc(old.ScheduleTriggers(), func(v RoutineTrigger) bool { return routineTriggerEqual(v, trigger) }) {
 			return r, &Failure{Code: Invalid, Field: "routine_once_future"}
 		}
 	}
-	r.Triggers = slices.Clone(triggers)
+	r.Triggers = cloneRoutineTriggers(triggers)
 	r.IntervalSeconds = 0
-	if old.ID != "" && slices.Equal(old.ScheduleTriggers(), triggers) && (!r.Enabled || old.Enabled) {
+	if old.ID != "" && slices.EqualFunc(old.ScheduleTriggers(), triggers, routineTriggerEqual) && (!r.Enabled || old.Enabled) {
 		r.NextRuns = slices.Clone(old.NextRuns)
 		if len(r.NextRuns) == 0 {
 			r.NextRuns = []time.Time{old.NextDue}
@@ -140,6 +156,44 @@ func SetRoutineSchedule(r, old Routine, triggers []RoutineTrigger, now time.Time
 	}
 	r.NextDue = earliestRoutineRun(r.NextRuns)
 	return r, nil
+}
+
+func routineTriggerEqual(a, b RoutineTrigger) bool {
+	return a.Type == b.Type && a.Seconds == b.Seconds && a.At == b.At && a.Expression == b.Expression && a.TimeZone == b.TimeZone && a.Source == b.Source && a.Event == b.Event && maps.Equal(a.Filters, b.Filters)
+}
+
+func DefaultRoutineEventLimits() RoutineEventLimits {
+	return RoutineEventLimits{MaxRoutineEventNameBytes, MaxRoutineEventFilters, MaxRoutineEventFilterKeyBytes, MaxRoutineEventFilterValueBytes}
+}
+
+func (t RoutineTrigger) EventSpec() RoutineEventSpec {
+	return RoutineEventSpec{Source: t.Source, Event: t.Event, Filters: t.Filters}
+}
+
+func (r Routine) HasHook() bool {
+	for _, t := range r.Triggers {
+		if t.Type == "webhook" || t.Type == "event" {
+			return true
+		}
+	}
+	return false
+}
+
+func (r Routine) MatchesEvent(e RoutineEvent) bool {
+	for _, t := range r.Triggers {
+		if t.Type == "webhook" || t.Type == "event" && t.EventSpec().Matches(e) {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneRoutineTriggers(in []RoutineTrigger) []RoutineTrigger {
+	out := slices.Clone(in)
+	for i := range out {
+		out[i].Filters = maps.Clone(out[i].Filters)
+	}
+	return out
 }
 
 // AdvanceRoutineSchedule coalesces simultaneous triggers, keeps interval

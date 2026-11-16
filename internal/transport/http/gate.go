@@ -285,6 +285,12 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			return
 		}
 		p := routePath(r)
+		// This capability has its own constant-time bearer/HMAC verification.
+		// Never convert it to a device grant or let a device cookie bypass it.
+		if routineHookDeliveryRoute(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// A request through Tailscale Serve arrives from loopback like the
 		// shell's own, and is a paired device's all the same: neither this
 		// machine's local-token exemptions nor the orchestrator door apply.

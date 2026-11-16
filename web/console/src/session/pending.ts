@@ -101,6 +101,8 @@ export interface PendingSend {
    * nothing on, so the Enter is offered again. Not kept between page loads.
    */
   enterRefused?: string
+  /** Whether the card is currently triggering an interrupt to steer the session. */
+  steering?: boolean
 }
 
 /** One transcript entry, as much of it as settling reads. */
@@ -256,6 +258,16 @@ export class PendingSends {
     this.changed()
     return card
   }
+
+  /** Mark a queued or accepted card as steering (interrupting the turn to send this card). */
+  steering(token: string, value: boolean): PendingSend | null {
+    const card = this.find(token)
+    if (!card) return null
+    card.steering = value
+    this.changed()
+    return card
+  }
+
 
   /** Every card on the page, oldest first: what `persist.ts` keeps between page loads. */
   all(): readonly PendingSend[] {

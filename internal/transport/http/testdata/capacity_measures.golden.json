@@ -316,6 +316,26 @@
     "Note": true
   },
   {
+    "Name": "bots.follow_up_chain",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.follow_up_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.follow_up_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.follow_up_tokens",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.frame_bytes",
     "Known": true,
     "Note": true
@@ -515,7 +535,42 @@
     "Note": true
   },
   {
+    "Name": "bots.routine_delivery_id_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_event_filters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_event_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_filter_key_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_filter_value_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.routine_finished_runs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_github_event_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_hook_secret_bytes",
     "Known": true,
     "Note": true
   },
@@ -545,6 +600,16 @@
     "Note": true
   },
   {
+    "Name": "bots.routine_retry_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_retry_delay_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.routine_tick_ms",
     "Known": true,
     "Note": true
@@ -556,6 +621,11 @@
   },
   {
     "Name": "bots.routine_triggers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.routine_webhook_body_bytes",
     "Known": true,
     "Note": true
   },

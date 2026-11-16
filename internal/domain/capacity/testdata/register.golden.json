@@ -1315,6 +1315,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.follow_up_chain",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineFollowUpChain"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.follow_up_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineFollowUps"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.follow_up_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 2592000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineFollowUpSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.follow_up_tokens",
+    "Class": "buffer",
+    "Unit": "tokens",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineFollowUpTokens"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.frame_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2111,6 +2191,106 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_delivery_id_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineDeliveryIDBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_event_filters",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineEventFilters"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_event_name_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineEventNameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_filter_key_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineEventFilterKeyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_filter_value_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineEventFilterValueBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.routine_finished_runs",
     "Class": "observation",
     "Unit": "rows",
@@ -2127,6 +2307,46 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxRoutineFinishedRuns"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_github_event_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineGitHubEventNameBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_hook_secret_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineWebhookSecretBytes"
     ]
   },
   {
@@ -2231,6 +2451,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_retry_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineRetryAttempts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_retry_delay_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 900,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineRetryDelaySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.routine_tick_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
@@ -2286,6 +2546,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxRoutineTriggers"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.routine_webhook_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutineWebhookBodyBytes"
     ]
   },
   {
