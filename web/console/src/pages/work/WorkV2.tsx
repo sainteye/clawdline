@@ -1490,7 +1490,7 @@ function CreatedWorkModal({ item, created = true, back, sessions, sessionList, r
     role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
-      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? catalogWord("ui", "workItemCreated") : catalogWord("ui", "boardItem")}</p>
+      <div className="work-modal-head"><div>{created && <p className="board-eyebrow">{catalogWord("ui", "workItemCreated")}</p>}
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}

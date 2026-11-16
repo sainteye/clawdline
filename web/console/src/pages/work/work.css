@@ -768,6 +768,14 @@
 }
 .work-created-panel > .work-modal-head { margin-bottom: 14px; }
 .work-created-panel > .work-v2-card { --work-edge: var(--accent); }
+/* The dialog is the item's surface: its content sits directly on the dialog
+   rather than on a second card, which cost a margin and a padding per side. */
+.work-created-panel > .work-v2-card, .work-created-panel > .work-v2-card.work-epic-card {
+    padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+@media (max-width: 720px) {
+    .work-created-panel { padding: 18px 16px; border-radius: 14px; }
+}
 .work-item-detail-modal {
     align-items: safe center; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
