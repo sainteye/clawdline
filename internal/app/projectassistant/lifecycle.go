@@ -153,10 +153,22 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 				}
 			}
 		}
-		_, err = repo.Commit(ctx, Mutation{RoutineRun: run, Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events})
+		m := Mutation{RoutineRun: run, Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events}
+		if t.ExchangeID != "" {
+			p, ok := repo.(CollaborationRepository)
+			if !ok {
+				return runtimeFailure(pa.Unsupported, "collaboration_cleanup")
+			}
+			_, err = p.FinishExchange(ctx, m, "")
+		} else {
+			_, err = repo.Commit(ctx, m)
+		}
 		if err != nil {
 			return err
 		}
+	}
+	if p, ok := repo.(CollaborationRepository); ok {
+		return p.DropExchangeReplies(ctx, key, clock())
 	}
 	return nil
 }

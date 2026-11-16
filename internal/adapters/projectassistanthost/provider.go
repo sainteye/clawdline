@@ -57,14 +57,16 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
-	routines  func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
-	send      func(context.Context, string, string) error
-	dispatch  func(context.Context, string, string, []string) (pa.WorkLink, error)
-	status    func(context.Context, string) (pa.WorkLink, error)
-	memory    func(context.Context) ([]pa.MemoryEntry, error)
-	edit      func(context.Context, string, app.MemoryEdit) error
-	output    func(context.Context, string, app.OutputRequest) (pa.Output, error)
-	artifacts func(context.Context) ([]app.ArtifactInfo, error)
+	listBots   func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
+	messageBot func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	routines   func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
+	send       func(context.Context, string, string) error
+	dispatch   func(context.Context, string, string, []string) (pa.WorkLink, error)
+	status     func(context.Context, string) (pa.WorkLink, error)
+	memory     func(context.Context) ([]pa.MemoryEntry, error)
+	edit       func(context.Context, string, app.MemoryEdit) error
+	output     func(context.Context, string, app.OutputRequest) (pa.Output, error)
+	artifacts  func(context.Context) ([]app.ArtifactInfo, error)
 }
 
 func (w NativeWork) Routines(ctx context.Context, q app.RoutineRequest) (app.RoutineResult, error) {
@@ -273,6 +275,10 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return nil, NativeWork{}, err
 	}
 	turnID := c.ActiveTurnID
+	turn, err := h.store.Turn(openCtx, q.Bot.Key, turnID)
+	if err != nil {
+		return nil, NativeWork{}, err
+	}
 	h.mu.Lock()
 	r, a, b := h.engine, h.authority, h.bridge
 	h.mu.Unlock()
@@ -319,7 +325,26 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return ctx, finish, nil
 	}
 	tools := NativeWork{}
+	tools.listBots = func(ctx context.Context, request pa.BotDirectoryQuery) (pa.BotDirectoryPage, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.BotDirectoryPage{}, e
+		}
+		defer cancel()
+		return r.ListBots(ctx, q.Binding.Fence, turnID, request)
+	}
+	tools.messageBot = func(ctx context.Context, request pa.BotMessageRequest) (pa.Exchange, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.Exchange{}, e
+		}
+		defer cancel()
+		return r.MessageBot(ctx, q.Binding.Fence, turnID, request)
+	}
 	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
+		if turn.Origin == pa.BotRequestOrigin && request.Action != "list" {
+			return app.RoutineResult{}, failure(pa.ScopeDenied, "bot_request_tools")
+		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return app.RoutineResult{}, e
@@ -328,6 +353,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Routine(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
+		if turn.Origin == pa.BotRequestOrigin {
+			return pa.Output{}, failure(pa.ScopeDenied, "bot_request_tools")
+		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return pa.Output{}, e
@@ -457,6 +485,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.MemoryEntries(ctx, q.Bot.Key)
 	}
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
+		if turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin {
+			return failure(pa.ScopeDenied, "bot_reply_memory")
+		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return e

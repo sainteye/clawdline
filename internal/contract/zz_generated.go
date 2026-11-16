@@ -4706,6 +4706,28 @@ type ProjectAssistantEventsResponse struct {
 	NextSeq         int64                   `json:"next_seq"`
 }
 
+type ProjectAssistantExchange struct {
+	Delivery      string                           `json:"delivery,omitempty"`
+	Detail        string                           `json:"detail,omitempty"`
+	Hops          int64                            `json:"hops"`
+	ID            string                           `json:"id"`
+	Outcome       string                           `json:"outcome"`
+	Project       ProjectAssistantProjectScope     `json:"project"`
+	Reply         string                           `json:"reply,omitempty"`
+	ReplyTurnID   string                           `json:"reply_turn_id,omitempty"`
+	Request       string                           `json:"request"`
+	RequestTurnID string                           `json:"request_turn_id"`
+	Revision      int64                            `json:"revision"`
+	Source        ProjectAssistantExchangeEndpoint `json:"source"`
+	SourceTurnID  string                           `json:"source_turn_id"`
+	Target        ProjectAssistantExchangeEndpoint `json:"target"`
+}
+
+type ProjectAssistantExchangeEndpoint struct {
+	ConversationID string                 `json:"conversation_id"`
+	Key            ProjectAssistantBotKey `json:"key"`
+}
+
 // Internal binding identity is safe to expose; native_session_id must be
 // redacted from public roster projections.
 type ProjectAssistantExecutionBinding struct {
@@ -4728,6 +4750,7 @@ type ProjectAssistantExport struct {
 	ContractVersion string                             `json:"contract_version"`
 	Conversation    ProjectAssistantConversation       `json:"conversation"`
 	Events          []ProjectAssistantEvent            `json:"events"`
+	Exchanges       []ProjectAssistantExchange         `json:"exchanges,omitempty"`
 	Memory          ProjectAssistantMemoryRevision     `json:"memory"`
 	MemoryEntries   []ProjectAssistantMemoryEntry      `json:"memory_entries"`
 	Messages        []ProjectAssistantMessage          `json:"messages"`
@@ -4880,6 +4903,7 @@ type ProjectAssistantMemoryWriteRequest struct {
 type ProjectAssistantMessage struct {
 	At             string                       `json:"at"`
 	Attachments    []ProjectAssistantAttachment `json:"attachments,omitempty"`
+	Exchange       *ProjectAssistantExchange    `json:"exchange,omitempty"`
 	Fence          ProjectAssistantFence        `json:"fence"`
 	Files          []ProjectAssistantInputFile  `json:"files,omitempty"`
 	ID             string                       `json:"id"`
@@ -5495,8 +5519,10 @@ type ProjectAssistantTrace struct {
 
 type ProjectAssistantTurn struct {
 	Attempts       []ProjectAssistantAttemptFact `json:"attempts,omitempty"`
+	ExchangeID     string                        `json:"exchange_id,omitempty"`
 	Failure        *ProjectAssistantFailure      `json:"failure,omitempty"`
 	Fence          ProjectAssistantFence         `json:"fence"`
+	Hops           int64                         `json:"hops,omitempty"`
 	ID             string                        `json:"id"`
 	IdempotencyKey string                        `json:"idempotency_key"`
 	Instructions   ProjectAssistantInstructions  `json:"instructions"`
@@ -5506,6 +5532,7 @@ type ProjectAssistantTurn struct {
 	JoinedTurnID   string `json:"joined_turn_id,omitempty"`
 	MemoryRevision int64  `json:"memory_revision"`
 	MessageID      string `json:"message_id"`
+	Origin         string `json:"origin,omitempty"`
 
 	// When the turn began running, RFC 3339; absent while it waits.
 	StartedAt string                    `json:"started_at,omitempty"`

@@ -48,8 +48,32 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		_, installed := usage()
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
+	reviews := func(sender bool) func() capacity.Reading {
+		return func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed := p.host, p.inspectionFailed
+			p.mu.RUnlock()
+			if h == nil {
+				return capacity.Reading{Known: !failed, Note: "no installed Bot collaboration store"}
+			}
+			total, largest, err := h.CollaborationUsage(context.Background())
+			if err != nil {
+				return capacity.Unmeasured("durable collaboration count unavailable")
+			}
+			if sender {
+				total = largest
+			}
+			return capacity.Reading{Known: true, Used: total, Note: "durable outstanding exchanges; historical facts and owned process cleanup are counted separately"}
+		}
+	}
 	return map[string]func() capacity.Reading{
-		capacity.BotsFallbacks: pure,
+		capacity.BotsReviewPending:   reviews(false),
+		capacity.BotsReviewPerSender: reviews(true),
+		capacity.BotsReviewHops:      pure,
+		capacity.BotsReviewRequest:   pure,
+		capacity.BotsReviewReply:     pure,
+		capacity.BotsFallbacks:       pure,
 		capacity.BotsAgentRestSeconds: func() capacity.Reading {
 			p := &s.projectAssistants
 			p.mu.RLock()

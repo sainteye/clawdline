@@ -34,7 +34,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -47,6 +47,8 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS project_assistant_exchanges (machine TEXT NOT NULL, id TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL, outstanding INTEGER NOT NULL, revision INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,id))`,
+		`CREATE INDEX IF NOT EXISTS project_assistant_exchange_pending ON project_assistant_exchanges(machine,outstanding,source)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_agent_rests (machine TEXT NOT NULL, agent TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,agent))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_bots (machine TEXT NOT NULL, bot TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0), data BLOB NOT NULL, PRIMARY KEY(machine,bot))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, machine TEXT NOT NULL, bot TEXT NOT NULL, event_id TEXT NOT NULL, data BLOB NOT NULL, UNIQUE(machine,event_id))`,
@@ -64,11 +66,11 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
-	// V2 protects aggregate fields and recovery semantics that v1 readers do
+	// V3 protects aggregate fields and recovery semantics that older readers do
 	// not understand. No historical JSON, event or receipt is decoded/rebuilt.
 	// Keep the metadata update last so failure rolls back the additive DDL too.
-	if version == 1 {
-		if _, err = tx.ExecContext(ctx, `UPDATE project_assistant_schema SET version=? WHERE id=1 AND version=1`, pa.SchemaVersion); err != nil {
+	if version < pa.SchemaVersion {
+		if _, err = tx.ExecContext(ctx, `UPDATE project_assistant_schema SET version=? WHERE id=1 AND version=?`, pa.SchemaVersion, version); err != nil {
 			return err
 		}
 	}

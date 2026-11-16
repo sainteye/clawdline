@@ -416,6 +416,31 @@
     "Note": true
   },
   {
+    "Name": "bots.review_hops",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.review_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.review_per_sender",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.review_reply_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.review_request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.roster_check_ms",
     "Known": true,
     "Note": true

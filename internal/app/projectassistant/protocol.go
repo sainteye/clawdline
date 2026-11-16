@@ -46,6 +46,12 @@ type NativeTools interface {
 	EditMemory(context.Context, string, MemoryEdit) error
 }
 
+// CollaborationTools is optional and entirely bound by the current Host turn.
+type CollaborationTools interface {
+	ListBots(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
+	MessageBot(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+}
+
 // OutputTools is additive so older native tool adapters remain compatible.
 type OutputTools interface {
 	PublishOutput(context.Context, string, OutputRequest) (pa.Output, error)

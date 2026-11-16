@@ -42,11 +42,11 @@ func TestLegacyV1ArchiveRestoresAllFactsAndExportsV2(t *testing.T) {
 				t.Fatal(err)
 			}
 			out, err := target.ExportArchive(testContext, b.Key)
-			if err != nil || out.Data.SchemaVersion != 2 || out.Manifest.SchemaVersion != 2 {
+			if err != nil || out.Data.SchemaVersion != pa.SchemaVersion || out.Manifest.SchemaVersion != pa.SchemaVersion {
 				t.Fatalf("restore did not export schema 2: %+v %v", out.Manifest, err)
 			}
 			want := transferred.Data
-			want.SchemaVersion = 2
+			want.SchemaVersion = pa.SchemaVersion
 			if !reflect.DeepEqual(want, out.Data) {
 				t.Fatal("legacy facts changed during restore")
 			}
@@ -82,7 +82,7 @@ func TestArchiveVersionAgreementAndIntegrityRefuseAtomically(t *testing.T) {
 		{"legacy manifest with current data", 1, 2, false, pa.Unsupported},
 		{"current manifest with legacy data", 2, 1, false, pa.Unsupported},
 		{"zero", 0, 0, false, pa.Unsupported},
-		{"future", 3, 3, false, pa.Unsupported},
+		{"future", pa.SchemaVersion + 1, pa.SchemaVersion + 1, false, pa.Unsupported},
 		{"future manifest", 3, 2, false, pa.Unsupported},
 		{"future data", 2, 3, false, pa.Unsupported},
 		{"legacy integrity", 1, 1, true, pa.Invalid},
@@ -271,12 +271,227 @@ func TestActualSchemaOneArchiveRetainsItsOriginalCanonicalHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := legacy.Data
-	want.SchemaVersion = 2
+	want.SchemaVersion = pa.SchemaVersion
 	if !reflect.DeepEqual(want, current) {
 		t.Fatal("restoring actual v1 archive changed its facts")
 	}
 	receipt, err := target.Receipt(testContext, command(want.Bot.Key, pa.SendOperation, "send"))
 	if err != nil || receipt.State != pa.EffectUnknown {
 		t.Fatalf("legacy unknown receipt changed: %+v %v", receipt, err)
+	}
+}
+
+// Produced by fd9a9629669c6df00839a9a048f079138b0a5836's actual v2
+// types/installer/exporter, before copying schema3 code into the staging tree.
+const actualSchemaTwoArchive = `{
+  "data": {
+    "ContractVersion": "project-assistants.v1",
+    "SchemaVersion": 2,
+    "Bot": {
+      "key": {
+        "machine_id": "machine",
+        "bot_id": "baseline-v2"
+      },
+      "project": {
+        "machine_id": "machine",
+        "project_id": "project",
+        "canonical_id": "canonical",
+        "kind": "repository"
+      },
+      "conversation_id": "chat/baseline-v2",
+      "name": "Bot baseline-v2",
+      "appearance": {
+        "shape": "blob",
+        "color": "#e39567"
+      },
+      "agent": "claude",
+      "permission_policy": "ask",
+      "instructions": {
+        "revision": 1,
+        "text": "Be helpful",
+        "role_snapshot_ref": ""
+      },
+      "version": 1,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    },
+    "Conversation": {
+      "key": {
+        "machine_id": "machine",
+        "bot_id": "baseline-v2"
+      },
+      "id": "chat/baseline-v2",
+      "generation": 0,
+      "binding_id": "",
+      "last_message_seq": 0,
+      "memory_revision": 1,
+      "active_turn_id": "",
+      "version": 1
+    },
+    "Messages": null,
+    "Turns": [],
+    "Bindings": [],
+    "Permissions": [],
+    "WorkLinks": [],
+    "Memory": {
+      "key": {
+        "machine_id": "machine",
+        "bot_id": "baseline-v2"
+      },
+      "project": {
+        "machine_id": "machine",
+        "project_id": "project",
+        "canonical_id": "canonical",
+        "kind": "repository"
+      },
+      "revision": 1,
+      "forgotten_through": 0,
+      "forgotten_source_ids": null
+    },
+    "MemoryEntries": [],
+    "Context": {
+      "memory": {
+        "key": {
+          "machine_id": "machine",
+          "bot_id": "baseline-v2"
+        },
+        "project": {
+          "machine_id": "machine",
+          "project_id": "project",
+          "canonical_id": "canonical",
+          "kind": "repository"
+        },
+        "revision": 1,
+        "forgotten_through": 0,
+        "forgotten_source_ids": null
+      },
+      "text": "",
+      "sources": [],
+      "provenance_complete": true
+    },
+    "Events": [
+      {
+        "version": "project-assistants.v1",
+        "id": "created/baseline-v2",
+        "seq": 1,
+        "fence": {
+          "key": {
+            "machine_id": "machine",
+            "bot_id": "baseline-v2"
+          },
+          "project": {
+            "machine_id": "machine",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat/baseline-v2",
+          "binding_id": "",
+          "generation": 0
+        },
+        "kind": "bot_created",
+        "at": "0001-01-01T00:00:00Z",
+        "bot": {
+          "bot": {
+            "key": {
+              "machine_id": "machine",
+              "bot_id": "baseline-v2"
+            },
+            "project": {
+              "machine_id": "machine",
+              "project_id": "project",
+              "canonical_id": "canonical",
+              "kind": "repository"
+            },
+            "conversation_id": "chat/baseline-v2",
+            "name": "Bot baseline-v2",
+            "appearance": {
+              "shape": "blob",
+              "color": "#e39567"
+            },
+            "agent": "claude",
+            "permission_policy": "ask",
+            "instructions": {
+              "revision": 1,
+              "text": "Be helpful",
+              "role_snapshot_ref": ""
+            },
+            "version": 1,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+          },
+          "latest_message": "",
+          "activity": "",
+          "activity_at": "0001-01-01T00:00:00Z",
+          "unread_count": 0,
+          "read_cursor": {
+            "key": {
+              "machine_id": "",
+              "bot_id": ""
+            },
+            "conversation_id": "",
+            "reader_id": "",
+            "message_seq": 0
+          },
+          "pending_permissions": 0,
+          "version": 0,
+          "source": {
+            "machine_id": "",
+            "state": "",
+            "readable": false,
+            "writable": false,
+            "fresh": false,
+            "observed_at": "0001-01-01T00:00:00Z",
+            "access": "",
+            "capabilities": null
+          }
+        }
+      }
+    ],
+    "Receipts": [
+      {
+        "command": {
+          "key": {
+            "machine_id": "machine",
+            "bot_id": "baseline-v2"
+          },
+          "operation": "create",
+          "idempotency_key": "create/baseline-v2",
+          "content_hash": "939ca6e4d1b78be1211ae995172ff209c613a3fccbdbdd9f05e0a9fbd1c85c89"
+        },
+        "id": "created/baseline-v2",
+        "state": "delivered",
+        "resource_id": "baseline-v2",
+        "event_seq": 1
+      }
+    ],
+    "ReadCursors": []
+  },
+  "manifest": {
+    "contract_version": "project-assistants.v1",
+    "schema_version": 2,
+    "sha256": "3b20cd14d176ef2295aee7c81a99a9a4811d18ce189ddaca4de8099743df1067"
+  }
+}`
+
+func TestActualSchemaTwoArchiveRetainsItsOriginalCanonicalHash(t *testing.T) {
+	var in Archive
+	if err := json.Unmarshal([]byte(actualSchemaTwoArchive), &in); err != nil {
+		t.Fatal(err)
+	}
+	if in.Manifest.SHA256 != "3b20cd14d176ef2295aee7c81a99a9a4811d18ce189ddaca4de8099743df1067" {
+		t.Fatal("old producer receipt changed")
+	}
+	sum, err := digest(in.Data)
+	if err != nil || sum != in.Manifest.SHA256 {
+		t.Fatal("v2 empty fields changed canonical JSON", sum, err)
+	}
+	_, s, _ := testDB(t)
+	if err = s.RestoreArchive(testContext, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.ExportArchive(testContext, in.Data.Bot.Key)
+	if err != nil || out.Data.SchemaVersion != pa.SchemaVersion {
+		t.Fatal(out.Manifest, err)
 	}
 }

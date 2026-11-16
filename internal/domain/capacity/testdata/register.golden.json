@@ -1717,6 +1717,106 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.review_hops",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationHops"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationOutstanding"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_per_sender",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationPerSender"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_reply_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationReplyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_request_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationRequestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.roster_check_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

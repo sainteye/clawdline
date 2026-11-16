@@ -42,8 +42,10 @@ type Engine struct {
 	disabled map[pa.ProjectSelection]bool
 	closed   bool
 	// restarting marks the daemon's own shutdown (CloseForRestart).
-	restarting bool
-	changed    chan struct{}
+	restarting   bool
+	changed      chan struct{}
+	pendingWakes map[pa.BotKey]struct{} // committed collaboration work, never native retry
+	waking       bool                   // Engine.mu: one waiter for actor capacity per runtime
 }
 
 type routineCompletion struct {
@@ -198,11 +200,19 @@ func runtimeCommand(key pa.BotKey, op pa.Operation, id string, payload any) pa.C
 // mutate increments the aggregate version once. Repository.Commit owns all
 // atomic facts/receipt/event allocation; no external IO runs inside its tx.
 func (r *Engine) mutate(ctx context.Context, bot pa.Bot, m Mutation) (pa.Receipt, error) {
+	prepared, err := r.prepareMutation(ctx, bot, m)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	return r.o.Repository.Commit(ctx, prepared)
+}
+
+func (r *Engine) prepareMutation(ctx context.Context, bot pa.Bot, m Mutation) (Mutation, error) {
 	if len(m.Messages) > 0 {
 		if m.Conversation == nil {
 			c, err := r.o.Repository.Conversation(ctx, bot.Key, bot.ConversationID)
 			if err != nil {
-				return pa.Receipt{}, err
+				return Mutation{}, err
 			}
 			m.Conversation = &c
 		}
@@ -232,7 +242,7 @@ func (r *Engine) mutate(ctx context.Context, bot pa.Bot, m Mutation) (pa.Receipt
 		m.Events[i].ID = r.o.ID()
 		m.Events[i].At = r.o.Clock()
 	}
-	return r.o.Repository.Commit(ctx, m)
+	return m, nil
 }
 
 func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
@@ -420,9 +430,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	fence := currentFence(bot, c)
 	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
+	turn.Origin = pa.UserOrigin
 	kind := pa.UserMessage
 	if s.Notice {
 		kind = pa.NoticeMessage
+		turn.Origin = pa.HostNoticeOrigin
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
 	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
@@ -500,6 +512,11 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 	if a.working {
 		return nil, nil
 	}
+	if p, ok := r.o.Repository.(CollaborationRepository); ok {
+		if err = p.DropExchangeReplies(ctx, key, r.o.Clock()); err != nil {
+			return nil, err
+		}
+	}
 	pending, err := r.o.Repository.PendingTurns(ctx, key)
 	if err != nil {
 		return nil, err
@@ -517,12 +534,24 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 		}
 	}
 	for _, t := range pending {
+		if t.Origin == pa.BotRequestOrigin || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+			state := pa.TurnCancelled
+			if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+				state = pa.TurnUnknown
+			}
+			if t.State != pa.TurnUnknown {
+				if err = r.finishLocked(ctx, a, t, state, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
 		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
 			if err = r.finishLocked(ctx, a, t, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
+				if t.Origin != pa.BotRequestOrigin && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
 					resumable = append(resumable, t)
 				}
 			}
@@ -557,6 +586,11 @@ func (r *Engine) work(a *runtimeActor) {
 			if err != nil {
 				r.retain(a, err)
 			}
+			a.working = false
+			a.mu.Unlock()
+			return
+		}
+		if err := r.promoteExchangeReply(a.lifetime, a.key); err != nil {
 			a.working = false
 			a.mu.Unlock()
 			return
@@ -622,6 +656,7 @@ func (r *Engine) work(a *runtimeActor) {
 			err = ctx.Err()
 		}
 		cancel()
+		r.wakeExchangeReply(*turn)
 		a.mu.Lock()
 		a.cancel = nil
 		a.turnID = ""
@@ -644,6 +679,10 @@ func (r *Engine) work(a *runtimeActor) {
 				}
 			}
 		}
+		// Any terminal failure may also have queued a correlated source reply.
+		a.mu.Unlock()
+		r.wakeExchangeReply(*turn)
+		a.mu.Lock()
 		r.mu.Lock()
 		retained := a.retained
 		r.mu.Unlock()
@@ -752,6 +791,14 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if input.Fence.Key != a.key || input.Fence.Project != bot.Project || input.Fence.ConversationID != c.ID || input.Kind != pa.UserMessage && input.Kind != pa.NoticeMessage {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "queued_message")
+	}
+	if err = collaborationPrompt(t, input); err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	if t.Origin == pa.BotRequestOrigin && (bot.Hidden || len(input.Files) > 0 || len(input.Attachments) > 0) {
+		a.mu.Unlock()
+		return runtimeFailure(pa.ScopeDenied, "collaboration_recipient")
 	}
 	quote, err := resolvePromptQuote(export, input.QuoteMessageID, currentFence(bot, c), current)
 	if err != nil {
@@ -865,6 +912,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	a.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if t.Origin == pa.BotRequestOrigin {
+		p, e := r.collaboration()
+		if e != nil {
+			return e
+		}
+		if e = p.StartExchange(ctx, t.Fence, t.ID, t.ExchangeID); e != nil {
+			return e
+		}
 	}
 	a.mu.Lock()
 	a.opening = true
@@ -1041,7 +1097,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		return err
 	}
 	err = r.finishLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil)
-	if err != nil && t.RoutineRunID != "" {
+	if err != nil && (t.RoutineRunID != "" || t.ExchangeID != "") {
 		a.completion = &routineCompletion{turn: t, text: result.FinalText}
 		r.retain(a, err)
 	}
@@ -1120,6 +1176,20 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 }
 
 func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
+	for {
+		err := r.finishOnceLocked(ctx, a, t, state, text, cause)
+		if !collaborationAggregateConflict(err) {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Rebuild only this uncommitted terminal mutation from current facts.
+		// This does not reopen, Send, or repeat any native effect.
+	}
+}
+
+func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
 	bot, err := r.o.Repository.Bot(ctx, a.key)
 	if err != nil {
 		return err
@@ -1159,7 +1229,7 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 		c.ActiveTurnID = ""
 	}
 	var messages []pa.Message
-	if state == pa.TurnSucceeded {
+	if state == pa.TurnSucceeded && t.Origin != pa.BotRequestOrigin {
 		// Visible messages have stable IDs. Querying this turn from export also
 		// covers long conversations whose user message is outside the last page.
 		var explicit []string
@@ -1241,11 +1311,39 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 	if state == pa.TurnSucceeded && len(t.Attempts) > 0 {
 		clearRest = t.Attempts[len(t.Attempts)-1].Agent
 	}
-	_, err = r.mutate(ctx, bot, Mutation{ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events})
+	m := Mutation{ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events}
+	if t.ExchangeID != "" {
+		var p CollaborationRepository
+		p, err = r.collaboration()
+		if err != nil {
+			return err
+		}
+		m, err = r.prepareMutation(ctx, bot, m)
+		if err != nil {
+			return err
+		}
+		_, err = p.FinishExchange(ctx, m, text)
+	} else {
+		_, err = r.mutate(ctx, bot, m)
+	}
 	return err
 }
 
 func (r *Engine) incoming(ctx context.Context, a *runtimeActor, e ProtocolEvent) error {
+	for {
+		err := r.incomingOnce(ctx, a, e)
+		if !collaborationAggregateConflict(err) {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// The event identity and receipt stay fixed. Reauthorization, fence,
+		// state, permission and replay checks all run again before Commit.
+	}
+}
+
+func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEvent) error {
 	a.mu.Lock()
 	locked := true
 	defer func() {
@@ -1279,6 +1377,9 @@ func (r *Engine) incoming(ctx context.Context, a *runtimeActor, e ProtocolEvent)
 	}
 	if t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 		return runtimeFailure(pa.StaleVersion, "incoming_turn")
+	}
+	if t.Origin == pa.BotRequestOrigin && (e.Message != "" || e.Output != nil) {
+		return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-event-"+t.ID+"-"+e.ID, e)
 	if rec, err := r.replay(ctx, cmd, pa.SendOperation); err != nil {
@@ -1652,7 +1753,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if t.Origin == pa.BotRequestOrigin || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)

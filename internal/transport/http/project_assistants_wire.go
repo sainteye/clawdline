@@ -108,6 +108,9 @@ func paWireFence(value pa.Fence) contract.ProjectAssistantFence {
 
 func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	var out contract.ProjectAssistantTurn
+	out.Origin = string(value.Origin)
+	out.ExchangeID = value.ExchangeID
+	out.Hops = int64(value.Hops)
 	for _, f := range value.Attempts {
 		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason})
 	}
@@ -143,6 +146,10 @@ func paWireExecutionBinding(value pa.ExecutionBinding) contract.ProjectAssistant
 
 func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	var out contract.ProjectAssistantMessage
+	if value.Exchange != nil {
+		x := paWireExchange(*value.Exchange)
+		out.Exchange = &x
+	}
 	out.ID = value.ID
 	out.Fence = paWireFence(value.Fence)
 	out.Seq = value.Seq
@@ -532,6 +539,9 @@ func paDomainMemoryEntry(value contract.ProjectAssistantMemoryEntry) pa.MemoryEn
 
 func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 	var out contract.ProjectAssistantExport
+	for _, x := range value.Exchanges {
+		out.Exchanges = append(out.Exchanges, paWireExchange(x))
+	}
 	out.ContractVersion = value.ContractVersion
 	out.SchemaVersion = int64(value.SchemaVersion)
 	convertedBot, err := paWireBot(value.Bot)
@@ -591,6 +601,10 @@ func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 		out.WorkLinks[i] = paWireWorkLink(value.WorkLinks[i])
 	}
 	return out, nil
+}
+
+func paWireExchange(x pa.Exchange) contract.ProjectAssistantExchange {
+	return contract.ProjectAssistantExchange{ID: x.ID, Project: paWireProjectScope(x.Project), Source: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Source.Key), ConversationID: x.Source.ConversationID}, Target: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Target.Key), ConversationID: x.Target.ConversationID}, SourceTurnID: x.SourceTurnID, RequestTurnID: x.RequestTurnID, ReplyTurnID: x.ReplyTurnID, Request: x.Request, Reply: x.Reply, Detail: x.Detail, Outcome: string(x.Outcome), Revision: x.Revision, Hops: int64(x.Hops), Delivery: x.Delivery}
 }
 
 func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {

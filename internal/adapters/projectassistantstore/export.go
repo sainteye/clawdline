@@ -56,7 +56,9 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 
 // Legacy exports retain their original facts and command identities. Restore
 // validates both versions identically; the next export uses the current schema.
-func restorableSchema(version int) bool { return version == 1 || version == pa.SchemaVersion }
+func restorableSchema(version int) bool {
+	return version == 1 || version == 2 || version == pa.SchemaVersion
+}
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -141,6 +143,10 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	if err != nil {
 		return out, err
 	}
+	out.Exchanges, err = readExchanges(ctx, tx, key)
+	if err != nil {
+		return out, err
+	}
 	return out, tx.Commit()
 }
 
@@ -150,6 +156,21 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	if in.ContractVersion != pa.ContractVersion || !restorableSchema(in.SchemaVersion) {
 		return failure(pa.Unsupported, "export_version")
+	}
+	// A single-Bot archive cannot authorize a two-Bot replay. Preserve all
+	// exchange facts on export and refuse this transfer boundary explicitly.
+	if len(in.Exchanges) > 0 {
+		return failure(pa.Unsupported, "collaboration_transfer")
+	}
+	for _, m := range in.Messages {
+		if m.Exchange != nil {
+			return failure(pa.Unsupported, "collaboration_transfer")
+		}
+	}
+	for _, t := range in.Turns {
+		if t.ExchangeID != "" {
+			return failure(pa.Unsupported, "collaboration_transfer")
+		}
 	}
 	unlock := s.lock(in.Bot.Key)
 	defer unlock()
