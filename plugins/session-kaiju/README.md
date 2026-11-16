@@ -1,38 +1,18 @@
 # Kaiju City for Clawdline
 
-A browser port of Jiqize's original isometric city. Original plates, eight
-building slots and damage layers, all eight monsters and five poses, day/night
-assets, depth ordering, dust, sirens and status-dependent motion are retained.
-Projects beyond eight appear in further districts rather than disappearing.
-Idle and unknown states stay in the register, following the original city display.
-Each building uses its original two to four stand points. Additional active
-monsters appear in explicit batches; selecting any registered Session brings its
-batch into view. Building hits and the Project strip expose the complete Project
-roster. All Sessions remain selectable in the
-complete searchable register. Selection does not navigate; Open Session does.
+A browser port of Jiqize's original isometric city. Version 0.3.0 retains original plates, eight building slots and monsters, damage layers, day/night artwork and depth. It restores dossier/avatar rosters, the original pixel font, monster entry and retreat, new-building rise, rooftop focus arrow, impact effects and background news. See the [source comparison](../../docs/plugins/kaiju-source-alignment.md) for individual behaviors and host differences.
 
-Building wear uses optional trusted working-turn timestamps only. Missing times
-keep an intact building; blocked work retains its observed level. Reported
-completion uses the original ruin metaphor but does not mark work accepted or
-claim project damage. Native timers, statistics and terminal commands are not
-available through the Session summary projection and are not fabricated.
+Projects beyond eight use districts. Idle Sessions stay in the roster; original standing points bound each cast, with explicit batches for additional active monsters. Every Session remains reachable by its full Unicode name. Selection and nearby touch controls keep the city interactive on phones. **Open Session** performs navigation; optional details remain available without an automatic bottom sheet.
 
-The shared builder embeds lossless original raster artwork, full MIT notice,
-SDK and browser renderer into a two-file STORE package:
+Building wear requires trusted working-turn timestamps. Missing times keep the building intact; blocked work retains its observed level. Reported completion uses ruins as a metaphor and does not accept work or claim project damage. Provided state times support elapsed-time fields. Native program names and persistent daily statistics are unavailable and are not fabricated. Confirmed callback waits retain their own caption.
+
+The shared builder embeds lossless original artwork, the unmodified Fusion Pixel font, MIT/OFL notices, SDK and browser renderer in a two-file STORE package:
 
 ```sh
 python3 plugins/build-herdr-views.py
+python3 tools/build-view-plugin-catalog.py
 ```
 
-The package needs the host's registered 32 MiB archive/expanded profile; it
-exceeds the previous 256 KiB archive limit. All other runtime permissions and
-bounds remain enforced. Stale/unknown data cannot navigate. Still/list mode,
-reduced motion, hidden host and disconnected state stop movement. There are no
-external resources or native commands. Installation is explicit and browser-local.
+The package uses the existing 32 MiB archive/expanded profile and unchanged host API v1/read/open permissions. Official installed cards can update it in place. Still/list mode, reduced motion, hidden hosts and disconnection stop movement. Stale or unknown unclassified readings cannot navigate. There are no external resources or native commands. Packages remain browser-local; roster mode lasts for this opening.
 
-See [PROVENANCE.md](PROVENANCE.md).
-
-On narrow screens, selecting a monster or roster entry opens an accessible detail
-sheet with the full title, reading status and explicit Open Session action. The
-scene fits its viewport independently of roster height. Selection never opens a
-Session, sends a message or accepts reported completion by itself.
+See [PROVENANCE.md](PROVENANCE.md) for original assets, source and licenses.

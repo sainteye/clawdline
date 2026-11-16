@@ -1066,5 +1066,581 @@
     "asset": "art/assets/night/monsters/yeti/walk.webp",
     "sourceSha256": "e1819a96c12ac9b1313f229b7d22598750ba53f2ca8fed51530a4c8c3e265c33",
     "sha256": "1325c7ecdb6c30546035f4c9006d37a8ac7866cb4ca9ea22e58704eed067c555"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/avatar-idle.png",
+    "asset": "art/assets/day/monsters/lizard/avatar-idle.webp",
+    "sourceSha256": "f6721a9319af166173dfc5b6b384a374e552e8fc2677cf4ec60009ed207ca7a2",
+    "sha256": "45f1a6058c38fc10422c7e3d9ee1683e256d032d599df3dd207c16b3f62d6600"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/avatar-walk.png",
+    "asset": "art/assets/day/monsters/lizard/avatar-walk.webp",
+    "sourceSha256": "11ce6b0f33ee98de1998f321efdf1acc7e05c85b102340e37195fa03ed8dd061",
+    "sha256": "cfe2949e40378541782b7bbcc5b40af6da06142be60bbbbef87b77462a1ae731"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/avatar-smash.png",
+    "asset": "art/assets/day/monsters/lizard/avatar-smash.webp",
+    "sourceSha256": "2c6fa42be2e5642f398337aceb9a5b6c249b556286a179501d51b8942d118d4f",
+    "sha256": "16da5a41505864b8cb06fd04dd8bbfb13f78f1ad3c0b3f9e0f8c4d9468ebad2a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/avatar-roar.png",
+    "asset": "art/assets/day/monsters/lizard/avatar-roar.webp",
+    "sourceSha256": "2d134933e0453fb643d56088aacb4b36992e6ef809a9cfdad5123f6597792d0f",
+    "sha256": "1614e9c0e7d3163f64a830743b41aacbd98b3be6b3afbe15c4d632233c72bf5a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/avatar-wave.png",
+    "asset": "art/assets/day/monsters/lizard/avatar-wave.webp",
+    "sourceSha256": "caf51af10dd3ad08f514fba536ce093d65d253c3ddbfcfacaad8fea5c2ae03b0",
+    "sha256": "3bea62fa2577c06b11d917f278146b28880ca3f90d3fe4ee4df03fea572dbe29"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/lizard/face-roar.png",
+    "asset": "art/assets/day/monsters/lizard/face-roar.webp",
+    "sourceSha256": "4e2124058339763fb6cc28ba336efb81687151de9aff44b53720eaaf102e9e52",
+    "sha256": "d3c0be7d37cd5e4a42799f7fa4adcb5c93e626c0614e097102fe96c3bb329544"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/avatar-idle.png",
+    "asset": "art/assets/day/monsters/ape/avatar-idle.webp",
+    "sourceSha256": "b3739b6d72aad87f05006837ff2ac5f7dacd2b2a24c73dc770c7a718cf2aff4d",
+    "sha256": "77777a3d4ca8f31c7ced689f429617cef10e408ee348bbe44b2870d3ac635cce"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/avatar-walk.png",
+    "asset": "art/assets/day/monsters/ape/avatar-walk.webp",
+    "sourceSha256": "485efbe301918f13c4e182934d21bde68ce897caa61bb5ab767c45809aa8ca5f",
+    "sha256": "f62b582e407c571043aaca03e179bb11b2c5efa9d24151c68b9f1d2144056005"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/avatar-smash.png",
+    "asset": "art/assets/day/monsters/ape/avatar-smash.webp",
+    "sourceSha256": "a8923d55ac03393d1b46e751300698298ca0b1c9eeb1da9ce5a12a08e1732b34",
+    "sha256": "fa3477a755d9ba362cf7f9b828b1c7671008dedd6677cb709cd75576fca5133e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/avatar-roar.png",
+    "asset": "art/assets/day/monsters/ape/avatar-roar.webp",
+    "sourceSha256": "447e62e99bf02a6b03de4917b7e9c7a717fcc2a6a6e8489fa9e9dcd19b06abf8",
+    "sha256": "ea07bb6052482c45681a4952703ec0f5bf6474be98d6887f74803f3eab8bd4d0"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/avatar-wave.png",
+    "asset": "art/assets/day/monsters/ape/avatar-wave.webp",
+    "sourceSha256": "fd05a7a268ee013c716f2978e7a253b672d2faa931102255d4d65470a002ddc6",
+    "sha256": "aa446d45eace49099bf1b3a2de2b53d24558d07bd9ad920de4ad5b3cfbef88d1"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/ape/face-roar.png",
+    "asset": "art/assets/day/monsters/ape/face-roar.webp",
+    "sourceSha256": "561114accdacf85c220585ff58b56006aeb6327ca1f408217940d475338e0906",
+    "sha256": "8ac0465037e1a2398c571a35f706caba189cd1dcf2e610ee6e244e628567e1bc"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/avatar-idle.png",
+    "asset": "art/assets/day/monsters/crab/avatar-idle.webp",
+    "sourceSha256": "7fe59ffcb8b4069156e09b3770ef7e854e817fb248b1309be36149a7869426c2",
+    "sha256": "64659576080ebf3eeeda7c995ec6a86e362878644fb3b966b7df78d43e632313"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/avatar-walk.png",
+    "asset": "art/assets/day/monsters/crab/avatar-walk.webp",
+    "sourceSha256": "0dc05eee21a9e59ff3b1720d658ee4be2d90f468688fb01685f4bb31b82e08aa",
+    "sha256": "25879969df9da51be44e500ead59227f7121dfea2d4b2754ffd1739e08386176"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/avatar-smash.png",
+    "asset": "art/assets/day/monsters/crab/avatar-smash.webp",
+    "sourceSha256": "8772bfd625b9b361e2ba119f2dbd4f161b5091a4b94c8c8d6ef7db3847640d96",
+    "sha256": "c475bbc0e822b1c9e1ed27173cca6788cb4348af00f9e34622bb797cd926a2c4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/avatar-roar.png",
+    "asset": "art/assets/day/monsters/crab/avatar-roar.webp",
+    "sourceSha256": "b02adfe45acee2912a59cdc979895340e1b301a44b0edf754d2d3c465b8847a6",
+    "sha256": "7277c5bb355fc6a170778fb148680f56dd61cbbd23e21ee64cf73e961d3f981c"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/avatar-wave.png",
+    "asset": "art/assets/day/monsters/crab/avatar-wave.webp",
+    "sourceSha256": "4186dd12c2b46f2057a715e4a4a6592e4841fba9bd641482fb32905054b0e896",
+    "sha256": "c2a369ff9e9f7b34188eb7f19ce1f4912188236ac17bc13a05ab7544af83386d"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/crab/face-roar.png",
+    "asset": "art/assets/day/monsters/crab/face-roar.webp",
+    "sourceSha256": "fd072c1b4c8f3220d91c003c69911903afbdd01e182055e2e300708bd245b3e9",
+    "sha256": "443cddb04ff61ce356ed643fac99dfcc340ab96f799011ae3c64f801dde53f5d"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/avatar-idle.png",
+    "asset": "art/assets/day/monsters/axolotl/avatar-idle.webp",
+    "sourceSha256": "7d6da22c4a737d77b0788a8566c4b4f637f30d750b826ce888ed9e645ab27096",
+    "sha256": "ddcef04d07baac0a5600c116a7a18c458ff41fd8e4f449130a2ed64a894f2c41"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/avatar-walk.png",
+    "asset": "art/assets/day/monsters/axolotl/avatar-walk.webp",
+    "sourceSha256": "6a874cbfa4d691349123949d8af1b3c7075d361b45ac0045a60e9d61dc4d4601",
+    "sha256": "eef006242d1a48c3dce1c8015d023efc7b4493b5cd4aeee95af101f5248e6b09"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/avatar-smash.png",
+    "asset": "art/assets/day/monsters/axolotl/avatar-smash.webp",
+    "sourceSha256": "bf89a13ff55ff6f582636013c0f998d4279b5726180fd3e05e5a157e77e55936",
+    "sha256": "12ad61863e22c8c51ec6d57009bd1e4957a06b4df9922bc3b08a4cbfaea7b1b8"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/avatar-roar.png",
+    "asset": "art/assets/day/monsters/axolotl/avatar-roar.webp",
+    "sourceSha256": "84e546d293c69aa99c7b804d2ddf907e5f7961fd6b961be6b2981d5bf7e0d191",
+    "sha256": "0055c53e28e1982c9f200990566081475db477c48f98730bb7eb508be8f56f6f"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/avatar-wave.png",
+    "asset": "art/assets/day/monsters/axolotl/avatar-wave.webp",
+    "sourceSha256": "3a05a0de9c84aeb213ca8c429d3384f3fb84a88f525c38bcc1c3e7fc71df4c37",
+    "sha256": "751bd20231e79cf87356c58411ef6a9d0d549dd3bb260e53662c21454de0e0c4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/axolotl/face-roar.png",
+    "asset": "art/assets/day/monsters/axolotl/face-roar.webp",
+    "sourceSha256": "fff96dff0b9be6e27e74fef372808a6bb21d474ac193289ed719d8341908665d",
+    "sha256": "d697ad42d80940cbf991d6f188bb87359fc1bc0ba45ac9a14a208dbdff36abe9"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/avatar-idle.png",
+    "asset": "art/assets/day/monsters/yeti/avatar-idle.webp",
+    "sourceSha256": "bce1339dd18e649866cd0d9f40e285fa8fe61a8bee596d65da732716f4083fc0",
+    "sha256": "b3582a0e45d71f466340b036930ff4d78bd22794d83b4ddc7a717b79e3e66bf6"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/avatar-walk.png",
+    "asset": "art/assets/day/monsters/yeti/avatar-walk.webp",
+    "sourceSha256": "6ec06db2d7aea9a045648f9a484c76cd83fbdba8debc6b74db55d630ba6575de",
+    "sha256": "b24a66630f5fa8180fa3c4809a7cccdd33ea4d550894db15577e86b7ba6b6395"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/avatar-smash.png",
+    "asset": "art/assets/day/monsters/yeti/avatar-smash.webp",
+    "sourceSha256": "1de016f5a2142b194a409bdfb3411b5ba4039b42546bf1e832c97b0ddea73d43",
+    "sha256": "e827a8f3c6b0bb15bba108d13fb7b4b0fb33a1f6630aeb36cf48aa32a3546d0e"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/avatar-roar.png",
+    "asset": "art/assets/day/monsters/yeti/avatar-roar.webp",
+    "sourceSha256": "678a913d3bd9ae9eb6b1e189b7af4e15c6b19934d0b44a127c0d4701ec5ac708",
+    "sha256": "2c424d907c49753459c524e71e584e37916ea0d69382ff078e42ddf0652bac3c"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/avatar-wave.png",
+    "asset": "art/assets/day/monsters/yeti/avatar-wave.webp",
+    "sourceSha256": "cc38dbc268edbf5228318b217f0b4e9a760d81747853dc9cb201afc690be1ec1",
+    "sha256": "9935050eb000fd3a4beeda88e37c81f6b7b5adf5a6fd498124ceaa14bdeeb813"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/yeti/face-roar.png",
+    "asset": "art/assets/day/monsters/yeti/face-roar.webp",
+    "sourceSha256": "8cd8a9dce20a9ef989e79b5458b0f7bfc3105a101f888677bab61fba0fb6660d",
+    "sha256": "62a9796ef68dd5e1efc4152fb50a5d968ab15775304274ac00a5ece6ecebbfd5"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/avatar-idle.png",
+    "asset": "art/assets/day/monsters/moth/avatar-idle.webp",
+    "sourceSha256": "963dc0879bb96231e6808c968e4174067391147ef3cc5853780643dcfaf4531c",
+    "sha256": "75b575efc2dc382e4c3120a02441454b8e83387d8b80654ec1e17dd76e836e4b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/avatar-walk.png",
+    "asset": "art/assets/day/monsters/moth/avatar-walk.webp",
+    "sourceSha256": "e195d88759962b3e7dfa86f9c32e5c51e11377ef0c6297cef4a7337212bc7cbf",
+    "sha256": "20d0c8aeda70b8c494f5f53970cec19e9bc0a31cb34beded8445af738d2c1f0a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/avatar-smash.png",
+    "asset": "art/assets/day/monsters/moth/avatar-smash.webp",
+    "sourceSha256": "0ffc96c4f911179ffe1f86933801d263152b487a490df6df0ff13575c0dd6f46",
+    "sha256": "2bb5a338331ea6a5da52a2cf596ae72196eaedf0ca28b669b2dbe8eba3ef795b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/avatar-roar.png",
+    "asset": "art/assets/day/monsters/moth/avatar-roar.webp",
+    "sourceSha256": "bb156cb860cf7f3c01636fffe272732da436b4798b034357229341611a6defcb",
+    "sha256": "c9e0d879cedfbff7ebebd09cf3c99e169234d7d9b38099c298ee5eeed7e384c1"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/avatar-wave.png",
+    "asset": "art/assets/day/monsters/moth/avatar-wave.webp",
+    "sourceSha256": "8d743f207336e0c1b752eade49ee2388ef03ba1871c161b2e1d01cf754f45acb",
+    "sha256": "91e54032328cb995144861a94bad5c2013948a7663c30b2c3b6255a870e05f6b"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/moth/face-roar.png",
+    "asset": "art/assets/day/monsters/moth/face-roar.webp",
+    "sourceSha256": "338000f49c71aaf791949d6cd54cf790b77f2ff1d4f287192a46b67d196ee44e",
+    "sha256": "4dc9f6faaac36b74da0e12645f0acabee714d94cfc7f34efbd0628c683139e0c"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/avatar-idle.png",
+    "asset": "art/assets/day/monsters/turtle/avatar-idle.webp",
+    "sourceSha256": "8d71b7c9090539fd02bc67f5079fca2a1a08ebfd9e70ceda31278ff880876907",
+    "sha256": "9ad6e8bfb7c653b2e63985f15eefde1ff6525b85d3e2ae00bd5b6adb0ac8b6cf"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/avatar-walk.png",
+    "asset": "art/assets/day/monsters/turtle/avatar-walk.webp",
+    "sourceSha256": "757b4ca0bd3c11752d7bd4626f3da5264b85bb53c17e4a07a250be70bb784798",
+    "sha256": "a0f51aa1fa5d7dc61d39122a054d674ce0dd5fb5950a20ef93e137622e70bba9"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/avatar-smash.png",
+    "asset": "art/assets/day/monsters/turtle/avatar-smash.webp",
+    "sourceSha256": "ebca7f83b0694b1884116f4b47923ba1239d2838825abe67e6d174030b393f3c",
+    "sha256": "0c6e45beb5464ab09e987c62e28e221e7b0a171a7e8f389bb8f0df19f141f558"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/avatar-roar.png",
+    "asset": "art/assets/day/monsters/turtle/avatar-roar.webp",
+    "sourceSha256": "6f6dfb2db908bc2937a66e61069953260ad4a75980451e57c4b640aaec2e5575",
+    "sha256": "840c9343a222cba71307d6568155f05381d1581b02f2e796d8551146cde0e881"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/avatar-wave.png",
+    "asset": "art/assets/day/monsters/turtle/avatar-wave.webp",
+    "sourceSha256": "112a007fab482f1e1ff2513187e77691fafaa357a5a1d142605b2b45d6a98cba",
+    "sha256": "e05ed028e569810b7031ae9bb6fd48d21691b4b438695574e6c7086b16c3b348"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/turtle/face-roar.png",
+    "asset": "art/assets/day/monsters/turtle/face-roar.webp",
+    "sourceSha256": "90352b20d7fa2b7130477fa6adf2b7608158aa0c97b27e424d5ac6268fd2a103",
+    "sha256": "c0c0e6fa364412615d719182f4544818299c97bedf97564ea044d6bc4e22f048"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/avatar-idle.png",
+    "asset": "art/assets/day/monsters/bat/avatar-idle.webp",
+    "sourceSha256": "20664217348de82677d4ff744de4040633ed3b0d59a7a28d6ba1cb4f031e19e4",
+    "sha256": "06ec252c71d1f8966a909a5381a03c6320646c6eb372a1cc53eeec756458880a"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/avatar-walk.png",
+    "asset": "art/assets/day/monsters/bat/avatar-walk.webp",
+    "sourceSha256": "34edb0bc7b475a8626de0ac02b7ae58f1ededa7c3c697640bace6de5b587376b",
+    "sha256": "15dcd3be9de41a1e2e4f2f36d7327225f315744d541781605906072c87a40242"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/avatar-smash.png",
+    "asset": "art/assets/day/monsters/bat/avatar-smash.webp",
+    "sourceSha256": "c14f6260a6da738f29eed0b7a03b2603d513eeded8fc96b88e85c8dd257b6d13",
+    "sha256": "5ed9d81eb05f1f04936047db810fa928bf79e54e23898931188e6c02417ec8ad"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/avatar-roar.png",
+    "asset": "art/assets/day/monsters/bat/avatar-roar.webp",
+    "sourceSha256": "af56b5eea1ad599bc0e9375f5d28a5011db4bcce51ed6544948593bb2b2f7f16",
+    "sha256": "85bf0dd8945532a7ce722904e380a44bc49e21f87cf54a5d3753182578a815b2"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/avatar-wave.png",
+    "asset": "art/assets/day/monsters/bat/avatar-wave.webp",
+    "sourceSha256": "acc6fbfe8e5f8bd81aba4495960101601d5e46962929dac3618944aa556a2c8d",
+    "sha256": "3f02436eaf749e2c1eff77e5ec1298154d22f553b2ed993a8aaa3d7ae6c024d4"
+  },
+  {
+    "source": "mods/kaiju/assets/day/monsters/bat/face-roar.png",
+    "asset": "art/assets/day/monsters/bat/face-roar.webp",
+    "sourceSha256": "6c88595d14d5b6f8dafedb59b3751162587f9ef18b8a475f320b9ee04f048fb3",
+    "sha256": "28d23e82d6978eb9407237dc8db56171c29db7b784de27e7720101f075578caa"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/avatar-idle.png",
+    "asset": "art/assets/night/monsters/lizard/avatar-idle.webp",
+    "sourceSha256": "b30c4d0ea552777e119e8b9c5647bc2d599ba82b5328d01d509cc46fee6e6f59",
+    "sha256": "e9fa61dc8602d3961fd57f4d896541df5a85ca5738e8fefd4ef5decc9f97333c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/avatar-walk.png",
+    "asset": "art/assets/night/monsters/lizard/avatar-walk.webp",
+    "sourceSha256": "0dd85b4d3c5b5e65cf9a5492815ef94b3df4e3bafb0eb5e7a51cf4bf89616a9c",
+    "sha256": "3213a6a9793f52e7db6b06fe8f8e66c9450ca3763c2983f860d40b754a7b31f5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/avatar-smash.png",
+    "asset": "art/assets/night/monsters/lizard/avatar-smash.webp",
+    "sourceSha256": "66616f9b4452e68f18658acbb025483b082aa67e4eceba653194e16f7d7ec567",
+    "sha256": "0aca4940a7410862812f0839828d1c1e74c790f7eb0230d7e9f01f195abe0d79"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/avatar-roar.png",
+    "asset": "art/assets/night/monsters/lizard/avatar-roar.webp",
+    "sourceSha256": "3b986496ff8b9668b05755c1b9ae78a0deb4f95c149bdbbfd861ac0943b24606",
+    "sha256": "2eed28f53dc9c0fb164d32017fcc58a558f34039ae326d6187995b73479c782d"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/avatar-wave.png",
+    "asset": "art/assets/night/monsters/lizard/avatar-wave.webp",
+    "sourceSha256": "f9c971e28b34b3769674d46c0774d13802fdf56566c584e964a043e44b86844b",
+    "sha256": "a25084b92ada713dc67adc9d335d8e701e7a586aa18a774d4be53af5d598b3d3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/lizard/face-roar.png",
+    "asset": "art/assets/night/monsters/lizard/face-roar.webp",
+    "sourceSha256": "15e41d9d399bd7ccec57ebf570c9642ff88f826e53a55d1c3c1061080e9c7598",
+    "sha256": "a4d4abb74cba4243e69155839ab4483f510c55cbbbb17e532f4f644a75d986c0"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/avatar-idle.png",
+    "asset": "art/assets/night/monsters/ape/avatar-idle.webp",
+    "sourceSha256": "9a6c66bd9c63763e248a808cbfe6ae30c4b55e6132d651dc78a29357756d01ee",
+    "sha256": "e9a016e4e1bb216f9eaa860f2876b3f5ba5007aabe3f18527aa2f9aded657560"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/avatar-walk.png",
+    "asset": "art/assets/night/monsters/ape/avatar-walk.webp",
+    "sourceSha256": "3c6d5d1e5e0cd620dc61bf2ad3b6aaee888704637b988c885b8adca94ac60b4c",
+    "sha256": "2be442bea4528d4ce1fa3945076089233ca9a7c3f316807a50adcb12a16ac116"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/avatar-smash.png",
+    "asset": "art/assets/night/monsters/ape/avatar-smash.webp",
+    "sourceSha256": "f5fd3e5b582b18700f62236a55d3fca77659794b47a9af136e2006c65fdbbffe",
+    "sha256": "1542fee4d2ab81c1abd31844addba4b72ca071e4b055b7e38039c20d1a4a3dd4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/avatar-roar.png",
+    "asset": "art/assets/night/monsters/ape/avatar-roar.webp",
+    "sourceSha256": "8301a158f4d80571cec29de8f59a26132f63fde00eca39abb76366f18ddfa5af",
+    "sha256": "8a8ce21f66200853cd1c181e5df568fde29a18bfd0d46c82b00016c4a89aaf69"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/avatar-wave.png",
+    "asset": "art/assets/night/monsters/ape/avatar-wave.webp",
+    "sourceSha256": "08168ac1c3c2fd3c61560b077ac803e1acecf7514efe587ec2639731a0d4edd4",
+    "sha256": "ccb0b2738612666c5c027a626aa2556380f90e0e618bec5d14d873b22d04af60"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/ape/face-roar.png",
+    "asset": "art/assets/night/monsters/ape/face-roar.webp",
+    "sourceSha256": "10291a67c4064e0848c73afb1961da2b631ac77f7c60b4c4104646b61cb48f51",
+    "sha256": "b5a21f9ee8659cf48e7556fee463beae89b7f753a954369578f0d58911089fea"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/avatar-idle.png",
+    "asset": "art/assets/night/monsters/crab/avatar-idle.webp",
+    "sourceSha256": "2c3c5d837853befd56df2813e4f493340a9a7203950aed91fa615ad275db577f",
+    "sha256": "2290e1490d9f820ae856c4ded09ecf79e4c1b09ed9e9ea2ca1dfdb6e758f03e7"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/avatar-walk.png",
+    "asset": "art/assets/night/monsters/crab/avatar-walk.webp",
+    "sourceSha256": "85d8d17c7acee7c32a8ca77900a5619770b104229035c2dfd7295e987daaca49",
+    "sha256": "4fcfe285842cec96919e65060a2e2fd4f2ac867e70a370edb8d1ed1ec52d42fa"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/avatar-smash.png",
+    "asset": "art/assets/night/monsters/crab/avatar-smash.webp",
+    "sourceSha256": "914b3b0575bba534e8a62d02ba2357a343e1a5eace85ad8e317960cb39b4f39f",
+    "sha256": "b6d44418782975782ead5268ea6f3f07f6dfd1f237526fb7479285b1b16a424b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/avatar-roar.png",
+    "asset": "art/assets/night/monsters/crab/avatar-roar.webp",
+    "sourceSha256": "26c3c820f68add3c2a1635cbdcf0fc4122b8da15cd4017519d73f27a353c512a",
+    "sha256": "4da3040f4684b845990cca9da348359657e320aec46f4da337b4b56d96db5b15"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/avatar-wave.png",
+    "asset": "art/assets/night/monsters/crab/avatar-wave.webp",
+    "sourceSha256": "4554deb55cf370c9a32c527260df2bff674fcdcb80f12310f9b64cd3daa26e42",
+    "sha256": "a5b1a12fd07dc862dc6dc664b00dc20dc8c375a94443d1340f1725a68baeb805"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/crab/face-roar.png",
+    "asset": "art/assets/night/monsters/crab/face-roar.webp",
+    "sourceSha256": "d46354e3f7afc8ea7e2bebd22fbb0b1eec24e2966a5376f8a313c17098781f50",
+    "sha256": "223812db67e14d862364881033ac8dbccbecca28aab80d996e3dc863c3b2dd60"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/avatar-idle.png",
+    "asset": "art/assets/night/monsters/axolotl/avatar-idle.webp",
+    "sourceSha256": "09cc33200237e514fdcb093b42c6f4bb952317a0df151165a7710aedd71cacdb",
+    "sha256": "786a393851d6583b03bf2c4c2d7e5ea192e017d3723aae367c9bb587497cfb1c"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/avatar-walk.png",
+    "asset": "art/assets/night/monsters/axolotl/avatar-walk.webp",
+    "sourceSha256": "9333aeec1d665e546e4d73bad13c42ec8e7fa0b61cf6fd59cd305a44d72d7d8c",
+    "sha256": "32b6d8cd45d6d5c4d1fd1f4677ff0a940f3e7a284509ba67ddc5fa5b8ab10b51"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/avatar-smash.png",
+    "asset": "art/assets/night/monsters/axolotl/avatar-smash.webp",
+    "sourceSha256": "24baa1a88f8e2191a575da36c43eefa1a5c9fbb5e21048d3050710a2cb507603",
+    "sha256": "f2f9aebf36b2bf6e458bbc523c9db0420ad209300788cac4034633de0d6fb655"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/avatar-roar.png",
+    "asset": "art/assets/night/monsters/axolotl/avatar-roar.webp",
+    "sourceSha256": "95095865f7ce5645de5be3ca949e85a5c1e836602b4ae918923f1e34a0f848ef",
+    "sha256": "cf7c79a39efbb242701f04f86ac3ac8ee8a09f3b1d9bf508caee496e243a4bd4"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/avatar-wave.png",
+    "asset": "art/assets/night/monsters/axolotl/avatar-wave.webp",
+    "sourceSha256": "eaa93b9838ff37a09d36c09e51c7c791c1b865412fc4317bc6ff56b0e145d8c7",
+    "sha256": "e8009549221c827a4f59177e0eb308c9b61815f8268a1b28919b327bbd9777a7"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/axolotl/face-roar.png",
+    "asset": "art/assets/night/monsters/axolotl/face-roar.webp",
+    "sourceSha256": "9c70e2a07eaa16d8a377565bd8c2e7e07c98def6d4644f069064eaffaabb43dd",
+    "sha256": "780e28c1e2f2159056582fb2e5f6be8612077870225fcd421daa688305474139"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/avatar-idle.png",
+    "asset": "art/assets/night/monsters/yeti/avatar-idle.webp",
+    "sourceSha256": "070c5947dba401f42e51aa5e1476c4aa801e0afd80f7ec023d83e0a1e48b982d",
+    "sha256": "b39fe35352b166a424dc4eff6cbeb72864d1f598713b8f0e8d19df5c880e3f49"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/avatar-walk.png",
+    "asset": "art/assets/night/monsters/yeti/avatar-walk.webp",
+    "sourceSha256": "761c3e049085787379386ca931d8ead0b4e53b47040a54cc619d55167fba9f97",
+    "sha256": "0fd017639c0804848539bb55f38089b9f368b74307aa5e18b6e88bfe9a17b76f"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/avatar-smash.png",
+    "asset": "art/assets/night/monsters/yeti/avatar-smash.webp",
+    "sourceSha256": "5da010e539ebb10203f6a53e0d4cb9949e250111135a4665d09d3b7cc73ad863",
+    "sha256": "d69f9d9d11b591bdfde62d2bbac294cafaa7b142ce6576269c9f652be0593218"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/avatar-roar.png",
+    "asset": "art/assets/night/monsters/yeti/avatar-roar.webp",
+    "sourceSha256": "ba59af483c6f28f398643424d33c14ceb56d689f17cb74ca41de84ba6d8caa4f",
+    "sha256": "ca011a625b9558db8a773d60aa157026aea955ade1ecc089ddeefa92818ffc49"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/avatar-wave.png",
+    "asset": "art/assets/night/monsters/yeti/avatar-wave.webp",
+    "sourceSha256": "768aa72b50140296d8c74d2d66b5ec7050a41b85dae48db9686aa957205683d4",
+    "sha256": "9630fb1168ca720a7d87b10088359291071fcacc0f4d3f81eae755cb70c024e3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/yeti/face-roar.png",
+    "asset": "art/assets/night/monsters/yeti/face-roar.webp",
+    "sourceSha256": "82dd283ec6fcd6ac93334d4342130f6c7c51691b256bb4435dde7a6838538cc4",
+    "sha256": "2526132f0ff0671514869267b78ffa5f856c95160e36974f1df304a48067972b"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/avatar-idle.png",
+    "asset": "art/assets/night/monsters/moth/avatar-idle.webp",
+    "sourceSha256": "b8e465ec9657c255aca3a3b699b7f6948977353f96940c1b5c8199335af441c1",
+    "sha256": "d1c0857d42e59876c9818362dafc6ebe02b4d018d2ad99be5ed19d106d9da24a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/avatar-walk.png",
+    "asset": "art/assets/night/monsters/moth/avatar-walk.webp",
+    "sourceSha256": "82f02db54a4678ecfd8f7bb36a9c540468058af7bcd263efd5a92fd47680cedf",
+    "sha256": "a8874a91d97d68963d88c7c165ff46ff7fd60698b4248c6a7c556dc054ef7471"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/avatar-smash.png",
+    "asset": "art/assets/night/monsters/moth/avatar-smash.webp",
+    "sourceSha256": "fc77f66881d727a8800463a75a9567feffcfae401ca51d23baed28bd5ecc2ff6",
+    "sha256": "0706fed84dc7e1e50f38197887b25ff76f50acb3df382c2a969cc78a7566b248"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/avatar-roar.png",
+    "asset": "art/assets/night/monsters/moth/avatar-roar.webp",
+    "sourceSha256": "0dcb3a755149113c559d92a3792806623340e74a28aa63b8bd5572fe26930f1d",
+    "sha256": "8b0082ea7d755a1650d1a663a54a2c57cd0f600209b30b2f410649523605ddb5"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/avatar-wave.png",
+    "asset": "art/assets/night/monsters/moth/avatar-wave.webp",
+    "sourceSha256": "e83c0eb04f033f4457e6d473d1cfb49b0e372addc89c3fae920d68cdd2e5187f",
+    "sha256": "b04529c0baaa2c5c2c8f13bdaf188b6cc9ad39b0b8f5990e40b73c40359bfaa3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/moth/face-roar.png",
+    "asset": "art/assets/night/monsters/moth/face-roar.webp",
+    "sourceSha256": "29178e5ad43e21bde9991a11da5a5c3d39fd66c76d95a7ce6c80cc542536c430",
+    "sha256": "906229ebe54843d9e60ac642fab9ed2abd097a5f4712314e13e79c87d52853f9"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/avatar-idle.png",
+    "asset": "art/assets/night/monsters/turtle/avatar-idle.webp",
+    "sourceSha256": "50b6fdb8471acec2f111077a39d07c4ad7677ab2f84198f18611e45db7bc05c2",
+    "sha256": "5eec9f187a9dce1aea00040a9de804ee538cebca7120a721d8503df47f64bee2"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/avatar-walk.png",
+    "asset": "art/assets/night/monsters/turtle/avatar-walk.webp",
+    "sourceSha256": "877789781e086bd67088cf30d615d8fbc13c5009df16de2ecebc0737997ae972",
+    "sha256": "31e83c531fd98855a0a14238fb4f1cc060c7061cbf0cd0708d0120c71ff69beb"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/avatar-smash.png",
+    "asset": "art/assets/night/monsters/turtle/avatar-smash.webp",
+    "sourceSha256": "c0843a024aba57056314b828206344fdb2388726692c69f039d3ebc69693cb9e",
+    "sha256": "87ba7d0cca7c139d4fc23abeea366a3a79b4015b1cfa261188fa2960cbc0583a"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/avatar-roar.png",
+    "asset": "art/assets/night/monsters/turtle/avatar-roar.webp",
+    "sourceSha256": "42529840d22f8df00f9292bbfda53711993f44b4114fadf633ed14354bbb1b29",
+    "sha256": "36eb6b62a26e7d31b3dd4957a1fc8db643ae1ffd1cd2cd62206437de008833d1"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/avatar-wave.png",
+    "asset": "art/assets/night/monsters/turtle/avatar-wave.webp",
+    "sourceSha256": "2ad32737df1274754fc24988f1b766287a655e9b9732f51ac1cc42e826bfc6ad",
+    "sha256": "13b08eb9e7c71a0f90a34285e4085b782275fb7f3de5e2d0cbbbf50a6f55c348"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/turtle/face-roar.png",
+    "asset": "art/assets/night/monsters/turtle/face-roar.webp",
+    "sourceSha256": "e1dc2fc7914ef31882413508627d9728ea55a2776bb79b13cb18e86c311580f9",
+    "sha256": "1b906a6b75e34db8a169a6e598e8d8770e4aef357d06599d5f557d7d30fa45b3"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/avatar-idle.png",
+    "asset": "art/assets/night/monsters/bat/avatar-idle.webp",
+    "sourceSha256": "b6c860279e1e1308e82a7098e4621c43bae74fee48c8d95332f40074dc0fbabf",
+    "sha256": "9005ec39e10e4d40bfd73e4a2a39a5c0bb68b47f76aefb8f975adb2beb8786f8"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/avatar-walk.png",
+    "asset": "art/assets/night/monsters/bat/avatar-walk.webp",
+    "sourceSha256": "bd5403e18d8579fdde51c97ef6d8fd46be8ecc7cebe81355d07cb298f48489a4",
+    "sha256": "f3fddffbe60f9c03c754e28f71e5982ad737562a54e051090cd0ae9664367e15"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/avatar-smash.png",
+    "asset": "art/assets/night/monsters/bat/avatar-smash.webp",
+    "sourceSha256": "74db84bf3d1aa3fd02c8d9d6955341a6a017e5b5f453e65a39a9e5931de4619a",
+    "sha256": "413685e0f73ea286a8197a2991691a6325e70b32664e8d77de383456754662c0"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/avatar-roar.png",
+    "asset": "art/assets/night/monsters/bat/avatar-roar.webp",
+    "sourceSha256": "726513b4397cab7d049ef736fccb9fa3dbd6afd5295f4f73a21e6870bfc34b60",
+    "sha256": "f4c291620df434a522e727f9c34c207928e4b9f3338e760c08682ccb51d298fc"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/avatar-wave.png",
+    "asset": "art/assets/night/monsters/bat/avatar-wave.webp",
+    "sourceSha256": "c42c58fb8acee0b757bc1ea1eb8c20978c2ce7b5baaea5b09de836a79d84b2d4",
+    "sha256": "09a9640fb4369221a794c47fc289547a6b680a4f2a77ea1476ab6e4c9c0deffc"
+  },
+  {
+    "source": "mods/kaiju/assets/night/monsters/bat/face-roar.png",
+    "asset": "art/assets/night/monsters/bat/face-roar.webp",
+    "sourceSha256": "7df31399119be12cd55d8362a00dd469db53e6ec492538f3322c148b8ecf7834",
+    "sha256": "eecc2d9820f5d9d33ca5274a0ac37dbcc5ad848b0d8e65bb5a71a49fe8948b3f"
   }
 ]

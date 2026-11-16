@@ -12740,5 +12740,7 @@
   "capacityRow.console.view_plugin_catalog_entries.what": "Bounds the number of releases read from one official version list.",
   "capacityRow.console.view_plugin_catalog_entries.full": "A list with too many entries is rejected; installed views are kept and the check reports a failure.",
   "capacityRow.console.view_plugin_update_milliseconds.what": "Bounds the time spent downloading the official version list or one update archive.",
-  "capacityRow.console.view_plugin_update_milliseconds.full": "A stalled download is stopped; the installed view is kept and you can check again later."
+  "capacityRow.console.view_plugin_update_milliseconds.full": "A stalled download is stopped; the installed view is kept and you can check again later.",
+  "capacityRow.console.view_plugin_kaiju_news_rows.what": "Limits monster news cards visible in the city at once, matching the original three-card window.",
+  "capacityRow.console.view_plugin_kaiju_news_rows.full": "Additional observed events appear in an overflow count; their Sessions remain available in the roster."
 }

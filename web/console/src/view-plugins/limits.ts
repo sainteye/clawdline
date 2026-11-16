@@ -15,4 +15,5 @@ export const PLUGIN_LIMITS = {
   catalogBytes: 1048576,
   catalogEntries: 256,
   updateMilliseconds: 60000,
+  kaijuNewsRows: 3,
 } as const

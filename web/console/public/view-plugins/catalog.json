@@ -3,10 +3,10 @@
   "packages": [
     {
       "id": "com.clawdline.session-codecraft",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "url": "/view-plugins/session-codecraft.zip",
-      "sha256": "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
-      "bytes": 20879814,
+      "sha256": "c8b5d040d4ee00827580d1229ccb8994517f45975d77e8272b8c9a6c12c8ee18",
+      "bytes": 20887100,
       "hostApi": 1,
       "capabilities": [
         "sessions.read",
@@ -15,6 +15,7 @@
       "knownDigests": [
         "507c08394d51767ba7111befd1fdb85c4d289f98fd1085fd6eae7001d2acc152",
         "85ac159b89e0f7089b8ac26d67c936df50da0896a030e0d90794caaaad25e6a6",
+        "c8b5d040d4ee00827580d1229ccb8994517f45975d77e8272b8c9a6c12c8ee18",
         "d78377ebb2c14a563abc71904bccd6e7da35c62a411400d5d8ca735686a9978c"
       ]
     },
@@ -54,10 +55,10 @@
     },
     {
       "id": "com.clawdline.session-kaiju",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "url": "/view-plugins/session-kaiju.zip",
-      "sha256": "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
-      "bytes": 415124,
+      "sha256": "96ce297958aed952943fdaa02347306df6d73c1dd24c980e4aa32e5669f29ea2",
+      "bytes": 10290671,
       "hostApi": 1,
       "capabilities": [
         "sessions.read",
@@ -66,6 +67,7 @@
       "knownDigests": [
         "4171fc77bba108603225198256088e69bf0d33bbd44284e8339d7950de769dc5",
         "5228551cde580db518e2c889902ddcdf3516f528095b685e920c8e463ff54b15",
+        "96ce297958aed952943fdaa02347306df6d73c1dd24c980e4aa32e5669f29ea2",
         "d49c2c5dd186db92a6f0a3d9ca268a2b62ef5fe483a1accb1fc5e80c53f2d3f2"
       ]
     },

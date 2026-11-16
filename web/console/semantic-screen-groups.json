@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12740,
-  "riskKeys": 5508,
-  "nonRiskCount": 7232,
+  "englishContentKeys": 12742,
+  "riskKeys": 5509,
+  "nonRiskCount": 7233,
   "groups": [
     {
       "name": "acp / other",
@@ -419,7 +419,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 641,
+      "count": 642,
       "sources": [
         null
       ],
@@ -790,6 +790,7 @@
         "capacityRow.console.view_plugin_catalog_entries.what",
         "capacityRow.console.view_plugin_expanded_bytes.what",
         "capacityRow.console.view_plugin_files.what",
+        "capacityRow.console.view_plugin_kaiju_news_rows.what",
         "capacityRow.console.view_plugin_manifest_bytes.what",
         "capacityRow.console.view_plugin_message_bytes.full",
         "capacityRow.console.view_plugin_pending.what",

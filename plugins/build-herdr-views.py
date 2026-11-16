@@ -29,16 +29,22 @@ def build(slug, kind, en, zh, cover_source):
         font_css = "@font-face{font-family:Codecraft;src:url(data:font/ttf;base64," + font + ")}"
     else:
         meta['city'] = read_constant(path / 'upstream/manifest.js', '')
-        font_css = ''
+        meta['newsRows'] = int(re.search(r'kaijuNewsRows: ([0-9]+)', (ROOT.parent / 'web/console/src/view-plugins/limits.ts').read_text())[1])
+        font = base64.b64encode((path / 'upstream/fusion-pixel-12px-proportional-zh_hans.ttf').read_bytes()).decode()
+        font_css = "@font-face{font-family:KaijuPixel;src:url(data:font/ttf;base64," + font + ");font-display:swap}"
     licenses = (path / 'upstream/LICENSE').read_text()
     if kind == 'world':
         licenses += '\n' + (path / 'upstream/OFL-Cinzel.txt').read_text()
+    else:
+        licenses += '\n' + (path / 'upstream/OFL-Fusion-Pixel.txt').read_text()
     # License text is inert HTML text; arbitrary source content cannot terminate a script.
     from html import escape
     content = (ROOT / 'herdr-scene.html').read_text().replace('<!-- FONT -->', '<style>' + font_css + '</style>')
     content = content.replace('<!-- LICENSE -->', escape(licenses))
+    content = content.replace('/* KAIJU_CSS */', (ROOT / 'kaiju-scene.css').read_text() if kind == 'kaiju' else '')
     content = content.replace('<!-- DATA -->', '<script>const ART=' + json.dumps(art) + ';const META=' + json.dumps(meta) + ';</script>')
-    content = content.replace('<!-- LOGIC -->', '<script>\n' + (ROOT / 'herdr-scene.js').read_text() + '\n</script>')
+    extra = '<script>\n' + (ROOT / 'kaiju-ui.js').read_text() + '\n</script>' if kind == 'kaiju' else ''
+    content = content.replace('<!-- LOGIC -->', extra + '<script>\n' + (ROOT / 'herdr-scene.js').read_text() + '\n</script>')
     (path / 'index.html').write_text(content)
     cover = path / 'cover.png'
     subprocess.run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', str(cover_source),
@@ -53,7 +59,7 @@ def build(slug, kind, en, zh, cover_source):
             chunks.append(raw[at:end])
         at = end
     cover.write_bytes(b''.join(chunks))
-    manifest = {'manifestVersion': 1, 'id': 'com.clawdline.' + slug, 'version': '0.3.0' if kind == 'world' else '0.2.1', 'hostApi': 1,
+    manifest = {'manifestVersion': 1, 'id': 'com.clawdline.' + slug, 'version': '0.3.1' if kind == 'world' else '0.3.0', 'hostApi': 1,
                 'name': {'en': en, 'zh-Hant': zh}, 'entry': 'index.html',
                 'capabilities': ['sessions.read', 'sessions.open'],
                 'cover': 'data:image/png;base64,' + base64.b64encode(cover.read_bytes()).decode()}

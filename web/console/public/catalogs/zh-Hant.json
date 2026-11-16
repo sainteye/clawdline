@@ -12740,5 +12740,7 @@
   "capacityRow.console.view_plugin_catalog_entries.what": "限制單次官方版本清單可讀取的發行項目數量。",
   "capacityRow.console.view_plugin_catalog_entries.full": "清單項目過多時會拒絕讀取；保留已安裝視圖，並回報檢查失敗。",
   "capacityRow.console.view_plugin_update_milliseconds.what": "限制下載官方版本清單或單一更新套件的等待時間。",
-  "capacityRow.console.view_plugin_update_milliseconds.full": "下載停滯逾時時會停止；保留已安裝視圖，稍後可再次檢查。"
+  "capacityRow.console.view_plugin_update_milliseconds.full": "下載停滯逾時時會停止；保留已安裝視圖，稍後可再次檢查。",
+  "capacityRow.console.view_plugin_kaiju_news_rows.what": "限制同時顯示在城市裡的怪獸快訊卡，保留原作三張卡的視窗。",
+  "capacityRow.console.view_plugin_kaiju_news_rows.full": "超出的已觀察事件會合併顯示數量，對應的 Session 仍可從名冊查看。"
 }

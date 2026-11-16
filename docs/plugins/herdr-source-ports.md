@@ -203,3 +203,7 @@ state, summary and detail distinguish it from idle, unknown and child waits.
 Working, person-attention and completion states retain priority. The fresh waiting
 halo pulses gently; all existing motion/freshness stop conditions apply. This
 additional orbit is an intentional Clawdline extension, not an upstream feature.
+
+## Kaiju source details in 0.3.0
+
+The [source comparison](kaiju-source-alignment.md) records the original dossier/avatar roster, pixel font, background news, rooftop focus arrow, construction spring, monster entry/retreat, hit ordering and effect periods now restored. Session selection uses a nearby touch action and optional details, replacing the automatic phone sheet. Native terminal controls and persistent statistics remain outside the SDK. Districts and casts retain access to overflow Projects and Sessions. Codecraft 0.3.1 rebuilds the shared template while retaining its 0.3.0 selection behavior.

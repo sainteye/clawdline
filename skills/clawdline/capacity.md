@@ -482,6 +482,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.view_plugin_cover_side` | 256 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_expanded_bytes` | 33554432 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_files` | 2 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.view_plugin_kaiju_news_rows` | 3 | `rows` | `coalesce` | `sender, diagnostics` | — |
 | `console.view_plugin_manifest_bytes` | 8192 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `console.view_plugin_message_bytes` | 1048576 | `bytes` | `disconnect` | `sender, diagnostics` | — |
 | `console.view_plugin_packages` | 8 | `rows` | `refuse` | `sender, diagnostics` | — |

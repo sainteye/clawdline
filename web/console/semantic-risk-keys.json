@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12740,
+  "englishKeys": 12742,
   "counts": {
     "negation": 3408,
-    "state": 2148,
+    "state": 2149,
     "permission": 752,
     "deletion": 303,
     "uncertainty": 496
   },
-  "unionCount": 5508,
+  "unionCount": 5509,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3819,6 +3819,7 @@
       "capacityRow.console.view_plugin_cover_side.full",
       "capacityRow.console.view_plugin_expanded_bytes.full",
       "capacityRow.console.view_plugin_files.full",
+      "capacityRow.console.view_plugin_kaiju_news_rows.full",
       "capacityRow.console.view_plugin_manifest_bytes.full",
       "capacityRow.console.view_plugin_message_bytes.what",
       "capacityRow.console.view_plugin_packages.what",
@@ -7928,6 +7929,7 @@
     "capacityRow.console.view_plugin_cover_side.what",
     "capacityRow.console.view_plugin_expanded_bytes.full",
     "capacityRow.console.view_plugin_files.full",
+    "capacityRow.console.view_plugin_kaiju_news_rows.full",
     "capacityRow.console.view_plugin_manifest_bytes.full",
     "capacityRow.console.view_plugin_message_bytes.what",
     "capacityRow.console.view_plugin_packages.full",

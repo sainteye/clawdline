@@ -9233,6 +9233,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.view_plugin_kaiju_news_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumViewPluginKaijuNewsRows"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "console.view_plugin_manifest_bytes",
     "Class": "buffer",
     "Unit": "bytes",

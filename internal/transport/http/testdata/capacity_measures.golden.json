@@ -2353,6 +2353,10 @@
     "Err": true
   },
   {
+    "Name": "console.view_plugin_kaiju_news_rows",
+    "Err": true
+  },
+  {
     "Name": "console.view_plugin_manifest_bytes",
     "Err": true
   },

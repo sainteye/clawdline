@@ -17,12 +17,14 @@ const (
 	MaximumViewPluginCatalogBytes        = 1048576
 	MaximumViewPluginCatalogEntries      = 256
 	MaximumViewPluginUpdateMilliseconds  = 60000
+	MaximumViewPluginKaijuNewsRows       = 3
 )
 
 func consoleBounds() []Entry { return append(baseConsoleBounds(), viewPluginBounds()...) }
 
 func viewPluginBounds() []Entry {
 	return []Entry{
+		{Name: "console.view_plugin_kaiju_news_rows", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginKaijuNewsRows, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumViewPluginKaijuNewsRows"}},
 		{Name: "console.view_plugin_catalog_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumViewPluginCatalogBytes, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginCatalogBytes"}},
 		{Name: "console.view_plugin_catalog_entries", Class: Buffer, Unit: Rows, Limit: MaximumViewPluginCatalogEntries, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginCatalogEntries"}},
 		{Name: "console.view_plugin_update_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: MaximumViewPluginUpdateMilliseconds, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumViewPluginUpdateMilliseconds"}},

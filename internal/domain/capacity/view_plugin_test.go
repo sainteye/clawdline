@@ -25,6 +25,7 @@ func TestViewPluginBoundsAreRegistered(t *testing.T) {
 		{"requestsPerSecond", "requests_per_second"}, {"textCharacters", "text_characters"},
 		{"catalogBytes", "catalog_bytes"}, {"catalogEntries", "catalog_entries"},
 		{"updateMilliseconds", "update_milliseconds"},
+		{"kaijuNewsRows", "kaiju_news_rows"},
 	} {
 		m := regexp.MustCompile(c.field + `: ([0-9]+)`).FindSubmatch(raw)
 		if len(m) != 2 {
