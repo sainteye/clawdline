@@ -197,6 +197,13 @@ export const LIVE_SCRIPTS = {
     { call: true }, { say: 'pT' }, { minimize: true }, { open: 'release' },
     { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
   ],
+  // The default since 2026-11-16: a call from the list reports the Sessions by
+  // itself, waiting ones first and then what the working ones are doing
+  // (f3a2270ae), so the person does not open by asking what needs them.
+  auto: [
+    { call: true, report: true }, { minimize: true }, { open: 'release' },
+    { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
+  ],
   switching: [
     { call: true }, { say: 'p1' }, { minimize: true }, { open: 'search', read: true }, { open: 'release' },
     { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'p6' }, { hangup: true },

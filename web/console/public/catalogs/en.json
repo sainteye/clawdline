@@ -12139,6 +12139,8 @@
   "capacityRow.console.copilot_live_note_characters.full": "A longer summary keeps its first sentence and its end, where the Session stands now; the middle is left out. Ask about that Session for its details.",
   "capacityRow.console.copilot_live_opening_wait_milliseconds.what": "How long a call placed from a Session waits for its opening summary to be said before it goes on with the latest state.",
   "capacityRow.console.copilot_live_opening_wait_milliseconds.full": "The latest state is said then, even if the opening is still being spoken.",
+  "capacityRow.console.copilot_live_append_tokens.what": "How much context, in estimated tokens, one message to a GPT-Live call carries.",
+  "capacityRow.console.copilot_live_append_tokens.full": "Longer context, such as a Session report, is sent in several messages.",
   "capacityRow.console.copilot_live_update_characters.what": "How much of a Session's newest reports a call placed from it says beside its latest summary.",
   "capacityRow.console.copilot_live_update_characters.full": "Older parts of those reports are left out; ask what happened since for the rest.",
   "capacityRow.console.copilot_fresh_recap_seconds.what": "How old a Session summary may be when you ask the voice copilot for the latest one.",

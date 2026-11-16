@@ -1792,6 +1792,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_live_append_tokens",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_live_note_characters",
     "Known": true,
     "Note": true

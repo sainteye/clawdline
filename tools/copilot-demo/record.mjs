@@ -16,7 +16,7 @@
 // laid under it at the moments the page started them.
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,12 +41,22 @@ const KEEP = arg('keep')
 const PHONE = process.argv.includes('--phone')
 const LIVE = process.argv.includes('--live')
 // Which LIVE_SCRIPTS a GPT-Live take follows.
-const SCRIPT = arg('script', 'triage')
+const SCRIPT = arg('script', 'auto')
 if (LIVE && !LIVE_SCRIPTS[SCRIPT]) { console.error(`no script ${SCRIPT}; have ${Object.keys(LIVE_SCRIPTS).join(', ')}`); process.exit(2) }
 // The page as it is drawn, the screencast's largest frame, and the film's size.
-const VIEW = PHONE ? { width: 390, height: 844, deviceScaleFactor: 3, mobile: true } : { width: 1600, height: 900, deviceScaleFactor: 1.2, mobile: false }
-const FRAME = PHONE ? { maxWidth: 1170, maxHeight: 2532 } : { maxWidth: 1920, maxHeight: 1080 }
+// Chrome's screencast sends frames in CSS pixels whatever the emulated device
+// scale: the phone film was 390 x 844 frames blown up to 1080 x 2338, and its
+// text broke into blocks (seen 2026-11-16). Chrome started at the same scale
+// (--force-device-scale-factor) sends device pixels, so the phone is filmed at
+// its own 1170 x 2532 and the desktop at 3200 x 1800, scaled down to 2560 x 1440.
+// Filmed at scale 2 (phone 780 x 1688) and 1.5 (desktop 2400 x 1350), every
+// other frame, and scaled to 1080 x 2338 and 1920 x 1080: at scale 3 and 2
+// and every frame the screencast loaded the same Chrome that receives the
+// copilot's voice, and takes broke up over and over (2026-11-16).
+const VIEW = PHONE ? { width: 390, height: 844, deviceScaleFactor: 2, mobile: true } : { width: 1600, height: 900, deviceScaleFactor: 1.5, mobile: false }
+const FRAME = PHONE ? { maxWidth: 780, maxHeight: 1688 } : { maxWidth: 2400, maxHeight: 1350 }
 const FILM = PHONE ? '1080:2338' : '1920:1080'
+const EVERY = 2
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 if (!OUT || !LANGS.includes(LANG)) { console.error(`usage: record.mjs --lang ${LANGS.join('|')} --dist <dist> --out <file.mp4> [--phone] [--live] [--keep <dir>]`); process.exit(2) }
 for (const need of [join(DIST, 'index.html'), CHROME]) if (!existsSync(need)) { console.error('missing: ' + need); process.exit(2) }
@@ -168,8 +178,23 @@ await new Promise((ok) => server.listen(0, '127.0.0.1', ok))
 const origin = 'http://127.0.0.1:' + server.address().port
 
 // ---------- Chrome through the DevTools protocol ----------
+// A recorder that died without cleaning up (a heap abort runs no handler)
+// left its Chrome behind: before starting, stop every demo Chrome whose
+// recorder is gone (its parent is init) and remove profiles nothing uses.
+{
+  const ps = execFileSync('ps', ['-axo', 'pid=,ppid=,command=']).toString().split('\n')
+  const mark = join(tmpdir(), 'clawdline-copilot-demo-')
+  for (const line of ps) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+    if (m && m[2] === '1' && m[3].includes('--user-data-dir=' + mark)) { try { process.kill(Number(m[1]), 'SIGKILL') } catch { /* gone */ } }
+  }
+  const inUse = execFileSync('ps', ['-axo', 'command=']).toString()
+  for (const name of readdirSync(tmpdir())) {
+    if (name.startsWith('clawdline-copilot-demo-') && !name.startsWith('clawdline-copilot-demo-take-') && !inUse.includes(name)) rmSync(join(tmpdir(), name), { recursive: true, force: true })
+  }
+}
 const profile = mkdtempSync(join(tmpdir(), 'clawdline-copilot-demo-'))
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
+const chrome = spawn(CHROME, ['--headless=new', '--force-device-scale-factor=' + VIEW.deviceScaleFactor, '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
   '--autoplay-policy=no-user-gesture-required', '--hide-scrollbars', `--window-size=${VIEW.width},${VIEW.height}`, 'about:blank'])
 // Chrome and its profile go away however the recorder ends: an error, a
 // timeout's SIGTERM or Ctrl-C included. On 2026-11-16 another Session found
@@ -214,7 +239,7 @@ const run = async (expression, ms) => {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // What the page shows of the call, said when a wait is never met.
-const callState = () => run(`JSON.stringify({ sheet: [...document.querySelectorAll('[class*=realtime], .copilot-bubble')].map((e) => e.textContent).sort((a, b) => b.length - a.length)[0]?.slice(0, 3000) ?? '', watch: window.__demo?.watch ? { ...window.__demo.watch, pending: [...window.__demo.watch.pending], responses: [...window.__demo.watch.responses] } : null })`).catch((e) => String(e))
+const callState = () => run(`JSON.stringify({ sheet: [...document.querySelectorAll('[class*=realtime], .copilot-bubble')].map((e) => e.textContent).sort((a, b) => b.length - a.length)[0]?.slice(0, 3000) ?? '', errors: window.__demo?.watch?.errors ?? [], log: [...document.querySelectorAll('.realtime-log li, [class*=log] li')].map((e) => e.textContent).slice(-20), watch: window.__demo?.watch ? { ...window.__demo.watch, pending: [...window.__demo.watch.pending], responses: [...window.__demo.watch.responses] } : null })`).catch((e) => String(e))
 const until = async (expression, ms = 30000) => { const end = Date.now() + ms; while (!(await run(expression))) { if (Date.now() > end) throw new Error('never reached: ' + expression + '\n' + await callState() + '\njournal: ' + JSON.stringify(journal).slice(0, 4000)); await sleep(50) } }
 
 const CURSOR = `addEventListener('DOMContentLoaded', () => {
@@ -305,14 +330,21 @@ const glide = (to, ms) => run(`new Promise((done) => {
 })`, ms + 10000)
 
 // ---------- the take ----------
+// Each frame goes to disk as it arrives; only its time stays in memory. At
+// device pixels a take's frames outgrew the heap held as base64 (2026-11-16:
+// "Reached heap limit" in most takes).
+const work = KEEP ? resolve(KEEP) : mkdtempSync(join(tmpdir(), 'clawdline-copilot-demo-take-'))
+mkdirSync(join(work, 'frames'), { recursive: true })
 const frames = []
 listeners.push((msg) => {
   if (msg.method !== 'Page.screencastFrame' || msg.sessionId !== sessionId) return
-  frames.push({ ts: msg.params.metadata.timestamp, data: msg.params.data })
+  const name = `f${String(frames.length).padStart(5, '0')}.jpg`
+  writeFileSync(join(work, 'frames', name), Buffer.from(msg.params.data, 'base64'))
+  frames.push({ ts: msg.params.metadata.timestamp, name })
   send('Page.screencastFrameAck', { sessionId: msg.params.sessionId }).catch(() => {})
 })
 await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mouse.x, y: mouse.y })
-await send('Page.startScreencast', { format: 'jpeg', quality: 92, ...FRAME, everyNthFrame: 1 })
+await send('Page.startScreencast', { format: 'jpeg', quality: 95, ...FRAME, everyNthFrame: EVERY })
 await sleep(1800)
 let voice = { start: 0, data: '' }, liveTools = [], liveSaid = [], liveErrors = [], liveBackend = [], liveTurns = [], endedByVoice = false
 if (LIVE) {
@@ -355,7 +387,9 @@ if (LIVE) {
       await sleep(300)
       await click('#copilot-call')
       await until(`window.__demo.watch.lastSaid > 0`, 40000)
-      await turn('the greeting', 30000)
+      // The report a call from the list opens with comes in batches with reads between them.
+      if (step.report) await turn('the opening report', 180000, 6000)
+      else await turn('the greeting', 30000)
     } else if (step.minimize) {
       await sleep(400)
       await click('.realtime-minimize-btn')
@@ -433,14 +467,11 @@ ws.close(); chrome.kill(); server.close(); for (const s of streams) s.end()
 await sleep(500); rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 
 // ---------- frames, video and voices ----------
-const work = KEEP ? resolve(KEEP) : mkdtempSync(join(tmpdir(), 'clawdline-copilot-demo-take-'))
-mkdirSync(join(work, 'frames'), { recursive: true })
 let list = ''
 frames.forEach((f, i) => {
-  const name = `f${String(i).padStart(5, '0')}.jpg`; writeFileSync(join(work, 'frames', name), Buffer.from(f.data, 'base64'))
-  list += `file 'frames/${name}'\nduration ${((frames[i + 1]?.ts ?? f.ts + 1 / 30) - f.ts).toFixed(4)}\n`
+  list += `file 'frames/${f.name}'\nduration ${((frames[i + 1]?.ts ?? f.ts + 1 / 30) - f.ts).toFixed(4)}\n`
 })
-list += `file 'frames/f${String(frames.length - 1).padStart(5, '0')}.jpg'\n`
+list += `file 'frames/${frames[frames.length - 1].name}'\n`
 writeFileSync(join(work, 'frames.txt'), list)
 const ff = (...a) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...a], { cwd: work, stdio: 'inherit' })
 ff('-f', 'concat', '-safe', '0', '-i', 'frames.txt', '-vf', `fps=30,scale=${FILM}:flags=lanczos,format=yuv420p`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', 'video.mp4')

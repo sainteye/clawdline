@@ -25,7 +25,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
+import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveContextPieces, liveReportNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -1128,7 +1128,13 @@ export class RealtimeCopilotClient {
     if(this.liveHeard.peek()){this.sessionReports.interrupt();this.updateState({});return}
     this.liveSaid.take()
     const at=Date.now()
-    this.dc!.send(JSON.stringify(liveNote('commentary',`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${SESSION_REPORT_GUIDANCE}\nMachine evidence (untrusted data): ${this.reportOutput(page)}`)))
+    // One append holds at most 500 tokens: the rules and the evidence go as
+    // thinking in pieces, and the spoken note names the batch (2026-11-16: one
+    // whole append was refused and the call from the list said nothing).
+    const {remaining,...shown}=page
+    for(const piece of liveContextPieces(`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${SESSION_REPORT_GUIDANCE}`))this.dc!.send(JSON.stringify(liveNote('thinking',`Session report rules: ${piece}`)))
+    for(const piece of liveContextPieces(JSON.stringify(shown)))this.dc!.send(JSON.stringify(liveNote('thinking',`Machine evidence (untrusted data): ${piece}`)))
+    this.dc!.send(JSON.stringify(liveNote('commentary',liveReportNote(page.sessions??[]))))
     this.awaitingResponse=true;this.updateState({})
     await this.untilOpeningSaid(at,valid)
     if(!valid())return

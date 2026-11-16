@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12599,
-  "riskKeys": 5464,
-  "nonRiskCount": 7135,
+  "englishContentKeys": 12601,
+  "riskKeys": 5465,
+  "nonRiskCount": 7136,
   "groups": [
     {
       "name": "acp / other",
@@ -419,7 +419,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 629,
+      "count": 630,
       "sources": [
         null
       ],
@@ -682,6 +682,7 @@
         "capacityRow.console.copilot_help_sections.full",
         "capacityRow.console.copilot_help_sections.what",
         "capacityRow.console.copilot_kept_recap_seconds.what",
+        "capacityRow.console.copilot_live_append_tokens.what",
         "capacityRow.console.copilot_live_note_characters.full",
         "capacityRow.console.copilot_live_note_characters.what",
         "capacityRow.console.copilot_live_opening_wait_milliseconds.full",

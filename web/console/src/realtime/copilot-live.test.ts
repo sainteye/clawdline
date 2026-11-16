@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, newShare, LIVE_NEWS_SHARE, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
+import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, newShare, LIVE_NEWS_SHARE, liveTokens, liveContextPieces, liveReportNote, LIVE_APPEND_TOKENS, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -151,4 +151,17 @@ test("the latest state is news only by what the call has not said yet", () => {
   assert.ok(newShare("Search rebuild deleted 1,240 lines of the old search", "Search rebuild delivered Meilisearch.") > LIVE_NEWS_SHARE)
   assert.equal(newShare("", "anything"), 0)
   assert.equal(newShare("all new words", ""), 1)
+})
+
+test("a GPT-Live append is cut to fit what OpenAI accepts", () => {
+  // 2026-11-16: a call from the list sent its report as one append and OpenAI refused it (over 500 tokens).
+  const long = ("Release 2.4 版發布正在 iPhone 和 iPad 上跑完整的 UI 測試。".repeat(40) + " Checkout redesign waits for your decision. ".repeat(40))
+  const pieces = liveContextPieces(long)
+  assert.ok(pieces.length > 2)
+  for (const piece of pieces) assert.ok(liveTokens(piece) <= LIVE_APPEND_TOKENS, String(liveTokens(piece)))
+  assert.equal(pieces.join("").replace(/\s/g, ""), long.replace(/\s/g, ""), "nothing is lost between pieces")
+  assert.deepEqual(liveContextPieces("short"), ["short"])
+  const note = liveReportNote([{ label: "Release 2.4", recap: "很長的摘要。".repeat(200) }, { label: "Checkout redesign", latest: "Waits for you." }])
+  assert.ok(liveTokens(note) <= LIVE_APPEND_TOKENS)
+  assert.match(note, /"Release 2.4".*"Checkout redesign": Waits for you\./)
 })

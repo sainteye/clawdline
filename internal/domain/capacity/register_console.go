@@ -183,6 +183,10 @@ func baseConsoleBounds() []Entry {
 		// newest reports a GPT-Live call placed from it says beside its latest
 		// recap; the older part is cut. LIVE_OPENING_WAIT_MS: the longest that
 		// latest state waits for the call's opening to be said before it is sent.
+		// LIVE_APPEND_TOKENS in realtime/copilot-live.ts: the most one GPT-Live
+		// append carries, in estimated tokens (OpenAI refuses one over 500);
+		// longer context is sent in pieces.
+		{Name: "console.copilot_live_append_tokens", Class: Buffer, Unit: Tokens, Limit: 400, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_live_update_characters", Class: Buffer, Unit: Characters, Limit: 150, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_live_opening_wait_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 60000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_fresh_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

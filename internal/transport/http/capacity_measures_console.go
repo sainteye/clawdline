@@ -293,6 +293,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_live_note_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-note cut on a spoken Session recap; enforced in the console"}
 		},
+		"console.copilot_live_append_tokens": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-append cut of GPT-Live context; enforced in the console"}
+		},
 		"console.copilot_live_update_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-note cut on a Session's newest reports; enforced in the console"}
 		},
