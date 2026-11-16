@@ -3904,6 +3904,48 @@
       ]
     },
     {
+      "id": "persistent-bot-group-rooms",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/app/projectassistant/runtime_groups.go",
+          "line": 616
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/group_rooms.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/groups.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "You are %s, one participant in a group chat (%q) with the user and %s.\n",
+        "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is the one message the room sees. Keep it short and conversational. After this round, only the participants someone @-mentions answer again: @-mention another participant when you need their answer or action, and only then. If you have nothing new worth adding, reply exactly %q. Never reveal private one-on-one context.\n",
+        "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
+        "It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.\n"
+      ],
+      "locations": [
+        "Member's own Bot conversation, one queued room turn",
+        "Host room driver with a stored room ticket"
+      ]
+    },
+    {
       "id": "tool-library-suggestions",
       "scope": "conditional",
       "agents": [
@@ -4128,6 +4170,7 @@
     "internal/adapters/projectassistanthost/provider.go": "d05faa733a985ee82357ea07b4c51a30e0fd6d6295208cad168b66e0044c22bd",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
     "internal/adapters/projectassistantstore/fallback.go": "40a430c39c8e09adb4bc4508bf5fb6a06ca0f03c07d73a341036ca453ffac0cc",
+    "internal/adapters/projectassistantstore/groups.go": "be40b1957a7d4886a8447c6bd6eacd528a87d17c29a02fb6055fbf0f3e9d005e",
     "internal/adapters/projectassistantstore/inputs.go": "b9f68823dcbd69ca9d5f2ad1e7d19e07da813299e62d4ca02b2f15c3cdf8319b",
     "internal/adapters/projectassistantstore/memory.go": "a276e93239e224b252739445b564d16a659e6c7074bc378961c2dc639038f787",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
@@ -4162,12 +4205,14 @@
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/collaboration.go": "0604599a5ccff8f288fe6568f72c4b51e592d080b37e125558d40312e32b56ae",
     "internal/app/projectassistant/fallback.go": "2407a37621c39b0cbffafb4bb0bf74646d6ae8142acc50bfdeda7c5db07a80c5",
+    "internal/app/projectassistant/group_rooms.go": "bf057e5ebf4f1ae25c326c30e08d05347a6bdb7feaa8a260dd6830381487f068",
     "internal/app/projectassistant/inputs.go": "745f888b5c7279a0fbb8cea53e76ba4b60a3e50140819f821552cbf01d47fdb8",
     "internal/app/projectassistant/lifecycle.go": "0e7cbc3890103e0126d65de4f20d1caa41382a33ec4ba60de8e115843434760f",
     "internal/app/projectassistant/provider_failure.go": "79cdabf8f144fcf7987e609b7b4db45b893be5e486d8ff3825e558d6cb4df1fd",
     "internal/app/projectassistant/routines.go": "0b5ec89d577827621ee3fac6b15bb709020b9a4e6b10187554c8fbbc632cb9ef",
     "internal/app/projectassistant/routines_human.go": "0cc5c47f243d6f8e8d5c3d2306f80fa70486b27f3f4f2fc8d260be39f96e0b4c",
-    "internal/app/projectassistant/runtime.go": "aeb5b752c0998b028b745fa4def6fe14d5a2ee2dfd5c4a2135c2c03e74a05bf9",
+    "internal/app/projectassistant/runtime.go": "952f93c94cf966f3a79b192b7c33890647da55c80f4b7b8a02907a74dbeb9a63",
+    "internal/app/projectassistant/runtime_groups.go": "2dd32405b1c057c8d95563f85370cf3785a22c947fe977577833cdedb59e0254",
     "internal/app/projectassistant/session_handoff.go": "7f276e56758f01c05f875e398c18543743c281829a6b9798c9e532fda738393f",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
@@ -4264,7 +4309,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "dd32aa1b11aa00c1b7f617e1741d7ffa7ae54794ac909db4fffa0ce2df4ce2f9",
-    "zh-Hant": "003ac00c196ecf794f3746e92ad4e86c2c8df621722a716d9c39639b46b0cea1"
+    "en": "d197df43a1790e9d393a0ab784a966bbf122272ebf1a960994f0e628224262f4",
+    "zh-Hant": "755fa075403a7cadcf9f2e8efb906c8e158d5e50b3527bb4073bdc84500f938e"
   }
 }

@@ -71,11 +71,18 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.fallback_agents` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.group_history_lines` | 24 | `rows` | `coalesce` | `diagnostics` | — |
+| `bots.group_late_turns` | 3 | `rows` | `coalesce` | `diagnostics` | — |
+| `bots.group_member_wait_seconds` | 600 | `seconds` | `coalesce` | `diagnostics` | — |
+| `bots.group_peer_line_chars` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
+| `bots.group_replies` | 10 | `rows` | `coalesce` | `diagnostics` | — |
+| `bots.group_rounds` | 3 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.memory_entries` | 256 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
