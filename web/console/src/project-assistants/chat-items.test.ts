@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
-import { buildChat,buildTimelineChat,mergeMessages,partitionMessages } from "./chat-items.ts"
+import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages } from "./chat-items.ts"
 const message=(id:string,seq:number,kind:W.ProjectAssistantMessageKind="assistant",at="2026-11-12T00:00:00Z")=>({id,seq,kind,at,text:id}) as W.ProjectAssistantMessage
 test("replay and earlier history produce one bubble per message in source order",()=>{
   const a=message("a",1),b=message("b",2)
@@ -34,4 +34,28 @@ test("queue to running transition keeps each message on exactly one surface",()=
   assert.deepEqual(next.queued,[]);assert.deepEqual(next.chat,[a,b])
   const running=partitionMessages([a,b],[{message_id:"a",state:"running"} as W.ProjectAssistantTurn])
   assert.deepEqual(running.queued,[]);assert.deepEqual(running.chat,[a,b])
+})
+test("in-flight sending bubble is suppressed once conversation admits the message",()=>{
+  const prior=message("msg-1",1,"user")
+  prior.text="hello"
+  // 1. No sending text: not admitted
+  assert.equal(isSendingAdmitted(null,[],0),false)
+  assert.equal(isSendingAdmitted("",[],0),false)
+
+  // 2. Sending in flight, messages do not have it yet: not admitted
+  assert.equal(isSendingAdmitted("hello",[],0),false)
+  assert.equal(isSendingAdmitted("new message",[prior],1),false)
+
+  // 3. Repeated identical text in history with seq <= baseline: not admitted
+  assert.equal(isSendingAdmitted("hello",[prior],1),false)
+
+  // 4. Same text from non-user (e.g. assistant reply): not admitted
+  const assistantEcho=message("bot-echo",2,"assistant")
+  assistantEcho.text="hello"
+  assert.equal(isSendingAdmitted("hello",[prior,assistantEcho],1),false)
+
+  // 5. Admitted new user message with seq > baseline and matching text: admitted!
+  const admitted=message("msg-2",2,"user")
+  admitted.text="hello"
+  assert.equal(isSendingAdmitted("hello",[prior,admitted],1),true)
 })

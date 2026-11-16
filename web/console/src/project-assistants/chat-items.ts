@@ -37,3 +37,14 @@ export function partitionMessages(messages: readonly W.ProjectAssistantMessage[]
   const queuedIDs = new Set(busy ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
   return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>!queuedIDs.has(m.id) || m.kind!=="user") }
 }
+
+/**
+ * A message being sent is shown in an optimistic sending bubble only until
+ * the conversation admits it. Once the message appears in the timeline above
+ * the baseline sequence number from when sending began, the sending bubble is
+ * suppressed so the message is never shown twice.
+ */
+export function isSendingAdmitted(sending: string | null, messages: readonly W.ProjectAssistantMessage[], baselineSeq: number): boolean {
+  if (!sending) return false
+  return messages.some(m => m.kind === "user" && m.seq > baselineSeq && m.text === sending)
+}
