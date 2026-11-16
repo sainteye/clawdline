@@ -9,6 +9,7 @@ import (
 	"errors"
 	"time"
 
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -21,6 +22,11 @@ const GroupSchemaVersion = 1
 // at startup until the host's lifecycle wires it. It is transactional and
 // repeatable, and refuses an unknown group schema version.
 type GroupInstaller struct{}
+
+var _ app.SchemaInstaller = GroupInstaller{}
+
+// Version is the group tables' own version, not pa.SchemaVersion.
+func (GroupInstaller) Version() int { return GroupSchemaVersion }
 
 func (GroupInstaller) Install(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)
@@ -58,6 +64,7 @@ func (GroupInstaller) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_members (machine TEXT NOT NULL, grp TEXT NOT NULL, bot TEXT NOT NULL, PRIMARY KEY(machine,grp,bot))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_group_member_bot ON project_assistant_group_members(machine,bot)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_rooms (machine TEXT NOT NULL, grp TEXT NOT NULL, revision INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,grp))`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_group_lines (machine TEXT NOT NULL, grp TEXT NOT NULL, seq INTEGER NOT NULL CHECK(seq>0), data BLOB NOT NULL, PRIMARY KEY(machine,grp,seq))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_receipts (machine TEXT NOT NULL, grp TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,grp,operation,command_key))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
@@ -230,6 +237,16 @@ func receiptID(c pa.Command) string {
 }
 
 func (s *GroupStore) writeGroup(ctx context.Context, tx *sql.Tx, g pa.Group, prior int64) error {
+	return writeGroupTx(ctx, tx, g, prior, s.at)
+}
+
+func writeGroupTx(ctx context.Context, tx *sql.Tx, g pa.Group, prior int64, hook func(string) error) error {
+	at := func(stage string) error {
+		if hook == nil {
+			return nil
+		}
+		return hook(stage)
+	}
 	raw, err := json.Marshal(g)
 	if err != nil {
 		return err
@@ -249,7 +266,7 @@ func (s *GroupStore) writeGroup(ctx context.Context, tx *sql.Tx, g pa.Group, pri
 	if err != nil {
 		return err
 	}
-	if err = s.at("group"); err != nil {
+	if err = at("group"); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM project_assistant_group_members WHERE machine=? AND grp=?`, g.Key.MachineID, g.Key.BotID); err != nil {
@@ -262,7 +279,7 @@ func (s *GroupStore) writeGroup(ctx context.Context, tx *sql.Tx, g pa.Group, pri
 			}
 		}
 	}
-	return s.at("members")
+	return at("members")
 }
 
 func (s *GroupStore) writeRoom(ctx context.Context, tx *sql.Tx, st pa.RoomState, prior int64) error {
@@ -423,14 +440,23 @@ func (s *GroupStore) DeleteGroup(ctx context.Context, c pa.Command, expectedVers
 	return s.finish(ctx, tx, c, g.Key.BotID)
 }
 
-// LeaveGroups takes a deleted Bot out of every live group on its machine. The
-// host's Bot deletion calls it after the Bot row is gone.
+// LeaveGroups takes a deleted Bot out of every live group on its machine in
+// its own transaction. Store.DeleteBot uses leaveGroupsTx instead, so the Bot
+// row and its memberships go together.
 func (s *GroupStore) LeaveGroups(ctx context.Context, member pa.BotKey, at time.Time) ([]pa.BotKey, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	left, err := leaveGroupsTx(ctx, tx, member, at, s.at)
+	if err != nil {
+		return nil, err
+	}
+	return left, tx.Commit()
+}
+
+func leaveGroupsTx(ctx context.Context, tx *sql.Tx, member pa.BotKey, at time.Time, hook func(string) error) ([]pa.BotKey, error) {
 	all, err := groupsRead(ctx, tx, member.MachineID)
 	if err != nil {
 		return nil, err
@@ -441,12 +467,20 @@ func (s *GroupStore) LeaveGroups(ctx context.Context, member pa.BotKey, at time.
 		if !ok {
 			continue
 		}
-		if err = s.writeGroup(ctx, tx, next, g.Version); err != nil {
+		if err = writeGroupTx(ctx, tx, next, g.Version, hook); err != nil {
 			return nil, err
 		}
 		left = append(left, g.Key)
 	}
-	return left, tx.Commit()
+	return left, nil
+}
+
+// groupsInstalled reports whether the group tables exist; a database whose
+// host has not installed them yet has no groups to leave or export.
+func groupsInstalled(ctx context.Context, r reader) (bool, error) {
+	var n int
+	err := r.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_group_schema'`).Scan(&n)
+	return n != 0, err
 }
 
 // UpdateRoom applies one pure room transition under the stored revision: the
@@ -522,4 +556,29 @@ func (s *GroupStore) CheckTicket(ctx context.Context, t pa.RoomTicket) error {
 		return failure(pa.ScopeDenied, "group_member_project")
 	}
 	return nil
+}
+
+// readMemberGroups is the export's view of the groups key belongs to, live
+// or deleted while it was a member, with their room state.
+func readMemberGroups(ctx context.Context, tx *sql.Tx, key pa.BotKey) ([]app.GroupExport, error) {
+	installed, err := groupsInstalled(ctx, tx)
+	if err != nil || !installed {
+		return nil, err
+	}
+	all, err := groupsRead(ctx, tx, key.MachineID)
+	if err != nil {
+		return nil, err
+	}
+	var out []app.GroupExport
+	for _, g := range all {
+		if _, ok := g.Member(key); !ok {
+			continue
+		}
+		st, err := roomRead(ctx, tx, g.Key)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, app.GroupExport{Group: g, Room: st})
+	}
+	return out, nil
 }

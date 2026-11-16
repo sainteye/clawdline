@@ -147,6 +147,13 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	if err != nil {
 		return out, err
 	}
+	out.Groups, err = readMemberGroups(ctx, tx, key)
+	if err != nil {
+		return out, err
+	}
+	if len(out.Groups) > 0 {
+		out.GroupSchemaVersion = GroupSchemaVersion
+	}
 	return out, tx.Commit()
 }
 
@@ -161,6 +168,17 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	// exchange facts on export and refuse this transfer boundary explicitly.
 	if len(in.Exchanges) > 0 {
 		return failure(pa.Unsupported, "collaboration_transfer")
+	}
+	// Group membership names other Bots; a single-Bot archive cannot
+	// authorize recreating it. A tombstone carries no authority and is not
+	// restored.
+	if len(in.Groups) > 0 && in.GroupSchemaVersion != GroupSchemaVersion {
+		return failure(pa.Unsupported, "group_export_version")
+	}
+	for _, g := range in.Groups {
+		if !g.Group.Deleted {
+			return failure(pa.Unsupported, "group_transfer")
+		}
 	}
 	for _, m := range in.Messages {
 		if m.Exchange != nil {

@@ -23,6 +23,9 @@ type Store struct {
 	db     *sql.DB
 	locks  sync.Map
 	roster rosterBus
+	// groupHook, when set by a test, fails a group write at the named stage
+	// inside a Store transaction (DeleteBot, FinishRoomTurn).
+	groupHook func(stage string) error
 }
 
 func New(db *sql.DB) *Store { return &Store{db: db} }
@@ -941,6 +944,15 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	}
 	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
+			return err
+		}
+	}
+	// The Bot leaves every group in this same transaction: no reader sees a
+	// group naming a member whose row is gone. What it said stays in rooms.
+	if installed, e := groupsInstalled(ctx, tx); e != nil {
+		return e
+	} else if installed {
+		if _, err = leaveGroupsTx(ctx, tx, key, time.Now().UTC(), s.groupHook); err != nil {
 			return err
 		}
 	}

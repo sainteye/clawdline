@@ -132,25 +132,38 @@ type ExchangeAdmission struct {
 // Export is a versioned data transfer, not a second Markdown authority. Restore
 // is PA-03's installer/store operation and must reject a newer unknown version.
 type Export struct {
-	Exchanges       []pa.Exchange   `json:"Exchanges,omitempty"`
-	Routines        []pa.Routine    `json:"Routines,omitempty"`
-	RoutineRuns     []pa.RoutineRun `json:"RoutineRuns,omitempty"`
-	ContractVersion string
-	SchemaVersion   int
-	Bot             pa.Bot
-	Conversation    pa.Conversation
-	Messages        []pa.Message
-	Turns           []pa.Turn
-	Bindings        []pa.ExecutionBinding
-	Permissions     []pa.PermissionOffer
-	WorkLinks       []pa.WorkLink
-	Memory          pa.MemoryRevision
-	MemoryEntries   []pa.MemoryEntry
-	Context         pa.ContextSnapshot
-	Events          []pa.Event
-	Receipts        []pa.Receipt
-	ReadCursors     []pa.ReadCursor
+	Exchanges []pa.Exchange `json:"Exchanges,omitempty"`
+	// Groups are the rooms this Bot belongs to, or belonged to when they
+	// were deleted (Group.Deleted marks the tombstone), with their members
+	// and room state. They are versioned by GroupSchemaVersion, separately
+	// from SchemaVersion; both are absent for a Bot in no group.
+	Groups             []GroupExport   `json:"Groups,omitempty"`
+	GroupSchemaVersion int             `json:"GroupSchemaVersion,omitempty"`
+	Routines           []pa.Routine    `json:"Routines,omitempty"`
+	RoutineRuns        []pa.RoutineRun `json:"RoutineRuns,omitempty"`
+	ContractVersion    string
+	SchemaVersion      int
+	Bot                pa.Bot
+	Conversation       pa.Conversation
+	Messages           []pa.Message
+	Turns              []pa.Turn
+	Bindings           []pa.ExecutionBinding
+	Permissions        []pa.PermissionOffer
+	WorkLinks          []pa.WorkLink
+	Memory             pa.MemoryRevision
+	MemoryEntries      []pa.MemoryEntry
+	Context            pa.ContextSnapshot
+	Events             []pa.Event
+	Receipts           []pa.Receipt
+	ReadCursors        []pa.ReadCursor
 }
+
+// GroupExport is one group as stored, with its room coordination state.
+type GroupExport struct {
+	Group pa.Group     `json:"group"`
+	Room  pa.RoomState `json:"room"`
+}
+
 type ForgetRequest struct {
 	Command          pa.Command
 	Project          pa.ProjectScope

@@ -185,7 +185,9 @@ func TestGroupLifecycleAgainstStoredBots(t *testing.T) {
 	if err = groups.CheckTicket(testContext, ticketB); pa.Code(err) != pa.Revoked {
 		t.Fatalf("deleted member's ticket: %v", err)
 	}
-	if left, err := groups.LeaveGroups(testContext, b.Key, groupTime); err != nil || len(left) != 1 {
+	// DeleteBot already left the group in its own transaction; leaving again
+	// finds nothing.
+	if left, err := groups.LeaveGroups(testContext, b.Key, groupTime); err != nil || len(left) != 0 {
 		t.Fatalf("leave %v %v", left, err)
 	}
 

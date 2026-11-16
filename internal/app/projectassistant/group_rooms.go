@@ -2,10 +2,25 @@ package projectassistant
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+// InstallSchemas installs the feature schema and then the group tables, each
+// in its own repeatable transaction. The host calls it wherever it installed
+// the feature schema alone; the group installer refuses to run before the
+// feature schema exists, so the order is part of the contract.
+func InstallSchemas(ctx context.Context, db *sql.DB, feature, groups SchemaInstaller) error {
+	if db == nil || feature == nil || groups == nil {
+		return serviceFailure(pa.Invalid, "schema_installers")
+	}
+	if err := feature.Install(ctx, db); err != nil {
+		return err
+	}
+	return groups.Install(ctx, db)
+}
 
 // GroupRoomStore is the persistence a group room needs. The SQLite
 // implementation is projectassistantstore.GroupStore; it is not part of the
