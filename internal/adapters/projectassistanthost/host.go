@@ -54,6 +54,8 @@ type Options struct {
 	Attachments app.AttachmentReader
 	Inputs      app.InputReader
 	Outputs     featurestore.Outputs
+	// Browser is optional; without it the browser tools answer disabled.
+	Browser *BrowserAccess
 }
 
 type Host struct {
