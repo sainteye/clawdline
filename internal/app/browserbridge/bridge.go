@@ -68,6 +68,9 @@ const (
 	OtherDebugger     Refusal = "browser_other_debugger"
 	StateWriteFailed  Refusal = "browser_state_write_failed"
 	SecretInputFailed Refusal = "browser_secret_input_failed"
+	// Cancelled is an owned command whose caller was cancelled before any
+	// host took it. It was never handed to the extension.
+	Cancelled Refusal = "browser_cancelled"
 )
 
 func (r Refusal) Error() string { return string(r) }
@@ -87,6 +90,9 @@ type Command struct {
 	// Person marks the person's own command: the extension keeps no picture of it.
 	Person       bool `json:"person,omitempty"`
 	conversation string
+	// ctx is the caller's context. Poll never hands out a command whose
+	// caller was already cancelled; checking it takes no other lock.
+	ctx context.Context
 }
 
 // Result is the host's answer to one command.
@@ -159,6 +165,9 @@ type Bridge struct {
 	queue           []Command
 	waiting         map[string]chan Result
 	inflight        map[string]string
+	// withheld marks waiting commands Poll dropped because their caller was
+	// cancelled first. It is a subset of waiting and bounded by it.
+	withheld        map[string]bool
 	wake            chan struct{}
 	mode            string   // active Chrome profile kind; native mode only disables this channel
 	setupHost       HostInfo // transport readiness, never grants Agent access
@@ -192,6 +201,7 @@ func New(onSite func(NewSite)) *Bridge {
 	return &Bridge{
 		waiting:      map[string]chan Result{},
 		inflight:     map[string]string{},
+		withheld:     map[string]bool{},
 		mode:         "isolated",
 		closing:      map[int]string{},
 		wake:         make(chan struct{}),
@@ -710,6 +720,16 @@ func (b *Bridge) DoWithAdmission(ctx context.Context, conversation, op string, a
 	return b.do(ctx, conversation, op, args, unlock, false)
 }
 
+// DoOwnedWithAdmission is DoWithAdmission for an owner that may act only on
+// tabs it opened itself, in this profile: no foreign or unowned tab, no full
+// tab listing, and a cancelled caller's queued command is never handed out.
+func (b *Bridge) DoOwnedWithAdmission(ctx context.Context, owner, op string, args json.RawMessage, release func()) (json.RawMessage, error) {
+	var once sync.Once
+	unlock := func() { once.Do(release) }
+	defer unlock()
+	return b.run(ctx, owner, op, args, unlock, false, true)
+}
+
 // PersonOpenWithAdmission opens a new tab for a Session at the person's own
 // request. The tab belongs to the Session like one its agent opened, but it
 // starts taken over by the person, so the agent's commands to it wait until
@@ -732,8 +752,12 @@ func (b *Bridge) PersonOpenWithAdmission(ctx context.Context, conversation, addr
 	return b.do(ctx, conversation, "open", args, unlock, true)
 }
 
-func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawMessage, admitted func(), person bool) (value json.RawMessage, err error) {
-	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes || (person && op != "open") {
+func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawMessage, admitted func(), person bool) (json.RawMessage, error) {
+	return b.run(ctx, conversation, op, args, admitted, person, false)
+}
+
+func (b *Bridge) run(ctx context.Context, conversation, op string, args json.RawMessage, admitted func(), person, strict bool) (value json.RawMessage, err error) {
+	if !agentOps[op] || conversation == "" || len(args) > MaxArgBytes || (person && op != "open") || (strict && op == "tabs") {
 		return nil, BadRequest
 	}
 	var a struct {
@@ -805,10 +829,18 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 			b.mu.Unlock()
 			return nil, OtherSessionsTab
 		}
+		if strict && op != "open" && b.owner[tab] != conversation {
+			b.mu.Unlock()
+			return nil, OtherSessionsTab
+		}
 		if b.person[tab] {
 			b.mu.Unlock()
 			return nil, PersonControlling
 		}
+	}
+	if strict && ctx.Err() != nil {
+		b.mu.Unlock()
+		return nil, Cancelled
 	}
 	if len(b.queue) >= MaxPendingCommands {
 		b.mu.Unlock()
@@ -817,6 +849,9 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 	stopEpoch, controlEpoch, permissionEpoch := b.stopEpoch, b.controlEpoch[tab], b.permissionEpoch
 	ownerAtStart := b.owner[tab]
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, conversation: conversation}
+	if strict {
+		c.ctx = ctx
+	}
 	if op == "close" {
 		b.closing[tab] = c.ID
 		if b.saveTabs() != nil {
@@ -848,16 +883,24 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 	b.mu.Lock()
 	delete(b.waiting, c.ID)
 	delete(b.inflight, c.ID)
-	if op == "close" {
-		for _, queued := range b.queue {
-			if queued.ID == c.ID {
-				delete(b.closing, tab)
-				b.saveTabs()
-				break
-			}
+	unsent := b.withheld[c.ID]
+	delete(b.withheld, c.ID)
+	for _, queued := range b.queue {
+		if queued.ID == c.ID {
+			unsent = true
+			break
 		}
 	}
+	if op == "close" && unsent {
+		delete(b.closing, tab)
+		b.saveTabs()
+	}
 	b.dropQueued(c.ID)
+	// An owned caller learns that its command never left the daemon. Once a
+	// host took it, the effect may have happened and the result stays a timeout.
+	if strict && unsent && !res.OK && ctx.Err() != nil {
+		res = Result{ID: c.ID, Tab: tab, Error: string(Cancelled)}
+	}
 	// A late answer cannot cross a stop or control handoff, even if control
 	// was handed back before the extension answered. Discard frames and text.
 	if b.disabled || b.permissionEpoch != permissionEpoch {
@@ -923,7 +966,7 @@ func (b *Bridge) do(ctx context.Context, conversation, op string, args json.RawM
 		return res.Value, nil
 	}
 	switch Refusal(res.Error) {
-	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab, QueueFull:
+	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab, QueueFull, Cancelled:
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -975,7 +1018,16 @@ func (b *Bridge) Poll(ctx context.Context, info HostInfo) []Command {
 		return []Command{}
 	}
 	b.host.LastPoll = b.now().Unix()
-	out := b.queue
+	out := make([]Command, 0, len(b.queue))
+	for _, c := range b.queue {
+		if c.ctx != nil && c.ctx.Err() != nil {
+			if _, waiting := b.waiting[c.ID]; waiting {
+				b.withheld[c.ID] = true
+			}
+			continue
+		}
+		out = append(out, c)
+	}
 	b.queue = nil
 	b.mu.Unlock()
 	if out == nil {
