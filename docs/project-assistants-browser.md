@@ -70,7 +70,17 @@ queue, epochs and audit as `DoSession`, plus:
   cannot be withdrawn.
 
 Ending the turn cancels the bound context (and the Host lifetime seal), which
-withdraws a still-queued command.
+withdraws a still-queued command. The seal is not redundant: the runtime
+closes the provider session before it cancels the turn context, and ACP Close
+waits for the native process to exit. During that cleanup only the seal
+withdraws a command still waiting for the host
+(`TestHostSealWithdrawsAQueuedCommandDuringNativeCleanup` fails without it).
+
+A remembered browser choice never falls through to another browser after a
+possibly executed action: turning the remembered profile off answers
+`browser_disabled`, not a switch to the next automatic one. Fallback and
+`browser_native_tools` / `browser_setup_required` apply to a Bot conversation
+before its first admitted command, as they do to a Session.
 
 ## MCP
 
@@ -81,6 +91,28 @@ fields are `pa_invalid`. A screenshot answers a text caption plus a standard MCP
 `image` content (`image/jpeg`, base64 as the extension produced it). A result
 that would not fit the existing owned-MCP frame answers
 `browser_result_too_large`; nothing is truncated and no limit was raised.
+
+## Verification
+
+`TestBotBrowserRunsEndToEndThroughACPAndOwnedMCP`
+(`internal/transport/http/project_assistants_browser_test.go`) is one path:
+the production ACP provider launches a scripted subprocess with the formal ACP
+handshake; `session/new` carries the Host-owned HTTP MCP descriptor; the
+process initializes MCP over TCP, lists the tools and calls `browser_status`
+and `browser_command`; each command passes the Host binding checks, the
+production Profiles and Bridge, and a scripted native host's Poll and Deliver;
+the reply is read back from SQLite. It covers open, read, click, type, read,
+screenshot (a decodable JPEG image block) and close, each with a command id
+and an audit row under the Host-derived owner; the typed codes
+`browser_page_error` (with its message), `browser_disabled`,
+`browser_person_controlling`, `browser_stopped`, `browser_tab_closing`,
+`browser_setup_required`, `browser_native_tools` and
+`browser_tab_other_session` with no host admission; a finished turn's replayed
+descriptor admitting nothing; and the CLI route's `session_unresolved` for the
+Bot conversation. The scripted subprocess and host are not a model or Chrome.
+
+`TestAnOwnedLateResultCannotCrossAPersonsABA` covers a late owned read or
+screenshot across takeover/handback and stop/resume.
 
 ## Not done
 
@@ -93,3 +125,6 @@ that would not fit the existing owned-MCP frame answers
 - New-site notices (`announceBrowserSite`) find no live Session for a Bot owner
   and fall back to a generic label without a target.
 - Real Chrome and native Claude Code / Codex acceptance.
+- The transparency page has no card describing the `browser_status` and
+  `browser_command` tool text a Bot receives; only the source receipts were
+  refreshed. A card needs its English and Taiwan Traditional Chinese copy.
