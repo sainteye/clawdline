@@ -320,11 +320,36 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   pictures() { return (this.grant.apiLevel ?? 0) >= (this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL) }
   attachmentURL(key: W.ProjectAssistantBotKey, id: string) { return this.grant.accountKey==="local" && this.pictures() && key.machine_id === this.machineID ? endpoint(key,`/attachments/${encodeURIComponent(id)}`)+query({machine_id:this.machineID}) : null }
+  private async localAttachment(path:string,id:string,s:AbortSignal,minimum:number):Promise<Blob> {
+    try { this.check(s,false,true,minimum) } catch (error) { throw notSent(error) }
+    let response:Response
+    try { response=await this.transport(path,{method:"GET",signal:s,cache:"no-store"}) }
+    catch (error) { if (sourceFailure(error)) throw error; throw new AssistantTransportFailure("pa_offline",error) }
+    this.recheck(s,false,true,minimum,response)
+    const type=(response.headers.get("Content-Type")??"").split(";")[0].trim().toLowerCase()
+    if(!response.ok||!type.startsWith("image/")){
+      let answer:unknown
+      try{answer=await response.json()}catch{answer=undefined}
+      if(sourceFailure(answer))throw answer
+      throw new AssistantTransportFailure(response.status===501?"pa_unsupported":"pa_offline",answer)
+    }
+    if(!["image/png","image/jpeg","image/gif","image/webp"].includes(type))throw failure("pa_invalid")
+    const bytes=new Uint8Array(await response.arrayBuffer())
+    if(bytes.length<=0)throw failure("pa_invalid")
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))).map(b=>b.toString(16).padStart(2,"0")).join("")
+    this.check(s,false,false,minimum)
+    if(digest!==id)throw failure("pa_invalid")
+    return new Blob([bytes],{type})
+  }
   async attachment(key: W.ProjectAssistantBotKey,id:string,s:AbortSignal):Promise<Blob> {
     this.key(key)
     if(!/^[0-9a-f]{64}$/.test(id))throw failure("pa_invalid")
     const minimum=this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL
-    const answer=await this.request<{contract_version:string;id:string;media_type:string;byte_count:number;data:string}>(endpoint(key,`/attachments/${id}`)+query({machine_id:this.machineID}),s,undefined,"GET",true,minimum)
+    const path=endpoint(key,`/attachments/${id}`)+query({machine_id:this.machineID})
+    // The local daemon answers with the picture's bytes; Cloud wraps them in a
+    // JSON envelope. Both pass the same type, size and digest checks.
+    if(this.grant.accountKey==="local")return this.localAttachment(path,id,s,minimum)
+    const answer=await this.request<{contract_version:string;id:string;media_type:string;byte_count:number;data:string}>(path,s,undefined,"GET",true,minimum)
     if(answer.contract_version!=="project-assistants.v1"||answer.id!==id||!["image/png","image/jpeg","image/gif","image/webp"].includes(answer.media_type)||!Number.isSafeInteger(answer.byte_count)||answer.byte_count<=0)throw failure("pa_invalid")
     let bytes:Uint8Array
     try{bytes=base64Bytes(answer.data,"attachment")}catch{throw failure("pa_invalid")}

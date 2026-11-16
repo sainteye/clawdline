@@ -2,6 +2,7 @@
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
 import {spawn} from "node:child_process"
+import {createHash} from "node:crypto"
 import {mkdir,mkdtemp,readFile,writeFile,rm,readdir,access} from "node:fs/promises"
 import {constants} from "node:fs"
 import {homedir} from "node:os"
@@ -48,7 +49,15 @@ const server=createServer(async(req,res)=>{try{
   if(relay){const chunks=[];for await(const chunk of req)chunks.push(chunk);const fields=JSON.parse(Buffer.concat(chunks).toString()),word=url.pathname.slice(7).split(".").at(-1),key=fields.key??fields;const {key:_,machine_id:__,bot_id:___,...rest}=fields;route="/v1/project-assistants/"+key.bot_id+(word==="get"?"":word==="attachment"?"/attachments/"+fields.id:"/"+word)+"?"+new URLSearchParams({machine_id:key.machine_id,...(["get","attachment"].includes(word)?{}:rest)})}
   const record={mode,path:route};requests.push(record)
   if(route.includes("/output?")&&fault){const kind=fault;fault="";if(kind==="fail"){record.status=503;res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"snapshot"}}));return}await new Promise(resolve=>setTimeout(resolve,1200))}
-  const answer=await fetch(upstream+route,{headers:{Authorization:"Bearer "+(mode==="read"?readToken:token)}});record.status=answer.status;res.writeHead(answer.status,{"Content-Type":answer.headers.get("content-type")??"application/json"});res.end(Buffer.from(await answer.arrayBuffer()));return
+  const answer=await fetch(upstream+route,{headers:{Authorization:"Bearer "+(mode==="read"?readToken:token)}}),body=Buffer.from(await answer.arrayBuffer()),mediaType=answer.headers.get("content-type")??"application/json";record.status=answer.status;record.mediaType=mediaType;record.bytes=body.length
+  // The production Cloud attachment operation wraps local image bytes in JSON.
+  // Local/read-only HTTP retains the original image response.
+  if(relay&&answer.ok&&route.includes("/attachments/")){
+    const id=new URL(upstream+route).pathname.split("/").at(-1)
+    assert.equal(createHash("sha256").update(body).digest("hex"),id)
+    record.encoding="cloud-image-envelope";res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",id,media_type:mediaType,byte_count:body.length,data:body.toString("base64")}));return
+  }
+  res.writeHead(answer.status,{"Content-Type":mediaType});res.end(body);return
  }
  if(url.pathname.startsWith("/catalog/")){res.setHeader("Content-Type","application/json");res.end(await readFile(path.join(root,"public/catalogs",path.basename(url.pathname))));return}
  if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
@@ -61,12 +70,13 @@ try {
   const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup timeout: "+output)),20000);chrome.on("error",reject);chrome.on("exit",(code,signal)=>{clearTimeout(timer);reject(Error("Chrome exited: "+code+" "+signal+" "+output))});chrome.stderr.on("data",chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
   ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
   let serial=0;const pending=new Map()
-  ws.addEventListener("message",event=>{const message=JSON.parse(String(event.data));if(!message.id){if(message.method?.startsWith("Page.")||message.method?.includes("crashed")||message.method==="Runtime.exceptionThrown")protocolEvents.push(message);return};const job=pending.get(message.id);pending.delete(message.id);if(message.error)job?.reject(Error(message.error.message));else job?.resolve(message.result)})
+  ws.addEventListener("message",event=>{const message=JSON.parse(String(event.data));if(!message.id){if(message.method?.startsWith("Page.")||message.method?.includes("crashed")||["Runtime.exceptionThrown","Runtime.consoleAPICalled","Log.entryAdded"].includes(message.method))protocolEvents.push(message);return};const job=pending.get(message.id);pending.delete(message.id);if(message.error)job?.reject(Error(message.error.message));else job?.resolve(message.result)})
   const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>reject(Error(method+" timed out")),15000);pending.set(id,{resolve:v=>{clearTimeout(timer);resolve(v)},reject:e=>{clearTimeout(timer);reject(e)}});ws.send(JSON.stringify({id,method,params,sessionId}))})
   const attach=async targetId=>{
     const {sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
     await send("Page.enable",{},sessionId)
     await send("Runtime.enable",{},sessionId)
+    await send("Log.enable",{},sessionId)
     await send("Page.setLifecycleEventsEnabled",{enabled:true},sessionId)
     return sessionId
   }
@@ -92,7 +102,12 @@ try {
     await until('[...document.querySelectorAll(".pa-output-overlay button")].some(b=>/Download file|下載檔案/.test(b.textContent))')
     await click(zh?"下載檔案":"Download file")
     await until('!!document.querySelector(".pa-output-overlay")');await run('document.querySelector(".pa-output-overlay header button").click()')
-    await run('document.querySelector("[data-library-kind=picture] button").click()');await until('document.querySelector(".pa-library-picture")?.naturalWidth===1');await run('document.querySelector(".pa-output-overlay header button").click()')
+    await run('document.querySelector("[data-library-kind=picture] button").click()')
+    await until('!!document.querySelector(".pa-output-overlay")')
+    await until('!!document.querySelector(".pa-output-overlay [role=alert]")||document.querySelector(".pa-library-picture")?.complete')
+    assert.equal(await run('document.querySelector(".pa-output-overlay [role=alert]")?.textContent??null'),null,"picture transfer must succeed")
+    assert.equal(await run('document.querySelector(".pa-library-picture")?.naturalWidth'),1,"stored PNG decodes")
+    await run('document.querySelector(".pa-output-overlay header button").click()')
     await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
     await until('!!document.querySelector(".pa-artifact-frame")')
     const before=await send("Target.getTargets")
