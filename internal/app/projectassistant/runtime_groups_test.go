@@ -458,3 +458,17 @@ func TestOwnChatStopKeepsALateRoomTurn(t *testing.T) {
 	close(hold)
 	h.driver.Idle()
 }
+
+func TestDefaultRoomBoundsAreCodyNCs(t *testing.T) {
+	g := app.DefaultGroupLimits()
+	if g.MaxRounds != 3 || g.MaxReplies != 10 || g.MaxLateTurns != 3 || g.MaxMembers < 1 || g.Validate() != nil {
+		t.Fatalf("group limits %+v", g)
+	}
+	r := app.DefaultRoomLimits()
+	if r.MemberWait != 600*time.Second || r.HistoryLines != 24 || r.PeerLineRunes != 2000 || r.Validate() != nil {
+		t.Fatalf("room limits %+v", r)
+	}
+	if app.DefaultManagerLimits().MaxCreated != 20 {
+		t.Fatal("manager limit")
+	}
+}

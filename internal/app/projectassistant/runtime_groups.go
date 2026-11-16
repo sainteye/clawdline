@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -146,6 +147,24 @@ func (r *Engine) BusyElsewhere(ctx context.Context, member, group pa.BotKey) (bo
 		}
 	}
 	return false, nil
+}
+
+// DefaultGroupLimits are the registered room bounds (internal/domain/capacity,
+// CodyNC group.rs and rooms.rs). Upstream has no member maximum: a room asks
+// members one at a time, each through a runtime actor, so the actor bound is
+// the most members a room can be served by.
+func DefaultGroupLimits() pa.GroupLimits {
+	return pa.GroupLimits{MaxMembers: capacity.MaximumBotActors, MaxRounds: capacity.MaximumBotGroupRounds, MaxReplies: capacity.MaximumBotGroupReplies, MaxLateTurns: capacity.MaximumBotGroupLateTurns}
+}
+
+// DefaultRoomLimits are the registered driver bounds.
+func DefaultRoomLimits() RoomLimits {
+	return RoomLimits{MemberWait: capacity.MaximumBotGroupMemberWaitSeconds * time.Second, HistoryLines: capacity.MaximumBotGroupHistoryLines, PeerLineRunes: capacity.MaximumBotGroupPeerLineChars}
+}
+
+// DefaultManagerLimits is the registered manager bound (chat/manage.rs).
+func DefaultManagerLimits() ManagerLimits {
+	return ManagerLimits{MaxCreated: capacity.MaximumBotManagerCreated}
 }
 
 // The room driver.

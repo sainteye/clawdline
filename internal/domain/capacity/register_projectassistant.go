@@ -47,13 +47,50 @@ const (
 	// The Project's Claude Code local settings, read to list and revoke the
 	// standing rules Always allow and Never leave there.
 	MaximumBotRulesFileBytes = 1 << 20
+	// Group rooms, CodyNC 9f67eb09 host/src/chat/group.rs and group/rooms.rs.
+	MaximumBotGroupRounds            = 3   // MAX_ROUNDS
+	MaximumBotGroupReplies           = 10  // MAX_REPLIES
+	MaximumBotGroupLateTurns         = 3   // rooms.rs MAX_LATE_TURNS
+	MaximumBotGroupMemberWaitSeconds = 600 // MEMBER_TIMEOUT; not a retry or permission deadline
+	MaximumBotGroupHistoryLines      = 24  // HISTORY_LINES shown to a member
+	MaximumBotGroupPeerLineChars     = 2000
+	// Live Bots one manager may have created (chat/manage.rs MAX_CREATED).
+	MaximumBotManagerCreated = 20
 )
+
+// Group room rows. Names live here, beside the bounds they name.
+const (
+	BotsGroupRounds            = "bots.group_rounds"
+	BotsGroupReplies           = "bots.group_replies"
+	BotsGroupLateTurns         = "bots.group_late_turns"
+	BotsGroupMemberWaitSeconds = "bots.group_member_wait_seconds"
+	BotsGroupHistoryLines      = "bots.group_history_lines"
+	BotsGroupPeerLineChars     = "bots.group_peer_line_chars"
+	BotsManagerCreated         = "bots.manager_created"
+)
+
+// groupBounds: a room turn that reaches a bound ends or shows less; nothing
+// is refused to the person. Group members have no upstream bound: a room
+// asks members one at a time, each through a runtime actor, so composition
+// passes BotsActors (MaximumBotActors) as pa.GroupLimits.MaxMembers rather
+// than inventing a number; that row already covers it.
+func groupBounds() []Entry {
+	return []Entry{
+		{Name: BotsGroupRounds, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupRounds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupRounds"}},
+		{Name: BotsGroupReplies, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupReplies, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupReplies"}},
+		{Name: BotsGroupLateTurns, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupLateTurns, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupLateTurns"}},
+		{Name: BotsGroupMemberWaitSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotGroupMemberWaitSeconds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupMemberWaitSeconds"}},
+		{Name: BotsGroupHistoryLines, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupHistoryLines, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupHistoryLines"}},
+		{Name: BotsGroupPeerLineChars, Class: Buffer, Unit: Characters, Limit: MaximumBotGroupPeerLineChars, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupPeerLineChars"}},
+		{Name: BotsManagerCreated, Class: Buffer, Unit: Rows, Limit: MaximumBotManagerCreated, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerCreated"}},
+	}
+}
 
 // These rows bound the frozen contract validators. PA-02 owns live queue
 // measurement; PA-05 installs those measurements with the disabled module.
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
-	return []Entry{
+	return append(groupBounds(), []Entry{
 		{Name: BotsContinuationMessages, Class: Buffer, Unit: Rows, Limit: MaximumBotContinuationMessages, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationMessages"}},
 		{Name: BotsContinuationQuoteBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotContinuationQuoteBytes, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationQuoteBytes"}},
 		{Name: BotsReviewPending, Class: Buffer, Unit: Rows, Limit: pa.MaxCollaborationOutstanding, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationOutstanding"}},
@@ -188,5 +225,5 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsAttachmentBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxAttachmentBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxAttachmentBytes"}},
-	}
+	}...)
 }
