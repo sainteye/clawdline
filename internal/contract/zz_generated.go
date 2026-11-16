@@ -4444,6 +4444,7 @@ type ProjectAssistantBot struct {
 	Appearance     ProjectAssistantAppearance `json:"appearance"`
 	ConversationID string                     `json:"conversation_id"`
 	CreatedAt      string                     `json:"created_at"`
+	CreatedBy      *ProjectAssistantBotKey    `json:"created_by,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
@@ -4453,6 +4454,7 @@ type ProjectAssistantBot struct {
 	Hidden       bool                         `json:"hidden,omitempty"`
 	Instructions ProjectAssistantInstructions `json:"instructions"`
 	Key          ProjectAssistantBotKey       `json:"key"`
+	ManageTeam   bool                         `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4554,6 +4556,7 @@ type ProjectAssistantCreateSettings struct {
 	// an explicit empty array clears them.
 	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
 	Instructions   string                  `json:"instructions"`
+	ManageTeam     bool                    `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4585,6 +4588,7 @@ type ProjectAssistantEditSettings struct {
 	// an explicit empty array clears them.
 	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
 	Instructions   string                  `json:"instructions"`
+	ManageTeam     bool                    `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4905,6 +4909,105 @@ type ProjectAssistantGetResponse struct {
 	ContractVersion string                       `json:"contract_version"`
 	Conversation    ProjectAssistantConversation `json:"conversation"`
 	Source          ProjectAssistantSourceStatus `json:"source"`
+}
+
+type ProjectAssistantGroup struct {
+	ConversationID     string                        `json:"conversation_id"`
+	CreatedAt          string                        `json:"created_at"`
+	Deleted            bool                          `json:"deleted"`
+	Key                ProjectAssistantBotKey        `json:"key"`
+	Members            []ProjectAssistantGroupMember `json:"members"`
+	MembershipRevision int64                         `json:"membership_revision"`
+	Name               string                        `json:"name"`
+	Project            ProjectAssistantProjectScope  `json:"project"`
+	UpdatedAt          string                        `json:"updated_at"`
+	Version            int64                         `json:"version"`
+}
+
+type ProjectAssistantGroupCreateRequest struct {
+	Command  ProjectAssistantCommand             `json:"command"`
+	Settings ProjectAssistantGroupCreateSettings `json:"settings"`
+}
+
+type ProjectAssistantGroupCreateSettings struct {
+	Members []ProjectAssistantBotKey         `json:"members"`
+	Name    string                           `json:"name"`
+	Target  ProjectAssistantProjectSelection `json:"target"`
+}
+
+type ProjectAssistantGroupDeleteRequest struct {
+	Command         ProjectAssistantCommand `json:"command"`
+	ExpectedVersion int64                   `json:"expected_version"`
+}
+
+type ProjectAssistantGroupEditRequest struct {
+	Command  ProjectAssistantCommand           `json:"command"`
+	Settings ProjectAssistantGroupEditSettings `json:"settings"`
+}
+
+type ProjectAssistantGroupEditSettings struct {
+	ExpectedVersion int64                    `json:"expected_version"`
+	Members         []ProjectAssistantBotKey `json:"members"`
+	Name            string                   `json:"name"`
+}
+
+type ProjectAssistantGroupHistoryRequest struct {
+	BeforeSeq int64                  `json:"before_seq"`
+	Key       ProjectAssistantBotKey `json:"key"`
+	PageSize  int64                  `json:"page_size"`
+}
+
+type ProjectAssistantGroupHistoryResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	Group           ProjectAssistantGroup        `json:"group"`
+	HasMore         bool                         `json:"has_more"`
+	Lines           []ProjectAssistantRoomEntry  `json:"lines"`
+	NextBeforeSeq   int64                        `json:"next_before_seq"`
+	Room            ProjectAssistantRoomState    `json:"room"`
+	Source          ProjectAssistantSourceStatus `json:"source"`
+}
+
+type ProjectAssistantGroupListRequest struct {
+	MachineID string `json:"machine_id"`
+}
+
+type ProjectAssistantGroupListResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	Groups          []ProjectAssistantGroup      `json:"groups"`
+	Source          ProjectAssistantSourceStatus `json:"source"`
+}
+
+type ProjectAssistantGroupMember struct {
+	JoinedRevision int64                  `json:"joined_revision"`
+	Key            ProjectAssistantBotKey `json:"key"`
+}
+
+type ProjectAssistantGroupResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	Group           ProjectAssistantGroup   `json:"group"`
+	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+type ProjectAssistantGroupSendRequest struct {
+	Command       ProjectAssistantCommand `json:"command"`
+	ReplyToAuthor *ProjectAssistantBotKey `json:"reply_to_author,omitempty"`
+	Text          string                  `json:"text"`
+}
+
+type ProjectAssistantGroupSendResponse struct {
+	ContractVersion string                    `json:"contract_version"`
+	Entry           ProjectAssistantRoomEntry `json:"entry"`
+	Room            ProjectAssistantRoomState `json:"room"`
+}
+
+type ProjectAssistantGroupStopRequest struct {
+	Command ProjectAssistantCommand `json:"command"`
+}
+
+type ProjectAssistantGroupStopResponse struct {
+	ContractVersion string                    `json:"contract_version"`
+	Room            ProjectAssistantRoomState `json:"room"`
+	Stopped         bool                      `json:"stopped"`
 }
 
 // before_seq=0 starts from latest. Items are ascending within a page. Page size
@@ -5476,6 +5579,22 @@ type ProjectAssistantReceiptResponse struct {
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
 }
 
+type ProjectAssistantRoomEntry struct {
+	Author        *ProjectAssistantBotKey `json:"author,omitempty"`
+	Kind          string                  `json:"kind"`
+	ReplyToAuthor *ProjectAssistantBotKey `json:"reply_to_author,omitempty"`
+	Seq           int64                   `json:"seq"`
+	Text          string                  `json:"text"`
+}
+
+type ProjectAssistantRoomState struct {
+	Epoch     int64 `json:"epoch"`
+	Pending   int64 `json:"pending"`
+	Revision  int64 `json:"revision"`
+	Running   int64 `json:"running"`
+	StoppedAt int64 `json:"stopped_at"`
+}
+
 // Replace by key/revision; removed is a replayable tombstone. Unread is an
 // absolute reader-specific count, never a delta. Revision is the roster journal
 // sequence, independent of Bot version/message sequence.
@@ -5732,6 +5851,63 @@ type ProjectAssistantStopRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
 	TurnID  string                  `json:"turn_id"`
+}
+
+type ProjectAssistantTeamAnswerRequest struct {
+	Allow   bool                    `json:"allow"`
+	Command ProjectAssistantCommand `json:"command"`
+	PlanID  string                  `json:"plan_id"`
+}
+
+type ProjectAssistantTeamAnswerResponse struct {
+	ContractVersion string `json:"contract_version"`
+	PlanID          string `json:"plan_id"`
+	State           string `json:"state"`
+}
+
+// Editable settings; omitted fallback_agents preserves the saved chain, while
+// an empty array clears it. Primary Agent and Project remain immutable.
+type ProjectAssistantTeamEditSettings struct {
+	Appearance      ProjectAssistantAppearance `json:"appearance"`
+	ExpectedVersion int64                      `json:"expected_version"`
+
+	// Ordered unique default login identities. Omitted edits preserve saved settings;
+	// an explicit empty array clears them.
+	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
+	Instructions   string                  `json:"instructions"`
+	ManageTeam     bool                    `json:"manage_team"`
+
+	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+	// otherwise one the agent offers (API level 65).
+	Mode string `json:"mode,omitempty"`
+	Name string `json:"name"`
+
+	// Empty leaves the permission setting unchanged (API level 65).
+	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
+}
+
+type ProjectAssistantTeamPlan struct {
+	Detail      string                 `json:"detail"`
+	ExpiresAt   string                 `json:"expires_at"`
+	ID          string                 `json:"id"`
+	Manager     ProjectAssistantBotKey `json:"manager"`
+	ManagerName string                 `json:"manager_name"`
+	Operation   string                 `json:"operation"`
+	Target      ProjectAssistantBotKey `json:"target"`
+}
+
+type ProjectAssistantTeamPlansRequest struct {
+	Key ProjectAssistantBotKey `json:"key"`
+}
+
+type ProjectAssistantTeamPlansResponse struct {
+	ContractVersion string                     `json:"contract_version"`
+	Plans           []ProjectAssistantTeamPlan `json:"plans"`
+}
+
+type ProjectAssistantTeamSettingsRequest struct {
+	Command  ProjectAssistantCommand          `json:"command"`
+	Settings ProjectAssistantTeamEditSettings `json:"settings"`
 }
 
 // Trace is not a visible message and never advances unread. Secrets and raw

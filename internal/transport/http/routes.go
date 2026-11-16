@@ -23,7 +23,9 @@ import (
 // open and mute requests accept a Bot target (bot_id with its conversation)
 // from level 74; an older daemon ignores an unknown GET field, so a console
 // must not name a Bot to a source below 74.
-const APILevel = 76
+// Group rooms and the person's team management approvals arrive at level 76.
+// Question-focused voice analysis arrives at level 77.
+const APILevel = 77
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

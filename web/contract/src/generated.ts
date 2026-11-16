@@ -5195,6 +5195,7 @@ export interface ProjectAssistantBot {
   appearance: ProjectAssistantAppearance
   conversation_id: string
   created_at: string
+  created_by?: ProjectAssistantBotKey
 
   /**
    * Ordered unique default login identities. Omitted edits preserve saved settings;
@@ -5208,6 +5209,7 @@ export interface ProjectAssistantBot {
   hidden?: boolean
   instructions: ProjectAssistantInstructions
   key: ProjectAssistantBotKey
+  manage_team?: boolean
 
   /**
    * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
@@ -5323,6 +5325,7 @@ export interface ProjectAssistantCreateSettings {
    */
   fallback_agents?: ProjectAssistantAgent[]
   instructions: string
+  manage_team?: boolean
 
   /**
    * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
@@ -5362,6 +5365,7 @@ export interface ProjectAssistantEditSettings {
    */
   fallback_agents?: ProjectAssistantAgent[]
   instructions: string
+  manage_team?: boolean
 
   /**
    * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
@@ -5688,6 +5692,105 @@ export interface ProjectAssistantGetResponse {
   contract_version: string
   conversation: ProjectAssistantConversation
   source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantGroup {
+  conversation_id: string
+  created_at: string
+  deleted: boolean
+  key: ProjectAssistantBotKey
+  members: ProjectAssistantGroupMember[]
+  membership_revision: number
+  name: string
+  project: ProjectAssistantProjectScope
+  updated_at: string
+  version: number
+}
+
+export interface ProjectAssistantGroupCreateRequest {
+  command: ProjectAssistantCommand
+  settings: ProjectAssistantGroupCreateSettings
+}
+
+export interface ProjectAssistantGroupCreateSettings {
+  members: ProjectAssistantBotKey[]
+  name: string
+  target: ProjectAssistantProjectSelection
+}
+
+export interface ProjectAssistantGroupDeleteRequest {
+  command: ProjectAssistantCommand
+  expected_version: number
+}
+
+export interface ProjectAssistantGroupEditRequest {
+  command: ProjectAssistantCommand
+  settings: ProjectAssistantGroupEditSettings
+}
+
+export interface ProjectAssistantGroupEditSettings {
+  expected_version: number
+  members: ProjectAssistantBotKey[]
+  name: string
+}
+
+export interface ProjectAssistantGroupHistoryRequest {
+  before_seq: number
+  key: ProjectAssistantBotKey
+  page_size: number
+}
+
+export interface ProjectAssistantGroupHistoryResponse {
+  contract_version: string
+  group: ProjectAssistantGroup
+  has_more: boolean
+  lines: ProjectAssistantRoomEntry[]
+  next_before_seq: number
+  room: ProjectAssistantRoomState
+  source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantGroupListRequest {
+  machine_id: string
+}
+
+export interface ProjectAssistantGroupListResponse {
+  contract_version: string
+  groups: ProjectAssistantGroup[]
+  source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantGroupMember {
+  joined_revision: number
+  key: ProjectAssistantBotKey
+}
+
+export interface ProjectAssistantGroupResponse {
+  contract_version: string
+  group: ProjectAssistantGroup
+  receipt: ProjectAssistantReceipt
+}
+
+export interface ProjectAssistantGroupSendRequest {
+  command: ProjectAssistantCommand
+  reply_to_author?: ProjectAssistantBotKey
+  text: string
+}
+
+export interface ProjectAssistantGroupSendResponse {
+  contract_version: string
+  entry: ProjectAssistantRoomEntry
+  room: ProjectAssistantRoomState
+}
+
+export interface ProjectAssistantGroupStopRequest {
+  command: ProjectAssistantCommand
+}
+
+export interface ProjectAssistantGroupStopResponse {
+  contract_version: string
+  room: ProjectAssistantRoomState
+  stopped: boolean
 }
 
 /**
@@ -6318,6 +6421,22 @@ export interface ProjectAssistantReceiptResponse {
   receipt: ProjectAssistantReceipt
 }
 
+export interface ProjectAssistantRoomEntry {
+  author?: ProjectAssistantBotKey
+  kind: string
+  reply_to_author?: ProjectAssistantBotKey
+  seq: number
+  text: string
+}
+
+export interface ProjectAssistantRoomState {
+  epoch: number
+  pending: number
+  revision: number
+  running: number
+  stopped_at: number
+}
+
 /**
  * Replace by key/revision; removed is a replayable tombstone. Unread is an absolute
  * reader-specific count, never a delta. Revision is the roster journal sequence,
@@ -6586,6 +6705,71 @@ export interface ProjectAssistantStopRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
   turn_id: string
+}
+
+export interface ProjectAssistantTeamAnswerRequest {
+  allow: boolean
+  command: ProjectAssistantCommand
+  plan_id: string
+}
+
+export interface ProjectAssistantTeamAnswerResponse {
+  contract_version: string
+  plan_id: string
+  state: string
+}
+
+/**
+ * Editable settings; omitted fallback_agents preserves the saved chain, while an
+ * empty array clears it. Primary Agent and Project remain immutable.
+ */
+export interface ProjectAssistantTeamEditSettings {
+  appearance: ProjectAssistantAppearance
+  expected_version: number
+
+  /**
+   * Ordered unique default login identities. Omitted edits preserve saved settings;
+   * an explicit empty array clears them.
+   */
+  fallback_agents?: ProjectAssistantAgent[]
+  instructions: string
+  manage_team: boolean
+
+  /**
+   * The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
+   * otherwise one the agent offers (API level 65).
+   */
+  mode?: string
+  name: string
+
+  /**
+   * Empty leaves the permission setting unchanged (API level 65).
+   */
+  permission_policy?: ProjectAssistantPermissionPolicy
+}
+
+export interface ProjectAssistantTeamPlan {
+  detail: string
+  expires_at: string
+  id: string
+  manager: ProjectAssistantBotKey
+  manager_name: string
+  operation: string
+  target: ProjectAssistantBotKey
+}
+
+export interface ProjectAssistantTeamPlansRequest {
+  key: ProjectAssistantBotKey
+}
+
+export interface ProjectAssistantTeamPlansResponse {
+  contract_version: string
+  plans: ProjectAssistantTeamPlan[]
+}
+
+export interface ProjectAssistantTeamSettingsRequest {
+  command: ProjectAssistantCommand
+  settings: ProjectAssistantTeamEditSettings
 }
 
 /**

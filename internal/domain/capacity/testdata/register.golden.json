@@ -1629,6 +1629,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.manager_approval_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 270,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotManagerApprovalSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.manager_card_units",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotManagerCardUnits"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.manager_created",
     "Class": "buffer",
     "Unit": "rows",
@@ -1645,6 +1685,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotManagerCreated"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.manager_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotManagerPending"
     ]
   },
   {

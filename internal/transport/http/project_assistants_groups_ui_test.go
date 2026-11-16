@@ -1,0 +1,143 @@
+package http
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/contract"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+)
+
+// This is the decrypted Cloud vocabulary boundary, followed by actual TCP
+// HTTP and SQLite. It is not a claim about production pairing or encryption.
+type groupUIRouter struct{ origin, token string }
+
+func (r groupUIRouter) Do(ctx context.Context, in cloudops.LocalRequest) (cloudops.LocalResponse, error) {
+	u, _ := url.Parse(r.origin + in.Path)
+	q := url.Values{}
+	for k, v := range in.Query {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, in.Method, u.String(), bytes.NewReader(in.Body))
+	if err != nil {
+		return cloudops.LocalResponse{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+r.token)
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range in.Header {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return cloudops.LocalResponse{}, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	return cloudops.LocalResponse{Status: res.StatusCode, Body: raw, ContentType: res.Header.Get("Content-Type")}, err
+}
+
+func TestGroupCloudDecoderReachesRealHTTPAndSQLite(t *testing.T) {
+	f := newGroupHTTPFixture(t)
+	bridge := cloudops.Bridge{MachineID: "machine", Router: groupUIRouter{origin: f.server.URL, token: "person"}, AllowCommands: func() bool { return true }}
+	call := func(word string, fields map[string]any) json.RawMessage {
+		t.Helper()
+		envelope := map[string]any{"type": "project-assistants." + word, "session": cloudops.MachineReplySession, "request": "read-" + word}
+		for key, value := range fields {
+			envelope[key] = value
+		}
+		if c, ok := fields["command"].(contract.ProjectAssistantCommand); ok {
+			envelope["request"] = c.IdempotencyKey
+		}
+		raw, _ := json.Marshal(envelope)
+		answer := bridge.Handle(t.Context(), cloudops.Command{Channel: "ctl/machine", Class: cloudops.ClassCtl, Sender: "synthetic-viewer", Sequence: 1, Plaintext: raw})
+		if !answer.OK() {
+			t.Fatalf("%s: %d %s %s", word, answer.Status, answer.Code, answer.Payload)
+		}
+		var result struct {
+			Body json.RawMessage `json:"body"`
+		}
+		if err := json.Unmarshal(answer.Payload, &result); err != nil {
+			t.Fatal(err)
+		}
+		return result.Body
+	}
+	created := call("group-create", map[string]any{"command": f.command(pa.CreateOperation, "cloud-create"), "settings": contract.ProjectAssistantGroupCreateSettings{Target: contract.ProjectAssistantProjectSelection{MachineID: "machine", ProjectID: "project"}, Name: "Cloud room", Members: []contract.ProjectAssistantBotKey{paWireBotKey(f.bots[0].Key), paWireBotKey(f.bots[1].Key)}}})
+	var group contract.ProjectAssistantGroupResponse
+	if err := json.Unmarshal(created, &group); err != nil {
+		t.Fatal(err)
+	}
+	f.groupID = group.Group.Key.BotID
+	if list := call("groups", map[string]any{"machine_id": "machine"}); !bytes.Contains(list, []byte("Cloud room")) {
+		t.Fatal(string(list))
+	}
+	call("group-send", map[string]any{"command": f.command(pa.SendOperation, "cloud-send"), "text": "Review this"})
+	deadline := time.Now().Add(3 * time.Second)
+	var history json.RawMessage
+	for time.Now().Before(deadline) {
+		history = call("group-history", map[string]any{"key": group.Group.Key, "before_seq": 0, "page_size": 100})
+		if strings.Count(string(history), `"kind":"member"`) == 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if strings.Count(string(history), `"kind":"member"`) != 2 {
+		t.Fatal(string(history))
+	}
+	call("group-edit", map[string]any{"command": f.command(pa.EditOperation, "cloud-edit"), "settings": contract.ProjectAssistantGroupEditSettings{ExpectedVersion: group.Group.Version, Name: "Cloud renamed", Members: []contract.ProjectAssistantBotKey{paWireBotKey(f.bots[0].Key)}}})
+	call("group-stop", map[string]any{"command": f.command(pa.StopOperation, "cloud-stop")})
+	call("group-delete", map[string]any{"command": f.command(pa.DeleteOperation, "cloud-delete"), "expected_version": group.Group.Version + 1})
+}
+
+func TestGroupRoomsHeadlessUI(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_GROUP_UI_ARTIFACTS")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_GROUP_UI_ARTIFACTS for the installed headless-shell UI acceptance")
+	}
+	f := newGroupHTTPFixture(t)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		bridge := cloudops.Bridge{MachineID: "machine", Router: groupUIRouter{origin: f.server.URL, token: "person"}, AllowCommands: func() bool { return true }}
+		answer := bridge.Handle(r.Context(), cloudops.Command{Channel: "ctl/machine", Class: cloudops.ClassCtl, Sender: "synthetic-viewer", Sequence: 1, Plaintext: data})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(answer.Status)
+		_, _ = w.Write(answer.Payload)
+	}))
+	defer cloud.Close()
+	timeout := 3 * time.Minute
+	if os.Getenv("CLAWDLINE_GROUP_UI_PREVIEW") == "1" {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "node", "../../../web/console/tools/project-assistants-groups.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+f.server.URL, "BOTS_CLOUD_ORIGIN="+cloud.URL, "BOTS_ARTIFACTS="+dir, "BOTS_WORK="+filepath.Join(filepath.Dir(dir), "work"))
+	if os.Getenv("CLAWDLINE_GROUP_UI_PREVIEW") == "1" {
+		cmd.Env = append(cmd.Env, "BOTS_PREVIEW=1")
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("headless group UI: %v\n%s", err, out)
+	}
+	if os.Getenv("CLAWDLINE_GROUP_UI_PREVIEW") == "1" {
+		t.Skip("task-only manual preview closed; no automated UI assertions ran")
+	}
+	t.Log(string(out))
+}

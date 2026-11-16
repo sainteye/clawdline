@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/cloudvocab"
@@ -177,6 +178,15 @@ func TestGeneratedDecodersKeepTheGolden(t *testing.T) {
 // word no longer generated drops out.
 func recordDecoderGolden(t *testing.T, recorded []goldenCase) []goldenCase {
 	t.Helper()
+	// A scoped vocabulary extension must not rewrite decisions for older
+	// words. Keep their recorded bytes and ordering, and probe only named words.
+	selected := map[string]bool{}
+	for _, word := range strings.Split(os.Getenv("CLAWDLINE_DECODER_GOLDEN_WORDS"), ",") {
+		if word != "" {
+			selected[word] = true
+		}
+	}
+	wanted := func(word string) bool { return len(selected) == 0 || selected[word] }
 	ops, err := cloudvocab.Operations()
 	if err != nil {
 		t.Fatal(err)
@@ -206,6 +216,9 @@ func recordDecoderGolden(t *testing.T, recorded []goldenCase) []goldenCase {
 		}
 	}
 	for _, c := range recorded {
+		if !wanted(c.Op) {
+			continue
+		}
 		b, err := goldenBody(c.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -213,14 +226,22 @@ func recordDecoderGolden(t *testing.T, recorded []goldenCase) []goldenCase {
 		keep(c.Op, b)
 	}
 	for _, row := range ops {
-		if _, ok := generatedDecoders[row.Op]; ok {
+		if _, ok := generatedDecoders[row.Op]; ok && wanted(row.Op) {
 			for _, b := range decoderProbes(row, universe, examples) {
 				keep(row.Op, b)
 			}
 		}
 	}
 	out := []goldenCase{}
+	for _, c := range recorded {
+		if !wanted(c.Op) {
+			out = append(out, c)
+		}
+	}
 	for _, row := range ops {
+		if !wanted(row.Op) {
+			continue
+		}
 		if _, ok := generatedDecoders[row.Op]; !ok {
 			continue
 		}

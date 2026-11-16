@@ -396,7 +396,22 @@
     "Note": true
   },
   {
+    "Name": "bots.manager_approval_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.manager_card_units",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.manager_created",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.manager_pending",
     "Known": true,
     "Note": true
   },

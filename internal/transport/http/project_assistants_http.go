@@ -785,7 +785,7 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 	// drops that array while normalizing; restore only this declared field for
 	// create/edit shape comparison. Unknown, null and duplicate keys still fail.
 	switch any(value).(type) {
-	case contract.ProjectAssistantCreateRequest, contract.ProjectAssistantEditRequest:
+	case contract.ProjectAssistantCreateRequest, contract.ProjectAssistantEditRequest, contract.ProjectAssistantTeamSettingsRequest:
 		inObject, _ := input.(map[string]any)
 		outObject, _ := expected.(map[string]any)
 		inSettings, _ := inObject["settings"].(map[string]any)

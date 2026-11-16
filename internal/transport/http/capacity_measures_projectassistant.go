@@ -68,6 +68,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		}
 	}
 	return map[string]func() capacity.Reading{
+		capacity.BotsManagerCardUnits:       pure,
+		capacity.BotsManagerApprovalSeconds: unobserved,
+		capacity.BotsManagerPending:         unobserved,
 		"bots.routine_event_name_bytes":     pure,
 		"bots.routine_event_filters":        pure,
 		"bots.routine_filter_key_bytes":     pure,

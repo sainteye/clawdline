@@ -57,16 +57,18 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
-	listBots   func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
-	messageBot func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
-	routines   func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
-	send       func(context.Context, string, string) error
-	dispatch   func(context.Context, string, string, []string) (pa.WorkLink, error)
-	status     func(context.Context, string) (pa.WorkLink, error)
-	memory     func(context.Context) ([]pa.MemoryEntry, error)
-	edit       func(context.Context, string, app.MemoryEdit) error
-	output     func(context.Context, string, app.OutputRequest) (pa.Output, error)
-	artifacts  func(context.Context) ([]app.ArtifactInfo, error)
+	teamAvailable func(context.Context) error
+	team          func(context.Context, string, json.RawMessage) (any, error)
+	listBots      func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
+	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
+	send          func(context.Context, string, string) error
+	dispatch      func(context.Context, string, string, []string) (pa.WorkLink, error)
+	status        func(context.Context, string) (pa.WorkLink, error)
+	memory        func(context.Context) ([]pa.MemoryEntry, error)
+	edit          func(context.Context, string, app.MemoryEdit) error
+	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
+	artifacts     func(context.Context) ([]app.ArtifactInfo, error)
 
 	browserStatus  func(context.Context) (app.BrowserStatus, error)
 	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
@@ -337,6 +339,29 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return ctx, finish, nil
 	}
 	tools := NativeWork{}
+	tools.teamAvailable = func(ctx context.Context) error {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return e
+		}
+		defer cancel()
+		_, e = r.ManagerContext(ctx, q.Binding.Fence, turnID)
+		return e
+	}
+	tools.team = func(ctx context.Context, action string, args json.RawMessage) (any, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return nil, e
+		}
+		defer cancel()
+		h.mu.Lock()
+		team := h.team
+		h.mu.Unlock()
+		if team == nil {
+			return nil, failure(pa.Unsupported, "manage_team")
+		}
+		return team.Call(ctx, q.Binding.Fence, turnID, action, args)
+	}
 	tools.listBots = func(ctx context.Context, request pa.BotDirectoryQuery) (pa.BotDirectoryPage, error) {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -589,3 +614,16 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 // botTabKept answers a Bot's release: the tab stays the Bot's, and the person
 // takes it over from the Bot's chat.
 var botTabKept = json.RawMessage(`{"kept":true,"note":"The tab stays yours so the person can take it over from your chat's browser and hand it back. Tell them what to do there; use close when you no longer need the tab."}`)
+
+func (w NativeWork) TeamAvailable(ctx context.Context) error {
+	if w.teamAvailable == nil {
+		return failure(pa.Disabled, "manage_team")
+	}
+	return w.teamAvailable(ctx)
+}
+func (w NativeWork) Team(ctx context.Context, action string, args json.RawMessage) (any, error) {
+	if w.team == nil {
+		return nil, failure(pa.Disabled, "manage_team")
+	}
+	return w.team(ctx, action, args)
+}

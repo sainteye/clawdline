@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12660,
-  "riskKeys": 5482,
-  "nonRiskCount": 7178,
+  "englishContentKeys": 12709,
+  "riskKeys": 5496,
+  "nonRiskCount": 7213,
   "groups": [
     {
       "name": "acp / other",
@@ -419,7 +419,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 636,
+      "count": 639,
       "sources": [
         null
       ],
@@ -499,7 +499,10 @@
         "capacityRow.bots.inputs_per_bot.what",
         "capacityRow.bots.inputs_per_message.what",
         "capacityRow.bots.instruction_bytes.what",
+        "capacityRow.bots.manager_approval_seconds.what",
+        "capacityRow.bots.manager_card_units.what",
         "capacityRow.bots.manager_created.what",
+        "capacityRow.bots.manager_pending.what",
         "capacityRow.bots.memory_entries.what",
         "capacityRow.bots.memory_search_results.full",
         "capacityRow.bots.memory_search_results.what",
@@ -5766,7 +5769,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 198,
+      "count": 228,
       "sources": [
         null
       ],
@@ -5826,6 +5829,26 @@
         "projectAssistants.forget",
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
+        "projectAssistants.groupBack",
+        "projectAssistants.groupCancel",
+        "projectAssistants.groupCreate",
+        "projectAssistants.groupEdit",
+        "projectAssistants.groupMembers",
+        "projectAssistants.groupMessage",
+        "projectAssistants.groupName",
+        "projectAssistants.groupOlder",
+        "projectAssistants.groupPerson",
+        "projectAssistants.groupProject",
+        "projectAssistants.groupReply",
+        "projectAssistants.groupReplyTo",
+        "projectAssistants.groupRunning",
+        "projectAssistants.groupSameProject",
+        "projectAssistants.groupSave",
+        "projectAssistants.groupSaving",
+        "projectAssistants.groupSend",
+        "projectAssistants.groupStop",
+        "projectAssistants.groupWorking",
+        "projectAssistants.groups",
         "projectAssistants.heldEarlierUnreadable",
         "projectAssistants.heldFiles",
         "projectAssistants.heldPictures",
@@ -5949,6 +5972,16 @@
         "projectAssistants.statusOneOk",
         "projectAssistants.statusShow",
         "projectAssistants.stop",
+        "projectAssistants.teamAccept",
+        "projectAssistants.teamApplying",
+        "projectAssistants.teamApproval",
+        "projectAssistants.teamCreateProposal",
+        "projectAssistants.teamDecline",
+        "projectAssistants.teamEditProposal",
+        "projectAssistants.teamExpires",
+        "projectAssistants.teamManage",
+        "projectAssistants.teamManageHint",
+        "projectAssistants.teamUnavailable",
         "projectAssistants.thinking",
         "projectAssistants.thisMachine",
         "projectAssistants.total",
@@ -7248,7 +7281,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 195,
+      "count": 197,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7370,6 +7403,8 @@
         "transparency.card.persistent-bot-routines-events.title",
         "transparency.card.persistent-bot-routines.summary",
         "transparency.card.persistent-bot-routines.title",
+        "transparency.card.persistent-bot-team.summary",
+        "transparency.card.persistent-bot-team.title",
         "transparency.card.persistent-bots.summary",
         "transparency.card.persistent-bots.title",
         "transparency.card.playbook.condition",

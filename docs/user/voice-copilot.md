@@ -94,7 +94,7 @@ spoken/audio acceptance or measured startup latency.
 
 ### Question-focused analysis
 
-Both voice engines use the same demand-only question endpoint (API level 76). The selected
+Both voice engines use the same demand-only question endpoint (API level 77). The selected
 Session's machine reads recent originals and the related user questions, then the existing small
 text model answers the actual question with exact quoted source references and explicit unknowns.
 The voice model receives that focused answer and source metadata; the large original-message
