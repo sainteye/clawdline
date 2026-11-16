@@ -5410,6 +5410,87 @@ type ProjectAssistantRosterRequest struct {
 	ProjectID string `json:"project_id,omitempty"`
 }
 
+type ProjectAssistantRoutineActionRequest struct {
+	Command          ProjectAssistantCommand `json:"command"`
+	ExpectedRevision int64                   `json:"expected_revision"`
+	Fence            ProjectAssistantFence   `json:"fence"`
+	ID               string                  `json:"id"`
+}
+
+type ProjectAssistantRoutineDefinition struct {
+	ConversationID string                           `json:"conversation_id"`
+	Deleted        bool                             `json:"deleted"`
+	Enabled        bool                             `json:"enabled"`
+	ID             string                           `json:"id"`
+	Instruction    string                           `json:"instruction"`
+	Key            ProjectAssistantBotKey           `json:"key"`
+	Name           string                           `json:"name"`
+	NextDue        string                           `json:"next_due"`
+	NextRuns       []string                         `json:"next_runs"`
+	Project        ProjectAssistantProjectScope     `json:"project"`
+	TimeoutSeconds int64                            `json:"timeout_seconds"`
+	Triggers       []ProjectAssistantRoutineTrigger `json:"triggers"`
+	Version        int64                            `json:"version"`
+}
+
+type ProjectAssistantRoutineEnabledRequest struct {
+	Command          ProjectAssistantCommand `json:"command"`
+	Enabled          bool                    `json:"enabled"`
+	ExpectedRevision int64                   `json:"expected_revision"`
+	Fence            ProjectAssistantFence   `json:"fence"`
+	ID               string                  `json:"id"`
+}
+
+type ProjectAssistantRoutineListRequest struct {
+	ConversationID string                       `json:"conversation_id"`
+	Cursor         string                       `json:"cursor"`
+	Key            ProjectAssistantBotKey       `json:"key"`
+	PageSize       int64                        `json:"page_size"`
+	Project        ProjectAssistantProjectScope `json:"project"`
+	RoutineID      string                       `json:"routine_id"`
+}
+
+type ProjectAssistantRoutineListResponse struct {
+	ContractVersion string                              `json:"contract_version"`
+	Definitions     []ProjectAssistantRoutineDefinition `json:"definitions"`
+	Fence           ProjectAssistantFence               `json:"fence"`
+	NextCursor      string                              `json:"next_cursor"`
+	Runs            []ProjectAssistantRoutineRun        `json:"runs"`
+	Source          ProjectAssistantSourceStatus        `json:"source"`
+}
+
+type ProjectAssistantRoutineRun struct {
+	CreatedAt  string                    `json:"created_at"`
+	Failure    *ProjectAssistantFailure  `json:"failure,omitempty"`
+	FinishedAt string                    `json:"finished_at"`
+	ID         string                    `json:"id"`
+	Result     string                    `json:"result"`
+	RoutineID  string                    `json:"routine_id"`
+	Source     string                    `json:"source"`
+	State      ProjectAssistantTurnState `json:"state"`
+	TurnID     string                    `json:"turn_id"`
+}
+
+type ProjectAssistantRoutineSaveRequest struct {
+	Command          ProjectAssistantCommand          `json:"command"`
+	Enabled          bool                             `json:"enabled"`
+	ExpectedRevision int64                            `json:"expected_revision"`
+	Fence            ProjectAssistantFence            `json:"fence"`
+	ID               string                           `json:"id"`
+	Instruction      string                           `json:"instruction"`
+	Name             string                           `json:"name"`
+	TimeoutSeconds   int64                            `json:"timeout_seconds"`
+	Triggers         []ProjectAssistantRoutineTrigger `json:"triggers"`
+}
+
+type ProjectAssistantRoutineTrigger struct {
+	At         int64  `json:"at"`
+	Expression string `json:"expression"`
+	Seconds    int64  `json:"seconds"`
+	TimeZone   string `json:"timeZone"`
+	Type       string `json:"type"`
+}
+
 // Revokes one standing rule for the Bot's Project (API level 66).
 type ProjectAssistantRuleRemoveRequest struct {
 	Command ProjectAssistantCommand        `json:"command"`

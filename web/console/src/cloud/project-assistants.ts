@@ -16,6 +16,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
 export const PROJECT_ASSISTANTS_ROSTER_API_LEVEL = 71
 export const PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL = 69
@@ -217,6 +218,30 @@ export class ProjectAssistantSourceClient implements SourceClient {
       else if (body) void body.cancel().catch(() => undefined)
     }
   }
+  canRoutines() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINES_API_LEVEL }
+  async routines(r: W.ProjectAssistantRoutineListRequest,s: AbortSignal) {
+    this.key(r.key)
+    if(r.project.machine_id!==this.machineID || !Number.isInteger(r.page_size) || r.page_size<1 || r.page_size>100 || !r.conversation_id || r.cursor.length>4096)throw failure("pa_invalid")
+    const suffix="/routines"+(r.routine_id?"/"+encodeURIComponent(r.routine_id)+"/runs":"")
+    const answer=await this.request<W.ProjectAssistantRoutineListResponse>(endpoint(r.key,suffix)+query({machine_id:this.machineID,project_id:r.project.project_id,canonical_id:r.project.canonical_id,kind:r.project.kind,conversation_id:r.conversation_id,cursor:r.cursor,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_ROUTINES_API_LEVEL)
+    const same=(a:W.ProjectAssistantBotKey,b:W.ProjectAssistantBotKey)=>a?.machine_id===b.machine_id&&a.bot_id===b.bot_id
+    const scope=(a:W.ProjectAssistantProjectScope)=>a?.machine_id===r.project.machine_id&&a.project_id===r.project.project_id&&a.canonical_id===r.project.canonical_id&&a.kind===r.project.kind
+    if(answer.contract_version!=="project-assistants.v1" || answer.source?.machine_id!==this.machineID || !answer.fence || !same(answer.fence.key,r.key) || !scope(answer.fence.project) || answer.fence.conversation_id!==r.conversation_id || !Array.isArray(answer.definitions) || !Array.isArray(answer.runs) || answer.definitions.length+answer.runs.length>r.page_size || typeof answer.next_cursor!=="string")throw failure("pa_scope_denied")
+    for(const d of answer.definitions)if(!same(d.key,r.key)||!scope(d.project)||d.conversation_id!==r.conversation_id)throw failure("pa_scope_denied")
+    for(const run of answer.runs)if(run.routine_id!==r.routine_id)throw failure("pa_scope_denied")
+    answer.source={...answer.source,writable:answer.source.writable&&this.currentGrant()?.writable===true};this.access=answer.source.access;this.lastStatus=answer.source
+    return answer
+  }
+  private async routineWrite(path:string,r:{command:W.ProjectAssistantCommand},s:AbortSignal,method="POST") {
+    const answer=await this.request<W.ProjectAssistantReceiptResponse>(path,s,r,method,true,PROJECT_ASSISTANTS_ROUTINES_API_LEVEL)
+    const receipt=answer?.receipt,c=receipt?.command,key=r.command.key
+    if(answer?.contract_version!=="project-assistants.v1"||!receipt?.id||!receipt.resource_id||!c||c.key?.machine_id!==key.machine_id||c.key.bot_id!==key.bot_id||c.operation!=="edit"||c.idempotency_key!==r.command.idempotency_key||!['accepted','delivered'].includes(receipt.state))throw new AssistantTransportFailure("pa_outcome_unknown",answer)
+    return answer
+  }
+  saveRoutine(r:W.ProjectAssistantRoutineSaveRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines"),r,s) }
+  enableRoutine(r:W.ProjectAssistantRoutineEnabledRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/enabled"),r,s) }
+  deleteRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)),r,s,"DELETE") }
+  testRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/runs"),r,s) }
   create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST") }
   async get(r: W.ProjectAssistantBotKey,s: AbortSignal) {
     this.key(r)
@@ -326,6 +351,13 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }
+    const routines=/^\/routines(?:\/([^/]+)\/runs)?$/.exec(tail)
+    if(routines) {
+      const fields=["machine_id","project_id","canonical_id","kind","conversation_id","cursor","page_size"]
+      if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||!/^[1-9][0-9]*$/.test(q.page_size))throw failure("pa_invalid")
+      const page_size=Number(q.page_size);if(!Number.isSafeInteger(page_size)||page_size>100)throw failure("pa_invalid")
+      return {word:"project-assistants."+(routines[1]?"routine-runs":"routines"),kind:"read" as const,fields:{key,project:{machine_id:q.machine_id,project_id:q.project_id,canonical_id:q.canonical_id,kind:q.kind},conversation_id:q.conversation_id,cursor:q.cursor,page_size,...(routines[1]?{routine_id:decodeURIComponent(routines[1])}:{})},id:""}
+    }
     if(tail==="/input") {
       const fields=["machine_id","conversation_id","message_id","id","offset"]
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||!/^(0|[1-9][0-9]*)$/.test(q.offset))throw failure("pa_invalid")
@@ -350,6 +382,12 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const command = fields.command
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
+  const routine=/^\/routines(?:\/([^/]+)(?:\/(enabled|runs))?)?$/.exec(tail)
+  if(routine) {
+    const action=method==="DELETE"&&routine[1]&&!routine[2]?"routine-delete":method==="POST"&&!routine[1]?"routine-save":method==="POST"&&routine[2]==="enabled"?"routine-enabled":method==="POST"&&routine[2]==="runs"?"routine-test":null
+    if(!action||(routine[1]&&decodeURIComponent(routine[1])!==fields.id))throw failure("pa_invalid")
+    return {word:"project-assistants."+action,kind:"action" as const,fields,id:command.idempotency_key}
+  }
   const action = !bot && method === "POST" ? "create" : bot && !tail && method === "PATCH" ? "edit" : method !== "POST" ? null :
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :

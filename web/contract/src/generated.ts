@@ -6249,6 +6249,87 @@ export interface ProjectAssistantRosterRequest {
   project_id?: string
 }
 
+export interface ProjectAssistantRoutineActionRequest {
+  command: ProjectAssistantCommand
+  expected_revision: number
+  fence: ProjectAssistantFence
+  id: string
+}
+
+export interface ProjectAssistantRoutineDefinition {
+  conversation_id: string
+  deleted: boolean
+  enabled: boolean
+  id: string
+  instruction: string
+  key: ProjectAssistantBotKey
+  name: string
+  next_due: string
+  next_runs: string[]
+  project: ProjectAssistantProjectScope
+  timeout_seconds: number
+  triggers: ProjectAssistantRoutineTrigger[]
+  version: number
+}
+
+export interface ProjectAssistantRoutineEnabledRequest {
+  command: ProjectAssistantCommand
+  enabled: boolean
+  expected_revision: number
+  fence: ProjectAssistantFence
+  id: string
+}
+
+export interface ProjectAssistantRoutineListRequest {
+  conversation_id: string
+  cursor: string
+  key: ProjectAssistantBotKey
+  page_size: number
+  project: ProjectAssistantProjectScope
+  routine_id: string
+}
+
+export interface ProjectAssistantRoutineListResponse {
+  contract_version: string
+  definitions: ProjectAssistantRoutineDefinition[]
+  fence: ProjectAssistantFence
+  next_cursor: string
+  runs: ProjectAssistantRoutineRun[]
+  source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantRoutineRun {
+  created_at: string
+  failure?: ProjectAssistantFailure
+  finished_at: string
+  id: string
+  result: string
+  routine_id: string
+  source: string
+  state: ProjectAssistantTurnState
+  turn_id: string
+}
+
+export interface ProjectAssistantRoutineSaveRequest {
+  command: ProjectAssistantCommand
+  enabled: boolean
+  expected_revision: number
+  fence: ProjectAssistantFence
+  id: string
+  instruction: string
+  name: string
+  timeout_seconds: number
+  triggers: ProjectAssistantRoutineTrigger[]
+}
+
+export interface ProjectAssistantRoutineTrigger {
+  at: number
+  expression: string
+  seconds: number
+  timeZone: string
+  type: string
+}
+
 /**
  * Revokes one standing rule for the Bot's Project (API level 66).
  */

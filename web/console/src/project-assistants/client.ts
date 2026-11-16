@@ -47,6 +47,12 @@ export interface SourceClient {
   setHidden?(request: W.ProjectAssistantVisibilityRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>
   canManage?(): boolean
+  canRoutines?(): boolean
+  routines?(request: W.ProjectAssistantRoutineListRequest, signal: AbortSignal): Promise<W.ProjectAssistantRoutineListResponse>
+  saveRoutine?(request: W.ProjectAssistantRoutineSaveRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  enableRoutine?(request: W.ProjectAssistantRoutineEnabledRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  deleteRoutine?(request: W.ProjectAssistantRoutineActionRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  testRoutine?(request: W.ProjectAssistantRoutineActionRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   /** Where the console reads a stored picture, or null when it cannot. */
   attachment?(key: W.ProjectAssistantBotKey, id: string, signal: AbortSignal): Promise<Blob>
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null

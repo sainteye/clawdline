@@ -169,6 +169,9 @@ func paHTTPSafeBotID(id string) bool {
 }
 
 func paRoute(r *http.Request) (paHTTPRoute, error) {
+	if route, ok := paRoutineRoute(r); ok {
+		return route, nil
+	}
 	const base = "/v1/project-assistants"
 	if r.URL.Path == base {
 		switch r.Method {
@@ -357,6 +360,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "routines" || route.action == "routine-runs" {
+		return h.readRoutines(r, route)
+	}
 	if route.action == "input" {
 		return h.readInput(r, route)
 	}
@@ -510,6 +516,9 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 }
 
 func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, route paHTTPRoute) (any, error) {
+	if strings.HasPrefix(route.action, "routine-") {
+		return h.writeRoutine(w, r, route)
+	}
 	s, ctx := h.options.Service, r.Context()
 	switch route.action {
 	case "create":
