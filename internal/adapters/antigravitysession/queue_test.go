@@ -134,3 +134,35 @@ func TestAQueuedGeminiMessageSurvivesARestart(t *testing.T) {
 		t.Fatalf("user turns after restart = %q", got)
 	}
 }
+
+func TestQueuedMessageIsSentImmediatelyWhenTurnIsInterrupted(t *testing.T) {
+	t.Setenv("CLW_INTERRUPT_PEER", "yes")
+	h, row, dir := fixture(t)
+	ctx := context.Background()
+	if err := h.Send(ctx, row, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SendProtocol(ctx, row, "queued follow-up", nil); err != nil {
+		t.Fatal(err)
+	}
+	// Before interrupt, first turn is hanging in mock peer.
+	// Now interrupt the running turn.
+	if err := h.InterruptProtocol(ctx, row, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Verify cancelled was recorded for turn 1.
+	waitFor(t, func() bool {
+		raw, err := os.ReadFile(filepath.Join(dir, "cancelled"))
+		return err == nil && string(raw) == row.ConversationID
+	})
+	// Release any mock hold so the queued prompt can complete.
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	prompts := filepath.Join(dir, "prompts")
+	waitFor(t, func() bool { return readFile(t, prompts) == "prompt\n" })
+	idleHost(t, h, row)
+	if got := userTurns(t, h, row); strings.Join(got, ",") != "first,queued follow-up" {
+		t.Fatalf("user turns = %q, want first,queued follow-up", got)
+	}
+}

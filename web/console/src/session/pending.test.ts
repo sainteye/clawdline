@@ -208,3 +208,19 @@ test("a `!` command settles whether or not a space followed the `!`", () => {
   q.reconcile("s", [user("!hello", T0 + 1_000)], T0 + 2_000)
   assert.deepEqual(states(q), ["accepted:hello"])
 })
+
+test("steering marks an accepted or queued card and notifies listeners", () => {
+  const p = new PendingSends()
+  p.reconcile("s", [], T0 - 1)
+  const card = p.add("s", "please interrupt and run this", [], T0, true)
+  assert.equal(card.steering, undefined)
+  let notified = 0
+  p.subscribe(() => { notified++ })
+  const updated = p.steering(card.token, true)
+  assert.equal(updated?.steering, true)
+  assert.equal(notified, 1)
+  p.steering(card.token, false)
+  assert.equal(p.card(card.token)?.steering, false)
+  assert.equal(notified, 2)
+})
+
