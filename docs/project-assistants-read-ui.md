@@ -113,7 +113,9 @@ cannot replay that effect. Known source refusals remain separate from an
 uncertain execution outcome.
 
 Every active mutation has its own tracked AbortController until its promise
-settles. Recovery, snapshot replacement and unmount abort all of them; a later
+settles. Recovery, snapshot replacement and unmount abort all of them, except
+that unmount no longer cancels a Send request already handed to the transport
+(see "A send's receipt after leaving its Chat"); a later
 mutation cannot replace the only cancellation handle of an earlier preflight.
 The complete permission attempt runs through `withPermissionRecovery`, so
 cursor expiry or a changed generation from the second detail await also
@@ -375,4 +377,49 @@ Cloud relay behavior, physical-phone acceptance or native model execution.
 CLAWDLINE_ROSTER_CLOUD_E2E_DIR=/absolute/task-owned/evidence-directory \
 BOTS_BROWSER_CLAWDLINE_DIR=/absolute/configured/browser-broker-directory \
 go test ./internal/transport/http -run '^TestProjectAssistantRosterCloudHTTP$' -count=1
+```
+
+## A send's receipt after leaving its Chat
+
+On 2026-11-16 a production Cloud Bot accepted, ran and answered one message
+while the person had already returned to the roster. Reopening the chat still
+held that message as unknown with a disabled composer: unmount had aborted the
+Send request, so the client lost a receipt the source had already written.
+
+The Send request now belongs to the host ViewState lifetime once its bytes may
+cross. Chat journals the intent, opens the request and passes it a signal that
+recovery, snapshot replacement and unwritable-source events still abort while
+the Chat is shown; leaving the Chat does not. Preflight reads and uploads are
+before the effect and are still cancelled by leaving, returning the draft.
+`HeldOutcomes.settle` applies the answer by the command's idempotency key only:
+a newer held send, a set-aside send's place, and the person's new draft and
+quote are never replaced. `endTransport` then tells any Chat for that
+account/Bot, including one opened after leaving, which shows the send as
+sending until then and adopts the journal's outcome once. The SourceClient
+still turns a revoked or changed grant into outcome unknown, so a late answer
+after revocation never reattaches. The open-request record is memory only: a
+full reload or a lost connection keeps the journaled send genuinely unknown,
+with the explicit check and set-aside; nothing is resent.
+
+This follows Codync's ownership, where the send task and its local
+`clientNonce` entry live in the per-computer `BotStore`
+(`apps/ios/Kit/Sources/CodyncUI/Store/BotStore+Sending.swift`, pinned tree
+9f67eb09) and "an eventual acknowledgement must not erase a newer draft". It
+reuses Clawdline's existing receipt and journal instead of Codync's nonce
+protocol.
+
+`TestProjectAssistantSendLifetimeBrowser` runs the actual Bots UI and Cloud
+SourceClient in a real browser against a real TCP Go Host, SQLite and a
+scripted provider. It holds the send's HTTP answer after admission, leaves and
+reopens the chat, then releases it; it also leaves during preflight, reloads
+during a held answer, and revokes after leaving. Before the fix the reopened
+chat stayed held with a locked composer; after it, four messages produce four
+provider sends and replies and nothing is resent.
+`TestProjectAssistantSendLifetimeSourceKeepsAdmittedTurnWhenClientLeaves`
+covers the source half without a browser.
+
+```sh
+CLAWDLINE_SEND_LIFETIME_E2E_DIR=/absolute/task-owned/evidence-directory \
+BOTS_BROWSER_CLAWDLINE_DIR=/absolute/configured/browser-broker-directory \
+go test ./internal/transport/http -run '^TestProjectAssistantSendLifetime' -count=1
 ```

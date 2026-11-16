@@ -40,7 +40,7 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 		return got
 	}
 	got := read(s, "GET", "")
-	if len(got) != 3 || got["workflow_skills_enabled"] || got["codegraph_enabled"] || got["space_saving_images"] {
+	if len(got) != 4 || got["workflow_skills_enabled"] || got["codegraph_enabled"] || got["space_saving_images"] || got["tool_library_suggestions_enabled"] {
 		t.Fatalf("new machine must opt in: %v", got)
 	}
 	got = read(s, "POST", `{"workflow_skills_enabled":true}`)
@@ -55,12 +55,16 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 	if !got["space_saving_images"] || !got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
 		t.Fatalf("image toggle changed other opt-ins: %v", got)
 	}
+	got = read(s, "POST", `{"tool_library_suggestions_enabled":true}`)
+	if !got["tool_library_suggestions_enabled"] || !got["space_saving_images"] || !got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
+		t.Fatalf("tool suggestions changed other opt-ins: %v", got)
+	}
 	got = read(s, "POST", `{"workflow_skills_enabled":false}`)
 	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
 		t.Fatalf("disabling skills changed codegraph: %v", got)
 	}
 	got = read(&Server{cfg: config.Config{Dir: dir}}, "GET", "")
-	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] {
+	if got["workflow_skills_enabled"] || !got["codegraph_enabled"] || !got["tool_library_suggestions_enabled"] {
 		t.Fatalf("restart did not retain machine settings: %v", got)
 	}
 	got = read(&Server{cfg: config.Config{Dir: t.TempDir()}}, "GET", "")
@@ -72,7 +76,7 @@ func TestIntegrationSettingsAreIndependentMachineOptIns(t *testing.T) {
 func TestIntegrationSettingsRejectMalformedChangesAtomically(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	for _, body := range []string{
-		`{"space_saving_images":null}`, `{"space_saving_images":"on"}`, `{"graphify_enabled":true}`, `{"workflow_skills_enabled":null}`, `{"codegraph_enabled":"on"}`,
+		`{"tool_library_suggestions_enabled":null}`, `{"tool_library_suggestions_enabled":"on"}`, `{"space_saving_images":null}`, `{"space_saving_images":"on"}`, `{"graphify_enabled":true}`, `{"workflow_skills_enabled":null}`, `{"codegraph_enabled":"on"}`,
 		`{"workflow_skills_enabled":true,"remote":true}`, `{"project":"/somewhere"}`,
 		`{"workflow_skills_enabled":true} {}`, `[]`, `null`,
 		`{"workflow_profile":"unknown","codegraph_enabled":true}`, `{"workflow_profile":null}`,

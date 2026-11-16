@@ -1,0 +1,6 @@
+.tool-suggestions-setting { padding: 14px 0; border-top: 1px solid var(--line); }
+.tool-suggestions-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tool-suggestions-row strong { min-width: 0; font-size: 15px; }
+.tool-suggestions-setting p { margin: 8px 0 0; color: var(--dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.tool-suggestions-setting button { flex-shrink: 0; }
+@media (max-width: 440px) { .tool-suggestions-row { gap: 8px; } }

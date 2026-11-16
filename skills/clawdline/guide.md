@@ -581,6 +581,18 @@ the same bytes and key. Other refusals include `invalid_project`, `unsupported_s
 `invalid_task`, `stale_session`, and the existing receipt/execution refusals. Missing
 installation, load or application receipts remain unknown. Full details: `docs/tool-library.md`.
 
+`clawdline toolbox search [terms]` reads this machine's recommendations and saved
+projects without fetching upstream or installing anything. Empty terms browse
+all sources; keywords match any term across English and Traditional Chinese
+names, summaries and Skill purposes. A failed read is not an empty library.
+Settings → Workflow and Tool library share `tool_library_suggestions_enabled`,
+off by default, through `/v1/settings/integrations`. When enabled, new Sessions
+and children receive guidance to search before substantial tasks, explain a
+suitable tool and ask whether the person wants to try it using an answer Note.
+Wait for the person's sent agreement before using the suggested tool. Existing
+conversations and resumes keep their original instructions; turning this setting
+on does not install, load or authorize tools or paid APIs.
+
 ## 2a. A Feature Root's ordinary path
 
 This is everything an ordinary Feature Root — a Session that owns one Board item — runs, in order.

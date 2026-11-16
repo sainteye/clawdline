@@ -23,7 +23,8 @@ func (s *Server) integrationSettingsRoute(w http.ResponseWriter, r *http.Request
 		}
 		codegraph, _ := values.Bool("codegraph_enabled")
 		images, _ := values.Bool("space_saving_images")
-		return map[string]any{"workflow_profile": profile, "workflow_skills_enabled": profile == "superpowers", "codegraph_enabled": codegraph, "space_saving_images": images}, nil
+		tools, _ := values.Bool("tool_library_suggestions_enabled")
+		return map[string]any{"workflow_profile": profile, "workflow_skills_enabled": profile == "superpowers", "codegraph_enabled": codegraph, "space_saving_images": images, "tool_library_suggestions_enabled": tools}, nil
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -40,7 +41,7 @@ func (s *Server) integrationSettingsRoute(w http.ResponseWriter, r *http.Request
 		}
 		changes := make(map[string]any, len(body))
 		for name, raw := range body {
-			if name != "workflow_skills_enabled" && name != "codegraph_enabled" && name != "workflow_profile" && name != "space_saving_images" {
+			if name != "workflow_skills_enabled" && name != "codegraph_enabled" && name != "workflow_profile" && name != "space_saving_images" && name != "tool_library_suggestions_enabled" {
 				writeRefusal(w, http.StatusBadRequest, "bad_request", "Not an integration setting key: "+name)
 				return
 			}

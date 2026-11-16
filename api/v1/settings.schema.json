@@ -35,6 +35,7 @@
         "browser_mode": { "type": "string", "nullable": true, "enum": ["native", "user_chrome", "isolated"] },
         "browser_notify_new_site": { "type": "boolean", "nullable": true },
         "space_saving_images": { "type": "boolean", "nullable": true },
+        "tool_library_suggestions_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "session_todo_auto_take": { "type": "boolean", "nullable": true },
@@ -342,6 +343,7 @@
         "browser_mode": { "type": "string", "nullable": true, "enum": ["native", "user_chrome", "isolated"] },
         "browser_notify_new_site": { "type": "boolean", "nullable": true },
         "space_saving_images": { "type": "boolean", "nullable": true },
+        "tool_library_suggestions_enabled": { "type": "boolean", "nullable": true },
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "hotkey": {
           "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",
@@ -655,6 +657,7 @@
       ],
       "properties": {
         "space_saving_images": { "type": "boolean", "description": "Machine-wide image review opt-in; omitted by older daemons and off by default." },
+        "tool_library_suggestions_enabled": { "type": "boolean", "description": "Suggest tools for substantial tasks in new executions; off by default. Usage requires the person to agree." },
         "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean",
@@ -671,6 +674,7 @@
       "additionalProperties": false,
       "properties": {
         "space_saving_images": { "type": "boolean", "description": "Machine-wide image review opt-in; omitted by older daemons and off by default." },
+        "tool_library_suggestions_enabled": { "type": "boolean", "description": "Suggest tools for substantial tasks in new executions; off by default. Usage requires the person to agree." },
         "workflow_profile": { "type": "string", "enum": ["clawdline", "superpowers", "poteto"], "description": "Machine-wide main workflow; omitted by older daemons." },
         "workflow_skills_enabled": {
           "type": "boolean"

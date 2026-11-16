@@ -33,6 +33,7 @@ import "../../src/ui/disclosure-motion.css"
 import "../../src/brand-handle.css"
 import "../../src/font-scale.css"
 import { createRoot } from "react-dom/client"
+import { WorkflowSettingsBlock } from "../../src/pages/settings/WorkflowSettingsBlock.js"
 import { Detail } from "../../src/session/Detail.js"
 import { activateCatalog } from "../../src/catalog.js"
 import { publish } from "../../src/legacy/bridge.js"
@@ -44,4 +45,4 @@ await loadStrings(async()=>words)
 const row = {id:"%tools",sessionId:"00000000-0000-4000-8000-000000000777",assistant:"claude",backend:"tmux",state:"idle",title:"Tool library implementation review",cwd:"/synthetic/tool-library",project:"Tool library",agents:[],shells:[],activity:{at:Date.now()/1000}}
 publish([row],row.id,"",row.id,[])
 document.documentElement.classList.remove("booting")
-createRoot(document.getElementById("root")!).render(<main style={{width:"100%",height:"100dvh",display:"flex"}}><Detail row={row} tasks={[]} onOpenSession={()=>{}} onBack={()=>{}} onDid={()=>{}} /></main>)
+createRoot(document.getElementById("root")!).render(new URLSearchParams(location.search).get("view") === "settings" ? <main style={{padding:24}}><WorkflowSettingsBlock shown /></main> : <main style={{width:"100%",height:"100dvh",display:"flex"}}><Detail row={row} tasks={[]} onOpenSession={()=>{}} onBack={()=>{}} onDid={()=>{}} /></main>)

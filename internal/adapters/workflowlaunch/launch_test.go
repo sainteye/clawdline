@@ -280,3 +280,70 @@ func TestOrderedBrowserPolicyTeachesExplicitChoicesEvenWhenAutomaticUseIsOff(t *
 		t.Fatalf("resume changed frozen launch: %q %v", resumed.Text, err)
 	}
 }
+
+func TestToolSuggestionsAreOffByDefaultAndRequireAgreementWhenEnabled(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir, root := t.TempDir(), t.TempDir()
+	service := Service{Store: st, Dir: dir, Resolve: skills.ResolveWorkflow}
+	for _, profile := range []string{"clawdline", "superpowers", "poteto"} {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": profile}); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := skills.ResolveWorkflow(profile, false)
+		for _, explicit := range []bool{false, true} {
+			if explicit {
+				if _, err := nextconfig.Open(dir).Set(map[string]any{"tool_library_suggestions_enabled": false}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			p, err := service.Prepare(ctx, root, "", "")
+			if err != nil || p.Text != before.Instructions {
+				t.Fatalf("disabled %s changed instructions: %v", profile, err)
+			}
+			l, found, err := st.WorkflowLaunchByID(ctx, p.ID)
+			if err != nil || !found || l.SnapshotID != before.Digest {
+				t.Fatalf("disabled digest changed: %+v %v", l, err)
+			}
+		}
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "clawdline", "tool_library_suggestions_enabled": true}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := service.Prepare(ctx, root, "", "")
+	if err != nil || enabled.Text != workflow.ToolLibrarySuggestionInstructions() {
+		t.Fatalf("opt-in missing: %+v %v", enabled, err)
+	}
+	if err := enabled.Bind(ctx, "%tool-test", "tool-parent"); err != nil {
+		t.Fatal(err)
+	}
+	for _, on := range []bool{false, true, false} {
+		if _, err := nextconfig.Open(dir).Set(map[string]any{"workflow_profile": "poteto", "tool_library_suggestions_enabled": on}); err != nil {
+			t.Fatal(err)
+		}
+		child, err := service.Prepare(ctx, root, "", "tool-parent")
+		want := ""
+		if on {
+			want = workflow.ToolLibrarySuggestionInstructions()
+		}
+		if err != nil || child.Text != want {
+			t.Fatalf("new child on=%v: %q %v", on, child.Text, err)
+		}
+		legacy, err := service.Prepare(ctx, root, "", "legacy-tool-parent")
+		if err != nil || legacy.Text != want {
+			t.Fatalf("legacy child on=%v: %q %v", on, legacy.Text, err)
+		}
+		resume, err := service.Prepare(ctx, root, "tool-parent", "")
+		if err != nil || resume.Text != "" {
+			t.Fatalf("resume reinjected: %+v %v", resume, err)
+		}
+		l, found, err := st.WorkflowLaunchByID(ctx, resume.ID)
+		if err != nil || !found || !l.Snapshot.ToolLibrarySuggestions {
+			t.Fatalf("resume mutated consent: %+v %v", l, err)
+		}
+	}
+}

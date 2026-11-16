@@ -8,6 +8,7 @@ import { showModalWithoutChoice } from "../modal-focus.js"
 import { libraryConnection } from "./api.js"
 import { filterProjects, localized, repositoryURL, sourceLink, toolTarget, type Library, type Prepared, type Project, type Skill } from "./model.js"
 import "./tool-library.css"
+import { ToolSuggestionsSetting } from "./ToolSuggestionsSetting.js"
 
 const w = (key: string) => nextWord(("toolLibrary" + key) as Parameters<typeof nextWord>[0])
 const name = (value: Record<string, string> | undefined) => localized(value, currentCatalogTag())
@@ -135,6 +136,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
         <button type="button" className="tl-flow-link" onClick={() => { back(); setFlow(true) }}>{w("Flow")}</button><p>{w("Existing")}</p>
       </nav>
       <div ref={body} className="tl-main">
+        {!project && !adding && !flow && <ToolSuggestionsSetting />}
         {error && <div role="alert" className="tl-error"><p>{error}</p>{retryWrite.current && <p>{w("WriteFailed")}</p>}<button type="button" disabled={busy} onClick={() => retryWrite.current ? retryWrite.current() : load()}>{w("Retry")}</button>{retryWrite.current && <button type="button" onClick={load}>{w("Loading").replace("…", "")}</button>}</div>}
         {loading && <p role="status">{w("Loading")}</p>}
         {!write && <p className="tl-notice">{w("Readonly")}</p>}

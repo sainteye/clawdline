@@ -110,6 +110,8 @@ func main() {
 			fail(err)
 		}
 		serve()
+	case "toolbox":
+		toolboxCommand(os.Args[2:])
 	case "codegraph":
 		codegraphCommand(os.Args[2:])
 	case "browser":
