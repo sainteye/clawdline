@@ -258,3 +258,84 @@ work. Codex native resume is qualified separately by the common-flow
 [installed-agent acceptance](project-assistants-native-acceptance.md); that proof
 does not qualify native fallback switching or mid-turn effects. No model recap
 calls are made.
+
+## Existing Bot settings
+
+API72 sources expose an ordered **Alternate Agents** list in the existing Bot
+settings, following Codync's `FallbacksRow`: numbered rows in try order, each
+saying when it takes over ("takes the message when <previous Agent> cannot
+start it before sending"), with Move up, Move down and Remove, and an
+"Add alternate Agent" picker. The list starts empty when nothing is stored;
+opening the form never chooses one. The picker never offers the primary or an
+Agent already in the list and disappears at `MAX_FALLBACK_AGENTS` (3, the
+source's registered `bots.fallback_agents`, not a new bound). With only the
+shipped Claude Code and Codex identities, one alternate is currently possible;
+the same list orders more once the source accepts more identities. A stored
+identity this console does not recognize is shown by its raw name and kept
+until removed. Reordering is a deliberate change and is sent; an unchanged
+order is omitted. Saving configuration never opens a provider or sends a
+prompt. Selecting an identity does not qualify an installed native adapter to
+issue the pre-send guarantee described above.
+
+Deliberate differences from Codync: no per-alternate model or login profile
+(Clawdline alternates are default-login Agent identities only), no rest/"In use"
+status rows and no switch-back button (status and switch-back are later work),
+and moves are buttons rather than a menu so they stay reachable on phones.
+
+`Bots` provides the selected immutable SourceClient through `FallbackSourceScope`;
+the form never consults the globally selected machine. An absent optional
+`canFallbacks` capability means unavailable. The production client checks API72
+again at the effect boundary whenever `fallback_agents` is present, including
+explicit clearing. Older-source metadata edits omit the field. Source authority,
+read-only/disabled status, current grants and post-await revocation keep their
+existing independent checks, including paired browser surfaces.
+
+The form captures its original version and alternate configuration on opening.
+Unchanged alternates are omitted from the edit, preserving configured data on
+unrelated saves. Fixed modes retain the existing order (it can still be removed) but offer no new alternate;
+Auto is required for the currently qualified alternate mapping. Stale and rejected
+saves keep the form. An unknown save also locks its controls, retains the visible
+selection and never generates an automatic retry. Reopening reads the actual
+source before another deliberate edit.
+
+The pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7` implementation
+was inspected directly: `apps/desktop/src/renderer/views/bots/Fallbacks.tsx:45-81`
+keeps alternates in the draft until the ordinary form save, excludes the primary
+login and starts empty; `BotEditorView.tsx:162-187` places these controls on the
+existing Agent card. `host/src/agent/bot/fallback.rs:348-411` closes the prior
+attempt and advances the same turn's original entries; `turn.rs:391-393`
+checks queued user messages independently. This UI increment uses Clawdline's
+narrower pre-send boundary, not upstream mid-turn replay or an unqualified
+native-mode stand-in.
+
+Focused helper and captured-client tests cover omission/clearing, both shipped
+identities, fixed modes, API71, read-only and revoked authority, and late
+revocation becoming an unknown write without retry. The optional
+`TestProjectAssistantFallbackSettingsBrowser` starts a real authenticated Go TCP
+source with empty SQLite and a scripted provider, then invokes the installed
+Clawdline browser CLI through `project-assistants-fallback-settings.e2e.mjs`.
+It never installs or probes a vendor executable and makes zero vendor/model/API
+requests. Set `CLAWDLINE_FALLBACK_SETTINGS_E2E_DIR` to a task-owned evidence
+directory and `BOTS_BROWSER_HOME` only for the existing browser broker's CLI.
+The product fixture itself retains its empty isolated HOME and store.
+
+The initial same-page acceptance exposed a pre-existing producer defect:
+`bot_updated` events can carry a zero-scoped `read_cursor`; the strict browser
+read validator rejects that event and retains its recovery barrier. The settings
+fixture therefore uses full source reopens between configuration saves, and
+after sending it waits on the source export before reopening to read the
+alternate's answer. This does not establish passing same-page post-edit or
+post-send event handling; the source projection needs separate integration
+before that claim. The read validator and authority fence are not relaxed by
+this increment.
+
+The browser run drives the person's configured Chrome through `clawdline
+browser` (the same broker the routines acceptance uses); set
+`BOTS_BROWSER_CLAWDLINE_DIR` to that broker's configuration directory because
+the Go fixture isolates HOME. It covers: empty list, add/save/reopen, remove,
+unrelated save omitting the field, a real send that switches to Codex before
+sending, idempotent receipt replay, Taiwan Traditional Chinese at phone width,
+API71 (control disabled with its reason, field omitted), a read-only grant
+(fieldset disabled with the read-only reason, no PATCH), a real expected-version
+conflict keeping the form, an injected lost response locking the form without
+another PATCH, and a fixed mode keeping the saved order without an Add picker.

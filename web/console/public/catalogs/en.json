@@ -12485,5 +12485,21 @@
   "transparency.card.voice-live-pacing.condition": "Only in a GPT-Live voice call. A new call reads the machine’s saved speed; asking the copilot to speak faster or slower during the call selects another existing speed setting.",
   "transparency.card.voice-live-pacing.summary": "Adds one of four pacing prompts to the speaking model: slow, unhurried, normal or quick. Chinese calls use Taiwan Traditional Chinese prompts; other interface languages use English pacing guidance without changing the chosen speaking language.",
   "transparency.card.voice-live-pacing.how": "The startup instructions contain the selected prompt. An in-call speed change sends session.instructions.append with a unique event id and null delegation id, separately from the Responses backend update. The new prompt explicitly supersedes earlier pacing directions and the setting is saved for later calls. The prompt preserves content, response length, accent and interruption rules.",
-  "transparency.card.voice-live-pacing.effect": "Asks GPT-Live to change articulation and pauses. The existing 0.8, 0.9, 1.0 and 1.1 values identify settings, not measured Live playback multipliers. A sent instruction or a saved setting does not prove audible compliance. Audio quality, speed separation and stability through repeated changes require listening acceptance; this mechanism does not create an extra model request."
+  "transparency.card.voice-live-pacing.effect": "Asks GPT-Live to change articulation and pauses. The existing 0.8, 0.9, 1.0 and 1.1 values identify settings, not measured Live playback multipliers. A sent instruction or a saved setting does not prove audible compliance. Audio quality, speed separation and stability through repeated changes require listening acceptance; this mechanism does not create an extra model request.",
+  "projectAssistants.fallbacks": "Alternate Agents",
+  "projectAssistants.fallbackIntro": "If {agent} cannot take a message before anything is sent, the next Agent in this order takes it in the same chat.",
+  "projectAssistants.fallbackEmpty": "No alternate Agents. Messages stay with this Bot's own Agent.",
+  "projectAssistants.fallbackOrder": "Alternate Agent order",
+  "projectAssistants.fallbackStepWhat": "Takes the message when {previous} cannot start it before sending.",
+  "projectAssistants.fallbackUnknownAgent": "This console does not recognize this Agent. It is kept until you remove it.",
+  "projectAssistants.fallbackAdd": "Add alternate Agent",
+  "projectAssistants.fallbackMoveUp": "Move {agent} up",
+  "projectAssistants.fallbackMoveDown": "Move {agent} down",
+  "projectAssistants.fallbackRemove": "Remove {agent}",
+  "projectAssistants.fallbackRemoveShort": "Remove",
+  "projectAssistants.fallbackHint": "An alternate is tried only when the source confirms nothing was sent and cleanup finished. Uncertain work is kept and never automatically repeated. Selecting an Agent does not qualify installed adapters for switching.",
+  "projectAssistants.fallbackUnavailable": "This source needs API 72 or newer to change alternates. Saved settings are kept.",
+  "projectAssistants.fallbackMode": "Alternates currently require Auto mode. The saved order is kept; fixed modes do not switch.",
+  "projectAssistants.fallbackSaveUnknown": "The save outcome is unknown. Your form is kept and nothing is sent again. Close and reopen settings to check the source before making another change.",
+  "projectAssistants.fallbackSaveStale": "Settings changed elsewhere. Your form is kept. Close and reopen settings to review the latest version."
 }

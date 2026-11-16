@@ -2,6 +2,8 @@ import type * as W from "@clawdline/contract"
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  /** API72 configuration support, independent of native execution qualification. */
+  canFallbacks?(): boolean
   canRoster?(): boolean
   subscribeRoster?(request: W.ProjectAssistantRosterRequest, receive: (frame: W.ProjectAssistantRosterFrame) => void, signal: AbortSignal): Promise<void>
 	canInputs?(): boolean
