@@ -77,7 +77,7 @@ func TestInstalledAgentsNativeQualification(t *testing.T) {
 			if err != nil {
 				t.Fatal("installed admission:", err)
 			}
-			if caps.NativeMemory != pa.NativeMemoryDisabled || !caps.NativeMemoryVerified || caps.Resume != (agent == pa.ClaudeCode) {
+			if caps.NativeMemory != pa.NativeMemoryDisabled || !caps.NativeMemoryVerified || !caps.Resume {
 				t.Fatal("unexpected native memory/resume contract", caps)
 			}
 			before := qualificationReopen(t, f, b.Key)

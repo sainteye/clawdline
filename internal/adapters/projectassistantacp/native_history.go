@@ -17,12 +17,20 @@ const nativeHistoryPolicy = "claude-owned-history.v1"
 
 var nativeSessionUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-type nativeHistory struct{ Root, Config, Owners, Identity string }
+type nativeHistory struct{ Root, Config, Owners, Identity, Policy string }
 
 // An execution generation is deliberately absent: a safe new process must see
 // the same native history. A changed privacy/instruction snapshot gets another
 // directory, so the old opaque context is not readable by the new process.
 func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
+	policy := nativeHistoryPolicy
+	switch q.Bot.Agent {
+	case pa.ClaudeCode:
+	case pa.Codex:
+		policy = "codex-owned-history.v1"
+	default:
+		return nativeHistory{}, refusal(pa.ScopeDenied, "native_history_agent")
+	}
 	f := q.Binding.Fence
 	if err := pa.CheckFence(f, f); err != nil {
 		return nativeHistory{}, err
@@ -40,7 +48,7 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 	epoch, _ := json.Marshal(struct {
 		Policy, Conversation    string
 		Forgotten, Instructions int64
-	}{nativeHistoryPolicy, f.ConversationID, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
+	}{policy, f.ConversationID, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
 	// Keep the byte identity of legacy main histories unchanged.
 	if q.Binding.SessionSlot != "" {
 		epoch = append(epoch, []byte("\x00"+q.Binding.SessionSlot)...)
@@ -48,7 +56,7 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 	sum := sha256.Sum256(epoch)
 	identity := hex.EncodeToString(scopeSum[:]) + "/" + hex.EncodeToString(sum[:])
 	root := filepath.Join(state, "project-assistants", "native", filepath.FromSlash(identity))
-	return nativeHistory{Root: root, Config: filepath.Join(root, "config"), Owners: filepath.Join(root, "owners"), Identity: identity}, nil
+	return nativeHistory{Root: root, Config: filepath.Join(root, "config"), Owners: filepath.Join(root, "owners"), Identity: identity, Policy: policy}, nil
 }
 
 // Reject links in every feature-owned component. No native ID or directory is
@@ -88,7 +96,7 @@ func (h nativeHistory) verifyID(id string) error {
 		return refusal(pa.ResumeUnsupported, "native_history_owner")
 	}
 	var record struct{ Policy, Identity, SessionID string }
-	if json.Unmarshal(data, &record) != nil || record.Policy != nativeHistoryPolicy || record.Identity != h.Identity || record.SessionID != id {
+	if json.Unmarshal(data, &record) != nil || record.Policy != h.Policy || record.Identity != h.Identity || record.SessionID != id {
 		return refusal(pa.ScopeDenied, "native_history_owner")
 	}
 	return nil
@@ -97,7 +105,7 @@ func (h nativeHistory) recordID(id string) error {
 	if !nativeSessionUUID.MatchString(id) {
 		return refusal(pa.Invalid, "native_session_id")
 	}
-	data, _ := json.Marshal(struct{ Policy, Identity, SessionID string }{nativeHistoryPolicy, h.Identity, id})
+	data, _ := json.Marshal(struct{ Policy, Identity, SessionID string }{h.Policy, h.Identity, id})
 	f, e := os.OpenFile(filepath.Join(h.Owners, id+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if os.IsExist(e) {
 		return h.verifyID(id)

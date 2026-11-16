@@ -254,4 +254,7 @@ and do not automatically switch. Installed native A/B/A, authoritative pre-send
 qualification, mid-turn tool/effect progress, completed-action ledger, parked
 sessions, upstream recap/catch-up, fixed-mode stand-ins, sign-in/reset telemetry,
 fallback editing/status/switch-back UI and broader exhaustion UX remain separate
-work. Codex continues to report `Resume=false`; no model recap calls are made.
+work. Codex native resume is qualified separately by the common-flow
+[installed-agent acceptance](project-assistants-native-acceptance.md); that proof
+does not qualify native fallback switching or mid-turn effects. No model recap
+calls are made.
