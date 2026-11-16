@@ -192,3 +192,142 @@ func TestAnOwnedLateResultCannotCrossAPersonsABA(t *testing.T) {
 		}
 	}
 }
+
+// A person's request scoped to one owner reaches only that owner's tabs; one
+// scoped away from Bots reaches every other tab. Admit runs at admission and
+// its refusal admits nothing: no queued command, no control change, no saved
+// choice. A tab forgotten while its picture travels returns no picture.
+func TestAPersonTargetIsCheckedAtAdmissionAndOnTheAnswer(t *testing.T) {
+	h, err := OpenProfiles("", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent []Command
+	var b *Bridge
+	forgetOnShot := 0
+	b = profilesHost(t, h, "isolated", func(c Command) Result {
+		sent = append(sent, c)
+		tab := c.Tab
+		if c.Op == "open" {
+			tab = 30 + len(sent)
+		}
+		if c.Op == "screenshot" && c.Tab == forgetOnShot {
+			b.Forget(c.Tab)
+		}
+		return Result{ID: c.ID, OK: true, Tab: tab, Value: json.RawMessage(`{"data":"eA=="}`)}
+	})
+	policy := ownedPolicy()
+	ctx := context.Background()
+	const botA, botB = BotOwnerPrefix + "a", BotOwnerPrefix + "b"
+	for _, owner := range []string{botA, botB} {
+		if _, err := h.DoOwned(ctx, owner, "open", json.RawMessage(`{"url":"https://example.com"}`), policy, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.DoSession(ctx, "session", "open", json.RawMessage(`{"url":"https://example.com"}`), policy, "", false); err != nil {
+		t.Fatal(err)
+	}
+	tabA, tabB, tabSession := 31, 32, 33
+	if b.OwnerOf(tabA) != botA || b.OwnerOf(tabB) != botB || b.OwnerOf(tabSession) != "session" {
+		t.Fatalf("owners: %q %q %q", b.OwnerOf(tabA), b.OwnerOf(tabB), b.OwnerOf(tabSession))
+	}
+	onlyA := PersonTarget{Owner: botA}
+	noBots := PersonTarget{Exclude: BotOwnerPrefix}
+	before := len(sent)
+	for _, c := range []struct {
+		target PersonTarget
+		tab    int
+	}{{onlyA, tabB}, {onlyA, tabSession}, {noBots, tabA}, {noBots, tabB}} {
+		if _, err := h.PersonDoFor(ctx, c.target, "isolated", "screenshot", c.tab, nil); err != OtherSessionsTab {
+			t.Fatalf("%+v on tab %d: %v", c.target, c.tab, err)
+		}
+		if err := h.SetPersonControlFor(c.target, "isolated", c.tab, true); err != OtherSessionsTab {
+			t.Fatalf("%+v took over tab %d: %v", c.target, c.tab, err)
+		}
+	}
+	if len(sent) != before || len(b.Status().PersonTabs) != 0 {
+		t.Fatalf("refused targets reached the host or a tab: %+v %+v", sent[before:], b.Status().PersonTabs)
+	}
+	if _, err := h.PersonDoFor(ctx, onlyA, "isolated", "screenshot", tabA, nil); err != nil {
+		t.Fatalf("Bot A's own picture: %v", err)
+	}
+	if _, err := h.PersonDoFor(ctx, noBots, "isolated", "screenshot", tabSession, nil); err != nil {
+		t.Fatalf("the Session's picture: %v", err)
+	}
+
+	// A refusal at admission admits nothing.
+	refused := &pa{}
+	failing := PersonTarget{Owner: botA, Admit: func() error { refused.calls++; return errStale }}
+	before = len(sent)
+	if _, err := h.PersonDoFor(ctx, failing, "isolated", "screenshot", tabA, nil); err != errStale {
+		t.Fatalf("picture after a failed admission: %v", err)
+	}
+	if err := h.SetPersonControlFor(failing, "isolated", tabA, true); err != errStale {
+		t.Fatalf("takeover after a failed admission: %v", err)
+	}
+	if _, err := h.PersonOpenFor(ctx, failing, botA, "https://example.com/x", "", policy); err != errStale {
+		t.Fatalf("open after a failed admission: %v", err)
+	}
+	if err := h.SetMutedFor(failing, botA, true); err != errStale {
+		t.Fatalf("mute after a failed admission: %v", err)
+	}
+	if refused.calls != 4 || len(sent) != before || len(b.Status().PersonTabs) != 0 || len(b.Status().Muted) != 0 {
+		t.Fatalf("a failed admission had an effect: calls=%d sent=%+v status=%+v", refused.calls, sent[before:], b.Status())
+	}
+	if _, err := h.PersonOpenFor(ctx, onlyA, botB, "https://example.com/x", "", policy); err != BadRequest {
+		t.Fatalf("an open under another owner's target: %v", err)
+	}
+
+	// Admit runs under the selector fence: a Session's command cannot be
+	// admitted while it runs.
+	entered, release := make(chan struct{}), make(chan struct{})
+	slow := PersonTarget{Owner: botA, Admit: func() error { close(entered); <-release; return nil }}
+	controlled := make(chan error, 1)
+	go func() { controlled <- h.SetPersonControlFor(slow, "isolated", tabA, true) }()
+	<-entered
+	sessionDone := make(chan error, 1)
+	go func() {
+		_, err := h.DoSession(ctx, "session", "read", nil, policy, "", false)
+		sessionDone <- err
+	}()
+	select {
+	case err := <-sessionDone:
+		t.Fatalf("a Session command was admitted inside Admit: %v", err)
+	default:
+	}
+	close(release)
+	if err := <-controlled; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-sessionDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetPersonControlFor(onlyA, "isolated", tabA, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// A tab forgotten while its picture travels returns no picture.
+	forgetOnShot = tabA
+	if _, err := h.PersonDoFor(ctx, onlyA, "isolated", "screenshot", tabA, nil); err != OtherSessionsTab {
+		t.Fatalf("a forgotten tab's late picture: %v", err)
+	}
+	// The unscoped engine call, used by the Bot's own tests, is unchanged.
+	if err := h.SetPersonControl("isolated", tabB, true); err != nil {
+		t.Fatalf("the unscoped takeover changed: %v", err)
+	}
+}
+
+type pa struct{ calls int }
+
+var errStale = &ExtensionError{Message: "stale"}
+
+// An audit view that names no Bot leaves every Bot's rows out.
+func TestAnAuditFilterCanLeaveBotsOut(t *testing.T) {
+	f := AuditFilter{Exclude: BotOwnerPrefix}
+	if f.matches(AuditRow{Conversation: BotOwnerPrefix + "a"}) || !f.matches(AuditRow{Conversation: "session"}) {
+		t.Fatal("Exclude did not leave out the Bot's row")
+	}
+	if !strings.HasPrefix(BotOwnerPrefix+"x", "bot-") {
+		t.Fatal("prefix")
+	}
+}
