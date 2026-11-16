@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { BotAvatar } from "./BotAvatar"
 import { words } from "./words"
+import type { BotMood } from "./working"
 import { orbPlace, quotaBarTop, setOrbPlace, subscribeOrbPlace } from "./orb-dock"
 
-export interface BotOrbProps {onOpen:(opener?:HTMLElement)=>void; language?:string; unread?:number; pendingPermissions?:number; variant?:"float"|"dock"}
+export interface BotOrbProps {onOpen:(opener?:HTMLElement)=>void; language?:string; unread?:number; pendingPermissions?:number; mood?:BotMood; variant?:"float"|"dock"}
 
 const DRAG_START = 5
 const ORB = 60
@@ -11,7 +12,7 @@ const ORB = 60
 /** The way into Bots. Floating, it is a draggable orb over the Session list;
  * dropped on the quota bar it docks there as a small icon, and dragging that
  * icon back up floats it again. A press without a drag opens Bots either way. */
-export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,variant="float"}:BotOrbProps) {
+export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,mood="idle",variant="float"}:BotOrbProps) {
   const w=words(language), count=unread+pendingPermissions
   const place=useSyncExternalStore(subscribeOrbPlace,orbPlace,orbPlace)
   const dock=useSyncExternalStore(subscribeDock,dockAvailable,dockAvailable)
@@ -74,12 +75,12 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,variant="f
   if(variant==="dock")return <span className="project-assistants pa-entry pa-dock-entry">
     <button type="button" className="pa-dock" data-ringing={ringing||undefined} data-lifted={lifted?true:undefined} aria-label={label} title={w.allBots} {...handlers}
       style={lifted?{position:"fixed",left:lifted.x-16,top:lifted.y-16,zIndex:20}:undefined}>
-      <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={20}/>{count>0&&<span key={count} className="pa-dock-badge" aria-hidden="true">{count}</span>}
+      <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={20} mood={mood}/>{count>0&&<span key={count} className="pa-dock-badge" aria-hidden="true">{count}</span>}
     </button></span>
   const at=offset??place
   return <span className="project-assistants pa-entry pa-orb-float" style={{right:at.right,bottom:at.bottom}} data-dragging={offset?true:undefined}>
     <button type="button" className="pa-orb" data-ringing={ringing||undefined} aria-label={label} {...handlers}>
-      <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={36}/>{count>0&&<span key={count} className="pa-orb-badge" aria-hidden="true">{count}</span>}
+      <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={36} mood={mood}/>{count>0&&<span key={count} className="pa-orb-badge" aria-hidden="true">{count}</span>}
     </button></span>
 }
 

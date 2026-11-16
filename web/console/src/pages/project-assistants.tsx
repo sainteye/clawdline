@@ -11,6 +11,7 @@ import { requestPage } from "../overlays/events.js"
 import { toast } from "../overlays/toast.js"
 import { words } from "../project-assistants/words.js"
 import { errorCode } from "../project-assistants/client.js"
+import { followLiveRoster } from "../project-assistants/live-roster.js"
 
 const BADGE_REFRESH_MS = 15_000
 
@@ -39,10 +40,10 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   // The orb's count follows new replies while Bots is closed, so it can ring.
   const [badgeTick,setBadgeTick] = useState(0)
   useEffect(() => {
-    if (opened) return
+    if (opened || sources.every(source=>source.canRoster?.()&&source.subscribeRoster)) return
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") setBadgeTick(n => n+1) }, BADGE_REFRESH_MS)
     return () => clearInterval(timer)
-  },[opened])
+  },[opened,sources])
   const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
   useEffect(() => {
     if (cloud || supplied || apiLevel === undefined || apiLevel < PROJECT_ASSISTANTS_API_LEVEL) return
@@ -59,6 +60,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   useEffect(() => {
     const control = new AbortController()
     for (const source of sources) void (async () => {
+      if(!opened&&source.canRoster?.()&&source.subscribeRoster)return
       try {
         const status = await source.status(control.signal)
         const readable = status.sources.some(canRead)
@@ -75,10 +77,29 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
           } while (cursor && !control.signal.aborted)
         }
         if (!control.signal.aborted) setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))
-      } catch { /* Keep the last observed badge on an offline source; revocation is filtered below. */ }
+      } catch {
+        // Keep unread counts, but cached work must stop animating on a failed read.
+        if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,items:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
+      }
     })()
     return () => control.abort()
   },[sources,opened,badgeTick])
+  useEffect(()=>{
+    if(opened)return
+    const control=new AbortController()
+    for(const source of sources){
+      if(!source.canRoster?.()||!source.subscribeRoster)continue
+      void followLiveRoster(source,()=>sources,control.signal,BADGE_REFRESH_MS,value=>{
+        if(control.signal.aborted)return
+        setMetadata(old=>{
+          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
+          const items=value.items??(value.error?previous?.items.map(item=>({...item,source:{...item.source,fresh:false}})):previous?.items)??[]
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable:value.statuses?.some(canRead)??previous?.readable??false,items}}
+        })
+      })
+    }
+    return()=>control.abort()
+  },[sources,opened])
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const admitted = current.some(([,data]) => data.readable)
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)

@@ -9,10 +9,10 @@ import { renderToStaticMarkup } from "react-dom/server"
 // module chain looks up a few elements when it loads; a page always has a
 // document, this test environment needs a stand-in.
 globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},createElement:()=>({style:{},setAttribute(){},appendChild(){},addEventListener(){}}),documentElement:{style:{},setAttribute(){},lang:"en"},body:{appendChild(){},classList:{add(){},remove(){},toggle(){},contains:()=>false}}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -190,4 +190,22 @@ test("memory opens with placeholders and a close button before its read answers"
     assert.ok(html.includes(w.memoryLoading));assert.ok(html.includes(`>${w.close}</button>`));assert.match(html,/aria-busy="true"/)
     assert.doesNotMatch(html,/<(textarea|input|fieldset)\b/);assert.ok(!html.includes(w.emptyMemory))
   }
+})
+
+test("the entry prioritizes live input over work without treating unread as activity",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal
+  const {items}=await source.list({machine_id:source.machineID,cursor:"",query:"",page_size:100},signal)
+  const idle={...items[0],unread_count:5,pending_permissions:0,status:"idle"}
+  const running={...items[1],unread_count:0,pending_permissions:0,status:"working"}
+  const waiting={...items[2],unread_count:0,pending_permissions:1,status:"needsInput"}
+  assert.equal(assistantBadge([idle],[source]).mood,"idle")
+  assert.equal(assistantBadge([idle,running],[source]).mood,"working")
+  for(const rows of [[running,waiting],[waiting,running]])assert.equal(assistantBadge(rows,[source]).mood,"needsInput")
+  for(const row of [{...waiting,bot:{...waiting.bot,hidden:true}},{...waiting,source:{...waiting.source,fresh:false}},{...waiting,source:{...waiting.source,state:"offline"}}]){
+    assert.equal(assistantBadge([running,row],[source]).mood,"working")
+  }
+  assert.equal(assistantBadge([waiting],[]).mood,"idle")
+  assert.equal(assistantBadge([waiting],[{...source,current:()=>false}]).mood,"idle")
+  assert.equal(assistantBadge([idle],[{...source,current:()=>false}]).unread,5)
+  assert.equal(assistantBadge([idle,running,waiting],[source]).unread,5)
 })

@@ -1,0 +1,97 @@
+/** Real host → roster → Chat animation acceptance with an isolated synthetic source. */
+import assert from 'node:assert/strict'
+import {createServer} from 'node:http'
+import {mkdir,writeFile} from 'node:fs/promises'
+import {fileURLToPath,pathToFileURL} from 'node:url'
+import path from 'node:path'
+import {build} from 'esbuild'
+const artifacts=process.env.BOTS_ARTIFACTS
+if(!artifacts||!process.env.PLAYWRIGHT_MODULE)throw Error('Set BOTS_ARTIFACTS and installed PLAYWRIGHT_MODULE')
+await mkdir(artifacts,{recursive:true})
+const built=await build({entryPoints:[fileURLToPath(new URL('../src/project-assistants/motion-surfaces.fixture.tsx',import.meta.url))],bundle:true,write:false,outfile:'motion.js',format:'esm',platform:'browser',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"','import.meta.env':'{}'},external:['/hero-orchestration-v4-task-clinic.webp']})
+const files=new Map(built.outputFiles.map(f=>['/'+path.basename(f.path),f.contents]))
+const server=createServer((req,res)=>{
+ const name=new URL(req.url,'http://fixture').pathname
+ if(files.has(name)){res.setHeader('Content-Type',name.endsWith('.css')?'text/css':'text/javascript');res.end(files.get(name));return}
+ if(name.startsWith('/v1/')){res.writeHead(500);res.end('No real API in this fixture');return}
+ res.setHeader('Content-Type','text/html');res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#080808;color:#fafafa;font:15px system-ui}.pane-list{height:80vh}footer{position:fixed;bottom:0;padding:12px}</style><link rel="stylesheet" href="/motion.css"><div id="app"></div><script type="module" src="/motion.js"></script>')
+})
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
+const origin=`http://127.0.0.1:${server.address().port}`;console.log(origin)
+if(process.argv.includes('--serve'))await new Promise(()=>{})
+else{
+ const pw=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href),results=[]
+ try{for(const engine of ['chromium','webkit']){
+  const browser=await pw[engine].launch({headless:true})
+  try{for(const [language,width,height] of [['en',1280,900],['zh-Hant',390,844]]){
+   const page=await browser.newPage({viewport:{width,height}}),errors=[],network=[]
+   page.on('pageerror',e=>errors.push(String(e)))
+   await page.route('**/v1/**',route=>{network.push(route.request().url());return route.abort()})
+   await page.goto(origin+'/?lang='+language)
+   const dock=page.locator('.pa-dock'),dockAvatar=dock.locator('.pa-avatar')
+   await dock.waitFor()
+   await page.waitForFunction(()=>document.querySelector('.pa-dock .pa-avatar')?.getAttribute('data-mood')==='working')
+   const dockFirst=await dockAvatar.screenshot();await page.waitForTimeout(200)
+   assert.ok(!dockFirst.equals(await dockAvatar.screenshot()),'Status-bar work animates')
+   await page.evaluate(()=>window.fixtureMotion.phase('needsInput'))
+   await page.waitForFunction(()=>document.querySelector('.pa-dock .pa-avatar')?.getAttribute('data-mood')==='needsInput')
+   await page.evaluate(()=>window.fixtureMotion.phase('working'))
+   await dock.click()
+   const row=page.locator('[data-bot-key=\'["motion","bot-0"]\']')
+   await row.waitFor();await row.click()
+   const header=page.locator('.pa-chat-header .pa-avatar'),transition=page.locator('.pa-working-transition'),indicator=page.locator('.pa-working')
+   await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar')?.getAttribute('data-mood')==='working')
+   assert.equal(await indicator.locator('canvas').count(),1,'Chat uses the actual ThinkingOrb')
+   const orb=indicator.locator('canvas')
+   assert.ok(await orb.evaluate(el=>el.getContext('2d').getImageData(0,0,el.width,el.height).data.some((v,i)=>i%4===3&&v>0)),'The thinking orb paints visible ink')
+   const orbFirst=await orb.screenshot();await page.waitForTimeout(200)
+   assert.ok(!orbFirst.equals(await orb.screenshot()),'The thinking orb visibly moves')
+   await orb.screenshot({path:path.join(artifacts,`${engine}-${language}-thinking-orb.png`)})
+   const first=await header.screenshot();await page.waitForTimeout(200)
+   assert.ok(!first.equals(await header.screenshot()),'Chat header work animates')
+   // Observe an actual blink, including the reopen, across a full upstream cycle.
+   await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar g path:last-child')?.getAttribute('transform')?.includes('scale(1 0.15)'),null,{timeout:5500,polling:20})
+   await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar g path:last-child')?.getAttribute('transform')?.includes('scale(1 1)'),null,{timeout:1000,polling:20})
+   const refresh=async()=>{
+    await page.getByRole('button',{name:language==='en'?'More actions':'更多動作',exact:true}).click()
+    await page.getByRole('menuitem',{name:language==='en'?'Check for updates':'檢查新訊息',exact:true}).click()
+   }
+   await page.evaluate(()=>window.fixtureMotion.phase('needsInput'));await refresh()
+   await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar')?.getAttribute('data-mood')==='needsInput')
+   assert.equal(await indicator.getAttribute('data-waiting'),'true')
+   await page.screenshot({path:path.join(artifacts,`${engine}-${language}-chat-waiting.png`),fullPage:true})
+   const expanded=await transition.evaluate(el=>el.getBoundingClientRect().height)
+   await page.evaluate(()=>window.fixtureMotion.phase('idle'));await refresh()
+   await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar')?.getAttribute('data-mood')==='idle')
+   assert.equal(await transition.getAttribute('aria-hidden'),'true')
+   await page.waitForTimeout(600)
+   assert.ok(await transition.evaluate(el=>el.getBoundingClientRect().height)<expanded,'Completed work releases its height')
+   assert.equal(await indicator.count(),0,'The exited working timer is unmounted')
+   await page.evaluate(()=>window.fixtureMotion.phase('working'));await refresh()
+   await page.waitForFunction(()=>document.querySelector('.pa-working-transition')?.hasAttribute('data-shown'))
+   // Reverse an exit before its cleanup timer fires; the new work must survive it.
+   await page.evaluate(()=>window.fixtureMotion.phase('idle'));await refresh()
+   await page.waitForFunction(()=>document.querySelector('.pa-working-transition')?.getAttribute('aria-hidden')==='true')
+   await page.evaluate(()=>window.fixtureMotion.phase('working'));await refresh()
+   await page.waitForFunction(()=>document.querySelector('.pa-working-transition')?.hasAttribute('data-shown'))
+   await page.waitForTimeout(500);assert.equal(await indicator.count(),1,'A quick restart cancels the old exit cleanup')
+   await page.emulateMedia({reducedMotion:'reduce'});await page.waitForTimeout(100)
+   const reduced=await header.screenshot();await page.waitForTimeout(200)
+   assert.ok(reduced.equals(await header.screenshot()),'Reduced motion freezes the lit chat avatar')
+   assert.equal(await transition.evaluate(el=>getComputedStyle(el).transitionDuration),'0s')
+   await page.screenshot({path:path.join(artifacts,`${engine}-${language}-reduced-motion.png`),fullPage:true})
+   if(width<=700)await page.getByRole('button',{name:language==='en'?'Back to Bots':'返回 Bots',exact:true}).click()
+   await page.getByRole('button',{name:language==='en'?'Collapse Bots':'收起 Bots',exact:true}).click()
+   await dock.waitFor()
+   await page.waitForFunction(()=>window.fixtureMotion.subscribers()===1)
+   await page.evaluate(()=>window.fixtureMotion.offline())
+   await page.waitForFunction(()=>document.querySelector('.pa-dock .pa-avatar')?.getAttribute('data-mood')==='idle')
+   assert.equal(await page.evaluate(()=>window.fixtureMotion.writes()),0)
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+   assert.deepEqual(errors,[]);assert.deepEqual(network,[])
+   results.push({engine,language,width,height,statusBar:true,header:true,blink:true,thinkingOrb:true,exit:true,restart:true,reducedMotion:true,offlineStops:true,modelRequests:0})
+   console.log(engine,language,'passed');await page.close()
+  }}finally{await browser.close()}
+ }}finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve))}
+ await writeFile(path.join(artifacts,'motion-evidence.json'),JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify(results))
+}

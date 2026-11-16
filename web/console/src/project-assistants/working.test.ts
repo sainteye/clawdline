@@ -1,7 +1,8 @@
+import type * as W from "@clawdline/contract"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { activityOf, elapsed, rowActivity, rosterActivity } from "./working.ts"
+import { activityOf, elapsed, rowActivity, rosterActivity, chatMood } from "./working.ts"
 // @ts-expect-error Node executes source extensions.
 import {words} from "./words.ts"
 const trace = (category: string, text: string) => ({ turn_id: "t", category, text, complete: false })
@@ -43,4 +44,14 @@ test("the roster shows a running Bot's state in the person's language",()=>{
   assert.equal(rowActivity("running", w), "工作中")
   assert.equal(rowActivity("waiting_permission", w), "等待允許")
   assert.equal(rowActivity("", w), "")
+})
+
+test("chat avatars require a current readable source and a live turn or pending input",()=>{
+  const source={machine_id:"machine",fresh:true,state:"online",readable:true,access:"interactive"} as W.ProjectAssistantSourceStatus
+  assert.equal(chatMood(source,{state:"running"} as never,0),"working")
+  assert.equal(chatMood(source,{state:"waiting_permission"} as never,0),"needsInput")
+  assert.equal(chatMood(source,{state:"running"} as never,1),"needsInput")
+  assert.equal(chatMood(source,undefined,0),"idle")
+  assert.equal(chatMood(source,{state:"succeeded"} as never,0),"idle")
+  for(const delta of [{fresh:false},{state:"offline"},{readable:false},{access:"hidden"}])assert.equal(chatMood({...source,...delta} as never,{state:"running"} as never,1),"idle")
 })

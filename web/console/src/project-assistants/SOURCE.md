@@ -97,12 +97,30 @@ the console's shipped `public/licenses/` copies for Apache-2.0 and MIT attributi
 The roster subscription is connected for local API71 sources. The encrypted
 Cloud transport continues to refuse the local-only stream URL.
 
+The chat header derives its mood from the detail head's current turn and
+pending-input count, guarded by current source freshness. `WorkingTransition`
+adapts Codync's `views/thread/WorkingTransition.tsx`, `components/Overlay.tsx`
+presence and `views/thread/thread.css` at the same pinned commit: preserve the
+last activity during the 420 ms height/opacity/transform exit, cancel cleanup
+on restart, show the initial snapshot without an entrance, and skip motion
+when requested. The chat indicator reuses `ThinkingOrb` working/listening.
+
+Both global entries receive a mood aggregated across readable, visible,
+current Bots, with needsInput before working before idle. Identity and unread
+remain independent. The host follows the existing roster stream while Bots
+is closed; snapshot-only sources retain the existing 15-second interval.
+Read/stream failures keep unread counts but mark cached activity stale.
+The host releases its stream while the open Bots view owns the subscription.
+Run `web/console/tools/project-assistants-motion.e2e.mjs` with the same
+`BOTS_ARTIFACTS` and `PLAYWRIGHT_MODULE` variables for the real host/chat/dock
+acceptance. Its synthetic source never starts a model or writes to the daemon.
+
 This removable React module implements the approved BR-01 through BR-06 presentation against `docs/project-assistants-handoff.json` (`project-assistants.v1`). It does not enable the feature, add a router entry, install an adapter, start a model, mount a recorder, or contact upstream services.
 
 ## Public entry points
 
 - `Bots(props: BotsProps)` from `Bots.tsx` receives `sources: readonly SourceClient[]`, `onClose: () => void`, and optional `language: string` (English by default), `accountKey: string`, `readerID: string`, `viewState: ViewState`, `returnFocus: HTMLElement | null`, `onOpenWork: (ProjectAssistantWorkLink) => void`, `manageHistory: boolean` (false by default), and `onSelectionChange: (ProjectAssistantBotKey | null) => void`.
-- `BotOrb(props: BotOrbProps)` from `BotOrb.tsx` receives `onOpen: (opener?: HTMLElement) => void` and optional `language`, `unread`, and `pendingPermissions`. The host sums counts only from currently readable sources. The global entry always uses the approved blob and `#e39567`; it never derives appearance from a selected Bot.
+- `BotOrb(props: BotOrbProps)` from `BotOrb.tsx` receives `onOpen: (opener?: HTMLElement) => void` and optional `language`, `unread`, `pendingPermissions`, and `mood`. The host sums counts only from currently readable sources. The global entry always uses the approved blob and `#e39567`; it never derives appearance from a selected Bot.
 - `SourceClient` is defined only in `client.ts`, with readonly `machineID`, `authorizationRevision`, generated request/response types, final `AbortSignal` arguments and optional live-roster support. It is injected. No global active-machine fetch is created here.
 - `createViewState(storage?)` from `view-state.ts` retains staged drafts, reply IDs, reading positions and recovery-required scopes. Supply one host-owned instance to preserve these through host remounts. Drafts use account namespace, machine ID and Bot ID, and flush on leaving or hiding instead of per keystroke. Without an explicit account key the source grant namespace is used, so renewed authorization does not reuse another account's drafts. The host should always supply its authenticated account namespace and reader principal.
 - `words(language)` and the exported `en` / `zhHant` tables from `words.ts` provide English and Taiwan Traditional Chinese together. Register every key as `projectAssistants.<key>` in both shipped catalogs and register this table with the source catalog checker. No shared catalog was edited by PA-04.

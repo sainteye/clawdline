@@ -10,6 +10,8 @@ import { readViewRequest, readView } from "../project-assistants/read-views.ts"
 import { RosterSSEDecoder, validateRosterRequest, RosterStreamFailure } from "../project-assistants/roster-stream.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { createViewState, canRead } from "../project-assistants/view-state.ts"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { rosterMood, type BotMood } from "../project-assistants/working.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 import type { WorkV2Item } from "../pages/work/api.js"
 
@@ -491,6 +493,13 @@ export function cloudAssistantGrants(account: string, machines: readonly CloudMa
 }
 
 export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[]) {
-  return items.reduce((count,item) => !item.bot.hidden && authorized.some(source => source.machineID === item.bot.key.machine_id) && canRead(item.source)
-    ? {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+item.pending_permissions} : count,{unread:0,pendingPermissions:0})
+  return items.reduce((count,item) => {
+    const source=authorized.find(source=>source.machineID===item.bot.key.machine_id)
+    if(item.bot.hidden||!source||!canRead(item.source))return count
+    // current() also becomes false while offline. Preserve the existing unread
+    // badge in that case, but never animate the cached activity.
+    const mood=source.current?.()===false?"idle":rosterMood(item)
+    return {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+item.pending_permissions,
+      mood:count.mood==="needsInput"||mood==="needsInput"?"needsInput" as const:count.mood==="working"||mood==="working"?"working" as const:"idle" as const}
+  },{unread:0,pendingPermissions:0,mood:"idle" as BotMood})
 }

@@ -84,6 +84,20 @@ motions follow Codync's activity cadence, adapted to line art. Reduced
 motion keeps the gradient and halo without movement. Existing saved shapes
 and colors keep the same storage and transport format.
 
+The chat header follows the current turn too. The status-bar and floating
+Bots entries summarize visible, authorized Bots: a Bot needing your answer
+takes precedence over working Bots, then the entry rests when all are idle.
+Unread counts alone do not start a working animation. Stale or disconnected
+activity stops moving while unread counts remain available. Local sources
+that support the roster stream update the closed entry from that stream;
+Cloud and older sources keep the existing snapshot refresh interval.
+
+The chat's working indicator uses the same thinking orb as the roster. It
+expands and fades in for new work, then collapses and fades out when work
+ends. A quick restart reverses the exit without removing the new activity.
+An already-running turn in the initial snapshot appears immediately, and
+reduced motion skips these transitions.
+
 A Bot keeps its own memory, as in Codync: when you tell it something lasting
 or ask it to remember, change or forget something, it does so with its
 memory tools, one short fact per entry. **Memory** in the chat lists every
