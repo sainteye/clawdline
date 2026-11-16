@@ -49,7 +49,12 @@ the message is still unsent, since GPT-Live may act on the instruction at once o
 Session's question instead of sending it.
 
 What a take does is a script in `story.mjs` (`LIVE_SCRIPTS`, `--script <name>`), so it can be
-revised without touching the recorder. `auto` is the default since a call from the list began
+revised without touching the recorder. `tour`, the default since 2026-11-17, lets the call report by itself and then opens
+three Sessions that report did not cover, each in another state: Search rebuild (finished, its
+story told while its conversation is read down), Offline sync (working, with news) and Release
+2.4 (a long run of tests, fixes and tool output that has just stopped on a decision with
+trade-offs, too much to read on a phone, so the summary is worth hearing). Opening one Session
+that wanted a decision at once showed none of that. `auto` is the default since a call from the list began
 reporting by itself: the person lets it tell the Sessions, waiting ones first and then what the
 working ones are doing, and the take goes on from there as `triage` does. It surfaced a defect:
 the report went to GPT-Live as one append of over 500 tokens, OpenAI refused it, and the call
