@@ -197,11 +197,18 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
           ? liveInstructions({ speed: snapshot.speed, brief: snapshot.brief, extra: snapshot.extra_instructions, language: document.documentElement.lang })
           : String((sessionUpdateEvent("","",{brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
         <h4>{nextWord("copilotSourceTools")}</h4>
-        <ul className="sw-copilot-tools">
-          {COPILOT_TOOLS.map((tool) => (
-            <li key={tool.name}><code>{tool.name}</code><span>{tool.description}</span></li>
-          ))}
-        </ul>
+        <div className="sw-copilot-tools-nav-box">
+          <p className="sw-hint">{nextWord("voiceToolsCardJumpHint")}</p>
+          <button
+            type="button"
+            className="sw-copilot-tools-nav-btn"
+            onClick={() => {
+              window.location.hash = "#page=voice-assistant&tab=tools"
+            }}
+          >
+            {nextWord("voiceToolsCardJump", { count: String(COPILOT_TOOLS.length) })}
+          </button>
+        </div>
       </details>
 
       {said ? <p className="sw-said sw-voice-saved" role="status">{said}</p> : null}
