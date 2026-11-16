@@ -84,10 +84,12 @@ try {
   await send("Browser.setDownloadBehavior",{behavior:"allow",downloadPath:artifacts})
   for(const [mode,lang,width] of [["local","en",1280],["local","zh-Hant",390],["cloud","en",1280],["cloud","zh-Hant",390],["read","en",390]]){
     const {targetId}=await send("Target.createTarget",{url:"about:blank"}),sessionId=await attach(targetId)
-    const run=async(expression)=>{const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
-    const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error(expression+"\n"+await run("document.body.innerText"));await new Promise(r=>setTimeout(r,50))}}
-    const click=async(label)=>run(`[...document.querySelectorAll("button")].find(b=>b.textContent===${JSON.stringify(label)}).click()`)
+    let lastExpression=""
+    const run=async(expression)=>{lastExpression=expression;const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
+    const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error("Timed out waiting for: "+expression);await new Promise(r=>setTimeout(r,50))}}
+    const click=async(label)=>run(`(()=>{const button=[...document.querySelectorAll("button")].find(b=>b.textContent===${JSON.stringify(label)});if(!button)throw Error("Missing button: "+${JSON.stringify(label)});button.click()})()`)
     const zh=lang!=="en",close=zh?"關閉":"Close",earlier=zh?"較早訊息":"Earlier messages"
+    try {
     await send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:1,mobile:width<700},sessionId)
     const historyBefore=requests.filter(r=>r.mode===mode&&r.path.includes("mode=history")).length
     await send("Page.navigate",{url:origin+"/?mode="+mode+"&lang="+lang},sessionId)
@@ -138,13 +140,31 @@ try {
     if(mode==="local"&&lang==="en"){
       await fetch(origin+"/fault?kind=delay");await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("result.bin")).click()')
       await until('!!document.querySelector(".pa-output-overlay [role=status]")');await click("Cancel download");await new Promise(r=>setTimeout(r,1400));assert.ok(await run('document.querySelector(".pa-output-overlay").textContent.includes("Download cancelled")'));assert.equal(await run('document.querySelector(".pa-output-overlay .pa-library-actions")'),null)
-      await run('document.querySelector(".pa-output-overlay header button").click()');await fetch(origin+"/fault?kind=fail");await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("result.bin")).click()');await until('!!document.querySelector(".pa-output-overlay [role=alert]")');assert.ok(await run('document.querySelector(".pa-output-overlay [role=alert]").textContent.includes("pa_not_found")'));await click("Retry");await until('!!document.querySelector(".pa-library-actions")');await run('document.querySelector(".pa-output-overlay header button").click()')
+      await run('document.querySelector(".pa-output-overlay header button").click()')
+      await fetch(origin+"/fault?kind=fail")
+      await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("result.bin")).click()')
+      await until('!!document.querySelector(".pa-output-overlay [role=alert]")')
+      assert.ok(await run('document.querySelector(".pa-output-overlay [role=alert]").textContent.includes("pa_not_found")'))
+      await click("Try again")
+      await until('!!document.querySelector(".pa-library-actions")')
+      await run('document.querySelector(".pa-output-overlay header button").click()')
     }
     const snapshots=requests.filter(r=>r.path.includes("mode=snapshot")).length
     await run('window.addLibraryItem()');await until('document.querySelectorAll("[data-library-kind]").length===5');const refreshDeadline=Date.now()+5000;while(requests.filter(r=>r.path.includes("mode=snapshot")).length===snapshots){assert.ok(Date.now()<refreshDeadline);await new Promise(r=>setTimeout(r,50))}
     assert.ok(await run('document.querySelector(".pa-library").textContent.includes("library-notes.txt")'),"refresh retains earlier pages")
     const {data}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`library-${mode}-${lang}-${width}.png`),Buffer.from(data,"base64"))
     await send("Target.closeTarget",{targetId});results.push({mode,lang,width})
+    }catch(error){
+      const failure={mode,lang,width,targetId,expression:lastExpression,error:error.stack??String(error)}
+      // Preserve the actual failed surface before the browser/profile is removed.
+      try {
+        const snapshot=await send("Runtime.evaluate",{expression:`(()=>({url:location.href,bodyText:document.body.innerText,library:document.querySelector(".pa-library")?.outerHTML??null,overlay:document.querySelector(".pa-output-overlay")?.outerHTML??null,cards:[...document.querySelectorAll(".pa-output-card")].map(card=>({kind:card.dataset.libraryKind??null,text:card.textContent,html:card.outerHTML})),buttons:[...document.querySelectorAll("button")].map(button=>({text:button.textContent,disabled:button.disabled,visible:!!button.getClientRects().length,card:!!button.closest(".pa-output-card"),overlay:!!button.closest(".pa-output-overlay")}))}))()`,returnByValue:true},sessionId)
+        failure.page=snapshot.result?.value??snapshot
+      }catch(captureError){failure.captureError=String(captureError)}
+      try {const {data}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,"library-failure.png"),Buffer.from(data,"base64"))}catch(captureError){failure.screenshotError=String(captureError)}
+      await writeFile(path.join(artifacts,"library-failure.json"),JSON.stringify(failure,null,2))
+      throw error
+    }
   }
   assert.deepEqual(await readFile(path.join(artifacts,"library-notes.txt")),Buffer.from("Explicit library input.\n"))
   await writeFile(path.join(artifacts,"library-results.json"),JSON.stringify({results,providerRequests:0},null,2));console.log(JSON.stringify(results))
