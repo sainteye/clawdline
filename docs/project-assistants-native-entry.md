@@ -119,5 +119,10 @@ Codex keeps its ChatGPT login in `$CODEX_HOME/auth.json`, so the Bot uses the
 person's own Codex home instead of a feature-owned one. Native memory is
 admitted only while `codex features list` reports `memories` false; a person
 who turns it on gets `memory_isolation_unverified` (`codex_memories_enabled`).
-Codex native resume is not qualified: each execution starts a new native
-session from the Host's filtered history and memory.
+Codex native resume is qualified for this supplied adapter by a real two-prompt
+cross-process round trip on 2026-11-16. `session/load` requires a feature-owned
+native-ID record scoped to this agent, Bot, full Project and privacy epoch;
+foreign, forgotten or changed-instruction sessions are not loaded. Missing
+native history still follows the existing typed filtered-handoff recovery.
+See [native qualification](project-assistants-native-acceptance.md) for the
+original context-loss failure, exact versions, request counts and limitations.

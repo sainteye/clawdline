@@ -3541,6 +3541,10 @@
         {
           "path": "cmd/clawdline/project_assistants.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation_codex.go",
+          "line": 1
         }
       ],
       "original": [
@@ -3940,9 +3944,10 @@
     "internal/adapters/projectassistantacp/capabilities.go": "dd080bb19784d6cf86989b33744278db2c6f52127cf05e216b7adcd1f6999e6e",
     "internal/adapters/projectassistantacp/client.go": "0574435a9215dd5fad39d3540a0828a3865ef273834bb2d5412c2657ff77bde9",
     "internal/adapters/projectassistantacp/installation.go": "3b8d67bb7961711bb0185f2c148762da416c75917f2f0e0664b7d9ea39239759",
+    "internal/adapters/projectassistantacp/installation_codex.go": "a0a718e46dbbe119abe7828e395f775bcfd5bb5193411c517e025d1d1ae22de9",
     "internal/adapters/projectassistantacp/installation_isolation.go": "37c100aba270c2e9c9b4ea9f3bc73cef5dbc611f9db7143471e8a903a227f54e",
     "internal/adapters/projectassistantacp/mcp.go": "a293ba4509c322a010394b89b6bbb904601d5549249fd7a287fb30828ad4c14f",
-    "internal/adapters/projectassistantacp/native_history.go": "7cf67113c9c36298930daad124ca61fef3f36233354897090f6ef908fa7feecb",
+    "internal/adapters/projectassistantacp/native_history.go": "76a4e6dce128045caaf145538acec3d81e8f130cd6e3e00a1fd41a2c84606176",
     "internal/adapters/projectassistantacp/routine_schema.go": "1dfc91c121f719ec9f28a7cbea79450b1d916d3e5d2ecb94defc03c12d427171",
     "internal/adapters/projectassistantacp/session_configuration.go": "2fe99a92cb2fc365b0a4c0521aa924db012eac618fa2cb71b3dc0a8315537449",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",

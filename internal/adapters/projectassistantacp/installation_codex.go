@@ -61,8 +61,8 @@ func (p *installedAgents) Open(ctx context.Context, q app.OpenRequest, sink func
 // runs as the person, in the Bot's Project, with its own tools and login.
 // Codex keeps its ChatGPT login in $CODEX_HOME/auth.json, so its home is not
 // replaced; native memory is admitted only while codex itself reports its
-// memories feature off. Each execution starts a new native session from the
-// Host's filtered context: Codex resume has not been proved, so it is off.
+// memories feature off. Native history is admitted only through feature-owned
+// records scoped to this agent, Bot, Project and privacy epoch.
 type installedCodex struct{ state string }
 
 func (p *installedCodex) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -72,6 +72,12 @@ func (p *installedCodex) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabil
 }
 
 func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if q.Bot.Agent != pa.Codex {
+		return nil, refusal(pa.AdapterNotFound, "native_provider")
+	}
 	if q.Bot.Project.Kind == pa.RepositoryProject {
 		directory, e := filepath.EvalSymlinks(q.Directory)
 		if e != nil {
@@ -86,6 +92,21 @@ func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(
 			return nil, refusal(pa.ScopeDenied, "native_state_project_overlap")
 		}
 	}
+	state, e := filepath.EvalSymlinks(p.state)
+	if e != nil {
+		return nil, refusal(pa.Invalid, "native_state")
+	}
+	history, e := historyForRequest(state, q)
+	if e == nil {
+		e = privateDirectory(state, history.Owners)
+	}
+	if e == nil && q.Resume {
+		e = history.verifyID(q.Binding.NativeSessionID)
+	}
+	if e != nil {
+		return nil, e
+	}
+	q.PersistNativeSession = true
 	config, caps, cleanup, e := p.prepare(ctx, q.Bot)
 	if e != nil {
 		cleanup()
@@ -105,6 +126,9 @@ func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(
 		return nil, e
 	}
 	session, e := provider.Open(ctx, q, sink)
+	if session != nil && e == nil {
+		e = history.recordID(session.SessionID())
+	}
 	if session == nil {
 		cleanup()
 		return nil, e
@@ -171,7 +195,7 @@ func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, 
 	caps.CLIVersion, caps.AdapterVersion = i.tools.CLIVersion, CodexAdapterVersion
 	caps.Evidence = "installed codex at or above the supported floor; supplied adapter sealed by digest; codex reports its memories feature off; the person's own Codex home and login"
 	caps.NativeMemory, caps.NativeMemoryVerified = pa.NativeMemoryDisabled, true
-	caps.Resume = false
+	caps.Resume = true
 	caps.SendMessage = true
 	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, caps, cleanup, nil
 }
