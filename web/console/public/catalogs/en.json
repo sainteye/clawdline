@@ -12400,5 +12400,20 @@
   "capacityRow.bots.fallback_agents.what": "Configured alternate default-login Agent identities for one Bot, excluding its primary. The upstream ceiling is three; only unique Claude and Codex identities are currently supported.",
   "capacityRow.bots.fallback_agents.full": "Extra, duplicate or unknown identities are refused before configuration is saved. Empty clears the chain; omission preserves it.",
   "capacityRow.bots.agent_rest_seconds.what": "Longest remaining durable Agent rest on this machine. Usage and sign-out wait one hour, credits six hours, and transient failures back off through one, five, twenty-five and sixty minutes.",
-  "capacityRow.bots.agent_rest_seconds.full": "When a rest expires, the identity becomes eligible only for the next message. Expiry never switches or repeats a running prompt. If every Agent is resting, a new message still tries its primary."
+  "capacityRow.bots.agent_rest_seconds.full": "When a rest expires, the identity becomes eligible only for the next message. Expiry never switches or repeats a running prompt. If every Agent is resting, a new message still tries its primary.",
+  "capacityRow.bots.review_pending.what": "Outstanding Bot review requests on this machine.",
+  "capacityRow.bots.review_pending.full": "At 64 outstanding requests, new requests receive typed backpressure. Completion, cancellation or unknown terminal outcomes release logical capacity once; process cleanup ownership is separate.",
+  "capacityRow.bots.review_per_sender.what": "Outstanding Bot review requests from one sender.",
+  "capacityRow.bots.review_per_sender.full": "At 16 outstanding requests from one sender, new requests from that sender are refused.",
+  "capacityRow.bots.review_hops.what": "Inherited handoffs in one Bot review chain.",
+  "capacityRow.bots.review_hops.full": "The eighth handoff is allowed; a ninth is refused. Ordinary user messages start a new chain.",
+  "capacityRow.bots.review_request_bytes.what": "UTF-8 bytes in one self-contained Bot review request.",
+  "capacityRow.bots.review_request_bytes.full": "Requests over 32000 bytes are refused without truncating the request.",
+  "capacityRow.bots.review_reply_bytes.what": "UTF-8 bytes retained as one Bot review reply.",
+  "capacityRow.bots.review_reply_bytes.full": "The reply is shortened at a valid UTF-8 boundary to 4000 bytes. Unknown diagnostic evidence is not truncated by this reply bound.",
+  "transparency.card.persistent-bot-review.title": "Bot review in the same Project",
+  "transparency.card.persistent-bot-review.condition": "Development-only Bots must be enabled. Each tool call belongs to a current authorized turn; the target must be visible in the same machine and full Project.",
+  "transparency.card.persistent-bot-review.summary": "A Bot can request an asynchronous peer review and receive one correlated reply in its own chat.",
+  "transparency.card.persistent-bot-review.how": "The Host binds sender identity, Project, conversation, turn, fence and lifetime. One SQLite transaction records both notices, the receipt and recipient request. The recipient uses its own settings, memory and permission offers; its final review becomes a structured result and one queued sender reply. Request and reply origins come from stored facts, never text. A shared waiter handles actor pressure without repeating native work.",
+  "transparency.card.persistent-bot-review.effect": "A review and its source summary can consume the respective native accounts when executed. Request turns cannot publish chat answers, files or artifacts, contact another Bot, mutate schedules or write user memory. Reply turns cannot write user memory. Unknown execution is retained rather than replayed. Restart interrupts requests; individual Bot archives containing exchanges cannot be restored. Managers, group rooms and installed-native qualification remain pending. Completed replies wait durably for existing chat queue space; Stop or restart drops unstarted delivery while retaining the result."
 }

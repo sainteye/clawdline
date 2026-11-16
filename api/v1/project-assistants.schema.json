@@ -9,38 +9,80 @@
       "description": "Local-only authorized machine roster SSE at GET /v1/project-assistants/roster-events, API 70. Cursor or Last-Event-ID resumes an applied frame; project_id optionally limits the Project. Cloud subscription and console consumption are pending.",
       "type": "object",
       "properties": {
-        "machine_id": { "type": "string" },
-        "project_id": { "type": "string" },
-        "cursor": { "type": "string" }
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        }
       },
-      "required": ["machine_id"]
+      "required": [
+        "machine_id"
+      ]
     },
     "ProjectAssistantRosterFrameType": {
       "type": "string",
-      "enum": ["hello", "snapshot", "snapshot-complete", "changes", "resync", "closure"]
+      "enum": [
+        "hello",
+        "snapshot",
+        "snapshot-complete",
+        "changes",
+        "resync",
+        "closure"
+      ]
     },
     "ProjectAssistantRosterChange": {
       "description": "Replace by key/revision; removed is a replayable tombstone. Unread is an absolute reader-specific count, never a delta. Revision is the roster journal sequence, independent of Bot version/message sequence.",
       "type": "object",
       "properties": {
-        "revision": { "type": "integer" },
-        "key": { "$ref": "#/$defs/ProjectAssistantBotKey" },
-        "removed": { "type": "boolean" },
-        "summary": { "$ref": "#/$defs/ProjectAssistantBotSummary" }
+        "revision": {
+          "type": "integer"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "removed": {
+          "type": "boolean"
+        },
+        "summary": {
+          "$ref": "#/$defs/ProjectAssistantBotSummary"
+        }
       },
-      "required": ["revision", "key", "removed"]
+      "required": [
+        "revision",
+        "key",
+        "removed"
+      ]
     },
     "ProjectAssistantRosterFrame": {
       "description": "Bounded SSE data. Apply all changes before saving its signed cursor. Initial pages pin their first machine frontier; only snapshot-complete establishes a complete initial roster. hello has no cursor. resync/closure/EOF never advance a cursor. Restart, changed scope/grant/reader or invalid cursor requires a new snapshot. Frames reuse 100 snapshot rows, 256 replay rows, 4096 cursor bytes and the 8 MiB plaintext ceiling.",
       "type": "object",
       "properties": {
-        "type": { "$ref": "#/$defs/ProjectAssistantRosterFrameType" },
-        "source_epoch": { "type": "string" },
-        "cursor": { "type": "string" },
-        "changes": { "type": "array", "items": { "$ref": "#/$defs/ProjectAssistantRosterChange" } },
-        "failure": { "$ref": "#/$defs/ProjectAssistantFailure" }
+        "type": {
+          "$ref": "#/$defs/ProjectAssistantRosterFrameType"
+        },
+        "source_epoch": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRosterChange"
+          }
+        },
+        "failure": {
+          "$ref": "#/$defs/ProjectAssistantFailure"
+        }
       },
-      "required": ["type"]
+      "required": [
+        "type"
+      ]
     },
     "ProjectAssistantAgent": {
       "type": "string",
@@ -650,6 +692,15 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantAttemptFact"
           }
+        },
+        "origin": {
+          "type": "string"
+        },
+        "exchange_id": {
+          "type": "string"
+        },
+        "hops": {
+          "type": "integer"
         }
       },
       "required": [
@@ -742,6 +793,9 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantInputFile"
           }
+        },
+        "exchange": {
+          "$ref": "#/$defs/ProjectAssistantExchange"
         }
       },
       "required": [
@@ -1741,6 +1795,12 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ProjectAssistantMemoryEntry"
+          }
+        },
+        "exchanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExchange"
           }
         }
       },
@@ -2871,6 +2931,82 @@
         "send_started",
         "effect",
         "cleanup_confirmed"
+      ]
+    },
+    "ProjectAssistantExchangeEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "conversation_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "conversation_id"
+      ]
+    },
+    "ProjectAssistantExchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source_turn_id": {
+          "type": "string"
+        },
+        "request_turn_id": {
+          "type": "string"
+        },
+        "reply_turn_id": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "reply": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "delivery": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantExchangeEndpoint"
+        },
+        "target": {
+          "$ref": "#/$defs/ProjectAssistantExchangeEndpoint"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "hops": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "source",
+        "target",
+        "source_turn_id",
+        "request_turn_id",
+        "request",
+        "outcome",
+        "revision",
+        "hops"
       ]
     }
   }

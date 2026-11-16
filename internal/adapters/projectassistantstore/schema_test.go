@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -256,7 +257,7 @@ func TestInstallerMigratesV1FactsWithoutRewritingAfterReopen(t *testing.T) {
 	verified.SetMaxOpenConns(1)
 	defer verified.Close()
 	var version int
-	if err = verified.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != 2 {
+	if err = verified.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != pa.SchemaVersion {
 		t.Fatalf("migration version=%d, want 2: %v", version, err)
 	}
 	after := databaseFacts(t, verified)
@@ -290,7 +291,7 @@ func TestInstallerMetadataFailureRollsBackDDLAndFacts(t *testing.T) {
 }
 
 func TestInstallerUnsupportedSchemasAreUntouched(t *testing.T) {
-	for _, version := range []int{0, 3, 99} {
+	for _, version := range []int{0, pa.SchemaVersion + 1, 99} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			db, _, _ := testDB(t)
 			if _, err := db.Exec(`UPDATE project_assistant_schema SET version=?`, version); err != nil {
@@ -386,7 +387,7 @@ func TestInstallerAddsFallbackRestTableAtomically(t *testing.T) {
 				t.Fatal(err)
 			}
 			var version, count int
-			if err = db.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != 2 {
+			if err = db.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != pa.SchemaVersion {
 				t.Fatal(version, err)
 			}
 			if err = db.QueryRow(`SELECT count(*) FROM project_assistant_agent_rests`).Scan(&count); err != nil || count != 0 {
@@ -409,6 +410,80 @@ func TestInstallerAddsFallbackRestTableAtomically(t *testing.T) {
 			after["@schema"] = unchanged
 			if !reflect.DeepEqual(before, after) {
 				t.Fatal("migration changed facts beyond the new rest table and version marker")
+			}
+		})
+	}
+}
+
+// This SQL was produced by fd9a962's actual v2 types, Installer and Store.
+// It includes old opaque aggregate bytes, memory/forgotten sources, receipts,
+// routines, a queued wake, fallback settings and a machine-wide Agent rest.
+func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
+	for _, fault := range []string{"", "ABORT", "IGNORE"} {
+		t.Run("metadata_"+fault, func(t *testing.T) {
+			db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "v2.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			db.SetMaxOpenConns(1)
+			fixture, err := os.ReadFile("testdata/schema2-database.sql")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.Exec(string(fixture)); err != nil {
+				t.Fatal(err)
+			}
+			var oldVersion, tableCount int
+			if err = db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&oldVersion); err != nil || oldVersion != 2 {
+				t.Fatal(oldVersion, err)
+			}
+			if err = db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name='project_assistant_exchanges'`).Scan(&tableCount); err != nil || tableCount != 0 {
+				t.Fatal("not a v2 table shape", tableCount, err)
+			}
+			if fault != "" {
+				action := "RAISE(IGNORE)"
+				if fault == "ABORT" {
+					action = "RAISE(ABORT,'metadata fault')"
+				}
+				if _, err = db.Exec(`CREATE TRIGGER fail_v3_metadata BEFORE UPDATE ON project_assistant_schema BEGIN SELECT ` + action + `; END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := databaseFacts(t, db)
+			err = (Installer{}).Install(testContext, db)
+			if fault != "" {
+				if err == nil {
+					t.Fatal("metadata fault accepted")
+				}
+				if !reflect.DeepEqual(before, databaseFacts(t, db)) {
+					t.Fatal("failed migration changed old bytes or leaked new DDL")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := databaseFacts(t, db)
+			var version int
+			if err = db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&version); err != nil || version != pa.SchemaVersion {
+				t.Fatal(version, err)
+			}
+			delete(before, "project_assistant_schema")
+			delete(after, "project_assistant_schema")
+			delete(after, "project_assistant_exchanges")
+			var oldDDL []string
+			for _, statement := range after["@schema"] {
+				if !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") {
+					oldDDL = append(oldDDL, statement)
+				}
+			}
+			after["@schema"] = oldDDL
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("upgrade changed old aggregate, routine, receipt, event, memory or fallback bytes")
+			}
+			if err = (Installer{}).Install(testContext, db); err != nil {
+				t.Fatal("reinstall", err)
 			}
 		})
 	}

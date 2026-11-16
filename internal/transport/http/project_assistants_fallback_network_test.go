@@ -80,7 +80,7 @@ func TestProjectAssistantFallbackNetworkKeepsOneAcceptedInput(t *testing.T) {
 	if h.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/messages", command, &replay) != 200 || replay.Receipt != admission {
 		t.Fatal("accepted command replay changed its receipt")
 	}
-	if exported.SchemaVersion != 2 || opens.Load() != 2 || sends.Load() != 1 || closes.Load() != 2 {
+	if exported.SchemaVersion != int64(pa.SchemaVersion) || opens.Load() != 2 || sends.Load() != 1 || closes.Load() != 2 {
 		t.Fatalf("schema=%d open/send/close=%d/%d/%d", exported.SchemaVersion, opens.Load(), sends.Load(), closes.Load())
 	}
 	t.Logf("real TCP endpoint: one admitted input, one alternate answer, one switch notice; schema=%d open/send/close=%d/%d/%d; native/model requests=0", exported.SchemaVersion, opens.Load(), sends.Load(), closes.Load())

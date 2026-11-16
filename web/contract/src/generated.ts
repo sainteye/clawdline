@@ -5479,6 +5479,28 @@ export interface ProjectAssistantEventsResponse {
   next_seq: number
 }
 
+export interface ProjectAssistantExchange {
+  delivery?: string
+  detail?: string
+  hops: number
+  id: string
+  outcome: string
+  project: ProjectAssistantProjectScope
+  reply?: string
+  reply_turn_id?: string
+  request: string
+  request_turn_id: string
+  revision: number
+  source: ProjectAssistantExchangeEndpoint
+  source_turn_id: string
+  target: ProjectAssistantExchangeEndpoint
+}
+
+export interface ProjectAssistantExchangeEndpoint {
+  conversation_id: string
+  key: ProjectAssistantBotKey
+}
+
 /**
  * Internal binding identity is safe to expose; native_session_id must be redacted
  * from public roster projections.
@@ -5504,6 +5526,7 @@ export interface ProjectAssistantExport {
   contract_version: string
   conversation: ProjectAssistantConversation
   events: ProjectAssistantEvent[]
+  exchanges?: ProjectAssistantExchange[]
   memory: ProjectAssistantMemoryRevision
   memory_entries: ProjectAssistantMemoryEntry[]
   messages: ProjectAssistantMessage[]
@@ -5666,6 +5689,7 @@ export interface ProjectAssistantMemoryWriteRequest {
 export interface ProjectAssistantMessage {
   at: string
   attachments?: ProjectAssistantAttachment[]
+  exchange?: ProjectAssistantExchange
   fence: ProjectAssistantFence
   files?: ProjectAssistantInputFile[]
   id: string
@@ -6344,8 +6368,10 @@ export interface ProjectAssistantTrace {
 
 export interface ProjectAssistantTurn {
   attempts?: ProjectAssistantAttemptFact[]
+  exchange_id?: string
   failure?: ProjectAssistantFailure
   fence: ProjectAssistantFence
+  hops?: number
   id: string
   idempotency_key: string
   instructions: ProjectAssistantInstructions
@@ -6357,6 +6383,7 @@ export interface ProjectAssistantTurn {
   joined_turn_id?: string
   memory_revision: number
   message_id: string
+  origin?: string
 
   /**
    * When the turn began running, RFC 3339; absent while it waits.

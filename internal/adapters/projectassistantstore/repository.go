@@ -353,6 +353,9 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	if m.Turn != nil {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {
+			if old.Origin != t.Origin || old.ExchangeID != t.ExchangeID || old.Hops != t.Hops {
+				return failure(pa.ScopeDenied, "turn_origin")
+			}
 			if err := checkAttemptAppend(old, t); err != nil {
 				return err
 			}
@@ -494,6 +497,9 @@ func validateAggregate(a aggregate) error {
 	}
 	pending := 0
 	for id, t := range a.Turns {
+		if err := pa.ValidateTurnOrigin(t); err != nil {
+			return err
+		}
 		// A turn joined by Send now never ran on its own, so it has no captured snapshot.
 		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed || t.JoinedTurnID != ""
 		if id == "" || id != t.ID || t.MessageID == "" || t.IdempotencyKey == "" || t.MemoryRevision < 0 || t.MemoryRevision > a.Memory.Revision || !queued && (t.MemoryRevision < 1 || t.Instructions.Revision < 1) {
@@ -536,6 +542,12 @@ func validateAggregate(a aggregate) error {
 	messageFacts := map[string]pa.Message{}
 	inputOwners := map[string]bool{}
 	for i, msg := range a.Messages {
+		if msg.Exchange != nil {
+			x := msg.Exchange
+			if x.Project != b.Project || (x.Source.Key != b.Key || x.Source.ConversationID != c.ID) && (x.Target.Key != b.Key || x.Target.ConversationID != c.ID) || x.Source.Key == x.Target.Key {
+				return failure(pa.ScopeDenied, "exchange_projection")
+			}
+		}
 		if msg.ID == "" || ids[msg.ID] || msg.Seq != int64(i+1) {
 			return failure(pa.Invalid, "message")
 		}

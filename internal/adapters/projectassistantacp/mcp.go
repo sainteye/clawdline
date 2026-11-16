@@ -382,6 +382,26 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
 	switch name {
+	case "list_bots":
+		tools, ok := s.tools.(app.CollaborationTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "collaboration_tools")
+		}
+		var q pa.BotDirectoryQuery
+		if mcpDecode(mcpEmpty(arguments), &q) != nil {
+			return nil, refusal(pa.Invalid, "bot_directory_arguments")
+		}
+		return tools.ListBots(ctx, q)
+	case "message_bot":
+		tools, ok := s.tools.(app.CollaborationTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "collaboration_tools")
+		}
+		var q pa.BotMessageRequest
+		if mcpDecode(arguments, &q) != nil {
+			return nil, refusal(pa.Invalid, "bot_message_arguments")
+		}
+		return tools.MessageBot(ctx, q)
 	case "list_routines", "save_routine", "enable_routine", "delete_routine", "test_run_routine":
 		tools, ok := s.tools.(app.RoutineTools)
 		if !ok {
@@ -510,6 +530,8 @@ func mcpTools() []any {
 	}
 	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
 	return []any{
+		tool("list_bots", "List visible Bots on this machine in your exact Project. Returns minimal metadata, never chat history or memory. 列出同一台機器、同一個完整 Project 中可見的 Bot；僅回傳基本資料，不含對話或記憶。", map[string]any{"query": text(), "cursor": text(), "page_size": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxPageRows}}),
+		tool("message_bot", "Queue one self-contained review request and return immediately. A correlated reply arrives later in your own chat. Do not wait or poll. Reuse the idempotency key after an uncertain response. 排入一個獨立完整的互審請求後立即返回；關聯回覆稍後會進入自己的對話。不要等待或輪詢；結果不明時沿用原冪等鍵。", map[string]any{"idempotency_key": text(), "target_bot_id": text(), "text": text()}, "idempotency_key", "target_bot_id", "text"),
 		tool("list_routines", "List this Bot's routines, their saved triggers and next due times. Webhook and event schedules are unsupported.", map[string]any{}),
 		tool("save_routine", "Save an explicitly requested schedule. Supply either legacy interval_seconds or triggers (OR). Triggers use type interval with seconds, once with at (Unix milliseconds), or cron with expression (five fields) and timeZone (explicit IANA name). Ask for missing calendar intent or timezone; never approximate it as an interval. Preserve unchanged triggers when editing name/instruction. Saving never test-runs. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "id": text(), "name": text(), "instruction": text(), "interval_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineIntervalSeconds}, "triggers": routineTriggerSchema(), "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineTimeoutSeconds}, "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "name", "instruction"),
 		tool("enable_routine", "Enable or pause this Bot's routine. A paused pending wake cannot send a prompt.", map[string]any{"idempotency_key": text(), "id": text(), "enabled": map[string]any{"type": "boolean"}}, "idempotency_key", "id", "enabled"),

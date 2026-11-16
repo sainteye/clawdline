@@ -90,6 +90,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_pending` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_per_sender` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_reply_bytes` | 4000 | `bytes` | `coalesce` | `diagnostics, sender` | — |
+| `bots.review_request_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.roster_check_ms` | 250 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_client_rows` | 1000 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |

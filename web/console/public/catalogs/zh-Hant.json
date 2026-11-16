@@ -12400,5 +12400,20 @@
   "capacityRow.bots.fallback_agents.what": "單一 Bot 除主要 Agent 之外所設定的預設登入身分。上游上限為三個，目前只接受不重複的 Claude 與 Codex 身分。",
   "capacityRow.bots.fallback_agents.full": "超額、重複或未知身分會在儲存設定前遭拒絕。空陣列會清除設定；省略欄位則保留原設定。",
   "capacityRow.bots.agent_rest_seconds.what": "這台機器目前最長的 Agent 持久休息剩餘時間。額度與登出等待一小時、餘額不足六小時，暫時性失敗依序等待一、五、二十五與六十分鐘。",
-  "capacityRow.bots.agent_rest_seconds.full": "休息到期後，該身分只在下一則訊息重新成為候選；不會切換或重送正在執行的提示。所有 Agent 都在休息時，新訊息仍會嘗試主要 Agent。"
+  "capacityRow.bots.agent_rest_seconds.full": "休息到期後，該身分只在下一則訊息重新成為候選；不會切換或重送正在執行的提示。所有 Agent 都在休息時，新訊息仍會嘗試主要 Agent。",
+  "capacityRow.bots.review_pending.what": "這台機器尚未結束的 Bot 互審請求。",
+  "capacityRow.bots.review_pending.full": "達到 64 筆時，以具型別的容量錯誤拒絕新請求。完成、取消或結果未知的終態只釋放一次邏輯容量；程序清理擁有權另行保留。",
+  "capacityRow.bots.review_per_sender.what": "單一發送 Bot 尚未結束的互審請求。",
+  "capacityRow.bots.review_per_sender.full": "同一發送 Bot 達到 16 筆時，拒絕它的新請求。",
+  "capacityRow.bots.review_hops.what": "同一條 Bot 互審鏈繼承的交接次數。",
+  "capacityRow.bots.review_hops.full": "允許第八次交接，拒絕第九次；一般使用者訊息會開始新鏈。",
+  "capacityRow.bots.review_request_bytes.what": "單筆完整 Bot 互審請求的 UTF-8 位元組數。",
+  "capacityRow.bots.review_request_bytes.full": "超過 32000 位元組時拒絕，不截斷請求。",
+  "capacityRow.bots.review_reply_bytes.what": "單筆 Bot 互審回覆保留的 UTF-8 位元組數。",
+  "capacityRow.bots.review_reply_bytes.full": "回覆在有效 UTF-8 邊界縮短至 4000 位元組；此上限不截斷結果未知的診斷證據。",
+  "transparency.card.persistent-bot-review.title": "同一 Project 的 Bot 互審",
+  "transparency.card.persistent-bot-review.condition": "必須啟用開發版 Bots。工具呼叫須屬於目前已授權的回合，目標必須在同一台機器及完整 Project 內且未隱藏。",
+  "transparency.card.persistent-bot-review.summary": "Bot 可以非同步請求另一個 Bot 互審，並在自己的聊天收到一筆有對應關係的回覆。",
+  "transparency.card.persistent-bot-review.how": "Host 綁定發送者身分、Project、對話、回合、執行授權與生命週期；同一筆 SQLite 交易保存雙方通知、收據與接收者請求。接收者沿用自己的設定、記憶與權限請求，最終審查成為結構化結果及一筆發送者回覆。請求與回覆來源來自保存的事實，不由文字決定。共用等待程序處理 actor 名額不足，不重做原生工作。",
+  "transparency.card.persistent-bot-review.effect": "實際執行互審與來源摘要時可能消耗各自原生帳號額度。請求回合不能發布聊天答案、檔案或 artifact、聯絡其他 Bot、修改排程或寫入使用者記憶；回覆回合也不能寫入使用者記憶。結果未知的執行會保留，不自動重送。重新啟動會中斷請求；含互審資料的個別 Bot 封存目前不支援還原。管理者、群組聊天室與已安裝原生 Agent 驗證仍待完成。已完成回覆會持久等待既有聊天佇列空間；停止或重啟會取消尚未開始的送達，並保留結果內容。"
 }

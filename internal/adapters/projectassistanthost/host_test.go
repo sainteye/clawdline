@@ -475,7 +475,7 @@ func TestHostDisabledV1HistoryMigratesBeforeReadService(t *testing.T) {
 	f.o.Broker = f.broker(t, t.TempDir())
 	f.start(t)
 	var version int
-	if err = f.o.Database.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != 2 {
+	if err = f.o.Database.QueryRow(`SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil || version != pa.SchemaVersion {
 		t.Fatalf("disabled history schema=%d, want 2: %v", version, err)
 	}
 	state, err := f.h.Status(context.Background())

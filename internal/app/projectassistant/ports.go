@@ -6,6 +6,7 @@ package projectassistant
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -107,9 +108,31 @@ type Repository interface {
 	Export(context.Context, pa.BotKey) (Export, error)
 }
 
+// CollaborationRepository owns a distinct two-aggregate transaction. No IO,
+// actor wait, or second Commit may be hidden inside these operations.
+type CollaborationRepository interface {
+	Directory(context.Context, pa.Fence, string, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
+	AdmitExchange(context.Context, ExchangeAdmission) (pa.Exchange, error)
+	Exchange(context.Context, pa.BotKey, string) (pa.Exchange, error)
+	FinishExchange(context.Context, Mutation, string) (pa.Exchange, error)
+	StartExchange(context.Context, pa.Fence, string, string) error
+	PromoteExchangeReply(context.Context, pa.BotKey, time.Time) (bool, error)
+	DropExchangeReplies(context.Context, pa.BotKey, time.Time) error
+}
+type ExchangeAdmission struct {
+	SourceFence   pa.Fence
+	SourceTurnID  string
+	SourceVersion int64
+	TargetVersion int64
+	Command       pa.Command
+	Exchange      pa.Exchange
+	At            time.Time
+}
+
 // Export is a versioned data transfer, not a second Markdown authority. Restore
 // is PA-03's installer/store operation and must reject a newer unknown version.
 type Export struct {
+	Exchanges       []pa.Exchange   `json:"Exchanges,omitempty"`
 	Routines        []pa.Routine    `json:"Routines,omitempty"`
 	RoutineRuns     []pa.RoutineRun `json:"RoutineRuns,omitempty"`
 	ContractVersion string
