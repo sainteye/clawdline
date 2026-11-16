@@ -895,6 +895,21 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return runtimeFailure(pa.Unsupported, "routine_effective_agent")
 	}
+	fromAgent := binding.Agent
+	var resumedFrom string
+	var carryKind string
+	var carryAfter int64
+	// Each configured identity keeps its own native conversation. A switch
+	// chooses only its newest confirmed-clean binding, never the active
+	// alternate's history. All execution authority is minted afresh below.
+	if !isolatedRoutine && len(bot.FallbackAgents.Agents()) > 0 && binding.Agent != effectiveAgent {
+		carryKind = "recap"
+		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent); ok {
+			binding = parked
+			binding.Revoked = false // old fence stays revoked; only the new copy is used
+			resumedFrom, carryAfter = parked.Fence.BindingID, seen
+		}
+	}
 	if binding.Agent != effectiveAgent || binding.Revoked {
 		binding.Agent = effectiveAgent
 		binding.NativeSessionID = ""
@@ -907,7 +922,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
-	resume := len(t.Attempts) == 0 && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	resume := (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	if resumedFrom != "" && resume {
+		carryKind = "catch_up"
+	} else {
+		resumedFrom, carryAfter = "", 0
+	}
 	// Preparation can block on capability, memory or history reads. Authority
 	// checked before those reads does not authorize a later execution start.
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
@@ -958,7 +978,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		ordinal = t.Attempts[len(t.Attempts)-1].Ordinal + 1
 	}
 	if len(bot.FallbackAgents.Agents()) > 0 {
-		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown"})
+		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter})
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID+"-"+binding.Fence.BindingID, t)
 	if routineRun != nil {
@@ -1086,6 +1106,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err != nil {
 		return err
 	}
+	if err = r.appendAttempt(ctx, a, &t, pa.AttemptOpened, nil, nil); err != nil {
+		return err
+	}
 	var pending PendingPrompt
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
@@ -1117,6 +1140,20 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 				return err
 			}
 		}
+		promptText := input.Text
+		if carryKind != "" && !isolatedRoutine {
+			kind, after := carryKind, carryAfter
+			if !resume {
+				kind, after = "recap", 0
+			}
+			var prefix string
+			var err error
+			handoff, prefix, err = fallbackOpening(export, t, filtered, effectiveAgent, fromAgent, kind, after)
+			if err != nil {
+				return err
+			}
+			promptText = prefix + promptText
+		}
 		// WithCurrent may wait behind a memory writer. Check again at the
 		// actual send boundary rather than trusting the pre-lock snapshot.
 		if err := r.authorized(ctx, a.key, bot.Project); err != nil {
@@ -1132,7 +1169,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		if e = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, false); e != nil {
 			return e
 		}
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: input.Text, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
 		return e
 	})
 	if err != nil {
@@ -1141,8 +1178,14 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if pending == nil {
 		return runtimeFailure(pa.ExecutionEffectUnknown, "missing_pending_prompt")
 	}
+	if err = r.appendAttempt(ctx, a, &t, pa.AttemptSent, nil, nil); err != nil {
+		return err
+	}
 	result, err := pending.Wait(ctx)
 	if err != nil {
+		return err
+	}
+	if err = r.appendAttempt(ctx, a, &t, pa.AttemptAnswered, nil, nil); err != nil {
 		return err
 	}
 	err = r.closeSession(a, session)
@@ -1503,6 +1546,11 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if count != 1 {
 		return runtimeFailure(pa.Invalid, "incoming_payload")
 	}
+	tool := e.Permission != nil || e.Trace != nil && (e.Trace.Category == "tool_call" || e.Trace.Category == "tool_call_update" || e.Trace.Category == "tool_activity")
+	if observeAttempt(&t, tool) {
+		m.Turn = &t
+		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.TurnUpdated, Turn: &t})
+	}
 	_, err = r.mutate(ctx, bot, m)
 	if err != nil {
 		return err
@@ -1581,7 +1629,17 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 		a.mu.Unlock()
 		return pa.WorkLink{}, runtimeFailure(pa.OutcomeUnknown, "inspect_work_receipt")
 	}
-	_, err = r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: q.TurnID}})
+	workMutation := Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: q.TurnID}}
+	turn, readErr := r.o.Repository.Turn(ctx, a.key, q.TurnID)
+	if readErr != nil {
+		a.mu.Unlock()
+		return pa.WorkLink{}, readErr
+	}
+	if observeAttempt(&turn, true) {
+		workMutation.Turn = &turn
+		workMutation.Events = []pa.Event{{Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}
+	}
+	_, err = r.mutate(ctx, bot, workMutation)
 	a.mu.Unlock()
 	if err != nil {
 		return pa.WorkLink{}, err

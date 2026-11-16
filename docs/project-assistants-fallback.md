@@ -107,12 +107,17 @@ go test ./internal/domain/capacity -run 'TestEveryBoundIsRegistered|TestTheRegis
 go test ./internal/transport/http -run 'TestEveryRegisteredRowIsMeasured|TestCapacityMeasuresMatchTheirSnapshot' -count=1
 ```
 
-Native qualification, mid-turn progress/ledger, parking, recap/catch-up, UI and
-deployment acceptance remain separate work. Typed quota alone
+Native qualification, complete native tool interception, UI and deployment
+acceptance remain separate work. The runtime/store extension below adds
+observed progress, per-Agent parking and quoted recap/catch-up. Typed quota alone
 never authorizes replay; EOF, partial writes, cancellation and cleanup ambiguity
 retain their existing unknown-effect barriers.
 
-## Bot Agent fallback: pre-send backend slice
+## Bot Agent fallback: initial pre-send backend slice
+
+This section records the initial slice; its progress and fresh-session-only
+behavior is extended by "Durable runtime progress and return to the primary"
+below.
 
 This is a backend implementation for configured, default-login Claude Code and
 Codex identities. It is not acceptance of the complete fallback Board step, a
@@ -220,8 +225,9 @@ The read-only reference was verified at Codync commit
 - `host/src/agent/bot/fallback.rs:348-411,485-515`: bounded advancement without a
   generic retry, and primary eligibility on the next visible turn after rest.
 - `host/src/agent/bot/fallback/park.rs:38-105`: upstream kills the old connection
-  before taking a parked session. This slice uses confirmed owned cleanup and
-  the existing filtered fresh-session handoff instead of parking native history.
+  before taking a parked session. The initial slice used confirmed owned
+  cleanup and a filtered fresh-session handoff; the runtime extension below
+  restores each Agent's own confirmed-clean history.
 
 Rests are keyed by machine plus Agent and survive Host/database reopen and Bot
 deletion. They are separate from Bot memory/export. A successful answer clears
@@ -251,8 +257,8 @@ cover read-only/foreign/stale writes and omitted versus explicit-empty edits.
 Native adapters deliberately do **not** construct `PreSendRefusal` in this
 change. Their existing typed quota errors therefore remain unknown after Send
 and do not automatically switch. Installed native A/B/A, authoritative pre-send
-qualification, mid-turn tool/effect progress, completed-action ledger, parked
-sessions, upstream recap/catch-up, fixed-mode stand-ins, sign-in/reset telemetry,
+qualification, complete native tool/effect interception, completed-action
+verification, fixed-mode stand-ins, sign-in/reset telemetry,
 fallback editing/status/switch-back UI and broader exhaustion UX remain separate
 work. Codex native resume is qualified separately by the common-flow
 [installed-agent acceptance](project-assistants-native-acceptance.md); that proof
@@ -339,3 +345,103 @@ API71 (control disabled with its reason, field omitted), a read-only grant
 (fieldset disabled with the read-only reason, no PATCH), a real expected-version
 conflict keeping the form, an injected lost response locking the form without
 another PATCH, and a fixed mode keeping the saved order without an Add picker.
+
+## Durable runtime progress and return to the primary
+
+This increment owns runtime and SQLite behavior. Contract generation, installed
+Host interception, UI presentation, schema-version coordination and deployment
+must be integrated before claiming complete product acceptance. It makes no
+model recap requests and changes no native provider's fallback qualification.
+
+`Turn.Attempts` remains an append-only ledger in the aggregate's SQLite
+transaction, together with its command receipt and events. The normal lifecycle
+is `opening -> opened -> sending -> sent -> answered -> closed`. `opened`
+records a successful Open, `sending` commits before calling Send, `sent` means
+Send returned a pending handle, and `answered` means Wait returned a result.
+These local observations do not prove remote acknowledgement or completion of
+external side effects. Cleanup is confirmed only after the owned Close succeeds.
+Provider/permission/message events atomically record sticky `native_activity`
+and `tool_activity` facts; dispatch journals tool activity with its existing
+unknown-effect receipt before contacting the WorkBridge. The event IDs and work
+links retain the underlying observations. A claimed tool completion remains a
+provider report, never authority to repeat an effect.
+
+`Engine.RecordToolActivity(ctx, fence, turnID, callID)` is an additive Host
+integration boundary. A Host must await this journal before invoking **every**
+NativeWork tool, including tools without visible output. Failure must propagate
+without invoking the tool. Calls use a source-owned stable invocation identity;
+repeating the journal is idempotent and conveys no replay permission. The
+existing owned-provider lifetime check still seals calls on refusal/cleanup.
+Until this boundary is connected in all Host callbacks, this increment proves
+observed events and runtime dispatch, not comprehensive native tool interception.
+
+The worker reloads the durable turn when it appends lifecycle facts, so a
+concurrent tool or permission event cannot be overwritten by the older worker
+snapshot. SQLite refuses removed facts, rewritten prefixes, regressing
+observations, contradictory no-effect claims and foreign resume provenance.
+All known Send/Wait activity and any unknown cleanup still prohibit automatic
+fallback, even if a provider incorrectly returns `PreSendRefusal` afterward.
+A crash or failed journal never advances to another attempt on recovery.
+
+Historical main-slot execution bindings are durable per-Agent parking slots;
+no second session table or model-generated session map is needed. On a switch,
+the runtime considers only the newest binding for the configured identity in
+the same Bot, full ProjectScope and Conversation. It requires confirmed cleanup
+and either a successful turn or a proven no-send refusal. An unsafe newest
+binding cannot resurrect older history. Each restored native session receives a
+new execution binding and generation; the historical revoked fence stays
+revoked. Native session IDs never move between Agent identities. The primary's
+rest expiry is considered on the next explicit input, and the configured
+ordered Agent chain fixes the primary/alternate mapping. Fixed non-Auto mode
+stand-ins remain unqualified and refused.
+
+A fresh replacement receives a recap through the existing provenance-checked
+SessionHandoff. A parked session receives a catch-up of chat after the last
+message it saw. The watermark is derived from successful turns on that exact
+Agent/native-session pair, excluding an input refused before Send. The carry
+also quotes terminal attempt facts, durable work links and one most-recent tool
+report per selected source turn. Tool reports use the existing continuation
+quote budget and explicitly retain `reported_text`/`reported_complete` wording.
+Nothing parses those reports to decide whether to switch, resume or replay.
+JSON quoting and a bilingual untrusted-data preamble separate this material
+from the current explicit input. Existing continuation/quote bounds, forget
+provenance, instruction revisions and native-memory policy remain authoritative;
+forgetting or changing fixed instructions starts filtered history rather than
+loading the parked opaque session.
+
+Differences from the pinned CodyNC implementation are deliberate:
+
+- `host/src/agent/bot/fallback/park.rs:38-105` uses best-effort KV parking and
+  last-chat sequence keys. This runtime uses confirmed-clean historical SQLite
+  bindings and derives the sequence from successful native-session ownership.
+  A bookkeeping failure stops the attempt rather than merely logging a warning.
+- `host/src/agent/bot/fallback.rs:226-309` distinguishes fresh recap from resumed
+  catch-up and reads tool ledgers. This implementation does the same distinction
+  with bounded, filtered source facts and quoted provider observations. It does
+  not infer file changes or command success from tool titles, start a summary
+  model or report unobserved filesystem effects as completed.
+- `host/src/agent/fallback/carry/ledger.rs:58-90` summarizes file/command/server
+  reports. Comprehensive native file/command/server effect verification is not
+  provided by this increment.
+- `host/src/chat/fallbacks.rs:1-56` implements self-managed fallback settings.
+  This increment does not give Bots permission to edit their own fallback chain;
+  the existing explicit settings and authority checks remain the mapping owner.
+- `apps/desktop/src/renderer/views/thread/HandoffNotice.tsx:24-42` expands an
+  Agent switch notice to show what was carried. Console parity needs the wire/UI
+  integration listed in the task handoff, including a deliberate switch-back
+  action if that action is exposed. No switch-back HTTP command is added here.
+
+`TestFallbackLedgerSQLiteParksAndCatchesUpAcrossReopen` exercises scripted
+A/B/A/B/A, reopening real SQLite between B and A, exact native IDs, increasing
+fences and quoted catch-up. `TestFallbackLedgerSQLiteEveryWriteFailureStopsAndSurvivesRestart`
+injects receipt failures after aggregate/event writes at start, binding, opened,
+sending, sent, answered, cleanup, terminal, activity, held, refusal, refused
+cleanup and alternate-start boundaries. It reopens SQLite and verifies that no
+input is resent. `TestFallbackLedgerSQLiteCrashSnapshotDoesNotSendAgain` reopens
+a real SQLite `VACUUM INTO` snapshot captured while a tool-active turn was still
+running; recovery preserves its unknown effects and the older queued-message
+barrier. Additional tests exercise journal idempotency, late no-send claims,
+forgets, instruction changes and foreign/unsafe parking candidates. These are
+scripted-provider results, not installed native qualification or Cloud/UI
+acceptance. All external provider/model/API request counts for these tests are
+zero.
