@@ -161,10 +161,10 @@ type NewSite struct {
 
 // Bridge is safe for concurrent use.
 type Bridge struct {
-	mu              sync.Mutex
-	queue           []Command
-	waiting         map[string]chan Result
-	inflight        map[string]string
+	mu       sync.Mutex
+	queue    []Command
+	waiting  map[string]chan Result
+	inflight map[string]string
 	// withheld marks waiting commands Poll dropped because their caller was
 	// cancelled first. It is a subset of waiting and bounded by it.
 	withheld        map[string]bool
