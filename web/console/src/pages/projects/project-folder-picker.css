@@ -25,12 +25,11 @@
 .project-folder-picker .project-folder-confirm { background: var(--accent); border-color: var(--accent); color: #18120f; font-weight: 600; }
 .project-folder-picker .project-folder-created { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
 
-/* Search above browsing (session/first-run.ts): type a Project's name instead of walking to it. */
-.project-folder-search { margin-top: 14px; }
-.project-folder-picker .project-folder-search-toggle { display: flex; align-items: center; gap: 6px; border: 0; padding: 0; background: none; color: var(--dim); }
-.project-folder-search-toggle svg { width: 16px; height: 16px; flex-shrink: 0; }
-.project-folder-search label { display: block; margin: 14px 0 6px; font-weight: 600; }
-.project-folder-search input { width: 100%; box-sizing: border-box; }
+/* Path entry and folder search share the same space. */
+.project-folder-path-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 6px; }
+.project-folder-picker .project-folder-path-heading label { margin: 0; }
+.project-folder-picker .project-folder-search-toggle { display: grid; place-items: center; flex-shrink: 0; width: 38px; padding: 6px; color: var(--dim); }
+.project-folder-search-toggle svg { width: 16px; height: 16px; }
 .project-folder-search-hint { margin: 6px 0 10px; color: var(--faint); font-size: 12px; }
 .project-folder-list button:has(.project-folder-found-where) { display: flex; align-items: baseline; gap: 10px; }
 .project-folder-found-name { min-width: 0; overflow-wrap: anywhere; }
