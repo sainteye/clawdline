@@ -179,9 +179,13 @@ API 81 adds four carried words with real runtime registration:
 `configuration-profile`. The last retains the configuration route but includes
 an explicit draft `login_profile`; old configuration requests without the key
 retain their existing saved-profile behavior. SourceClient refuses new fields
-and operations below API 81 before transport. Private Cloud relay mirrors must
-carry these four shapes and the new optional edit/team-settings fields before
-hosted acceptance; this construction does not edit or deploy that repository.
+and operations below API 81 before transport. Operation decoding and registration
+belong to the source daemon and hosted console. The private Relay validates the
+signed encrypted envelope, account, channel and device capability; it forwards
+the ciphertext without parsing Bot operation fields or secret values. New Bot
+operations do not require another operation vocabulary in the Relay. Hosted
+acceptance still requires a compatible source, console and an observed encrypted
+round trip; this construction does not claim production deployment.
 
 Feature schema 7 adds source-owned profiles/holds and protects Bot selection
 fields from older writers. Schemas 1–6 migrate transactionally without rewriting
