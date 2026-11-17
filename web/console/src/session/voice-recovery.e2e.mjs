@@ -123,3 +123,86 @@ test("voice recovery uses real browser UI, closes capture and preserves manual r
   if (directory) await writeFile(join(directory, "results.json"), JSON.stringify(results, null, 2) + "\n")
   console.log(JSON.stringify(results))
 })
+
+test("Bots composer centers borderless controls and shares dictation recovery", { skip: !enabled }, async () => {
+  const { webkit, chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
+  const directory = process.env.VOICE_UI_OUTPUT
+  if (directory) await mkdir(directory, { recursive: true })
+  const results = []
+  for (const [engine, type] of [["webkit", webkit], ["chromium", chromium]]) {
+    const browser = await type.launch({ headless: true })
+    try {
+      for (const [lang, width] of [["zh-Hant", 320], ["zh-Hant", 390], ["en", 1100]]) {
+        const page = await browser.newPage({ viewport: { width, height: 740 }, reducedMotion: "reduce" })
+        const errors = []
+        page.on("pageerror", error => errors.push(error.message))
+        const open = async (mode = "normal") => {
+          await page.goto(`${process.env.VOICE_UI_ORIGIN}/tools/fixtures/voice-recovery.html?composer=bots&mode=${mode}&lang=${lang}`)
+          await page.locator(".pa-mic").waitFor()
+        }
+        const state = expected => page.waitForFunction(expected => window.voiceFixture.snapshot().state === expected, expected)
+        const snapshot = () => page.evaluate(() => window.voiceFixture.snapshot())
+        await open()
+        const layout = await page.locator(".pa-attach").evaluate(node => {
+          const button = node.getBoundingClientRect(), icon = node.querySelector("svg").getBoundingClientRect()
+          const editor = document.querySelector(".pa-editor").getBoundingClientRect()
+          return { border: getComputedStyle(node).borderWidth, horizontal: (button.left + button.right - icon.left - icon.right) / 2,
+            vertical: (button.top + button.bottom - icon.top - icon.bottom) / 2, editor: (button.top + button.bottom - editor.top - editor.bottom) / 2 }
+        })
+        assert.equal(layout.border, "0px")
+        for (const axis of ["horizontal", "vertical", "editor"]) assert.ok(Math.abs(layout[axis]) < 1, `${axis}: ${JSON.stringify(layout)}`)
+        const editor = page.locator(".pa-editor textarea"), mic = page.locator(".pa-mic")
+        const typed = lang === "en" ? "Existing draft" : "既有草稿"
+        await editor.fill(typed)
+        await mic.click(); await state("recording")
+        assert.equal(await mic.getAttribute("aria-pressed"), "true")
+        assert.equal(await page.locator(".pa-send").isDisabled(), true)
+        // Typing continues during recording; the latest draft must receive speech.
+        await editor.fill(typed + " updated")
+        await editor.press("Enter")
+        assert.equal((await snapshot()).sends, 0)
+        await mic.click()
+        assert.deepEqual((await snapshot()).tracks, ["ended"])
+        await state("off")
+        assert.ok((await editor.inputValue()).startsWith(typed + " updated "))
+        assert.match(await editor.inputValue(), lang === "en" ? /recovered recording/ : /這段錄音已恢復/)
+        assert.equal((await snapshot()).posts, 1)
+        assert.equal((await snapshot()).sends, 0, "dictation never sends automatically")
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+        if (directory) await page.screenshot({ path: join(directory, `bots-${engine}-${lang}-${width}.png`) })
+        await page.locator(".pa-send").click()
+        assert.equal((await snapshot()).sends, 1)
+
+        await open("failed"); await mic.click(); await state("recording"); await mic.click(); await state("recoverable")
+        assert.deepEqual((await snapshot()).tracks, ["ended"])
+        await page.evaluate(() => window.voiceFixture.succeed())
+        await page.locator(".pa-voice .go").click(); await state("off")
+        assert.equal((await snapshot()).opens, 1, "retry reuses the recording")
+        assert.equal((await snapshot()).posts, 2)
+
+        await open(); await mic.click(); await state("recording")
+        await page.getByRole("button", { name: "Toggle disabled", exact: true }).click()
+        assert.equal(await mic.isDisabled(), false, "the active microphone can always be stopped")
+        await page.locator(".pa-voice .drop").click(); await state("off")
+        assert.deepEqual((await snapshot()).tracks, ["ended"])
+        assert.equal(await mic.isDisabled(), true)
+        assert.equal((await snapshot()).posts, 0)
+
+        await open(); await mic.click(); await state("recording")
+        await page.getByRole("button", { name: "Unmount input", exact: true }).click(); await state("off")
+        assert.deepEqual((await snapshot()).tracks, ["ended"])
+        assert.equal((await snapshot()).posts, 0)
+
+        await open("reading"); await mic.click(); await state("recording"); await mic.click(); await state("reading")
+        await page.getByRole("button", { name: "Unmount input", exact: true }).click(); await state("off")
+        await page.evaluate(() => window.voiceFixture.succeed())
+        assert.equal((await snapshot()).sends, 0, "late transcription cannot send after leaving the Bot")
+        assert.deepEqual(errors, [])
+        results.push({ engine, lang, width, layout, recording: "stopped", retry: "same recording", unmount: "cancelled" })
+        await page.close()
+      }
+    } finally { await browser.close() }
+  }
+  if (directory) await writeFile(join(directory, "bots-results.json"), JSON.stringify(results, null, 2) + "\n")
+  console.log(JSON.stringify(results))
+})
