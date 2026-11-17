@@ -46,12 +46,15 @@ func TestCleanupRequiresIndependentPositiveEvidence(t *testing.T) {
 	}
 }
 
-func TestEveryTerminalTaskKeepsScratchForOneDayAndLogsForAWeek(t *testing.T) {
+func TestScratchKeepsOneDayLogsOneWeekAndIdleCachesHaveNoTimeFloor(t *testing.T) {
 	now := time.Unix(1_790_000_000, 0)
 	f := Facts{ScopeAllowed: true, PathOwned: true, IdentityMatches: true, OwnerComplete: true,
 		OwnerPresence: "absent", UsePresence: "absent", OutputsSaved: true, ManifestMatches: true}
 	for _, class := range []Class{Scratch, Cache, Log} {
 		duration := 24 * time.Hour
+		if class == Cache {
+			duration = 0
+		}
 		if class == Log {
 			duration = 7 * 24 * time.Hour
 		}

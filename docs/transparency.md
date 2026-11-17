@@ -716,3 +716,13 @@ The 2026-11-17 portability correction keeps the same child storage policy in bot
 languages. Both Chinese tags share the reviewed compact wording; launch-size
 checks now choose their language explicitly instead of inheriting the host locale.
 The original briefing excerpt and source receipts follow this wording correction.
+
+Heavy callbacks now reuse a registered Project-scoped Go build cache and describe
+its source-owned consumer fence, idle capacity trimming and lack of a cache
+retention delay in both guide languages. Ordinary scratch keeps 24 hours and
+non-artifact raw logs seven days. Review of the English and Taiwan Traditional
+Chinese core-guide cards confirms their loading trigger and per-section scope
+remain accurate: this guide change does not inject a new startup instruction,
+change native permissions, create a Bot or turn a future Bot into a machine
+operator. The reviewed source receipt follows both guide files; the website
+snapshot must import this reviewed product tree after landing.

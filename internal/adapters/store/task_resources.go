@@ -39,7 +39,7 @@ func validResource(r taskresource.Resource) bool {
 	_, oerr := uuid.Parse(r.Owner.ID)
 	class := r.Class == taskresource.Cache || r.Class == taskresource.Scratch || r.Class == taskresource.Log || r.Class == taskresource.Artifact || r.Class == taskresource.Evidence
 	return err == nil && gerr == nil && oerr == nil && id.String() == r.ID && gen.String() == r.Generation &&
-		(r.Owner.Kind == "task" || r.Owner.Kind == "root") && filepath.IsAbs(r.Owner.Project) &&
+		(r.Owner.Kind == "task" || r.Owner.Kind == "root" || r.Owner.Kind == "shared_go" && r.Class == taskresource.Cache) && filepath.IsAbs(r.Owner.Project) &&
 		r.RelativePath == r.ID && r.Identity != "" && r.CreatedAt > 0 && class
 }
 
