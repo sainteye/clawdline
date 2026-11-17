@@ -31,8 +31,8 @@ export function serialSnapshotRefresh(run:(append:boolean)=>Promise<void>,signal
   }
 }
 
-/** Use the existing conversation cadence only while this roster is foreground. */
-export function followSnapshotRoster(load:()=>Promise<void>,signal:AbortSignal,refreshMs:number,document:EventTarget&{visibilityState:string},window:EventTarget) {
+/** Periodic reads follow foreground visibility; an explicit entry can read once. */
+export function followSnapshotRoster(load:()=>Promise<void>,signal:AbortSignal,refreshMs:number,document:EventTarget&{visibilityState:string},window:EventTarget,{readOnEntry=false}:{readOnEntry?:boolean}={}) {
   let timer:ReturnType<typeof setTimeout>|undefined,generation=0,paused=document.visibilityState==="hidden"
   const clear=()=>{if(timer)clearTimeout(timer);timer=undefined}
   const refresh=async()=>{
@@ -48,5 +48,8 @@ export function followSnapshotRoster(load:()=>Promise<void>,signal:AbortSignal,r
   if(signal.aborted)return
   document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",hide);window.addEventListener("pageshow",show)
   signal.addEventListener("abort",stop,{once:true})
-  void refresh()
+  // Explicitly opening the roster needs one result even when a remote browser
+  // tab starts hidden. Visibility still gates every subsequent periodic read.
+  if(readOnEntry&&paused)void load()
+  else void refresh()
 }

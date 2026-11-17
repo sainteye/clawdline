@@ -20,6 +20,14 @@ Only `Bots.manageHistory=true` owns history: one roster entry and one chat entry
 
 Every operation checks its captured grant before transport, after the response, and after JSON decoding. Revocation aborts its lifetime signal immediately; late responses cannot cross into a new source/account. Logout, device revocation, machine access failures and machine forgetting invalidate the owning registry/source. Removing one source drops its badge and permission authority while the other clients and account view state survive. An unchanged roster does not manufacture another registry snapshot or metadata refresh.
 
+Opening the roster starts one snapshot read even if the browser reports a hidden
+document. Previously, a hidden initial entry skipped both the initial read and
+the visibility-gated follower, leaving the loading state without a request.
+Visibility continues to pause periodic refreshes; foreground return catches up
+immediately. The entry read uses the existing single-flight loader, captured
+grant checks and transport deadlines. It adds no retry or timeout. A typed read
+failure reaches the existing source footer and ends the initial loading state.
+
 Pairing/read access is never treated as permission to send. Content mutations require current machine operation permission plus fresh source `interactive` access and an explicit writable status. A failed status read removes content-write authority until a fresh source answer supplies it. Read cursors are replaced with the host's reader hint, but **the server must derive and validate the principal from authenticated context**; client account strings and `reader_id` are not authorization. Local uses `local`. A trustworthy same-principal mapping across Cloud devices remains a backend integration acceptance requirement.
 
 The local host discovers source IDs from the source status response only after the existing health feed reports API level 56. CloudGate supplies all authorized account machine descriptors, including unavailable machines as typed source states. Each Cloud transport captures its machine; it does not use `install.ts`'s active reader or `captureMachineFetch()`.
@@ -78,6 +86,25 @@ The matrix is Chromium/WebKit × 320/390/1440 × English/Traditional Chinese. As
 No new resource bound is introduced. Metadata uses the existing list page size 100 and follows each opaque source cursor serially, rejecting repeated cursors. It does not poll. Existing module list/history/events sizes 100/100/256, the 3,000 ms event refresh and 3,600,000 ms separator remain the module owner's capacities.
 
 Production Cloud vocabulary/decoders, trusted cross-device reader principals, real native adapter enforcement, physical phone gestures/keyboard, real voice/media coexistence, persistence/restart, task-only navigation, deployment, dev installation and release are separate integration evidence. A synthetic matrix or a bundle build does not prove them.
+
+`TestProjectAssistantHiddenRosterEntryBrowser` injects a hidden document before
+mounting the actual `Bots` component. Its English/Traditional Chinese desktop
+and narrow-width cases read through the captured Cloud source client, closed
+Cloud decoder, authenticated HTTP Host and SQLite. An injected `pa_offline`
+checks that failure ends loading without a list read or an empty success. The
+outer encrypted carrier and provider are local doubles; no prompt is sent.
+Optional `BOTS_BASELINE` points at an existing checkout to demonstrate the old
+hidden-entry loading state with zero roster requests under the same conditions.
+
+```sh
+CLAWDLINE_ROSTER_ENTRY_BROWSER_DIR=/task-owned/evidence-directory \
+go test ./internal/transport/http \
+  -run '^TestProjectAssistantHiddenRosterEntryBrowser$' -count=1 -v
+```
+
+This controlled fault demonstrates the hidden-entry defect. It does not prove
+that a production loading observation had the same cause; that requires the
+deployed version and the affected viewer's own request/visibility evidence.
 
 ## Removal
 
