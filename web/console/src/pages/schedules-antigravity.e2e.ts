@@ -16,7 +16,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const now = () => Math.floor(Date.now() / 1000)
 let mode = "ready", language = "en"
 let sends: string[] = [], inventoryReads: string[] = []
-let defaults: Record<string,unknown> = {}, writes: any[] = []
+let defaults: Record<string,unknown> = {}, writes: any[] = [], runRequests: any[] = []
 const scheduleID = "11111111-1111-4111-8111-111111111111"
 const record = () => ({ id:scheduleID, file:scheduleID+".json",title:"Synthetic native schedule", enabled:true, close_tab:"on_success",catch_up_hours:6,notify_on_failure:true,runs:[],webhook_binding_availability:"unbound",when:{trigger_only:true},trigger_only:true,task:{assistant:"antigravity",project_dir:"/work/fixture",instructions:"Synthetic instructions",model:"native-synthetic",reasoning_effort:mode==="unknown-effort"?"future-native":"max"}})
 const defaultSnapshot = () => ({codex_default_model:null,claude_default_model:null,codex_default_effort:null,antigravity_default_model:"native-synthetic",antigravity_default_effort:"max",models:{codex:[],claude:[],antigravity:[]},...defaults})
@@ -64,6 +64,13 @@ function daemon(): Server {
    return json(res,200,defaultSnapshot())
   }
   if (path === "/v1/auth/status") return json(res,200,{authenticated:true,canSend:true,local:true,capabilities:["read","send","admin"]})
+  if (path === "/v1/orchestrator/schedules/"+scheduleID+"/run" && req.method === "POST") {
+    let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{
+      const input=JSON.parse(body);runRequests.push(input)
+      if(mode==="active" && !input.force) return json(res,409,{error:{code:"schedule_active",message:"Synthetic active run"}})
+      json(res,200,{ok:true,task_id:"synthetic-run"})
+    });return
+  }
   if (path === "/v1/orchestrator/schedules") return json(res,200,{at:now(),schedules:[{...record(),assistant:"antigravity",project_dir:"/work/fixture",at:"",days:[]}]})
   if(path === "/v1/orchestrator/schedules/"+scheduleID){
     if(req.method === "PATCH"){let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{writes.push(JSON.parse(body));json(res,200,{ok:true,schedule:{id:scheduleID,title:"Synthetic native schedule",enabled:true}})});return}
@@ -286,7 +293,7 @@ before(async () => {
 
 after(async () => {
   browser?.close()
-  if (browserProcess && browserProcess.exitCode === null) {
+  if (browserProcess && browserProcess.exitCode === null && browserProcess.signalCode === null) {
     const gone = new Promise((ok) => browserProcess.once("exit", ok))
     browserProcess.kill()
     await gone
@@ -365,3 +372,35 @@ test("unknown saved effort remains visible; missing readiness cannot save",{time
   }
  }finally{await tab.close()}
 })
+
+for (const [label,width,height,mobile] of [["desktop",1280,800,false],["phone",390,844,true]] as const) for(const lang of ["en","zh-Hant"]) {
+ test(`${label} ${lang}: Run now uses an in-app decision even when native confirmation cancels`,{timeout:45000},async()=>{
+  mode="ready";language=lang;runRequests=[]
+  const tab=await Tab.open(browser,width,height,mobile)
+  try {
+   await tab.go("/?run-confirm=1#page=sessions")
+   await tab.until("schedule is listed",s=>s.text.includes("Synthetic native schedule"))
+   await tab.click('.schedule-row[data-id="'+scheduleID+'"]')
+   await tab.until("history ready",s=>s.edit)
+   await tab.run(`window.nativeConfirmCalls=0;window.confirm=()=>{window.nativeConfirmCalls++;return false}`)
+   const choice=async(value:string)=>{
+    await tab.until("application confirmation appears",s=>s.text.includes(lang==="en"?"Run Synthetic native schedule now?":"要立即執行"))
+    assert.deepEqual(runRequests,[])
+    assert.ok(await tab.run(`document.querySelector('.app-confirm').open`))
+    await tab.shot(`run-confirm-${label}-${lang}`)
+    await tab.click('.app-confirm [data-choice='+value+']')
+   }
+   await tab.click('#schedule-history-run-now');await choice("cancel")
+   await tab.until("cancel restores history",s=>s.edit)
+   assert.deepEqual(runRequests,[])
+   mode="active"
+   await tab.click('#schedule-history-run-now');await choice("confirm")
+   await tab.until("force question appears",s=>s.text.includes(lang==="en"?"Start another run anyway?":"仍要強制再執行一次嗎"))
+   assert.deepEqual(runRequests,[{}])
+   await tab.click('.app-confirm [data-choice=confirm]')
+   await tab.until("run accepted",s=>s.edit)
+   assert.deepEqual(runRequests,[{}, {force:true}])
+   assert.equal(await tab.run(`window.nativeConfirmCalls`),0)
+  } finally {await tab.close()}
+ })
+}

@@ -367,7 +367,7 @@ test("site shot: the next request, queued with a screenshot", { skip: !SITE_SHOT
       await until(`(() => {
         const fold = document.querySelector('.session-todos')
         if (fold && !fold.open) fold.querySelector('summary')?.click()
-        return !!document.querySelector('.session-todo-image-link')?.getAttribute('href')?.startsWith('blob:')
+        return !!document.querySelector('button.session-todo-image-link:not(:disabled)')
       })()`)
     }, [
       { sel: ".session-direct-todo", pad: 2 },

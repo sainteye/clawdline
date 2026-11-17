@@ -437,7 +437,9 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   // so coming back to it writes that session's address, not the page's.
   const go = (to: Page, options?: { hash?: boolean }) => {
     if (!knowsHere(to) || to === pageRef.current) return false
-    if (!document.dispatchEvent(new CustomEvent(BEFORE_PAGE_CHANGE, { cancelable: true, detail: { from: pageRef.current, to } }))) return false
+    if (!document.dispatchEvent(new CustomEvent(BEFORE_PAGE_CHANGE, {
+      cancelable: true, detail: { from: pageRef.current, to, retry: () => goRef.current(to) },
+    }))) return false
     pageRef.current = to
     setPage(to)
     if (focusCloudSessions && to !== "sessions") onLeaveCloudSessions?.()
