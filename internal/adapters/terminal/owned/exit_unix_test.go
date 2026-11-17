@@ -4,6 +4,7 @@ package owned
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -97,8 +98,34 @@ func TestAShellThatEndsByItselfLeavesOneLogLine(t *testing.T) {
 
 	closed := open(t, s, 80, 24)
 	shellPID(t, s, closed.ID)
+	server, err := raw(t, s, "display-message", "-p", "#{pid}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverPID, err := strconv.Atoi(server)
+	if err != nil || serverPID <= 0 {
+		t.Fatalf("invalid owned server PID %q: %v", server, err)
+	}
 	if err := s.Close(ctx, closed.ID); err != nil {
 		t.Fatal(err)
+	}
+	// Closing the last session can overlap the private server's exit. Wait
+	// for this captured server to be gone, so List tests stable absence
+	// rather than racing its closing connection.
+	// Never retry the read or classify an unreachable server as empty.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := syscall.Kill(serverPID, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("owned server liveness: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("owned server %d did not exit after its last session closed", serverPID)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if _, err := s.List(ctx); err != nil {
 		t.Fatal(err)
