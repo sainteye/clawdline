@@ -1,5 +1,4 @@
 import { useRef, useState, type KeyboardEvent } from "react"
-import { botFailureText } from "./source-errors"
 import type { ReactNode } from "react"
 import type * as W from "@clawdline/contract"
 import { BotRow } from "./BotRow"
@@ -16,10 +15,10 @@ import { moveRosterBot, pinRosterBot, reorderKeys } from "./roster-state"
 import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import "./roster-controls.css"
-export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,retrying={},onRetry,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],groupsItems}: {
+export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],groupsItems}: {
   rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
-  retrying?:Readonly<Record<string,boolean>>;onRetry?:(id:string)=>void;errors:readonly [string,string,boolean][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
+  errors:readonly [string,string,boolean][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
   const {state: rosterState, problem, update} = useRosterState(rosterScope)
   const dragging = useRef<RosterDrag | null>(null)
@@ -67,14 +66,7 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
     <header className="pa-toolbar"><button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button><h1>{w.allBots}</h1>{onCreate&&<button className="pa-circle" onClick={onCreate} aria-label={w.create}>+</button>}</header>
     <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearQuote||"Clear"} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>
     {several&&<div className="pa-roster-filter"><span>{!items.length&&errors.length?(errors.some(([, ,retryable])=>retryable)?w.sourceConnecting:w.sourceError):<>{w.total} {loading&&!items.length?"…":shown.length}</>}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
-    <div className="pa-roster-scroll">{errors.map(([id,code,retryable])=><section role="status" className="pa-source-error pa-connection-notice" key={id}>
-      <div className="pa-connection-heading"><strong>{named(id)}</strong>{retryable&&onRetry&&<button type="button" onClick={()=>onRetry(id)} disabled={!!retrying[id]} aria-busy={!!retrying[id]}>{retrying[id]?w.sourceRetrying:w.retry}</button>}</div>
-      <p>{
-        // refusal-ok: The original typed code remains in the expandable Connection details below.
-        code==="pa_offline"||code==="unavailable"?w.sourceOffline:code==="pa_revoked"||code==="pa_unpaired"||code==="pa_scope_denied"?w.sourcePairingRequired:botFailureText(code,w)}</p>
-      {retryable&&<p className="pa-connection-hint">{w.sourceRetryHint}</p>}
-      <details><summary>{w.sourceDetails}</summary><code>{code}</code></details>
-    </section>)}{loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
+    <div className="pa-roster-scroll">{loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
       <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected}/>
       {problem&&<p role="status" className="pa-roster-save-error">{w.rosterUnsaved}</p>}
       {!groups.some(g => g.kind === "pinned")&&<section className="pa-roster-pin-target" {...targetProps({kind:"project",key:pinnedGroupKey})}>{w.rosterDropPin}</section>}

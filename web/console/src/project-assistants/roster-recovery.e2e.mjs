@@ -26,19 +26,22 @@ await new Promise(r=>server.listen(0,"127.0.0.1",r))
 const origin=`http://127.0.0.1:${server.address().port}`,results=[]
 try {
   for(const engine of [chromium,webkit])for(const [language,width] of [["zh-Hant",390],["en",1280]]) {
-    const browser=await engine.launch({headless:true}),page=await browser.newPage({viewport:{width,height:844}})
+    const browser=await engine.launch({headless:true,...(engine===chromium?{args:["--disable-features=OmniboxEverywhere"]}:{})}),page=await browser.newPage({viewport:{width,height:844}})
     const errors=[];page.on("pageerror",error=>errors.push(error.message))
     const name=`${engine.name()}-${language}-${width}`
     try {
       await page.goto(origin+"/?lang="+language)
       const card=id=>page.locator(".pa-connection-notice").filter({has:page.locator("strong",{hasText:id})})
       const retry=id=>card(id).getByRole("button")
-      await page.waitForFunction(()=>document.querySelectorAll(".pa-source-error").length===2)
-      if(process.env.BOTS_RECOVERY_BASELINE){
-        assert.equal(await page.locator(".pa-source-error button").count(),2,"offline sources need manual retry controls")
-        continue
-      }
-      assert.equal(await page.locator(".pa-connection-notice").count(),2)
+      await page.waitForFunction(()=>document.querySelector(".pa-source-summary,.pa-connection-notice"))
+      assert.equal(await page.locator(".pa-roster-scroll .pa-connection-notice").count(),0,"machine notices stay out of the Bots list")
+      assert.equal(await page.locator(".pa-connection-notice").count(),0,"connection details start collapsed")
+      const footer=page.locator(".pa-status-bar")
+      const box=await footer.boundingBox(),roster=await page.locator(".pa-roster").boundingBox()
+      assert.ok(Math.abs(box.y+box.height-roster.y-roster.height)<2,"status stays at the bottom")
+      await page.screenshot({path:path.join(artifacts,`${name}-collapsed.png`)})
+      await footer.getByRole("button").click()
+      assert.equal(await page.locator(".pa-status-bar .pa-connection-notice").count(),2)
       assert.equal(await page.getByText("pa_offline",{exact:true}).first().isVisible(),false,"raw errors are collapsed")
       assert.match(await page.locator(".pa-roster-filter").innerText(),language==="en"?/Connecting/:/正在連線/)
       assert.equal(await page.locator(".pa-roster-filter").innerText().then(s=>/Bots\s+0/.test(s)),false)
