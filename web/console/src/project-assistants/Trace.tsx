@@ -15,25 +15,29 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
     })
   }
 
-  const isZh = typeof w.trace === "string" && w.trace.includes("處理")
-  const loadingText = isZh ? "載入詳細內容中…" : "Loading details…"
-  const emptyText = isZh ? "（無詳細輸出）" : "(No output)"
-
   if (summaries.length || !items.length && total > 0 && summaries.length > 0) {
     return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{summaries.map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
+      const trimmedFull = full?.text?.trim() ?? ""
+      const hasBody = trimmedFull.length > 0 && trimmedFull !== (info.text ?? "").trim() && trimmedFull !== info.label
       const isOpen = !!openIds[row.id]
-      return <div key={row.id} data-trace-id={row.id} className={`pa-trace-row ${isOpen ? "open" : ""}`}>
-        <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
+      return <div key={row.id} data-trace-id={row.id} className="pa-trace-row">
+        {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
+          <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
+          <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+          <span className="pa-trace-title">{info.label}</span>
+        {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
           <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
           <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
           <span className="pa-trace-title">{info.label}</span>
           {info.text ? <span className="pa-trace-desc">{info.text}</span> : <span className="pa-trace-desc pa-trace-detail-hint">{w.details}</span>}
-        </button>
-        {isOpen && <div className="pa-trace-expanded">
-          {full ? <pre className="pa-trace-body">{full.text || emptyText}</pre> : <div className="pa-trace-loading">{loadingText}</div>}
+        </button> : <div className="pa-trace-line">
+          <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+          <span className="pa-trace-title">{info.label}</span>
+          {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
         </div>}
+        {hasBody && isOpen && <pre className="pa-trace-body">{trimmedFull}</pre>}
       </div>
     })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.more}</button>}</div></details>
   }
@@ -43,17 +47,21 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
   return <details className="pa-trace"><summary>{w.trace} · {items.length}</summary><div className="pa-trace-list">{[...turns].map(([id, rows]) => <div key={id} className="pa-trace-turn">{rows.map((row, i) => {
     const info = formatTraceItem(row.category, row.text, w)
     const turnKey = `${id}-${i}`
+    const trimmed = row.text?.trim() ?? ""
+    const hasBody = trimmed.length > 0 && trimmed !== (info.text ?? "").trim() && trimmed !== info.label
     const isOpen = !!openIds[turnKey]
-    return <div key={i} className={`pa-trace-row ${isOpen ? "open" : ""}`}>
-      <button type="button" className="pa-trace-toggle" onClick={() => setOpenIds(prev => ({ ...prev, [turnKey]: !prev[turnKey] }))}>
+    return <div key={i} className="pa-trace-row">
+      {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => setOpenIds(prev => ({ ...prev, [turnKey]: !prev[turnKey] }))}>
         <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
         <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
         <span className="pa-trace-title">{info.label}</span>
         {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
-      </button>
-      {isOpen && <div className="pa-trace-expanded">
-        <pre className="pa-trace-body">{row.text || emptyText}</pre>
+      </button> : <div className="pa-trace-line">
+        <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+        <span className="pa-trace-title">{info.label}</span>
+        {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
       </div>}
+      {hasBody && isOpen && <pre className="pa-trace-body">{trimmed}</pre>}
     </div>
   })}</div>)}</div></details>
 }
@@ -79,6 +87,10 @@ export function formatTraceItem(category: string, rawText: string | undefined, w
   } else if (category === "plan") {
     icon = "📋"
     label = w.tracePlan
+  } else if (category === "agent_message_chunk") {
+    if (text && text.trim().length <= 2 && !/\p{L}|\p{N}/u.test(text.trim())) {
+      text = undefined
+    }
   }
 
   if (text) {
