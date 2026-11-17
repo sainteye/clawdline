@@ -844,16 +844,37 @@ func TestLifetimeCancellationAndBusyAndDeadline(t *testing.T) {
 	t.Run("lifetime", func(t *testing.T) {
 		t.Setenv("CLAWDLINE_ACP_FAKE", "1")
 		dir := t.TempDir()
-		exe, _ := os.Executable()
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		c, err := Start(ctx, Options{Executable: exe, Args: []string{"-test.run=^TestACPProcess$", "--", "happy"}, WorkingDir: dir, AccountDir: dir, MaxFrameBytes: 4096, CallTimeout: time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Initialize(context.Background()); err != nil {
+		t.Cleanup(func() {
+			if err := c.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+		// Process lifetime cancellation must also work before ACP is ready,
+		// even when the native process cannot respond to any control RPC.
+		if err := syscall.Kill(c.cmd.Process.Pid, syscall.SIGSTOP); err != nil {
 			t.Fatal(err)
 		}
 		cancel()
+		// Await the lifetime watcher before Close, which could otherwise mask
+		// a broken context watcher by performing the shutdown itself.
+		select {
+		case <-c.watchDone:
+		case <-time.After(3 * time.Second):
+			t.Fatal("lifetime cancellation did not stop the process")
+		}
+		if got := c.Lifecycle(); got.Failure != "cancelled" {
+			t.Fatal("process was not stopped by lifetime cancellation", got)
+		}
 		if err := c.Close(); err != nil {
 			t.Fatal(err)
 		}

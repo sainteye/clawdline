@@ -43,8 +43,8 @@ func (p *routineRetryProvider) Open(ctx context.Context, q app.OpenRequest, sink
 
 func TestRoutineRetryUsesAllThreeDelaysAndThenStops(t *testing.T) {
 	f := newRoutineIsolationFixture(t)
-	p := installRoutineRetryProvider(t, f, "qualified-always")
 	f.main(t)
+	p := installRoutineRetryProvider(t, f, "qualified-always")
 	f.schedule(t, "bounded-retry", pa.RoutineTrigger{Type: "once", At: f.now.UnixMilli()})
 	f.tick(t)
 	f.idle(t)
@@ -104,6 +104,8 @@ func TestRoutineNeverStartedQueueSurvivesPlannedRestart(t *testing.T) {
 
 func installRoutineRetryProvider(t *testing.T, f *routineIsolationFixture, mode string) *routineRetryProvider {
 	t.Helper()
+	// Establish main history with the standard fixture first. This runtime's
+	// short prompt budget must not govern unrelated main-chat preparation.
 	if err := f.r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -120,8 +122,8 @@ func installRoutineRetryProvider(t *testing.T, f *routineIsolationFixture, mode 
 
 func TestRoutineRetryRequiresQualifiedNoEffectAndRetainsIdentity(t *testing.T) {
 	f := newRoutineIsolationFixture(t)
-	p := installRoutineRetryProvider(t, f, "qualified")
 	f.main(t)
+	p := installRoutineRetryProvider(t, f, "qualified")
 	f.schedule(t, "safe", pa.RoutineTrigger{Type: "once", At: f.now.UnixMilli()})
 	f.tick(t)
 	f.idle(t)
@@ -174,8 +176,8 @@ func TestRoutineUnknownOpenAndTimeoutNeverReplay(t *testing.T) {
 	for _, mode := range []string{"unknown", "open-only", "timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newRoutineIsolationFixture(t)
-			p := installRoutineRetryProvider(t, f, mode)
 			f.main(t)
+			p := installRoutineRetryProvider(t, f, mode)
 			f.schedule(t, "unsafe", pa.RoutineTrigger{Type: "once", At: f.now.UnixMilli()})
 			f.tick(t)
 			f.idle(t)
