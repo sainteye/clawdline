@@ -23,9 +23,9 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
   const skeleton=useShowAfter(loading&&!items.length&&!errors.length)
   return <aside className="pa-roster" aria-label={w.allBots}>
     <header className="pa-toolbar"><button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button><h1>{w.allBots}</h1>{onCreate&&<button className="pa-circle" onClick={onCreate} aria-label={w.create}>+</button>}</header>
-    <label className="pa-search"><span aria-hidden="true">⌕</span><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/></label>
+    <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearQuote||"Clear"} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>
     {several&&<div className="pa-roster-filter"><span>{!items.length&&errors.length?(errors.some(([, ,retryable])=>retryable)?w.sourceConnecting:w.sourceError):<>{w.total} {loading&&!items.length?"…":shown.length}</>}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
-    <div className="pa-roster-scroll">{status}{errors.map(([id,code,retryable])=><section role="status" className="pa-source-error pa-connection-notice" key={id}>
+    <div className="pa-roster-scroll">{errors.map(([id,code,retryable])=><section role="status" className="pa-source-error pa-connection-notice" key={id}>
       <div className="pa-connection-heading"><strong>{named(id)}</strong>{retryable&&onRetry&&<button type="button" onClick={()=>onRetry(id)} disabled={!!retrying[id]} aria-busy={!!retrying[id]}>{retrying[id]?w.sourceRetrying:w.retry}</button>}</div>
       <p>{
         // refusal-ok: The original typed code remains in the expandable Connection details below.
@@ -40,5 +40,6 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
       </section>)}
       {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
     </div>
+    {status&&<footer className="pa-status-bar">{status}</footer>}
   </aside>
 }
