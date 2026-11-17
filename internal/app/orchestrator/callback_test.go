@@ -409,6 +409,7 @@ func TestAVerdictKeepsTheLastLineOfALongOutput(t *testing.T) {
 
 func TestAFinishedCallbacksFilesAreReclaimedAfterAWeek(t *testing.T) {
 	b, ctx := newTestBroker(t)
+	b.ProcessUses = func(context.Context, string) string { return "absent" }
 	id := "c0000000-0000-4000-8000-000000000013"
 	if _, err := b.StartCallback(ctx, callbackRequest(t, id, "sh", "-c", "echo out")); err != nil {
 		t.Fatal(err)

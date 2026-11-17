@@ -100,193 +100,197 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.answer":          genDecodeProjectAssistantsAnswer,
 	"project-assistants.attachment":      genDecodeProjectAssistantsAttachment,
 	"project-assistants.configuration":   genDecodeProjectAssistantsConfiguration,
-	"project-assistants.create":          genDecodeProjectAssistantsCreate,
-	"project-assistants.delete":          genDecodeProjectAssistantsDelete,
-	"project-assistants.edit":            genDecodeProjectAssistantsEdit,
-	"project-assistants.events":          genDecodeProjectAssistantsEvents,
-	"project-assistants.export":          genDecodeProjectAssistantsExport,
-	"project-assistants.forget":          genDecodeProjectAssistantsForget,
-	"project-assistants.get":             genDecodeProjectAssistantsGet,
-	"project-assistants.group-create":    genDecodeProjectAssistantsGroupCreate,
-	"project-assistants.group-delete":    genDecodeProjectAssistantsGroupDelete,
-	"project-assistants.group-edit":      genDecodeProjectAssistantsGroupEdit,
-	"project-assistants.group-history":   genDecodeProjectAssistantsGroupHistory,
-	"project-assistants.group-send":      genDecodeProjectAssistantsGroupSend,
-	"project-assistants.group-stop":      genDecodeProjectAssistantsGroupStop,
-	"project-assistants.groups":          genDecodeProjectAssistantsGroups,
-	"project-assistants.history":         genDecodeProjectAssistantsHistory,
-	"project-assistants.input":           genDecodeProjectAssistantsInput,
-	"project-assistants.list":            genDecodeProjectAssistantsList,
-	"project-assistants.memory":          genDecodeProjectAssistantsMemory,
-	"project-assistants.memory-view":     genDecodeProjectAssistantsMemoryView,
-	"project-assistants.observed":        genDecodeProjectAssistantsObserved,
-	"project-assistants.output":          genDecodeProjectAssistantsOutput,
-	"project-assistants.projects":        genDecodeProjectAssistantsProjects,
-	"project-assistants.read":            genDecodeProjectAssistantsRead,
-	"project-assistants.rename-artifact": genDecodeProjectAssistantsRenameArtifact,
-	"project-assistants.routine-delete":  genDecodeProjectAssistantsRoutineDelete,
-	"project-assistants.routine-enabled": genDecodeProjectAssistantsRoutineEnabled,
-	"project-assistants.routine-hook":    genDecodeProjectAssistantsRoutineHook,
-	"project-assistants.routine-runs":    genDecodeProjectAssistantsRoutineRuns,
-	"project-assistants.routine-save":    genDecodeProjectAssistantsRoutineSave,
-	"project-assistants.routine-test":    genDecodeProjectAssistantsRoutineTest,
-	"project-assistants.routines":        genDecodeProjectAssistantsRoutines,
-	"project-assistants.rule-remove":     genDecodeProjectAssistantsRuleRemove,
-	"project-assistants.rules":           genDecodeProjectAssistantsRules,
-	"project-assistants.send":            genDecodeProjectAssistantsSend,
-	"project-assistants.send-files":      genDecodeProjectAssistantsSendFiles,
-	"project-assistants.send-now":        genDecodeProjectAssistantsSendNow,
-	"project-assistants.send-pictures":   genDecodeProjectAssistantsSendPictures,
-	"project-assistants.status":          genDecodeProjectAssistantsStatus,
-	"project-assistants.stop":            genDecodeProjectAssistantsStop,
-	"project-assistants.team-answer":     genDecodeProjectAssistantsTeamAnswer,
-	"project-assistants.team-plans":      genDecodeProjectAssistantsTeamPlans,
-	"project-assistants.team-settings":   genDecodeProjectAssistantsTeamSettings,
-	"project-assistants.upload":          genDecodeProjectAssistantsUpload,
-	"project-assistants.view":            genDecodeProjectAssistantsView,
-	"project-assistants.visibility":      genDecodeProjectAssistantsVisibility,
-	"project-codegraph":                  genDecodeProjectCodegraph,
-	"project-codegraph-build":            genDecodeProjectCodegraphBuild,
-	"project-devstack":                   genDecodeProjectDevstack,
-	"project-entry":                      genDecodeProjectEntry,
-	"project-file-list":                  genDecodeProjectFileList,
-	"project-file-read":                  genDecodeProjectFileRead,
-	"project-file-save":                  genDecodeProjectFileSave,
-	"project-folder-create":              genDecodeProjectFolderCreate,
-	"project-folders":                    genDecodeProjectFolders,
-	"project-hide":                       genDecodeProjectHide,
-	"project-manifest":                   genDecodeProjectManifest,
-	"project-mirror":                     genDecodeProjectMirror,
-	"project-mirror-apply":               genDecodeProjectMirrorApply,
-	"project-mirror-detach":              genDecodeProjectMirrorDetach,
-	"project-ops-create":                 genDecodeProjectOpsCreate,
-	"project-ops-delete":                 genDecodeProjectOpsDelete,
-	"project-ops-list":                   genDecodeProjectOpsList,
-	"project-ops-read":                   genDecodeProjectOpsRead,
-	"project-ops-resolve-request":        genDecodeProjectOpsResolveRequest,
-	"project-ops-setup":                  genDecodeProjectOpsSetup,
-	"project-ops-update":                 genDecodeProjectOpsUpdate,
-	"project-tree-list":                  genDecodeProjectTreeList,
-	"project-tree-read":                  genDecodeProjectTreeRead,
-	"project-unify-apply":                genDecodeProjectUnifyApply,
-	"project-unify-plan":                 genDecodeProjectUnifyPlan,
-	"project-worktree-lifecycle":         genDecodeProjectWorktreeLifecycle,
-	"project-worktree-lifecycle-refresh": genDecodeProjectWorktreeLifecycleRefresh,
-	"project-worktree-remove":            genDecodeProjectWorktreeRemove,
-	"projects":                           genDecodeProjects,
-	"provider-quotas":                    genDecodeProviderQuotas,
-	"push-key":                           genDecodePushKey,
-	"push-test":                          genDecodePushTest,
-	"push-unsubscribe":                   genDecodePushUnsubscribe,
-	"restorable-sessions":                genDecodeRestorableSessions,
-	"restore-archived":                   genDecodeRestoreArchived,
-	"restore-sessions":                   genDecodeRestoreSessions,
-	"schedule":                           genDecodeSchedule,
-	"schedule-create":                    genDecodeScheduleCreate,
-	"schedule-delete":                    genDecodeScheduleDelete,
-	"schedule-run":                       genDecodeScheduleRun,
-	"schedule-update":                    genDecodeScheduleUpdate,
-	"schedules":                          genDecodeSchedules,
-	"screen":                             genDecodeScreen,
-	"send":                               genDecodeSend,
-	"session-codegraph":                  genDecodeSessionCodegraph,
-	"session-codegraph-build":            genDecodeSessionCodegraphBuild,
-	"session-receipt":                    genDecodeSessionReceipt,
-	"session-snippets":                   genDecodeSessionSnippets,
-	"sessions.list":                      genDecodeSessionsList,
-	"sessions.row":                       genDecodeSessionsRow,
-	"sessions.snapshot":                  genDecodeSessionsSnapshot,
-	"sessions.snapshot.initial":          genDecodeSessionsSnapshotInitial,
-	"shell":                              genDecodeShell,
-	"skills":                             genDecodeSkills,
-	"smart-title":                        genDecodeSmartTitle,
-	"snippet-create":                     genDecodeSnippetCreate,
-	"snippet-delete":                     genDecodeSnippetDelete,
-	"snippet-order":                      genDecodeSnippetOrder,
-	"snippet-update":                     genDecodeSnippetUpdate,
-	"snippets":                           genDecodeSnippets,
-	"squad-event-head":                   genDecodeSquadEventHead,
-	"squad-events":                       genDecodeSquadEvents,
-	"squad-events.conversations":         genDecodeSquadEventsConversations,
-	"squad-session-bindings":             genDecodeSquadSessionBindings,
-	"squad-session-snapshot":             genDecodeSquadSessionSnapshot,
-	"squad-session-snapshots":            genDecodeSquadSessionSnapshots,
-	"squad.catalog":                      genDecodeSquadCatalog,
-	"squad.catalog.update":               genDecodeSquadCatalogUpdate,
-	"squad.definition":                   genDecodeSquadDefinition,
-	"squad.motion.update":                genDecodeSquadMotionUpdate,
-	"squad.packages.adopt":               genDecodeSquadPackagesAdopt,
-	"squad.packages.export":              genDecodeSquadPackagesExport,
-	"squad.packages.export.private":      genDecodeSquadPackagesExportPrivate,
-	"squad.packages.preview":             genDecodeSquadPackagesPreview,
-	"squad.role-draft":                   genDecodeSquadRoleDraft,
-	"squad.scopes":                       genDecodeSquadScopes,
-	"squad.settings":                     genDecodeSquadSettings,
-	"squad.settings.update":              genDecodeSquadSettingsUpdate,
-	"squad.skill-sources":                genDecodeSquadSkillSources,
-	"title":                              genDecodeTitle,
-	"tools.catalog":                      genDecodeToolsCatalog,
-	"tools.prepare":                      genDecodeToolsPrepare,
-	"tools.save":                         genDecodeToolsSave,
-	"transcript":                         genDecodeTranscript,
-	"update":                             genDecodeUpdate,
-	"update-apply":                       genDecodeUpdateApply,
-	"update-fresh":                       genDecodeUpdateFresh,
-	"usage.compare-compaction":           genDecodeUsageCompareCompaction,
-	"usage.compare-handoff":              genDecodeUsageCompareHandoff,
-	"usage.item":                         genDecodeUsageItem,
-	"usage.overview":                     genDecodeUsageOverview,
-	"usage.session":                      genDecodeUsageSession,
-	"usage.task":                         genDecodeUsageTask,
-	"usage.work-samples":                 genDecodeUsageWorkSamples,
-	"usage.work-units":                   genDecodeUsageWorkUnits,
-	"verification.close":                 genDecodeVerificationClose,
-	"verification.create":                genDecodeVerificationCreate,
-	"verification.criterion":             genDecodeVerificationCriterion,
-	"verification.delete":                genDecodeVerificationDelete,
-	"verification.get":                   genDecodeVerificationGet,
-	"verification.list":                  genDecodeVerificationList,
-	"verification.note":                  genDecodeVerificationNote,
-	"voice":                              genDecodeVoice,
-	"voice-settings":                     genDecodeVoiceSettings,
-	"voice-settings-update":              genDecodeVoiceSettingsUpdate,
-	"work-gate-settings":                 genDecodeWorkGateSettings,
-	"work-gate-settings-update":          genDecodeWorkGateSettingsUpdate,
-	"work.decision":                      genDecodeWorkDecision,
-	"work.decision-answer":               genDecodeWorkDecisionAnswer,
-	"work.decision-dismiss":              genDecodeWorkDecisionDismiss,
-	"work.decisions":                     genDecodeWorkDecisions,
-	"work.digests":                       genDecodeWorkDigests,
-	"work.proposals":                     genDecodeWorkProposals,
-	"work.v2.assign":                     genDecodeWorkV2Assign,
-	"work.v2.cancel":                     genDecodeWorkV2Cancel,
-	"work.v2.cards":                      genDecodeWorkV2Cards,
-	"work.v2.complete":                   genDecodeWorkV2Complete,
-	"work.v2.convert":                    genDecodeWorkV2Convert,
-	"work.v2.create":                     genDecodeWorkV2Create,
-	"work.v2.edit":                       genDecodeWorkV2Edit,
-	"work.v2.gate-decision":              genDecodeWorkV2GateDecision,
-	"work.v2.gate-export":                genDecodeWorkV2GateExport,
-	"work.v2.gate-purge":                 genDecodeWorkV2GatePurge,
-	"work.v2.human-intervention-action":  genDecodeWorkV2HumanInterventionAction,
-	"work.v2.human-interventions":        genDecodeWorkV2HumanInterventions,
-	"work.v2.image":                      genDecodeWorkV2Image,
-	"work.v2.image-create":               genDecodeWorkV2ImageCreate,
-	"work.v2.image-delete":               genDecodeWorkV2ImageDelete,
-	"work.v2.item":                       genDecodeWorkV2Item,
-	"work.v2.items":                      genDecodeWorkV2Items,
-	"work.v2.persona-suggestion":         genDecodeWorkV2PersonaSuggestion,
-	"work.v2.proposal-resolve":           genDecodeWorkV2ProposalResolve,
-	"work.v2.proposals":                  genDecodeWorkV2Proposals,
-	"work.v2.remind":                     genDecodeWorkV2Remind,
-	"work.v2.search":                     genDecodeWorkV2Search,
-	"work.v2.seen":                       genDecodeWorkV2Seen,
-	"work.v2.session-todos":              genDecodeWorkV2SessionTodos,
-	"work.v2.todo-action":                genDecodeWorkV2TodoAction,
-	"work.v2.todo-create":                genDecodeWorkV2TodoCreate,
-	"work.v2.todo-image-create":          genDecodeWorkV2TodoImageCreate,
-	"workflow-settings":                  genDecodeWorkflowSettings,
-	"workflow-settings-update":           genDecodeWorkflowSettingsUpdate,
+	"project-assistants.configuration-profile": genDecodeProjectAssistantsConfigurationProfile,
+	"project-assistants.create":                genDecodeProjectAssistantsCreate,
+	"project-assistants.delete":                genDecodeProjectAssistantsDelete,
+	"project-assistants.edit":                  genDecodeProjectAssistantsEdit,
+	"project-assistants.events":                genDecodeProjectAssistantsEvents,
+	"project-assistants.export":                genDecodeProjectAssistantsExport,
+	"project-assistants.extensions":            genDecodeProjectAssistantsExtensions,
+	"project-assistants.forget":                genDecodeProjectAssistantsForget,
+	"project-assistants.get":                   genDecodeProjectAssistantsGet,
+	"project-assistants.group-create":          genDecodeProjectAssistantsGroupCreate,
+	"project-assistants.group-delete":          genDecodeProjectAssistantsGroupDelete,
+	"project-assistants.group-edit":            genDecodeProjectAssistantsGroupEdit,
+	"project-assistants.group-history":         genDecodeProjectAssistantsGroupHistory,
+	"project-assistants.group-send":            genDecodeProjectAssistantsGroupSend,
+	"project-assistants.group-stop":            genDecodeProjectAssistantsGroupStop,
+	"project-assistants.groups":                genDecodeProjectAssistantsGroups,
+	"project-assistants.history":               genDecodeProjectAssistantsHistory,
+	"project-assistants.input":                 genDecodeProjectAssistantsInput,
+	"project-assistants.list":                  genDecodeProjectAssistantsList,
+	"project-assistants.login-profile":         genDecodeProjectAssistantsLoginProfile,
+	"project-assistants.login-profiles":        genDecodeProjectAssistantsLoginProfiles,
+	"project-assistants.memory":                genDecodeProjectAssistantsMemory,
+	"project-assistants.memory-view":           genDecodeProjectAssistantsMemoryView,
+	"project-assistants.observed":              genDecodeProjectAssistantsObserved,
+	"project-assistants.output":                genDecodeProjectAssistantsOutput,
+	"project-assistants.projects":              genDecodeProjectAssistantsProjects,
+	"project-assistants.read":                  genDecodeProjectAssistantsRead,
+	"project-assistants.rename-artifact":       genDecodeProjectAssistantsRenameArtifact,
+	"project-assistants.routine-delete":        genDecodeProjectAssistantsRoutineDelete,
+	"project-assistants.routine-enabled":       genDecodeProjectAssistantsRoutineEnabled,
+	"project-assistants.routine-hook":          genDecodeProjectAssistantsRoutineHook,
+	"project-assistants.routine-runs":          genDecodeProjectAssistantsRoutineRuns,
+	"project-assistants.routine-save":          genDecodeProjectAssistantsRoutineSave,
+	"project-assistants.routine-test":          genDecodeProjectAssistantsRoutineTest,
+	"project-assistants.routines":              genDecodeProjectAssistantsRoutines,
+	"project-assistants.rule-remove":           genDecodeProjectAssistantsRuleRemove,
+	"project-assistants.rules":                 genDecodeProjectAssistantsRules,
+	"project-assistants.send":                  genDecodeProjectAssistantsSend,
+	"project-assistants.send-files":            genDecodeProjectAssistantsSendFiles,
+	"project-assistants.send-now":              genDecodeProjectAssistantsSendNow,
+	"project-assistants.send-pictures":         genDecodeProjectAssistantsSendPictures,
+	"project-assistants.status":                genDecodeProjectAssistantsStatus,
+	"project-assistants.stop":                  genDecodeProjectAssistantsStop,
+	"project-assistants.team-answer":           genDecodeProjectAssistantsTeamAnswer,
+	"project-assistants.team-plans":            genDecodeProjectAssistantsTeamPlans,
+	"project-assistants.team-settings":         genDecodeProjectAssistantsTeamSettings,
+	"project-assistants.upload":                genDecodeProjectAssistantsUpload,
+	"project-assistants.view":                  genDecodeProjectAssistantsView,
+	"project-assistants.visibility":            genDecodeProjectAssistantsVisibility,
+	"project-codegraph":                        genDecodeProjectCodegraph,
+	"project-codegraph-build":                  genDecodeProjectCodegraphBuild,
+	"project-devstack":                         genDecodeProjectDevstack,
+	"project-entry":                            genDecodeProjectEntry,
+	"project-file-list":                        genDecodeProjectFileList,
+	"project-file-read":                        genDecodeProjectFileRead,
+	"project-file-save":                        genDecodeProjectFileSave,
+	"project-folder-create":                    genDecodeProjectFolderCreate,
+	"project-folders":                          genDecodeProjectFolders,
+	"project-hide":                             genDecodeProjectHide,
+	"project-manifest":                         genDecodeProjectManifest,
+	"project-mirror":                           genDecodeProjectMirror,
+	"project-mirror-apply":                     genDecodeProjectMirrorApply,
+	"project-mirror-detach":                    genDecodeProjectMirrorDetach,
+	"project-ops-create":                       genDecodeProjectOpsCreate,
+	"project-ops-delete":                       genDecodeProjectOpsDelete,
+	"project-ops-list":                         genDecodeProjectOpsList,
+	"project-ops-read":                         genDecodeProjectOpsRead,
+	"project-ops-resolve-request":              genDecodeProjectOpsResolveRequest,
+	"project-ops-setup":                        genDecodeProjectOpsSetup,
+	"project-ops-update":                       genDecodeProjectOpsUpdate,
+	"project-tree-list":                        genDecodeProjectTreeList,
+	"project-tree-read":                        genDecodeProjectTreeRead,
+	"project-unify-apply":                      genDecodeProjectUnifyApply,
+	"project-unify-plan":                       genDecodeProjectUnifyPlan,
+	"project-worktree-lifecycle":               genDecodeProjectWorktreeLifecycle,
+	"project-worktree-lifecycle-refresh":       genDecodeProjectWorktreeLifecycleRefresh,
+	"project-worktree-remove":                  genDecodeProjectWorktreeRemove,
+	"projects":                                 genDecodeProjects,
+	"provider-quotas":                          genDecodeProviderQuotas,
+	"push-key":                                 genDecodePushKey,
+	"push-test":                                genDecodePushTest,
+	"push-unsubscribe":                         genDecodePushUnsubscribe,
+	"restorable-sessions":                      genDecodeRestorableSessions,
+	"restore-archived":                         genDecodeRestoreArchived,
+	"restore-sessions":                         genDecodeRestoreSessions,
+	"schedule":                                 genDecodeSchedule,
+	"schedule-create":                          genDecodeScheduleCreate,
+	"schedule-delete":                          genDecodeScheduleDelete,
+	"schedule-run":                             genDecodeScheduleRun,
+	"schedule-update":                          genDecodeScheduleUpdate,
+	"schedules":                                genDecodeSchedules,
+	"screen":                                   genDecodeScreen,
+	"send":                                     genDecodeSend,
+	"session-codegraph":                        genDecodeSessionCodegraph,
+	"session-codegraph-build":                  genDecodeSessionCodegraphBuild,
+	"session-receipt":                          genDecodeSessionReceipt,
+	"session-snippets":                         genDecodeSessionSnippets,
+	"sessions.list":                            genDecodeSessionsList,
+	"sessions.row":                             genDecodeSessionsRow,
+	"sessions.snapshot":                        genDecodeSessionsSnapshot,
+	"sessions.snapshot.initial":                genDecodeSessionsSnapshotInitial,
+	"shell":                                    genDecodeShell,
+	"skills":                                   genDecodeSkills,
+	"smart-title":                              genDecodeSmartTitle,
+	"snippet-create":                           genDecodeSnippetCreate,
+	"snippet-delete":                           genDecodeSnippetDelete,
+	"snippet-order":                            genDecodeSnippetOrder,
+	"snippet-update":                           genDecodeSnippetUpdate,
+	"snippets":                                 genDecodeSnippets,
+	"squad-event-head":                         genDecodeSquadEventHead,
+	"squad-events":                             genDecodeSquadEvents,
+	"squad-events.conversations":               genDecodeSquadEventsConversations,
+	"squad-session-bindings":                   genDecodeSquadSessionBindings,
+	"squad-session-snapshot":                   genDecodeSquadSessionSnapshot,
+	"squad-session-snapshots":                  genDecodeSquadSessionSnapshots,
+	"squad.catalog":                            genDecodeSquadCatalog,
+	"squad.catalog.update":                     genDecodeSquadCatalogUpdate,
+	"squad.definition":                         genDecodeSquadDefinition,
+	"squad.motion.update":                      genDecodeSquadMotionUpdate,
+	"squad.packages.adopt":                     genDecodeSquadPackagesAdopt,
+	"squad.packages.export":                    genDecodeSquadPackagesExport,
+	"squad.packages.export.private":            genDecodeSquadPackagesExportPrivate,
+	"squad.packages.preview":                   genDecodeSquadPackagesPreview,
+	"squad.role-draft":                         genDecodeSquadRoleDraft,
+	"squad.scopes":                             genDecodeSquadScopes,
+	"squad.settings":                           genDecodeSquadSettings,
+	"squad.settings.update":                    genDecodeSquadSettingsUpdate,
+	"squad.skill-sources":                      genDecodeSquadSkillSources,
+	"title":                                    genDecodeTitle,
+	"tools.catalog":                            genDecodeToolsCatalog,
+	"tools.prepare":                            genDecodeToolsPrepare,
+	"tools.save":                               genDecodeToolsSave,
+	"transcript":                               genDecodeTranscript,
+	"update":                                   genDecodeUpdate,
+	"update-apply":                             genDecodeUpdateApply,
+	"update-fresh":                             genDecodeUpdateFresh,
+	"usage.compare-compaction":                 genDecodeUsageCompareCompaction,
+	"usage.compare-handoff":                    genDecodeUsageCompareHandoff,
+	"usage.item":                               genDecodeUsageItem,
+	"usage.overview":                           genDecodeUsageOverview,
+	"usage.session":                            genDecodeUsageSession,
+	"usage.task":                               genDecodeUsageTask,
+	"usage.work-samples":                       genDecodeUsageWorkSamples,
+	"usage.work-units":                         genDecodeUsageWorkUnits,
+	"verification.close":                       genDecodeVerificationClose,
+	"verification.create":                      genDecodeVerificationCreate,
+	"verification.criterion":                   genDecodeVerificationCriterion,
+	"verification.delete":                      genDecodeVerificationDelete,
+	"verification.get":                         genDecodeVerificationGet,
+	"verification.list":                        genDecodeVerificationList,
+	"verification.note":                        genDecodeVerificationNote,
+	"voice":                                    genDecodeVoice,
+	"voice-settings":                           genDecodeVoiceSettings,
+	"voice-settings-update":                    genDecodeVoiceSettingsUpdate,
+	"work-gate-settings":                       genDecodeWorkGateSettings,
+	"work-gate-settings-update":                genDecodeWorkGateSettingsUpdate,
+	"work.decision":                            genDecodeWorkDecision,
+	"work.decision-answer":                     genDecodeWorkDecisionAnswer,
+	"work.decision-dismiss":                    genDecodeWorkDecisionDismiss,
+	"work.decisions":                           genDecodeWorkDecisions,
+	"work.digests":                             genDecodeWorkDigests,
+	"work.proposals":                           genDecodeWorkProposals,
+	"work.v2.assign":                           genDecodeWorkV2Assign,
+	"work.v2.cancel":                           genDecodeWorkV2Cancel,
+	"work.v2.cards":                            genDecodeWorkV2Cards,
+	"work.v2.complete":                         genDecodeWorkV2Complete,
+	"work.v2.convert":                          genDecodeWorkV2Convert,
+	"work.v2.create":                           genDecodeWorkV2Create,
+	"work.v2.edit":                             genDecodeWorkV2Edit,
+	"work.v2.gate-decision":                    genDecodeWorkV2GateDecision,
+	"work.v2.gate-export":                      genDecodeWorkV2GateExport,
+	"work.v2.gate-purge":                       genDecodeWorkV2GatePurge,
+	"work.v2.human-intervention-action":        genDecodeWorkV2HumanInterventionAction,
+	"work.v2.human-interventions":              genDecodeWorkV2HumanInterventions,
+	"work.v2.image":                            genDecodeWorkV2Image,
+	"work.v2.image-create":                     genDecodeWorkV2ImageCreate,
+	"work.v2.image-delete":                     genDecodeWorkV2ImageDelete,
+	"work.v2.item":                             genDecodeWorkV2Item,
+	"work.v2.items":                            genDecodeWorkV2Items,
+	"work.v2.persona-suggestion":               genDecodeWorkV2PersonaSuggestion,
+	"work.v2.proposal-resolve":                 genDecodeWorkV2ProposalResolve,
+	"work.v2.proposals":                        genDecodeWorkV2Proposals,
+	"work.v2.remind":                           genDecodeWorkV2Remind,
+	"work.v2.search":                           genDecodeWorkV2Search,
+	"work.v2.seen":                             genDecodeWorkV2Seen,
+	"work.v2.session-todos":                    genDecodeWorkV2SessionTodos,
+	"work.v2.todo-action":                      genDecodeWorkV2TodoAction,
+	"work.v2.todo-create":                      genDecodeWorkV2TodoCreate,
+	"work.v2.todo-image-create":                genDecodeWorkV2TodoImageCreate,
+	"workflow-settings":                        genDecodeWorkflowSettings,
+	"workflow-settings-update":                 genDecodeWorkflowSettingsUpdate,
 }
 
 // generatedUnrouted is every generated word whose decode states no local
@@ -2549,6 +2553,42 @@ func genDecodeProjectAssistantsConfiguration(b body) (plan, LocalRequest, bool) 
 	return p, req, true
 }
 
+// genDecodeProjectAssistantsConfigurationProfile is the `project-assistants.configuration-profile` row's decode.
+func genDecodeProjectAssistantsConfigurationProfile(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "agent", "bot_id", "conversation_id", "login_profile", "machine_id", "model", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("agent", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("login_profile", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("model", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/configuration"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"agent": genValue{from: "agent"}, "conversation_id": genValue{from: "conversation_id"}, "login_profile": genValue{from: "login_profile"}, "machine_id": genValue{from: "machine_id"}, "model": genValue{from: "model"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
 // genDecodeProjectAssistantsCreate is the `project-assistants.create` row's decode.
 func genDecodeProjectAssistantsCreate(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -2610,7 +2650,7 @@ func genDecodeProjectAssistantsEdit(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"edit"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name"}, closed: true}) {
+	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -2674,6 +2714,33 @@ func genDecodeProjectAssistantsExport(b body) (plan, LocalRequest, bool) {
 	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/export"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsExtensions is the `project-assistants.extensions` row's decode.
+func genDecodeProjectAssistantsExtensions(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "bot_id", "conversation_id", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/extensions"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "machine_id": genValue{from: "machine_id"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -3011,6 +3078,81 @@ func genDecodeProjectAssistantsList(b body) (plan, LocalRequest, bool) {
 	path := "/v1/project-assistants"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "machine_id"}, "page_size": genValue{from: "page_size"}, "query": genValue{from: "query"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsLoginProfile is the `project-assistants.login-profile` row's decode.
+func genDecodeProjectAssistantsLoginProfile(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "agent", "command", "expected_version", "fence", "name", "profile_id", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"create", "rename", "start", "cancel", "check", "remove"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("agent", genRule{kind: "string", enum: []string{"claude", "codex"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"login-profile"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("name", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("profile_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/login-profile"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "agent": genValue{from: "agent"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "name": genValue{from: "name"}, "profile_id": genValue{from: "profile_id"}, "revision": genValue{from: "revision"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsLoginProfiles is the `project-assistants.login-profiles` row's decode.
+func genDecodeProjectAssistantsLoginProfiles(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "agent", "bot_id", "conversation_id", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("agent", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/login-profiles"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"agent": genValue{from: "agent"}, "conversation_id": genValue{from: "conversation_id"}, "machine_id": genValue{from: "machine_id"}})
 	req.Header = asDevice()
 	return p, req, true
 }
@@ -3799,7 +3941,7 @@ func genDecodeProjectAssistantsTeamSettings(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"edit"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "manage_team": genRule{kind: "bool"}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name", "manage_team"}, closed: true}) {
+	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "manage_team": genRule{kind: "bool"}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name", "manage_team"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

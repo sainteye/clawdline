@@ -223,7 +223,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration":
+					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -231,7 +231,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -368,6 +368,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 				return nil, err
 			}
 		}
+	}
+	if route.action == "login-profiles" || route.action == "login-profile" || route.action == "extensions" {
+		return h.loginProfiles(w, r, route)
 	}
 	if r.Method == http.MethodGet {
 		return h.read(r, route)
@@ -570,7 +573,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)

@@ -181,3 +181,25 @@ func framed(prompt, instructions string) bool {
 		strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access") &&
 		strings.Contains(prompt, "browser_command") && strings.Contains(prompt, "session_unresolved") && strings.Contains(prompt, "Don't release it")
 }
+
+func TestDiscoveryCleanupUncertaintyKeepsTheManagedProfileHold(t *testing.T) {
+	p, q, _ := configuredProvider(t, pa.Codex, "configure-codex")
+	config, caps, e := p.admit(context.Background(), q.Bot)
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = probeConfiguration(context.Background(), config, caps, p.o.Limits, q.Bot, q.Directory, "", func(c *Client) { c.p.setCleanupError(refusal(pa.ExecutionEffectUnknown, "synthetic_census_failure")) })
+	var unknown *configurationCleanupFailure
+	if !errors.As(e, &unknown) {
+		t.Fatal("discovery cleanup was not retained", e)
+	}
+	released := false
+	releaseConfiguration(func() { released = true }, e)
+	if released {
+		t.Fatal("uncertain discovery released the account")
+	}
+	releaseConfiguration(func() { released = true }, refusal(pa.Unsupported, "model"))
+	if !released {
+		t.Fatal("known clean refusal leaked its hold")
+	}
+}

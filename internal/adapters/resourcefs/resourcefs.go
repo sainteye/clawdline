@@ -237,7 +237,9 @@ func snapshot(ctx context.Context, dir *os.Root, content, disposable bool) (Snap
 		if entry.Type()&os.ModeSymlink != 0 {
 			return ErrUnsafe
 		}
-		info, err := entry.Info()
+		// Read metadata through the opened root. Go 1.25 DirEntry.Info can
+		// resolve a nested Root.FS entry against the parent root instead.
+		info, err := dir.Lstat(path)
 		if err != nil {
 			return err
 		}

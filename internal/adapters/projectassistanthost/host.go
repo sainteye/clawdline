@@ -26,6 +26,8 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
+	Extensions    app.ExtensionInventory
+	LoginProfiles func(context.Context) (app.LoginProfiles, error)
 	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
 	Database      *sql.DB
 	// Reader borrows Store's existing query-only pool. Host never closes it.
@@ -60,6 +62,7 @@ type Options struct {
 }
 
 type Host struct {
+	profiles           app.LoginProfiles
 	configurationSlots chan struct{}
 	routineStop        context.CancelFunc
 	routineDone        chan struct{}
@@ -182,7 +185,13 @@ func (h *Host) makeService() error {
 		return err
 	}
 	h.groups, h.rooms, h.team = groups, rooms, team
-	s, err := app.NewService(app.ServiceOptions{ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	if h.o.LoginProfiles != nil {
+		h.profiles, err = h.o.LoginProfiles(context.Background())
+		if err != nil {
+			return err
+		}
+	}
+	s, err := app.NewService(app.ServiceOptions{Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -478,6 +487,13 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.cleanupPending = h.store != nil
 	h.mu.Unlock()
 	var result error
+	if h.profiles != nil {
+		if closeHost {
+			result = errors.Join(result, h.profiles.Close(ctx))
+		} else {
+			result = errors.Join(result, h.profiles.Suspend(ctx))
+		}
+	}
 	if rooms != nil {
 		rooms.CancelRooms()
 	}

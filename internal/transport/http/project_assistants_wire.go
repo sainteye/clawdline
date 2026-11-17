@@ -69,6 +69,10 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	}
 	out.Mode = value.Mode
 	out.Notify = value.Notify
+	out.LoginProfile = value.LoginProfile
+	if len(value.Extensions.Skills)+len(value.Extensions.Connectors) > 0 {
+		out.Extensions = paWireExtensions(value.Extensions)
+	}
 	if value.RuntimeSettings.Model != "" || len(value.RuntimeSettings.Options) > 0 {
 		options := value.RuntimeSettings.Options
 		if options == nil {
@@ -126,7 +130,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	out.ExchangeID = value.ExchangeID
 	out.Hops = int64(value.Hops)
 	for _, f := range value.Attempts {
-		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason, Opened: f.Opened, SendReturned: f.SendReturned, NativeActivity: f.NativeActivity, ToolActivity: f.ToolActivity, AnswerObserved: f.AnswerObserved, ResumeBindingID: f.ResumeBindingID, CarryKind: f.CarryKind, CarryAfterSeq: f.CarryAfterSeq})
+		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{LoginProfile: f.LoginProfile, Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason, Opened: f.Opened, SendReturned: f.SendReturned, NativeActivity: f.NativeActivity, ToolActivity: f.ToolActivity, AnswerObserved: f.AnswerObserved, ResumeBindingID: f.ResumeBindingID, CarryKind: f.CarryKind, CarryAfterSeq: f.CarryAfterSeq})
 	}
 	out.ID = value.ID
 	out.Fence = paWireFence(value.Fence)
@@ -148,6 +152,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 
 func paWireExecutionBinding(value pa.ExecutionBinding) contract.ProjectAssistantExecutionBinding {
 	var out contract.ProjectAssistantExecutionBinding
+	out.LoginProfile = value.LoginProfile
 	out.Fence = paWireFence(value.Fence)
 	out.Agent = contract.ProjectAssistantAgent(value.Agent)
 	out.NativeSessionID = value.NativeSessionID
@@ -773,4 +778,35 @@ func paDomainRuntimeSettings(value *contract.ProjectAssistantRuntimeSettings) *p
 		return nil
 	}
 	return &pa.RuntimeSettings{Model: value.Model, Options: value.Options}
+}
+
+func paDomainLoginSelection(v *contract.ProjectAssistantLoginSelection) *string {
+	if v == nil {
+		return nil
+	}
+	return &v.ID
+}
+
+func paDomainExtensions(v *contract.ProjectAssistantExtensionSelection) *pa.ExtensionSelection {
+	if v == nil {
+		return nil
+	}
+	out := pa.ExtensionSelection{Skills: []pa.ExtensionRef{}, Connectors: []pa.ExtensionRef{}}
+	for _, r := range v.Skills {
+		out.Skills = append(out.Skills, pa.ExtensionRef{ID: r.ID, Fingerprint: r.Fingerprint})
+	}
+	for _, r := range v.Connectors {
+		out.Connectors = append(out.Connectors, pa.ExtensionRef{ID: r.ID, Fingerprint: r.Fingerprint})
+	}
+	return &out
+}
+func paWireExtensions(v pa.ExtensionSelection) *contract.ProjectAssistantExtensionSelection {
+	out := &contract.ProjectAssistantExtensionSelection{Skills: []contract.ProjectAssistantExtensionRef{}, Connectors: []contract.ProjectAssistantExtensionRef{}}
+	for _, r := range v.Skills {
+		out.Skills = append(out.Skills, contract.ProjectAssistantExtensionRef{ID: r.ID, Fingerprint: r.Fingerprint})
+	}
+	for _, r := range v.Connectors {
+		out.Connectors = append(out.Connectors, contract.ProjectAssistantExtensionRef{ID: r.ID, Fingerprint: r.Fingerprint})
+	}
+	return out
 }

@@ -36,11 +36,12 @@ const installationFormat = 2
 // found again for each execution and never saved. No credential, account
 // identity, conversation or user environment is saved.
 type ClaudeInstallation struct {
-	Format  int               `json:"format"`
-	Adapter string            `json:"adapter"`
-	Files   map[string]string `json:"files"`
-	tools   nativeTools
-	spec    *adapterSpec
+	Format     int               `json:"format"`
+	Adapter    string            `json:"adapter"`
+	Files      map[string]string `json:"files"`
+	tools      nativeTools
+	spec       *adapterSpec
+	profileEnv []string
 }
 
 func (i ClaudeInstallation) adapter() adapterSpec {
@@ -286,7 +287,10 @@ func nativeLimits() Limits {
 // on first use and finds the person's tools; only Open starts the adapter.
 func InstalledClaudeProvider(state string) app.Provider { return &installedClaude{state: state} }
 
-type installedClaude struct{ state string }
+type installedClaude struct {
+	state    string
+	profiles app.LoginProfiles
+}
 
 func (p *installedClaude) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabilities, error) {
 	_, caps, cleanup, e := p.prepare(ctx, b, nil)
@@ -295,7 +299,7 @@ func (p *installedClaude) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabi
 }
 func (p *installedClaude) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
 	// Native scratch output must not become a write exception inside a repository.
-	if q.Bot.Project.Kind == pa.RepositoryProject {
+	if q.Directory != "" {
 		directory, e := filepath.EvalSymlinks(q.Directory)
 		if e != nil {
 			return nil, refusal(pa.ScopeDenied, "native_project")
@@ -319,7 +323,7 @@ func (p *installedClaude) Open(ctx context.Context, q app.OpenRequest, sink func
 		if b.Key != q.Bot.Key || b.Project != q.Bot.Project {
 			return caps, refusal(pa.ScopeDenied, "native_configuration")
 		}
-		if _, e := readInstallation(ctx, p.state); e != nil {
+		if _, e := readInstallation(withProfileEnvironment(ctx, nativeProfileOnly(config.Environment)), p.state); e != nil {
 			return caps, e
 		}
 		return caps, nil
@@ -362,6 +366,16 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 	if b.Agent != pa.ClaudeCode {
 		return Configuration{}, caps, func() {}, refusal(pa.AdapterNotFound, "native_provider")
 	}
+	ctx, env, release, e := profileHold(ctx, p.profiles, b)
+	if e != nil {
+		return Configuration{}, caps, func() {}, e
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			release()
+		}
+	}()
 	i, e := ensureInstallation(ctx, p.state)
 	if e != nil {
 		return Configuration{}, caps, func() {}, e
@@ -387,17 +401,22 @@ func (p *installedClaude) prepare(ctx context.Context, b pa.Bot, request *app.Op
 		}
 		history = h.Config
 	}
+	i.profileEnv = env
 	config, cleanup, e := i.isolatedWithHistory(ctx, state, b, history)
 	if e != nil {
 		return config, caps, cleanup, e
 	}
 	caps.CLIVersion, caps.AdapterVersion = i.tools.CLIVersion, ClaudeAdapterVersion
 	caps.Evidence = "installed Claude Code at or above the supported floor; supplied adapter sealed by digest; the person's own Claude Code settings and login, as in Codync; native auto memory and dreaming off"
+	if b.LoginProfile != "" {
+		caps.Evidence = "selected managed Claude Code account and configuration; sealed supplied adapter; native auto memory and dreaming off"
+	}
 	caps.ReadOnlyEnforced, caps.NativeMemoryVerified = false, true
 	caps.NativeMemory = pa.NativeMemoryDisabled
 	caps.Resume = claudeResumeQualified
 	caps.SendMessage = true
-	return config, caps, cleanup, nil
+	ok = true
+	return config, caps, func() { cleanup(); release() }, nil
 }
 
 // CheckClaudeInstallation verifies the supplied adapter and the person's tools.

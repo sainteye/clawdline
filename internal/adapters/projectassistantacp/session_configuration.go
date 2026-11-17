@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -16,6 +17,7 @@ import (
 // The HTTP owner must revalidate the current actor before every tool effect;
 // copying this descriptor does not grant authority to another execution.
 type OwnedMCP struct {
+	Extensions  []app.NativeConnector
 	Fence       pa.Fence
 	URL         string
 	BearerToken string
@@ -60,6 +62,12 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			return nil, err
 		}
 		servers = append(servers, owned.wire())
+		for index, connector := range owned.Extensions {
+			wire := owned.wire()
+			wire["name"] = connector.Name
+			wire["url"] = owned.URL + "/extensions/" + strconv.Itoa(index)
+			servers = append(servers, wire)
+		}
 	}
 	params := map[string]any{"cwd": q.Directory, "mcpServers": servers}
 	switch q.Bot.Agent {
@@ -144,6 +152,9 @@ func systemPrompt(q app.OpenRequest) string {
 	)
 	if text := strings.TrimSpace(q.Bot.Instructions.Text); text != "" {
 		lines = append(lines, "", "Standing instructions from the user:", text)
+	}
+	if q.Extensions.Skills != "" {
+		lines = append(lines, q.Extensions.Skills)
 	}
 	return strings.Join(lines, "\n")
 }

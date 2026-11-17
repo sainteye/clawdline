@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12989,
-  "riskKeys": 5610,
-  "nonRiskCount": 7379,
+  "englishContentKeys": 13021,
+  "riskKeys": 5626,
+  "nonRiskCount": 7395,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 663,
+      "count": 665,
       "sources": [
         null
       ],
@@ -549,6 +549,7 @@
         "capacityRow.bots.config_probes.what",
         "capacityRow.bots.dispatch_seconds.what",
         "capacityRow.bots.event_rows.what",
+        "capacityRow.bots.extensions.what",
         "capacityRow.bots.fallback_agents.what",
         "capacityRow.bots.feature_probe_bytes.what",
         "capacityRow.bots.follow_up_chain.full",
@@ -583,6 +584,7 @@
         "capacityRow.bots.inputs_per_bot.what",
         "capacityRow.bots.inputs_per_message.what",
         "capacityRow.bots.instruction_bytes.what",
+        "capacityRow.bots.login_profiles.what",
         "capacityRow.bots.manager_approval_seconds.what",
         "capacityRow.bots.manager_card_units.what",
         "capacityRow.bots.manager_created.what",
@@ -5894,7 +5896,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 273,
+      "count": 287,
       "sources": [
         null
       ],
@@ -5939,6 +5941,10 @@
         "projectAssistants.earlierLoading",
         "projectAssistants.executing",
         "projectAssistants.export",
+        "projectAssistants.extensionChanged",
+        "projectAssistants.extensionDeselect",
+        "projectAssistants.extensionScope",
+        "projectAssistants.extensions",
         "projectAssistants.failBotsOff",
         "projectAssistants.failCloudOff",
         "projectAssistants.failFull",
@@ -6013,6 +6019,16 @@
         "projectAssistants.libraryCancel",
         "projectAssistants.libraryPicture",
         "projectAssistants.loading",
+        "projectAssistants.loginCreate",
+        "projectAssistants.loginDefault",
+        "projectAssistants.loginName",
+        "projectAssistants.loginProfile",
+        "projectAssistants.loginProfiles",
+        "projectAssistants.loginRename",
+        "projectAssistants.loginReplay",
+        "projectAssistants.loginReplayHint",
+        "projectAssistants.loginSignedIn",
+        "projectAssistants.loginUnavailable",
         "projectAssistants.machine",
         "projectAssistants.memory",
         "projectAssistants.memoryAuthorBot",

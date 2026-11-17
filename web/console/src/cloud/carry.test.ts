@@ -422,6 +422,10 @@ test("one word, one list, and every route names a word the table carries", () =>
     "project-assistants.rule-remove": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/rules/remove",
     "project-assistants.memory-view": "captured Bot source GET /v1/project-assistants/{bot_id}/memory-view",
     "project-assistants.configuration": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
+    "project-assistants.configuration-profile": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
+    "project-assistants.extensions": "captured Bot source GET /v1/project-assistants/{bot_id}/extensions",
+    "project-assistants.login-profiles": "captured Bot source GET /v1/project-assistants/{bot_id}/login-profiles",
+    "project-assistants.login-profile": "captured Bot source POST /v1/project-assistants/{bot_id}/login-profile",
     "project-assistants.view": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
     "project-assistants.export": "captured Bot source GET /v1/project-assistants/{bot_id}/export",
   } as const
@@ -430,7 +434,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 289)
+  assert.equal(Object.keys(CARRIED).length, 293)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

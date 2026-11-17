@@ -61,3 +61,34 @@ func TestTheCodexLockfileNamesTheSuppliedAdapter(t *testing.T) {
 		t.Fatal("bundled lockfile does not name the supplied Codex adapter")
 	}
 }
+
+func TestManagedCodexMemoryProbeUsesOnlyItsSelectedHome(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "first")
+	second := filepath.Join(root, "second")
+	for _, dir := range []string{first, second} {
+		if e := os.Mkdir(dir, 0700); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e := os.WriteFile(filepath.Join(second, "memories-enabled"), []byte("synthetic"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	script := filepath.Join(root, "codex")
+	if e := os.WriteFile(script, []byte("#!/bin/sh\nif [ -n \"$CODEX_HOME\" ] && [ -f \"$CODEX_HOME/memories-enabled\" ]; then echo 'memories stable true'; else echo 'memories stable false'; fi\n"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	for _, test := range []struct {
+		home string
+		on   bool
+	}{{first, false}, {second, true}, {"", false}} {
+		env := []string{"PATH=/usr/bin:/bin"}
+		if test.home != "" {
+			env = append(env, "CODEX_HOME="+test.home)
+		}
+		on, e := codexMemoriesOn(context.Background(), script, env)
+		if e != nil || on != test.on {
+			t.Fatalf("selected home memory policy: %t %v", on, e)
+		}
+	}
+}

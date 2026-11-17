@@ -106,13 +106,13 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 	if err = pa.CheckExecutionCapabilities(caps, q.Binding.Fence); err != nil {
 		return nil, err
 	}
-	if q.Binding.Revoked || q.Binding.Agent != q.Bot.Agent || q.Binding.Fence.ConversationID != q.Bot.ConversationID || q.Binding.InstructionRevision != q.Bot.Instructions.Revision {
+	if q.Binding.Revoked || q.Binding.Agent != q.Bot.Agent || q.Binding.LoginProfile != q.Bot.LoginProfile || q.Binding.Fence.ConversationID != q.Bot.ConversationID || q.Binding.InstructionRevision != q.Bot.Instructions.Revision {
 		return nil, refusal(pa.ScopeDenied, "execution_binding")
 	}
 	if q.Resume && (!caps.Resume || q.Binding.NativeSessionID == "") {
 		return nil, refusal(pa.ResumeUnsupported, "native_session")
 	}
-	if caps.SendMessage && (p.o.Limits.RPCPending < 2 || q.Tools == nil && p.o.OpenMCP == nil) {
+	if (caps.SendMessage || len(q.Extensions.Connectors) > 0) && (p.o.Limits.RPCPending < 2 || q.Tools == nil && p.o.OpenMCP == nil) {
 		return nil, refusal(pa.AdapterNotFound, "owned_mcp")
 	}
 	proc, err := StartProcess(ctx, ProcessOptions{Configuration: c, Directory: q.Directory, Limits: p.o.Limits})
@@ -133,7 +133,7 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 		return nil, errors.Join(err, proc.Close(cleanup))
 	}
 	client.adapterVersion = caps.AdapterVersion
-	if caps.SendMessage {
+	if caps.SendMessage || len(q.Extensions.Connectors) > 0 {
 		var lease OwnedMCP
 		if p.o.OpenMCP != nil {
 			lease, err = p.o.OpenMCP(ctx, q)

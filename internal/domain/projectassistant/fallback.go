@@ -33,6 +33,7 @@ const (
 // AttemptFact is append-only. Opening and Sending deliberately mean unknown
 // after a crash; a reason alone never authorizes another attempt.
 type AttemptFact struct {
+	LoginProfile     string       `json:"login_profile,omitempty"`
 	Ordinal          int          `json:"ordinal"`
 	Agent            Agent        `json:"agent"`
 	Fence            Fence        `json:"fence"`
@@ -56,12 +57,13 @@ type AttemptFact struct {
 
 // AgentRest belongs to one machine's default login identity, never Bot memory.
 type AgentRest struct {
-	RecordedAt time.Time `json:"recorded_at"`
-	MachineID  string    `json:"machine_id"`
-	Agent      Agent     `json:"agent"`
-	Until      time.Time `json:"until"`
-	Reason     string    `json:"reason"`
-	Failures   int       `json:"failures"`
+	LoginProfile string    `json:"login_profile,omitempty"`
+	RecordedAt   time.Time `json:"recorded_at"`
+	MachineID    string    `json:"machine_id"`
+	Agent        Agent     `json:"agent"`
+	Until        time.Time `json:"until"`
+	Reason       string    `json:"reason"`
+	Failures     int       `json:"failures"`
 }
 
 func ValidateFallbacks(primary Agent, agents []Agent) error {
@@ -159,4 +161,12 @@ func (c *FallbackConfig) UnmarshalJSON(raw []byte) error {
 	}
 	*c = FallbackConfigOf(agents)
 	return nil
+}
+
+// LoginKey is generated only from validated source-owned identities.
+func LoginKey(agent Agent, profile string) string {
+	if profile == "" {
+		return string(agent)
+	}
+	return string(agent) + "#profile-" + profile
 }

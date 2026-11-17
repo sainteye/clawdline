@@ -35,7 +35,7 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 	if err := pa.CheckFence(f, f); err != nil {
 		return nativeHistory{}, err
 	}
-	if f.Key != q.Bot.Key || f.Project != q.Bot.Project || f.ConversationID != q.Bot.ConversationID || q.Binding.Agent != q.Bot.Agent || q.Binding.Revoked || q.Binding.InstructionRevision != q.Bot.Instructions.Revision || q.Binding.MemoryRevision < 0 || q.Binding.ForgottenThrough < 0 {
+	if f.Key != q.Bot.Key || f.Project != q.Bot.Project || f.ConversationID != q.Bot.ConversationID || q.Binding.Agent != q.Bot.Agent || q.Binding.LoginProfile != q.Bot.LoginProfile || q.Binding.Revoked || q.Binding.InstructionRevision != q.Bot.Instructions.Revision || q.Binding.MemoryRevision < 0 || q.Binding.ForgottenThrough < 0 {
 		return nativeHistory{}, refusal(pa.ScopeDenied, "native_history_scope")
 	}
 	scope, _ := json.Marshal(struct {
@@ -49,6 +49,9 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 		Policy, Conversation    string
 		Forgotten, Instructions int64
 	}{policy, f.ConversationID, q.Binding.ForgottenThrough, q.Binding.InstructionRevision})
+	if q.Bot.LoginProfile != "" {
+		epoch = append(epoch, []byte("\x00login-profile:"+q.Bot.LoginProfile)...)
+	}
 	// Keep the byte identity of legacy main histories unchanged.
 	if q.Binding.SessionSlot != "" {
 		epoch = append(epoch, []byte("\x00"+q.Binding.SessionSlot)...)

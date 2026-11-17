@@ -33,6 +33,7 @@ func TestManagedResourceHTTPRequiresMachineAuthorityAndReviewedPlan(t *testing.T
 	now := time.Now()
 	owner := taskresources.OwnerState{Owner: taskresource.Owner{Kind: "task", ID: uuid.NewString(), Project: filepath.Dir(output)}, OutputRoot: output, EvidenceDigest: "synthetic accepted completion", Presence: "absent", UsePresence: "absent"}
 	service := s.broker.Resources
+	service.Uses = func(context.Context, taskresource.Resource) string { return "absent" }
 	service.Owner = func(context.Context, string, string) (taskresources.OwnerState, error) { return owner, nil }
 	service.FreeSpace = func() (int64, error) { return 1 << 40, nil }
 	service.Clock = func() time.Time { return now.Add(-26 * time.Hour) }

@@ -239,7 +239,7 @@ func (c *Client) configureModel(ctx context.Context, bot pa.Bot, raw []byte, app
 
 // Configuration is a disposable protocol discovery session. It sends no prompt,
 // attaches no tools, records no native ownership, and never resumes a Bot.
-func probeConfiguration(ctx context.Context, config Configuration, caps pa.Capabilities, limits Limits, bot pa.Bot, dir, model string) (result pa.ConfigurationCatalog, err error) {
+func probeConfiguration(ctx context.Context, config Configuration, caps pa.Capabilities, limits Limits, bot pa.Bot, dir, model string, faults ...func(*Client)) (result pa.ConfigurationCatalog, err error) {
 	ctx, cancel := context.WithTimeout(ctx, limits.RPCTimeout)
 	defer cancel()
 	p, err := StartProcess(ctx, ProcessOptions{Configuration: config, Directory: dir, Limits: limits})
@@ -252,13 +252,24 @@ func probeConfiguration(ctx context.Context, config Configuration, caps pa.Capab
 	if err != nil {
 		cleanup, stop := context.WithTimeout(context.Background(), limits.CleanupTimeout)
 		defer stop()
-		return result, errors.Join(err, p.Close(cleanup))
+		closeErr := p.Close(cleanup)
+		if closeErr != nil {
+			closeErr = &configurationCleanupFailure{closeErr}
+		}
+		return result, errors.Join(err, closeErr)
 	}
 	defer func() {
 		cleanup, stop := context.WithTimeout(context.Background(), limits.CleanupTimeout)
 		defer stop()
-		err = errors.Join(err, c.Close(cleanup))
+		closeErr := c.Close(cleanup)
+		if closeErr != nil {
+			closeErr = &configurationCleanupFailure{closeErr}
+		}
+		err = errors.Join(err, closeErr)
 	}()
+	if len(faults) > 0 {
+		defer faults[0](c)
+	}
 	c.adapterVersion = caps.AdapterVersion
 	c.discovery = true
 	c.discoveryApply = len(bot.RuntimeSettings.Options) > 0
@@ -275,19 +286,35 @@ func (p *Provider) Configuration(ctx context.Context, bot pa.Bot, dir, model str
 }
 func (p *installedClaude) Configuration(ctx context.Context, bot pa.Bot, dir, model string) (pa.ConfigurationCatalog, error) {
 	config, caps, cleanup, err := p.prepare(ctx, bot, nil)
-	defer cleanup()
 	if err != nil {
+		cleanup()
 		return pa.ConfigurationCatalog{}, err
 	}
-	return probeConfiguration(ctx, config, caps, nativeLimits(), bot, dir, model)
+	result, err := probeConfiguration(ctx, config, caps, nativeLimits(), bot, dir, model)
+	if p.profiles != nil && bot.LoginProfile != "" {
+		var pending *configurationCleanupFailure
+		if errors.As(err, &pending) {
+			err = errors.Join(err, p.profiles.Quarantine(context.Background(), bot))
+		}
+	}
+	releaseConfiguration(cleanup, err)
+	return result, err
 }
 func (p *installedCodex) Configuration(ctx context.Context, bot pa.Bot, dir, model string) (pa.ConfigurationCatalog, error) {
 	config, caps, cleanup, err := p.prepare(ctx, bot)
-	defer cleanup()
 	if err != nil {
+		cleanup()
 		return pa.ConfigurationCatalog{}, err
 	}
-	return probeConfiguration(ctx, config, caps, nativeLimits(), bot, dir, model)
+	result, err := probeConfiguration(ctx, config, caps, nativeLimits(), bot, dir, model)
+	if p.profiles != nil && bot.LoginProfile != "" {
+		var pending *configurationCleanupFailure
+		if errors.As(err, &pending) {
+			err = errors.Join(err, p.profiles.Quarantine(context.Background(), bot))
+		}
+	}
+	releaseConfiguration(cleanup, err)
+	return result, err
 }
 func (p *installedAgents) Configuration(ctx context.Context, bot pa.Bot, dir, model string) (pa.ConfigurationCatalog, error) {
 	provider, err := p.pick(bot.Agent)
@@ -297,4 +324,21 @@ func (p *installedAgents) Configuration(ctx context.Context, bot pa.Bot, dir, mo
 	return provider.(interface {
 		Configuration(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
 	}).Configuration(ctx, bot, dir, model)
+}
+
+// Unknown discovery cleanup must keep the selected account's durable hold and
+// scratch ownership; another operation cannot remove it beneath a lost process.
+type configurationCleanupFailure struct{ cause error }
+
+func (e *configurationCleanupFailure) Error() string {
+	return "execution_effect_unknown: configuration_cleanup"
+}
+func (e *configurationCleanupFailure) Unwrap() []error {
+	return []error{refusal(pa.ExecutionEffectUnknown, "configuration_cleanup"), e.cause}
+}
+func releaseConfiguration(cleanup func(), err error) {
+	var pending *configurationCleanupFailure
+	if !errors.As(err, &pending) {
+		cleanup()
+	}
 }

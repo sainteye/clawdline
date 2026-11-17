@@ -51,6 +51,8 @@ func cacheTask(t *testing.T, pane string, register bool, states ...State) (*Brok
 		}
 	}
 	b.ProcessCWDs = func(context.Context) ([]string, error) { return []string{"/"}, nil }
+	// This policy fixture supplies a complete, idle process observation.
+	b.ProcessUses = func(context.Context, string) string { return "absent" }
 	b.Reading = func(context.Context) session.Inventory {
 		return session.Inventory{Sessions: []session.Session{{ID: "%root", Assistant: session.AssistantClaude}},
 			Sources: map[string]bool{"tmux": true}}

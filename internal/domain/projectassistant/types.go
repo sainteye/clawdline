@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 6
+	SchemaVersion       = 7
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -105,16 +105,18 @@ type InstructionSnapshot struct {
 	RoleSnapshotRef string `json:"role_snapshot_ref"`
 }
 type Bot struct {
-	RuntimeSettings  RuntimeSettings  `json:"runtime_settings,omitempty,omitzero"`
-	Notify           string           `json:"notify,omitempty"`
-	Key              BotKey           `json:"key"`
-	Project          ProjectScope     `json:"project"`
-	ConversationID   string           `json:"conversation_id"`
-	Name             string           `json:"name"`
-	Appearance       Appearance       `json:"appearance"`
-	Agent            Agent            `json:"agent"`
-	FallbackAgents   FallbackConfig   `json:"fallback_agents,omitempty,omitzero"`
-	PermissionPolicy PermissionPolicy `json:"permission_policy"`
+	Extensions       ExtensionSelection `json:"extensions,omitempty,omitzero"`
+	LoginProfile     string             `json:"login_profile,omitempty"`
+	RuntimeSettings  RuntimeSettings    `json:"runtime_settings,omitempty,omitzero"`
+	Notify           string             `json:"notify,omitempty"`
+	Key              BotKey             `json:"key"`
+	Project          ProjectScope       `json:"project"`
+	ConversationID   string             `json:"conversation_id"`
+	Name             string             `json:"name"`
+	Appearance       Appearance         `json:"appearance"`
+	Agent            Agent              `json:"agent"`
+	FallbackAgents   FallbackConfig     `json:"fallback_agents,omitempty,omitzero"`
+	PermissionPolicy PermissionPolicy   `json:"permission_policy"`
 	// Mode is the agent mode the Bot works in, as in Codync: AutoMode (or
 	// empty) is the agent's own Auto mode, otherwise one of AgentModes.
 	Mode string `json:"mode,omitempty"`
@@ -150,14 +152,16 @@ type CreateBot struct {
 
 // EditBot preserves optional settings omitted by older clients; Project is fixed.
 type EditBot struct {
-	Agent           Agent            `json:"agent,omitempty"`
-	RuntimeSettings *RuntimeSettings `json:"runtime_settings,omitempty"`
-	Notify          string           `json:"notify,omitempty"`
-	FallbackAgents  *[]Agent         `json:"fallback_agents,omitempty"`
-	ExpectedVersion int64            `json:"expected_version"`
-	Name            string           `json:"name"`
-	Appearance      Appearance       `json:"appearance"`
-	Instructions    string           `json:"instructions"`
+	Extensions      *ExtensionSelection `json:"extensions,omitempty"`
+	LoginProfile    *string             `json:"login_profile,omitempty"`
+	Agent           Agent               `json:"agent,omitempty"`
+	RuntimeSettings *RuntimeSettings    `json:"runtime_settings,omitempty"`
+	Notify          string              `json:"notify,omitempty"`
+	FallbackAgents  *[]Agent            `json:"fallback_agents,omitempty"`
+	ExpectedVersion int64               `json:"expected_version"`
+	Name            string              `json:"name"`
+	Appearance      Appearance          `json:"appearance"`
+	Instructions    string              `json:"instructions"`
 	// An empty policy leaves the permission setting as it is, so a console
 	// older than this setting cannot reset it.
 	PermissionPolicy PermissionPolicy `json:"permission_policy,omitempty"`
@@ -228,6 +232,7 @@ type Turn struct {
 }
 
 type ExecutionBinding struct {
+	LoginProfile        string `json:"login_profile,omitempty"`
 	SessionSlot         string `json:"session_slot,omitempty"`
 	Fence               Fence  `json:"fence"`
 	Agent               Agent  `json:"agent"`

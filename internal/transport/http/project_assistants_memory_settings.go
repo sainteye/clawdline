@@ -50,6 +50,9 @@ func (h *projectAssistantHTTP) readMemorySettings(r *http.Request, route paHTTPR
 		fields = append(fields, "source_epoch", "layer", "entry_id", "revision")
 	} else {
 		fields = append(fields, "agent", "model")
+		if r.URL.Query().Has("login_profile") {
+			fields = append(fields, "login_profile")
+		}
 	}
 	q, err := paHTTPQuery(r, fields...)
 	if err != nil {
@@ -73,7 +76,11 @@ func (h *projectAssistantHTTP) readMemorySettings(r *http.Request, route paHTTPR
 		}{pa.ContractVersion, v}
 		check = v.Revalidate
 	} else {
-		v, c, e := h.options.Service.Configuration(r.Context(), request, pa.Agent(q.Get("agent")), q.Get("model"))
+		profiles := []string{}
+		if q.Has("login_profile") {
+			profiles = append(profiles, q.Get("login_profile"))
+		}
+		v, c, e := h.options.Service.Configuration(r.Context(), request, pa.Agent(q.Get("agent")), q.Get("model"), profiles...)
 		if e != nil {
 			return nil, e
 		}

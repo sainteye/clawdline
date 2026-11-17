@@ -52,6 +52,10 @@ func projectAssistantOperationCases() []operationCase {
 		{"list", "GET", "", map[string]any{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": 2}, map[string]string{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": "2"}},
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
 		{"memory-view", "GET", "/bot/memory-view", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}},
+		{"configuration-profile", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}},
+		{"extensions", "GET", "/bot/extensions", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
+		{"login-profiles", "GET", "/bot/login-profiles", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex"}},
+		{"login-profile", "POST", "/bot/login-profile", map[string]any{"fence": fence, "expected_version": 1, "profile_id": "", "revision": 0, "agent": "codex", "action": "create", "name": "Synthetic account"}, nil},
 		{"configuration", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": ""}},
 		{"export", "GET", "/bot/export", key, map[string]string{"machine_id": "mac-01"}},
 		{"history", "GET", "/bot/messages", map[string]any{"key": key, "conversation_id": "chat", "before_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "before_seq": "3", "page_size": "2"}},
@@ -124,7 +128,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 48 {
+	if len(out) != 52 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

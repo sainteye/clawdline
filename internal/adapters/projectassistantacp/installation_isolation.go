@@ -85,6 +85,7 @@ func (i ClaudeInstallation) isolatedWithHistory(ctx context.Context, state strin
 	// permission rules and the Project's CLAUDE.md load; only native auto
 	// memory is off (CLAUDE_CODE_DISABLE_AUTO_MEMORY and the session
 	// settings). history only holds this feature's native-ID owner records.
+	environment = append(environment, i.profileEnv...)
 	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, cleanup, nil
 }
 

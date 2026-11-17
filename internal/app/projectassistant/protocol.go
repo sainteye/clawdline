@@ -22,6 +22,7 @@ type Provider interface {
 }
 
 type OpenRequest struct {
+	Extensions NativeExtensions
 	// PrimaryAgent remains configured on the Bot; Binding.Agent is the effective identity.
 	PrimaryAgent pa.Agent
 	Bot          pa.Bot

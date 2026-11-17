@@ -4450,6 +4450,7 @@ type ProjectAssistantAttemptFact struct {
 	CleanupConfirmed bool                  `json:"cleanup_confirmed"`
 	Effect           string                `json:"effect"`
 	Fence            ProjectAssistantFence `json:"fence"`
+	LoginProfile     string                `json:"login_profile,omitempty"`
 
 	// Source-admitted native activity was observed.
 	NativeActivity bool `json:"native_activity,omitempty"`
@@ -4473,11 +4474,12 @@ type ProjectAssistantAttemptFact struct {
 }
 
 type ProjectAssistantBot struct {
-	Agent          ProjectAssistantAgent      `json:"agent"`
-	Appearance     ProjectAssistantAppearance `json:"appearance"`
-	ConversationID string                     `json:"conversation_id"`
-	CreatedAt      string                     `json:"created_at"`
-	CreatedBy      *ProjectAssistantBotKey    `json:"created_by,omitempty"`
+	Agent          ProjectAssistantAgent               `json:"agent"`
+	Appearance     ProjectAssistantAppearance          `json:"appearance"`
+	ConversationID string                              `json:"conversation_id"`
+	CreatedAt      string                              `json:"created_at"`
+	CreatedBy      *ProjectAssistantBotKey             `json:"created_by,omitempty"`
+	Extensions     *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
@@ -4487,6 +4489,7 @@ type ProjectAssistantBot struct {
 	Hidden       bool                         `json:"hidden,omitempty"`
 	Instructions ProjectAssistantInstructions `json:"instructions"`
 	Key          ProjectAssistantBotKey       `json:"key"`
+	LoginProfile string                       `json:"login_profile,omitempty"`
 	ManageTeam   bool                         `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
@@ -4644,15 +4647,17 @@ type ProjectAssistantEditRequest struct {
 // Editable settings; omitted fallback_agents preserves the saved chain, while
 // an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantEditSettings struct {
-	Agent           ProjectAssistantAgent      `json:"agent,omitempty"`
-	Appearance      ProjectAssistantAppearance `json:"appearance"`
-	ExpectedVersion int64                      `json:"expected_version"`
+	Agent           ProjectAssistantAgent               `json:"agent,omitempty"`
+	Appearance      ProjectAssistantAppearance          `json:"appearance"`
+	ExpectedVersion int64                               `json:"expected_version"`
+	Extensions      *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
-	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
-	Instructions   string                  `json:"instructions"`
-	ManageTeam     bool                    `json:"manage_team,omitempty"`
+	FallbackAgents []ProjectAssistantAgent         `json:"fallback_agents,omitempty"`
+	Instructions   string                          `json:"instructions"`
+	LoginProfile   *ProjectAssistantLoginSelection `json:"login_profile,omitempty"`
+	ManageTeam     bool                            `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4815,6 +4820,7 @@ type ProjectAssistantExecutionBinding struct {
 	Fence               ProjectAssistantFence `json:"fence"`
 	ForgottenThrough    int64                 `json:"forgotten_through"`
 	InstructionRevision int64                 `json:"instruction_revision"`
+	LoginProfile        string                `json:"login_profile,omitempty"`
 	MemoryRevision      int64                 `json:"memory_revision"`
 	NativeSessionID     string                `json:"native_session_id"`
 	Revoked             bool                  `json:"revoked"`
@@ -4946,6 +4952,33 @@ type ProjectAssistantExportRoutineTrigger struct {
 	Source     string            `json:"source,omitempty"`
 	TimeZone   string            `json:"timeZone,omitempty"`
 	Type       string            `json:"type"`
+}
+
+type ProjectAssistantExtensionCatalog struct {
+	ConnectorsAvailable bool                             `json:"connectors_available"`
+	Items               []ProjectAssistantExtensionOffer `json:"items"`
+}
+
+type ProjectAssistantExtensionOffer struct {
+	Fingerprint string `json:"fingerprint"`
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+}
+
+type ProjectAssistantExtensionRef struct {
+	Fingerprint string `json:"fingerprint"`
+	ID          string `json:"id"`
+}
+
+type ProjectAssistantExtensionSelection struct {
+	Connectors []ProjectAssistantExtensionRef `json:"connectors"`
+	Skills     []ProjectAssistantExtensionRef `json:"skills"`
+}
+
+type ProjectAssistantExtensionsResponse struct {
+	Catalog         ProjectAssistantExtensionCatalog `json:"catalog"`
+	ContractVersion string                           `json:"contract_version"`
 }
 
 type ProjectAssistantFailure struct {
@@ -5146,6 +5179,40 @@ type ProjectAssistantListResponse struct {
 	Sources         []ProjectAssistantSourceStatus `json:"sources"`
 }
 
+type ProjectAssistantLoginProfile struct {
+	Agent    ProjectAssistantAgent `json:"agent"`
+	ID       string                `json:"id"`
+	Kind     string                `json:"kind"`
+	Name     string                `json:"name"`
+	Revision int64                 `json:"revision"`
+	State    string                `json:"state"`
+}
+
+type ProjectAssistantLoginProfileAction struct {
+	Action          string                  `json:"action"`
+	Agent           ProjectAssistantAgent   `json:"agent"`
+	Command         ProjectAssistantCommand `json:"command"`
+	ExpectedVersion int64                   `json:"expected_version"`
+	Fence           ProjectAssistantFence   `json:"fence"`
+	Name            string                  `json:"name"`
+	ProfileID       string                  `json:"profile_id"`
+	Revision        int64                   `json:"revision"`
+}
+
+type ProjectAssistantLoginProfileResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	Profile         ProjectAssistantLoginProfile `json:"profile"`
+}
+
+type ProjectAssistantLoginProfilesResponse struct {
+	ContractVersion string                         `json:"contract_version"`
+	Profiles        []ProjectAssistantLoginProfile `json:"profiles"`
+}
+
+type ProjectAssistantLoginSelection struct {
+	ID string `json:"id"`
+}
+
 type ProjectAssistantMemoryDetail struct {
 	ID        string `json:"id"`
 	Layer     string `json:"layer"`
@@ -5303,10 +5370,11 @@ const (
 	ProjectAssistantOperationDispatch       ProjectAssistantOperation = "dispatch"
 	ProjectAssistantOperationUpload         ProjectAssistantOperation = "upload"
 	ProjectAssistantOperationRenameArtifact ProjectAssistantOperation = "rename-artifact"
+	ProjectAssistantOperationLoginProfile   ProjectAssistantOperation = "login-profile"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`
@@ -6011,15 +6079,17 @@ type ProjectAssistantTeamAnswerResponse struct {
 // Editable settings; omitted fallback_agents preserves the saved chain, while
 // an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantTeamEditSettings struct {
-	Agent           ProjectAssistantAgent      `json:"agent,omitempty"`
-	Appearance      ProjectAssistantAppearance `json:"appearance"`
-	ExpectedVersion int64                      `json:"expected_version"`
+	Agent           ProjectAssistantAgent               `json:"agent,omitempty"`
+	Appearance      ProjectAssistantAppearance          `json:"appearance"`
+	ExpectedVersion int64                               `json:"expected_version"`
+	Extensions      *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
-	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
-	Instructions   string                  `json:"instructions"`
-	ManageTeam     bool                    `json:"manage_team"`
+	FallbackAgents []ProjectAssistantAgent         `json:"fallback_agents,omitempty"`
+	Instructions   string                          `json:"instructions"`
+	LoginProfile   *ProjectAssistantLoginSelection `json:"login_profile,omitempty"`
+	ManageTeam     bool                            `json:"manage_team"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).

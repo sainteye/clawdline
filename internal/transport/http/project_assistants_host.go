@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/botcapabilities"
+	"github.com/sainteye/clawdline/internal/adapters/botloginprofiles"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
@@ -27,6 +29,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
@@ -44,6 +47,8 @@ type projectAssistantServer struct {
 	inspectionFailed bool
 	// Private fixture overrides; production uses the installed native factory.
 	provider          func() (app.Provider, error)
+	loginProfiles     func(context.Context) (app.LoginProfiles, error)
+	extensions        app.ExtensionInventory
 	clock             func() time.Time
 	limits            *app.RuntimeLimits
 	beforeViewPublish func()
@@ -108,16 +113,43 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	if p.limits != nil {
 		limits = *p.limits
 	}
+	var profiles app.LoginProfiles
+	profileFactory := p.loginProfiles
+	if profileFactory == nil {
+		profileFactory = func(ctx context.Context) (app.LoginProfiles, error) {
+			account := i.AccountID
+			if account == "" {
+				account = "local:" + i.MachineID
+			}
+			r, e := botloginprofiles.New(ctx, s.store.ProjectAssistantDatabase(), s.cfg.Dir, account, i.MachineID, projectassistantacp.InstalledLoginNative{})
+			if e == nil {
+				profiles = r
+			}
+			return r, e
+		}
+	} else {
+		factory := profileFactory
+		profileFactory = func(ctx context.Context) (app.LoginProfiles, error) { r, e := factory(ctx); profiles = r; return r, e }
+	}
 	provider := p.provider
 	if provider == nil {
-		provider = func() (app.Provider, error) { return projectassistantacp.InstalledProvider(s.cfg.Dir), nil }
+		provider = func() (app.Provider, error) {
+			return projectassistantacp.InstalledProviderWithProfiles(s.cfg.Dir, profiles), nil
+		}
 	}
 	clock := p.clock
 	if clock == nil {
 		clock = time.Now
 	}
+	extensions := p.extensions
+	if extensions == nil {
+		extensions = botcapabilities.Inventory{State: s.cfg.Dir, Skills: func(ctx context.Context) ([]squad.Skill, error) {
+			catalog, e := s.squadCatalog(ctx)
+			return catalog.Skills, e
+		}}
+	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
-		Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
+		Extensions: extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,
 		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: clock,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,

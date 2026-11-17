@@ -121,6 +121,7 @@ func TestTheSweepRemovesOnlyWhatItCanProve(t *testing.T) {
 	cwds := []string{"/"}
 	var cwdErr error
 	b.ProcessCWDs = func(context.Context) ([]string, error) { return cwds, cwdErr }
+	b.ProcessUses = func(context.Context, string) string { return "absent" }
 
 	landed := "c6000001-0000-4000-8000-000000000001"
 	dirty := "c6000002-0000-4000-8000-000000000002"

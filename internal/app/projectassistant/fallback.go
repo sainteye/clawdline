@@ -84,7 +84,11 @@ func (r *Engine) selectAgent(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.Age
 			continue
 		}
 		if ok {
-			rest, err := rests.AgentRest(ctx, bot.Key.MachineID, agent)
+			profile := ""
+			if agent == bot.Agent {
+				profile = bot.LoginProfile
+			}
+			rest, err := loginRest(ctx, rests, bot.Key.MachineID, agent, profile)
 			if err != nil {
 				return "", err
 			}
@@ -217,11 +221,15 @@ func (r *Engine) attemptRest(ctx context.Context, bot pa.Bot, t pa.Turn) (*pa.Ag
 		return nil, runtimeFailure(pa.Unsupported, "agent_rests")
 	}
 	f := t.Attempts[len(t.Attempts)-1]
-	before, err := store.AgentRest(ctx, bot.Key.MachineID, f.Agent)
+	before, err := loginRest(ctx, store, bot.Key.MachineID, f.Agent, f.LoginProfile)
 	if err != nil {
 		return nil, err
 	}
-	return pa.RestAfter(bot.Key.MachineID, f.Agent, f.Reason, r.o.Clock(), before), nil
+	rest := pa.RestAfter(bot.Key.MachineID, f.Agent, f.Reason, r.o.Clock(), before)
+	if rest != nil {
+		rest.LoginProfile = f.LoginProfile
+	}
+	return rest, nil
 }
 
 // holdAttempt records cleanup knowledge without granting replay authority. It
@@ -286,4 +294,16 @@ func attemptSwitchNotice(x Export, t pa.Turn, primary pa.Agent) string {
 		return ""
 	}
 	return "Agent switched before sending / 送出前已切換 Agent：" + string(before) + " → " + string(effective)
+}
+
+func loginRest(ctx context.Context, store AgentRestRepository, machine string, agent pa.Agent, profile string) (*pa.AgentRest, error) {
+	if profile == "" {
+		return store.AgentRest(ctx, machine, agent)
+	}
+	if p, ok := store.(interface {
+		ProfileRest(context.Context, string, pa.Agent, string) (*pa.AgentRest, error)
+	}); ok {
+		return p.ProfileRest(ctx, machine, agent, profile)
+	}
+	return nil, runtimeFailure(pa.Unsupported, "profile_rests")
 }

@@ -5207,6 +5207,7 @@ export interface ProjectAssistantAttemptFact {
   cleanup_confirmed: boolean
   effect: string
   fence: ProjectAssistantFence
+  login_profile?: string
 
   /**
    * Source-admitted native activity was observed.
@@ -5246,6 +5247,7 @@ export interface ProjectAssistantBot {
   conversation_id: string
   created_at: string
   created_by?: ProjectAssistantBotKey
+  extensions?: ProjectAssistantExtensionSelection
 
   /**
    * Ordered unique default login identities. Omitted edits preserve saved settings;
@@ -5259,6 +5261,7 @@ export interface ProjectAssistantBot {
   hidden?: boolean
   instructions: ProjectAssistantInstructions
   key: ProjectAssistantBotKey
+  login_profile?: string
   manage_team?: boolean
 
   /**
@@ -5441,6 +5444,7 @@ export interface ProjectAssistantEditSettings {
   agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   expected_version: number
+  extensions?: ProjectAssistantExtensionSelection
 
   /**
    * Ordered unique default login identities. Omitted edits preserve saved settings;
@@ -5448,6 +5452,7 @@ export interface ProjectAssistantEditSettings {
    */
   fallback_agents?: ProjectAssistantAgent[]
   instructions: string
+  login_profile?: ProjectAssistantLoginSelection
   manage_team?: boolean
 
   /**
@@ -5613,6 +5618,7 @@ export interface ProjectAssistantExecutionBinding {
   fence: ProjectAssistantFence
   forgotten_through: number
   instruction_revision: number
+  login_profile?: string
   memory_revision: number
   native_session_id: string
   revoked: boolean
@@ -5746,6 +5752,33 @@ export interface ProjectAssistantExportRoutineTrigger {
   source?: string
   timeZone?: string
   type: string
+}
+
+export interface ProjectAssistantExtensionCatalog {
+  connectors_available: boolean
+  items: ProjectAssistantExtensionOffer[]
+}
+
+export interface ProjectAssistantExtensionOffer {
+  fingerprint: string
+  id: string
+  kind: string
+  name: string
+}
+
+export interface ProjectAssistantExtensionRef {
+  fingerprint: string
+  id: string
+}
+
+export interface ProjectAssistantExtensionSelection {
+  connectors: ProjectAssistantExtensionRef[]
+  skills: ProjectAssistantExtensionRef[]
+}
+
+export interface ProjectAssistantExtensionsResponse {
+  catalog: ProjectAssistantExtensionCatalog
+  contract_version: string
 }
 
 export interface ProjectAssistantFailure {
@@ -5954,6 +5987,40 @@ export interface ProjectAssistantListResponse {
   sources: ProjectAssistantSourceStatus[]
 }
 
+export interface ProjectAssistantLoginProfile {
+  agent: ProjectAssistantAgent
+  id: string
+  kind: string
+  name: string
+  revision: number
+  state: string
+}
+
+export interface ProjectAssistantLoginProfileAction {
+  action: string
+  agent: ProjectAssistantAgent
+  command: ProjectAssistantCommand
+  expected_version: number
+  fence: ProjectAssistantFence
+  name: string
+  profile_id: string
+  revision: number
+}
+
+export interface ProjectAssistantLoginProfileResponse {
+  contract_version: string
+  profile: ProjectAssistantLoginProfile
+}
+
+export interface ProjectAssistantLoginProfilesResponse {
+  contract_version: string
+  profiles: ProjectAssistantLoginProfile[]
+}
+
+export interface ProjectAssistantLoginSelection {
+  id: string
+}
+
 export interface ProjectAssistantMemoryDetail {
   id: string
   layer: string
@@ -6107,8 +6174,9 @@ export type ProjectAssistantOperation =
   | "dispatch"
   | "upload"
   | "rename-artifact"
+  | "login-profile"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string
@@ -6895,6 +6963,7 @@ export interface ProjectAssistantTeamEditSettings {
   agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   expected_version: number
+  extensions?: ProjectAssistantExtensionSelection
 
   /**
    * Ordered unique default login identities. Omitted edits preserve saved settings;
@@ -6902,6 +6971,7 @@ export interface ProjectAssistantTeamEditSettings {
    */
   fallback_agents?: ProjectAssistantAgent[]
   instructions: string
+  login_profile?: ProjectAssistantLoginSelection
   manage_team: boolean
 
   /**

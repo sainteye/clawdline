@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"strings"
 	"testing"
 )
 
@@ -40,13 +41,14 @@ func TestRuntimeAgentSettingsWaitForNextGeneration(t *testing.T) {
 	if before.Agent == pa.Codex {
 		nextAgent = pa.ClaudeCode
 	}
+	login := strings.Repeat("a", 32)
 	settings := pa.RuntimeSettings{Model: "synthetic-next", Options: map[string]string{"effort": "high"}}
-	f.store.bot, err = pa.ApplyEdit(before, pa.EditBot{ExpectedVersion: before.Version, Name: before.Name, Appearance: before.Appearance, Instructions: before.Instructions.Text, Agent: nextAgent, RuntimeSettings: &settings})
+	f.store.bot, err = pa.ApplyEdit(before, pa.EditBot{ExpectedVersion: before.Version, Name: before.Name, Appearance: before.Appearance, Instructions: before.Instructions.Text, Agent: nextAgent, LoginProfile: &login, RuntimeSettings: &settings})
 	f.store.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.q.Bot.Agent != oldAgent || running.q.Bot.RuntimeSettings.Model != "" {
+	if running.q.Bot.Agent != oldAgent || running.q.Bot.RuntimeSettings.Model != "" || running.q.Bot.LoginProfile != "" {
 		t.Fatal("current execution changed in place")
 	}
 	running.reply <- PromptResult{FinalText: "old configuration finished"}
@@ -57,7 +59,7 @@ func TestRuntimeAgentSettingsWaitForNextGeneration(t *testing.T) {
 	}
 	next := receivePrompt(t, f.provider)
 	session := f.provider.session()
-	if session.q.Bot.Agent != nextAgent || session.q.Resume || session.q.Binding.NativeSessionID != "" || session.q.Bot.RuntimeSettings.Model != "synthetic-next" || next.Turn.Fence.Generation <= first.Turn.Fence.Generation {
+	if session.q.Bot.Agent != nextAgent || session.q.Resume || session.q.Binding.NativeSessionID != "" || session.q.Bot.RuntimeSettings.Model != "synthetic-next" || session.q.Bot.LoginProfile != login || next.Turn.Fence.Generation <= first.Turn.Fence.Generation {
 		t.Fatalf("next settings did not start a fresh generation: %+v", session.q)
 	}
 	session.reply <- PromptResult{}

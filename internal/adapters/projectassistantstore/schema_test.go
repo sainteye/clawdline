@@ -487,9 +487,15 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				delete(after, table)
 			}
 			delete(after, "project_assistant_cloud_hook_schema")
+			for _, table := range []string{"project_assistant_login_profiles", "project_assistant_login_holds"} {
+				if len(after[table]) != 0 {
+					t.Fatal("migration manufactured native login authority", table)
+				}
+				delete(after, table)
+			}
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
-				if !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") && !strings.Contains(statement, "project_assistant_routine_hooks") && !strings.Contains(statement, "project_assistant_routine_delivery") && !strings.Contains(statement, "project_assistant_cloud_hook") {
+				if !strings.Contains(statement, "project_assistant_login_") && !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") && !strings.Contains(statement, "project_assistant_routine_hooks") && !strings.Contains(statement, "project_assistant_routine_delivery") && !strings.Contains(statement, "project_assistant_cloud_hook") {
 					oldDDL = append(oldDDL, statement)
 				}
 			}

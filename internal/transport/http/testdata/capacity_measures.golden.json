@@ -326,6 +326,11 @@
     "Note": true
   },
   {
+    "Name": "bots.extensions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.fallback_agents",
     "Known": true,
     "Note": true
@@ -472,6 +477,11 @@
   },
   {
     "Name": "bots.instruction_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.login_profiles",
     "Known": true,
     "Note": true
   },

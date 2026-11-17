@@ -472,6 +472,12 @@
             "on",
             "off"
           ]
+        },
+        "login_profile": {
+          "type": "string"
+        },
+        "extensions": {
+          "$ref": "#/$defs/ProjectAssistantExtensionSelection"
         }
       },
       "required": [
@@ -586,6 +592,12 @@
         },
         "agent": {
           "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "login_profile": {
+          "$ref": "#/$defs/ProjectAssistantLoginSelection"
+        },
+        "extensions": {
+          "$ref": "#/$defs/ProjectAssistantExtensionSelection"
         }
       },
       "required": [
@@ -774,6 +786,9 @@
         },
         "revoked": {
           "type": "boolean"
+        },
+        "login_profile": {
+          "type": "string"
         }
       },
       "required": [
@@ -2012,7 +2027,8 @@
         "memory_save",
         "dispatch",
         "upload",
-        "rename-artifact"
+        "rename-artifact",
+        "login-profile"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -3035,6 +3051,9 @@
         "carry_after_seq": {
           "type": "integer",
           "description": "Last source message already seen by the selected Agent/session; 0 when absent."
+        },
+        "login_profile": {
+          "type": "string"
         }
       },
       "required": [
@@ -3794,6 +3813,222 @@
         "revision",
         "forgotten_through",
         "forgotten_count"
+      ]
+    },
+    "ProjectAssistantLoginSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "ProjectAssistantLoginProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agent",
+        "kind",
+        "name",
+        "state",
+        "revision"
+      ]
+    },
+    "ProjectAssistantLoginProfileAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "profile_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "action": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "expected_version",
+        "profile_id",
+        "revision",
+        "agent",
+        "action",
+        "name"
+      ]
+    },
+    "ProjectAssistantLoginProfilesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantLoginProfile"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "profiles"
+      ]
+    },
+    "ProjectAssistantLoginProfileResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProjectAssistantLoginProfile"
+        }
+      },
+      "required": [
+        "contract_version",
+        "profile"
+      ]
+    },
+    "ProjectAssistantExtensionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fingerprint"
+      ]
+    },
+    "ProjectAssistantExtensionSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExtensionRef"
+          }
+        },
+        "connectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExtensionRef"
+          }
+        }
+      },
+      "required": [
+        "skills",
+        "connectors"
+      ]
+    },
+    "ProjectAssistantExtensionOffer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fingerprint",
+        "name",
+        "kind"
+      ]
+    },
+    "ProjectAssistantExtensionCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantExtensionOffer"
+          }
+        },
+        "connectors_available": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "connectors_available"
+      ]
+    },
+    "ProjectAssistantExtensionsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "catalog": {
+          "$ref": "#/$defs/ProjectAssistantExtensionCatalog"
+        }
+      },
+      "required": [
+        "contract_version",
+        "catalog"
       ]
     }
   }

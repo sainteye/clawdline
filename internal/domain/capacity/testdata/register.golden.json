@@ -1356,6 +1356,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.extensions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxBotExtensions"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.fallback_agents",
     "Class": "buffer",
     "Unit": "rows",
@@ -1934,6 +1954,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxInstructionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.login_profiles",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginProfiles"
     ]
   },
   {

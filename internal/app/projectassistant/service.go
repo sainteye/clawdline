@@ -29,6 +29,8 @@ type ReaderRepository interface {
 }
 
 type ServiceOptions struct {
+	LoginProfiles LoginProfiles
+	Extensions    ExtensionInventory
 	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
 	Configuration func(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
 	Repository    Repository
@@ -234,8 +236,18 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
 	}
+	if next.LoginProfile != "" {
+		if err = s.validateLoginSelection(ctx, next); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+	}
 	if settings.RuntimeSettings != nil && !pa.SameRuntimeSettings(next.RuntimeSettings, bot.RuntimeSettings) {
 		if err = s.validateConfiguration(ctx, next); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+	}
+	if settings.Extensions != nil {
+		if err = s.validateExtensions(ctx, next); err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}
 	}
@@ -251,9 +263,21 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 		return pa.Bot{}, pa.Receipt{}, err
 	}
 	summary.Source = a.Source
-	r, err := s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next,
-		Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
-		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotUpdated, At: next.UpdatedAt, Bot: &summary}}})
+	var r pa.Receipt
+	commit := func() error {
+		var e error
+		r, e = s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next,
+			Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
+			Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotUpdated, At: next.UpdatedAt, Bot: &summary}}})
+		return e
+	}
+	if s.opts.LoginProfiles != nil {
+		err = s.opts.LoginProfiles.WithSelection(ctx, next, commit)
+	} else if next.LoginProfile != "" {
+		err = serviceFailure(pa.Unsupported, "login_profiles")
+	} else {
+		err = commit()
+	}
 	return next, r, err
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/squad"
@@ -76,8 +77,7 @@ func squadPromptBytes(t *testing.T, short string, claims []string) int {
 // one entry instead of one line. seo gained skills too, so a role with none is
 // measured with pricing (4683 bytes).
 func TestTheFixedLaunchAdditionsAreMeasured(t *testing.T) {
-	b := &Broker{Tasks: taskdir.New("/Users/someone/.config/clawdline-next"),
-		Executable: "/Applications/Clawdline Next.app/Contents/MacOS/clawdline", Port: 7727}
+	b := launchBytesBroker(t, "en")
 	r := launchBytesRecord()
 	child := len(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID))
 	backendGo := squadPromptBytes(t, "backend", []string{"internal/a.go"})
@@ -96,12 +96,31 @@ func TestTheFixedLaunchAdditionsAreMeasured(t *testing.T) {
 	if guide := len(ChildGuide()); guide == 0 {
 		t.Error("clawdline guide child is empty")
 	}
+	for _, lang := range []string{"en", "zh-Hant", "zh-TW"} {
+		t.Run(lang, func(t *testing.T) {
+			b := launchBytesBroker(t, lang)
+			n := len(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID))
+			t.Logf("%s CHILD.md %d bytes", lang, n)
+			if n > 5500 {
+				t.Fatalf("localized CHILD.md is %d bytes, past 5500", n)
+			}
+		})
+	}
+}
+
+func launchBytesBroker(t *testing.T, language string) *Broker {
+	t.Helper()
+	b := &Broker{Dir: t.TempDir(), Tasks: taskdir.New("/Users/someone/.config/clawdline-next"), Executable: "/Applications/Clawdline Next.app/Contents/MacOS/clawdline", Port: 7727}
+	if _, err := nextconfig.Open(b.Dir).Set(map[string]any{"language": language}); err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // The reviewed ordinary briefing includes scratch retention and separation.
 // Image-review opt-out must keep that task and protocol baseline unchanged.
 func TestImageReviewDoesNotChangeTheExistingChildBrief(t *testing.T) {
-	b := &Broker{Tasks: taskdir.New("/Users/someone/.config/clawdline-next"), Executable: "/Applications/Clawdline Next.app/Contents/MacOS/clawdline", Port: 7727}
+	b := launchBytesBroker(t, "en")
 	r := launchBytesRecord()
 	sum := sha256.Sum256([]byte(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID)))
 	if got := hex.EncodeToString(sum[:]); got != "79cf88ae64dd98f945445312af5441d82801a2cb12281ff70578497313a2b7c3" {

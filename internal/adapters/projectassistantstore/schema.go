@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -50,6 +50,8 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS project_assistant_login_profiles (source TEXT NOT NULL,id TEXT NOT NULL,agent TEXT NOT NULL,name TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,removed INTEGER NOT NULL,PRIMARY KEY(source,id))`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_login_holds (source TEXT NOT NULL,profile TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(source,profile,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hook_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version=1))`,
 		`INSERT OR IGNORE INTO project_assistant_cloud_hook_schema(id,version) VALUES(1,1)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hooks (account TEXT NOT NULL, machine TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), fingerprint TEXT NOT NULL, PRIMARY KEY(account,machine))`,
@@ -75,6 +77,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// V7 protects managed login and extension selections and adds source-owned login holds.
 	// V6 protects Agent configuration and notification choices from older writers.
 	// V5 preserves human artifact title overlays; older readers refuse before rewriting them.
 	// V4 protects hook capabilities, follow-up provenance and retry state that older readers do

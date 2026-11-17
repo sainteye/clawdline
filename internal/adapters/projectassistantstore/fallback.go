@@ -12,8 +12,11 @@ import (
 )
 
 func (s *Store) AgentRest(ctx context.Context, machine string, agent pa.Agent) (*pa.AgentRest, error) {
+	return s.ProfileRest(ctx, machine, agent, "")
+}
+func (s *Store) ProfileRest(ctx context.Context, machine string, agent pa.Agent, profile string) (*pa.AgentRest, error) {
 	var raw []byte
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, machine, agent).Scan(&raw)
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, machine, pa.LoginKey(agent, profile)).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -24,7 +27,7 @@ func (s *Store) AgentRest(ctx context.Context, machine string, agent pa.Agent) (
 	if err = json.Unmarshal(raw, &rest); err != nil {
 		return nil, err
 	}
-	if rest.MachineID != machine || rest.Agent != agent || rest.Failures < 1 {
+	if rest.MachineID != machine || rest.Agent != agent || rest.LoginProfile != profile || rest.Failures < 1 {
 		return nil, failure(pa.Invalid, "agent_rest")
 	}
 	return &rest, nil
@@ -48,12 +51,12 @@ func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation
 			return failure(pa.ScopeDenied, "agent_rest")
 		}
 		fact := m.Turn.Attempts[len(m.Turn.Attempts)-1]
-		if fact.Agent != rest.Agent || fact.Reason != rest.Reason || rest.Failures < 1 {
+		if fact.Agent != rest.Agent || fact.LoginProfile != rest.LoginProfile || fact.Reason != rest.Reason || rest.Failures < 1 {
 			return failure(pa.ScopeDenied, "agent_rest_attempt")
 		}
 		var before *pa.AgentRest
 		var prior []byte
-		e := tx.QueryRowContext(ctx, `SELECT data FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, rest.MachineID, rest.Agent).Scan(&prior)
+		e := tx.QueryRowContext(ctx, `SELECT data FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, rest.MachineID, pa.LoginKey(rest.Agent, rest.LoginProfile)).Scan(&prior)
 		if e == nil {
 			var saved pa.AgentRest
 			if e = json.Unmarshal(prior, &saved); e != nil {
@@ -63,7 +66,11 @@ func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation
 		} else if !errors.Is(e, sql.ErrNoRows) {
 			return e
 		}
+		profile := rest.LoginProfile
 		rest = pa.RestAfter(rest.MachineID, rest.Agent, rest.Reason, rest.RecordedAt, before)
+		if rest != nil {
+			rest.LoginProfile = profile
+		}
 		if rest == nil {
 			return failure(pa.Invalid, "agent_rest_reason")
 		}
@@ -71,16 +78,16 @@ func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_agent_rests(machine,agent,data) VALUES(?,?,?) ON CONFLICT(machine,agent) DO UPDATE SET data=excluded.data`, rest.MachineID, rest.Agent, raw)
+		_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_agent_rests(machine,agent,data) VALUES(?,?,?) ON CONFLICT(machine,agent) DO UPDATE SET data=excluded.data`, rest.MachineID, pa.LoginKey(rest.Agent, rest.LoginProfile), raw)
 		if err != nil {
 			return err
 		}
 	}
 	if m.ClearAgentRest != "" {
-		if m.Turn == nil || m.Turn.State != pa.TurnSucceeded || len(m.Turn.Attempts) == 0 || m.Turn.Attempts[len(m.Turn.Attempts)-1].Agent != m.ClearAgentRest {
+		if m.Turn == nil || m.Turn.State != pa.TurnSucceeded || len(m.Turn.Attempts) == 0 || m.Turn.Attempts[len(m.Turn.Attempts)-1].Agent != m.ClearAgentRest || m.Turn.Attempts[len(m.Turn.Attempts)-1].LoginProfile != m.ClearLoginProfile {
 			return failure(pa.ScopeDenied, "clear_agent_rest")
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, a.Bot.Key.MachineID, m.ClearAgentRest)
+		_, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_agent_rests WHERE machine=? AND agent=?`, a.Bot.Key.MachineID, pa.LoginKey(m.ClearAgentRest, m.ClearLoginProfile))
 		return err
 	}
 	return nil
@@ -124,7 +131,7 @@ func checkAttemptFacts(next pa.Turn) error {
 			tried[f.Agent] = true
 			continue
 		}
-		if f.Ordinal != p.Ordinal || f.Agent != p.Agent || f.Fence != p.Fence || p.SendStarted && !f.SendStarted || p.Opened && !f.Opened || p.SendReturned && !f.SendReturned || p.NativeActivity && !f.NativeActivity || p.ToolActivity && !f.ToolActivity || p.AnswerObserved && !f.AnswerObserved || p.ResumeBindingID != f.ResumeBindingID || p.CarryKind != f.CarryKind || p.CarryAfterSeq != f.CarryAfterSeq || p.CleanupConfirmed {
+		if f.Ordinal != p.Ordinal || f.Agent != p.Agent || f.LoginProfile != p.LoginProfile || f.Fence != p.Fence || p.SendStarted && !f.SendStarted || p.Opened && !f.Opened || p.SendReturned && !f.SendReturned || p.NativeActivity && !f.NativeActivity || p.ToolActivity && !f.ToolActivity || p.AnswerObserved && !f.AnswerObserved || p.ResumeBindingID != f.ResumeBindingID || p.CarryKind != f.CarryKind || p.CarryAfterSeq != f.CarryAfterSeq || p.CleanupConfirmed {
 			return failure(pa.ScopeDenied, "attempt_identity")
 		}
 		valid := validAttemptStage(p, f)

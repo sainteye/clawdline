@@ -340,3 +340,27 @@ func TestCodexResumeRejectsUnownedHistoryBeforeNativeSetup(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedAccountsNeverBorrowDefaultNativeHistory(t *testing.T) {
+	state := t.TempDir()
+	q := historyRequest()
+	first, e := historyForRequest(state, q)
+	if e != nil {
+		t.Fatal(e)
+	}
+	q.Bot.LoginProfile = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	q.Binding.LoginProfile = q.Bot.LoginProfile
+	managed, e := historyForRequest(state, q)
+	if e != nil || managed.Identity == first.Identity {
+		t.Fatal("managed account borrowed default history", e)
+	}
+	q.Bot.LoginProfile = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if _, e = historyForRequest(state, q); pa.Code(e) != pa.ScopeDenied {
+		t.Fatal("binding from another profile admitted", e)
+	}
+	q.Binding.LoginProfile = q.Bot.LoginProfile
+	second, e := historyForRequest(state, q)
+	if e != nil || second.Identity == managed.Identity || second.Identity == first.Identity {
+		t.Fatal("two accounts share opaque history", e)
+	}
+}

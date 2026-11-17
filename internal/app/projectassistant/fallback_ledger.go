@@ -45,10 +45,14 @@ func (r *Engine) RecordToolActivity(ctx context.Context, fence pa.Fence, turnID,
 // parkedAttempt restores only the newest session of this configured identity.
 // Historical bindings are the durable per-Agent parking slots; an unsafe newest
 // binding must never cause an older, apparently healthy one to be resurrected.
-func parkedAttempt(x Export, turn pa.Turn, agent pa.Agent) (pa.ExecutionBinding, int64, bool) {
+func parkedAttempt(x Export, turn pa.Turn, agent pa.Agent, profiles ...string) (pa.ExecutionBinding, int64, bool) {
+	profile := ""
+	if len(profiles) > 0 {
+		profile = profiles[0]
+	}
 	var binding pa.ExecutionBinding
 	for _, b := range x.Bindings {
-		if b.Agent == agent && b.SessionSlot == "" && sameSessionOwner(b.Fence, turn.Fence) && b.Fence.Generation > binding.Fence.Generation {
+		if b.Agent == agent && b.LoginProfile == profile && b.SessionSlot == "" && sameSessionOwner(b.Fence, turn.Fence) && b.Fence.Generation > binding.Fence.Generation {
 			binding = b
 		}
 	}
@@ -72,7 +76,7 @@ func parkedAttempt(x Export, turn pa.Turn, agent pa.Agent) (pa.ExecutionBinding,
 	}
 	sessionBindings := map[string]pa.Fence{}
 	for _, b := range x.Bindings {
-		if b.Agent == agent && b.NativeSessionID == binding.NativeSessionID && b.SessionSlot == "" && sameSessionOwner(b.Fence, turn.Fence) {
+		if b.Agent == agent && b.LoginProfile == profile && b.NativeSessionID == binding.NativeSessionID && b.SessionSlot == "" && sameSessionOwner(b.Fence, turn.Fence) {
 			sessionBindings[b.Fence.BindingID] = b.Fence
 		}
 	}

@@ -85,6 +85,7 @@ type Mutation struct {
 	ArtifactTitle     *pa.ArtifactDisplayTitle
 	AgentRest         *pa.AgentRest
 	ClearAgentRest    pa.Agent
+	ClearLoginProfile string
 	Routine           *pa.Routine
 	RotateRoutineHook bool
 	RoutineNotStarted bool

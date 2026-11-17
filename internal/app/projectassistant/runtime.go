@@ -425,7 +425,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		}
 		c.BindingID = r.o.ID()
 		c.Generation = 1
-		b := pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, MemoryRevision: memory.Revision, ForgottenThrough: memory.ForgottenThrough, InstructionRevision: bot.Instructions.Revision}
+		b := pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, LoginProfile: bot.LoginProfile, MemoryRevision: memory.Revision, ForgottenThrough: memory.ForgottenThrough, InstructionRevision: bot.Instructions.Revision}
 		binding = &b
 	}
 	for _, t := range unknown {
@@ -810,6 +810,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	effectiveBot.Agent = effectiveAgent
 	if effectiveAgent != bot.Agent {
 		effectiveBot.RuntimeSettings = pa.RuntimeSettings{}
+		effectiveBot.LoginProfile = ""
 	}
 	caps, err := r.o.Provider.Capabilities(ctx, effectiveBot)
 	if err == nil {
@@ -907,14 +908,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// alternate's history. All execution authority is minted afresh below.
 	if !isolatedRoutine && len(bot.FallbackAgents.Agents()) > 0 && binding.Agent != effectiveAgent {
 		carryKind = "recap"
-		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent); ok {
+		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent, effectiveBot.LoginProfile); ok {
 			binding = parked
 			binding.Revoked = false // old fence stays revoked; only the new copy is used
 			resumedFrom, carryAfter = parked.Fence.BindingID, seen
 		}
 	}
-	if binding.Agent != effectiveAgent || binding.Revoked {
+	if binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile || binding.Revoked {
 		binding.Agent = effectiveAgent
+		binding.LoginProfile = effectiveBot.LoginProfile
 		binding.NativeSessionID = ""
 		binding.Revoked = false
 	}
@@ -981,7 +983,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		ordinal = t.Attempts[len(t.Attempts)-1].Ordinal + 1
 	}
 	if len(bot.FallbackAgents.Agents()) > 0 {
-		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter})
+		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, LoginProfile: effectiveBot.LoginProfile, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter})
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID+"-"+binding.Fence.BindingID, t)
 	if routineRun != nil {
@@ -1424,7 +1426,11 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 	if state == pa.TurnSucceeded && len(t.Attempts) > 0 {
 		clearRest = t.Attempts[len(t.Attempts)-1].Agent
 	}
-	m := Mutation{ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events}
+	clearProfile := ""
+	if len(t.Attempts) > 0 {
+		clearProfile = t.Attempts[len(t.Attempts)-1].LoginProfile
+	}
+	m := Mutation{ClearLoginProfile: clearProfile, ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events}
 	if run != nil && run.Source == "follow_up" {
 		for _, d := range export.Routines {
 			if d.ID == run.RoutineID && !d.Deleted {
@@ -1944,5 +1950,5 @@ func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa
 }
 
 func sameExecutionConfig(a, b pa.Bot) bool {
-	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
+	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameExtensions(a.Extensions, b.Extensions) && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
 }

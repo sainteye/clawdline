@@ -72,6 +72,7 @@
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.extensions` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.fallback_agents` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.follow_up_chain` | 24 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -102,6 +103,7 @@
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

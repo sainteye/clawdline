@@ -224,7 +224,7 @@ func findTools(ctx context.Context, home, user string, dirs []string) (nativeToo
 func findToolsFor(ctx context.Context, home, user string, dirs []string, spec adapterSpec) (nativeTools, error) {
 	var t nativeTools
 	env := func(dir string) []string {
-		return []string{"HOME=" + home, "USER=" + user, "PATH=" + dir + string(os.PathListSeparator) + nativePath, "LANG=C", "LC_ALL=C"}
+		return append([]string{"HOME=" + home, "USER=" + user, "PATH=" + dir + string(os.PathListSeparator) + nativePath, "LANG=C", "LC_ALL=C"}, profileEnvironment(ctx)...)
 	}
 	nodeOld, cliOld := false, false
 	for _, d := range dirs {

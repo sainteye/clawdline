@@ -22,6 +22,7 @@ import (
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
+	"projectassistant.MaxBotExtensions":                projectassistant.MaxBotExtensions,
 	"projectassistant.MaxConfigurationOptions":         projectassistant.MaxConfigurationOptions,
 	"projectassistant.MaxFallbackAgents":               projectassistant.MaxFallbackAgents,
 	"capacity.MaximumBotActors":                        capacity.MaximumBotActors,

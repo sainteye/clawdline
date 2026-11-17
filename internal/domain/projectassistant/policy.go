@@ -138,6 +138,8 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		bot.Agent = in.Agent
 		bot.Mode = ""
 		bot.RuntimeSettings = RuntimeSettings{}
+		bot.LoginProfile = ""
+		bot.Extensions = ExtensionSelection{}
 		bot.FallbackAgents = FallbackConfig{}
 	}
 	if in.RuntimeSettings != nil {
@@ -145,6 +147,18 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 			return bot, err
 		}
 		bot.RuntimeSettings = *in.RuntimeSettings
+	}
+	if in.LoginProfile != nil {
+		if !ValidLoginProfileID(*in.LoginProfile) {
+			return bot, fail(Invalid, "login_profile")
+		}
+		bot.LoginProfile = *in.LoginProfile
+	}
+	if in.Extensions != nil {
+		if err := ValidateExtensions(*in.Extensions); err != nil {
+			return bot, err
+		}
+		bot.Extensions = ExtensionSelection{Skills: slices.Clone(in.Extensions.Skills), Connectors: slices.Clone(in.Extensions.Connectors)}
 	}
 	if in.Notify != "" {
 		if in.Notify != "on" && in.Notify != "off" {
@@ -178,7 +192,7 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance
-	if bot.Instructions.Text != in.Instructions || bot.Agent != previous.Agent || !SameRuntimeSettings(bot.RuntimeSettings, previous.RuntimeSettings) {
+	if bot.Instructions.Text != in.Instructions || bot.Agent != previous.Agent || bot.LoginProfile != previous.LoginProfile || !SameExtensions(bot.Extensions, previous.Extensions) || !SameRuntimeSettings(bot.RuntimeSettings, previous.RuntimeSettings) {
 		bot.Instructions.Text = in.Instructions
 		bot.Instructions.Revision++
 	}
@@ -372,7 +386,7 @@ func DecideReplay(command Command, receipt *Receipt) (ReplayDecision, error) {
 		return "", fail(Invalid, "content_hash")
 	}
 	switch command.Operation {
-	case RenameArtifactOperation, CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, RuleRemoveOperation, DeleteOperation, VisibilityOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
+	case LoginProfileOperation, RenameArtifactOperation, CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, RuleRemoveOperation, DeleteOperation, VisibilityOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
 	default:
 		return "", fail(Invalid, "operation")
 	}

@@ -5,7 +5,7 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-func (s *Service) Configuration(ctx context.Context, q MemoryReadRequest, agent pa.Agent, model string) (pa.ConfigurationCatalog, func(context.Context) error, error) {
+func (s *Service) Configuration(ctx context.Context, q MemoryReadRequest, agent pa.Agent, model string, profiles ...string) (pa.ConfigurationCatalog, func(context.Context) error, error) {
 	if err := pa.ValidateRuntimeSettings(pa.RuntimeSettings{Model: model}); err != nil {
 		return pa.ConfigurationCatalog{}, nil, err
 	}
@@ -20,7 +20,21 @@ func (s *Service) Configuration(ctx context.Context, q MemoryReadRequest, agent 
 		if agent != pa.ClaudeCode && agent != pa.Codex {
 			return pa.ConfigurationCatalog{}, nil, serviceFailure(pa.Unsupported, "agent")
 		}
+		if b.Agent != agent {
+			b.LoginProfile = ""
+		}
 		b.Agent = agent
+	}
+	if len(profiles) > 0 {
+		if !pa.ValidLoginProfileID(profiles[0]) {
+			return pa.ConfigurationCatalog{}, nil, serviceFailure(pa.Invalid, "login_profile")
+		}
+		b.LoginProfile = profiles[0]
+	}
+	if b.LoginProfile != "" {
+		if err = s.validateLoginSelection(ctx, b); err != nil {
+			return pa.ConfigurationCatalog{}, nil, err
+		}
 	}
 	if s.opts.Configuration == nil {
 		return pa.ConfigurationCatalog{}, nil, serviceFailure(pa.Unsupported, "configuration")

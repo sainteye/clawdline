@@ -63,7 +63,10 @@ func (p *installedAgents) Open(ctx context.Context, q app.OpenRequest, sink func
 // replaced; native memory is admitted only while codex itself reports its
 // memories feature off. Native history is admitted only through feature-owned
 // records scoped to this agent, Bot, Project and privacy epoch.
-type installedCodex struct{ state string }
+type installedCodex struct {
+	state    string
+	profiles app.LoginProfiles
+}
 
 func (p *installedCodex) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabilities, error) {
 	_, caps, cleanup, e := p.prepare(ctx, b)
@@ -78,7 +81,7 @@ func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(
 	if q.Bot.Agent != pa.Codex {
 		return nil, refusal(pa.AdapterNotFound, "native_provider")
 	}
-	if q.Bot.Project.Kind == pa.RepositoryProject {
+	if q.Directory != "" {
 		directory, e := filepath.EvalSymlinks(q.Directory)
 		if e != nil {
 			return nil, refusal(pa.ScopeDenied, "native_project")
@@ -116,7 +119,7 @@ func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(
 		if b.Key != q.Bot.Key || b.Project != q.Bot.Project {
 			return caps, refusal(pa.ScopeDenied, "native_configuration")
 		}
-		if _, e := readAdapter(ctx, p.state, codexSpec); e != nil {
+		if _, e := readAdapter(withProfileEnvironment(ctx, nativeProfileOnly(config.Environment)), p.state, codexSpec); e != nil {
 			return caps, e
 		}
 		return caps, nil
@@ -151,6 +154,16 @@ func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, 
 	if b.Agent != pa.Codex {
 		return Configuration{}, caps, none, refusal(pa.AdapterNotFound, "native_provider")
 	}
+	ctx, env, release, e := profileHold(ctx, p.profiles, b)
+	if e != nil {
+		return Configuration{}, caps, none, e
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			release()
+		}
+	}()
 	i, e := ensureAdapter(ctx, p.state, codexSpec)
 	if e != nil {
 		return Configuration{}, caps, none, e
@@ -165,6 +178,7 @@ func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, 
 	}
 	path := filepath.Dir(i.tools.Node) + string(os.PathListSeparator) + nativePath
 	base := []string{"HOME=" + home, "USER=" + account, "PATH=" + path, "LANG=C", "LC_ALL=C"}
+	base = append(base, env...)
 	on, e := codexMemoriesOn(ctx, i.tools.CLI, base)
 	if e != nil {
 		return Configuration{}, caps, none, e
@@ -194,10 +208,14 @@ func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, 
 	environment := append(base, "TMPDIR="+tmp, "CODEX_PATH="+i.tools.CLI)
 	caps.CLIVersion, caps.AdapterVersion = i.tools.CLIVersion, CodexAdapterVersion
 	caps.Evidence = "installed codex at or above the supported floor; supplied adapter sealed by digest; codex reports its memories feature off; the person's own Codex home and login"
+	if b.LoginProfile != "" {
+		caps.Evidence = "selected managed Codex account; sealed supplied adapter; that account reports its memories feature off"
+	}
 	caps.NativeMemory, caps.NativeMemoryVerified = pa.NativeMemoryDisabled, true
 	caps.Resume = true
 	caps.SendMessage = true
-	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, caps, cleanup, nil
+	ok = true
+	return Configuration{Executable: i.tools.Node, Arguments: []string{i.Adapter}, Environment: environment}, caps, func() { cleanup(); release() }, nil
 }
 
 // codexMemoriesOn reads codex's own effective feature state rather than

@@ -8,6 +8,8 @@ import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayR
 import { command, errorCode } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node executes source extensions.
 import * as clientModule from "../project-assistants/client.ts"
+// @ts-expect-error -- Node executes source extensions.
+import {validLoginIntent} from "../project-assistants/login-profile-intent.ts"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
 // @ts-expect-error -- Node executes source extensions.
 import { CARRIED } from "./carry-generated.ts"
@@ -320,7 +322,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["memory-view","configuration","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -739,3 +741,16 @@ test("send recovery: Cloud relay refusals before the encrypted request are marke
   await source.status(signal())
   await assert.rejects(source.send(sendRequest("relay"),signal()),e => errorCode(e) === "pa_outcome_unknown" && !notSentEvidence(e))
 })
+
+test("login and selected-account configuration keep source API and exact carried shapes",async()=>{
+ const paths:string[]=[];const fresh=make(async path=>{paths.push(path);return Response.json({profiles:[],catalog:{agent:"codex",model:"",options:[]}})},{...grant(),apiLevel:81}).source;
+ await fresh.loginProfiles(key,"chat","codex",signal());assert.equal(assistantRelayRequest(paths[0]).word,"project-assistants.login-profiles");
+ await fresh.extensions(key,"chat",signal());assert.equal(assistantRelayRequest(paths[1]).word,"project-assistants.extensions");
+ await fresh.configuration(key,"chat","codex","",signal(),"a".repeat(32));const routed=assistantRelayRequest(paths[2]);assert.equal(routed.word,"project-assistants.configuration-profile");assert.equal((routed.fields as Record<string,unknown>).login_profile,"a".repeat(32));
+ let calls=0;const old=make(async()=>{calls++;return Response.json({})},{...grant(),apiLevel:80}).source;await assert.rejects(old.configuration(key,"chat","codex","",signal(),"a".repeat(32)),e=>errorCode(e)==="pa_unsupported");assert.equal(calls,0)
+});
+
+test("stored login recovery cannot cross Bot, Project or conversation",()=>{
+ const bot=viewWire().snapshot!.bot;const request:W.ProjectAssistantLoginProfileAction={command:command(bot.key,"login-profile"),fence:{key:bot.key,project:bot.project,conversation_id:bot.conversation_id,binding_id:"",generation:0},expected_version:bot.version,profile_id:"",revision:0,agent:bot.agent,action:"create",name:"Synthetic account"};assert.equal(validLoginIntent(request,bot),true);
+ for(const change of [(q:W.ProjectAssistantLoginProfileAction)=>q.command.key={...q.command.key,bot_id:"another"},(q:W.ProjectAssistantLoginProfileAction)=>q.fence.project={...q.fence.project,canonical_id:"another"},(q:W.ProjectAssistantLoginProfileAction)=>q.fence.conversation_id="another"]){const copy=structuredClone(request);change(copy);assert.equal(validLoginIntent(copy,bot),false)}
+});

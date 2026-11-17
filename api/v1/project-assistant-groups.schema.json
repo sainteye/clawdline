@@ -565,6 +565,12 @@
         },
         "runtime_settings": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantRuntimeSettings"
+        },
+        "login_profile": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantLoginSelection"
+        },
+        "extensions": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantExtensionSelection"
         }
       },
       "required": [

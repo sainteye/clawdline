@@ -58,6 +58,7 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	extension     func(context.Context, pa.ExtensionRef) error
 	teamAvailable func(context.Context) error
 	team          func(context.Context, string, json.RawMessage) (any, error)
 	listBots      func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
@@ -129,6 +130,7 @@ func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEd
 type sendWriteContextKey struct{}
 
 type workLifetime struct {
+	extensions func(context.Context) error
 	closed     atomic.Bool
 	sending    atomic.Bool
 	used       atomic.Bool
@@ -205,6 +207,18 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 		return nil, &app.OpenNotStarted{Cause: err}
 	}
 	q.Tools = tools
+	if len(q.Bot.Extensions.Skills)+len(q.Bot.Extensions.Connectors) > 0 {
+		if p.h.o.Extensions == nil {
+			life.invalidate()
+			return nil, &app.OpenNotStarted{Cause: failure(pa.Unsupported, "bot_extensions")}
+		}
+		q.Extensions, err = p.h.capturedExtensions(ctx, q)
+		if err != nil {
+			life.invalidate()
+			return nil, &app.OpenNotStarted{Cause: err}
+		}
+		life.extensions = func(ctx context.Context) error { _, e := p.h.capturedExtensions(ctx, q); return e }
+	}
 	if p.h.o.NativeWork != nil {
 		unregister, registerErr := p.h.o.NativeWork(ctx, q, tools)
 		life.registered(unregister)
@@ -228,6 +242,11 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 		}
 		if life.insideSend(ctx) {
 			return failure(pa.ExecutionEffectUnknown, "native_event_during_send")
+		}
+		if life.extensions != nil {
+			if err := life.extensions(ctx); err != nil {
+				return err
+			}
 		}
 		return sink(ctx, e)
 	})
@@ -259,6 +278,11 @@ type ownedSession struct {
 // Send is a bounded write inside the engine memory lock. A provider must defer
 // tool callbacks to its independent consumer/Wait, never await a journal here.
 func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if s.life.extensions != nil {
+		if e := s.life.extensions(ctx); e != nil {
+			return nil, e
+		}
+	}
 	s.life.sending.Store(true)
 	defer s.life.sending.Store(false)
 	return s.ProviderSession.Send(context.WithValue(ctx, sendWriteContextKey{}, s.life), q)
@@ -266,6 +290,11 @@ func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.Pendi
 
 // Steer forwards Send now to a native session that can take it.
 func (s *ownedSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+	if s.life.extensions != nil {
+		if e := s.life.extensions(ctx); e != nil {
+			return "", e
+		}
+	}
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {
 		return steerer.Steer(ctx, text)
 	}
@@ -373,6 +402,30 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
+	tools.extension = func(ctx context.Context, ref pa.ExtensionRef) error {
+		ctx, done, e := bound(ctx)
+		if e != nil {
+			return e
+		}
+		defer done()
+		if h.o.Extensions == nil {
+			return failure(pa.Unsupported, "bot_extensions")
+		}
+		selected := false
+		for _, v := range q.Bot.Extensions.Connectors {
+			if v == ref {
+				selected = true
+			}
+		}
+		if !selected {
+			return failure(pa.ScopeDenied, "selected_connector")
+		}
+		if e = journal(ctx, "connector"); e != nil {
+			return e
+		}
+		_, e = h.capturedExtensions(ctx, q)
+		return e
+	}
 	tools.teamAvailable = func(ctx context.Context) error {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -702,4 +755,49 @@ func (w NativeWork) Team(ctx context.Context, action string, args json.RawMessag
 		return nil, failure(pa.Disabled, "manage_team")
 	}
 	return w.team(ctx, action, args)
+}
+
+func (w NativeWork) CheckExtension(ctx context.Context, ref pa.ExtensionRef) error {
+	if w.extension == nil {
+		return failure(pa.Unsupported, "bot_extensions")
+	}
+	return w.extension(ctx, ref)
+}
+
+// Narrowing a live selection revokes its application-managed capabilities now.
+// Additions remain a next-generation change and never enter an old session.
+func (h *Host) capturedExtensions(ctx context.Context, q app.OpenRequest) (app.NativeExtensions, error) {
+	if h.o.Extensions == nil {
+		return app.NativeExtensions{}, failure(pa.Unsupported, "bot_extensions")
+	}
+	current, e := h.store.Bot(ctx, q.Bot.Key)
+	if e != nil {
+		return app.NativeExtensions{}, e
+	}
+	primary := q.PrimaryAgent
+	if primary == "" {
+		primary = q.Bot.Agent
+	}
+	if current.Project != q.Bot.Project || current.Agent != primary {
+		return app.NativeExtensions{}, failure(pa.Revoked, "extension_scope")
+	}
+	for index, refs := range [][]pa.ExtensionRef{q.Bot.Extensions.Skills, q.Bot.Extensions.Connectors} {
+		now := current.Extensions.Skills
+		if index == 1 {
+			now = current.Extensions.Connectors
+		}
+		for _, ref := range refs {
+			found := false
+			for _, allowed := range now {
+				if ref == allowed {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return app.NativeExtensions{}, failure(pa.Revoked, "selected_extension")
+			}
+		}
+	}
+	return h.o.Extensions.Resolve(ctx, q.Bot, q.Directory)
 }

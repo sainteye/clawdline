@@ -108,12 +108,11 @@ the console completion sound for that Bot; omission retains the old enabled
 default. Permission cards and their existing delivery remain independent.
 This is a completion choice, not a claim that every activity alert is filtered.
 
-The installed integration inherits the person's existing CLI login, skills,
-connectors, Project instructions and network settings. It does not expose
-trusted per-Bot login-profile, skill, connector or network-selection ports.
-Those controls are described as unavailable, rather than storing ineffective
-switches or changing global CLI settings. Their safe enforcement remains a
-follow-up integration requirement, not a cancelled product request.
+The following account-profile and application-extension construction adds real
+source-owned ports; see [Bot login profiles and selected application extensions](project-assistants-login-capabilities.md).
+It preserves this memory/model path and distinguishes supported account/text-skill/
+HTTP-connector behavior from the still-open API-key, selected-fallback and network
+work. These selectors do not disable independently configured native tools.
 
 ## CodyNC comparison
 
@@ -126,8 +125,8 @@ Read-only reference: CodyNC `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 | Model protocol | `host/src/agent/bot/launch.rs::select_model`; `agent/auth/models.rs` | Model first, then returned model-specific config; verified selections on discovery and execution |
 | Fast mode | `host/src/agent/config.rs`, `bot/fast_mode.rs` | Only a current native select/boolean offer; no guessed flag or invented support |
 | Editor | `BotEditorView.tsx`, `AgentModelPicker.tsx` | Primary Agent, model/options, completion notification, existing team switch; fixed Project and existing approvals |
-| Login profile | `LoginProfileRow.tsx`; `host/src/hub/bots.rs` and `agent/login_profiles` | Existing local account remains in use; no corresponding isolated profile-selection port yet |
-| Plugins/network | CodyNC editor's plugin lists and `NetworkSwitches` | Existing CLI capabilities remain inherited; separate per-Bot enforcement is not constructed |
+| Login profile | `LoginProfileRow.tsx`; `host/src/hub/bots.rs` and `agent/login_profiles` | Default login remains in place; managed account slots now have guarded source selection and native lifecycle ports; API keys remain open |
+| Plugins/network | CodyNC editor's plugin lists and `NetworkSwitches` | Selected application text skills and configured HTTP connectors are enforced separately; independent native tools remain inherited and true remote reachability remains open |
 | Dreams/native memory | CodyNC memory opening and optional native-memory reader | Explicitly different policy: dreaming deferred; global native-memory reading not authorized |
 
 ## Compatibility, capacity and verification
@@ -178,16 +177,10 @@ as device-authenticated reads. Their exact query shapes match the local routes;
 source minimum is API 79. The existing reply ceiling and typed refusal envelope
 apply. Optional edit fields are added to both existing edit operations.
 
-The dispatch only claimed `internal/app/cloudops/zz_decode_generated.go`, not
-the private operation registration file. Root must add `memory-view` and
-`configuration` to the read-word list in
-`internal/app/cloudops/ops_project_assistants.go` before the Cloud path is
-complete. The task artifacts contain exact registration and test fragments. The normal
-gate also requires updating the copied-limit constant inventory, the 46-to-48
-Bot-word fixtures, the 287-to-289 console carry fixtures and the decoder golden
-through its existing record command. These files are outside the dispatch
-write claims. This is not
-claimed as a working production Cloud operation until that registration and
-its gate are integrated. The private Cloud mirror must allow these two read
-words/shapes, carry the existing PA failure envelope and accept the optional
-edit fields; this task does not edit that private repository.
+The original memory/settings handoff was integrated in
+`6a6d4ca8ad8aa41a13108d003f9707d396ad11ca`: both runtime registrations,
+query inventories, copied limits, carry inventories and the decoder golden
+were completed. The following login/capability construction uses the complete
+cloudops write scope and records its additional API 81 mirror requirements
+in the linked document. Source construction still does not establish a
+working production Cloud deployment or private-relay mirror acceptance.

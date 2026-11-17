@@ -32,6 +32,7 @@ import (
 // One listener belongs to one already bounded runtime process slot. Accepted
 // connections and outbound ACP requests share that client's RPCPending budget.
 type ownedMCPServer struct {
+	extensions  []app.NativeConnector
 	ctx         context.Context
 	cancel      context.CancelFunc
 	server      *http.Server
@@ -71,7 +72,7 @@ func (c *Client) openMCP(parent context.Context, q app.OpenRequest) (OwnedMCP, e
 		return OwnedMCP{}, refusal(pa.Offline, "mcp_listener")
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s := &ownedMCPServer{ctx: ctx, cancel: cancel, listener: listener, token: hex.EncodeToString(secret[:]), tools: q.Tools, limits: c.l, slots: c.rpcSlots, done: make(chan struct{}), stopDone: make(chan struct{})}
+	s := &ownedMCPServer{ctx: ctx, cancel: cancel, listener: listener, token: hex.EncodeToString(secret[:]), tools: q.Tools, extensions: q.Extensions.Connectors, limits: c.l, slots: c.rpcSlots, done: make(chan struct{}), stopDone: make(chan struct{})}
 	s.server = &http.Server{
 		Handler: s, ReadHeaderTimeout: c.l.WriteTimeout, ReadTimeout: c.l.RPCTimeout,
 		WriteTimeout: c.l.RPCTimeout, IdleTimeout: c.l.WriteTimeout, MaxHeaderBytes: c.l.FrameBytes,
@@ -85,7 +86,7 @@ func (c *Client) openMCP(parent context.Context, q app.OpenRequest) (OwnedMCP, e
 	}
 	s.server.SetKeepAlivesEnabled(false)
 	go func() { defer close(s.done); _ = s.server.Serve(&mcpListener{Listener: listener, owner: s}) }()
-	return OwnedMCP{Fence: q.Binding.Fence, URL: "http://" + listener.Addr().String() + "/mcp", BearerToken: s.token, Revoke: s.close}, nil
+	return OwnedMCP{Fence: q.Binding.Fence, URL: "http://" + listener.Addr().String() + "/mcp", BearerToken: s.token, Revoke: s.close, Extensions: q.Extensions.Connectors}, nil
 }
 
 // No handler may acquire a new effect owner after close seals admission.
@@ -202,6 +203,10 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer s.effects.Done()
 	if r.Host != s.listener.Addr().String() || r.Header.Get("Origin") != "" || len(r.Header.Values("Authorization")) != 1 || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.token)) != 1 {
 		http.Error(w, string(pa.ScopeDenied), http.StatusForbidden)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/mcp/extensions/") {
+		s.extension(w, r)
 		return
 	}
 	if r.URL.Path != "/mcp" || r.URL.RawQuery != "" {
