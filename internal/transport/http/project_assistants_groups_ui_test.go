@@ -12,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -23,6 +25,69 @@ import (
 // This is the decrypted Cloud vocabulary boundary, followed by actual TCP
 // HTTP and SQLite. It is not a claim about production pairing or encryption.
 type groupUIRouter struct{ origin, token string }
+
+// Only the test owns this latch. The browser observes a real persisted
+// running turn before allowing the local scripted provider to finish.
+type groupUIHeldProvider struct {
+	app.Provider
+	mu   sync.Mutex
+	hold chan struct{}
+}
+
+func (p *groupUIHeldProvider) block() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hold == nil {
+		p.hold = make(chan struct{})
+	}
+}
+func (p *groupUIHeldProvider) release() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hold != nil {
+		close(p.hold)
+		p.hold = nil
+	}
+}
+func (p *groupUIHeldProvider) Open(ctx context.Context, request app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	inner, err := p.Provider.Open(ctx, request, sink)
+	if err != nil {
+		return nil, err
+	}
+	return &groupUIHeldSession{ProviderSession: inner, owner: p}, nil
+}
+
+type groupUIHeldSession struct {
+	app.ProviderSession
+	owner *groupUIHeldProvider
+}
+
+func (s *groupUIHeldSession) Send(ctx context.Context, request app.PromptRequest) (app.PendingPrompt, error) {
+	pending, err := s.ProviderSession.Send(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	return &groupUIHeldPrompt{PendingPrompt: pending, owner: s.owner}, nil
+}
+
+type groupUIHeldPrompt struct {
+	app.PendingPrompt
+	owner *groupUIHeldProvider
+}
+
+func (s *groupUIHeldPrompt) Wait(ctx context.Context) (app.PromptResult, error) {
+	s.owner.mu.Lock()
+	hold := s.owner.hold
+	s.owner.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return app.PromptResult{}, ctx.Err()
+		}
+	}
+	return s.PendingPrompt.Wait(ctx)
+}
 
 func (r groupUIRouter) Do(ctx context.Context, in cloudops.LocalRequest) (cloudops.LocalResponse, error) {
 	u, _ := url.Parse(r.origin + in.Path)
@@ -124,8 +189,20 @@ func TestGroupRoomsHeadlessUI(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_GROUP_UI_ARTIFACTS for the installed headless-shell UI acceptance")
 	}
-	f := newGroupHTTPFixture(t)
+	provider := &groupUIHeldProvider{Provider: &routineHumanProvider{}}
+	f := newGroupHTTPFixture(t, provider)
+	t.Cleanup(provider.release)
 	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/hold" || r.URL.Path == "/release" {
+			if r.URL.Path == "/hold" {
+				provider.block()
+			} else {
+				provider.release()
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"fixture":true}`))
+			return
+		}
 		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 		if err != nil {
 			t.Error(err)

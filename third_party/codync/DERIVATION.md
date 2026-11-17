@@ -50,3 +50,18 @@ paged Cloud reads. An optional trace step identity preserves new steps while
 legacy records continue to use category snapshots. Text is persisted as deltas,
 then joined by step on read; it is not stored repeatedly as a growing snapshot.
 This is a source-based adaptation, not runtime verification of Codync itself.
+
+Group interaction alignment on 2026-11-18 references revision
+`9f67eb09084db61b3cca9c84a11bc03df9de29b7`:
+
+- `apps/desktop/src/renderer/views/thread/mentions.ts`: end-of-draft member
+  filtering, full-name insertion and keyboard/touch selection adapted into
+  `group-mentions.ts` and GroupRoom. The upstream query-length shortcut is
+  not copied; the existing source message limit remains authoritative.
+- `docs/features/groups-and-replies.md` and `host/src/chat/replies.rs`:
+  source-owned exact reply references, separate author/excerpt context and
+  original-room routing. Clawdline reuses its existing message byte budget
+  for retained quote excerpts rather than copying Codync's excerpt capacity.
+
+Source-based adaptation and synthetic browser/HTTP tests do not establish
+live native Codync interaction or production group acceptance.

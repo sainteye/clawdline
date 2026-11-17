@@ -1,7 +1,7 @@
 /** Real roster/room components, source clients, decrypted Cloud decoder, HTTP and SQLite. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
-import {spawn} from "node:child_process"
+import {spawn,execFileSync} from "node:child_process"
 import {access,mkdir,mkdtemp,readFile,readdir,rm,writeFile} from "node:fs/promises"
 import {constants} from "node:fs"
 import {userInfo} from "node:os"
@@ -30,17 +30,20 @@ import {words} from "./src/project-assistants/words";import {bootCatalog} from "
 import "./src/legacy/tokens.css";import "./src/project-assistants/styles.css";
 const q=new URL(location.href).searchParams,mode=q.get("mode")??"local",language=q.get("lang")??"en";
 localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json");
-const grant={accountKey:mode==="cloud"?"synthetic":"local",readerID:"person",machineID:"machine",authorizationRevision:"one",apiLevel:mode==="old"?75:76,paired:true,online:true,writable:mode!=="read"};
+const grant={accountKey:mode==="cloud"?"synthetic":"local",readerID:"person",machineID:"machine",authorizationRevision:"one",apiLevel:mode==="old"?75:88,paired:true,online:true,writable:mode!=="read"};
 const carried=${JSON.stringify(words)};
 const relay={machineDescriptor:()=>({machine:{commands:carried}}),_machineRequest:async(_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json(),_machineRequestAs:async(id,_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":id}})).json()};
 const source=new ProjectAssistantSourceClient(grant,mode==="cloud"?capturedAssistantRelayFetch("machine",()=>relay,carried):(input,init)=>fetch("/proxy/"+mode+input,init),()=>grant);
 await source.status(new AbortController().signal);const page=await source.list({machine_id:"machine",cursor:"",query:"",page_size:100},new AbortController().signal);
 createRoot(document.getElementById("app")).render(<div className="project-assistants pa-shell"><BotRoster sources={[source]} groupsItems={page.items} items={page.items} machines={["machine"]} selected={null} query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} loading={false} errors={[]} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"],[JSON.stringify(["machine","other"]),"Other Project"]])}/><main className="pa-main"/></div>);
-`,resolveDir:root,loader:"tsx"},bundle:true,write:false,outfile:"groups.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
+`,resolveDir:root,loader:"tsx"},bundle:true,write:false,outfile:"groups.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",plugins:process.env.BOTS_ROOM_BASELINE?[{name:"recorded-room-baseline",setup(plugin){plugin.onLoad({filter:/project-assistants\/(GroupRoom\.tsx|styles\.css)$/},args=>({contents:execFileSync("git",["show",process.env.BOTS_ROOM_BASELINE+":"+path.relative(path.resolve(root,"../.."),args.path)],{cwd:path.resolve(root,"../.."),encoding:"utf8"}),loader:args.path.endsWith(".css")?"css":"tsx",resolveDir:path.dirname(args.path)}))}}]:[],define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents])),traffic=[]
 const server=createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,"http://fixture")
+    if(url.pathname==="/fixture/hold"||url.pathname==="/fixture/release"){
+      const response=await fetch(cloud+url.pathname.replace("/fixture", ""),{method:"POST"});res.writeHead(response.status,{"Content-Type":"application/json"});res.end(await response.text());return
+    }
     if(url.pathname.startsWith("/proxy/")||url.pathname.startsWith("/relay/")){
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const raw=Buffer.concat(chunks).toString(),relay=url.pathname.startsWith("/relay/")
       let answer,record={method:req.method,path:url.pathname,relay,body:raw?JSON.parse(raw):null};traffic.push(record)
@@ -66,18 +69,28 @@ if(process.env.BOTS_PREVIEW==="1"){
 const profile=await mkdtemp(path.join(work,"groups-browser-")),executable=await testBrowser()
 const chrome=spawn(executable,["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
 let ws
-const results=[]
+const results=[],operations=[]
 try{
   const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup: "+output)),20000);chrome.on("error",reject);chrome.on("exit",(code,signal)=>{clearTimeout(timer);reject(Error("Chrome exited: "+code+" "+signal+" "+output))});chrome.stderr.on("data",chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
   ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
   let serial=0;const pending=new Map()
   ws.addEventListener("message",event=>{const message=JSON.parse(String(event.data)),job=pending.get(message.id);if(!job)return;pending.delete(message.id);message.error?job.reject(Error(message.error.message)):job.resolve(message.result)})
   const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>reject(Error(method+" timed out")),15000);pending.set(id,{resolve:v=>{clearTimeout(timer);resolve(v)},reject:e=>{clearTimeout(timer);reject(e)}});ws.send(JSON.stringify({id,method,params,sessionId}))})
-  const open=async(mode,lang,width,height)=>{const {targetId}=await send("Target.createTarget",{url:"about:blank"});const {sessionId}=await send("Target.attachToTarget",{targetId,flatten:true});await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId);await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);await send("Page.navigate",{url:origin+"/?mode="+mode+"&lang="+lang},sessionId);return{targetId,sessionId}}
+  const open=async(mode,lang,width,height)=>{const {targetId}=await send("Target.createTarget",{url:"about:blank"});const {sessionId}=await send("Target.attachToTarget",{targetId,flatten:true});await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId);await send("Page.bringToFront",{},sessionId);await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);await send("Emulation.setTouchEmulationEnabled",{enabled:width<600},sessionId);await send("Page.navigate",{url:origin+"/?mode="+mode+"&lang="+lang},sessionId);return{targetId,sessionId}}
   const evaluate=async(sessionId,expression)=>{const reply=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(reply.exceptionDetails)throw Error(reply.exceptionDetails.text+": "+reply.exceptionDetails.exception?.description);return reply.result.value}
   const until=async(sessionId,expression)=>{const deadline=Date.now()+15000;while(Date.now()<deadline){if(await evaluate(sessionId,expression))return;await new Promise(r=>setTimeout(r,50))}throw Error("UI wait: "+expression+"\n"+await evaluate(sessionId,"document.body.innerText"))}
-  const click=async(sessionId,text)=>{assert.ok(await evaluate(sessionId,`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled);if(!b)return false;b.click();return true})()`),"click "+text)}
-  const fill=async(sessionId,selector,value)=>evaluate(sessionId,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing input');Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`)
+  const hit=async(sessionId,selector,touch=false)=>{
+    const point=await evaluate(sessionId,`(()=>{const b=document.querySelector(${JSON.stringify(selector)});if(!b||b.disabled)throw Error('Missing enabled '+${JSON.stringify(selector)});b.scrollIntoView({block:'nearest'});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+    operations.push({action:touch?"touch":"click",selector,at:Date.now(),point})
+    if(touch){await send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[point]},sessionId);await send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},sessionId)}
+    else{await send("Input.dispatchMouseEvent",{type:"mousePressed",...point,button:"left",clickCount:1},sessionId);await send("Input.dispatchMouseEvent",{type:"mouseReleased",...point,button:"left",clickCount:1},sessionId)}
+  }
+  const click=async(sessionId,text)=>{
+    const selector=await evaluate(sessionId,`(()=>{const buttons=[...document.querySelectorAll('button')];const index=buttons.findIndex(b=>(b.getAttribute('aria-label')===${JSON.stringify(text)}||b.textContent.trim()===${JSON.stringify(text)})&&!b.disabled&&b.getBoundingClientRect().height>0);if(index<0)throw Error('Missing button '+${JSON.stringify(text)});buttons[index].setAttribute('data-fixture-hit','true');return 'button[data-fixture-hit=true]'})()`)
+    try{await hit(sessionId,selector)}finally{await evaluate(sessionId,"document.querySelector('[data-fixture-hit]')?.removeAttribute('data-fixture-hit')")}
+  }
+  const key=async(sessionId,key,code=key)=>{operations.push({action:"key",key,at:Date.now()});await send("Input.dispatchKeyEvent",{type:"keyDown",key,code},sessionId);await send("Input.dispatchKeyEvent",{type:"keyUp",key,code},sessionId)}
+  const fill=async(sessionId,selector,value)=>evaluate(sessionId,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing input');e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.setSelectionRange?.(e.value.length,e.value.length);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('select',{bubbles:true}));})()`)
   for(const [mode,lang,width,height]of [["local","en",1280,800],["local","zh-Hant",390,844],["cloud","en",1280,800],["cloud","zh-Hant",390,844]]){
     const {targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant",name=`Review ${mode} ${lang}`
     const copy=zh?{create:"新增群組",save:"儲存",edit:"編輯群組",send:"傳送",stop:"停止群組",remove:"刪除群組",confirm:"確認刪除群組"}:{create:"New group",save:"Save",edit:"Edit group",send:"Send",stop:"Stop group",remove:"Delete group",confirm:"Confirm group deletion"}
@@ -86,16 +99,57 @@ try{
     assert.equal(await evaluate(sessionId,"[...document.querySelectorAll('[role=dialog] input[type=checkbox]')].some(e=>e.parentElement.textContent.includes('Stranger'))"),false,"another Project was offered as a room member")
     await evaluate(sessionId,"for(const e of document.querySelectorAll('[role=dialog] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
     await click(sessionId,copy.save);await until(sessionId,`!!document.querySelector('.pa-chat-header h2')&&document.querySelector('.pa-chat-header h2').textContent===${JSON.stringify(name)}`)
-    await fill(sessionId,"[role=dialog] textarea","Synthetic UI room message");await click(sessionId,copy.send);await until(sessionId,"document.querySelectorAll('[data-room-seq]').length===3")
+    const bounds=await evaluate(sessionId,"(()=>{const r=document.querySelector('.pa-room-layout').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight}})()")
+    await writeFile(path.join(artifacts,`room-bounds-${mode}-${lang}.json`),JSON.stringify(bounds,null,2))
+    const positionShot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`room-position-${mode}-${lang}.png`),Buffer.from(positionShot.data,"base64"))
+    assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.width>=width-2&&bounds.y+bounds.height<=height+2,"group room must fill its shell inside the viewport: "+JSON.stringify(bounds))
+    await fetch(origin+"/fixture/hold",{method:"POST"})
+    await fill(sessionId,"[role=dialog] textarea","Synthetic UI room message");await click(sessionId,copy.send)
+    await until(sessionId,"[...document.querySelectorAll('[data-working-member]')].some(row=>JSON.parse(row.dataset.workingMember)[1]==='alice'&&row.dataset.workingState==='running')")
+    const workers=await evaluate(sessionId,"[...document.querySelectorAll('[data-working-member]')].map(row=>JSON.parse(row.dataset.workingMember)[1])")
+    assert.deepEqual(workers,["alice"],"room activity guessed that every member was working")
+    const workingShot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`group-working-${mode}-${lang}.png`),Buffer.from(workingShot.data,"base64"))
+    await fetch(origin+"/fixture/release",{method:"POST"})
+    await until(sessionId,"document.querySelectorAll('[data-room-seq]').length===3")
     const authors=await evaluate(sessionId,"[...document.querySelectorAll('[data-room-seq] strong')].map(e=>e.textContent)");assert.ok(authors.includes("Alice")&&authors.includes("Bob"),authors)
     assert.equal(await evaluate(sessionId,"document.documentElement.scrollWidth>innerWidth"),false,"room widened the page")
     const shot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`group-${mode}-${lang}.png`),Buffer.from(shot.data,"base64"))
-    await click(sessionId,copy.edit);await until(sessionId,"!!document.querySelector('[role=dialog] [role=dialog] input:not([type=checkbox])')");await fill(sessionId,"[role=dialog] [role=dialog] input:not([type=checkbox])",name+" changed")
+    // Keyboard and real touch pick the same full member name. A pick does
+    // not send; a subsequent Enter sends one command to the source.
+    const sends=()=>traffic.filter(row=>row.method!=="GET"&&(row.word==="project-assistants.group-send"||row.path.endsWith("/messages")))
+    const prior=sends().length
+    await fill(sessionId,"[role=dialog] textarea","@")
+    await until(sessionId,"document.querySelectorAll('.pa-room-mentions [role=option]').length===2")
+    if(width<600)await hit(sessionId,".pa-room-mentions [role=option]:nth-child(2)",true)
+    else{await key(sessionId,"ArrowDown");await key(sessionId,"Tab")}
+    await until(sessionId,"document.querySelector('[role=dialog] textarea').value==='@Bob '")
+    assert.equal(sends().length,prior,"picking a mention sent a message")
+    await key(sessionId,"Enter")
+    await until(sessionId,`document.querySelectorAll('[data-room-seq]').length===5`)
+    assert.equal(sends().length,prior+1)
+    const bobLine=await evaluate(sessionId,"[...document.querySelectorAll('[data-room-seq]')].filter(row=>row.querySelector('.pa-room-author strong')?.textContent==='Bob').at(-1).dataset.roomSeq")
+    await hit(sessionId,`[data-room-seq="${bobLine}"] .pa-room-reply`)
+    await until(sessionId,"!!document.querySelector('.pa-room-draft-quote')")
+    await fill(sessionId,"[role=dialog] textarea","Synthetic exact quote reply")
+    await click(sessionId,copy.send)
+    await until(sessionId,`!!document.querySelector('[data-quote-seq="${bobLine}"]')`)
+    const quoteSend=sends().at(-1)
+    assert.equal(quoteSend.body.quote.seq,Number(bobLine))
+    assert.equal(quoteSend.body.text,"Synthetic exact quote reply")
+    const shown=await evaluate(sessionId,`document.querySelector('[data-quote-seq="${bobLine}"]').innerText`)
+    assert.ok(shown.includes("Bob")&&shown.includes("Synthetic main result"),shown)
+    await fill(sessionId,"[role=dialog] textarea","Synthetic draft retained in member details")
+    await click(sessionId,zh?"成員 (2)":"Members (2)")
+    await key(sessionId,"Escape")
+    await until(sessionId,"document.querySelector('.pa-room-members').hidden")
+    assert.equal(await evaluate(sessionId,"document.querySelector('[role=dialog] textarea').value"),"Synthetic draft retained in member details")
+    await fill(sessionId,"[role=dialog] textarea","")
+    await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.edit);await until(sessionId,"!!document.querySelector('[role=dialog] [role=dialog] input:not([type=checkbox])')");await fill(sessionId,"[role=dialog] [role=dialog] input:not([type=checkbox])",name+" changed")
     await evaluate(sessionId,"[...document.querySelectorAll('[role=dialog] [role=dialog] input[type=checkbox]')].find(e=>e.parentElement.textContent.trim()==='Bob').click()")
     await click(sessionId,copy.save);await until(sessionId,`document.querySelector('.pa-chat-header h2')?.textContent===${JSON.stringify(name+" changed")}`)
-    await click(sessionId,copy.stop);await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(copy.remove)}&&!b.disabled)`)
-    await click(sessionId,copy.remove);await click(sessionId,copy.confirm);await until(sessionId,"!document.querySelector('[role=dialog]')")
-    results.push({mode,lang,width,create:true,send:true,authors,edit:true,stop:true,delete:true});await send("Target.closeTarget",{targetId})
+    await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.stop);await until(sessionId,"!!document.querySelector('[role=dialog] textarea:not(:disabled)')")
+    await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.remove);await click(sessionId,copy.confirm);await until(sessionId,"!document.querySelector('[role=dialog]')")
+    results.push({mode,lang,width,create:true,send:true,authors,edit:true,stop:true,delete:true,roomBounds:bounds,actualWorkers:workers,keyboardMention:width>=600,touchMention:width<600,quoteSeq:Number(bobLine),quoteAuthor:"Bob",memberPanelDraftRetained:true,modelRequests:0});await send("Target.closeTarget",{targetId})
   }
   // A real saved room can be read from a read-only source; no action leaves it.
   const request={command:{key:{machine_id:"machine",bot_id:"read-room"},operation:"create",idempotency_key:"seed-reader-room",content_hash:""},settings:{target:{machine_id:"machine",project_id:"project"},name:"Saved reader room",members:[{machine_id:"machine",bot_id:"alice"}]}}
@@ -107,5 +161,5 @@ try{
   console.log("GROUP_UI_RECEIPT "+JSON.stringify({browser:executable,results,providerRequests:0,cloudBoundary:"decrypted vocabulary -> actual HTTP -> SQLite"}))
 }finally{
   await writeFile(path.join(artifacts,"group-ui-traffic.json"),JSON.stringify(traffic,null,2));await writeFile(path.join(artifacts,"group-ui-results.json"),JSON.stringify(results,null,2))
-  ws?.close();chrome.kill("SIGTERM");await new Promise(resolve=>{if(chrome.exitCode!==null)return resolve();const timer=setTimeout(()=>{chrome.kill("SIGKILL");resolve()},3000);chrome.once("exit",()=>{clearTimeout(timer);resolve()})});server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true})
+  await writeFile(path.join(artifacts,"group-ui-operations.json"),JSON.stringify(operations,null,2));ws?.close();chrome.kill("SIGTERM");await new Promise(resolve=>{if(chrome.exitCode!==null)return resolve();const timer=setTimeout(()=>{chrome.kill("SIGKILL");resolve()},3000);chrome.once("exit",()=>{clearTimeout(timer);resolve()})});server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true})
 }

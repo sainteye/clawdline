@@ -208,6 +208,28 @@ Read-only devices can see rooms and pending team cards; write controls are
 disabled and HTTP independently refuses their actions. Being paired does not
 itself make a device read-only.
 
+The room mounts a portal directly inside the surrounding `.pa-shell`, so a
+roster scroll container cannot make it a narrow row below the list. The
+optional `active` prop defaults to true; a parent opening a member's chat
+keeps the room mounted with `active=false`. Hidden rooms stop reads while
+retaining their draft, exact quote, history and reading position. On return
+the room restores its own focus and position. The parent must clear any
+previous Bot selection when opening a room, and must not also restore roster
+focus when returning from a member chat. `onOpenMember` accepts the actual
+source-qualified Bot key; navigation is read-authorized independently from
+content-write authority. Parent roster wiring and that complete navigation
+journey require their own integrated browser check.
+
+The composer filters current members after a trailing `@`. Up/down changes
+the highlighted member; Tab or Enter inserts its full name; Escape dismisses
+the list until the draft changes; touch selects the same option. A completed
+name followed by a space, and `@all`/`@everyone`, allow the next Enter to send.
+IME composition never sends or picks. The client edits only the draft; the
+source selects speakers. Replies on person and member lines keep their exact
+quote visible with author and excerpt. Working indicators name only the
+source's valid activity tickets. Opening the member panel, reading earlier
+pages and receiving newer lines retain the current reading anchor.
+
 ## Limits
 
 Registered in `internal/domain/capacity` with Codync's values: rounds 3,

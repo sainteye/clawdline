@@ -45,7 +45,7 @@ type groupHTTPFixture struct {
 	beforePublish func()
 }
 
-func newGroupHTTPFixture(t *testing.T) *groupHTTPFixture {
+func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixture {
 	t.Helper()
 	f := &groupHTTPFixture{revision: "grant-one"}
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "groups.db"))
@@ -83,7 +83,11 @@ func newGroupHTTPFixture(t *testing.T) *groupHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: f.repo, Memory: f.repo, WorkBridge: &paHTTPWork{}, Provider: &routineHumanProvider{}, ProjectResolver: projects, Clock: time.Now, ID: id, Authorize: background, Rooms: f.rooms, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+	var provider app.Provider = &routineHumanProvider{}
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
+	f.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: f.repo, Memory: f.repo, WorkBridge: &paHTTPWork{}, Provider: provider, ProjectResolver: projects, Clock: time.Now, ID: id, Authorize: background, Rooms: f.rooms, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
