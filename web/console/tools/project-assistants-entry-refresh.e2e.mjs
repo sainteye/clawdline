@@ -47,14 +47,14 @@ async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=a
 async function until(expression,label){for(let n=0;n<30;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,50))}throw Error(label)}
 try{
  await connect()
- for(const language of ["en","zh-Hant"]){
+ for(const language of ["en","zh-Hant"]) for(const listMode of ["ready","failed","hold"]){
   const zh=language==="zh-Hant",refresh=zh?"更新額度":"Refresh quotas"
-  await browser("open",origin+"/?feature=off&lang="+language)
+  await browser("open",origin+"/?feature=off&lang="+language+"&list="+listMode)
   await browser("viewport",zh?"mobile":"desktop")
   await until('!!window.fixtureHost&&!!document.querySelector(".quota-refresh")',"real status footer did not load")
   await until('window.fixtureHost.log.filter(r=>r.method==="status").length>=2',"initial source authority was not read")
   assert.equal(await evaluate('!!document.querySelector(".pa-orb,.pa-dock")'),false)
-  await browser("screenshot","--out",path.join(artifacts,language+"-before.jpg"))
+  await browser("screenshot","--out",path.join(artifacts,language+"-"+listMode+"-before.jpg"))
   if(zh){
    await evaluate('window.fixtureHost.quota("hold")')
    await browser("click",refresh)
@@ -68,7 +68,12 @@ try{
   await until('!!document.querySelector(".pa-orb,.pa-dock")',"manual refresh did not restore Bots before the background timer")
   assert.ok(await evaluate('window.fixtureHost.log.filter(r=>r.method==="status").length')>before,"refresh did not recheck Bot authority")
   if(zh)assert.equal(await evaluate('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length'),quotas,"pending quota read duplicated")
-  await browser("screenshot","--out",path.join(artifacts,language+"-restored.jpg"))
+  await browser("screenshot","--out",path.join(artifacts,language+"-"+listMode+"-restored.jpg"))
+  if(listMode!=="ready") {
+   await until('window.fixtureHost.log.some(r=>r.method==="list-unavailable")',"list failure/hold was not exercised")
+   assert.equal(await evaluate('!!document.querySelector(".pa-orb,.pa-dock")'),true,"readable authority was hidden by an unavailable list")
+   await evaluate('window.fixtureHost.listMode("ready")')
+  }
   await evaluate('document.querySelector(".pa-orb,.pa-dock").click()')
   await until('!!document.querySelector(".pa-window button[data-bot-key]")',"restored entry did not open the actual roster")
   assert.deepEqual(await evaluate('({media:window.fixtureHost.stats().mediaOpens,sends:window.fixtureHost.stats().sessionSends})'),{media:0,sends:0})
@@ -78,7 +83,12 @@ try{
   await browser("click",refresh)
   await until(`window.fixtureHost.log.filter(r=>r.method==="status").length>${deniedReads}`,"disabled source was not rechecked")
   assert.equal(await evaluate('!!document.querySelector(".pa-orb,.pa-dock")'),false,"refresh granted access to a disabled source")
-  results.push({language,entryRestored:true,actualRosterOpened:true,quotaPending:zh,disabledRemainsHidden:true,modelRequests:0})
+  const listReads=await evaluate('window.fixtureHost.log.filter(r=>r.method==="list-unavailable").length')
+  await evaluate('window.fixtureHost.listMode("denied");window.fixtureHost.enableFeature()')
+  await browser("click",refresh)
+  await until(`window.fixtureHost.log.filter(r=>r.method==="list-unavailable").length>${listReads}`,"explicit list denial did not cross the source client")
+  await until('!document.querySelector(".pa-orb,.pa-dock")',"explicit source denial retained entry access")
+  results.push({language,listMode,explicitDenialHidden:true,entryRestored:true,actualRosterOpened:true,quotaPending:zh,disabledRemainsHidden:true,modelRequests:0})
   await browser("close");tab=undefined
  }
  console.log(JSON.stringify(results))
