@@ -27,10 +27,6 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
           <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
           <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
           <span className="pa-trace-title">{info.label}</span>
-        {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
-          <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
-          <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
-          <span className="pa-trace-title">{info.label}</span>
           {info.text ? <span className="pa-trace-desc">{info.text}</span> : <span className="pa-trace-desc pa-trace-detail-hint">{w.details}</span>}
         </button> : <div className="pa-trace-line">
           <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
