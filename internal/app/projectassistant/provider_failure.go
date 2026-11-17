@@ -1,5 +1,44 @@
 package projectassistant
 
+import (
+	"context"
+	"errors"
+
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+)
+
+// executionFailureField keeps only diagnostic categories owned by the host.
+// Neither a native error narrative nor an arbitrary adapter field is public copy.
+// This metadata never proves no effects and never authorizes a prompt replay.
+func executionFailureField(cause error) string {
+	if errors.Is(cause, context.DeadlineExceeded) {
+		return "prompt_timeout"
+	}
+	if errors.Is(cause, context.Canceled) {
+		return "prompt_stopped"
+	}
+	var provider *ProviderFailure
+	if errors.As(cause, &provider) {
+		switch provider.Reason {
+		case ProviderUsageExhausted, ProviderOutOfCredits, ProviderRateLimited,
+			ProviderOverloaded, ProviderSignedOut, ProviderModelMissing:
+			return "provider_" + string(provider.Reason)
+		}
+	}
+	var failure *pa.Failure
+	if errors.As(cause, &failure) {
+		// Capacity fields already identify the registered local boundary.
+		if failure.Code == pa.CapacityFull && failure.Field != "" {
+			return failure.Field
+		}
+		switch failure.Field {
+		case "acp_eof", "prompt_stopped", "prompt_result", "prompt_max_tokens", "prompt_max_turn_requests", "owned_cleanup":
+			return failure.Field
+		}
+	}
+	return "execution"
+}
+
 // ProviderFailureReason describes an allowlisted native error category. It is
 // diagnostic metadata, never evidence that a prompt had no effects or may replay.
 type ProviderFailureReason string

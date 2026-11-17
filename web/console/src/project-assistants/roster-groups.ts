@@ -1,5 +1,6 @@
 import type { ProjectAssistantBotSummary } from "@clawdline/contract"
-import { botIdentity } from "./view-state"
+// @ts-expect-error Node executes source extensions.
+import { botIdentity } from "./view-state.ts"
 
 export type RosterGroup = { key: string; machineID: string; projectID: string; items: ProjectAssistantBotSummary[] }
 

@@ -4,13 +4,17 @@ import {createRoot} from "react-dom/client"
 import {useProjectAssistantsHost} from "../pages/project-assistants"
 import {fixtureSource} from "./fixtures"
 import {createViewState} from "./view-state"
+import {Chat} from "./Chat"
+import {FallbackSourceScope} from "./FallbackSettings"
+import {words} from "./words"
 import {setDockAvailable} from "./BotOrb"
 import {setOrbPlace} from "./orb-dock"
 import type * as W from "@clawdline/contract"
 import "./styles.css"
 
 const source=fixtureSource("motion"),baseList=source.list.bind(source),baseView=source.view!.bind(source)
-let phase:"idle"|"working"|"needsInput"="working",revision=1
+const failureField=new URL(location.href).searchParams.get("failure")??""
+let phase:"idle"|"working"|"needsInput"|"error"=failureField?"error":"working",revision=1
 const listeners=new Set<(frame:W.ProjectAssistantRosterFrame)=>void>()
 const disconnects=new Set<()=>void>()
 const query={machine_id:source.machineID,cursor:"",query:"",page_size:100}
@@ -21,12 +25,14 @@ source.list=async(r,s)=>{
 source.view=async(r,s)=>{
   const page=await baseView(r,s)
   if(r.key.bot_id!==source.bots[0].key.bot_id)return page
-  page.head.conversation.active_turn_id=phase==="idle"?"":"motion-turn"
+  const terminal=phase==="idle"||phase==="error"
+  page.head.conversation.active_turn_id=terminal?"":"motion-turn"
+  page.head.unknown_turn_count=phase==="error"?1:0
   page.head.pending_permission_count=phase==="needsInput"?1:0
   if(page.snapshot){
-    const turn:W.ProjectAssistantReadTurnSummary={id:"motion-turn",message_id:"motion-message",fence:page.head.current_fence,state:phase==="idle"?"succeeded":phase==="needsInput"?"waiting_permission":"running",started_at:"2026-11-16T00:00:00Z",failure_code:""}
-    page.snapshot.pending_turns=phase==="idle"?[]:[turn]
-    page.snapshot.last_turn=phase==="idle"?turn:undefined
+    const turn:W.ProjectAssistantReadTurnSummary={id:"motion-turn",message_id:"motion-message",fence:page.head.current_fence,state:phase==="error"?"unknown":phase==="idle"?"succeeded":phase==="needsInput"?"waiting_permission":"running",started_at:"2026-11-16T00:00:00Z",failure_code:phase==="error"?"execution_effect_unknown":"",failure_field:failureField}
+    page.snapshot.pending_turns=terminal?[]:[turn]
+    page.snapshot.last_turn=terminal?turn:undefined
   }
   return page
 }
@@ -61,4 +67,10 @@ function App(){
   const host=useProjectAssistantsHost({registry:registry as never,cloud:false,language})
   return <><main className="pane-list"><h1>Sessions</h1>{host.entry}</main><footer aria-label="Status bar">{host.dock}</footer>{host.content}</>
 }
-createRoot(document.querySelector("#app")!).render(<App/>)
+function FailureChat(){
+  const [summary,setSummary]=React.useState<W.ProjectAssistantBotSummary>()
+  const language=new URL(location.href).searchParams.get("lang")??"en"
+  React.useEffect(()=>{void source.list(query,new AbortController().signal).then(page=>setSummary(page.items[0]))},[])
+  return summary?<div className="project-assistants" style={{height:"100vh"}}><FallbackSourceScope source={source}><Chat summary={summary} source={source} current={()=>sources} accountKey="motion" view={registry.viewState} w={words(language)} language={language} onBack={()=>{}} onBotChanged={()=>{}}/></FallbackSourceScope></div>:null
+}
+createRoot(document.querySelector("#app")!).render(failureField?<FailureChat/>:<App/>)

@@ -363,7 +363,9 @@ func (p *pendingRPC) waitResult(ctx context.Context) (json.RawMessage, error) {
 		p.c.mu.Lock()
 		p.c.removePending(p.id)
 		p.c.mu.Unlock()
-		err := refusal(pa.ExecutionEffectUnknown, "rpc_timeout")
+		// Keep the effect unknown while retaining the runtime's distinction
+		// between an expired turn deadline and an explicit cancellation.
+		err := errors.Join(refusal(pa.ExecutionEffectUnknown, "rpc_timeout"), ctx.Err())
 		p.c.fail(err)
 		return nil, err
 	case <-p.c.done:

@@ -88,3 +88,43 @@ func TestProviderFailureAfterSendRemainsUnknownWithoutReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestUnknownTurnExplainsInterruptionWithoutReplaying(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		cause error
+		field string
+	}{
+		{"deadline", context.DeadlineExceeded, "prompt_timeout"},
+		{"cancelled", context.Canceled, "prompt_stopped"},
+		{"connection", &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acp_eof"}, "acp_eof"},
+		{"output limit", &pa.Failure{Code: pa.Unsupported, Field: "prompt_max_tokens"}, "prompt_max_tokens"},
+		{"quota", &ProviderFailure{Reason: ProviderUsageExhausted, Cause: &pa.Failure{Code: pa.Unsupported, Field: "rpc_-32603"}}, "provider_usage_limit"},
+		{"untrusted field", &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "private native error narrative"}, "execution"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newRuntimeFixture(t)
+			f.r.o.Provider = failingWaitProvider{runtimeProvider: f.provider, failure: tt.cause}
+			receipt, err := f.submit(t, "synthetic input", "interruption")
+			if err != nil {
+				t.Fatal(err)
+			}
+			receivePrompt(t, f.provider)
+			awaitTurn(t, f, receipt.ResourceID, pa.TurnUnknown)
+			turn, err := f.store.Turn(context.Background(), f.key, receipt.ResourceID)
+			if err != nil || turn.Failure == nil || turn.Failure.Field != tt.field {
+				t.Fatalf("interruption detail: %+v %v, want %s", turn.Failure, err, tt.field)
+			}
+			replayed, err := f.submit(t, "synthetic input", "interruption")
+			if err != nil || replayed.ID != receipt.ID {
+				t.Fatalf("receipt changed: %+v %v", replayed, err)
+			}
+			if err = f.r.Recover(context.Background(), f.key); err != nil {
+				t.Fatal(err)
+			}
+			if f.provider.count() != 1 || len(f.provider.sent) != 0 {
+				t.Fatal("unknown prompt replayed")
+			}
+		})
+	}
+}

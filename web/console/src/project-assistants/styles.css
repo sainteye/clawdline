@@ -78,6 +78,8 @@
 .project-assistants pre { white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace; }
 .project-assistants .pa-chat-footer { padding:8px 24px max(24px,env(safe-area-inset-bottom));width:100%;max-width:864px;margin:auto; }
 .project-assistants .pa-chat-footer>p,.project-assistants .pa-turn { font-size:11px;color:var(--pa-dim);margin:5px 0; }
+.project-assistants .pa-turn[role="status"] { font-size:13px;line-height:1.6;color:var(--pa-text);margin:12px 0; }
+.project-assistants .pa-turn[role="status"] small { color:var(--pa-dim);font-size:11px; }
 .project-assistants .pa-chat-tools { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px; }
 .project-assistants .pa-chat-tools button { padding:2px 6px;font-size:12px;color:var(--pa-dim);background:transparent;border:0; }
 .project-assistants .pa-composer { display:flex;align-items:flex-end;gap:8px;border:1px solid var(--pa-line);background:#141414;border-radius:24px;padding:5px 6px; }

@@ -2337,6 +2337,10 @@
           "type": "string",
           "description": "Empty when absent; no captured instructions or failure narrative."
         },
+        "failure_field": {
+          "type": "string",
+          "description": "Optional source diagnostic category; never a native error narrative or replay authorization."
+        },
         "started_at": {
           "type": "string",
           "description": "When the turn began running, RFC 3339; empty while it waits."

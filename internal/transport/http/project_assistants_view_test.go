@@ -202,6 +202,11 @@ func TestProjectAssistantViewMandatorySnapshotDetailAndEventFrontier(t *testing.
 	if out.Items == nil || out.Snapshot == nil || out.Snapshot.PendingTurns == nil || out.Snapshot.QueuedMessages == nil || out.Head.EventFrontier != 602 {
 		t.Fatal("null or missing required snapshot data")
 	}
+	r.View.Snapshot.LastTurn = &app.ReadTurnSummary{ID: "interrupted", State: pa.TurnUnknown, FailureCode: pa.ExecutionEffectUnknown, FailureField: "prompt_timeout"}
+	out = paPackDecode(t, q, r)
+	if out.Snapshot.LastTurn == nil || out.Snapshot.LastTurn.FailureField != "prompt_timeout" || out.Snapshot.LastTurn.State != contract.ProjectAssistantTurnStateUnknown {
+		t.Fatal("Cloud snapshot lost the interruption reason or changed its effect state")
+	}
 	r.View.Snapshot.Bot.Instructions.Text = strings.Repeat("x", cloudops.ReadPlaintextBytesLimit)
 	if _, err := paPackReadView(q, r); pa.Code(err) != pa.CapacityFull {
 		t.Fatalf("mandatory snapshot truncated: %v", err)

@@ -225,6 +225,30 @@ RPC timeout/exit/oversized output, stderr cap, and observed setsid descendants.
 The test executable is the free scripted peer. `testdata/peer.go` is an additional
 standalone host rehearsal peer and never calls a model.
 
+### Interrupted turns explain their outcome
+
+The runtime retains allowlisted interruption categories instead of reducing every
+failure to the field `execution`: a turn deadline, cancellation, transport exit,
+response/step limits and normalized provider refusals. The ACP pending reply
+preserves its context error alongside `execution_effect_unknown`, so a timeout
+remains distinguishable from cancellation. A planned restart keeps its existing
+recovery marker. These categories are diagnostics, never no-effect evidence.
+
+The bounded SQLite read view and HTTP/Cloud snapshot carry an optional
+`failure_field`. Its SQL projection admits only known categories; arbitrary or
+large stored failure narratives stay outside mandatory state. Live turn events
+retain the same field when reduced to a summary. Older sources without it still
+show the generic uncertainty explanation.
+
+Chat presents the cause in English and Taiwan Traditional Chinese, followed by
+instructions to inspect results and send follow-up instructions when effects are
+unknown. It does not resubmit the original prompt or clear unknown receipts.
+This follows the visible failure-notice behavior in
+[Codync's turn handler at 9b471897](https://github.com/leepokai/Codync/blob/9b47189739216b405416b334b9ada5b5b28176c1/host/src/agent/bot/turn.rs).
+Clawdline retains its own effect-state and cleanup barriers; this change adds no
+automatic health-check hook or recovery retry. Persisted older events that already
+lost their cause cannot establish why a particular turn stopped.
+
 Run the two package tests and race tests, then the repository commit gate.
 When sandbox policy refuses `/bin/ps`, transport/setsid tests skip before
 launching their fixtures, and a separate admission test asserts typed unknown

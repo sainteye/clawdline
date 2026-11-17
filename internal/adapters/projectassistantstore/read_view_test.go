@@ -129,6 +129,26 @@ func TestReadViewSQLCapabilitiesAndLegacyCollections(t *testing.T) {
 	}
 }
 
+func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T) {
+	for _, field := range []string{"prompt_timeout", "provider_usage_limit", "restart", strings.Repeat("private narrative", cloudops.ReadPlaintextBytesLimit)} {
+		t.Run(field[:min(len(field), 20)], func(t *testing.T) {
+			e, _, _ := viewFixture(t, 1, 0, false)
+			e.Turns[0].State = pa.TurnUnknown
+			e.Turns[0].Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: field}
+			_, _, views, _ := restoreViews(t, e)
+			v := readView(t, views, viewQuery(e.Bot))
+			last := v.Snapshot.LastTurn
+			want := field
+			if strings.HasPrefix(field, "private narrative") {
+				want = ""
+			}
+			if last == nil || last.FailureField != want || last.FailureCode != pa.ExecutionEffectUnknown || last.State != pa.TurnUnknown || v.Head.UnknownTurnCount != 1 {
+				t.Fatalf("lost safe diagnostic or changed uncertainty: %+v", last)
+			}
+		})
+	}
+}
+
 func TestReadViewTimelineAndAllControlsStayBounded(t *testing.T) {
 	e, old, _ := viewFixture(t, 600, 101, true)
 	e.Turns[18].State, e.Turns[19].State = pa.TurnAccepted, pa.TurnWaitingPermission

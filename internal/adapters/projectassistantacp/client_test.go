@@ -431,7 +431,7 @@ func TestACPTimeoutDoesNotReplay(t *testing.T) {
 	p := sendTestPrompt(t, c)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
 	defer cancel()
-	if _, err := p.Wait(ctx); pa.Code(err) != pa.ExecutionEffectUnknown {
+	if _, err := p.Wait(ctx); pa.Code(err) != pa.ExecutionEffectUnknown || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
 	if _, err := c.Send(context.Background(), app.PromptRequest{Turn: pa.Turn{ID: "two", Fence: testFence()}, Text: "retry"}); err == nil {

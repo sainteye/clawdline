@@ -6604,6 +6604,12 @@ export interface ProjectAssistantReadTurnSummary {
    * Empty when absent; no captured instructions or failure narrative.
    */
   failure_code: string
+
+  /**
+   * Optional source diagnostic category; never a native error narrative or replay
+   * authorization.
+   */
+  failure_field?: string
   fence: ProjectAssistantFence
   id: string
   message_id: string
