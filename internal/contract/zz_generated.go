@@ -4493,8 +4493,10 @@ type ProjectAssistantBot struct {
 	// otherwise one the agent offers (API level 65).
 	Mode             string                           `json:"mode,omitempty"`
 	Name             string                           `json:"name"`
+	Notify           string                           `json:"notify,omitempty"`
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	Project          ProjectAssistantProjectScope     `json:"project"`
+	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 	UpdatedAt        string                           `json:"updated_at"`
 	Version          int64                            `json:"version"`
 }
@@ -4558,6 +4560,30 @@ type ProjectAssistantCommand struct {
 	Operation      ProjectAssistantOperation `json:"operation"`
 }
 
+type ProjectAssistantConfigChoice struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ProjectAssistantConfigOption struct {
+	Category string                         `json:"category"`
+	Choices  []ProjectAssistantConfigChoice `json:"choices"`
+	Current  string                         `json:"current"`
+	ID       string                         `json:"id"`
+	Name     string                         `json:"name"`
+}
+
+type ProjectAssistantConfigurationCatalog struct {
+	Agent   ProjectAssistantAgent          `json:"agent"`
+	Model   string                         `json:"model"`
+	Options []ProjectAssistantConfigOption `json:"options"`
+}
+
+type ProjectAssistantConfigurationResponse struct {
+	Catalog         ProjectAssistantConfigurationCatalog `json:"catalog"`
+	ContractVersion string                               `json:"contract_version"`
+}
+
 // A forgotten source in any provenance rejects the whole summary; never
 // silently strip its ID while retaining the text.
 type ProjectAssistantContextSnapshot struct {
@@ -4618,6 +4644,7 @@ type ProjectAssistantEditRequest struct {
 // Editable settings; omitted fallback_agents preserves the saved chain, while
 // an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantEditSettings struct {
+	Agent           ProjectAssistantAgent      `json:"agent,omitempty"`
 	Appearance      ProjectAssistantAppearance `json:"appearance"`
 	ExpectedVersion int64                      `json:"expected_version"`
 
@@ -4629,11 +4656,13 @@ type ProjectAssistantEditSettings struct {
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
-	Mode string `json:"mode,omitempty"`
-	Name string `json:"name"`
+	Mode   string `json:"mode,omitempty"`
+	Name   string `json:"name"`
+	Notify string `json:"notify,omitempty"`
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
+	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 }
 
 // Acceptance is durable admission; delivery is a persisted reply; observation
@@ -5117,6 +5146,14 @@ type ProjectAssistantListResponse struct {
 	Sources         []ProjectAssistantSourceStatus `json:"sources"`
 }
 
+type ProjectAssistantMemoryDetail struct {
+	ID        string `json:"id"`
+	Layer     string `json:"layer"`
+	Revision  string `json:"revision"`
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated"`
+}
+
 type ProjectAssistantMemoryEntry struct {
 	Forgotten bool                           `json:"forgotten"`
 	ID        string                         `json:"id"`
@@ -5125,6 +5162,20 @@ type ProjectAssistantMemoryEntry struct {
 	Revision  int64                          `json:"revision"`
 	Sources   []ProjectAssistantMemorySource `json:"sources"`
 	Text      string                         `json:"text"`
+
+	// Source-owned last write time. Absent for legacy entries whose time was never
+	// recorded.
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type ProjectAssistantMemoryLayer struct {
+	Available bool                        `json:"available"`
+	Cap       int64                       `json:"cap"`
+	Entries   []ProjectAssistantMemoryRow `json:"entries"`
+	Layer     string                      `json:"layer"`
+	Revision  string                      `json:"revision"`
+	Truncated bool                        `json:"truncated"`
+	Used      int64                       `json:"used"`
 }
 
 type ProjectAssistantMemoryResponse struct {
@@ -5142,12 +5193,42 @@ type ProjectAssistantMemoryRevision struct {
 	Revision           int64                        `json:"revision"`
 }
 
+type ProjectAssistantMemoryRow struct {
+	Author    string                         `json:"author"`
+	ID        string                         `json:"id"`
+	Sources   []ProjectAssistantMemorySource `json:"sources"`
+	Text      string                         `json:"text"`
+	UpdatedAt string                         `json:"updated_at"`
+}
+
 type ProjectAssistantMemorySource struct {
 	ID       string                       `json:"id"`
 	Key      ProjectAssistantBotKey       `json:"key"`
 	Kind     string                       `json:"kind"`
 	Project  ProjectAssistantProjectScope `json:"project"`
 	Revision int64                        `json:"revision"`
+}
+
+type ProjectAssistantMemoryView struct {
+	Bot            ProjectAssistantBot             `json:"bot"`
+	ConversationID string                          `json:"conversation_id"`
+	Layers         []ProjectAssistantMemoryLayer   `json:"layers"`
+	Memory         ProjectAssistantMemoryViewState `json:"memory"`
+}
+
+type ProjectAssistantMemoryViewResponse struct {
+	ContractVersion string                        `json:"contract_version"`
+	Detail          *ProjectAssistantMemoryDetail `json:"detail,omitempty"`
+	SourceEpoch     string                        `json:"source_epoch"`
+	View            ProjectAssistantMemoryView    `json:"view"`
+}
+
+type ProjectAssistantMemoryViewState struct {
+	ForgottenCount   int64                        `json:"forgotten_count"`
+	ForgottenThrough int64                        `json:"forgotten_through"`
+	Key              ProjectAssistantBotKey       `json:"key"`
+	Project          ProjectAssistantProjectScope `json:"project"`
+	Revision         int64                        `json:"revision"`
 }
 
 type ProjectAssistantMemoryWriteRequest struct {
@@ -5825,6 +5906,11 @@ type ProjectAssistantRulesResponse struct {
 	Rules           []ProjectAssistantPermissionRule `json:"rules"`
 }
 
+type ProjectAssistantRuntimeSettings struct {
+	Model   string            `json:"model"`
+	Options map[string]string `json:"options"`
+}
+
 // Sends one queued message into the running turn, as Codync's steer (API level
 // 64).
 type ProjectAssistantSendNowRequest struct {
@@ -5925,6 +6011,7 @@ type ProjectAssistantTeamAnswerResponse struct {
 // Editable settings; omitted fallback_agents preserves the saved chain, while
 // an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantTeamEditSettings struct {
+	Agent           ProjectAssistantAgent      `json:"agent,omitempty"`
 	Appearance      ProjectAssistantAppearance `json:"appearance"`
 	ExpectedVersion int64                      `json:"expected_version"`
 
@@ -5936,11 +6023,13 @@ type ProjectAssistantTeamEditSettings struct {
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
-	Mode string `json:"mode,omitempty"`
-	Name string `json:"name"`
+	Mode   string `json:"mode,omitempty"`
+	Name   string `json:"name"`
+	Notify string `json:"notify,omitempty"`
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
+	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 }
 
 type ProjectAssistantTeamPlan struct {

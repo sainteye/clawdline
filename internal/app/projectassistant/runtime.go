@@ -808,6 +808,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	effectiveBot := bot
 	effectiveBot.Agent = effectiveAgent
+	if effectiveAgent != bot.Agent {
+		effectiveBot.RuntimeSettings = pa.RuntimeSettings{}
+	}
 	caps, err := r.o.Provider.Capabilities(ctx, effectiveBot)
 	if err == nil {
 		err = pa.CheckExecutionCapabilities(caps, t.Fence)
@@ -1941,5 +1944,5 @@ func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa
 }
 
 func sameExecutionConfig(a, b pa.Bot) bool {
-	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && a.ConversationID == b.ConversationID
+	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
 }

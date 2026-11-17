@@ -22,6 +22,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const browseGeneration = useRef(0)
   const attempt = useRef<{ parent: string; name: string; key: string } | null>(null)
   const [page, setPage] = useState<ProjectFolderPage | null>(null)
@@ -87,6 +88,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
   }, [open, machine])
 
   useEffect(() => { if (creating) nameInput.current?.focus() }, [creating])
+  useEffect(() => { if (searchOpen) searchInput.current?.focus() }, [searchOpen])
 
   function cancelCreate() {
     if (busy) return
@@ -167,29 +169,37 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
     </> : <>
       <h2 id="project-folder-picker-title">{nextWord("folderPickerTitle")}</h2>
       <p>{word("folderHint")}</p>
-      <div className="project-folder-search">
-        <button type="button" className="project-folder-search-toggle" aria-expanded={searchOpen}
-          aria-controls="project-folder-search-fields" onClick={() => { setSearchOpen(!searchOpen); setFind("") }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
-            <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" />
-          </svg>
-          {nextWord("folderSearchLabel")} <span aria-hidden="true">{searchOpen ? "▴" : "▾"}</span>
-        </button>
-        <div id="project-folder-search-fields" hidden={!searchOpen}>
-        {searchOpen && <>
-          <label htmlFor="project-folder-search">{nextWord("folderSearchLabel")}</label>
-          <input id="project-folder-search" type="search" value={find} onChange={event => setFind(event.target.value)}
-            disabled={busy} autoFocus autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={64}
-            aria-describedby="project-folder-search-hint" />
-          <p id="project-folder-search-hint" className="project-folder-search-hint">
-            {!deep ? nextWord("folderFilterHint") : found?.protected_skipped ? nextWord("folderSearchHintMac") : nextWord("folderSearchHint")}
-          </p>
-        </>}
+      <form onSubmit={event => { event.preventDefault(); if (!searchOpen) void browse(typed) }}>
+        <div className="project-folder-path-heading">
+          <label htmlFor={searchOpen ? "project-folder-search" : "project-folder-path"}>
+            {searchOpen ? nextWord("folderSearchLabel") : word("folderPath")}
+          </label>
+          <button type="button" className="project-folder-search-toggle" aria-expanded={searchOpen}
+            aria-controls="project-folder-entry" disabled={busy}
+            aria-label={searchOpen ? word("folderBack") : nextWord("folderSearchLabel")}
+            title={searchOpen ? word("folderBack") : nextWord("folderSearchLabel")}
+            onClick={() => { setSearchOpen(!searchOpen); setFind("") }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+              {searchOpen ? <path d="m6 6 12 12M18 6 6 18" /> : <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></>}
+            </svg>
+          </button>
         </div>
-      </div>
+        <div id="project-folder-entry" className="project-folder-path-row">
+          {searchOpen ? <input ref={searchInput} id="project-folder-search" type="search" value={find} onChange={event => setFind(event.target.value)}
+            disabled={busy} autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={64}
+            aria-describedby="project-folder-search-hint" /> : <>
+            <input id="project-folder-path" value={typed} onChange={event => setTyped(event.target.value)}
+              disabled={busy} autoComplete="off" spellCheck={false} />
+            <button type="submit" disabled={busy || !typed}>{word("folderGo")}</button>
+          </>}
+        </div>
+        {searchOpen && <p id="project-folder-search-hint" className="project-folder-search-hint">
+          {!deep ? nextWord("folderFilterHint") : found?.protected_skipped ? nextWord("folderSearchHintMac") : nextWord("folderSearchHint")}
+        </p>}
+      </form>
       {deep && findText ? <div className="project-folder-list" role="group" aria-label={nextWord("folderSearchLabel")} aria-busy={!found && !findFailed}>
         {found?.folders.map(folder => <button type="button" key={folder.path} disabled={busy}
-          onClick={() => { setFind(""); void browse(folder.path) }}>
+          onClick={() => { setFind(""); setSearchOpen(false); void browse(folder.path) }}>
           <span className="project-folder-found-name">📁 {folder.name}</span>
           <span className="project-folder-found-where">{folder.path.slice(0, Math.max(0, folder.path.length - folder.name.length - 1))}</span>
         </button>)}
@@ -197,23 +207,15 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
         {findFailed && <p role="alert">{nextWord("folderSearchFailed")}</p>}
         {found?.truncated && <p role="status">{nextWord("folderSearchTruncated")}</p>}
       </div> : null}
-      <form hidden={deep && !!findText} onSubmit={event => { event.preventDefault(); void browse(typed) }}>
-        <label htmlFor="project-folder-path">{word("folderPath")}</label>
-        <div className="project-folder-path-row">
-          <input id="project-folder-path" value={typed} onChange={event => setTyped(event.target.value)}
-            disabled={busy} autoComplete="off" spellCheck={false} />
-          <button type="submit" disabled={busy || !typed}>{word("folderGo")}</button>
-        </div>
-      </form>
       {page && !(deep && findText) && <>
         <div className="project-folder-toolbar">
           <button type="button" disabled={busy} onClick={() => { setCreating(true); setName(""); setError(""); attempt.current = null }}>{word("folderCreate")}</button>
         </div>
         {created && <p className="project-folder-created" role="status">{word("folderCreated")}</p>}
         <div className="project-folder-list" role="group" aria-label={word("folderList")}>
-          {page.parent && <button type="button" disabled={busy} onClick={() => void browse(page.parent)}>{word("folderParent")}</button>}
+          {page.parent && <button type="button" disabled={busy} onClick={() => { setFind(""); setSearchOpen(false); void browse(page.parent) }}>{word("folderParent")}</button>}
           {(filtered ?? page.folders).map(folder => <button type="button" key={folder.path} disabled={busy}
-            onClick={() => { setFind(""); void browse(folder.path) }}>📁 {folder.name}</button>)}
+            onClick={() => { setFind(""); setSearchOpen(false); void browse(folder.path) }}>📁 {folder.name}</button>)}
           {filtered && !filtered.length && <p>{nextWord("folderSearchEmpty", { q: findText })}</p>}
           {!filtered && !page.folders.length && <p>{word("folderEmpty")}</p>}
         </div>

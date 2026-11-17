@@ -31,7 +31,7 @@ export function createCompletionTracker() {
         if(item.bot.hidden)continue
         const key=JSON.stringify([item.bot.key.bot_id,item.bot.conversation_id]),marker=item.completed_turn_id??""
         if(!item.source.fresh||item.source.state!=="online"||!item.source.readable){if(previous?.has(key))next.set(key,previous.get(key)!);continue}
-        if(marker&&previous?.has(key)&&previous.get(key)!==marker)completed=true
+        if(item.bot.notify!=="off"&&marker&&previous?.has(key)&&previous.get(key)!==marker)completed=true
         next.set(key,marker)
       }
       sources.set(scope,next)

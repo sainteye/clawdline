@@ -3041,12 +3041,19 @@ test("phone: folder search folds away and a long selected name keeps both action
       wait(() => document.getElementById("projects")?.hidden === false && document.getElementById("projects-add")?.textContent.includes("新增專案"), () => {
         stage = "listing"; document.getElementById("projects-add").click()
         wait(() => document.querySelector(".project-folder-picker[open] .project-folder-list button:nth-child(2)"), () => {
+          const pathInput = document.querySelector(".project-folder-picker[open] #project-folder-path")
+          const pathTop = pathInput.getBoundingClientRect().top - pathInput.closest("dialog").getBoundingClientRect().top
+          const heading = document.querySelector(".project-folder-picker[open] label[for=project-folder-path]").getBoundingClientRect()
+          const searchButton = document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").getBoundingClientRect()
+          const besidePath = searchButton.left > heading.right && searchButton.top <= heading.bottom && searchButton.bottom >= heading.top
           stage = "search"; document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").click()
           wait(() => document.querySelector(".project-folder-picker[open] #project-folder-search"), () => {
+            const replacesPath = !document.querySelector(".project-folder-picker[open] #project-folder-path") &&
+              Math.abs(document.querySelector(".project-folder-picker[open] #project-folder-search").getBoundingClientRect().top - document.querySelector(".project-folder-picker[open]").getBoundingClientRect().top - pathTop) <= 1
             stage = "long folder"; const expanded = document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").getAttribute("aria-expanded")
             document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").click()
             document.querySelector(".project-folder-picker[open] .project-folder-list button:nth-child(2)").click()
-            wait(() => document.querySelector(".project-folder-picker[open] #project-folder-path").value.length > 100, () => {
+            wait(() => document.querySelector(".project-folder-picker[open] #project-folder-path")?.value.length > 100, () => {
               const dialog = document.querySelector(".project-folder-picker[open]")
               const bounds = dialog.getBoundingClientRect()
               const actions = Array.from(dialog.querySelectorAll(".project-folder-actions button"))
@@ -3055,13 +3062,13 @@ test("phone: folder search folds away and a long selected name keeps both action
                 return rect.left >= bounds.left && rect.right <= bounds.right && rect.height < 60
               })
               const folded = !document.querySelector(".project-folder-picker[open] #project-folder-search")
-              resolve({ expanded, folded, fits })
+              resolve({ expanded, folded, fits, besidePath, replacesPath })
             })
           })
         })
       })
     })`)
-    assert.deepEqual(state, { expanded: "true", folded: true, fits: true })
+    assert.deepEqual(state, { expanded: "true", folded: true, fits: true, besidePath: true, replacesPath: true })
     await tab.shot("project-folder-long-name")
     await tab.run(`document.querySelector(".project-folder-picker[open] .project-folder-actions button:first-child").click()`)
     assert.equal(projectAdds, before)

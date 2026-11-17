@@ -26,7 +26,8 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
-	Database *sql.DB
+	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	Database      *sql.DB
 	// Reader borrows Store's existing query-only pool. Host never closes it.
 	Reader *sql.DB
 	// ReadViews is an optional composition override for controlled port fixtures.
@@ -59,21 +60,22 @@ type Options struct {
 }
 
 type Host struct {
-	routineStop     context.CancelFunc
-	routineDone     chan struct{}
-	o               Options
-	mu              sync.Mutex
-	transition      sync.Mutex
-	enabled, closed bool
-	cleanupPending  bool
-	store           *featurestore.Store
-	service         *app.Service
-	engine          *app.Engine
-	groups          *app.GroupRooms
-	rooms           *app.RoomDriver
-	team            *app.TeamCoordinator
-	authority       *orchestrator.AssistantAuthority
-	bridge          *app.BrokerWorkBridge
+	configurationSlots chan struct{}
+	routineStop        context.CancelFunc
+	routineDone        chan struct{}
+	o                  Options
+	mu                 sync.Mutex
+	transition         sync.Mutex
+	enabled, closed    bool
+	cleanupPending     bool
+	store              *featurestore.Store
+	service            *app.Service
+	engine             *app.Engine
+	groups             *app.GroupRooms
+	rooms              *app.RoomDriver
+	team               *app.TeamCoordinator
+	authority          *orchestrator.AssistantAuthority
+	bridge             *app.BrokerWorkBridge
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -85,7 +87,7 @@ func New(ctx context.Context, o Options) (*Host, error) {
 	if o.Database == nil || o.MachineID == "" || o.Projects == nil || o.Broker == nil || o.Clock == nil || o.ID == nil || o.Authority == nil || o.Source == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout <= 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, failure(pa.Invalid, "host_options")
 	}
-	h := &Host{o: o}
+	h := &Host{o: o, configurationSlots: make(chan struct{}, pa.MaxConfigurationProbes)}
 	exists, _, err := h.installedSchema(ctx)
 	if err != nil {
 		return nil, err
@@ -180,7 +182,7 @@ func (h *Host) makeService() error {
 		return err
 	}
 	h.groups, h.rooms, h.team = groups, rooms, team
-	s, err := app.NewService(app.ServiceOptions{Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}

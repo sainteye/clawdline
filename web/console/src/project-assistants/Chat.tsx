@@ -78,7 +78,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const lockedAtMount=inFlightAtMount?null:heldSendAtMount
   const [text,setText]=useState(()=>lockedAtMount?lockedAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedAtMount?lockedAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
   const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>(inFlightAtMount?.text??null)
-  const [unknown,setUnknown]=useState(()=>(view.heldOutcomes.has(draftKey)&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantExport|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const [unknown,setUnknown]=useState(()=>(view.heldOutcomes.has(draftKey)&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[settings,setSettings]=useState(false),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [routines,setRoutines]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
@@ -559,12 +559,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   }
   const exportBot=()=>void authorized(source,current,s=>source.export(key,s),new AbortController().signal).then(value=>{const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="bot-export.json";a.click();URL.revokeObjectURL(url)}).catch(fail)
   const loadExport=async()=>{
-    const value=await authorized(source,current,s=>source.export(key,s),new AbortController().signal)
-    if(!valid()||!sameConversation({key:value.bot.key,project:value.bot.project,conversation_id:value.conversation.id},scope))throw failure("pa_scope_denied")
-    if(memoryShown.current)setMemory(previous=>previous&&previous.memory.revision>value.memory.revision?previous:value)
+    if(!source.canMemorySettings?.()||!source.memoryView)throw failure("pa_unsupported")
+    const value=await authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s),new AbortController().signal)
+    if(!valid()||!sameConversation({key:value.view.bot.key,project:value.view.bot.project,conversation_id:value.view.conversation_id},scope))throw failure("pa_scope_denied")
+    if(memoryShown.current)setMemory(previous=>previous&&previous.view.memory.revision>value.view.memory.revision?previous:value)
   }
   // The panel opens at once with placeholders; a failed read closes it onto the chat's error line.
   const loadExportRef=useRef(loadExport);loadExportRef.current=loadExport
+  useEffect(()=>{if(memoryShown.current)void loadExportRef.current().catch(fail)},[data?.conversation.memory_revision,fail])
   const failRef=useRef(fail);failRef.current=fail
   const memoryPanel=useRef<ReturnType<typeof memoryOpener>|null>(null)
   memoryPanel.current??=memoryOpener(()=>loadExportRef.current(),{
@@ -581,7 +583,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(intent&&intent.entry.text!==text)throw failure("pa_outcome_unknown")
     if(!intent){
       const id=crypto.randomUUID()
-      intent={command:command(key,"memory_save"),expected_revision:memory.memory.revision,entry:{id,key,project:memory.bot.project,text,revision:memory.memory.revision,sources:[],forgotten:false}}
+      intent={command:command(key,"memory_save"),expected_revision:memory.view.memory.revision,entry:{id,key,project:memory.view.bot.project,text,revision:memory.view.memory.revision,sources:[],forgotten:false}}
       memorySave.current=intent
     }
     const request=intent
@@ -597,7 +599,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     let intent=memoryForget.current
     const ids=[...new Set(sourceIDs)].sort()
     if(intent&&JSON.stringify(intent.source_ids)!==JSON.stringify(ids))throw failure("pa_outcome_unknown")
-    if(!intent){intent={command:command(key,"forget"),project:memory.bot.project,expected_revision:memory.memory.revision,source_ids:ids};memoryForget.current=intent}
+    if(!intent){intent={command:command(key,"forget"),project:memory.view.bot.project,expected_revision:memory.view.memory.revision,source_ids:ids};memoryForget.current=intent}
     const request=intent
     let attempted=false
     try{await mutate((_,signal)=>{attempted=true;return source.forget(request,signal)})}
@@ -632,7 +634,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={activeTurn} activity={activeTurn?activity[activeTurn.id]??"":""} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}/>
       {routines&&<Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])} onClose={()=>setRoutines(false)}/>}
-      {(memory||memoryLoading)&&<MemoryPanel value={memory} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>memoryPanel.current?.close()} w={w}/>}
+      {(memory||memoryLoading)&&<MemoryPanel value={memory} readDetail={async detail=>{if(!source.memoryView)throw failure("pa_unsupported");return authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail),new AbortController().signal)}} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>memoryPanel.current?.close()} w={w}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       <div className="tx-jump pa-jump" data-end="bottom" data-shown={following?"off":"on"} data-fresh="off">

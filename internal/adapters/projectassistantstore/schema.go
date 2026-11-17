@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -75,6 +75,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// V6 protects Agent configuration and notification choices from older writers.
 	// V5 preserves human artifact title overlays; older readers refuse before rewriting them.
 	// V4 protects hook capabilities, follow-up provenance and retry state that older readers do
 	// not understand. No historical JSON, event or receipt is decoded/rebuilt.

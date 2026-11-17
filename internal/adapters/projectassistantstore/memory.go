@@ -113,6 +113,7 @@ func (s *Store) Save(ctx context.Context, in app.MemoryWrite) (pa.MemoryRevision
 		}
 		a.Memory.Revision++
 		entry := in.Entry
+		entry.UpdatedAt = time.Now().UTC()
 		entry.Revision = a.Memory.Revision
 		a.Entries[entry.ID] = entry
 		return nil

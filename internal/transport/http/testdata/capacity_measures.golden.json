@@ -291,6 +291,26 @@
     "Note": true
   },
   {
+    "Name": "bots.config_choices",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.config_options",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.config_probes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.config_value_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.dispatch_seconds",
     "Known": true,
     "Note": true
@@ -477,6 +497,11 @@
   },
   {
     "Name": "bots.memory_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.memory_preview",
     "Known": true,
     "Note": true
   },

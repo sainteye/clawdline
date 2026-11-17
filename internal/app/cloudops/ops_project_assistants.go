@@ -16,7 +16,7 @@ import (
 
 func init() {
 	register(op{name: "project-assistants.attachment", read: true, shape: projectAssistantAttachmentReply, partial: projectAssistantFailure})
-	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules", "output", "input"} {
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules", "output", "input", "memory-view", "configuration"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}

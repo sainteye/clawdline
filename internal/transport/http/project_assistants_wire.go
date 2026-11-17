@@ -68,6 +68,14 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 		out.FallbackAgents = append(out.FallbackAgents, contract.ProjectAssistantAgent(a))
 	}
 	out.Mode = value.Mode
+	out.Notify = value.Notify
+	if value.RuntimeSettings.Model != "" || len(value.RuntimeSettings.Options) > 0 {
+		options := value.RuntimeSettings.Options
+		if options == nil {
+			options = map[string]string{}
+		}
+		out.RuntimeSettings = &contract.ProjectAssistantRuntimeSettings{Model: value.RuntimeSettings.Model, Options: options}
+	}
 	out.Hidden = value.Hidden
 	out.ManageTeam = value.ManageTeam
 	if value.CreatedBy != nil {
@@ -256,6 +264,9 @@ func paWireMemoryRevision(value pa.MemoryRevision) contract.ProjectAssistantMemo
 
 func paWireMemoryEntry(value pa.MemoryEntry) contract.ProjectAssistantMemoryEntry {
 	var out contract.ProjectAssistantMemoryEntry
+	if !value.UpdatedAt.IsZero() {
+		out.UpdatedAt = value.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
 	out.ID = value.ID
 	out.Key = paWireBotKey(value.Key)
 	out.Project = paWireProjectScope(value.Project)
@@ -755,4 +766,11 @@ func paDomainOptionalAgents(agents []contract.ProjectAssistantAgent) *[]pa.Agent
 	}
 	out := paDomainAgents(agents)
 	return &out
+}
+
+func paDomainRuntimeSettings(value *contract.ProjectAssistantRuntimeSettings) *pa.RuntimeSettings {
+	if value == nil {
+		return nil
+	}
+	return &pa.RuntimeSettings{Model: value.Model, Options: value.Options}
 }

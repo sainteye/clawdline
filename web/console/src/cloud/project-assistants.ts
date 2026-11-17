@@ -22,6 +22,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL = 79
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
@@ -329,7 +330,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return answer
   }
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
@@ -413,6 +414,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }
+  canMemorySettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL);return true}catch{return false}}
+  async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}){
+    this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
+    const v=answer.view;if(v.bot.key.machine_id!==key.machine_id||v.bot.key.bot_id!==key.bot_id||v.bot.conversation_id!==conversation||v.conversation_id!==conversation||!answer.source_epoch||detail&&(answer.source_epoch!==detail.source_epoch||answer.detail?.id!==detail.entry_id||answer.detail?.layer!==detail.layer||answer.detail?.revision!==detail.revision))throw failure("pa_scope_denied")
+    return answer
+  }
+  configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
   forget(r: W.ProjectAssistantForgetRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory/forget"),s,r,"POST") }
   saveMemory(r: W.ProjectAssistantMemoryWriteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory"),s,r,"POST") }
   export(r: W.ProjectAssistantBotKey,s: AbortSignal) { this.key(r); return this.request<W.ProjectAssistantExport>(endpoint(r,"/export")+query({machine_id:this.machineID}),s) }
@@ -517,6 +525,11 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(f=>!url.searchParams.has(f))||! /^(0|[1-9][0-9]*)$/.test(q.offset))throw failure("pa_invalid")
       const offset=Number(q.offset);if(!Number.isSafeInteger(offset)||offset>100*1024*1024)throw failure("pa_invalid")
       return {word:"project-assistants.output",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id,message_id:q.message_id,id:q.id,artifact_id:q.artifact_id,offset},id:""}
+    }
+    if(tail==="/memory-view"||tail==="/configuration"){
+      const fields=tail==="/memory-view"?["machine_id","conversation_id","source_epoch","layer","entry_id","revision"]:["machine_id","conversation_id","agent","model"]
+      if(init?.body!=null||[...url.searchParams.keys()].some(f=>!fields.includes(f))||!q.conversation_id||!q.machine_id)throw failure("pa_invalid")
+      return {word:"project-assistants."+tail.slice(1),kind:"read" as const,fields:{...key,...Object.fromEntries(fields.filter(f=>f!=="machine_id").map(f=>[f,q[f]??""]))},id:""}
     }
     const picture=/^\/attachments\/([0-9a-f]{64})$/.exec(tail)
     if(picture){if(url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid");return {word:"project-assistants.attachment",kind:"read" as const,fields:{...key,id:picture[1]},id:""}}

@@ -10,6 +10,9 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  canMemorySettings?():boolean
+  memoryView?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}):Promise<W.ProjectAssistantMemoryViewResponse>
+  configuration?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal):Promise<W.ProjectAssistantConfigurationResponse>
   canRenameArtifact?(): boolean
   renameArtifact?(request:W.ProjectAssistantRenameArtifactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
   /** Account-scoped identity for persisting uncertain metadata commands. */

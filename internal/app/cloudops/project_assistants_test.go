@@ -51,6 +51,8 @@ func projectAssistantOperationCases() []operationCase {
 		{"projects", "GET", "/v1/project-assistant-targets", map[string]any{"machine_id": "mac-01", "cursor": "page", "page_size": 100}, map[string]string{"machine_id": "mac-01", "cursor": "page", "page_size": "100"}},
 		{"list", "GET", "", map[string]any{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": 2}, map[string]string{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": "2"}},
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
+		{"memory-view", "GET", "/bot/memory-view", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}},
+		{"configuration", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": ""}},
 		{"export", "GET", "/bot/export", key, map[string]string{"machine_id": "mac-01"}},
 		{"history", "GET", "/bot/messages", map[string]any{"key": key, "conversation_id": "chat", "before_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "before_seq": "3", "page_size": "2"}},
 		{"view", "GET", "/bot/view", map[string]any{"key": key, "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": 0, "page_size": 100}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": "0", "page_size": "100"}},
@@ -122,7 +124,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 46 {
+	if len(out) != 48 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
