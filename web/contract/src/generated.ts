@@ -11493,6 +11493,136 @@ export interface TaskPage {
   unfinished: number
 }
 
+export interface TaskResourceAdmission {
+  admitted: boolean
+}
+
+export interface TaskResourceAllocateRequest {
+  class: string
+  owner_id: string
+  owner_kind: string
+}
+
+export interface TaskResourceAllocation {
+  artifacts: string
+  path: string
+  resource: TaskResourceResource
+}
+
+export interface TaskResourceApplyRequest {
+  execution: string
+  plan: TaskResourcePlan
+}
+
+export interface TaskResourceDecision {
+  eligible_at?: number
+  next_owner: string
+  outcome: string
+  reason: string
+  resource: string
+}
+
+export interface TaskResourceInspection {
+  current_manifest: string
+  decision: TaskResourceDecision
+  owner_evidence_digest: string
+  resource: TaskResourceResource
+  snapshot: TaskResourceSnapshot
+}
+
+export interface TaskResourceOwner {
+  id: string
+  kind: string
+  project: string
+}
+
+export interface TaskResourcePage {
+  items: TaskResourceInspection[]
+  next: string
+  policy: TaskResourcePolicy
+}
+
+export interface TaskResourcePinRequest {
+  pinned: boolean
+  resource: string
+}
+
+export interface TaskResourcePlan {
+  digest: string
+  items: TaskResourceInspection[]
+  policy: TaskResourcePolicy
+}
+
+export interface TaskResourcePlanRequest {
+  resources: string[]
+}
+
+export interface TaskResourcePolicy {
+  cache_bytes: number
+  cache_total_bytes: number
+  disk_reserve_bytes: number
+  log_seconds: number
+  scratch_seconds: number
+  scratch_total_bytes: number
+}
+
+export interface TaskResourcePublishRequest {
+  resource: string
+}
+
+export interface TaskResourceReceipt {
+  allocated_bytes: number
+  allocation_known: boolean
+  logical_bytes: number
+  outcome: string
+  reason: string
+  resource: string
+}
+
+export interface TaskResourceResource {
+  class: string
+  created_at: number
+  filesystem_identity: string
+  generation: string
+  id: string
+  last_actor: string
+  last_at: number
+  last_execution: string
+  last_outcome: string
+  last_plan: string
+  last_reason: string
+  last_targets: string
+  manifest_digest: string
+  owner: TaskResourceOwner
+  pinned: boolean
+  relative_path: string
+}
+
+export interface TaskResourceResult {
+  execution: string
+  items: TaskResourceReceipt[]
+  outcome_unknown: boolean
+  plan: string
+  replayed: boolean
+}
+
+export interface TaskResourceSnapshot {
+  allocated_bytes: number
+  allocation_known: boolean
+  digest: string
+  files: number
+  logical_bytes: number
+  measured: boolean
+}
+
+export interface TaskResourceUsage {
+  available_bytes: number
+  cache_total_bytes: number
+  known: boolean
+  largest_cache_bytes: number
+  scratch_total_bytes: number
+}
+
 /**
  * The session that asked for the task. `terminalId` is not stored: it is resolved
  * on every read against the sessions on screen — the parent task's child terminal

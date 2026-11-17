@@ -153,8 +153,14 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 	w("## Where and how long")
 	w("")
-	w("- Work inside %s. Keep artifacts in %s/artifacts/; put heavyweight temporary", cwd, dir)
-	w("  work in %s/work/, which is deleted when the task ends.", dir)
+	if b.DisplayLanguage() == "zh-Hant" {
+		w("- 工作目錄 %s；成果放在 %s/artifacts/。", cwd, dir)
+		w("  %s/work/ 為暫存，保留期限到期且安全條件通過後才回收。", dir)
+		w("  可重建二進位與原始紀錄放暫存；成果保留精簡驗證證據。")
+	} else {
+		w("- Work in %s. Deliverables: %s/artifacts/; temporary files:", cwd, dir)
+		w("  %s/work/ (temporary binaries/logs). Retention and safety checks apply.", dir)
+	}
 	if r.Root == nil && r.ScheduleID != "" {
 		// A scheduled run is not ended by its clock while it is still working
 		// (scheduled_run.go), so the clock is not a reason to cut the work short.

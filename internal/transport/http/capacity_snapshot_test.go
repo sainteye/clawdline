@@ -35,7 +35,8 @@ type measureShape struct {
 // hostDependentMeasures answer from the machine the test runs on: whether
 // tmux is installed, and how long its temporary directory's path is.
 var hostDependentMeasures = map[string]bool{
-	capacity.TerminalCount: true,
+	capacity.TerminalCount:         true,
+	"resources.disk_reserve_bytes": true,
 }
 
 func renderMeasures(t *testing.T) []byte {

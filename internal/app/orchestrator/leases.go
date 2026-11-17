@@ -300,109 +300,131 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 	}
 	var answer LeaseAnswer
 	callbackMoved := false
-	err = b.Store.DecideLease(ctx, req.Resource, key, func(st store.LeaseState) (store.LeaseChange, error) {
-		var change store.LeaseChange
-		ev := func(kind string, body map[string]any) {
-			body["resource"], body["key"] = req.Resource, key
-			payload, _ := json.Marshal(body)
-			change.Events = append(change.Events, store.Event{Kind: kind, Subject: req.Resource + ":" + key, Payload: payload})
-		}
-		// The holder asking again renews.
-		if h := st.Holder; h != nil && h.RequestID == req.RequestID {
-			next := *h
-			next.RenewedAt = now
-			if req.Phase != "" {
-				next.Phase = req.Phase
+	admitted := req.Resource != ResourceCompile || (b.Resources == nil && !b.ResourceServiceRequired)
+	needsStorageAdmission := errors.New("storage_admission_required")
+	for {
+		callbackMoved = false
+		err = b.Store.DecideLease(ctx, req.Resource, key, func(st store.LeaseState) (store.LeaseChange, error) {
+			var change store.LeaseChange
+			ev := func(kind string, body map[string]any) {
+				body["resource"], body["key"] = req.Resource, key
+				payload, _ := json.Marshal(body)
+				change.Events = append(change.Events, store.Event{Kind: kind, Subject: req.Resource + ":" + key, Payload: payload})
 			}
-			callbackMoved = h.CallbackTaskID != "" && next.Phase != h.Phase
-			change.SetHolder = &next
-			answer = LeaseAnswer{State: "granted", LeaseID: h.LeaseID}
-			return change, nil
-		}
-		holderFree := st.Holder == nil
-		if h := st.Holder; h != nil {
-			p, ok := proofs[h.RequestID]
-			if !ok {
-				// Read after the proofs were taken: nothing is known of it yet.
-				p = proof{"unknown", "evidence_unknown"}
+			// The holder asking again renews.
+			if h := st.Holder; h != nil && h.RequestID == req.RequestID {
+				next := *h
+				next.RenewedAt = now
+				if req.Phase != "" {
+					next.Phase = req.Phase
+				}
+				callbackMoved = h.CallbackTaskID != "" && next.Phase != h.Phase
+				change.SetHolder = &next
+				answer = LeaseAnswer{State: "granted", LeaseID: h.LeaseID}
+				return change, nil
 			}
-			if p.verdict == "gone" {
-				change.ClearHolder = true
-				holderFree = true
-				ev("lease.taken_over", map[string]any{"from": h.RequestID, "holder": h.Holder, "why": p.why,
-					"held_seconds": int(now.Sub(h.AcquiredAt) / time.Second)})
-			}
-		}
-		// The line, oldest first, with this asker in it.
-		waiters := make([]store.LeaseRow, 0, len(st.Waiters)+1)
-		mine := -1
-		for _, w := range st.Waiters {
-			if w.RequestID != req.RequestID && proofs[w.RequestID].verdict == "gone" {
-				change.DropWaiters = append(change.DropWaiters, w.RequestID)
-				continue
-			}
-			if w.RequestID != req.RequestID && now.Sub(w.AskedAt) > waiterForgotten {
-				change.DropWaiters = append(change.DropWaiters, w.RequestID)
-				continue
-			}
-			if w.RequestID == req.RequestID {
-				w.AskedAt = now
-				mine = len(waiters)
-			}
-			waiters = append(waiters, w)
-		}
-		if mine < 0 {
-			callbackMoved = req.CallbackTaskID != ""
-			if line := b.leaseLine(); len(waiters) >= line {
-				return change, refuseRawWith(http.StatusTooManyRequests, "queue_full",
-					fmt.Sprintf("%d askers are already waiting for this lease; nothing was queued.", line),
-					map[string]any{"retry_after": 30, "limit": line})
-			}
-			waiters = append(waiters, store.LeaseRow{
-				Resource: req.Resource, Key: key, RequestID: req.RequestID, Holder: req.Holder, Reason: req.Reason,
-				Session: req.Session, CallbackTaskID: req.CallbackTaskID, PID: req.PID, ProcessStart: req.ProcessStart, RequestedAt: now, AskedAt: now,
-			})
-			mine = len(waiters) - 1
-		}
-		// The head is the oldest waiter still asking. A waiter that stopped
-		// asking is passed over and keeps its row until it is forgotten.
-		position := 1
-		for i := 0; i < mine; i++ {
-			if now.Sub(waiters[i].AskedAt) <= waiterSilence {
-				position++
-			}
-		}
-		if holderFree && len(st.Blockers) == 0 && position == 1 {
-			w := waiters[mine]
-			callbackMoved = w.CallbackTaskID != ""
-			lease := uuidLike()
-			change.SetHolder = &store.LeaseRow{
-				Resource: req.Resource, Key: key, RequestID: w.RequestID, LeaseID: lease, Holder: w.Holder,
-				Reason: w.Reason, Session: w.Session, CallbackTaskID: w.CallbackTaskID, PID: w.PID, ProcessStart: w.ProcessStart,
-				RequestedAt: w.RequestedAt, AcquiredAt: now, RenewedAt: now, Phase: req.Phase,
-			}
-			change.DropWaiters = append(change.DropWaiters, w.RequestID)
-			ev("lease.granted", map[string]any{"request": w.RequestID, "holder": w.Holder,
-				"waited_seconds": int(now.Sub(w.RequestedAt) / time.Second)})
-			answer = LeaseAnswer{State: "granted", LeaseID: lease}
-			return change, nil
-		}
-		change.PutWaiters = append(change.PutWaiters, waiters[mine])
-		why := "queued_behind_others"
-		if position == 1 {
-			why = "holder_proving"
-			if len(st.Blockers) > 0 {
-				why = "conflicting_resource_held"
-			}
-			if st.Holder != nil {
-				if p, ok := proofs[st.Holder.RequestID]; ok && p.verdict == "unknown" {
-					why = "evidence_unknown"
+			holderFree := st.Holder == nil
+			if h := st.Holder; h != nil {
+				p, ok := proofs[h.RequestID]
+				if !ok {
+					// Read after the proofs were taken: nothing is known of it yet.
+					p = proof{"unknown", "evidence_unknown"}
+				}
+				if p.verdict == "gone" {
+					change.ClearHolder = true
+					holderFree = true
+					ev("lease.taken_over", map[string]any{"from": h.RequestID, "holder": h.Holder, "why": p.why,
+						"held_seconds": int(now.Sub(h.AcquiredAt) / time.Second)})
 				}
 			}
+			// The line, oldest first, with this asker in it.
+			waiters := make([]store.LeaseRow, 0, len(st.Waiters)+1)
+			mine := -1
+			for _, w := range st.Waiters {
+				if w.RequestID != req.RequestID && proofs[w.RequestID].verdict == "gone" {
+					change.DropWaiters = append(change.DropWaiters, w.RequestID)
+					continue
+				}
+				if w.RequestID != req.RequestID && now.Sub(w.AskedAt) > waiterForgotten {
+					change.DropWaiters = append(change.DropWaiters, w.RequestID)
+					continue
+				}
+				if w.RequestID == req.RequestID {
+					w.AskedAt = now
+					mine = len(waiters)
+				}
+				waiters = append(waiters, w)
+			}
+			if mine < 0 {
+				callbackMoved = req.CallbackTaskID != ""
+				if line := b.leaseLine(); len(waiters) >= line {
+					return change, refuseRawWith(http.StatusTooManyRequests, "queue_full",
+						fmt.Sprintf("%d askers are already waiting for this lease; nothing was queued.", line),
+						map[string]any{"retry_after": 30, "limit": line})
+				}
+				waiters = append(waiters, store.LeaseRow{
+					Resource: req.Resource, Key: key, RequestID: req.RequestID, Holder: req.Holder, Reason: req.Reason,
+					Session: req.Session, CallbackTaskID: req.CallbackTaskID, PID: req.PID, ProcessStart: req.ProcessStart, RequestedAt: now, AskedAt: now,
+				})
+				mine = len(waiters) - 1
+			}
+			// The head is the oldest waiter still asking. A waiter that stopped
+			// asking is passed over and keeps its row until it is forgotten.
+			position := 1
+			for i := 0; i < mine; i++ {
+				if now.Sub(waiters[i].AskedAt) <= waiterSilence {
+					position++
+				}
+			}
+			if holderFree && len(st.Blockers) == 0 && position == 1 {
+				// Never scan or reclaim inside a write transaction. Only a prospective
+				// grant requests preflight; queue polls and holder renewals remain cheap.
+				if !admitted {
+					return store.LeaseChange{}, needsStorageAdmission
+				}
+				w := waiters[mine]
+				callbackMoved = w.CallbackTaskID != ""
+				lease := uuidLike()
+				change.SetHolder = &store.LeaseRow{
+					Resource: req.Resource, Key: key, RequestID: w.RequestID, LeaseID: lease, Holder: w.Holder,
+					Reason: w.Reason, Session: w.Session, CallbackTaskID: w.CallbackTaskID, PID: w.PID, ProcessStart: w.ProcessStart,
+					RequestedAt: w.RequestedAt, AcquiredAt: now, RenewedAt: now, Phase: req.Phase,
+				}
+				change.DropWaiters = append(change.DropWaiters, w.RequestID)
+				ev("lease.granted", map[string]any{"request": w.RequestID, "holder": w.Holder,
+					"waited_seconds": int(now.Sub(w.RequestedAt) / time.Second)})
+				answer = LeaseAnswer{State: "granted", LeaseID: lease}
+				return change, nil
+			}
+			change.PutWaiters = append(change.PutWaiters, waiters[mine])
+			why := "queued_behind_others"
+			if position == 1 {
+				why = "holder_proving"
+				if len(st.Blockers) > 0 {
+					why = "conflicting_resource_held"
+				}
+				if st.Holder != nil {
+					if p, ok := proofs[st.Holder.RequestID]; ok && p.verdict == "unknown" {
+						why = "evidence_unknown"
+					}
+				}
+			}
+			answer = LeaseAnswer{State: "queued", Position: position, HoldReason: why, RetryAfter: leaseRetry}
+			return change, nil
+		})
+		if !errors.Is(err, needsStorageAdmission) {
+			break
 		}
-		answer = LeaseAnswer{State: "queued", Position: position, HoldReason: why, RetryAfter: leaseRetry}
-		return change, nil
-	})
+		if err = b.AdmitHeavyResources(ctx); err != nil {
+			return LeaseAnswer{}, err
+		}
+		admitted = true
+		now = b.now()
+		proofs, err = b.leaseProofs(ctx, req.Resource, key, now)
+		if err != nil {
+			return LeaseAnswer{}, err
+		}
+	}
 	if err != nil {
 		return LeaseAnswer{}, leaseStoreError(err)
 	}

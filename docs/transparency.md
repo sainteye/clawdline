@@ -701,3 +701,13 @@ the English and Taiwan Traditional Chinese instructions, current-question yes
 handling, local ending deadline and provider-free hangup cue. Neither mechanism
 grants terminal writes or background task approval. Both source excerpts and
 language copies were reviewed; the website must import this delivered revision.
+
+## Managed task resources (2026-11-17)
+
+Managed-resource instructions now distinguish retained deliverables from temporary
+binaries and raw execution logs. The English and Traditional Chinese child
+explanations and original briefing excerpt reflect retention and positive safety
+checks; they do not grant a new deletion authority or tool permission. The
+resource CLI registration and Root artifact directory do not add a provider
+injection trigger. The callback guide describes the shared inspection/cleanup
+contract and its future Bot boundary; reading it does not execute cleanup.

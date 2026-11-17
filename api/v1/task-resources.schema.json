@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task-resources.schema.json",
+  "title": "Managed task resource ownership and guarded cleanup",
+  "$defs": {
+    "TaskResourceOwner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "project"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourceResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "generation",
+        "owner",
+        "class",
+        "relative_path",
+        "filesystem_identity",
+        "created_at",
+        "pinned",
+        "manifest_digest",
+        "last_outcome",
+        "last_reason",
+        "last_execution",
+        "last_actor",
+        "last_plan",
+        "last_targets",
+        "last_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/TaskResourceOwner"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "cache",
+            "scratch",
+            "execution_log",
+            "artifact",
+            "evidence"
+          ]
+        },
+        "relative_path": {
+          "type": "string"
+        },
+        "filesystem_identity": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "integer"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "manifest_digest": {
+          "type": "string"
+        },
+        "last_outcome": {
+          "type": "string"
+        },
+        "last_reason": {
+          "type": "string"
+        },
+        "last_execution": {
+          "type": "string"
+        },
+        "last_actor": {
+          "type": "string"
+        },
+        "last_plan": {
+          "type": "string"
+        },
+        "last_targets": {
+          "type": "string"
+        },
+        "last_at": {
+          "type": "integer"
+        }
+      }
+    },
+    "TaskResourcePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scratch_seconds",
+        "log_seconds",
+        "cache_bytes",
+        "cache_total_bytes",
+        "scratch_total_bytes",
+        "disk_reserve_bytes"
+      ],
+      "properties": {
+        "scratch_seconds": {
+          "type": "integer"
+        },
+        "log_seconds": {
+          "type": "integer"
+        },
+        "cache_bytes": {
+          "type": "integer"
+        },
+        "cache_total_bytes": {
+          "type": "integer"
+        },
+        "scratch_total_bytes": {
+          "type": "integer"
+        },
+        "disk_reserve_bytes": {
+          "type": "integer"
+        }
+      }
+    },
+    "TaskResourceDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "outcome",
+        "reason",
+        "next_owner"
+      ],
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "next_owner": {
+          "type": "string"
+        },
+        "eligible_at": {
+          "type": "integer"
+        }
+      }
+    },
+    "TaskResourceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measured",
+        "logical_bytes",
+        "allocated_bytes",
+        "allocation_known",
+        "files",
+        "digest"
+      ],
+      "properties": {
+        "measured": {
+          "type": "boolean"
+        },
+        "logical_bytes": {
+          "type": "integer"
+        },
+        "allocated_bytes": {
+          "type": "integer"
+        },
+        "allocation_known": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourceInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "decision",
+        "snapshot",
+        "current_manifest",
+        "owner_evidence_digest"
+      ],
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/TaskResourceResource"
+        },
+        "decision": {
+          "$ref": "#/$defs/TaskResourceDecision"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/TaskResourceSnapshot"
+        },
+        "current_manifest": {
+          "type": "string"
+        },
+        "owner_evidence_digest": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourcePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "policy",
+        "items"
+      ],
+      "properties": {
+        "digest": {
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/TaskResourcePolicy"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskResourceInspection"
+          }
+        }
+      }
+    },
+    "TaskResourceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "outcome",
+        "reason",
+        "logical_bytes",
+        "allocated_bytes",
+        "allocation_known"
+      ],
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "logical_bytes": {
+          "type": "integer"
+        },
+        "allocated_bytes": {
+          "type": "integer"
+        },
+        "allocation_known": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TaskResourceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution",
+        "plan",
+        "items",
+        "outcome_unknown",
+        "replayed"
+      ],
+      "properties": {
+        "execution": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskResourceReceipt"
+          }
+        },
+        "outcome_unknown": {
+          "type": "boolean"
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TaskResourcePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "next",
+        "policy"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskResourceInspection"
+          }
+        },
+        "next": {
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/TaskResourcePolicy"
+        }
+      }
+    },
+    "TaskResourceAllocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "path",
+        "artifacts"
+      ],
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/TaskResourceResource"
+        },
+        "path": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourceUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "largest_cache_bytes",
+        "cache_total_bytes",
+        "scratch_total_bytes",
+        "available_bytes"
+      ],
+      "properties": {
+        "known": {
+          "type": "boolean"
+        },
+        "largest_cache_bytes": {
+          "type": "integer"
+        },
+        "cache_total_bytes": {
+          "type": "integer"
+        },
+        "scratch_total_bytes": {
+          "type": "integer"
+        },
+        "available_bytes": {
+          "type": "integer"
+        }
+      }
+    },
+    "TaskResourceAllocateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner_kind",
+        "owner_id",
+        "class"
+      ],
+      "properties": {
+        "owner_kind": {
+          "type": "string",
+          "enum": [
+            "task",
+            "root"
+          ]
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "cache",
+            "scratch",
+            "execution_log"
+          ]
+        }
+      }
+    },
+    "TaskResourcePlanRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resources"
+      ],
+      "properties": {
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      }
+    },
+    "TaskResourceApplyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "execution"
+      ],
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/TaskResourcePlan"
+        },
+        "execution": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourcePublishRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource"
+      ],
+      "properties": {
+        "resource": {
+          "type": "string"
+        }
+      }
+    },
+    "TaskResourcePinRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "pinned"
+      ],
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TaskResourceAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admitted"
+      ],
+      "properties": {
+        "admitted": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -49,6 +49,14 @@ func capacityServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(stop)
+	srv.broker = newBroker(srv)
+	if err := srv.broker.EnableTaskResources(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.CloseTaskResources() })
+	if _, err := srv.broker.Resources.Measure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	return srv
 }
 

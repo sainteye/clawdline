@@ -782,7 +782,7 @@ type RootAssignmentClosure struct {
 }
 
 // RootCleanupEligibility keeps the independent cleanup gates visible. There
-// is currently no broker-registered Root scratch, so eligible is always false.
+// is no aggregate deletion grant; registered resources have independent plans.
 type RootCleanupEligibility struct {
 	Eligible     bool   `json:"eligible"`
 	Reason       string `json:"reason"`
@@ -980,7 +980,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		Assignment: req.Assignment, CreatedAt: now.Unix(), Ownership: "independent_root",
 		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"), Persona: req.Persona, BriefLanguage: b.DisplayLanguage(),
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "artifacts"), 0o700); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuseRaw(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}

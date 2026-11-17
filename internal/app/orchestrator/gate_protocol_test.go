@@ -132,6 +132,7 @@ func storedGateTask(t *testing.T, b *Broker, repo, id string) (Record, string) {
 		ProjectDir: repo, Repository: repo, Title: "check", Instructions: "verify", TimeoutMinutes: 30,
 		CreatedAt: time.Now(), State: StateBriefed, Gate: g,
 		Worktree: &Worktree{Repository: repo, Path: path, Base: commit, Head: commit, Detached: true},
+		Dir:      b.Tasks.Path(id),
 	}
 	if err := b.save(ctxForTest(), r, HashSecret(w1Secret), "task.briefed"); err != nil {
 		t.Fatal(err)
@@ -241,6 +242,16 @@ func TestGateResultRecoversAfterPersistenceAndIgnoresOrdinaryResult(t *testing.T
 	if after.State != StateSuccess || after.Result == nil || after.Result.GateVerdict == nil || after.Landing != nil {
 		t.Fatalf("settled gate record: %+v", after)
 	}
+	if _, err := b.taskPreservationDigest(ctx, id); err != nil {
+		t.Fatal("durable gate result was not preservation proof", err)
+	}
+	if err := b.Tasks.PurgeGateSubmissions(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.taskPreservationDigest(ctx, id); err == nil {
+		t.Fatal("missing gate submission still authorized scratch cleanup")
+	}
+
 }
 
 func TestGateCheckoutAndTaskRootAreReadOnlyExceptScratch(t *testing.T) {

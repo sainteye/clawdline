@@ -133,6 +133,8 @@ func main() {
 		// skeleton's `dispatch` wrote a second table of tasks; this one writes
 		// nothing the broker does not read.
 		dispatchCommand(os.Args[2:])
+	case "resources":
+		resourcesCommand(os.Args[2:])
 	case "callback":
 		// A wait handed to the daemon: it runs the command and wakes this
 		// session when it exits (orchestrator/callback.go).
@@ -323,6 +325,7 @@ func serve() {
 		}
 	}
 	defer stopCodeGraph()
+	defer srv.CloseTaskResources()
 	defer srv.StopGitHub()
 	stopIssueSync := srv.StartIssueSync(cloudCtx)
 	defer stopIssueSync()
@@ -683,6 +686,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_report_status_file_repo_dir_open", "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_session_report_summary_sentence_record_this", "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_coordinator_bind_conversation_id_register_this", "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_resources", "  resources <list|allocate|publish|plan|apply|pin|measure|admit>   inspect and reclaim registered temporary data"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_coordination_resources", "  coordination <status|pause|observed|safe|wake|resumed|retry|run>   coordinate Session resources and safe pauses"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_session_c_task_id_item", "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_update_release_help", "  update [--apply [--version vX.Y.Z] [--force]] [--json] [--port n]   check or install a release; exit 0 current, 10 newer, 3 unknown"))

@@ -9673,6 +9673,136 @@ type TaskPage struct {
 	Unfinished int64 `json:"unfinished"`
 }
 
+type TaskResourceAdmission struct {
+	Admitted bool `json:"admitted"`
+}
+
+type TaskResourceAllocateRequest struct {
+	Class     string `json:"class"`
+	OwnerID   string `json:"owner_id"`
+	OwnerKind string `json:"owner_kind"`
+}
+
+type TaskResourceAllocation struct {
+	Artifacts string               `json:"artifacts"`
+	Path      string               `json:"path"`
+	Resource  TaskResourceResource `json:"resource"`
+}
+
+type TaskResourceApplyRequest struct {
+	Execution string           `json:"execution"`
+	Plan      TaskResourcePlan `json:"plan"`
+}
+
+type TaskResourceDecision struct {
+	EligibleAt int64  `json:"eligible_at,omitempty"`
+	NextOwner  string `json:"next_owner"`
+	Outcome    string `json:"outcome"`
+	Reason     string `json:"reason"`
+	Resource   string `json:"resource"`
+}
+
+type TaskResourceInspection struct {
+	CurrentManifest     string               `json:"current_manifest"`
+	Decision            TaskResourceDecision `json:"decision"`
+	OwnerEvidenceDigest string               `json:"owner_evidence_digest"`
+	Resource            TaskResourceResource `json:"resource"`
+	Snapshot            TaskResourceSnapshot `json:"snapshot"`
+}
+
+type TaskResourceOwner struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Project string `json:"project"`
+}
+
+type TaskResourcePage struct {
+	Items  []TaskResourceInspection `json:"items"`
+	Next   string                   `json:"next"`
+	Policy TaskResourcePolicy       `json:"policy"`
+}
+
+type TaskResourcePinRequest struct {
+	Pinned   bool   `json:"pinned"`
+	Resource string `json:"resource"`
+}
+
+type TaskResourcePlan struct {
+	Digest string                   `json:"digest"`
+	Items  []TaskResourceInspection `json:"items"`
+	Policy TaskResourcePolicy       `json:"policy"`
+}
+
+type TaskResourcePlanRequest struct {
+	Resources []string `json:"resources"`
+}
+
+type TaskResourcePolicy struct {
+	CacheBytes        int64 `json:"cache_bytes"`
+	CacheTotalBytes   int64 `json:"cache_total_bytes"`
+	DiskReserveBytes  int64 `json:"disk_reserve_bytes"`
+	LogSeconds        int64 `json:"log_seconds"`
+	ScratchSeconds    int64 `json:"scratch_seconds"`
+	ScratchTotalBytes int64 `json:"scratch_total_bytes"`
+}
+
+type TaskResourcePublishRequest struct {
+	Resource string `json:"resource"`
+}
+
+type TaskResourceReceipt struct {
+	AllocatedBytes  int64  `json:"allocated_bytes"`
+	AllocationKnown bool   `json:"allocation_known"`
+	LogicalBytes    int64  `json:"logical_bytes"`
+	Outcome         string `json:"outcome"`
+	Reason          string `json:"reason"`
+	Resource        string `json:"resource"`
+}
+
+type TaskResourceResource struct {
+	Class              string            `json:"class"`
+	CreatedAt          int64             `json:"created_at"`
+	FilesystemIdentity string            `json:"filesystem_identity"`
+	Generation         string            `json:"generation"`
+	ID                 string            `json:"id"`
+	LastActor          string            `json:"last_actor"`
+	LastAt             int64             `json:"last_at"`
+	LastExecution      string            `json:"last_execution"`
+	LastOutcome        string            `json:"last_outcome"`
+	LastPlan           string            `json:"last_plan"`
+	LastReason         string            `json:"last_reason"`
+	LastTargets        string            `json:"last_targets"`
+	ManifestDigest     string            `json:"manifest_digest"`
+	Owner              TaskResourceOwner `json:"owner"`
+	Pinned             bool              `json:"pinned"`
+	RelativePath       string            `json:"relative_path"`
+}
+
+type TaskResourceResult struct {
+	Execution      string                `json:"execution"`
+	Items          []TaskResourceReceipt `json:"items"`
+	OutcomeUnknown bool                  `json:"outcome_unknown"`
+	Plan           string                `json:"plan"`
+	Replayed       bool                  `json:"replayed"`
+}
+
+type TaskResourceSnapshot struct {
+	AllocatedBytes  int64  `json:"allocated_bytes"`
+	AllocationKnown bool   `json:"allocation_known"`
+	Digest          string `json:"digest"`
+	Files           int64  `json:"files"`
+	LogicalBytes    int64  `json:"logical_bytes"`
+	Measured        bool   `json:"measured"`
+}
+
+type TaskResourceUsage struct {
+	AvailableBytes    int64 `json:"available_bytes"`
+	CacheTotalBytes   int64 `json:"cache_total_bytes"`
+	Known             bool  `json:"known"`
+	LargestCacheBytes int64 `json:"largest_cache_bytes"`
+	ScratchTotalBytes int64 `json:"scratch_total_bytes"`
+}
+
 // The session that asked for the task. `terminalId` is not stored: it is
 // resolved on every read against the sessions on screen — the parent task's
 // child terminal first, otherwise the one live session whose conversation is

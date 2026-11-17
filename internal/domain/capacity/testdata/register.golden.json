@@ -13228,6 +13228,166 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.cache_bytes",
+    "Class": "cache",
+    "Unit": "bytes",
+    "Limit": 4294967296,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.CacheBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.cache_total_bytes",
+    "Class": "cache",
+    "Unit": "bytes",
+    "Limit": 17179869184,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.CacheTotalBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.disk_reserve_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2147483648,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.DiskReserveBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.log_seconds",
+    "Class": "diagnostic_log",
+    "Unit": "seconds",
+    "Limit": 604800,
+    "WarnAt": 0,
+    "AtLimit": "rotate",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.LogRetentionSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.page_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.PageRowsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.scan_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.FilesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.scratch_seconds",
+    "Class": "work",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.ScratchRetentionSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.scratch_total_bytes",
+    "Class": "work",
+    "Unit": "bytes",
+    "Limit": 17179869184,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.ScratchTotalBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "run.claimed_items",
     "Class": "buffer",
     "Unit": "rows",

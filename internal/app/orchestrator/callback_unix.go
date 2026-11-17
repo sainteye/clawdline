@@ -93,6 +93,18 @@ func callbackEnviron(r Record) []string {
 		}
 		env = append(env, k+"="+v)
 	}
+	if r.Callback.ScratchPath != "" {
+		kept := env[:0]
+		for _, entry := range env {
+			if !strings.HasPrefix(entry, "TMPDIR=") {
+				kept = append(kept, entry)
+			}
+		}
+		env = kept
+		env = append(env, "TMPDIR="+r.Callback.ScratchPath, "CLAWDLINE_SCRATCH_DIR="+r.Callback.ScratchPath,
+			"GOCACHE="+r.Callback.CachePath, "XDG_CACHE_HOME="+r.Callback.CachePath, "npm_config_cache="+filepath.Join(r.Callback.CachePath, "npm"),
+			"CLAWDLINE_ARTIFACT_DIR="+filepath.Join(r.Dir, "artifacts"))
+	}
 	sort.Strings(env)
 	env = append(env, "CLAWDLINE_CALLBACK_TASK_ID="+r.ID, "CLAWDLINE_CALLBACK_DIR="+r.Dir)
 	if r.Root != nil {
@@ -209,4 +221,20 @@ func unfence(f *os.File) {
 func sameGroup(pid, pgid int) bool {
 	got, err := syscall.Getpgid(pid)
 	return err == nil && got == pgid
+}
+
+// Signal zero observes a group without delivering a signal. A live group keeps
+// its resources even when a descendant closed the inherited callback lock.
+func callbackGroupPresence(pgid int) string {
+	if pgid <= 0 {
+		return "unknown"
+	}
+	err := syscall.Kill(-pgid, syscall.Signal(0))
+	if err == nil {
+		return "present"
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return "absent"
+	}
+	return "unknown"
 }

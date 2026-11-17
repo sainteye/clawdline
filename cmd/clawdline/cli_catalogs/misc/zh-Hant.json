@@ -290,5 +290,6 @@
   "project_assistants.switch_refused": "Bots 開關沒有變更（HTTP %d）。\n",
   "project_assistants.switch_on": "Bots 已開啟。打開 console，在 Session 清單選「所有 Bots」。\n",
   "project_assistants.switch_off": "Bots 已關閉。已儲存的 Bot 與對話都會保留。\n",
-  "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n"
+  "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n",
+  "resources.usage": "用法：clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit"
 }

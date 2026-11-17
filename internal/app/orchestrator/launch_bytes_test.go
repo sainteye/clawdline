@@ -98,13 +98,13 @@ func TestTheFixedLaunchAdditionsAreMeasured(t *testing.T) {
 	}
 }
 
-// The pre-feature briefing bytes are pinned because opt-out promises exact
-// compatibility, including the child's ordinary task and protocol text.
+// The reviewed ordinary briefing includes scratch retention and separation.
+// Image-review opt-out must keep that task and protocol baseline unchanged.
 func TestImageReviewDoesNotChangeTheExistingChildBrief(t *testing.T) {
 	b := &Broker{Tasks: taskdir.New("/Users/someone/.config/clawdline-next"), Executable: "/Applications/Clawdline Next.app/Contents/MacOS/clawdline", Port: 7727}
 	r := launchBytesRecord()
 	sum := sha256.Sum256([]byte(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID)))
-	if got := hex.EncodeToString(sum[:]); got != "1af71ea0fbcf909897beef3d0371d6751f4f22f2da00d4a4cad6c41e8d7607ed" {
-		t.Fatalf("pre-feature CHILD.md changed: %s", got)
+	if got := hex.EncodeToString(sum[:]); got != "79cf88ae64dd98f945445312af5441d82801a2cb12281ff70578497313a2b7c3" {
+		t.Fatalf("reviewed ordinary CHILD.md changed: %s", got)
 	}
 }

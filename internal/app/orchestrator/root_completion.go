@@ -48,9 +48,11 @@ func (b *Broker) RecordRootClosure(ctx context.Context, id string, closed sessio
 // rootCleanup projects the current evidence without changing the assignment
 // or treating the brief directory, project checkout or shared cache as scratch.
 func (b *Broker) rootCleanup(ctx context.Context, rd reading, a RootAssignment) *RootCleanupEligibility {
-	return rootCleanupWithOccupancy(rd, a, func(paths ...string) (string, error) {
+	p := rootCleanupWithOccupancy(rd, a, func(paths ...string) (string, error) {
 		return b.occupied(ctx, paths...)
 	})
+	b.projectRegisteredRootResources(ctx, a.ID, p)
+	return p
 }
 
 func rootCleanupWithOccupancy(rd reading, a RootAssignment, occupied func(...string) (string, error)) *RootCleanupEligibility {
@@ -105,5 +107,29 @@ func (b *Broker) ProjectRootCleanup(ctx context.Context, assignments []RootAssig
 	occupied := b.occupancySnapshot(ctx)
 	for i := range assignments {
 		assignments[i].Cleanup = rootCleanupWithOccupancy(rd, assignments[i], occupied)
+		b.projectRegisteredRootResources(ctx, assignments[i].ID, assignments[i].Cleanup)
+	}
+}
+
+// A Root projection is not an aggregate deletion grant. Registered resource
+// plans independently show retention, output manifests, pins and live readers.
+func (b *Broker) projectRegisteredRootResources(ctx context.Context, id string, p *RootCleanupEligibility) {
+	if b.Resources == nil {
+		return
+	}
+	rows, _, err := b.Store.TaskResourcesByOwnerPage(ctx, "root", id, "")
+	if err != nil {
+		p.Scratch = "unknown"
+		p.Reason = "resource_register_unknown"
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	p.Scratch = "registered"
+	p.Preservation = "per_resource_manifest"
+	if p.Completion && p.Owner == "absent" {
+		p.Reason = "inspect_registered_resources"
+		p.NextOwner = "resource_service"
 	}
 }

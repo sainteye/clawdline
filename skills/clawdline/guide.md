@@ -1039,6 +1039,24 @@ command. Use the same `--task-id` only to resolve an uncertain registration resp
   refused `429 callback_capacity` with a `retry_after`. A dispatch cannot call itself
   `kind callback` (`bad_task`). Windows refuses `501 no_callback_capability`.
 
+Managed callback storage (daemon API 79): the daemon allocates separate private scratch and cache directories before starting the command. `TMPDIR` and `CLAWDLINE_SCRATCH_DIR` name scratch; `GOCACHE`, `XDG_CACHE_HOME` and `npm_config_cache` name the registered cache. `CLAWDLINE_ARTIFACT_DIR` names the retained `artifacts/` directory. Publish results there before exit; files left in scratch/cache are explicitly disposable. Commands that override these paths create unmanaged data; the daemon will not adopt or delete it. Native application compilation still needs `clawdline heavy`; ordinary tests do not need the compile slot.
+
+All terminal scratch/cache retains at least 24 hours; non-artifact raw logs retain 7 days. Artifacts and attachments never expire under this policy. A settled callback also needs an absent process group, released lock, no open readers and unchanged saved outputs. Unknown evidence keeps the data. A heavy callback or new compile lease is refused when safe reclamation cannot restore the 4 GiB per-cache / 16 GiB aggregate cache budget, 16 GiB scratch budget or 2 GiB filesystem reserve. Existing lease renewals and ordinary wait callbacks remain available. These are admission thresholds, not in-flight filesystem quotas.
+
+Use `clawdline resources list [--after ID]` for one read-only page (at most 64 rows). `allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log` creates a new owned directory and returns its separate artifact path; it cannot adopt an existing path. For explicit Root resources, preserve files in that artifact path and keep a durable Session delivery before safely closing the exact Root executor. Missing completion or publication proof keeps its resources. A long-lived Root should use command-scoped callbacks for build caches rather than keeping one cache live until the Root closes. Existing Root assignment directories and Git worktrees are never deletion targets of this interface.
+
+`resources publish UUID` seals only already-published, source-verified output; it cannot declare completion. `resources pin UUID` protects a resource (`--value=false` explicitly unpins with machine authority). To review and apply exact identities:
+
+`clawdline resources plan <resource UUID> > /path/to/reviewed-plan.json`
+
+`clawdline resources apply --plan /path/to/reviewed-plan.json --execution <new UUID>`
+
+Retain that execution UUID for uncertain-response retries; do not regenerate the plan or execution implicitly. Changed bytes, policy, protection or use invalidate a plan. `resources measure` refreshes usage; `resources admit` checks safe reclamation and new-heavy-work admission. The API uses the same operations under `/v1/orchestrator/resources` (GET) and `/allocate`, `/publish`, `/pin`, `/plan`, `/apply`, `/measure`, `/admit` (POST). These machine-token routes are not Bot credentials. A future Bot adapter must use its own verified Project scope with inspect/reclaim only; it cannot seal outputs, unpin or reclassify data. No Bot or Bot schedule is created here.
+
+Command caches are isolated by execution. This can repeat dependency compilation; the aggregate budget can refuse further builds during the retention window. Shared reuse needs tracked consumers and cannot be inferred from a cache path. Keep concise successful-check evidence as the deliverable; temporary binaries and raw traces belong in managed scratch/log storage unless explicitly required as retained artifacts. Existing artifacts are not reclassified.
+
+Queued compile requests retain their place; storage admission runs only before a new grant, not on every queue poll.
+
 ## 6. Landing, and the other three kinds of work
 
 **After you merge a child's branch, do nothing more**: the broker records `landed` itself (below).

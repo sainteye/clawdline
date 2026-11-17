@@ -436,6 +436,9 @@ func New(cfg config.Config) (*Server, error) {
 	// there, which is why the directory is under this daemon's own state and
 	// not under a temporary one somebody else may empty.
 	srv.broker = newBroker(srv)
+	if err := srv.broker.EnableTaskResources(); err != nil {
+		log.Print("task resources: ownership root unavailable; new heavy work remains fenced")
+	}
 	srv.screenBus = newScreenBus()
 	screenDir := filepath.Join(cfg.Dir, "screens")
 	srv.screens = app.NewScreens(hosts, terminal.NewPaneSignal(screenDir, terminal.NewTmux()),
@@ -749,6 +752,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/root-assignments/"}, s.rootAssignmentsRoute},
 		{Route{"*", "/v1/orchestrator/graphs"}, s.graphsRoute},
 		{Route{"*", "/v1/orchestrator/reclaim"}, s.reclaimRoute},
+		{Route{"*", "/v1/orchestrator/resources"}, s.taskResourcesRoute},
+		{Route{"*", "/v1/orchestrator/resources/"}, s.taskResourcesRoute},
 		{Route{"*", "/v1/strings"}, s.strings},
 		{Route{"*", "/v1/settings"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/browser"}, s.settingsRoute},

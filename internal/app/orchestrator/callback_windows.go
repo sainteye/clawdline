@@ -28,4 +28,5 @@ func lockHeld(string) (bool, error)             { return false, errNoCallbacks }
 func fence(string) (*os.File, error)            { return nil, errNoCallbacks }
 func unfence(*os.File)                          {}
 func sameGroup(int, int) bool                   { return false }
+func callbackGroupPresence(int) string          { return "unknown" }
 func stopGroup(int, time.Duration) error        { return errNoCallbacks }

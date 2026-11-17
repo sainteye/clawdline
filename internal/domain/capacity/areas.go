@@ -42,6 +42,7 @@ var areas = []area{
 	{"projectfiles", []string{"projectfiles", "projects"}, projectFilesBounds},
 	{"projectsync", []string{"projectsync"}, projectSyncBounds},
 	{"release", []string{"release"}, releaseBounds},
+	{"resources", []string{"resources"}, resourceBounds},
 	{"session", []string{"session", "naming", "schedule", "snippets"}, sessionBounds},
 	{"sessions", []string{"sessions"}, sessionsBounds},
 	{"squad", []string{"squad", "personas", "workflow"}, squadBounds},
