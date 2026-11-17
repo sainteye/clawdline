@@ -9,13 +9,12 @@
 .project-folder-picker button { cursor: pointer; }
 .project-folder-picker button:hover:not(:disabled) { border-color: var(--accent); }
 .project-folder-picker button:focus-visible, .project-folder-picker input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.project-folder-current { overflow-wrap: anywhere; }
 .project-folder-list { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 4px; min-width: 0; max-height: min(350px, 40vh); overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 8px; }
 .project-folder-list button { min-width: 0; max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; }
 .project-folder-list p { padding: 4px 8px; }
 .project-folder-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.project-folder-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
-.project-folder-toolbar .project-folder-current { flex: 1 1 140px; min-width: 0; margin: 0; }
+.project-folder-actions button { flex-shrink: 0; white-space: nowrap; }
+.project-folder-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin: 14px 0; }
 .project-folder-toolbar button { flex-shrink: 0; font-size: 13px; }
 .project-folder-picker .project-folder-back { padding: 0; min-height: 28px; margin-bottom: 14px; border: 0; background: none; color: var(--dim); }
 .project-folder-location span { display: block; margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; }
@@ -27,6 +26,8 @@
 .project-folder-picker .project-folder-created { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
 
 /* Search above browsing (session/first-run.ts): type a Project's name instead of walking to it. */
+.project-folder-search { margin-top: 14px; }
+.project-folder-picker .project-folder-search-toggle { display: flex; align-items: center; gap: 6px; border: 0; padding: 0; background: none; color: var(--dim); }
 .project-folder-search label { display: block; margin: 14px 0 6px; font-weight: 600; }
 .project-folder-search input { width: 100%; box-sizing: border-box; }
 .project-folder-search-hint { margin: 6px 0 10px; color: var(--faint); font-size: 12px; }
