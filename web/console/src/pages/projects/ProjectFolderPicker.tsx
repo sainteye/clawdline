@@ -34,6 +34,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
   // Searching: this machine's daemon looks two levels under home; another
   // machine (or a daemon too old to search) filters the folder shown below.
   const [find, setFind] = useState("")
+  const [searchOpen, setSearchOpen] = useState(false)
   const [found, setFound] = useState<ProjectFolderSearch | null>(null)
   const [findFailed, setFindFailed] = useState(false)
   const [deepFind, setDeepFind] = useState(true)
@@ -76,7 +77,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
     const node = dialog.current
     if (!node) return
     setCreating(false); setName(""); setCreated(false); attempt.current = null
-    setFind(""); setFound(null); setFindFailed(false); setDeepFind(true)
+    setFind(""); setSearchOpen(false); setFound(null); setFindFailed(false); setDeepFind(true)
     if (open) {
       showModalWithoutChoice(node)
       setPage(null); setTyped(""); setError("")
@@ -167,13 +168,24 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
       <h2 id="project-folder-picker-title">{nextWord("folderPickerTitle")}</h2>
       <p>{word("folderHint")}</p>
       <div className="project-folder-search">
-        <label htmlFor="project-folder-search">{nextWord("folderSearchLabel")}</label>
-        <input id="project-folder-search" type="search" value={find} onChange={event => setFind(event.target.value)}
-          disabled={busy} autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={64}
-          aria-describedby="project-folder-search-hint" />
-        <p id="project-folder-search-hint" className="project-folder-search-hint">
-          {!deep ? nextWord("folderFilterHint") : found?.protected_skipped ? nextWord("folderSearchHintMac") : nextWord("folderSearchHint")}
-        </p>
+        <button type="button" className="project-folder-search-toggle" aria-expanded={searchOpen}
+          aria-controls="project-folder-search-fields" onClick={() => { setSearchOpen(!searchOpen); setFind("") }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" />
+          </svg>
+          {nextWord("folderSearchLabel")} <span aria-hidden="true">{searchOpen ? "▴" : "▾"}</span>
+        </button>
+        <div id="project-folder-search-fields" hidden={!searchOpen}>
+        {searchOpen && <>
+          <label htmlFor="project-folder-search">{nextWord("folderSearchLabel")}</label>
+          <input id="project-folder-search" type="search" value={find} onChange={event => setFind(event.target.value)}
+            disabled={busy} autoFocus autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={64}
+            aria-describedby="project-folder-search-hint" />
+          <p id="project-folder-search-hint" className="project-folder-search-hint">
+            {!deep ? nextWord("folderFilterHint") : found?.protected_skipped ? nextWord("folderSearchHintMac") : nextWord("folderSearchHint")}
+          </p>
+        </>}
+        </div>
       </div>
       {deep && findText ? <div className="project-folder-list" role="group" aria-label={nextWord("folderSearchLabel")} aria-busy={!found && !findFailed}>
         {found?.folders.map(folder => <button type="button" key={folder.path} disabled={busy}
@@ -195,7 +207,6 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
       </form>
       {page && !(deep && findText) && <>
         <div className="project-folder-toolbar">
-          <p className="project-folder-current">{page.path}</p>
           <button type="button" disabled={busy} onClick={() => { setCreating(true); setName(""); setError(""); attempt.current = null }}>{word("folderCreate")}</button>
         </div>
         {created && <p className="project-folder-created" role="status">{word("folderCreated")}</p>}
@@ -212,7 +223,7 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
       <div className="project-folder-actions">
         <button type="button" disabled={busy} onClick={onClose}>{word("folderCancel")}</button>
         <button type="button" className="project-folder-add" disabled={busy || !page || (deep && !!findText)} onClick={() => void add()}>
-          {page ? nextWord("folderAddNamed", { name: page.path.split(/[\\/]/).filter(Boolean).pop() || page.path }) : word("folderAdd")}
+          {word("folderAdd")}
         </button>
       </div>
     </>}

@@ -493,7 +493,7 @@ function daemon(): Server {
       const folder = url.searchParams.get("path") || "/tmp"
       return json(res, 200, { path: folder, parent: folder === "/tmp" ? "/" : "/tmp",
         folders: folder === "/tmp" ? [
-          { name: "fixture-" + "very-long-folder-name-".repeat(12), path: "/tmp/fixture-long" },
+          { name: "fixture-" + "very-long-folder-name-".repeat(12), path: "/tmp/fixture-" + "very-long-folder-name-".repeat(12) },
           { name: "fixture-new", path: "/tmp/fixture-new" },
         ] : [], truncated: false })
     }
@@ -3001,9 +3001,16 @@ test("phone: Projects offers a folder picker that can be cancelled", () =>
               folder.scrollWidth <= folder.clientWidth + 1 &&
               folder.scrollHeight > 38
             const cancel = dialog.querySelector(".project-folder-actions button:first-child")
+            const searchHidden = !dialog.querySelector("#project-folder-search")
+            const uniquePath = !Array.from(dialog.querySelectorAll("p")).some(p =>
+              p.textContent === dialog.querySelector("#project-folder-path").value)
+            const actionsFit = Array.from(dialog.querySelectorAll(".project-folder-actions button")).every(button => {
+              const rect = button.getBoundingClientRect()
+              return rect.left >= dialogRect.left && rect.right <= dialogRect.right && button.scrollWidth <= button.clientWidth + 1
+            })
             cancel.click()
             const closed = () => {
-              if (!dialog.open) return resolve({ shown: !document.getElementById("projects").hidden, cancelled: true, fits })
+              if (!dialog.open) return resolve({ shown: !document.getElementById("projects").hidden, cancelled: true, fits, searchHidden, uniquePath, actionsFit })
               if (Date.now() > deadline) return reject(new Error("Project picker did not close"))
               setTimeout(closed, 25)
             }
@@ -3015,7 +3022,48 @@ test("phone: Projects offers a folder picker that can be cancelled", () =>
       }
       wait()
     })`)
-    assert.deepEqual(state, { shown: true, cancelled: true, fits: true })
+    assert.deepEqual(state, { shown: true, cancelled: true, fits: true, searchHidden: true, uniquePath: true, actionsFit: true })
+    assert.equal(projectAdds, before)
+  }))
+
+test("phone: folder search folds away and a long selected name keeps both actions visible", () =>
+  inTab(PHONE, async (tab) => {
+    const before = projectAdds
+    await tab.go("/#page=projects")
+    const state = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      let stage = "page"
+      const wait = (ready, next) => {
+        if (ready()) return next()
+        if (Date.now() > deadline) return reject(new Error("Folder picker did not advance at " + stage + ": " + document.querySelector(".project-folder-picker[open]")?.textContent))
+        setTimeout(() => wait(ready, next), 25)
+      }
+      wait(() => document.getElementById("projects")?.hidden === false && document.getElementById("projects-add")?.textContent.includes("新增專案"), () => {
+        stage = "listing"; document.getElementById("projects-add").click()
+        wait(() => document.querySelector(".project-folder-picker[open] .project-folder-list button:nth-child(2)"), () => {
+          stage = "search"; document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").click()
+          wait(() => document.querySelector(".project-folder-picker[open] #project-folder-search"), () => {
+            stage = "long folder"; const expanded = document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").getAttribute("aria-expanded")
+            document.querySelector(".project-folder-picker[open] .project-folder-search-toggle").click()
+            document.querySelector(".project-folder-picker[open] .project-folder-list button:nth-child(2)").click()
+            wait(() => document.querySelector(".project-folder-picker[open] #project-folder-path").value.length > 100, () => {
+              const dialog = document.querySelector(".project-folder-picker[open]")
+              const bounds = dialog.getBoundingClientRect()
+              const actions = Array.from(dialog.querySelectorAll(".project-folder-actions button"))
+              const fits = actions.every(button => {
+                const rect = button.getBoundingClientRect()
+                return rect.left >= bounds.left && rect.right <= bounds.right && rect.height < 60
+              })
+              const folded = !document.querySelector(".project-folder-picker[open] #project-folder-search")
+              resolve({ expanded, folded, fits })
+            })
+          })
+        })
+      })
+    })`)
+    assert.deepEqual(state, { expanded: "true", folded: true, fits: true })
+    await tab.shot("project-folder-long-name")
+    await tab.run(`document.querySelector(".project-folder-picker[open] .project-folder-actions button:first-child").click()`)
     assert.equal(projectAdds, before)
   }))
 
@@ -3094,7 +3142,7 @@ test("phone: an empty Session picker adds and removes a Project in edit mode", (
         if (Date.now() > deadline) return reject(new Error("Project picker did not advance at " + stage + ": " + document.getElementById("start-say").textContent))
         setTimeout(() => wait(test, next), 25)
       }
-      wait(() => document.getElementById("start-say").textContent.includes("目前沒有專案") &&
+      wait(() => document.getElementById("start-say").textContent.includes("還沒有 Project") &&
         !document.getElementById("start-add-project").hidden &&
         document.querySelectorAll("#start-list .place").length === 0, () => {
         const empty = document.getElementById("start-say").textContent
@@ -3103,7 +3151,7 @@ test("phone: an empty Session picker adds and removes a Project in edit mode", (
         wait(() => document.querySelector(".project-folder-picker[open] .project-folder-list button"), () => {
           document.querySelector(".project-folder-picker .project-folder-list button:last-of-type").click()
           stage = "child"
-          wait(() => document.querySelector(".project-folder-picker .project-folder-current")?.textContent === "/tmp/fixture-new", () => {
+          wait(() => document.querySelector(".project-folder-picker #project-folder-path")?.value === "/tmp/fixture-new", () => {
             document.querySelector(".project-folder-picker .project-folder-actions button:last-child").click()
             stage = "added"
             wait(() => document.querySelectorAll("#start-list .place").length === 1, () => {
@@ -3131,7 +3179,7 @@ test("phone: an empty Session picker adds and removes a Project in edit mode", (
         })
       })
     })`)
-    assert.match(String((result as { empty: string }).empty), /目前沒有專案.*新增/)
+    assert.match(String((result as { empty: string }).empty), /還沒有 Project.*新增/)
     assert.deepEqual({ addVisible: (result as { addVisible: boolean }).addVisible, editing: (result as { editing: string }).editing },
       { addVisible: true, editing: "1" })
     assert.equal(projectAdds, beforeAdds + 1)
