@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
-import { readView,readViewRequest,mergeTimeline,eventTimeline } from "./read-views.ts"
+import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary } from "./read-views.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { errorCode } from "./client.ts"
 // @ts-expect-error -- Node executes source extensions.
@@ -31,6 +31,21 @@ test("snapshot adopts an exact cross-Bot machine frontier while retaining older 
   assert.equal(value.head.unknown_turn_count,17)
   assert.equal(value.head.pending_permission_count,101)
   assert.equal(value.head.trace_category_count,101)
+})
+test("interruption details survive snapshot and live-event summaries without requiring newer sources",()=>{
+  const a=answer()
+  const summary={id:"interrupted",message_id:"input",fence,state:"unknown" as const,failure_code:"execution_effect_unknown",started_at:""}
+  a.snapshot!.last_turn={...summary,failure_field:"prompt_timeout"}
+  assert.equal(readView(a,request(),fence).snapshot!.last_turn!.failure_field,"prompt_timeout")
+  a.snapshot!.last_turn=summary
+  assert.equal(readView(a,request(),fence).snapshot!.last_turn!.failure_field,undefined)
+  for(const value of [true,7,{}]){
+    a.snapshot!.last_turn={...summary,failure_field:value as never}
+    assert.throws(()=>readView(a,request(),fence),e=>errorCode(e)==="pa_invalid")
+  }
+  const live=turnSummary({id:"interrupted",message_id:"input",fence,state:"unknown",failure:{code:"execution_effect_unknown",field:"prompt_timeout",retry_after_seconds:0}} as W.ProjectAssistantTurn)
+  assert.equal(live.failure_field,"prompt_timeout")
+  assert.equal(live.state,"unknown")
 })
 test("truthy Source strings never authorize a successful snapshot",()=>{
   for(const field of ["readable","writable","fresh"] as const)rejects(a=>{(a.source as unknown as Record<string,unknown>)[field]="false"})

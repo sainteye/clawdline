@@ -22,7 +22,7 @@ test("a Bot that cannot be changed says why",()=>{
   assert.equal(readOnlyReason(undefined, w), "正在載入")
 })
 // @ts-expect-error Node executes source extensions.
-import { botFailureText } from "./source-errors.ts"
+import { botFailureText, botTurnOutcome } from "./source-errors.ts"
 test("a failed Bot action says what to do, never only its code",()=>{
   const w = { failRetry: "再按一次", failOffline: "連不上", failGeneric: "失敗了" } as Record<string,string>
   assert.equal(botFailureText("pa_stale_version", w), "再按一次")
@@ -33,4 +33,16 @@ test("a failed Bot action says what to do, never only its code",()=>{
 test("retryable source reads are separate from permanent authority or protocol errors",()=>{
   for(const code of ["pa_offline","unavailable","pa_capacity_full","pa_cursor_expired"])assert.equal(retryableSourceError(code),true)
   for(const code of ["","pa_revoked","pa_scope_denied","pa_unpaired","pa_invalid","pa_unsupported","pa_disabled"])assert.equal(retryableSourceError(code),false)
+})
+
+test("an interrupted turn explains a known cause and preserves uncertainty",()=>{
+  const w={unknown:"unknown",failed:"failed",failUnknown:"unknown effect",failGeneric:"generic",failTimeout:"time limit",failConnection:"connection lost",failUsage:"usage exhausted",turnUnknownNext:"check results; send follow-up; no automatic replay",failAcknowledged:"follow-up received; earlier result unconfirmed"}
+  for(const [field,cause] of [["prompt_timeout","time limit"],["acp_eof","connection lost"],["provider_usage_limit","usage exhausted"]]){
+    const text=botTurnOutcome({state:"unknown",failure_code:"execution_effect_unknown",failure_field:field},w)
+    assert.equal(text,`${cause} ${w.turnUnknownNext}`)
+  }
+  for(const field of [undefined,"execution","private native error narrative"]){
+    assert.equal(botTurnOutcome({state:"unknown",failure_code:"pa_unsupported",failure_field:field},w),w.turnUnknownNext)
+  }
+  assert.equal(botTurnOutcome({state:"failed",failure_code:"execution_effect_unknown",failure_field:"acknowledged"},w),w.failAcknowledged)
 })

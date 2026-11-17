@@ -5768,10 +5768,14 @@ type ProjectAssistantReadTurnSummary struct {
 	Attempts []ProjectAssistantAttemptFact `json:"attempts,omitempty"`
 
 	// Empty when absent; no captured instructions or failure narrative.
-	FailureCode string                `json:"failure_code"`
-	Fence       ProjectAssistantFence `json:"fence"`
-	ID          string                `json:"id"`
-	MessageID   string                `json:"message_id"`
+	FailureCode string `json:"failure_code"`
+
+	// Optional source diagnostic category; never a native error narrative or replay
+	// authorization.
+	FailureField string                `json:"failure_field,omitempty"`
+	Fence        ProjectAssistantFence `json:"fence"`
+	ID           string                `json:"id"`
+	MessageID    string                `json:"message_id"`
 
 	// When the turn began running, RFC 3339; empty while it waits.
 	StartedAt string                    `json:"started_at"`

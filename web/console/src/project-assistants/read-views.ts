@@ -60,7 +60,7 @@ function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
 }
 function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.ProjectAssistantFence) {
   // started_at arrived with API level 63; an older daemon omits it.
-  if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
+  if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.failure_field!==undefined&&typeof t.failure_field!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
   own(t.fence,scope,current)
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
@@ -181,4 +181,4 @@ export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:
   if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
  }
 }
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??"",attempts:t.attempts}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",attempts:t.attempts}}

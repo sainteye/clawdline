@@ -1353,12 +1353,10 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		if state == pa.TurnUnknown {
 			field = r.unknownField()
 		}
-		// Capacity is an execution outcome, not an invitation to retry. Keep
-		// its typed boundary so diagnostics can distinguish local pressure
-		// from a provider limit. A planned restart retains its recovery marker.
-		var capacityFailure *pa.Failure
-		if field == "execution" && pa.Code(cause) == pa.CapacityFull && errors.As(cause, &capacityFailure) && capacityFailure.Field != "" {
-			field = capacityFailure.Field
+		// Preserve a planned restart's recovery marker. Other interruptions
+		// retain allowlisted diagnostics without changing their effect state.
+		if field == "execution" {
+			field = executionFailureField(cause)
 		}
 		t.Failure = &pa.Failure{Code: pa.Code(cause), Field: field}
 	}

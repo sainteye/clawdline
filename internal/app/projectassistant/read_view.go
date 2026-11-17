@@ -42,13 +42,14 @@ type ReadViewHead struct {
 }
 
 type ReadTurnSummary struct {
-	ID          string
-	Fence       pa.Fence
-	MessageID   string
-	State       pa.TurnState
-	FailureCode pa.ErrorCode
-	StartedAt   string
-	Attempts    []pa.AttemptFact
+	ID           string
+	Fence        pa.Fence
+	MessageID    string
+	State        pa.TurnState
+	FailureCode  pa.ErrorCode
+	FailureField string
+	StartedAt    string
+	Attempts     []pa.AttemptFact
 }
 
 type ReadSnapshot struct {

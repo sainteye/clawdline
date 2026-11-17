@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13098,
-  "riskKeys": 5675,
-  "nonRiskCount": 7423,
+  "englishContentKeys": 13115,
+  "riskKeys": 5682,
+  "nonRiskCount": 7433,
   "groups": [
     {
       "name": "acp / other",
@@ -5897,7 +5897,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 308,
+      "count": 318,
       "sources": [
         null
       ],
@@ -5950,9 +5950,18 @@
         "projectAssistants.extensions",
         "projectAssistants.failBotsOff",
         "projectAssistants.failCloudOff",
+        "projectAssistants.failConnection",
+        "projectAssistants.failCredits",
         "projectAssistants.failFull",
         "projectAssistants.failGeneric",
         "projectAssistants.failInvalid",
+        "projectAssistants.failOutputLimit",
+        "projectAssistants.failOverloaded",
+        "projectAssistants.failRate",
+        "projectAssistants.failRestart",
+        "projectAssistants.failStepLimit",
+        "projectAssistants.failStopped",
+        "projectAssistants.failUsage",
         "projectAssistants.fallbackAdd",
         "projectAssistants.fallbackAnswerObserved",
         "projectAssistants.fallbackAttempt",
@@ -6085,6 +6094,7 @@
         "projectAssistants.permissionSwitchMode",
         "projectAssistants.picture",
         "projectAssistants.pictureLoading",
+        "projectAssistants.pinned",
         "projectAssistants.primaryAgent",
         "projectAssistants.project",
         "projectAssistants.projectsFailed",

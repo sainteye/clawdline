@@ -6,6 +6,15 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The interrupted-Bot update retains allowlisted failure diagnostics through the
+native reply, durable turn and bounded chat read view. Review of the persistent
+Bot, input, fallback, routine and group entries in English and Taiwan Traditional
+Chinese found no change to prompt text, memory selection, execution authority or
+automatic replay rules. Context deadlines remain unknown effects; displaying a
+cause does not prove an action was not applied. The existing bilingual
+explanations remain accurate, and only the three changed implementation source
+receipts are refreshed.
+
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant
 principal boundary. Its English and Taiwan Chinese copies distinguish source
