@@ -132,9 +132,19 @@ space before and after. Do not infer reclaimable space from a sum of directory
 sizes or from allocated bytes alone. An unavailable process or lease reading
 is an unknown owner, not proof that the cache is idle.
 
-The [task resource lifecycle plan](task-resource-lifecycle-plan.md) specifies
-managed scratch ownership, protected outputs and an inspection/cleanup contract
-for a future Bot. Its retention and capacity proposals are not active policy.
+The [task resource lifecycle plan](task-resource-lifecycle-plan.md) describes the
+active managed-resource service. Heavy callbacks share a daemon-created Go cache
+per canonical Project, independently of their private non-Go cache and scratch.
+Every consumer is durably linked before launch under the plan/apply mutex. The
+source adapter requires all consumers to finish, save their outputs and release
+their process groups and locks. Unknown readers keep the cache. The Root need not
+close. Shared caches stay registered while recent Go entries are reused; guarded
+plan/apply trims recognized entries oldest-used first when capacity or reserve
+requires it. It preserves unknown filenames and refuses later heavy work if safe
+trimming cannot restore the budgets. Cache entries have no 24-hour delay; ordinary
+scratch still keeps 24 hours and raw logs seven days. A future Project-scoped Bot
+uses the same service, without publication, unpinning or arbitrary-path authority.
+Manual legacy/default caches are never silently adopted.
 
 ## Remaining product work
 

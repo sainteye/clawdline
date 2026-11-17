@@ -58,6 +58,12 @@ func TestManagedCallbackUsesRegisteredPathsAndKeepsItsResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, i := range page.Items {
+		if i.Resource.Class == taskresource.Cache {
+			if i.Decision.Outcome != "eligible" {
+				t.Fatal(i.Decision)
+			}
+			continue
+		}
 		if i.Decision.Reason != "within_retention" {
 			t.Fatal(i.Decision)
 		}

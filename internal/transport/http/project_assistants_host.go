@@ -148,6 +148,13 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 			return catalog.Skills, e
 		}}
 	}
+	if inventory, ok := extensions.(botcapabilities.Inventory); ok {
+		account := i.AccountID
+		if account == "" {
+			account = "local:" + i.MachineID
+		}
+		extensions = attachConnectorCredentials(inventory, s.store.ProjectAssistantDatabase(), account, i.MachineID)
+	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
 		Extensions: extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,

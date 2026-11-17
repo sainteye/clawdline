@@ -6,6 +6,14 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The selected Bot extension card now covers execution-owned folder skill snapshots,
+selected stdio and HTTP MCP transports, dedicated encrypted connector credentials,
+per-call and publication revocation, and durable unknown-cleanup reservations.
+Its English and Taiwan Chinese explanations distinguish local construction evidence
+from installed provider, production Cloud and remote Bot acceptance. Independent
+native Project/global configuration remains separately governed. The source receipt
+includes the materializer, stdio owner, connector vault and dedicated secret input.
+
 The Session composer's `/resume` shortcut opens the existing resume picker and
 does not send the command or inject a prompt into the current assistant. The
 picker retains the existing optional role selection and resume launcher. The
@@ -723,3 +731,13 @@ provider environment allowlists and the separation from ordinary model context.
 The fallback entry now names ordered Agent/login identities, including another
 login of the same Agent. Synthetic local proof does not establish provider,
 production Cloud or installed-native acceptance.
+
+Heavy callbacks now reuse a registered Project-scoped Go build cache and describe
+its source-owned consumer fence, idle capacity trimming and lack of a cache
+retention delay in both guide languages. Ordinary scratch keeps 24 hours and
+non-artifact raw logs seven days. Review of the English and Taiwan Traditional
+Chinese core-guide cards confirms their loading trigger and per-section scope
+remain accurate: this guide change does not inject a new startup instruction,
+change native permissions, create a Bot or turn a future Bot into a machine
+operator. The reviewed source receipt follows both guide files; the website
+snapshot must import this reviewed product tree after landing.

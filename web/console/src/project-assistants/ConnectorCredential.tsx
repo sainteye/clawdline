@@ -1,0 +1,22 @@
+import {useEffect,useRef,useState} from "react"
+import type * as W from "@clawdline/contract"
+import {command,errorCode,provablyNotSent,type SourceClient} from "./client"
+import {routineScopeIdentity} from "./routine-hook-intent"
+import type {Words} from "./words"
+
+export function ConnectorCredential({source,bot,offer,w}:{source:SourceClient;bot:W.ProjectAssistantBot;offer:W.ProjectAssistantExtensionOffer;w:Words}){
+ const [status,setStatus]=useState<W.ProjectAssistantConnectorCredential|null>(null),[pending,setPending]=useState<W.ProjectAssistantConnectorCredentialAction|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState("")
+ const field=useRef<HTMLTextAreaElement>(null),generation=useRef(0),scope=routineScopeIdentity(source,bot),journal="clawdline.bot-connector-intent:"+scope+":"+offer.id+":"+offer.fingerprint
+ useEffect(()=>{generation.current++;setStatus(null);setError("");setPending(null);if(field.current)field.current.value="";try{const saved=JSON.parse(localStorage.getItem(journal)??"null");if(saved?.command?.operation==="connector-credential"&&saved.command.key?.bot_id===bot.key.bot_id&&saved.command.key?.machine_id===bot.key.machine_id&&saved.ref?.id===offer.id&&saved.ref?.fingerprint===offer.fingerprint&&["prepare","remove","submit"].includes(saved.action))setPending(saved)}catch{}return()=>{generation.current++;if(field.current)field.current.value=""}},[source,journal])
+ const perform=async(request:W.ProjectAssistantConnectorCredentialAction,secret="")=>{
+  const n=generation.current;setBusy(true);setError("")
+  if(request.action!=="status"){localStorage.setItem(journal,JSON.stringify(request));setPending(request)}
+  try{const answer=request.action==="submit"&&secret?await source.connectorSecret!(request,secret,new AbortController().signal):await source.connectorCredential!(request,new AbortController().signal);secret="";if(n!==generation.current)return;setStatus(answer.credential);localStorage.removeItem(journal);setPending(null)}catch(e){if(n===generation.current){setError(errorCode(e));const refusal=e as Partial<W.ProjectAssistantErrorResponse>;if(provablyNotSent(e)||refusal.error?.code==="pa_expired"&&refusal.error?.field==="connector_secret_target"){localStorage.removeItem(journal);setPending(null);setStatus(null)}}}finally{secret="";if(n===generation.current)setBusy(false)}
+ }
+ const action=async(kind:string)=>{
+  const n=generation.current;setBusy(true);let secret=""
+  if(kind==="submit"){secret=field.current?.value??"";if(field.current)field.current.value=""}
+  try{const fresh=await source.get(bot.key,new AbortController().signal);if(n!==generation.current)return;const c=fresh.conversation;await perform({command:command(bot.key,"connector-credential"),fence:{key:bot.key,project:bot.project,conversation_id:c.id,binding_id:c.binding_id,generation:c.generation},expected_version:fresh.bot.version,ref:{id:offer.id,fingerprint:offer.fingerprint},action:kind,target:status?.handoff?.id??""},secret)}catch(e){if(n===generation.current)setError(errorCode(e))}finally{secret="";if(n===generation.current)setBusy(false)}
+ }
+ return <section className="pa-rules" aria-label={w.connectorCredential+" · "+offer.name}><h4>{w.connectorCredential} · {offer.name}</h4><p>{w.connectorCredentialHint}</p><div className="pa-toolbar" style={{flexWrap:"wrap",justifyContent:"flex-start"}}><button type="button" disabled={busy||!!pending} onClick={()=>void action("prepare")}>{w.connectorPrepare}</button><button type="button" disabled={busy||!!pending} onClick={()=>void action("status")}>{w.connectorCheck}</button><button type="button" disabled={busy||!!pending} onClick={()=>void action("remove")}>{w.connectorRemove}</button></div>{status&&<p role="status">{status.state==="ready"||status.state==="accepted"?w.connectorStored:status.state==="missing"||status.state==="removed"?w.connectorMissing:w.connectorPrepared}</p>}{status?.handoff&&<form className="secret-handoff-form" onSubmit={e=>{e.preventDefault();void action("submit")}}><label>{w.connectorValue}<textarea aria-label={w.connectorValue} ref={field} autoComplete="off" spellCheck={false} required disabled={busy||!!pending}/></label><button type="submit" disabled={busy||!!pending}>{w.connectorSubmit}</button></form>}{pending&&<><p role="status">{w.loginReplayHint}</p><button type="button" disabled={busy} onClick={()=>void perform(pending)}>{w.loginReplay}</button></>}{error&&<p role="alert">{w.unavailable} ({error})</p>}</section>
+}

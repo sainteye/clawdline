@@ -6,6 +6,9 @@ import { canWrite } from "./view-state"
 import { GroupRoom } from "./GroupRoom"
 import { EventRefreshMs } from "./Chat"
 import { rosterMood } from "./working"
+import { BotAvatar } from "./BotAvatar"
+import { ProjectMark } from "./ProjectMark"
+import { PaSelect } from "./PaSelect"
 
 export const groupWord=(key:string)=>catalogWord("projectAssistants",key)
 export const sameGroupProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -13,7 +16,7 @@ const identity=(key:W.ProjectAssistantBotKey)=>JSON.stringify([key.machine_id,ke
 type GroupSource={source:SourceClient;groups:W.ProjectAssistantGroup[];status:W.ProjectAssistantSourceStatus}
 
 /** Group entries live beside Bots, but open a room rather than a native chat. */
-export function Groups({sources,items,projectNames,query="",machine="",selected:selectedBot}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;query?:string;machine?:string;selected?:string|null}) {
+export function Groups({sources,items,projectNames,projectIcons,query="",machine="",selected:selectedBot}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;query?:string;machine?:string;selected?:string|null}) {
   const [pages,setPages]=useState<GroupSource[]>([]),[error,setError]=useState(""),[creating,setCreating]=useState(false),[selected,setSelected]=useState<{source:SourceClient;group:W.ProjectAssistantGroup}|null>(null)
   const live=useRef(sources);live.current=sources
   const current=()=>live.current
@@ -41,13 +44,13 @@ export function Groups({sources,items,projectNames,query="",machine="",selected:
     <div className="pa-toolbar"><h2>{groupWord("groups")}</h2>{canCreate&&<button type="button" onClick={()=>setCreating(true)}>{groupWord("groupCreate")}</button>}</div>
     {rows.map(({source,group})=><button type="button" className="pa-row" key={identity(group.key)} data-group-key={identity(group.key)} onClick={()=>setSelected({source,group})}><span aria-hidden="true">◎</span><span><strong>{group.name}</strong><small>{projectNames.get(JSON.stringify([group.key.machine_id,group.project.project_id]))??groupWord("groupProject")} · {group.members.length} {groupWord("groupMembers")}</small></span></button>)}
     {error&&<p role="status">{groupWord("groupUnavailable")} ({error})</p>}
-    {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);setSelected({source,group});refresh(n=>n+1)}}/>}
+    {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} projectIcons={projectIcons} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);setSelected({source,group});refresh(n=>n+1)}}/>}
     {selected&&sources.includes(selected.source)&&selected.source.current?.()!==false&&<GroupRoom source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} onClose={()=>setSelected(null)} onChanged={group=>{setSelected(group.deleted?null:{...selected,group});refresh(n=>n+1)}}/>}
     <TeamApprovals sources={sources} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
   </section>
 }
 
-export function GroupEditor({sources,bots,projectNames,current,group,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
+export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
   const choices=bots.filter(b=>sources.some(s=>s.source.machineID===b.key.machine_id&&canWrite(s.status))).filter((b,i,all)=>all.findIndex(other=>sameGroupProject(b.project,other.project))===i)
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
   const pending=useRef<{fingerprint:string;request:W.ProjectAssistantGroupCreateRequest|W.ProjectAssistantGroupEditRequest}|null>(null)
@@ -70,8 +73,8 @@ export function GroupEditor({sources,bots,projectNames,current,group,onSaved,onC
     <header className="pa-toolbar"><button type="button" onClick={onClose}>{groupWord("groupCancel")}</button><h2>{groupWord(group?"groupEdit":"groupCreate")}</h2><button type="button" disabled={!source||busy||unknown||!name.trim()||!members.length||!complete} onClick={()=>void save()}>{groupWord(busy?"groupSaving":"groupSave")}</button></header>
     <div className="pa-form-body"><fieldset disabled={busy||unknown}>
       <label>{groupWord("groupName")}<input value={name} onChange={e=>setName(e.target.value)}/></label>
-      <label>{groupWord("groupProject")}<select disabled={!!group} value={project?JSON.stringify(project):""} onChange={e=>{setProject(JSON.parse(e.target.value));setMembers([])}}>{choices.map(b=><option key={JSON.stringify(b.project)} value={JSON.stringify(b.project)}>{projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))??b.project.project_id}{sources.length>1?` · ${sources.find(s=>s.source.machineID===b.key.machine_id)?.source.machineName??b.key.machine_id}`:""}</option>)}</select></label>
-      <fieldset><legend>{groupWord("groupMembers")}</legend>{eligible.map(bot=><label key={identity(bot.key)} style={{display:"flex",gap:8,alignItems:"center"}}><input type="checkbox" checked={members.includes(identity(bot.key))} onChange={e=>setMembers(old=>e.target.checked?[...old,identity(bot.key)]:old.filter(k=>k!==identity(bot.key)))}/>{bot.name}</label>)}</fieldset>
+      <PaSelect label={groupWord("groupProject")} disabled={!!group} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]);const pName=projectNames.get(keyStr)??b.project.project_id;const icon=projectIcons?.get(keyStr);const machineSuffix=sources.length>1?` · ${sources.find(s=>s.source.machineID===b.key.machine_id)?.source.machineName??b.key.machine_id}`:"";return {value:JSON.stringify(b.project),label:`${pName}${machineSuffix}`,icon:<ProjectMark icon={icon} size={16}/>}})}/>
+      <fieldset><legend>{groupWord("groupMembers")}</legend>{eligible.map(bot=>{const id=identity(bot.key);const checked=members.includes(id);return <label key={id} style={{display:"flex",flexDirection:"row",alignItems:"center",gap:12,minHeight:44,margin:"6px 0",cursor:"pointer"}}><input type="checkbox" style={{flex:"none",width:20,height:20,minHeight:20,minWidth:20,margin:0,padding:0,accentColor:"#e39567"}} checked={checked} onChange={e=>setMembers(old=>e.target.checked?[...old,id]:old.filter(k=>k!==id))}/><BotAvatar appearance={bot.appearance} size={28}/><span style={{flex:1,fontSize:15,color:"#fafafa",fontWeight:500}}>{bot.name}</span></label>})}</fieldset>
     </fieldset><p>{groupWord("groupSameProject")}</p>{!complete&&<p role="status">{groupWord("groupMembersMissing")}</p>}{error&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} ({error})</p>}</div>
   </section>
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -52,6 +53,7 @@ type nativePermission struct {
 }
 
 type Client struct {
+	extensionFiles string
 	discovery      bool
 	discoveryApply bool
 	configuration  pa.ConfigurationCatalog
@@ -812,6 +814,12 @@ func (c *Client) Close(ctx context.Context) error {
 	err = errors.Join(err, c.p.Close(cleanup))
 	if !waitOwnedDone(cleanup, c.workerDone) {
 		err = errors.Join(err, refusal(pa.ExecutionEffectUnknown, "incoming_cleanup"))
+	}
+	if err == nil && c.extensionFiles != "" {
+		if os.RemoveAll(c.extensionFiles) != nil {
+			return refusal(pa.ExecutionEffectUnknown, "skill_cleanup")
+		}
+		c.extensionFiles = ""
 	}
 	return err
 }

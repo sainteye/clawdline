@@ -13,10 +13,11 @@ type ExtensionSelection struct {
 	Connectors []ExtensionRef `json:"connectors"`
 }
 type ExtensionOffer struct {
-	ID          string `json:"id"`
-	Fingerprint string `json:"fingerprint"`
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
+	ID                 string `json:"id"`
+	Fingerprint        string `json:"fingerprint"`
+	Name               string `json:"name"`
+	Kind               string `json:"kind"`
+	CredentialRequired bool   `json:"credential_required,omitempty"`
 }
 type ExtensionCatalog struct {
 	Items               []ExtensionOffer `json:"items"`

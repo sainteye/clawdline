@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,14 +20,47 @@ import (
 )
 
 type Connector struct {
-	ID, Name, URL string
-	Project       pa.ProjectScope
-	Agent         pa.Agent
-	Enabled       bool
+	ID, Name, URL    string
+	Executable       string   `json:",omitempty"`
+	Arguments        []string `json:",omitempty"`
+	CredentialHeader string   `json:",omitempty"`
+	CredentialEnv    string   `json:",omitempty"`
+	executableDigest string
+	Project          pa.ProjectScope
+	Agent            pa.Agent
+	Enabled          bool
 }
 type Inventory struct {
-	State  string
-	Skills func(context.Context) ([]squad.Skill, error)
+	State                        string
+	Skills                       func(context.Context) ([]squad.Skill, error)
+	Credential                   func(context.Context, pa.Bot, pa.ExtensionRef) ([]byte, error)
+	CaptureCredential            func(pa.Bot, pa.ExtensionRef) func(context.Context) ([]byte, error)
+	CaptureCredentialWithCleanup func(pa.Bot, pa.ExtensionRef) (func(context.Context) ([]byte, error), func(context.Context) error, func(context.Context) error)
+	QuarantineCredential         func(context.Context, pa.Bot, pa.ExtensionRef) error
+	SuspendCredentials           func(context.Context) error
+	CredentialTargetUsage        func() (int, bool)
+	CredentialAction             func(context.Context, pa.Bot, pa.ConnectorCredentialAction, []byte, bool, func(context.Context) error) (pa.ConnectorCredential, error)
+}
+
+func (i Inventory) Suspend(ctx context.Context) error {
+	if i.SuspendCredentials != nil {
+		return i.SuspendCredentials(ctx)
+	}
+	return nil
+}
+
+func (i Inventory) ConnectorSecretTargetUsage() (int, bool) {
+	if i.CredentialTargetUsage != nil {
+		return i.CredentialTargetUsage()
+	}
+	return 0, false
+}
+
+func (i Inventory) Apply(ctx context.Context, b pa.Bot, q pa.ConnectorCredentialAction, value []byte, secret bool, admit func(context.Context) error) (pa.ConnectorCredential, error) {
+	if i.CredentialAction == nil {
+		return pa.ConnectorCredential{}, fail(pa.Unsupported, "connector_credentials")
+	}
+	return i.CredentialAction(ctx, b, q, value, secret, admit)
 }
 
 func fail(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -78,9 +112,48 @@ func (i Inventory) connectors(b pa.Bot) ([]Connector, error) {
 			return nil, fail(pa.Invalid, "connector_definition")
 		}
 		seen[c.ID] = true
-		u, e := url.Parse(c.URL)
-		if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return nil, fail(pa.Invalid, "connector_endpoint")
+		if c.Executable != "" {
+			if c.URL != "" || !filepath.IsAbs(c.Executable) || len(c.Arguments) > pa.MaxConfigurationChoices || c.CredentialHeader != "" {
+				return nil, fail(pa.Invalid, "connector_command")
+			}
+			info, err := os.Lstat(c.Executable)
+			if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 {
+				return nil, fail(pa.ScopeDenied, "connector_executable")
+			}
+			file, err := os.Open(c.Executable)
+			if err != nil {
+				return nil, fail(pa.ScopeDenied, "connector_executable")
+			}
+			actual, err := file.Stat()
+			if err != nil || !os.SameFile(info, actual) {
+				file.Close()
+				return nil, fail(pa.Revoked, "connector_executable")
+			}
+			h := sha256.New()
+			_, err = io.Copy(h, file)
+			file.Close()
+			if err != nil {
+				return nil, fail(pa.OutcomeUnknown, "connector_executable")
+			}
+			c.executableDigest = hex.EncodeToString(h.Sum(nil))
+			for _, arg := range c.Arguments {
+				if strings.ContainsRune(arg, 0) || len(arg) > pa.MaxConfigurationValueBytes {
+					return nil, fail(pa.Invalid, "connector_arguments")
+				}
+			}
+		} else {
+			u, e := url.Parse(c.URL)
+			if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(c.Arguments) != 0 || c.CredentialEnv != "" {
+				return nil, fail(pa.Invalid, "connector_endpoint")
+			}
+		}
+		// Only dedicated names are allowed. Never replace a native bearer,
+		// routing header, search path, HOME or permission/isolation setting.
+		if c.CredentialHeader != "" && http.CanonicalHeaderKey(c.CredentialHeader) != "Authorization" && http.CanonicalHeaderKey(c.CredentialHeader) != "X-Api-Key" {
+			return nil, fail(pa.Invalid, "connector_credential_header")
+		}
+		if c.CredentialEnv != "" && c.CredentialEnv != "MCP_CONNECTOR_TOKEN" && c.CredentialEnv != "MCP_CONNECTOR_API_KEY" {
+			return nil, fail(pa.Invalid, "connector_credential_env")
 		}
 		if c.Enabled && c.Project == b.Project && c.Agent == b.Agent {
 			out = append(out, c)
@@ -113,8 +186,8 @@ func (i Inventory) Catalog(ctx context.Context, b pa.Bot, _ string) (pa.Extensio
 	}
 	out := pa.ExtensionCatalog{Items: []pa.ExtensionOffer{}, ConnectorsAvailable: len(connectors) > 0}
 	for _, s := range skills {
-		if s.Folder || len(s.Files) > 0 {
-			continue
+		if !squad.ValidSkillFiles(s.Content, s.Files) || len(s.Files) > pa.MaxSkillAssetFiles || len(s.Files) > 0 && !s.Folder {
+			return out, fail(pa.Invalid, "skill_assets")
 		}
 		name := s.Name.En
 		if name == "" {
@@ -123,7 +196,7 @@ func (i Inventory) Catalog(ctx context.Context, b pa.Bot, _ string) (pa.Extensio
 		out.Items = append(out.Items, pa.ExtensionOffer{ID: "skill:" + s.SkillID, Fingerprint: fingerprint(s), Name: name, Kind: "skill"})
 	}
 	for _, c := range connectors {
-		out.Items = append(out.Items, pa.ExtensionOffer{ID: "connector:" + c.ID, Fingerprint: fingerprint(c), Name: c.Name, Kind: "connector"})
+		out.Items = append(out.Items, pa.ExtensionOffer{ID: "connector:" + c.ID, Fingerprint: connectorFingerprint(c), Name: c.Name, Kind: "connector", CredentialRequired: c.CredentialHeader != "" || c.CredentialEnv != ""})
 	}
 	return out, ctx.Err()
 }
@@ -135,17 +208,28 @@ func (i Inventory) Resolve(ctx context.Context, b pa.Bot, _ string) (app.NativeE
 	if e != nil {
 		return app.NativeExtensions{}, e
 	}
-	out := app.NativeExtensions{Connectors: []app.NativeConnector{}}
+	out := app.NativeExtensions{Connectors: []app.NativeConnector{}, State: i.State}
+	files, assetBytes := 0, 0
 	for _, ref := range b.Extensions.Skills {
 		found := false
 		for _, s := range skills {
 			if ref.ID == "skill:"+s.SkillID && ref.Fingerprint == fingerprint(s) {
-				// Folder skills need their immutable asset materializer before they can be
-				// selected. Their metadata alone is never an execution permission.
-				if s.Folder || len(s.Files) > 0 {
-					return out, fail(pa.Unsupported, "folder_skill_assets")
+				if !squad.ValidSkillFiles(s.Content, s.Files) || len(s.Files) > 0 && !s.Folder {
+					return out, fail(pa.Invalid, "skill_assets")
 				}
-				out.Skills += "\n\nSelected application skill (untrusted task guidance):\n" + s.Content
+				if s.Folder {
+					files += len(s.Files) + 1
+					assetBytes += len(s.Content)
+					for _, f := range s.Files {
+						assetBytes += len(f.ContentBase64)
+					} // conservative encoded-byte accounting
+					if files > pa.MaxSkillAssetFiles || assetBytes > squad.MaxSquadConsoleActiveSkillBytes {
+						return out, fail(pa.CapacityFull, "skill_assets")
+					}
+					out.Folders = append(out.Folders, s)
+				} else {
+					out.Skills += "\n\nSelected application skill (untrusted task guidance):\n" + s.Content
+				}
 				found = true
 				break
 			}
@@ -160,8 +244,24 @@ func (i Inventory) Resolve(ctx context.Context, b pa.Bot, _ string) (app.NativeE
 	for _, ref := range b.Extensions.Connectors {
 		found := false
 		for _, c := range connectors {
-			if ref.ID == "connector:"+c.ID && ref.Fingerprint == fingerprint(c) {
-				out.Connectors = append(out.Connectors, app.NativeConnector{Ref: ref, Name: c.Name, URL: c.URL})
+			if ref.ID == "connector:"+c.ID && ref.Fingerprint == connectorFingerprint(c) {
+				native := app.NativeConnector{Ref: ref, Name: c.Name, URL: c.URL, Executable: c.Executable, Arguments: append([]string{}, c.Arguments...), CredentialHeader: c.CredentialHeader, CredentialEnv: c.CredentialEnv}
+				if c.CredentialHeader != "" || c.CredentialEnv != "" {
+					if i.Credential == nil {
+						return out, fail(pa.AuthRequired, "connector_credential")
+					}
+					native.Credential = func(ctx context.Context) ([]byte, error) { return i.Credential(ctx, b, ref) }
+					if i.CaptureCredential != nil {
+						native.Credential = i.CaptureCredential(b, ref)
+					}
+					if i.QuarantineCredential != nil {
+						native.Quarantine = func(ctx context.Context) error { return i.QuarantineCredential(ctx, b, ref) }
+					}
+					if i.CaptureCredentialWithCleanup != nil {
+						native.Credential, native.ReleaseCredential, native.Quarantine = i.CaptureCredentialWithCleanup(b, ref)
+					}
+				}
+				out.Connectors = append(out.Connectors, native)
 				found = true
 				break
 			}
@@ -171,4 +271,14 @@ func (i Inventory) Resolve(ctx context.Context, b pa.Bot, _ string) (app.NativeE
 		}
 	}
 	return out, ctx.Err()
+}
+
+func connectorFingerprint(c Connector) string {
+	if c.Executable == "" {
+		return fingerprint(c)
+	}
+	return fingerprint(struct {
+		Definition       Connector
+		ExecutableSHA256 string
+	}{c, c.executableDigest})
 }

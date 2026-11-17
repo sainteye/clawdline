@@ -1,12 +1,14 @@
 # Bot login profiles and selected application extensions
 
 This construction extends `b3a182748e8bfd1b6c538a26d7f428d90143ff14`
-(API 81). Its compatibility tier is API 82 and feature schema 8. Integration
+(API 81). Its original compatibility tier is API 82 and feature schema 8.
+The folder/transport construction advances this to API 83/schema 9; see
+[Selected Bot skill folders and connector transports](project-assistants-extensions.md). Integration
 must choose a higher monotonic tier if another API change lands first.
 The login construction includes account and encrypted API-key profiles and
 selected fallback identities. Application text skills and configured HTTP
-connectors retain the previous implementation. Folder skills, additional
-connector transports and actual network reachability remain open. No deployment,
+connectors retain the previous implementation. Folder assets, selected stdio and dedicated connector credentials are described in the extension construction.
+Actual network reachability remains open. No deployment,
 installed-native account acceptance or public Release is claimed here.
 
 ## Account identity and native launch
@@ -112,8 +114,7 @@ requires a fresh deliberate selection.
 Production skill inventory uses the existing Squad catalog, including installed
 custom definitions. Supported text-only skill contents are added only to the
 selected Bot's assembled system context. Metadata is task data, never permission
-to install or execute a package. Folder skills with assets are excluded until
-their immutable asset-materialization port exists. Selected contents are bounded
+to install or execute a package. Selected folder skills now use the execution-owned asset materializer described in the extension construction. Selected contents are bounded
 by the existing instruction-byte ceiling.
 
 HTTP connector definitions are a source-owned `project-assistants/connectors.json`
@@ -122,8 +123,7 @@ file below application state. The private file contains `ID`, `Name`, `URL`, ful
 credential-bearing URLs, query strings and environment/command fields are
 refused. A definition is offered only for its exact source Project and Agent.
 Reading this file installs or activates nothing. No connector is configured on
-the person's machine by the task. This port currently supports unauthenticated
-HTTP endpoints; stdio and secret-backed connector adapters remain open.
+the person's machine by the task. The extension construction adds selected stdio and credential-backed HTTP/stdio adapters while preserving these HTTP definitions.
 
 The native session receives only selected connectors in actual ACP `mcpServers`,
 beside mandatory Host tools. The endpoint is an execution-owned loopback proxy
@@ -226,9 +226,10 @@ sandbox denials of `/bin/ps` are retained separately from permission-enabled
 native/browser passes. The decoder golden audit retains 276,750 previous inputs
 with zero removals or changed decisions; added probes are distinct new inputs.
 
-Remaining construction is explicit: folder-skill and stdio/authenticated
-connector support, and true remote-Bot/Cloud-assistant reachability. These
-limitations do not complete the parent Board step or its later acceptance card.
+The folder-skill and stdio/authenticated connector extension is now documented in
+the linked API-83 construction. True remote-Bot/Cloud-assistant reachability remains
+with the next construction unit. This does not complete the parent Board step or
+its later installed/Cloud acceptance card.
 
 ## API-key Secret Handoff and protected-file vault
 

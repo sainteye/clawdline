@@ -4,6 +4,9 @@ import pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 
 func memorySettingsBounds() []Entry {
 	return []Entry{
+		{Name: "bots.connector_credentials", Class: Buffer, Unit: Rows, Limit: pa.MaxConfigurationChoices, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxConfigurationChoices"}},
+		{Name: "bots.connector_secret_targets", Class: Buffer, Unit: Rows, Limit: pa.MaxLoginSecretTargets, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxLoginSecretTargets"}},
+		{Name: "bots.connector_credential_holds", Class: Buffer, Unit: Rows, Limit: pa.MaxLoginSecretTargets, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxLoginSecretTargets"}},
 		{Name: "bots.login_secret_targets", Class: Buffer, Unit: Rows, Limit: pa.MaxLoginSecretTargets, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxLoginSecretTargets"}},
 		{Name: "bots.extensions", Class: Buffer, Unit: Rows, Limit: pa.MaxBotExtensions, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxBotExtensions"}},
 		{Name: "bots.login_profiles", Class: Buffer, Unit: Rows, Limit: pa.MaxLoginProfiles, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxLoginProfiles"}},

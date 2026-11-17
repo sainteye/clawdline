@@ -813,7 +813,7 @@
         },
         "primary_superseded_at": {
           "type": "integer",
-          "description": "Source-recorded configuration revision that replaced this binding’s primary Agent; absent for current or legacy unchanged primary bindings."
+          "description": "Source-recorded configuration revision that replaced this binding\u2019s primary Agent; absent for current or legacy unchanged primary bindings."
         }
       },
       "required": [
@@ -2053,7 +2053,8 @@
         "dispatch",
         "upload",
         "rename-artifact",
-        "login-profile"
+        "login-profile",
+        "connector-credential"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -4027,6 +4028,9 @@
         },
         "kind": {
           "type": "string"
+        },
+        "credential_required": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -4152,6 +4156,110 @@
       },
       "required": [
         "agent"
+      ]
+    },
+    "ProjectAssistantConnectorCredentialAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "ref": {
+          "$ref": "#/$defs/ProjectAssistantExtensionRef"
+        },
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "expected_version",
+        "ref",
+        "action",
+        "target"
+      ]
+    },
+    "ProjectAssistantConnectorSecretSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "ref": {
+          "$ref": "#/$defs/ProjectAssistantExtensionRef"
+        },
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "expected_version",
+        "ref",
+        "action",
+        "target",
+        "value"
+      ]
+    },
+    "ProjectAssistantConnectorCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "handoff": {
+          "$ref": "#/$defs/ProjectAssistantLoginSecretTarget"
+        }
+      },
+      "required": [
+        "state",
+        "revision"
+      ]
+    },
+    "ProjectAssistantConnectorCredentialResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "credential": {
+          "$ref": "#/$defs/ProjectAssistantConnectorCredential"
+        }
+      },
+      "required": [
+        "contract_version",
+        "credential"
       ]
     }
   }

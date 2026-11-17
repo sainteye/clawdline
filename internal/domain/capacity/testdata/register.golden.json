@@ -1297,6 +1297,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.connector_credential_holds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginSecretTargets"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.connector_credentials",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationChoices"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.connector_processes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConnectorProcesses"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.connector_secret_targets",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginSecretTargets"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.dispatch_seconds",
     "Class": "buffer",
     "Unit": "seconds",
@@ -3095,6 +3175,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotSendBodyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.skill_asset_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSkillAssetFiles"
     ]
   },
   {

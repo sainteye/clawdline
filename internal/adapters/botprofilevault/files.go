@@ -26,6 +26,12 @@ type Files struct {
 // the registry. No Cloud identity or preexisting credential is read.
 func New(parent string) *Files { return &Files{dir: filepath.Join(parent, "key-vault-v1")} }
 
+// NewConnector uses a separate protected key namespace for connector credentials.
+// A provider login vault cannot decrypt or overwrite this namespace.
+func NewConnector(parent string) *Files {
+	return &Files{dir: filepath.Join(parent, "connector-key-vault-v1")}
+}
+
 func privateDir(path string) error {
 	info, e := os.Lstat(path)
 	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {

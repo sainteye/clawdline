@@ -32,6 +32,8 @@ import (
 // One listener belongs to one already bounded runtime process slot. Accepted
 // connections and outbound ACP requests share that client's RPCPending budget.
 type ownedMCPServer struct {
+	stdio       []*connectorStdio
+	cleanupErr  error
 	extensions  []app.NativeConnector
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -73,6 +75,40 @@ func (c *Client) openMCP(parent context.Context, q app.OpenRequest) (OwnedMCP, e
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s := &ownedMCPServer{ctx: ctx, cancel: cancel, listener: listener, token: hex.EncodeToString(secret[:]), tools: q.Tools, extensions: q.Extensions.Connectors, limits: c.l, slots: c.rpcSlots, done: make(chan struct{}), stopDone: make(chan struct{})}
+	s.stdio = make([]*connectorStdio, len(q.Extensions.Connectors))
+	for index, connector := range q.Extensions.Connectors {
+		if connector.Executable == "" {
+			continue
+		}
+		child, e := startConnector(ctx, q, connector, c.l)
+		if child != nil {
+			s.stdio[index] = child
+		}
+		if e != nil {
+			cancel()
+			_ = listener.Close()
+			cleanup, stop := context.WithTimeout(context.Background(), c.l.CleanupTimeout)
+			defer stop()
+			var unknown error
+			for _, child := range s.stdio {
+				if child != nil {
+					unknown = errors.Join(unknown, child.close(cleanup))
+				}
+			}
+			if unknown != nil {
+				return OwnedMCP{Revoke: func(ctx context.Context) error {
+					var result error
+					for _, child := range s.stdio {
+						if child != nil {
+							result = errors.Join(result, child.close(ctx))
+						}
+					}
+					return result
+				}}, errors.Join(e, unknown)
+			}
+			return OwnedMCP{}, e
+		}
+	}
 	s.server = &http.Server{
 		Handler: s, ReadHeaderTimeout: c.l.WriteTimeout, ReadTimeout: c.l.RPCTimeout,
 		WriteTimeout: c.l.RPCTimeout, IdleTimeout: c.l.WriteTimeout, MaxHeaderBytes: c.l.FrameBytes,
@@ -99,12 +135,31 @@ func (s *ownedMCPServer) close(ctx context.Context) error {
 		s.cancel()
 		s.mu.Unlock()
 		_ = s.server.Close()
-		go func() { <-s.done; s.effects.Wait(); s.conns.Wait(); close(s.stopDone) }()
+		go func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), s.limits.CleanupTimeout)
+			defer cancel()
+			for _, child := range s.stdio {
+				if child != nil {
+					s.cleanupErr = errors.Join(s.cleanupErr, child.close(cleanup))
+				}
+			}
+			<-s.done
+			s.effects.Wait()
+			s.conns.Wait()
+			for _, connector := range s.extensions {
+				if s.cleanupErr == nil && connector.ReleaseCredential != nil {
+					s.cleanupErr = errors.Join(s.cleanupErr, connector.ReleaseCredential(cleanup))
+				} else if s.cleanupErr != nil && connector.Quarantine != nil {
+					s.cleanupErr = errors.Join(s.cleanupErr, connector.Quarantine(cleanup))
+				}
+			}
+			close(s.stopDone)
+		}()
 	})
 	if !waitOwnedDone(ctx, s.stopDone) {
 		return refusal(pa.ExecutionEffectUnknown, "mcp_cleanup")
 	}
-	return nil
+	return s.cleanupErr
 }
 
 type mcpListener struct {

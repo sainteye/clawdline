@@ -231,7 +231,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -371,6 +371,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 	}
 	if route.action == "login-profiles" || route.action == "login-profile" || route.action == "login-secret" || route.action == "extensions" {
 		return h.loginProfiles(w, r, route)
+	}
+	if route.action == "connector-credential" || route.action == "connector-secret" {
+		return h.connectorCredential(w, r, route)
 	}
 	if r.Method == http.MethodGet {
 		return h.read(r, route)

@@ -101,6 +101,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.attachment":      genDecodeProjectAssistantsAttachment,
 	"project-assistants.configuration":   genDecodeProjectAssistantsConfiguration,
 	"project-assistants.configuration-profile": genDecodeProjectAssistantsConfigurationProfile,
+	"project-assistants.connector-credential":  genDecodeProjectAssistantsConnectorCredential,
+	"project-assistants.connector-secret":      genDecodeProjectAssistantsConnectorSecret,
 	"project-assistants.create":                genDecodeProjectAssistantsCreate,
 	"project-assistants.delete":                genDecodeProjectAssistantsDelete,
 	"project-assistants.edit":                  genDecodeProjectAssistantsEdit,
@@ -2587,6 +2589,87 @@ func genDecodeProjectAssistantsConfigurationProfile(b body) (plan, LocalRequest,
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"agent": genValue{from: "agent"}, "conversation_id": genValue{from: "conversation_id"}, "login_profile": genValue{from: "login_profile"}, "machine_id": genValue{from: "machine_id"}, "model": genValue{from: "model"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsConnectorCredential is the `project-assistants.connector-credential` row's decode.
+func genDecodeProjectAssistantsConnectorCredential(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "command", "expected_version", "fence", "ref", "request", "session", "target"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"prepare", "remove", "status", "submit"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"connector-credential"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("ref", genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", nonEmpty: true}, "id": genRule{kind: "string", nonEmpty: true}}, required: []string{"fingerprint", "id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("target", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/connector-credential"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "ref": genValue{from: "ref"}, "target": genValue{from: "target"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsConnectorSecret is the `project-assistants.connector-secret` row's decode.
+func genDecodeProjectAssistantsConnectorSecret(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "command", "expected_version", "fence", "ref", "request", "session", "target", "value"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"submit"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"connector-credential"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("ref", genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", nonEmpty: true}, "id": genRule{kind: "string", nonEmpty: true}}, required: []string{"fingerprint", "id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("target", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("value", genRule{kind: "string", maxBytes: 16384}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/connector-secret"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "ref": genValue{from: "ref"}, "target": genValue{from: "target"}, "value": genValue{from: "value"}})
 	return p, req, true
 }
 

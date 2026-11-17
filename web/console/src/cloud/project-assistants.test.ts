@@ -322,7 +322,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -753,4 +753,18 @@ test("login and selected-account configuration keep source API and exact carried
 test("stored login recovery cannot cross Bot, Project or conversation",()=>{
  const bot=viewWire().snapshot!.bot;const request:W.ProjectAssistantLoginProfileAction={command:command(bot.key,"login-profile"),fence:{key:bot.key,project:bot.project,conversation_id:bot.conversation_id,binding_id:"",generation:0},expected_version:bot.version,profile_id:"",revision:0,agent:bot.agent,action:"create",name:"Synthetic account"};assert.equal(validLoginIntent(request,bot),true);
  for(const change of [(q:W.ProjectAssistantLoginProfileAction)=>q.command.key={...q.command.key,bot_id:"another"},(q:W.ProjectAssistantLoginProfileAction)=>q.fence.project={...q.fence.project,canonical_id:"another"},(q:W.ProjectAssistantLoginProfileAction)=>q.fence.conversation_id="another"]){const copy=structuredClone(request);change(copy);assert.equal(validLoginIntent(copy,bot),false)}
+});
+
+test("connector credential operations require API83 and retain closed carried scopes",async()=>{
+ const requests:{path:string;init?:RequestInit}[]=[];
+ const client=make(async(path,init)=>{if(path.endsWith("/status"))return Response.json(sourceStatus());requests.push({path,init});return Response.json({contract_version:"project-assistants.v1",credential:{state:"prepared",revision:1}})},{...grant(),apiLevel:83}).source;
+ await client.status(signal());
+ const bot=viewWire().snapshot!.bot;
+ const request:W.ProjectAssistantConnectorCredentialAction={command:command(key,"connector-credential"),fence:{key,project:bot.project,conversation_id:"chat",binding_id:"",generation:0},expected_version:1,ref:{id:"connector:fixture",fingerprint:"a".repeat(64)},action:"prepare",target:""};
+ await client.connectorCredential(request,signal());
+ const prepared=assistantRelayRequest(requests[0].path,requests[0].init);assert.equal(prepared.word,"project-assistants.connector-credential");
+ await client.connectorSecret({...request,action:"submit",target:"synthetic-target"},"SYNTHETIC_CONNECTOR_ONLY",signal());
+ const secret=assistantRelayRequest(requests[1].path,requests[1].init);assert.equal(secret.word,"project-assistants.connector-secret");assert.equal((secret.fields as Record<string,unknown>).value,"SYNTHETIC_CONNECTOR_ONLY");
+ let calls=0;const old=make(async()=>{calls++;return Response.json({})},{...grant(),apiLevel:82}).source;
+ await assert.rejects(old.connectorSecret(request,"SYNTHETIC_CONNECTOR_ONLY",signal()),e=>errorCode(e)==="pa_unsupported");assert.equal(calls,0);
 });

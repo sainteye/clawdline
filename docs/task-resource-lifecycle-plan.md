@@ -1,7 +1,7 @@
 # Task resources and safe reclamation
 
 Status: the managed service and command path are implemented. The policy is
-24 hours for all terminal scratch and 7 days for non-artifact raw logs. Existing
+24 hours for all terminal scratch and 7 days for non-artifact raw logs. Rebuildable caches have no retention delay after positive completion and idle-use proofs. Existing
 unregistered data remains protected by its original ownership boundary.
 
 The daemon creates callback scratch/cache before launch and provides a separate
@@ -91,10 +91,14 @@ Managed callback launch contexts expose separate scratch, cache and protected ar
 Root briefs and handoff packages remain retained evidence. A command may place
 temporary code copies, test environments and caches in scratch. Deliveries publish
 their required files into the artifact root before reporting output preservation. Root and child allocations are explicit;
-only callback environments are automatically set in this delivery. Command
-caches are isolated by execution and can repeat dependency compilation. The
-aggregate budget can refuse later builds within the retention window. Shared
-reuse requires tracked consumers; a path alone cannot prove a shared lifetime.
+only callback environments are automatically set in this delivery. Heavy callbacks
+reuse a registered Project-scoped Go cache; ordinary wait callbacks,
+non-Go caches and restricted gate caches retain separate storage. Each callback
+records its consumer reference before launch under the cleanup fence. Idle shared
+caches retain recent recognized Go entries and trim oldest-used entries to the
+existing per-cache, aggregate and disk-reserve budgets. All source-owned command
+completion and saved-output facts must hold before trimming; an open Root alone
+does not pin this command cache. Explicit legacy paths remain unmanaged.
 Producer briefs direct temporary binaries and raw traces to scratch and retain
 concise verification evidence unless the task explicitly requires larger outputs.
 Existing artifacts are never reclassified by this guidance.
@@ -198,7 +202,7 @@ rejecting an unregistered bound before the final green check.
 | Successful-task disposable scratch | 24 hours after proved completion |
 | Failed/cancelled-task disposable scratch | 24 hours after proved completion |
 | Non-artifact execution logs | 7 days after completion |
-| Idle managed cache, each / aggregate | 4 GiB / 16 GiB |
+| Idle managed cache, each / aggregate | 4 GiB / 16 GiB; no retention floor |
 | Other managed scratch, aggregate | 16 GiB |
 | Minimum available filesystem space | 2 GiB |
 | Results, attachments and protected evidence | No automatic deletion |

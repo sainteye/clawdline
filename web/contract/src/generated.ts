@@ -5370,6 +5370,36 @@ export interface ProjectAssistantConfigurationResponse {
   contract_version: string
 }
 
+export interface ProjectAssistantConnectorCredential {
+  handoff?: ProjectAssistantLoginSecretTarget
+  revision: number
+  state: string
+}
+
+export interface ProjectAssistantConnectorCredentialAction {
+  action: string
+  command: ProjectAssistantCommand
+  expected_version: number
+  fence: ProjectAssistantFence
+  ref: ProjectAssistantExtensionRef
+  target: string
+}
+
+export interface ProjectAssistantConnectorCredentialResponse {
+  contract_version: string
+  credential: ProjectAssistantConnectorCredential
+}
+
+export interface ProjectAssistantConnectorSecretSubmission {
+  action: string
+  command: ProjectAssistantCommand
+  expected_version: number
+  fence: ProjectAssistantFence
+  ref: ProjectAssistantExtensionRef
+  target: string
+  value: string
+}
+
 /**
  * A forgotten source in any provenance rejects the whole summary; never silently
  * strip its ID while retaining the text.
@@ -5769,6 +5799,7 @@ export interface ProjectAssistantExtensionCatalog {
 }
 
 export interface ProjectAssistantExtensionOffer {
+  credential_required?: boolean
   fingerprint: string
   id: string
   kind: string
@@ -6212,8 +6243,9 @@ export type ProjectAssistantOperation =
   | "upload"
   | "rename-artifact"
   | "login-profile"
+  | "connector-credential"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string

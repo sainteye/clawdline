@@ -79,6 +79,13 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       try {
         const status = await source.status(control.signal)
         const readable = status.sources.some(canRead)
+        // Entry availability comes from source authority, independently of the
+        // paged badge read. A slow or failed list must not hide the way to retry.
+        if (!control.signal.aborted) setMetadata(old => {
+          const previous=old[source.machineID]
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable,
+            items:readable&&previous?.revision===source.authorizationRevision?previous.items:[]}}
+        })
         const items: W.ProjectAssistantBotSummary[] = []
         if (readable) {
           let cursor = ""
@@ -92,9 +99,11 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
           } while (cursor && !control.signal.aborted)
         }
         if (!control.signal.aborted) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
-      } catch {
-        // Keep unread counts, but cached work must stop animating on a failed read.
-        if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,items:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
+      } catch (error) {
+        // Transport failure keeps the entry, while explicit loss of authority
+        // closes it. Cached work must stop animating after either failed read.
+        const denied=["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(errorCode(error))
+        if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,readable:!denied&&previous.readable,items:denied?[]:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
       }
     })()
     return () => control.abort()

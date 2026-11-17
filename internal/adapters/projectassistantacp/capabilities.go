@@ -6,6 +6,7 @@ package projectassistantacp
 import (
 	"context"
 	"errors"
+	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"os"
 	"path/filepath"
 
@@ -115,8 +116,22 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 	if (caps.SendMessage || len(q.Extensions.Connectors) > 0) && (p.o.Limits.RPCPending < 2 || q.Tools == nil && p.o.OpenMCP == nil) {
 		return nil, refusal(pa.AdapterNotFound, "owned_mcp")
 	}
+	assets, err := prepareExtensionFiles(&q)
+	if err != nil {
+		return nil, err
+	}
+	if assets != "" {
+		guidance, e := squadfiles.PublishBotSkills(assets, q.Extensions.Folders)
+		if e != nil {
+			_ = os.RemoveAll(assets)
+			return nil, refusal(pa.Invalid, "skill_materialization")
+		}
+		q.Extensions.Skills += guidance
+	}
 	proc, err := StartProcess(ctx, ProcessOptions{Configuration: c, Directory: q.Directory, Limits: p.o.Limits})
 	if err != nil {
+		// StartProcess can fail after an uncertain startup cleanup. Preserve
+		// materialized files unless startup is known to have had no effect.
 		return nil, err
 	}
 	// The default classifier binds host-verified identity, never identity
@@ -133,6 +148,7 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 		return nil, errors.Join(err, proc.Close(cleanup))
 	}
 	client.adapterVersion = caps.AdapterVersion
+	client.extensionFiles = assets
 	if caps.SendMessage || len(q.Extensions.Connectors) > 0 {
 		var lease OwnedMCP
 		if p.o.OpenMCP != nil {

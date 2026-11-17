@@ -24,6 +24,11 @@ func ValidSkillFiles(content string, files []SkillFile) bool {
 			}
 		}
 		folded := strings.ToLower(name)
+		for previous := range seen {
+			if strings.HasPrefix(folded, previous+"/") || strings.HasPrefix(previous, folded+"/") {
+				return false
+			}
+		}
 		if seen[folded] {
 			return false
 		}

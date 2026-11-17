@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,7 +51,8 @@ func squadPromptBytes(t *testing.T, short string, claims []string) int {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(document)
-	files, err := squadfiles.PublishFor(t.TempDir(), "abcdefghijklmnopqrstuv", hex.EncodeToString(sum[:]), "capability", document,
+	stateDir := t.TempDir()
+	files, err := squadfiles.PublishFor(stateDir, "abcdefghijklmnopqrstuv", hex.EncodeToString(sum[:]), "capability", document,
 		squadfiles.Task{Claims: claims})
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +61,9 @@ func squadPromptBytes(t *testing.T, short string, claims []string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Measure fixed product text against the same public fixture root as the
+	// child brief. A managed TMPDIR's spelling is not launch-text growth.
+	body = bytes.ReplaceAll(body, []byte(stateDir), []byte("/Users/someone/.config/clawdline-next"))
 	return len(body)
 }
 

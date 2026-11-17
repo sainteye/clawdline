@@ -4588,6 +4588,36 @@ type ProjectAssistantConfigurationResponse struct {
 	ContractVersion string                               `json:"contract_version"`
 }
 
+type ProjectAssistantConnectorCredential struct {
+	Handoff  *ProjectAssistantLoginSecretTarget `json:"handoff,omitempty"`
+	Revision int64                              `json:"revision"`
+	State    string                             `json:"state"`
+}
+
+type ProjectAssistantConnectorCredentialAction struct {
+	Action          string                       `json:"action"`
+	Command         ProjectAssistantCommand      `json:"command"`
+	ExpectedVersion int64                        `json:"expected_version"`
+	Fence           ProjectAssistantFence        `json:"fence"`
+	Ref             ProjectAssistantExtensionRef `json:"ref"`
+	Target          string                       `json:"target"`
+}
+
+type ProjectAssistantConnectorCredentialResponse struct {
+	ContractVersion string                              `json:"contract_version"`
+	Credential      ProjectAssistantConnectorCredential `json:"credential"`
+}
+
+type ProjectAssistantConnectorSecretSubmission struct {
+	Action          string                       `json:"action"`
+	Command         ProjectAssistantCommand      `json:"command"`
+	ExpectedVersion int64                        `json:"expected_version"`
+	Fence           ProjectAssistantFence        `json:"fence"`
+	Ref             ProjectAssistantExtensionRef `json:"ref"`
+	Target          string                       `json:"target"`
+	Value           string                       `json:"value"`
+}
+
 // A forgotten source in any provenance rejects the whole summary; never
 // silently strip its ID while retaining the text.
 type ProjectAssistantContextSnapshot struct {
@@ -4967,10 +4997,11 @@ type ProjectAssistantExtensionCatalog struct {
 }
 
 type ProjectAssistantExtensionOffer struct {
-	Fingerprint string `json:"fingerprint"`
-	ID          string `json:"id"`
-	Kind        string `json:"kind"`
-	Name        string `json:"name"`
+	CredentialRequired bool   `json:"credential_required,omitempty"`
+	Fingerprint        string `json:"fingerprint"`
+	ID                 string `json:"id"`
+	Kind               string `json:"kind"`
+	Name               string `json:"name"`
 }
 
 type ProjectAssistantExtensionRef struct {
@@ -5389,27 +5420,28 @@ type ProjectAssistantObserveRequest struct {
 type ProjectAssistantOperation string
 
 const (
-	ProjectAssistantOperationCreate         ProjectAssistantOperation = "create"
-	ProjectAssistantOperationEdit           ProjectAssistantOperation = "edit"
-	ProjectAssistantOperationSend           ProjectAssistantOperation = "send"
-	ProjectAssistantOperationStop           ProjectAssistantOperation = "stop"
-	ProjectAssistantOperationSendNow        ProjectAssistantOperation = "send_now"
-	ProjectAssistantOperationRuleRemove     ProjectAssistantOperation = "rule_remove"
-	ProjectAssistantOperationDelete         ProjectAssistantOperation = "delete"
-	ProjectAssistantOperationVisibility     ProjectAssistantOperation = "visibility"
-	ProjectAssistantOperationAnswer         ProjectAssistantOperation = "answer"
-	ProjectAssistantOperationRead           ProjectAssistantOperation = "read"
-	ProjectAssistantOperationObserve        ProjectAssistantOperation = "observe"
-	ProjectAssistantOperationForget         ProjectAssistantOperation = "forget"
-	ProjectAssistantOperationMemorySave     ProjectAssistantOperation = "memory_save"
-	ProjectAssistantOperationDispatch       ProjectAssistantOperation = "dispatch"
-	ProjectAssistantOperationUpload         ProjectAssistantOperation = "upload"
-	ProjectAssistantOperationRenameArtifact ProjectAssistantOperation = "rename-artifact"
-	ProjectAssistantOperationLoginProfile   ProjectAssistantOperation = "login-profile"
+	ProjectAssistantOperationCreate              ProjectAssistantOperation = "create"
+	ProjectAssistantOperationEdit                ProjectAssistantOperation = "edit"
+	ProjectAssistantOperationSend                ProjectAssistantOperation = "send"
+	ProjectAssistantOperationStop                ProjectAssistantOperation = "stop"
+	ProjectAssistantOperationSendNow             ProjectAssistantOperation = "send_now"
+	ProjectAssistantOperationRuleRemove          ProjectAssistantOperation = "rule_remove"
+	ProjectAssistantOperationDelete              ProjectAssistantOperation = "delete"
+	ProjectAssistantOperationVisibility          ProjectAssistantOperation = "visibility"
+	ProjectAssistantOperationAnswer              ProjectAssistantOperation = "answer"
+	ProjectAssistantOperationRead                ProjectAssistantOperation = "read"
+	ProjectAssistantOperationObserve             ProjectAssistantOperation = "observe"
+	ProjectAssistantOperationForget              ProjectAssistantOperation = "forget"
+	ProjectAssistantOperationMemorySave          ProjectAssistantOperation = "memory_save"
+	ProjectAssistantOperationDispatch            ProjectAssistantOperation = "dispatch"
+	ProjectAssistantOperationUpload              ProjectAssistantOperation = "upload"
+	ProjectAssistantOperationRenameArtifact      ProjectAssistantOperation = "rename-artifact"
+	ProjectAssistantOperationLoginProfile        ProjectAssistantOperation = "login-profile"
+	ProjectAssistantOperationConnectorCredential ProjectAssistantOperation = "connector-credential"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`

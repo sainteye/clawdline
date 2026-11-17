@@ -487,6 +487,9 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.cleanupPending = h.store != nil
 	h.mu.Unlock()
 	var result error
+	if extensions, ok := h.o.Extensions.(interface{ Suspend(context.Context) error }); ok {
+		result = errors.Join(result, extensions.Suspend(ctx))
+	}
 	if h.profiles != nil {
 		if closeHost {
 			result = errors.Join(result, h.profiles.Close(ctx))

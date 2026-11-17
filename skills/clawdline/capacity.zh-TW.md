@@ -69,6 +69,10 @@
 | `bots.config_options` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_probes` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_value_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.connector_credential_holds` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.connector_credentials` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.connector_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.connector_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -160,6 +164,7 @@
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.send_body_bytes` | 25165824 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

@@ -202,6 +202,8 @@ export const CARRIED = {
   "project-assistants.attachment": "captured Bot source GET /v1/project-assistants/{bot_id}/attachments/{id}",
   "project-assistants.configuration": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
   "project-assistants.configuration-profile": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
+  "project-assistants.connector-credential": "captured Bot source POST /v1/project-assistants/{bot_id}/connector-credential",
+  "project-assistants.connector-secret": "captured Bot source POST /v1/project-assistants/{bot_id}/connector-secret",
   "project-assistants.create": "captured Bot source POST /v1/project-assistants",
   "project-assistants.delete": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/delete",
   "project-assistants.edit": "captured Bot source PATCH /v1/project-assistants/{command.key.bot_id}",

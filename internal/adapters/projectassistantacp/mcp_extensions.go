@@ -43,6 +43,55 @@ func (s *ownedMCPServer) extension(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(pa.CapacityFull), 413)
 		return
 	}
+	if connector.Credential != nil {
+		value, err := connector.Credential(ctx)
+		if err != nil {
+			http.Error(w, string(pa.Code(err)), 403)
+			return
+		}
+		defer func() {
+			for i := range value {
+				value[i] = 0
+			}
+		}()
+		if connector.Executable == "" {
+			// The source-owned closure checks the captured revision as well as
+			// returning the value. Header injection happens only at the backend.
+			ctx = context.WithValue(ctx, connectorSecretKey{}, value)
+		}
+	}
+	if index < len(s.stdio) && s.stdio[index] != nil {
+		if r.Method != "POST" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		data, err := s.stdio[index].exchange(ctx, body)
+		if err != nil {
+			http.Error(w, string(pa.Code(err)), 502)
+			return
+		}
+		if err = guard.CheckExtension(ctx, connector.Ref); err != nil {
+			http.Error(w, string(pa.OutcomeUnknown), 409)
+			return
+		}
+		if connector.Credential != nil {
+			v, err := connector.Credential(ctx)
+			for i := range v {
+				v[i] = 0
+			}
+			if err != nil {
+				http.Error(w, string(pa.OutcomeUnknown), 409)
+				return
+			}
+		}
+		if data == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+		return
+	}
 	request, e := http.NewRequestWithContext(ctx, r.Method, connector.URL, bytes.NewReader(body))
 	if e != nil {
 		http.Error(w, string(pa.Invalid), 400)
@@ -52,6 +101,9 @@ func (s *ownedMCPServer) extension(w http.ResponseWriter, r *http.Request) {
 		if v := r.Header.Get(name); v != "" {
 			request.Header.Set(name, v)
 		}
+	}
+	if value, ok := ctx.Value(connectorSecretKey{}).([]byte); ok {
+		request.Header.Set(connector.CredentialHeader, string(value))
 	}
 	transport := &http.Transport{DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
@@ -72,6 +124,16 @@ func (s *ownedMCPServer) extension(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(pa.OutcomeUnknown), 409)
 		return
 	}
+	if connector.Credential != nil {
+		v, err := connector.Credential(ctx)
+		for i := range v {
+			v[i] = 0
+		}
+		if err != nil {
+			http.Error(w, string(pa.OutcomeUnknown), 409)
+			return
+		}
+	}
 	for _, name := range []string{"Content-Type", "Mcp-Session-Id"} {
 		if v := response.Header.Get(name); v != "" {
 			w.Header().Set(name, v)
@@ -80,3 +142,5 @@ func (s *ownedMCPServer) extension(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(response.StatusCode)
 	_, _ = w.Write(data)
 }
+
+type connectorSecretKey struct{}

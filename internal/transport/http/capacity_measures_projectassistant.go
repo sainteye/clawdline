@@ -69,6 +69,21 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.connector_credentials":      func() capacity.Reading { return s.connectorRows("project_assistant_connector_credentials") },
+		"bots.connector_credential_holds": func() capacity.Reading { return s.connectorRows("project_assistant_connector_holds") },
+		"bots.connector_secret_targets": func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed := p.host, p.inspectionFailed
+			p.mu.RUnlock()
+			if h == nil {
+				return capacity.Reading{Known: !failed, Note: "no active connector target registry"}
+			}
+			n, known := h.ConnectorSecretTargetUsage()
+			return capacity.Reading{Known: known, Used: int64(n), Note: "actual live expiring connector credential targets"}
+		},
+		capacity.BotsSkillAssetFiles:        func() capacity.Reading { return s.extensionFilesMeasure(true) },
+		capacity.BotsConnectorProcesses:     func() capacity.Reading { return s.extensionFilesMeasure(false) },
 		capacity.BotsManagerCardUnits:       pure,
 		capacity.BotsManagerApprovalSeconds: unobserved,
 		capacity.BotsManagerPending:         unobserved,

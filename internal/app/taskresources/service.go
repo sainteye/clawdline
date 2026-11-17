@@ -498,7 +498,33 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 			out.Items = append(out.Items, row)
 			continue
 		}
-		if err := s.FS.Remove(ctx, r, item.Snapshot.Digest); err != nil {
+		if r.Owner.Kind == "shared_go" {
+			target := s.policy().CacheBytes
+			u, measureErr := s.Measure(ctx)
+			if measureErr != nil {
+				row.Reason = "resource_measurement_unknown"
+			} else {
+				size := item.Snapshot.Logical
+				if item.Snapshot.AllocationKnown {
+					size = item.Snapshot.Allocated
+				}
+				if u.CacheTotal > s.policy().CacheTotal {
+					target = min(target, max(int64(0), size-(u.CacheTotal-s.policy().CacheTotal)))
+				}
+				if u.Available < s.policy().DiskReserve {
+					target = min(target, max(int64(0), size-(s.policy().DiskReserve-u.Available)))
+				}
+				removed, trimErr := s.FS.TrimGoCache(ctx, r, item.Snapshot.Digest, target)
+				row.LogicalBytes, row.AllocatedBytes, row.AllocationKnown = removed.Logical, removed.Allocated, removed.AllocationKnown
+				row.Reason = "shared_cache_within_budget"
+				if removed.Logical > 0 {
+					row.Reason = "shared_cache_trimmed"
+				}
+				if trimErr != nil {
+					row.Reason = "shared_cache_trim_failed"
+				}
+			}
+		} else if err := s.FS.Remove(ctx, r, item.Snapshot.Digest); err != nil {
 			row.Reason = "remove_failed"
 		} else {
 			row.Outcome, row.Reason = "removed", "completed_owned_scratch"

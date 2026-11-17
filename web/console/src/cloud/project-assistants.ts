@@ -23,6 +23,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
+export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
 export const PROJECT_ASSISTANTS_LOGIN_API_LEVEL = 81
 export const PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL = 79
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
@@ -417,6 +418,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }
   extensions(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantExtensionsResponse>(endpoint(key,"/extensions")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  canConnectorCredentials(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL);return true}catch{return false}}
+  connectorCredential(r:W.ProjectAssistantConnectorCredentialAction,signal:AbortSignal){return this.request<W.ProjectAssistantConnectorCredentialResponse>(endpoint(r.command.key,"/connector-credential"),signal,r,"POST",true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL)}
+  connectorSecret(r:W.ProjectAssistantConnectorCredentialAction,value:string,signal:AbortSignal){const submission:W.ProjectAssistantConnectorSecretSubmission={...r,value};return this.request<W.ProjectAssistantConnectorCredentialResponse>(endpoint(r.command.key,"/connector-secret"),signal,submission,"POST",true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL)}
   canKeyProfiles(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL);return true}catch{return false}}
   canFallbackProfiles(){return this.canKeyProfiles()}
   loginSecret(r:W.ProjectAssistantLoginProfileAction,value:string,signal:AbortSignal){const submission:W.ProjectAssistantLoginSecretSubmission={...r,target:r.target??"",value};return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-secret"),signal,submission,"POST",true,PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL)}
@@ -571,7 +575,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
-    tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
+    tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }

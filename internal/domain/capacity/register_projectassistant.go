@@ -66,6 +66,8 @@ const (
 // Group room rows. Names live here, beside the bounds they name.
 const (
 	BotsGroupRounds            = "bots.group_rounds"
+	BotsSkillAssetFiles        = "bots.skill_asset_files"
+	BotsConnectorProcesses     = "bots.connector_processes"
 	BotsGroupReplies           = "bots.group_replies"
 	BotsGroupLateTurns         = "bots.group_late_turns"
 	BotsGroupMemberWaitSeconds = "bots.group_member_wait_seconds"
@@ -84,6 +86,8 @@ const (
 // than inventing a number; that row already covers it.
 func groupBounds() []Entry {
 	return []Entry{
+		{Name: BotsSkillAssetFiles, Class: Buffer, Unit: Rows, Limit: pa.MaxSkillAssetFiles, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSkillAssetFiles"}},
+		{Name: BotsConnectorProcesses, Class: Buffer, Unit: Rows, Limit: pa.MaxConnectorProcesses, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxConnectorProcesses"}},
 		{Name: BotsManagerCardUnits, Class: Buffer, Unit: Characters, Limit: MaximumBotManagerCardUnits, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerCardUnits"}},
 		{Name: BotsManagerApprovalSeconds, Class: Buffer, Unit: Seconds, Limit: MaximumBotManagerApprovalSeconds, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerApprovalSeconds"}},
 		{Name: BotsManagerPending, Class: Buffer, Unit: Rows, Limit: MaximumBotManagerPending, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerPending"}},

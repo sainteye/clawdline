@@ -153,6 +153,9 @@ func Evaluate(r Resource, p Policy, f Facts, now time.Time) Decision {
 		return keep("outputs_changed")
 	}
 	retention := p.ScratchSeconds
+	if r.Class == Cache {
+		retention = 0
+	}
 	if r.Class == Log {
 		retention = p.LogSeconds
 	}

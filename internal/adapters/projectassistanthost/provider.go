@@ -217,7 +217,23 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 			life.invalidate()
 			return nil, &app.OpenNotStarted{Cause: err}
 		}
-		life.extensions = func(ctx context.Context) error { _, e := p.h.capturedExtensions(ctx, q); return e }
+		life.extensions = func(ctx context.Context) error {
+			if _, e := p.h.capturedExtensions(ctx, q); e != nil {
+				return e
+			}
+			for _, connector := range q.Extensions.Connectors {
+				if connector.Credential != nil {
+					value, e := connector.Credential(ctx)
+					for i := range value {
+						value[i] = 0
+					}
+					if e != nil {
+						return e
+					}
+				}
+			}
+			return nil
+		}
 	}
 	if p.h.o.NativeWork != nil {
 		unregister, registerErr := p.h.o.NativeWork(ctx, q, tools)
