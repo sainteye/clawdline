@@ -261,6 +261,16 @@
     "Note": true
   },
   {
+    "Name": "bots.assistant_grants",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.assistant_receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.attachment_bytes",
     "Known": true,
     "Note": true
@@ -552,6 +562,16 @@
   },
   {
     "Name": "bots.name_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.network_grants",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.network_receipts",
     "Known": true,
     "Note": true
   },

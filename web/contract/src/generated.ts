@@ -6215,6 +6215,58 @@ export type ProjectAssistantNativeMemoryMode =
 
 export const ProjectAssistantNativeMemoryModeValues: readonly ProjectAssistantNativeMemoryMode[] = ["unknown", "disabled", "isolated", "unsafe"] as const
 
+export interface ProjectAssistantNetworkCapabilities {
+  assistants: ProjectAssistantNetworkCapability
+  peer: ProjectAssistantNetworkCapability
+}
+
+export interface ProjectAssistantNetworkCapability {
+  reason?: string
+  state: string
+}
+
+export interface ProjectAssistantNetworkPreferenceValue {
+  enabled: boolean
+}
+
+export interface ProjectAssistantNetworkScope {
+  account_id: string
+  key: ProjectAssistantBotKey
+  project: ProjectAssistantProjectScope
+}
+
+export interface ProjectAssistantNetworkSettings {
+  offered_to_network: boolean
+  reachable_by_assistants: boolean
+  revision: number
+  scope: ProjectAssistantNetworkScope
+}
+
+export interface ProjectAssistantNetworkSettingsPatch {
+  offered_to_network?: ProjectAssistantNetworkPreferenceValue
+  reachable_by_assistants?: ProjectAssistantNetworkPreferenceValue
+}
+
+export interface ProjectAssistantNetworkSettingsRequest {
+  command: ProjectAssistantCommand
+  expected_revision: number
+  expected_version: number
+  fence: ProjectAssistantFence
+  patch: ProjectAssistantNetworkSettingsPatch
+}
+
+export interface ProjectAssistantNetworkSettingsResponse {
+  contract_version: string
+  network: ProjectAssistantNetworkSettingsView
+}
+
+export interface ProjectAssistantNetworkSettingsView {
+  bot_version: number
+  capabilities: ProjectAssistantNetworkCapabilities
+  fence: ProjectAssistantFence
+  settings: ProjectAssistantNetworkSettings
+}
+
 /**
  * Authenticated device observation of a receipt/event. It does not advance read
  * cursors or turn model text into human authorization.
@@ -6244,8 +6296,9 @@ export type ProjectAssistantOperation =
   | "rename-artifact"
   | "login-profile"
   | "connector-credential"
+  | "network-settings"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential", "network-settings"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string

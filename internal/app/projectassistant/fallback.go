@@ -14,6 +14,14 @@ type AgentRestRepository interface {
 }
 
 func (r *Engine) checkAttemptBoundary(ctx context.Context, a *runtimeActor, bot pa.Bot, c pa.Conversation, t pa.Turn, checkMemory bool) error {
+	if t.Network != nil {
+		if r.o.NetworkCheck == nil {
+			return runtimeFailure(pa.Unsupported, "network_gate")
+		}
+		if e := r.o.NetworkCheck(ctx, t); e != nil {
+			return e
+		}
+	}
 	a.mu.Lock()
 	stopped := a.stopped
 	a.mu.Unlock()

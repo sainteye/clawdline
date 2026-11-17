@@ -1,0 +1,6 @@
+.pa-network-settings { margin-block: 1rem; }
+.pa-network-settings > h3 { margin-block: 0 .5rem; }
+.pa-network-settings p { margin-block: .3rem; color: var(--muted); }
+.pa-network-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .8rem; border-top: 1px solid var(--border); }
+.pa-network-row > div { min-width: 0; }
+.pa-network-row > button { flex-shrink: 0; }

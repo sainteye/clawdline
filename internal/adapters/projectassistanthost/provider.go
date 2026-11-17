@@ -12,7 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -58,6 +60,7 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	network       func(context.Context, app.NetworkToolRequest) (network.Response, error)
 	extension     func(context.Context, pa.ExtensionRef) error
 	teamAvailable func(context.Context) error
 	team          func(context.Context, string, json.RawMessage) (any, error)
@@ -418,6 +421,40 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
+	tools.network = func(ctx context.Context, request app.NetworkToolRequest) (network.Response, error) {
+		if pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
+			return network.Response{}, failure(pa.ScopeDenied, "network_peer_tools")
+		}
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return network.Response{}, e
+		}
+		defer cancel()
+		if h.o.Network == nil || h.o.NetworkTransport == nil {
+			return network.Response{}, failure(pa.Unsupported, "network_unconfigured")
+		}
+		if e = journal(ctx, "networkBot"); e != nil {
+			return network.Response{}, e
+		}
+		source := wire.BotEndpoint{AccountID: h.o.Network.AccountID(), MachineID: q.Bot.Key.MachineID, ProjectID: q.Bot.Project.ProjectID, BotID: q.Bot.Key.BotID, ConversationID: q.Binding.Fence.ConversationID, Generation: q.Binding.Fence.Generation}
+		if request.Kind == "routes" {
+			return h.o.Network.Routes(ctx, source, h.o.NetworkTransport)
+		}
+		transport, e := h.o.NetworkTransport(ctx, request.AuthorityID)
+		if e != nil {
+			return network.Response{}, e
+		}
+		result, e := h.o.Network.Call(ctx, network.Call{RequestID: request.RequestID, CorrelationID: request.CorrelationID, Kind: request.Kind, AuthorityID: request.AuthorityID, Source: source, Target: request.Target, Text: request.Text}, transport)
+		if e != nil {
+			return network.Response{}, e
+		}
+		if _, finish, e := bound(ctx); e != nil {
+			return network.Response{}, e
+		} else {
+			finish()
+		}
+		return result, nil
+	}
 	tools.extension = func(ctx context.Context, ref pa.ExtensionRef) error {
 		ctx, done, e := bound(ctx)
 		if e != nil {
@@ -494,7 +531,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.MessageBot(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
-		if turn.Origin == pa.BotRequestOrigin && request.Action != "list" {
+		if pa.IsPeerRequest(turn.Origin) && request.Action != "list" {
 			return app.RoutineResult{}, failure(pa.ScopeDenied, "bot_request_tools")
 		}
 		ctx, cancel, e := bound(ctx)
@@ -508,7 +545,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Routine(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
-		if turn.Origin == pa.BotRequestOrigin {
+		if pa.IsPeerRequest(turn.Origin) {
 			return pa.Output{}, failure(pa.ScopeDenied, "bot_request_tools")
 		}
 		ctx, cancel, e := bound(ctx)
@@ -649,7 +686,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.MemoryEntries(ctx, q.Bot.Key)
 	}
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
-		if turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin {
+		if pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
 			return failure(pa.ScopeDenied, "bot_reply_memory")
 		}
 		ctx, cancel, e := bound(ctx)
@@ -719,6 +756,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
 	tools.dispatch = func(ctx context.Context, id, brief string, claims []string) (pa.WorkLink, error) {
+		if pa.IsPeerRequest(turn.Origin) {
+			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
+		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return pa.WorkLink{}, e

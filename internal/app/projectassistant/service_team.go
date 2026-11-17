@@ -116,7 +116,7 @@ func (r *Engine) ManagerContext(ctx context.Context, fence pa.Fence, turnID stri
 	if currentFence(bot, c) != fence || t.Fence != fence || c.ActiveTurnID != turnID || t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 		return ManagerContext{}, serviceFailure(pa.StaleGeneration, "manager_turn")
 	}
-	if t.Origin == pa.BotRequestOrigin {
+	if pa.IsPeerRequest(t.Origin) {
 		return ManagerContext{}, serviceFailure(pa.ScopeDenied, "bot_request_tools")
 	}
 	if t.Room != nil {

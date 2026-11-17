@@ -6,6 +6,12 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The Bot network card separately describes authenticated cross-source work,
+captured execution fences, untrusted peer input and the dedicated assistant
+principal boundary. Its English and Taiwan Chinese copies distinguish source
+construction from the private Cloud API, relay and assistant gateway that still
+need integration. A saved preference is never account or assistant consent.
+
 The selected Bot extension card now covers execution-owned folder skill snapshots,
 selected stdio and HTTP MCP transports, dedicated encrypted connector credentials,
 per-call and publication revocation, and durable unknown-cleanup reservations.
@@ -741,3 +747,10 @@ remain accurate: this guide change does not inject a new startup instruction,
 change native permissions, create a Bot or turn a future Bot into a machine
 operator. The reviewed source receipt follows both guide files; the website
 snapshot must import this reviewed product tree after landing.
+
+The Bot-network source verifier selects the pinned signing key by the actual
+sender machine, independently of the original pair offer direction. Review of
+the English and Taiwan Traditional Chinese Bot-network explanations confirms
+that this corrects signature verification without broadening grants, scopes or
+injected instructions. Both native source orientations have focused local
+evidence; private Cloud wiring and destination acceptance remain pending.

@@ -1,5 +1,17 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "networkTitle": "Bot reachability",
+  "networkHint": "Choose who can discover and message this Bot. Account authorization and source setup are managed separately.",
+  "networkPeer": "Offered to other computers",
+  "networkPeerHint": "Bots on your authorized other computers can discover and message this Bot.",
+  "networkAssistants": "Reachable by cloud assistants",
+  "networkAssistantsHint": "Connected assistants with account consent and this Bot’s scope can discover and message it.",
+  "networkSetup": "Source setup or authenticated authorization is required.",
+  "networkUnavailable": "This source has no configured reachability service.",
+  "networkSavedInactive": "The saved preference is inactive while source support is unavailable.",
+  "networkSaving": "Saving reachability preference…",
+  "networkSaved": "Reachability preference saved.",
+  "networkSaveFailed": "The source could not confirm this preference. Refresh before trying again.",
   "extensions": "Application skills and connectors",
   "connectorCredential": "Connector credential",
   "connectorCredentialHint": "Only this selected connector receives the credential. It is encrypted on the source computer and never added to Bot instructions or settings.",
@@ -432,6 +444,18 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "networkTitle": "Bot 連線對象",
+  "networkHint": "選擇誰能找到這個 Bot 並傳訊。帳號授權與來源設定須另外管理。",
+  "networkPeer": "開放給其他電腦",
+  "networkPeerHint": "已授權的其他電腦上的 Bot 可以找到這個 Bot 並傳訊。",
+  "networkAssistants": "開放給雲端助理",
+  "networkAssistantsHint": "已連接的助理須取得帳號同意及這個 Bot 的存取範圍，才能找到它並傳訊。",
+  "networkSetup": "來源仍須完成設定或取得已驗證的授權。",
+  "networkUnavailable": "這個來源尚未設定連線服務。",
+  "networkSavedInactive": "來源支援無法使用時，已儲存的偏好不會生效。",
+  "networkSaving": "正在儲存連線偏好…",
+  "networkSaved": "已儲存連線偏好。",
+  "networkSaveFailed": "來源無法確認這次偏好設定。請重新整理後再試。",
   "extensions": "應用程式技能與連接器",
   "connectorCredential": "連接器憑證",
   "connectorCredentialHint": "只有這個已選取的連接器會收到憑證。憑證會在來源電腦加密保存，不會加入 Bot 指令或設定。",

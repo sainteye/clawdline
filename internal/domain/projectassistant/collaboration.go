@@ -75,7 +75,7 @@ type BotMessageRequest struct {
 }
 
 func CheckCollaborationRequest(q BotMessageRequest, origin TurnOrigin, hops int) error {
-	if origin == BotRequestOrigin {
+	if IsPeerRequest(origin) {
 		return fail(ScopeDenied, "bot_request_tools")
 	}
 	if hops < 0 || hops >= MaxCollaborationHops {
@@ -106,10 +106,17 @@ func CollaborationReply(text string) string {
 }
 
 func ValidateTurnOrigin(t Turn) error {
+	if (t.Origin == NetworkRequestOrigin) != (t.Network != nil) {
+		return fail(Invalid, "network_origin")
+	}
 	switch t.Origin {
 	case "", UserOrigin, HostNoticeOrigin:
 		if t.ExchangeID != "" || t.Hops != 0 {
 			return fail(Invalid, "turn_origin")
+		}
+	case NetworkRequestOrigin:
+		if t.ExchangeID != "" || t.Hops != 0 || t.RoutineRunID != "" {
+			return fail(Invalid, "network_origin")
 		}
 	case BotRequestOrigin, BotReplyOrigin:
 		if t.ExchangeID == "" || t.Hops < 1 || t.Hops > MaxCollaborationHops || t.RoutineRunID != "" {

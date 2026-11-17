@@ -5409,6 +5409,58 @@ const (
 // ProjectAssistantNativeMemoryModeValues is every value the contract allows, in contract order.
 var ProjectAssistantNativeMemoryModeValues = []ProjectAssistantNativeMemoryMode{ProjectAssistantNativeMemoryModeUnknown, ProjectAssistantNativeMemoryModeDisabled, ProjectAssistantNativeMemoryModeIsolated, ProjectAssistantNativeMemoryModeUnsafe}
 
+type ProjectAssistantNetworkCapabilities struct {
+	Assistants ProjectAssistantNetworkCapability `json:"assistants"`
+	Peer       ProjectAssistantNetworkCapability `json:"peer"`
+}
+
+type ProjectAssistantNetworkCapability struct {
+	Reason string `json:"reason,omitempty"`
+	State  string `json:"state"`
+}
+
+type ProjectAssistantNetworkPreferenceValue struct {
+	Enabled bool `json:"enabled"`
+}
+
+type ProjectAssistantNetworkScope struct {
+	AccountID string                       `json:"account_id"`
+	Key       ProjectAssistantBotKey       `json:"key"`
+	Project   ProjectAssistantProjectScope `json:"project"`
+}
+
+type ProjectAssistantNetworkSettings struct {
+	OfferedToNetwork      bool                         `json:"offered_to_network"`
+	ReachableByAssistants bool                         `json:"reachable_by_assistants"`
+	Revision              int64                        `json:"revision"`
+	Scope                 ProjectAssistantNetworkScope `json:"scope"`
+}
+
+type ProjectAssistantNetworkSettingsPatch struct {
+	OfferedToNetwork      *ProjectAssistantNetworkPreferenceValue `json:"offered_to_network,omitempty"`
+	ReachableByAssistants *ProjectAssistantNetworkPreferenceValue `json:"reachable_by_assistants,omitempty"`
+}
+
+type ProjectAssistantNetworkSettingsRequest struct {
+	Command          ProjectAssistantCommand              `json:"command"`
+	ExpectedRevision int64                                `json:"expected_revision"`
+	ExpectedVersion  int64                                `json:"expected_version"`
+	Fence            ProjectAssistantFence                `json:"fence"`
+	Patch            ProjectAssistantNetworkSettingsPatch `json:"patch"`
+}
+
+type ProjectAssistantNetworkSettingsResponse struct {
+	ContractVersion string                              `json:"contract_version"`
+	Network         ProjectAssistantNetworkSettingsView `json:"network"`
+}
+
+type ProjectAssistantNetworkSettingsView struct {
+	BotVersion   int64                               `json:"bot_version"`
+	Capabilities ProjectAssistantNetworkCapabilities `json:"capabilities"`
+	Fence        ProjectAssistantFence               `json:"fence"`
+	Settings     ProjectAssistantNetworkSettings     `json:"settings"`
+}
+
 // Authenticated device observation of a receipt/event. It does not advance read
 // cursors or turn model text into human authorization.
 type ProjectAssistantObserveRequest struct {
@@ -5438,10 +5490,11 @@ const (
 	ProjectAssistantOperationRenameArtifact      ProjectAssistantOperation = "rename-artifact"
 	ProjectAssistantOperationLoginProfile        ProjectAssistantOperation = "login-profile"
 	ProjectAssistantOperationConnectorCredential ProjectAssistantOperation = "connector-credential"
+	ProjectAssistantOperationNetworkSettings     ProjectAssistantOperation = "network-settings"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential, ProjectAssistantOperationNetworkSettings}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`

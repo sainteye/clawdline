@@ -1098,6 +1098,48 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.assistant_grants",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkAssistantGrants"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.assistant_receipts",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkAssistantReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.attachment_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2253,6 +2295,48 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxNameRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.network_grants",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkGrants"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.network_receipts",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkReceipts"
     ]
   },
   {

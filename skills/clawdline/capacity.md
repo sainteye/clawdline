@@ -59,6 +59,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.agent_rest_seconds` | 21600 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.artifact_bytes` | 5242880 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.assistant_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.assistant_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
@@ -118,6 +120,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `bots.network_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.network_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.output_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |

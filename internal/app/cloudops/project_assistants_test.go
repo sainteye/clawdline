@@ -53,6 +53,8 @@ func projectAssistantOperationCases() []operationCase {
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
 		{"memory-view", "GET", "/bot/memory-view", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}},
 		{"configuration-profile", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}},
+		{"network-settings", "GET", "/bot/network-settings", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
+		{"network-settings-save", "POST", "/bot/network-settings", map[string]any{"fence": fence, "expected_version": 1, "expected_revision": 0, "patch": map[string]any{"offered_to_network": map[string]any{"enabled": false}}}, nil},
 		{"extensions", "GET", "/bot/extensions", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
 		{"login-profiles", "GET", "/bot/login-profiles", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex"}},
 		{"login-secret", "POST", "/bot/login-secret", map[string]any{"fence": fence, "expected_version": 1, "profile_id": "synthetic-profile", "revision": 1, "agent": "codex", "action": "submit-key", "name": "", "target": "synthetic-target", "value": "SAFE_FIXTURE"}, nil},
@@ -95,7 +97,7 @@ func projectAssistantOperationCases() []operationCase {
 			c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		}
 		if r.method != "GET" {
-			op := map[string]string{"connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
+			op := map[string]string{"network-settings-save": "network-settings", "connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -131,7 +133,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 55 {
+	if len(out) != 57 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

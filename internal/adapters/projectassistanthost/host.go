@@ -11,6 +11,7 @@ import (
 	"time"
 
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -26,10 +27,15 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
-	Extensions    app.ExtensionInventory
-	LoginProfiles func(context.Context) (app.LoginProfiles, error)
-	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
-	Database      *sql.DB
+	Assistants          *network.AssistantService
+	Network             *network.Service
+	NetworkTransport    func(context.Context, string) (network.Transport, error)
+	NetworkAccount      func(context.Context) (string, error)
+	NetworkCapabilities func(context.Context, string, string) pa.NetworkCapabilities
+	Extensions          app.ExtensionInventory
+	LoginProfiles       func(context.Context) (app.LoginProfiles, error)
+	ProjectMemory       func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	Database            *sql.DB
 	// Reader borrows Store's existing query-only pool. Host never closes it.
 	Reader *sql.DB
 	// ReadViews is an optional composition override for controlled port fixtures.
@@ -191,7 +197,7 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{NetworkAccount: h.networkAccount, NetworkSettings: h.store, NetworkCapabilities: h.o.NetworkCapabilities, Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -593,7 +599,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e

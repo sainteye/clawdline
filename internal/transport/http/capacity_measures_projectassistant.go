@@ -69,6 +69,10 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.network_grants":             s.botNetworkGrantMeasure,
+		"bots.assistant_grants":           s.botAssistantRowsMeasure("project_assistant_gateway_grants"),
+		"bots.assistant_receipts":         s.botAssistantRowsMeasure("project_assistant_gateway_receipts"),
+		"bots.network_receipts":           s.botNetworkReceiptMeasure,
 		"bots.connector_credentials":      func() capacity.Reading { return s.connectorRows("project_assistant_connector_credentials") },
 		"bots.connector_credential_holds": func() capacity.Reading { return s.connectorRows("project_assistant_connector_holds") },
 		"bots.connector_secret_targets": func() capacity.Reading {

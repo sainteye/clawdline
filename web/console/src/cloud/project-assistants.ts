@@ -22,6 +22,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
 export const PROJECT_ASSISTANTS_LOGIN_API_LEVEL = 81
@@ -418,6 +419,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }
   extensions(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantExtensionsResponse>(endpoint(key,"/extensions")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  canNetworkSettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL);return true}catch{return false}}
+  networkSettings(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(key,"/network-settings")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
+  saveNetworkSettings(r:W.ProjectAssistantNetworkSettingsRequest,signal:AbortSignal){return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(r.command.key,"/network-settings"),signal,r,"POST",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
   canConnectorCredentials(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL);return true}catch{return false}}
   connectorCredential(r:W.ProjectAssistantConnectorCredentialAction,signal:AbortSignal){return this.request<W.ProjectAssistantConnectorCredentialResponse>(endpoint(r.command.key,"/connector-credential"),signal,r,"POST",true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL)}
   connectorSecret(r:W.ProjectAssistantConnectorCredentialAction,value:string,signal:AbortSignal){const submission:W.ProjectAssistantConnectorSecretSubmission={...r,value};return this.request<W.ProjectAssistantConnectorCredentialResponse>(endpoint(r.command.key,"/connector-secret"),signal,submission,"POST",true,PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL)}
@@ -539,9 +543,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       const offset=Number(q.offset);if(!Number.isSafeInteger(offset)||offset>100*1024*1024)throw failure("pa_invalid")
       return {word:"project-assistants.output",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id,message_id:q.message_id,id:q.id,artifact_id:q.artifact_id,offset},id:""}
     }
-    if(tail==="/memory-view"||tail==="/configuration"||tail==="/login-profiles"||tail==="/extensions"){
-      const fields=tail==="/memory-view"?["machine_id","conversation_id","source_epoch","layer","entry_id","revision"]:tail==="/extensions"?["machine_id","conversation_id"]:tail==="/login-profiles"?["machine_id","conversation_id","agent"]:["machine_id","conversation_id","agent","model",...(url.searchParams.has("login_profile")?["login_profile"]:[])]
+    if(tail==="/memory-view"||tail==="/configuration"||tail==="/login-profiles"||tail==="/extensions"||tail==="/network-settings"){
+      const fields=tail==="/memory-view"?["machine_id","conversation_id","source_epoch","layer","entry_id","revision"]:tail==="/extensions"||tail==="/network-settings"?["machine_id","conversation_id"]:tail==="/login-profiles"?["machine_id","conversation_id","agent"]:["machine_id","conversation_id","agent","model",...(url.searchParams.has("login_profile")?["login_profile"]:[])]
       if(init?.body!=null||[...url.searchParams.keys()].some(f=>!fields.includes(f))||!q.conversation_id||!q.machine_id)throw failure("pa_invalid")
+      if(tail==="/network-settings"&&(url.searchParams.size!==fields.length||fields.some(field=>url.searchParams.getAll(field).length!==1)))throw failure("pa_invalid")
       return {word:"project-assistants."+(tail==="/configuration"&&url.searchParams.has("login_profile")?"configuration-profile":tail.slice(1)),kind:"read" as const,fields:{...key,...Object.fromEntries(fields.filter(f=>f!=="machine_id").map(f=>[f,q[f]??""]))},id:""}
     }
     const picture=/^\/attachments\/([0-9a-f]{64})$/.exec(tail)
@@ -575,7 +580,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
-    tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
+    tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }

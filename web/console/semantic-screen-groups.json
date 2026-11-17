@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13060,
-  "riskKeys": 5654,
-  "nonRiskCount": 7406,
+  "englishContentKeys": 13085,
+  "riskKeys": 5672,
+  "nonRiskCount": 7413,
   "groups": [
     {
       "name": "acp / other",
@@ -5897,7 +5897,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 293,
+      "count": 298,
       "sources": [
         null
       ],
@@ -6062,6 +6062,11 @@
         "projectAssistants.nativeOff",
         "projectAssistants.nativeOn",
         "projectAssistants.nativeSettings",
+        "projectAssistants.networkAssistants",
+        "projectAssistants.networkAssistantsHint",
+        "projectAssistants.networkPeer",
+        "projectAssistants.networkSaving",
+        "projectAssistants.networkTitle",
         "projectAssistants.nextIdle",
         "projectAssistants.no",
         "projectAssistants.offline",
@@ -7474,7 +7479,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 204,
+      "count": 206,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7588,6 +7593,8 @@
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
+        "transparency.card.persistent-bot-network.how",
+        "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",
         "transparency.card.persistent-bot-outputs.title",
         "transparency.card.persistent-bot-review.summary",

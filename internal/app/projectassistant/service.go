@@ -29,12 +29,15 @@ type ReaderRepository interface {
 }
 
 type ServiceOptions struct {
-	LoginProfiles LoginProfiles
-	Extensions    ExtensionInventory
-	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
-	Configuration func(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
-	Repository    Repository
-	ReadViews     ReadViews
+	NetworkAccount      func(context.Context) (string, error)
+	NetworkSettings     NetworkSettingsStore
+	NetworkCapabilities func(context.Context, string, string) pa.NetworkCapabilities
+	LoginProfiles       LoginProfiles
+	Extensions          ExtensionInventory
+	ProjectMemory       func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	Configuration       func(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
+	Repository          Repository
+	ReadViews           ReadViews
 	// ReadViewByteLimit is supplied by trusted composition from the existing
 	// Cloud plaintext ceiling. It is never accepted from a wire request.
 	ReadViewByteLimit int

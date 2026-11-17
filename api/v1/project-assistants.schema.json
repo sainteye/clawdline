@@ -2054,7 +2054,8 @@
         "upload",
         "rename-artifact",
         "login-profile",
-        "connector-credential"
+        "connector-credential",
+        "network-settings"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -4260,6 +4261,179 @@
       "required": [
         "contract_version",
         "credential"
+      ]
+    },
+    "ProjectAssistantNetworkCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "setup_required",
+            "unavailable"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "ProjectAssistantNetworkCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "peer": {
+          "$ref": "#/$defs/ProjectAssistantNetworkCapability"
+        },
+        "assistants": {
+          "$ref": "#/$defs/ProjectAssistantNetworkCapability"
+        }
+      },
+      "required": [
+        "peer",
+        "assistants"
+      ]
+    },
+    "ProjectAssistantNetworkScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        }
+      },
+      "required": [
+        "account_id",
+        "key",
+        "project"
+      ]
+    },
+    "ProjectAssistantNetworkSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/ProjectAssistantNetworkScope"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "offered_to_network": {
+          "type": "boolean"
+        },
+        "reachable_by_assistants": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "revision",
+        "offered_to_network",
+        "reachable_by_assistants"
+      ]
+    },
+    "ProjectAssistantNetworkSettingsPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "offered_to_network": {
+          "$ref": "#/$defs/ProjectAssistantNetworkPreferenceValue"
+        },
+        "reachable_by_assistants": {
+          "$ref": "#/$defs/ProjectAssistantNetworkPreferenceValue"
+        }
+      },
+      "required": []
+    },
+    "ProjectAssistantNetworkSettingsView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/ProjectAssistantNetworkSettings"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/ProjectAssistantNetworkCapabilities"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "bot_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "settings",
+        "capabilities",
+        "fence",
+        "bot_version"
+      ]
+    },
+    "ProjectAssistantNetworkSettingsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "expected_revision": {
+          "type": "integer"
+        },
+        "patch": {
+          "$ref": "#/$defs/ProjectAssistantNetworkSettingsPatch"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "expected_version",
+        "expected_revision",
+        "patch"
+      ]
+    },
+    "ProjectAssistantNetworkSettingsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "network": {
+          "$ref": "#/$defs/ProjectAssistantNetworkSettingsView"
+        }
+      },
+      "required": [
+        "contract_version",
+        "network"
+      ]
+    },
+    "ProjectAssistantNetworkPreferenceValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
       ]
     }
   }

@@ -14,6 +14,7 @@ import (
 )
 
 type RuntimeOptions struct {
+	NetworkCheck    func(context.Context, pa.Turn) error
 	Repository      Repository
 	Memory          Memory
 	WorkBridge      WorkBridge
@@ -261,6 +262,9 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err := pa.ValidateInputSend(s.Message.Text, s.Message.Attachments, s.Message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
 	}
+	if s.Network != nil && (!s.Notice || s.Room != nil || len(s.Message.Attachments) > 0 || len(s.Message.UploadIDs) > 0 || s.Message.QuoteMessageID != "") {
+		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "network_submission")
+	}
 	if s.Room != nil {
 		if err := r.admitRoomSubmission(ctx, s); err != nil {
 			return pa.Receipt{}, err
@@ -384,6 +388,9 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		}
 		waiting++
 	}
+	if len(unknown) > 0 && s.Network != nil {
+		return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
+	}
 	if len(unknown) > 0 && waiting > 0 {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 	}
@@ -451,6 +458,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.Notice {
 		kind = pa.NoticeMessage
 		turn.Origin = pa.HostNoticeOrigin
+	}
+	if s.Network != nil {
+		turn.Origin = pa.NetworkRequestOrigin
+		captured := *s.Network
+		turn.Network = &captured
 	}
 	if s.Room != nil {
 		ticket := *s.Room
@@ -554,7 +566,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 		}
 	}
 	for _, t := range pending {
-		if t.Origin == pa.BotRequestOrigin || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+		if pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
 			state := pa.TurnCancelled
 			if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
 				state = pa.TurnUnknown
@@ -571,7 +583,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if t.Origin != pa.BotRequestOrigin && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
+				if !pa.IsPeerRequest(t.Origin) && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
 					resumable = append(resumable, t)
 				}
 			}
@@ -856,7 +868,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
-	if t.Origin == pa.BotRequestOrigin && (bot.Hidden || len(input.Files) > 0 || len(input.Attachments) > 0) {
+	if pa.IsPeerRequest(t.Origin) && (bot.Hidden || len(input.Files) > 0 || len(input.Attachments) > 0) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "collaboration_recipient")
 	}
@@ -1321,6 +1333,15 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 			return err
 		}
 	}
+	if state == pa.TurnSucceeded && t.Network != nil {
+		if r.o.NetworkCheck == nil {
+			state = pa.TurnUnknown
+			cause = runtimeFailure(pa.Unsupported, "network_gate")
+		} else if e := r.o.NetworkCheck(ctx, t); e != nil {
+			state = pa.TurnUnknown
+			cause = e
+		}
+	}
 	if state == pa.TurnSucceeded {
 		if err = pa.CheckFence(t.Fence, currentFence(bot, c)); err != nil {
 			return err
@@ -1511,7 +1532,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 		return runtimeFailure(pa.StaleVersion, "incoming_turn")
 	}
-	if t.Origin == pa.BotRequestOrigin && (e.Message != "" || e.Output != nil) {
+	if pa.IsPeerRequest(t.Origin) && (e.Message != "" || e.Output != nil) {
 		return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-event-"+t.ID+"-"+e.ID, e)
@@ -1915,7 +1936,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if t.Origin == pa.BotRequestOrigin || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if pa.IsPeerRequest(t.Origin) || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)

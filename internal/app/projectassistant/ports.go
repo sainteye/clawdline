@@ -12,6 +12,7 @@ import (
 )
 
 type Submission struct {
+	Network *pa.NetworkWork
 	// Room makes this a group member's room turn: Notice must be set and
 	// the ticket's member must be Command.Key. Only the room driver sets it.
 	Room       *pa.RoomTicket

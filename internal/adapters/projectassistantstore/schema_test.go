@@ -487,6 +487,10 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				delete(after, table)
 			}
 			delete(after, "project_assistant_cloud_hook_schema")
+			if rows, exists := after["project_assistant_network_settings"]; !exists || len(rows) != 0 {
+				t.Fatal("migration did not create an empty default-off network settings table")
+			}
+			delete(after, "project_assistant_network_settings")
 			for _, table := range []string{"project_assistant_connector_credentials", "project_assistant_connector_holds"} {
 				if len(after[table]) != 0 {
 					t.Fatal("migration manufactured connector credential authority", table)
@@ -501,6 +505,9 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 			}
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
+				if strings.HasPrefix(statement, "CREATE TABLE project_assistant_network_settings (") {
+					continue
+				}
 				if !strings.Contains(statement, "project_assistant_connector_") && !strings.Contains(statement, "project_assistant_login_") && !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") && !strings.Contains(statement, "project_assistant_routine_hooks") && !strings.Contains(statement, "project_assistant_routine_delivery") && !strings.Contains(statement, "project_assistant_cloud_hook") {
 					oldDDL = append(oldDDL, statement)
 				}

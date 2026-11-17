@@ -126,6 +126,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.login-secret":          genDecodeProjectAssistantsLoginSecret,
 	"project-assistants.memory":                genDecodeProjectAssistantsMemory,
 	"project-assistants.memory-view":           genDecodeProjectAssistantsMemoryView,
+	"project-assistants.network-settings":      genDecodeProjectAssistantsNetworkSettings,
+	"project-assistants.network-settings-save": genDecodeProjectAssistantsNetworkSettingsSave,
 	"project-assistants.observed":              genDecodeProjectAssistantsObserved,
 	"project-assistants.output":                genDecodeProjectAssistantsOutput,
 	"project-assistants.projects":              genDecodeProjectAssistantsProjects,
@@ -3366,6 +3368,69 @@ func genDecodeProjectAssistantsMemoryView(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "entry_id": genValue{from: "entry_id"}, "layer": genValue{from: "layer"}, "machine_id": genValue{from: "machine_id"}, "revision": genValue{from: "revision"}, "source_epoch": genValue{from: "source_epoch"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsNetworkSettings is the `project-assistants.network-settings` row's decode.
+func genDecodeProjectAssistantsNetworkSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "bot_id", "conversation_id", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/network-settings"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "machine_id": genValue{from: "machine_id"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsNetworkSettingsSave is the `project-assistants.network-settings-save` row's decode.
+func genDecodeProjectAssistantsNetworkSettingsSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "command", "expected_revision", "expected_version", "fence", "patch", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"network-settings"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("patch", genRule{kind: "object", properties: map[string]genRule{"offered_to_network": genRule{kind: "object", properties: map[string]genRule{"enabled": genRule{kind: "bool"}}, required: []string{"enabled"}, closed: true}, "reachable_by_assistants": genRule{kind: "object", properties: map[string]genRule{"enabled": genRule{kind: "bool"}}, required: []string{"enabled"}, closed: true}}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/network-settings"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "expected_revision": genValue{from: "expected_revision"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "patch": genValue{from: "patch"}})
 	return p, req, true
 }
 

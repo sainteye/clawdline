@@ -227,6 +227,8 @@ export const CARRIED = {
   "project-assistants.login-secret": "captured Bot source POST /v1/project-assistants/{bot_id}/login-secret",
   "project-assistants.memory": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/memory",
   "project-assistants.memory-view": "captured Bot source GET /v1/project-assistants/{bot_id}/memory-view",
+  "project-assistants.network-settings": "captured Bot source GET /v1/project-assistants/{bot_id}/network-settings",
+  "project-assistants.network-settings-save": "captured Bot source POST /v1/project-assistants/{bot_id}/network-settings",
   "project-assistants.observed": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/observed",
   "project-assistants.output": "captured Bot source GET /v1/project-assistants/{bot_id}/output",
   "project-assistants.projects": "captured Bot source GET /v1/project-assistant-targets",

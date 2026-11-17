@@ -223,7 +223,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions":
+					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions", "network-settings":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -231,7 +231,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -368,6 +368,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 				return nil, err
 			}
 		}
+	}
+	if route.action == "network-settings" {
+		return h.networkSettings(w, r, route)
 	}
 	if route.action == "login-profiles" || route.action == "login-profile" || route.action == "login-secret" || route.action == "extensions" {
 		return h.loginProfiles(w, r, route)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	network "github.com/sainteye/clawdline/internal/app/botnetwork"
+	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -198,4 +200,17 @@ type RoutineResult struct {
 	MaxTokens   int                `json:"max_tokens,omitempty"`
 	Definitions []pa.Routine       `json:"definitions,omitempty"`
 	ID          string             `json:"id,omitempty"`
+}
+
+// NetworkTools is optional and bound to the owning native execution.
+type NetworkTools interface {
+	NetworkBot(context.Context, NetworkToolRequest) (network.Response, error)
+}
+type NetworkToolRequest struct {
+	Kind          string           `json:"kind"`
+	RequestID     string           `json:"idempotency_key"`
+	CorrelationID string           `json:"correlation_id,omitempty"`
+	AuthorityID   string           `json:"authority_id"`
+	Target        wire.BotEndpoint `json:"target"`
+	Text          string           `json:"text,omitempty"`
 }
