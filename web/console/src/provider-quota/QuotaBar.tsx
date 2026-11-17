@@ -9,6 +9,7 @@ import * as L from "../legacy/bridge.js"
 import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
 import { setDockAvailable } from "../project-assistants/BotOrb.js"
+import { requestStatusRefresh } from "../status-refresh.js"
 import "./quota.css"
 
 function Icon({ id }: { id: string }) {
@@ -89,6 +90,11 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
     if (expanded && dialog.current && !dialog.current.open) dialog.current.showModal()
     if (!expanded && dialog.current?.open) dialog.current.close()
   }, [expanded])
+  const refresh = () => {
+    requestStatusRefresh()
+    // A slow quota read must not block entry recovery or start another read.
+    if (!polling.pending && !offline) polling.poke()
+  }
   const stale = (row: ProviderQuotaRow) => offline || !!polling.error || quotaStale(row, now)
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
   const readingState = offline ? "offline" : polling.error ? "failed" : polling.pending ? "loading" : rows.length ? "ready" : "empty"
@@ -118,7 +124,7 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
           aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
       </div>
       <button className="quota-refresh" type="button" title={nextWord("quotaRefresh")} aria-label={nextWord("quotaRefresh")}
-        disabled={polling.pending || offline} onClick={polling.poke}>↻</button>
+        onClick={refresh}>↻</button>
     </footer>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
       onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
@@ -142,7 +148,7 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
           {row.problem === "reauth_required" && <span> {nextWord("quotaRunCLI", { provider: row.label })}</span>}</p>}
       </section>)}
       <p className="quota-caption">{nextWord("quotaRefreshHint")}</p>
-      <button type="button" className="chip" disabled={polling.pending || offline} onClick={polling.poke}>{nextWord("quotaRefresh")}</button>
+      <button type="button" className="chip" disabled={polling.pending || offline} onClick={refresh}>{nextWord("quotaRefresh")}</button>
     </dialog>
   </>
 }

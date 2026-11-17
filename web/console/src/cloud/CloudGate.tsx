@@ -1,3 +1,4 @@
+import { onStatusRefresh } from "../status-refresh.js"
 import { cloudPluginSources } from "../view-plugins/sources.js"
 import { supportWord } from "../support/words.js"
 import { ProjectAssistantRegistry, capturedAssistantRelayFetch, cloudAssistantGrants, type AssistantWorkIntent } from "./project-assistants.js"
@@ -567,6 +568,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const line = useRef<RecoveringCloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
   const [clientEpoch, setClientEpoch] = useState(0)
+  const [assistantRefresh, setAssistantRefresh] = useState(0)
+  useEffect(() => onStatusRefresh(() => setAssistantRefresh(n => n + 1)),[])
   const assistantRegistry = useMemo(() => who?.account ? new ProjectAssistantRegistry(who.account,who.account) : null,[who?.account])
   const assistantRegistryRef = useRef(assistantRegistry)
   const [assistantWorkIntent,setAssistantWorkIntent] = useState<AssistantWorkIntent | null>(null)
@@ -583,7 +586,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         machines.find(machine => machine.id === id)?.operationAllowed]))
     assistantRegistry.sync(grants,grant => capturedAssistantRelayFetch(grant.machineID,() =>
       client.current?.account === account ? client.current : null,CARRY_TABLE.carried))
-  },[assistantRegistry,machines,clientEpoch,who?.device,forgotten])
+  },[assistantRegistry,machines,clientEpoch,who?.device,forgotten,assistantRefresh])
   const currentActionClient = useCallback(() => client.current, [])
   // A renewal replaces the client; the source moves its listeners to the new one.
   const clientChanges = useRef(new Set<() => void>())

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type * as W from "@clawdline/contract"
+import { onStatusRefresh } from "../status-refresh.js"
 import { Bots } from "../project-assistants/Bots.js"
 import { BotOrb } from "../project-assistants/BotOrb.js"
 import { canRead } from "../project-assistants/view-state.js"
@@ -40,6 +41,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   useEffect(() => {if (opened && typeof history.state?.paView === "string") ownedHistory.current=history.state.paView},[opened,entry])
   // The orb's count follows new replies while Bots is closed, so it can ring.
   const [badgeTick,setBadgeTick] = useState(0)
+  useEffect(() => onStatusRefresh(() => setBadgeTick(n => n + 1)),[])
   useEffect(() => {
     if (opened || sources.every(source=>source.canRoster?.()&&source.subscribeRoster)) return
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") setBadgeTick(n => n+1) }, BADGE_REFRESH_MS)
