@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13131,
+  "englishKeys": 13139,
   "counts": {
-    "negation": 3484,
+    "negation": 3486,
     "state": 2226,
     "permission": 803,
     "deletion": 310,
     "uncertainty": 536
   },
-  "unionCount": 5688,
+  "unionCount": 5690,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3086,6 +3086,8 @@
       "projectAssistants.networkSaveFailed",
       "projectAssistants.networkUnavailable",
       "projectAssistants.noCapabilities",
+      "projectAssistants.noInstructions",
+      "projectAssistants.permissionAnswerFailed",
       "projectAssistants.reactionsUnavailable",
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
@@ -12362,11 +12364,13 @@
     "projectAssistants.networkSetup",
     "projectAssistants.networkUnavailable",
     "projectAssistants.noCapabilities",
+    "projectAssistants.noInstructions",
     "projectAssistants.observed",
     "projectAssistants.openWork",
     "projectAssistants.outputFailed",
     "projectAssistants.pending",
     "projectAssistants.permission",
+    "projectAssistants.permissionAnswerFailed",
     "projectAssistants.permissionDelete",
     "projectAssistants.pictureUnavailable",
     "projectAssistants.policy",
