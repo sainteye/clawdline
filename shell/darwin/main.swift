@@ -241,6 +241,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// A page to go to once the console has loaded — "Settings…" pressed while
     /// the daemon was still coming up.
     private var pendingPage: String?
+    /// A session to open once the console has loaded — an island session clicked
+    /// while the daemon was still coming up.
+    private var pendingSession: String?
 
     /// The settings page's key recorder, while it is listening.
     private var recorder: Any?
@@ -492,7 +495,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             CloudPairLocal(trustedOrigin: home), contentWorld: .page, name: CloudPairLocal.name)
         // The notch island listens to the same stream and opens this window
         // when its character is pressed (NotchIsland.swift).
-        NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
+        NotchIsland.shared.attach(
+            to: content,
+            open: { [weak self] in self?.showHome() },
+            selectSession: { [weak self] id in self?.goToSession(id) }
+        )
         config.userContentController = content
         web = FileDropWebView(frame: .zero, configuration: config, trustedOrigin: home)
         web.navigationDelegate = self
@@ -1219,7 +1226,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         guard webView.url?.host == home.host else { return }
         failedLoads = 0
         pageLoaded = true
-        if let page = pendingPage {
+        if let session = pendingSession {
+            pendingSession = nil
+            goToSession(session)
+        } else if let page = pendingPage {
             pendingPage = nil
             goToPage(page)
         }
@@ -1312,6 +1322,29 @@ extension Shell {
         """
         web.evaluateJavaScript(script) { _, error in
             if let error { shellLog("page: could not go to \(name): \(error.localizedDescription)") }
+        }
+    }
+
+    /// Ask the console to open a session the way its own address does. Before the
+    /// console has loaded, the request waits for it.
+    func goToSession(_ id: String) {
+        showHome()
+        guard pageLoaded else {
+            pendingSession = id
+            return
+        }
+        let allowed = CharacterSet(charactersIn: "-_.~").union(.alphanumerics)
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
+        let fragment = "#session=" + escaped
+        let script = """
+        (function () {
+          try { history.replaceState(history.state, '', \(jsString(fragment))); }
+          catch (e) { location.hash = \(jsString(fragment)); return; }
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        })();
+        """
+        web.evaluateJavaScript(script) { _, error in
+            if let error { shellLog("page: could not open session \(id): \(error.localizedDescription)") }
         }
     }
 

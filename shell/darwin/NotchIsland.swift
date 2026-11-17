@@ -176,6 +176,8 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
     /// Opening the console: what the character is pressed for. Handed in by the
     /// shell when the island is attached, so nothing here reaches for a global.
     private var openConsole: (() -> Void)?
+    /// Opening a specific session in the console.
+    private var openSession: ((String) -> Void)?
 
     /// The pointer can walk to another display without a single session
     /// changing, and the island would stay on the screen you walked away from.
@@ -195,8 +197,9 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
     /// page already knows would double that work. The script wraps whatever
     /// `window.EventSource` is by then — the shell's fleet bridge wraps it
     /// first — and both wrappers watch the one object the page asked for.
-    func attach(to content: WKUserContentController, open: @escaping () -> Void) {
+    func attach(to content: WKUserContentController, open: @escaping () -> Void, selectSession: ((String) -> Void)? = nil) {
         openConsole = open
+        openSession = selectSession
         content.addUserScript(WKUserScript(source: Self.bridgeScript,
                                            injectionTime: .atDocumentStart,
                                            forMainFrameOnly: true))
@@ -668,6 +671,7 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
             return
         }
         focus(wanted)
+        openSession?(wanted.id)
     }
 
     /// Every session the current shape is speaking for, not just the one it had
@@ -761,6 +765,7 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
         guard let id = sender.representedObject as? String,
               let session = rows.first(where: { $0.id == id }) else { return }
         focus(session)
+        openSession?(session.id)
     }
 }
 
