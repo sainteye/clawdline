@@ -10,13 +10,15 @@ export const projectKey = (machineID: string, projectID: string) => JSON.stringi
  * recent Bot, and Bots inside it keep the order the roster gave them, so the
  * newest activity still reads first.
  */
-export function groupByProject(items: readonly ProjectAssistantBotSummary[]): RosterGroup[] {
+export function groupByProject(items: readonly ProjectAssistantBotSummary[], pinnedKeys: readonly string[]): RosterGroup[] {
   const groups = new Map<string, RosterGroup>()
   for (const item of items) {
-    const machineID = item.bot.key.machine_id, projectID = item.bot.project.project_id, key = projectKey(machineID, projectID)
+    const isPinned = pinnedKeys.includes(botIdentity(item.bot.key))
+    const machineID = item.bot.key.machine_id, projectID = isPinned ? "pinned" : item.bot.project.project_id, key = projectKey(machineID, projectID)
     let group = groups.get(key)
     if (!group) groups.set(key, group = { key, machineID, projectID, items: [] })
     group.items.push(item)
   }
-  return [...groups.values()]
+  // 確保 pinned 組永遠排在最前面
+  return [...groups.values()].sort((a, b) => a.projectID === "pinned" ? -1 : 1)
 }
