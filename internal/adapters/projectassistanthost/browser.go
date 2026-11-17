@@ -48,8 +48,11 @@ func browserScope(binding pa.ExecutionBinding, turn pa.Turn) error {
 	if binding.SessionSlot != "" {
 		return failure(pa.ScopeDenied, "browser_session_slot")
 	}
+	if turn.Room != nil {
+		return failure(pa.ScopeDenied, "browser_room")
+	}
 	switch turn.Origin {
-	case "", pa.UserOrigin:
+	case "", pa.UserOrigin, pa.HostNoticeOrigin:
 		return nil
 	}
 	return failure(pa.ScopeDenied, "browser_turn_origin")

@@ -301,10 +301,16 @@ func TestBrowserToolsRefuseRoutineSlotsAndBotTurns(t *testing.T) {
 	if pa.Code(browserScope(pa.ExecutionBinding{SessionSlot: "routine-1"}, pa.Turn{})) != pa.ScopeDenied {
 		t.Fatal("a routine slot borrowed the main lane's browser")
 	}
-	for _, origin := range []pa.TurnOrigin{pa.BotRequestOrigin, pa.BotReplyOrigin, pa.HostNoticeOrigin} {
+	for _, origin := range []pa.TurnOrigin{pa.BotRequestOrigin, pa.BotReplyOrigin} {
 		if pa.Code(browserScope(pa.ExecutionBinding{}, pa.Turn{Origin: origin})) != pa.ScopeDenied {
 			t.Fatalf("%s turn reached the browser", origin)
 		}
+	}
+	if pa.Code(browserScope(pa.ExecutionBinding{}, pa.Turn{Origin: pa.HostNoticeOrigin, Room: &pa.RoomTicket{}})) != pa.ScopeDenied {
+		t.Fatal("a room host notice reached the browser")
+	}
+	if browserScope(pa.ExecutionBinding{}, pa.Turn{Origin: pa.HostNoticeOrigin}) != nil {
+		t.Fatal("the main lane host notice was refused")
 	}
 	if browserScope(pa.ExecutionBinding{}, pa.Turn{Origin: pa.UserOrigin}) != nil {
 		t.Fatal("the person's own turn was refused")
