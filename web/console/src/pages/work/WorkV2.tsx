@@ -1635,9 +1635,9 @@ function WorkReferenceImage({ item, image, busy, run }: {
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
 }) {
-  // The card draws the small copy; the red pen and the new tab get the
+  // The card draws the small copy; the red pen and the shared viewer get the
   // original, read when they are opened (`useReferenceImage`).
-  const { source, failed, full, fullFailed, opening, loadFull, openFull } = useReferenceImage(image.id)
+  const { source, failed, full, fullFailed, opening, loadFull, openFull } = useReferenceImage(image.id, image.title)
   const [marking, setMarking] = useState(false)
   const mark = () => { void loadFull().then(() => setMarking(true), () => {}) }
   const editable = !item.closed_at
@@ -1670,9 +1670,10 @@ function WorkReferenceImage({ item, image, busy, run }: {
         title={catalogWord("inline", "cf3c6f547bd1")} onClick={mark}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
       </button>
-      : <a href={full || source} target="_blank" rel="noreferrer" aria-label={catalogFormat("template", "37ba92bd09dc", [image.title])} onClick={openFull}>
+      : <button className="work-reference-open work-reference-preview" type="button" disabled={opening} aria-busy={opening}
+        aria-label={catalogFormat("template", "37ba92bd09dc", [image.title])} onClick={openFull}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
-      </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7ae221f38b02")}</div>}
+      </button> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7ae221f38b02")}</div>}
     <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
     {marking && full && <PictureMarkup picture={{ id: image.id, url: full }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
     {!item.closed_at && <button className="work-reference-remove" type="button" aria-label={catalogFormat("template", "da1cebd6b045", [image.title])} disabled={!!busy}

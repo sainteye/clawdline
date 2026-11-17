@@ -106,6 +106,7 @@ function describeArtifactFailure(code: string, artifact: ArtifactRef | undefined
 }
 
 let lightbox: Lightbox | null = null
+let lightboxRevision = 0
 
 /** A picture's bytes as a URL the tile can show, and the way to let them go. */
 export type PictureSource = (artifact: ArtifactRef, session: string, size?: "thumb" | "full") => Promise<{ url: string; release?: () => void }>
@@ -153,6 +154,19 @@ function imageLightbox(): Lightbox {
   title.textContent = T.webImagePreview
   close.textContent = T.webImageClose
   const preview = createImageLightbox(dialog, image, close, document)
+  // A Board detail has its own focus trap below this shared viewer. Keep its
+  // Tab handler from taking focus away from the image controls.
+  dialog.addEventListener("keydown", event => {
+    if (event.key !== "Tab") return
+    event.stopPropagation()
+    const controls = [...dialog!.querySelectorAll<HTMLButtonElement>("button:not([disabled])")]
+      .filter(button => button.getClientRects().length > 0)
+    const first = controls[0], last = controls.at(-1)
+    if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+      event.preventDefault()
+      ;(event.shiftKey ? last : first)?.focus()
+    }
+  })
   const steps = attachLightboxSteps(dialog, image, {
     previous: nextWord("imagePreviewPrevious"),
     next: nextWord("imagePreviewNext"),
@@ -162,6 +176,7 @@ function imageLightbox(): Lightbox {
   })
   lightbox = {
     open: (trigger, src, failed, name = "clawdline-image.png") => {
+      lightboxRevision++
       preview.open(trigger, src, failed)
       steps.opened(trigger, name)
     },
@@ -175,9 +190,15 @@ export function openImagePreview(trigger: Element, src: string, name: string, on
   const preview = imageLightbox()
   const dialog = document.getElementById("image-lightbox")!
   preview.open(trigger, src, undefined, name)
-  const observer = new MutationObserver(() => { if (dialog.hidden) onClose() })
+  const revision = lightboxRevision
+  const observer = new MutationObserver(() => {
+    if (dialog.hidden) { observer.disconnect(); onClose() }
+  })
   observer.observe(dialog, { attributes: true, attributeFilter: ["hidden"] })
-  return () => { observer.disconnect(); preview.close() }
+  return () => {
+    observer.disconnect()
+    if (revision === lightboxRevision) preview.close()
+  }
 }
 
 /** `hydrateArtifactImages`: give each fresh tile its state, its listeners and its source. */

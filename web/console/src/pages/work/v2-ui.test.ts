@@ -43,7 +43,6 @@ test("work cards add, show, open, and remove durable reference images", () => {
   assert.match(source, pattern`\{${wordCall("＋ 參考圖片")}\}`)
   assert.match(source, /accept="image\/\*,\.heic,\.heif"/)
   assert.match(source, /prepareReferencePicture/)
-  assert.match(source, /useReferenceImage\(image\.id\)/)
   assert.match(source, /deleteWorkV2Image/)
   assert.match(styles, /\.work-reference-images/)
 })
@@ -262,10 +261,8 @@ test("voice Board drafts are prefilled and still require the create confirmation
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {
   const hook = readFileSync(new URL("./useReferenceImage.ts", import.meta.url), "utf8")
   assert.match(source, /function WorkReferenceImage/)
-  // Board cards and to-do rows both read through the one hook, so both share
-  // the page's Cloud limit (`reference-images.ts`).
-  assert.match(source, /useReferenceImage\(image\.id\)/)
-  assert.match(todos, /useReferenceImage\(image\.id\)/)
+  // Reference opening is exercised through the rendered Board and to-do
+  // controls in list-gestures.e2e.ts, rather than pinning hook arguments here.
   // The card draws the small copy; the red pen is given the original.
   assert.match(hook, /referenceImages\.load\(id, "thumb"/)
   assert.match(hook, /referenceImages\.load\(id, "full"/)
