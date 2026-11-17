@@ -1238,7 +1238,7 @@ before(async () => {
   origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
   profile = mkdtempSync(join(tmpdir(), "clawdline-gestures-"))
   browserProcess = spawn(chrome, [
-    "--headless=new",
+    "--headless=new", "--disable-features=OmniboxEverywhere",
     "--remote-debugging-port=0",
     "--user-data-dir=" + profile,
     "--no-first-run",

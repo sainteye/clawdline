@@ -110,6 +110,7 @@ tools/check-shell-expansions.sh         # no $name runs into a non-ASCII charact
 tools/check-private.sh                  # nothing of the person's is in a public repo
 node tools/check-console-tests.mjs      # every console test file is run by npm test or npm run check
 node tools/check-mirror-tests.mjs       # no console test asserts on the shape of the code
+node tools/check-browser-switches.mjs   # every Chromium launch disables OmniboxEverywhere
 tools/heavy.sh node --test tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
 tools/heavy.sh bash tools/test-check-modes.sh # entrypoint scope, fallback and failure propagation
 tools/heavy.sh bash tools/release/supply-chain.test.sh # release evidence fails on what it exists to catch

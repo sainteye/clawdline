@@ -277,7 +277,7 @@ before(async () => {
   origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
   profile = mkdtempSync(join(tmpdir(), "clawdline-antigravity-readiness-"))
   browserProcess = spawn(chrome, [
-    "--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
+    "--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--user-data-dir=" + profile,
     "--no-first-run", "--no-default-browser-check", "about:blank",
   ])
   const endpoint = await new Promise<string>((ok, fail) => {

@@ -90,7 +90,7 @@ before(async () => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
   origin = "http://127.0.0.1:" + server.address().port
   profile = mkdtempSync(join(tmpdir(), "clawdline-changelog-browser-"))
-  chrome = spawn(process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
+  chrome = spawn(process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", ["--headless=new", "--disable-features=OmniboxEverywhere", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
   const address = await new Promise((resolve, reject) => {
     let log = ""
     const timer = setTimeout(() => reject(new Error("Chrome did not start: " + log)), 10000)

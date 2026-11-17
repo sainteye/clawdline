@@ -38,6 +38,9 @@ func (s *Server) StartBrowserUpkeep(ctx context.Context) {
 	} else if changed {
 		log.Printf("browser: the stable extension folder now holds %s", browserlaunch.EmbeddedVersion())
 	}
+	if reaped := browserlaunch.ReapOrphanedTestBrowsers(); reaped > 0 {
+		log.Printf("browser: initial upkeep reaped %d orphaned test browser(s)", reaped)
+	}
 	go func() {
 		tick := time.NewTicker(browserUpkeepTick)
 		defer tick.Stop()
@@ -46,6 +49,7 @@ func (s *Server) StartBrowserUpkeep(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
+				browserlaunch.ReapOrphanedTestBrowsers()
 				s.relaunchStaleTestChrome(time.Now())
 			}
 		}
