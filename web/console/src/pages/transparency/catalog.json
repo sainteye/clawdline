@@ -3747,6 +3747,14 @@
         {
           "path": "web/console/src/project-assistants/ArtifactRename.tsx",
           "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/OutputLibrary.tsx",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/library-items.ts",
+          "line": 1
         }
       ],
       "original": [
@@ -4836,11 +4844,13 @@
     "web/console/src/project-assistants/ExchangePanel.tsx": "b8d736bc5a4213aac0cd9e133919d114be76b086da76d6592c3f502fa6d1fabe",
     "web/console/src/project-assistants/NetworkSettings.tsx": "9bed4cfacee38582d10746410ea38781414a6da9409f343a1779fe1d592eda97",
     "web/console/src/project-assistants/OutputCard.tsx": "042da49f7fc9b35758ff541dc45b4e427e9f76732390a7f6a4f12102deb52670",
-    "web/console/src/project-assistants/OutputViewer.tsx": "9574aef07b7df14997ed92457397b22a64db2ec87c8c2d74af9ac57c4ad2fcc6",
+    "web/console/src/project-assistants/OutputLibrary.tsx": "a5b9394d57c407abc1f3f7e7883b09a3cd9e307aace72b8b308bd475b6ca7a74",
+    "web/console/src/project-assistants/OutputViewer.tsx": "3c838fc6e170997ada6da163c840b04b489ac37c6c0147a4afbaefc022c82874",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
     "web/console/src/project-assistants/Routines.tsx": "630fafe3bd3c26a25917d1796712dea1aeea042a90755b8c753e6f4f36914a94",
     "web/console/src/project-assistants/exchanges.ts": "96a7166c90bf406b2e7bb9e122a28a49055a42071d716366a6a3a05d38a3258f",
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
+    "web/console/src/project-assistants/library-items.ts": "00f51891305a9f9a0c892acaa9e6f07a90a8a22929b5ba7de72fa203b982ac9e",
     "web/console/src/project-assistants/outputs.ts": "52cab6393ead99002f32d29b6df1e0fc43f61eac1c18dc5e8cf05732c2be664f",
     "web/console/src/project-assistants/routine-events.ts": "a85129e50ef6cf234e41ec9d283c5b497c25ede4b8d7c59f3fb70c2dff86b3aa",
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",

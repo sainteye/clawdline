@@ -57,6 +57,7 @@ const server=createServer(async(req,res)=>{try{
   if(route.includes("/output?")&&fault){const kind=fault;fault="";if(kind==="fail"){record.status=503;res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"snapshot"}}));return}await new Promise(resolve=>setTimeout(resolve,1200))}
   const answer=await fetch(upstream+route,{method,body:bodyToSend,headers:headersToSend}),body=Buffer.from(await answer.arrayBuffer()),mediaType=answer.headers.get("content-type")??"application/json";record.status=answer.status;record.mediaType=mediaType;record.bytes=body.length
   if(unknownRename&&answer.ok){res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",error:{code:"pa_outcome_unknown",field:"lost_ack"}}));return}
+  if(answer.ok&&route.includes("/output?")){const value=JSON.parse(body);record.output=value.output}
   // The production Cloud attachment operation wraps local image bytes in JSON.
   // Local/read-only HTTP retains the original image response.
   if(relay&&answer.ok&&route.includes("/attachments/")){
@@ -120,6 +121,11 @@ try {
     await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
     await until('!!document.querySelector(".pa-artifact-frame")')
     if(mode!=="read") {
+      const artifactBefore=requests.findLast(row=>row.output?.artifact_id)?.output
+      assert.ok(artifactBefore?.artifact_id,"capture the actual opened artifact identity")
+      const cards=()=>run('[...document.querySelectorAll(".pa-output-card strong")].map(row=>row.textContent)')
+      const cardBefore=await cards()
+      assert.ok(cardBefore.includes("Interactive report"),JSON.stringify(cardBefore))
       await click(zh?"重新命名作品":"Rename artifact")
       await run(`(()=>{const field=document.querySelector(".pa-artifact-rename input");const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(field,${JSON.stringify(zh?"手機改名作品":"Renamed library artifact")});field.dispatchEvent(new Event("input",{bubbles:true}))})()`)
       const unknown=mode==="local"&&!zh,renameStart=requests.filter(r=>r.path.endsWith("/rename")).length
@@ -135,9 +141,26 @@ try {
         await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
       }
       await until('document.querySelector(".pa-output-overlay h3")?.textContent==='+JSON.stringify(zh?"手機改名作品":"Renamed library artifact"))
+      await until('[...document.querySelectorAll(".pa-artifact-rename button")].some(button=>button.textContent==='+JSON.stringify(zh?"重新命名作品":"Rename artifact")+')&&!document.querySelector(".pa-artifact-rename [role=alert]")')
       if(unknown){const commands=requests.filter(r=>r.path.endsWith("/rename")).slice(renameStart);assert.equal(commands.length,2);assert.equal(commands[0].idempotency,commands[1].idempotency,"explicit retry keeps original intent key")}
 
-      assert.ok(await run('document.querySelector(".pa-library").textContent.includes('+JSON.stringify(zh?"手機改名作品":"Renamed library artifact")+')'))
+      const renamed=zh?"手機改名作品":"Renamed library artifact"
+      const proof={artifactBefore,cardBefore,renamed}
+      try{await until('[...document.querySelectorAll(".pa-output-card strong")].some(row=>row.textContent==='+JSON.stringify(renamed)+')')}
+      finally{proof.cardAfter=await cards();proof.artifactAfter=requests.findLast(row=>row.output?.artifact_id)?.output;await writeFile(path.join(artifacts,`rename-card-${mode}-${lang}-${width}.json`),JSON.stringify(proof,null,2))}
+      assert.equal(proof.artifactAfter.artifact_id,artifactBefore.artifact_id)
+      await run('document.querySelector(".pa-output-overlay header button").click()')
+      assert.ok((await cards()).includes(renamed),"closing the viewer lost the renamed old-history card")
+      await until('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent==='+JSON.stringify(renamed))
+      proof.focusAfterClose=await run('document.activeElement.closest(".pa-output-card").querySelector("strong").textContent')
+      await run('[...document.querySelectorAll(".pa-output-card button")].find(row=>row.querySelector("strong")?.textContent==='+JSON.stringify(renamed)+').click()')
+      await until('document.querySelector(".pa-output-overlay h3")?.textContent==='+JSON.stringify(renamed))
+      await until('!!document.querySelector(".pa-artifact-frame")')
+      const reopened=requests.findLast(row=>row.output?.artifact_id)?.output
+      assert.equal(reopened.artifact_id,artifactBefore.artifact_id)
+      assert.equal(reopened.sha256,artifactBefore.sha256,"renaming changed the stored artifact bytes")
+      proof.cardAfterReopen=await cards();proof.reopened=reopened
+      await writeFile(path.join(artifacts,`rename-card-${mode}-${lang}-${width}.json`),JSON.stringify(proof,null,2))
       const {data:renameShot}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`rename-${mode}-${lang}-${width}.png`),Buffer.from(renameShot,"base64"))
       await click(zh?"重新命名作品":"Rename artifact")
       await run('(()=>{const field=document.querySelector(".pa-artifact-rename input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,"Interactive report");field.dispatchEvent(new Event("input",{bubbles:true}))})()')

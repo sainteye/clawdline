@@ -780,3 +780,15 @@ injected instructions. Both native source orientations have focused local
 evidence; private Cloud wiring and destination acceptance remain pending.
 
 The owned Bot main-chat reaction tool and its current unsupported room boundary are documented in [Message reactions](project-assistants-reactions.md). It accepts only an emoji; Host captures the actual running actor and answered message.
+
+## Older library artifact titles
+
+The English and Taiwan Traditional Chinese output explanations still describe
+metadata-only renaming, complete content verification, retained unknown intents
+and unchanged Bot instructions. A verified artifact read now refreshes the
+matching older library card's logical title within its Bot, Project and
+conversation scope. Delayed history cannot overwrite an observed newer title;
+publication identity, bytes and dates remain intact. This adds no model call,
+permission or automatic command replay. Closing the viewer returns focus to
+the originating card. The source inventory includes the library projection
+and title merge; the public website snapshot must follow the delivered tree.

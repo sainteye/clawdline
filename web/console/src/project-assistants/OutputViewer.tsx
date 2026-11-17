@@ -15,7 +15,7 @@ export function libraryItemName(item:LibraryItem):string {
 }
 
 /** Shared transfer/view UI for chat outputs and every library item. */
-export function OutputViewer({item,source,w,onClose,onRenamed}:{item:LibraryItem;source:SourceClient;w:Words;onClose:()=>void;onRenamed?:()=>void}) {
+export function OutputViewer({item,source,w,onClose,onRenamed,onResolved}:{item:LibraryItem;source:SourceClient;w:Words;onClose:()=>void;onRenamed?:()=>void;onResolved?:(output:W.ProjectAssistantOutput)=>void}) {
   const [value,setValue]=useState<{blob:Blob;name:string;html:string;links:string[];pictureURL:string;output?:W.ProjectAssistantOutput}|null>(null),[error,setError]=useState(""),[progress,setProgress]=useState(0),[attempt,setAttempt]=useState(0),[cancelled,setCancelled]=useState(false)
   const close=useRef<HTMLButtonElement>(null),active=useRef<AbortController|null>(null),tabURLs=useRef<string[]>([])
   const name=libraryItemName(item),artifact=item.kind==="output"&&!!item.message.output!.artifact_id
@@ -39,13 +39,14 @@ export function OutputViewer({item,source,w,onClose,onRenamed}:{item:LibraryItem
         loadedName=attachment.id+"."+({"image/png":"png","image/jpeg":"jpg","image/gif":"gif","image/webp":"webp"}[blob.type]??"bin");progress(blob.size,blob.size)
       }
       if(control.signal.aborted||source.current?.()===false)return
+      if(output)onResolved?.(output)
       const doc=new DOMParser().parseFromString(html,"text/html"),links=[...new Set([...doc.querySelectorAll("a[href]")].map(a=>a.getAttribute("href")!).filter(h=>/^(https?:\/\/|mailto:)/i.test(h)))]
       if(attachment)pictureURL=URL.createObjectURL(blob)
       setValue({blob,name:loadedName,html,links,pictureURL,output})
     })().catch(e=>{if(!control.signal.aborted)setError(errorCode(e))})
     const timer=setInterval(()=>{if(source.current?.()===false){control.abort();if(pictureURL)URL.revokeObjectURL(pictureURL);tabURLs.current.forEach(url=>URL.revokeObjectURL(url));setValue(null);setError("pa_revoked")}},3000)
     return()=>{control.abort();clearInterval(timer);if(pictureURL)URL.revokeObjectURL(pictureURL)}
-  },[source,kind,message,file,attachment,attempt])
+  },[source,kind,message,file,attachment,attempt,onResolved])
   const save=()=>{if(!value||source.current?.()===false)return;const url=URL.createObjectURL(value.blob),a=document.createElement("a");a.href=url;a.download=value.name.replace(/[\/\\]/g,"_")+(artifact?".html":"");a.click();setTimeout(()=>URL.revokeObjectURL(url),0)}
   const openBrowser=()=>{
     if(!value||!artifact||source.current?.()===false)return
@@ -57,5 +58,5 @@ export function OutputViewer({item,source,w,onClose,onRenamed}:{item:LibraryItem
     const url=URL.createObjectURL(new Blob(["<!doctype html>"+shell.documentElement.outerHTML],{type:"text/html"}));tabURLs.current.push(url)
     const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener noreferrer";a.click()
   }
-  return <div className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={name}><header><h3>{value?.name??name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button>{value?.output&&artifact&&<ArtifactRename source={source} message={message} output={value.output} w={w} onRenamed={()=>{setAttempt(n=>n+1);onRenamed?.()}}/>}</header>{!value&&!error&&!cancelled&&<><p role="status">{w.openingOutput} {progress}%</p><button type="button" onClick={()=>{active.current?.abort();setCancelled(true)}}>{tr("libraryCancel")}</button></>}{cancelled&&<p role="status">{tr("libraryCancelled")} <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{error&&<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{value&&<><div className="pa-library-actions">{artifact&&<button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.refresh}</button>}<button type="button" onClick={save}>{artifact?w.saveHTML:w.downloadFile}</button>{artifact&&<button type="button" onClick={openBrowser}>{tr("libraryOpenBrowser")}</button>}</div>{artifact&&<iframe className="pa-artifact-frame" title={value.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={artifactFrame(value.html)}/>} {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>}</div>
+  return <div className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={value?.name??name}><header><h3>{value?.name??name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button>{value?.output&&artifact&&<ArtifactRename source={source} message={message} output={value.output} w={w} onRenamed={()=>{setAttempt(n=>n+1);onRenamed?.()}}/>}</header>{!value&&!error&&!cancelled&&<><p role="status">{w.openingOutput} {progress}%</p><button type="button" onClick={()=>{active.current?.abort();setCancelled(true)}}>{tr("libraryCancel")}</button></>}{cancelled&&<p role="status">{tr("libraryCancelled")} <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{error&&<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{value&&<><div className="pa-library-actions">{artifact&&<button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.refresh}</button>}<button type="button" onClick={save}>{artifact?w.saveHTML:w.downloadFile}</button>{artifact&&<button type="button" onClick={openBrowser}>{tr("libraryOpenBrowser")}</button>}</div>{artifact&&<iframe className="pa-artifact-frame" title={value.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={artifactFrame(value.html)}/>} {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>}</div>
 }
