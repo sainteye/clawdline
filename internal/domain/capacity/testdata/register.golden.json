@@ -1834,6 +1834,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.group_preview_avatars",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotGroupPreviewAvatars"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.group_replies",
     "Class": "buffer",
     "Unit": "rows",

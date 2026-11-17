@@ -446,6 +446,10 @@
     "Note": true
   },
   {
+    "Name": "bots.group_preview_avatars",
+    "Err": true
+  },
+  {
     "Name": "bots.group_replies",
     "Known": true,
     "Note": true

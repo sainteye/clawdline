@@ -160,6 +160,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsRosterWakeups:     unobserved,
 		capacity.BotsRosterLifetime:    pure,
 		capacity.BotsRosterRecheck:     pure,
+		capacity.BotsGroupPreviewAvatars: func() capacity.Reading {
+			return capacity.Unmeasured("each browser composes its group avatar preview; the source does not observe the rendered member count")
+		},
 		capacity.BotsRosterClientRows: func() capacity.Reading {
 			return capacity.Unmeasured("each browser owns its retained Bot rows and removal revisions; the source does not observe client occupancy")
 		},

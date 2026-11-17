@@ -13207,5 +13207,12 @@
   "capacityRow.bots.cloud_lease_seconds.what": "Shows seconds remaining in the last confirmed Bot source capability lease. A lease can extend at most one minute into the future.",
   "capacityRow.bots.cloud_lease_seconds.full": "The maximum duration is normal for a fresh lease. Once it expires, it grants no source readiness or execution authority.",
   "capacityRow.bots.cloud_refresh_seconds.what": "Bounds the wait before rechecking Bot capability metadata after a failed refresh. It does not schedule another native effect.",
-  "capacityRow.bots.cloud_refresh_seconds.full": "At this delay the source waits before another metadata check. Ambiguous native work remains retained and is never automatically resent."
+  "capacityRow.bots.cloud_refresh_seconds.full": "At this delay the source waits before another metadata check. Ambiguous native work remains retained and is never automatically resent.",
+  "projectAssistants.rosterPinGroup": "Pin group",
+  "projectAssistants.rosterUnpinGroup": "Unpin group",
+  "projectAssistants.rosterOptions": "List options",
+  "projectAssistants.rosterSort": "Reorder conversations",
+  "projectAssistants.rosterSortDone": "Done",
+  "capacityRow.bots.group_preview_avatars.what": "Member avatars shown in a group conversation’s list preview.",
+  "capacityRow.bots.group_preview_avatars.full": "Additional members appear as a count. Open the room to see every member."
 }
