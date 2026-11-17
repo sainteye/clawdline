@@ -1,13 +1,21 @@
 import {test} from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node executes source extensions.
-import {performRoutineHook,routineScopeIdentity} from "./routine-hook-intent.ts"
+import {performRoutineHook,routineScopeIdentity,validRoutineHookAnswer} from "./routine-hook-intent.ts"
 // @ts-expect-error -- Node executes source extensions.
 import {readRoutineIntent} from "./routine-intent.ts"
 const key={machine_id:"synthetic",bot_id:"bot"},project={machine_id:"synthetic",project_id:"project",canonical_id:"canonical",kind:"repository" as const}
 const scope={key,project,conversation_id:"chat"}
 const request={command:{key,operation:"edit" as const,idempotency_key:"original-rotation",content_hash:""},fence:{...scope,binding_id:"original-binding",generation:2},id:"routine",expected_revision:3,rotate:true}
 const answer={contract_version:"project-assistants.v1",url:"/hooks/routines/routine",key:"a".repeat(64)}
+
+test("optional public addresses retain old local responses and require exact HTTPS source scope",()=>{
+  assert.equal(validRoutineHookAnswer(answer,"routine","synthetic"),true)
+  const public_url="https://api.example.test/v1/hooks/synthetic/routine"
+  assert.equal(validRoutineHookAnswer({...answer,public_url},"routine","synthetic"),true)
+  for(const value of ["",public_url.replace("https:","http:"),public_url+"?key="+answer.key,public_url+"#secret",public_url.replace("synthetic","other"),public_url.replace("routine","other"),public_url.replace("api.example.test","secret@api.example.test"),"javascript:alert(1)",public_url.replace("/v1/","/v1/../v1/")])assert.equal(validRoutineHookAnswer({...answer,public_url:value},"routine","synthetic"),false)
+  assert.equal(validRoutineHookAnswer({...answer,public_url},"routine"),false)
+})
 
 test("lost rotation response and reload expose only the exact explicit replay, without storing secrets",async()=>{
   let bytes="",calls=0

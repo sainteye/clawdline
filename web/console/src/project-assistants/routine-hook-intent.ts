@@ -5,8 +5,14 @@ export function routineScopeIdentity(source:{machineID:string;intentAccount?:str
   return JSON.stringify([source.intentAccount??"",source.machineID,source.authorizationRevision,bot.key.machine_id,bot.key.bot_id,bot.project.machine_id,bot.project.project_id,bot.project.canonical_id,bot.project.kind,bot.conversation_id])
 }
 
-export function validRoutineHookAnswer(answer:W.ProjectAssistantRoutineHookResponse,id:string):boolean {
-  return answer?.contract_version==="project-assistants.v1"&&answer.url==="/hooks/routines/"+encodeURIComponent(id)&&/^[0-9a-f]{64}$/.test(answer.key)
+export function validRoutineHookAnswer(answer:W.ProjectAssistantRoutineHookResponse,id:string,machine?:string):boolean {
+  if(answer?.contract_version!=="project-assistants.v1"||answer.url!=="/hooks/routines/"+encodeURIComponent(id)||!/^[0-9a-f]{64}$/.test(answer.key))return false
+  if(answer.public_url===undefined)return true
+  if(typeof answer.public_url!=="string"||!machine)return false
+  try {
+    const url=new URL(answer.public_url)
+    return url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&url.href===answer.public_url&&url.pathname==="/v1/hooks/"+encodeURIComponent(machine)+"/"+encodeURIComponent(id)
+  } catch {return false}
 }
 
 /** No automatic replay: the caller invokes this only after an explicit human action. */
@@ -21,5 +27,5 @@ export async function performRoutineHook(request:W.ProjectAssistantRoutineHookRe
   options.persist({action:"hook",request:original})
   if(!options.current())return null
   const answer=await options.send(original)
-  return options.current()&&validRoutineHookAnswer(answer,original.id)?answer:null
+  return options.current()&&validRoutineHookAnswer(answer,original.id,original.command.key.machine_id)?answer:null
 }

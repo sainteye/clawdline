@@ -33,6 +33,7 @@ import (
 // One composition owner per Server. transition serializes lifecycle IO, while
 // mu protects only process-local state and is never held during Host/SQL IO.
 type projectAssistantServer struct {
+	cloudHooks       botRoutineHookServer
 	transition       sync.Mutex
 	mu               sync.RWMutex
 	host             *projectassistanthost.Host
@@ -392,7 +393,7 @@ func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) 
 		paWriteHTTPFailure(w, err)
 		return
 	}
-	newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{Service: service, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
+	newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{HookPublicURL: s.botRoutineHookPublicURL, Service: service, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
 		Status: func(ctx context.Context) (pa.SourceStatus, error) {
 			a, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: i.MachineID}, false)
 			return a.Source, err

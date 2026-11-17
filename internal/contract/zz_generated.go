@@ -5748,6 +5748,7 @@ type ProjectAssistantRoutineHookRequest struct {
 type ProjectAssistantRoutineHookResponse struct {
 	ContractVersion string `json:"contract_version"`
 	Key             string `json:"key"`
+	PublicURL       string `json:"public_url,omitempty"`
 	URL             string `json:"url"`
 }
 

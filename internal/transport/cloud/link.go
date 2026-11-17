@@ -48,6 +48,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	peercontract "github.com/sainteye/clawdline/internal/domain/agenthandoff"
+	"github.com/sainteye/clawdline/internal/domain/botroutinehooks"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
@@ -1012,6 +1013,16 @@ func (l *Link) ScheduleWebhooks() (schedulewebhook.Identity, schedulewebhook.Clo
 	}
 	return schedulewebhook.Identity{AccountID: l.identity.AccountID, MachineID: l.identity.MachineID},
 		adaptercloud.NewScheduleWebhookClient(l.settings.APIBase, l.identity.MachineCredential), true
+}
+
+// BotRoutineHooks is separate from the opaque Relay and ordinary command lanes.
+// The machine credential is captured only by the control-plane adapter.
+func (l *Link) BotRoutineHooks() (botroutinehooks.Identity, botroutinehooks.Cloud, bool) {
+	if !l.settings.Enabled || !l.identity.Valid() || l.settings.APIBase == "" {
+		return botroutinehooks.Identity{}, nil, false
+	}
+	return botroutinehooks.Identity{AccountID: l.identity.AccountID, MachineID: l.identity.MachineID},
+		adaptercloud.NewBotRoutineHookClient(l.settings.APIBase, l.identity.MachineCredential), true
 }
 
 // PushClient is the machine-credential client for `POST /v1/push/send`, when

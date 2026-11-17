@@ -153,11 +153,16 @@ returned relative path is labelled local, never a public Cloud address.
 Future enabled follow-ups with a source-reported next wake appear separately.
 History shows actual run source, delivery ID, safe retry count and not-before
 time when present. Unknown effects have an explicit warning and no retry button.
-There is no human follow-up cancellation endpoint or SourceClient command in the
-current wire. Root integration must add a human, authenticated counterpart to
-the native `cancel_follow_up` operation, with edit command receipts, exact fence,
-routine identity/revision and publication revalidation before adding a console
-cancel control. No invented cancellation request is sent by this implementation.
+A person can cancel a pending follow-up through the existing authenticated
+routine-delete command. It carries the exact edit receipt, conversation fence
+and expected definition revision; the source rechecks current authority. Once a
+scheduler tick changes that revision, a stale pending-note action is refused.
+This control cancels a future note; it does not stop an already started run.
+An uncertain reply retains the original command across panel remounts and only
+an explicit replay can resend those exact bytes. The replay button waits until
+current source authority has loaded. The focused bilingual browser fixture
+checks read-only refusal, one lost reply, exact replay and two SQLite tombstones
+without opening a provider.
 
 Focused construction evidence includes Node cases for closed trigger shapes,
 exact uncertain-key replay/reload, source-scope changes, late-key rejection and
@@ -168,15 +173,77 @@ delivery and inspect a genuinely executed scripted-provider result. Provider
 execution is scripted; native/model/paid API counts are zero. This is construction
 verification, not browser, installed-app or production Cloud acceptance.
 
-The private Cloud repository must register host hook sets `{id,key,enabled}`,
-propagate changes/removals/rotation with a monotonically changing hook revision,
-serve the public `/v1/hooks/<computer>/<id>` route, verify the exact original
-bearer/HMAC proof before forwarding, preserve proof headers, body bytes and
-delivery identity, and have the host verify again. It must preserve paused,
-busy, ping, dedupe, unavailable-source and unknown-effect behavior without
-changing delivery IDs, replaying an uncertain send or lending device authority.
-Do not expose a public URL until enrollment, revocation and relay acceptance
-are independently verified. A relative local path is not a deployed public URL.
+## Source enrollment and Cloud deliveries
+
+The source bridge uses the separate `clawdline.bot_routine_hooks.v1` machine-
+authenticated REST protocol. It adds no content to opaque WebSocket envelopes
+or ordinary Cloud command lanes. The credential remains inside the Cloud
+adapter; the receiver borrows neither a browser grant nor a local/device bearer.
+Incoming webhook bodies and proofs are visible to Cloud. Bot chat, memory and
+instructions do not travel through this bridge.
+
+`PUT /v1/bot-routine-hooks` replaces the complete `{id,key,enabled}` set. The
+source persists its canonical sorted set fingerprint and positive JS-safe
+revision before networking. A lost response retries the same content/revision;
+rotation, pause, removal and feature opt-out advance it. An unexpected higher
+Cloud revision produces a typed conflict; it is never silently overwritten.
+A fresh source without hooks or prior enrollment does not send empty sets.
+Existing enrollment is withdrawn with an acknowledged empty replacement even
+when Bots are disabled. Current account, machine and Project are checked before
+publication and again after network IO.
+
+Bridge metadata has an independent schema version 1, alongside feature schema
+5. Installation is additive and transactional; future bridge versions refuse
+before feature DDL. It never rewrites aggregate/message/event/receipt bytes.
+Enrollment fingerprints, one pending forwarding/ack barrier per namespace and
+leases stay outside public views and archives; existing capabilities remain in
+their private hook table.
+
+Claim returns a Cloud queue ID, a scoped routine, enrollment revision, original
+proof headers, canonical base64 body and lease token. The source rejects oversized
+or noncanonical bytes and duplicate/unsupported headers. It preserves exactly
+the supplied `X-Delivery-Id`, which may differ from the queue ID. It invokes the
+production `POST /hooks/routines/{id}` receiver with original bytes and proof;
+the Host independently rechecks current authority, key, Project, feature, memory
+and SQLite delivery receipt. A durable pre-forward barrier prevents replay after
+an ambiguous local effect or storage failure. A recorded local HTTP response is
+acknowledged with its original lease, actual status/code and actual run ID.
+Lost ack responses retain the identical durable ack and inspect same-machine
+metadata. Unknown local outcomes inspect only; no replacement event identity or
+new native prompt is inferred. Cloud's busy backoff retains the same identity.
+
+One cancellation-aware sequential worker owns enrollment/claim/ack. Cloud reload
+cancels and awaits it before another generation starts. Normal idle polling is
+5 seconds; failure backoff reaches 60 seconds. Each cycle and HTTP client have
+a 10-second deadline. No Host actor or memory lock is held during Cloud IO.
+Source bounds are registered for 1000 hooks, 512 KiB enrollment, 64 KiB original
+event, 200-byte headers, 100-byte routine IDs, 128 KiB HTTP replies and 16 KiB
+local replies. Cloud separately owns its 1000 retained deliveries, 60-second
+lease, 72-hour TTL, 30–900-second busy retry, 512 ack receipts, 256 source rate
+slots plus global slot, 60/1200 requests per minute and 5000 ms query deadline.
+Source diagnostics do not invent live measurements of those remote limits.
+
+The existing human routine-hook response optionally adds `public_url`. The
+local URL/key work with older sources. A public HTTPS address is available only
+when the active worker has acknowledged exactly the current hook/key/enabled
+snapshot; configured, offline, unknown, disabled, canceled or stale enrollment
+provides no ready public address. Publication and the console validate source
+scope; URLs contain no key or credential. The key panel clears these results
+with its existing authority and lifecycle rules. A configured address or a local
+fixture is not evidence of production deployment or acceptance.
+
+`TestBotRoutineHooksHTTPHostSQLiteExactBytesLostAckAndRedelivery` uses authenticated
+human HTTP, real Host/SQLite, a local fake Cloud HTTP server and a scripted
+provider. It exercises enrollment, HMAC over whitespace/exact large-number JSON,
+original delivery identity, lost ack and durable same-ID redelivery. These are
+construction fixtures, not production Cloud receipts. The fixture first creates
+an actual scripted main-session binding, which the existing routine runtime
+requires; admission itself can remain durably queued before that first binding.
+The opt-in
+`TestBotRoutineHooksRealControlPlaneOptIn` accepts an independently provisioned
+local control plane through `CLAWDLINE_TEST_BOT_HOOKS_API`, `_ACCOUNT`, `_MACHINE`
+and `_CREDENTIAL`. Its default skip means the cross-repository path was not run.
+Root owns that run, private Cloud integration, secrets, deployment and acceptance.
 
 Local scripted tests use real HTTP, Host lifecycle and SQLite. They cover
 signature/bearer authentication, indistinguishable credential failures, filters,

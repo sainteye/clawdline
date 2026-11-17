@@ -23,6 +23,9 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err = checkCloudHookSchema(ctx, tx); err != nil {
+		return err
+	}
 	// Inspect before any feature DDL or backfill. A future (or invalid) source
 	// must remain untouched even when it is missing one of our known tables.
 	var exists int
@@ -47,6 +50,10 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hook_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version=1))`,
+		`INSERT OR IGNORE INTO project_assistant_cloud_hook_schema(id,version) VALUES(1,1)`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hooks (account TEXT NOT NULL, machine TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), fingerprint TEXT NOT NULL, PRIMARY KEY(account,machine))`,
+		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hook_pending (account TEXT NOT NULL, machine TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account,machine))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_exchanges (machine TEXT NOT NULL, id TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL, outstanding INTEGER NOT NULL, revision INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,id))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_exchange_pending ON project_assistant_exchanges(machine,outstanding,source)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_agent_rests (machine TEXT NOT NULL, agent TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,agent))`,

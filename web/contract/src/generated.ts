@@ -6615,6 +6615,7 @@ export interface ProjectAssistantRoutineHookRequest {
 export interface ProjectAssistantRoutineHookResponse {
   contract_version: string
   key: string
+  public_url?: string
   url: string
 }
 

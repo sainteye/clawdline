@@ -24,9 +24,10 @@ import (
 // The host mounts this handler behind its existing gate and supplies current
 // trusted request context. Constructing it installs nothing and starts no runtime.
 type projectAssistantHTTPOptions struct {
-	Service   *app.Service
-	MachineID string
-	Status    func(context.Context) (pa.SourceStatus, error)
+	Service       *app.Service
+	HookPublicURL func(context.Context, string, string) string
+	MachineID     string
+	Status        func(context.Context) (pa.SourceStatus, error)
 	// Attachments keeps the pictures sent to Bots.
 	Attachments projectassistantstore.Attachments
 	Outputs     projectassistantstore.Outputs

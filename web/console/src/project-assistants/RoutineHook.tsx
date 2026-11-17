@@ -26,7 +26,8 @@ export function RoutineHook({id,allowed,busy,held,blocked,onRun,onClose,w}:{
     <header className="pa-toolbar"><h4>{tr("manageHook")}</h4><button type="button" onClick={onClose}>{w.close}</button></header>
     <p>{tr("localHint")}</p>
     {!allowed&&<p role="status">{tr("hookReadOnly")}</p>}
-    {allowed&&answer&&<dl><dt>{tr("localURL")}</dt><dd><code>{answer.url}</code></dd><dt>{tr("key")}</dt><dd><code>{answer.key}</code></dd></dl>}
+    {allowed&&answer&&<dl>{answer.public_url&&<><dt>{tr("publicURL")}</dt><dd><code>{answer.public_url}</code></dd></>}<dt>{tr("localURL")}</dt><dd><code>{answer.url}</code></dd><dt>{tr("key")}</dt><dd><code>{answer.key}</code></dd></dl>}
+    {allowed&&answer&&<p>{answer.public_url?tr("publicHint"):tr("publicUnavailable")}</p>}
     {uncertain?<div role="alert"><p>{tr("hookHeld")}</p><button type="button" disabled={!allowed||busy||blocked} onClick={()=>void act(held.request.rotate,true)}>{tr("retryHook")}</button></div>:<div className="pa-toolbar">
       <button type="button" disabled={!allowed||busy||!!held||blocked} onClick={()=>void act(false)}>{tr("viewKey")}</button>
       <button type="button" disabled={!allowed||busy||!!held||blocked} onClick={()=>{setAnswer(null);setConfirm(true)}}>{tr("rotateKey")}</button>

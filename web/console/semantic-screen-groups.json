@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12899,
-  "riskKeys": 5565,
-  "nonRiskCount": 7334,
+  "englishContentKeys": 12926,
+  "riskKeys": 5579,
+  "nonRiskCount": 7347,
   "groups": [
     {
       "name": "acp / other",
@@ -406,7 +406,7 @@
     },
     {
       "name": "botRoutineControls / other",
-      "count": 25,
+      "count": 26,
       "sources": [
         "src/project-assistants/routine-words.ts"
       ],
@@ -428,6 +428,7 @@
         "botRoutineControls.localURL",
         "botRoutineControls.manageHook",
         "botRoutineControls.otherRun",
+        "botRoutineControls.publicURL",
         "botRoutineControls.retryCount",
         "botRoutineControls.rotateKey",
         "botRoutineControls.rotateWarning",
@@ -487,7 +488,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 643,
+      "count": 655,
       "sources": [
         null
       ],
@@ -561,6 +562,18 @@
         "capacityRow.bots.group_replies.full",
         "capacityRow.bots.group_replies.what",
         "capacityRow.bots.group_rounds.what",
+        "capacityRow.bots.hook_backoff_seconds.what",
+        "capacityRow.bots.hook_enroll_bytes.what",
+        "capacityRow.bots.hook_event_bytes.what",
+        "capacityRow.bots.hook_header_bytes.what",
+        "capacityRow.bots.hook_http_seconds.full",
+        "capacityRow.bots.hook_http_seconds.what",
+        "capacityRow.bots.hook_id_bytes.what",
+        "capacityRow.bots.hook_local_bytes.what",
+        "capacityRow.bots.hook_pending.what",
+        "capacityRow.bots.hook_poll_seconds.what",
+        "capacityRow.bots.hook_response_bytes.what",
+        "capacityRow.bots.hook_revision.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",

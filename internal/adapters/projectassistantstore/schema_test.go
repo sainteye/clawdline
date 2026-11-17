@@ -476,9 +476,20 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				t.Fatal("migration manufactured hook secrets")
 			}
 			delete(after, "project_assistant_routine_hooks")
+			var bridgeVersion int
+			if err = db.QueryRow(`SELECT version FROM project_assistant_cloud_hook_schema WHERE id=1`).Scan(&bridgeVersion); err != nil || bridgeVersion != 1 {
+				t.Fatal("bridge schema marker", bridgeVersion, err)
+			}
+			for _, table := range []string{"project_assistant_cloud_hooks", "project_assistant_cloud_hook_pending"} {
+				if len(after[table]) != 0 {
+					t.Fatal("migration manufactured bridge authority or deliveries", table)
+				}
+				delete(after, table)
+			}
+			delete(after, "project_assistant_cloud_hook_schema")
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
-				if !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") && !strings.Contains(statement, "project_assistant_routine_hooks") && !strings.Contains(statement, "project_assistant_routine_delivery") {
+				if !strings.Contains(statement, "project_assistant_exchanges") && !strings.Contains(statement, "project_assistant_exchange_pending") && !strings.Contains(statement, "project_assistant_routine_hooks") && !strings.Contains(statement, "project_assistant_routine_delivery") && !strings.Contains(statement, "project_assistant_cloud_hook") {
 					oldDDL = append(oldDDL, statement)
 				}
 			}

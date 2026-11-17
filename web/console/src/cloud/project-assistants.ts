@@ -305,7 +305,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
       const k=r.command.key,f=r.fence
       if(!r.id||!Number.isSafeInteger(r.expected_revision)||r.expected_revision<1||typeof r.rotate!=="boolean"||r.command.operation!=="edit"||f.key.machine_id!==k.machine_id||f.key.bot_id!==k.bot_id||f.project.machine_id!==k.machine_id||!f.project.project_id||!f.project.canonical_id||!f.conversation_id)throw notSent(failure("pa_scope_denied"))
       const answer=await this.request<W.ProjectAssistantRoutineHookResponse>(endpoint(k,"/routines/"+encodeURIComponent(r.id)+"/hook"),s,r,"POST",true,PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL)
-      if(!validRoutineHookAnswer(answer,r.id))throw new AssistantTransportFailure("pa_outcome_unknown",null)
+      if(!validRoutineHookAnswer(answer,r.id,k.machine_id))throw new AssistantTransportFailure("pa_outcome_unknown",null)
       return answer
     } catch(error) {
       // A hook response may contain a key. Never retain it in diagnostic evidence.

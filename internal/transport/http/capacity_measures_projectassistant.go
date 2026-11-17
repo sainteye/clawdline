@@ -67,7 +67,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			return capacity.Reading{Known: true, Used: total, Note: "durable outstanding exchanges; historical facts and owned process cleanup are counted separately"}
 		}
 	}
-	return map[string]func() capacity.Reading{
+	measures := s.botRoutineHookCapacityMeasures()
+	for key, measure := range map[string]func() capacity.Reading{
 		capacity.BotsManagerCardUnits:       pure,
 		capacity.BotsManagerApprovalSeconds: unobserved,
 		capacity.BotsManagerPending:         unobserved,
@@ -186,5 +187,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsGroupHistoryLines:      pure,
 		capacity.BotsGroupPeerLineChars:     pure,
 		capacity.BotsManagerCreated:         unobserved,
+	} {
+		measures[key] = measure
 	}
+	return measures
 }

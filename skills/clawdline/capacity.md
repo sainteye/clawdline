@@ -81,6 +81,18 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.group_peer_line_chars` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
 | `bots.group_replies` | 10 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_rounds` | 3 | `rows` | `coalesce` | `diagnostics` | — |
+| `bots.hook_backoff_seconds` | 60 | `seconds` | `refuse` | `diagnostics` | — |
+| `bots.hook_enroll_bytes` | 524288 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_event_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_header_bytes` | 200 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_hooks` | 1000 | `rows` | `refuse` | `diagnostics` | — |
+| `bots.hook_http_seconds` | 10 | `seconds` | `refuse` | `diagnostics` | — |
+| `bots.hook_id_bytes` | 100 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_local_bytes` | 16384 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_pending` | 1 | `rows` | `refuse` | `diagnostics` | — |
+| `bots.hook_poll_seconds` | 5 | `seconds` | `refuse` | `diagnostics` | — |
+| `bots.hook_response_bytes` | 131072 | `bytes` | `refuse` | `diagnostics` | — |
+| `bots.hook_revision` | 9007199254740991 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |

@@ -1529,6 +1529,234 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.hook_backoff_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxBackoffSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_enroll_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 524288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxEnrollmentBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_event_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxEventBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_header_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxHeaderBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_hooks",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxHooks"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_http_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxHTTPSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_id_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxRoutineIDBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_local_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxLocalResponseBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxPending"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_poll_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxPollSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 131072,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxResponseBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.hook_revision",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 9007199254740991,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botroutinehooks.MaxRevision"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.input_bytes",
     "Class": "buffer",
     "Unit": "bytes",

@@ -386,13 +386,17 @@
         },
         "contract_version": {
           "type": "string"
+        },
+        "public_url": {
+          "type": "string"
         }
       },
       "required": [
         "url",
         "key",
         "contract_version"
-      ]
+      ],
+      "additionalProperties": false
     }
   }
 }

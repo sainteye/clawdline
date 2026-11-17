@@ -417,9 +417,10 @@ func serve() {
 	if err := srv.SettleOpsRenames(context.Background()); err != nil {
 		log.Printf("ops: pending renames were not settled: %v", err)
 	}
-	startCloudLine(cloudCtx, cfg, srv)
+	stopCloudLine := startCloudLine(cloudCtx, cfg, srv)
+	defer stopCloudLine()
 	if err := srv.Serve(ln); err != nil {
-		stopServing(stopOwnedHosts, stopCloud, stopCodeGraph)
+		stopServing(stopOwnedHosts, func() { stopCloud(); stopCloudLine() }, stopCodeGraph)
 		refuseToServe(1, err.Error())
 	}
 }
@@ -433,7 +434,8 @@ func serve() {
 // a machine that was never enrolled must all leave a working local daemon
 // behind. Each of those is recorded where `/v1/cloud/status` can say it, which
 // is the difference between a quiet failure and a legible one.
-func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.Server) {
+func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.Server) func() {
+	ctx, stopAll := context.WithCancel(ctx)
 	admit := cloudAdmission(cfg.Dir)
 	httptransport.SetCloudUnavailable(cfg.Dir)
 	opts := cloudtransport.LinkOptions{
@@ -493,6 +495,7 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 	var stop context.CancelFunc
 	var done chan struct{}
 	var webhooksDone <-chan struct{}
+	var botHooksDone <-chan struct{}
 	const maxCloudReloadStopSeconds = 15
 	stopWait := time.Duration(min(int64(maxCloudReloadStopSeconds), httptransport.CapacityLimit(capacity.CloudReloadStopSeconds))) * time.Second
 	reload := func() error {
@@ -512,8 +515,16 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 					return fmt.Errorf("the previous Cloud schedule poller did not stop within %s", stopWait)
 				}
 			}
+			if botHooksDone != nil {
+				select {
+				case <-botHooksDone:
+				case <-time.After(stopWait):
+					return fmt.Errorf("the previous Bot webhook worker did not stop within %s", stopWait)
+				}
+			}
 			stop, done = nil, nil
 			webhooksDone = nil
+			botHooksDone = nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -536,6 +547,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		if identity, webhooks, ok := link.ScheduleWebhooks(); ok {
 			webhooksDone = srv.StartScheduleWebhooks(lineCtx, identity, webhooks, version)
 		}
+		if identity, hooks, ok := link.BotRoutineHooks(); ok {
+			botHooksDone = srv.StartBotRoutineHooks(lineCtx, identity, hooks)
+		}
 		finished := done
 		go func() {
 			defer close(finished)
@@ -556,6 +570,24 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		defer ticker.Stop()
 		gate.resume(ticker.C)
 	}()
+	return func() {
+		stopAll()
+		mu.Lock()
+		defer mu.Unlock()
+		if stop != nil {
+			stop()
+		}
+		for _, worker := range []<-chan struct{}{done, webhooksDone, botHooksDone} {
+			if worker == nil {
+				continue
+			}
+			select {
+			case <-worker:
+			case <-time.After(stopWait):
+				log.Print("cloud: shutdown worker cleanup remains unknown")
+			}
+		}
+	}
 }
 
 func doctor() {

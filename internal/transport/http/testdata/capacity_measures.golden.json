@@ -371,6 +371,66 @@
     "Note": true
   },
   {
+    "Name": "bots.hook_backoff_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_enroll_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_event_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_header_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_hooks",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_http_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_id_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_local_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_poll_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_response_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.hook_revision",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.input_bytes",
     "Known": true,
     "Note": true

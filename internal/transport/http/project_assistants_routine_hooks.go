@@ -154,9 +154,21 @@ func (h *projectAssistantHTTP) routineHook(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(contract.ProjectAssistantRoutineHookResponse{ContractVersion: pa.ContractVersion, URL: hook.URL, Key: hook.Key})
+	publicURL := ""
+	if h.options.HookPublicURL != nil {
+		publicURL = h.options.HookPublicURL(r.Context(), q.ID, hook.Key)
+	}
+	body, err := json.Marshal(contract.ProjectAssistantRoutineHookResponse{ContractVersion: pa.ContractVersion, URL: hook.URL, Key: hook.Key, PublicURL: publicURL})
 	if err != nil {
 		return nil, err
 	}
-	return paEncodedOutput{body: body, check: check}, nil
+	return paEncodedOutput{body: body, check: func(ctx context.Context) error {
+		if err := check(ctx); err != nil {
+			return err
+		}
+		if publicURL != "" && (h.options.HookPublicURL == nil || h.options.HookPublicURL(ctx, q.ID, hook.Key) != publicURL) {
+			return paHTTPFailure(pa.StaleVersion, "routine_cloud_enrollment")
+		}
+		return nil
+	}}, nil
 }
