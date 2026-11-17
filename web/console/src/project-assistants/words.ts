@@ -1,6 +1,12 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
   "pinned": "Pinned",
+  "rosterPin": "Pin Bot",
+  "rosterUnpin": "Unpin Bot",
+  "rosterReorder": "Reorder",
+  "rosterReorderHint": "Drag to reorder, or use Up and Down arrow keys",
+  "rosterDropPin": "Drop here to pin",
+  "rosterUnsaved": "Roster preferences could not be saved. Changes are kept for this view.",
   "failTimeout": "The Agent did not finish before this turn's time limit.",
   "failStopped": "The Agent's work was interrupted.",
   "failConnection": "The connection to the Agent ended before its result was received.",
@@ -476,6 +482,12 @@ export const en = {
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
   "pinned": "已釘選",
+  "rosterPin": "釘選 Bot",
+  "rosterUnpin": "取消釘選 Bot",
+  "rosterReorder": "調整順序",
+  "rosterReorderHint": "拖曳調整順序，或使用上、下方向鍵",
+  "rosterDropPin": "拖放至此以釘選",
+  "rosterUnsaved": "無法儲存清單偏好，變更會保留在目前畫面。",
   "failTimeout": "Agent 未能在這回合的時限內完成。",
   "failStopped": "Agent 的工作已中斷。",
   "failConnection": "尚未收到結果，與 Agent 的連線就已結束。",

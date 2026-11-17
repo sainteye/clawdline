@@ -1,0 +1,14 @@
+.project-assistants .pa-roster-entry { display:flex;align-items:center;border-radius:12px;transition:background-color .15s; }
+.project-assistants .pa-roster-entry > .pa-bot-row { flex:1;min-width:0;width:auto; }
+.project-assistants .pa-roster-actions { display:flex;flex-direction:column;align-items:center;gap:2px; }
+.project-assistants .pa-roster-pin,.project-assistants .pa-roster-handle { display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:5px;border:0;border-radius:6px;background:transparent;color:var(--pa-dim); }
+.project-assistants .pa-roster-pin:hover,.project-assistants .pa-roster-handle:hover { color:var(--pa-text);background:var(--pa-hover,#242426); }
+.project-assistants .pa-roster-pin[aria-pressed="true"] { color:var(--pa-accent,#e39567); }
+.project-assistants .pa-roster-handle { cursor:grab;touch-action:none; }
+.project-assistants .pa-roster-handle:active { cursor:grabbing; }
+.project-assistants .pa-project-heading > .pa-roster-handle { margin-left:auto; }
+.project-assistants [data-dragging="true"] { opacity:.6; }
+.project-assistants [data-drop="true"] { outline:1px dashed var(--pa-accent,#e39567);outline-offset:-1px; }
+.project-assistants .pa-roster-pin-target { padding:14px 8px;border:1px dashed var(--pa-dim);border-radius:8px;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-roster-save-error { padding:8px;color:var(--warning,#f0a030);font-size:13px; }
+@media (prefers-reduced-motion:reduce) { .project-assistants .pa-roster-entry { transition:none; } }

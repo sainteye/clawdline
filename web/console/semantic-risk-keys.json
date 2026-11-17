@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13115,
+  "englishKeys": 13121,
   "counts": {
-    "negation": 3483,
-    "state": 2224,
+    "negation": 3484,
+    "state": 2225,
     "permission": 803,
     "deletion": 308,
     "uncertainty": 535
   },
-  "unionCount": 5682,
+  "unionCount": 5683,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3088,6 +3088,7 @@
       "projectAssistants.noCapabilities",
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
+      "projectAssistants.rosterUnsaved",
       "projectAssistants.routineHeld",
       "projectAssistants.routineJournalUnreadable",
       "projectAssistants.routineNoRuns",
@@ -5446,6 +5447,7 @@
       "projectAssistants.openWork",
       "projectAssistants.outputFailed",
       "projectAssistants.resumedNotice",
+      "projectAssistants.rosterUnsaved",
       "projectAssistants.routineDeleteConfirm",
       "projectAssistants.routineHeld",
       "projectAssistants.routineHint",
@@ -12369,6 +12371,7 @@
     "projectAssistants.renameArtifactUnknown",
     "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
+    "projectAssistants.rosterUnsaved",
     "projectAssistants.routineConfirmDelete",
     "projectAssistants.routineDelete",
     "projectAssistants.routineDeleteConfirm",

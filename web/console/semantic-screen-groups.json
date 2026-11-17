@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13115,
-  "riskKeys": 5682,
-  "nonRiskCount": 7433,
+  "englishContentKeys": 13121,
+  "riskKeys": 5683,
+  "nonRiskCount": 7438,
   "groups": [
     {
       "name": "acp / other",
@@ -5897,7 +5897,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 318,
+      "count": 323,
       "sources": [
         null
       ],
@@ -6113,6 +6113,11 @@
         "projectAssistants.renameArtifactFailed",
         "projectAssistants.renamingArtifact",
         "projectAssistants.retry",
+        "projectAssistants.rosterDropPin",
+        "projectAssistants.rosterPin",
+        "projectAssistants.rosterReorder",
+        "projectAssistants.rosterReorderHint",
+        "projectAssistants.rosterUnpin",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",
         "projectAssistants.routineCron",

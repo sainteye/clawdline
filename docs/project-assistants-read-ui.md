@@ -442,3 +442,8 @@ CLAWDLINE_SEND_LIFETIME_E2E_DIR=/absolute/task-owned/evidence-directory \
 BOTS_BROWSER_CLAWDLINE_DIR=/absolute/configured/browser-broker-directory \
 go test ./internal/transport/http -run '^TestProjectAssistantSendLifetime' -count=1
 ```
+
+## Custom roster order and pins
+
+[Bot roster preferences](project-assistants-roster.md) describes the local account-scoped
+order, pin controls, mouse/touch/keyboard interaction and browser regression checks.
