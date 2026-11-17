@@ -36,6 +36,16 @@ func refuse(code pa.ErrorCode, field string) error { return &pa.Failure{Code: co
 // PutGrant is a local management port, absent from the network dispatcher and
 // native tools. The composition must authenticate the human before calling it.
 func (s *Store) PutGrant(ctx context.Context, g app.Grant) error {
+	return s.putGrant(ctx, g, false)
+}
+
+// SyncGrant accepts a newer API epoch after missed source synchronizations.
+// It preserves immutable identities and permanent revocation. Only the
+// independently authenticated Cloud manager adapter calls this port.
+func (s *Store) SyncGrant(ctx context.Context, g app.Grant) error {
+	return s.putGrant(ctx, g, true)
+}
+func (s *Store) putGrant(ctx context.Context, g app.Grant, syncAPI bool) error {
 	if g.ID == "" || g.Epoch < 1 || g.AccountID == "" || g.Source.AccountID != g.AccountID || g.Target.AccountID != g.AccountID {
 		return refuse(pa.Invalid, "network_grant")
 	}
@@ -57,7 +67,7 @@ func (s *Store) PutGrant(ctx context.Context, g app.Grant) error {
 		}
 	}
 	if e == nil {
-		if prior.AccountID != g.AccountID || prior.Source.AccountID != g.Source.AccountID || prior.Source.MachineID != g.Source.MachineID || prior.Source.ProjectID != g.Source.ProjectID || prior.Source.BotID != g.Source.BotID || prior.Source.ConversationID != g.Source.ConversationID || prior.Target.AccountID != g.Target.AccountID || prior.Target.MachineID != g.Target.MachineID || prior.Target.ProjectID != g.Target.ProjectID || prior.Target.BotID != g.Target.BotID || prior.Target.ConversationID != g.Target.ConversationID || prior.Pair != g.Pair || g.Epoch != prior.Epoch+1 {
+		if prior.AccountID != g.AccountID || prior.Source.AccountID != g.Source.AccountID || prior.Source.MachineID != g.Source.MachineID || prior.Source.ProjectID != g.Source.ProjectID || prior.Source.BotID != g.Source.BotID || prior.Source.ConversationID != g.Source.ConversationID || prior.Target.AccountID != g.Target.AccountID || prior.Target.MachineID != g.Target.MachineID || prior.Target.ProjectID != g.Target.ProjectID || prior.Target.BotID != g.Target.BotID || prior.Target.ConversationID != g.Target.ConversationID || prior.Pair != g.Pair || g.Epoch <= prior.Epoch || !syncAPI && g.Epoch != prior.Epoch+1 || syncAPI && prior.Revoked && !g.Revoked {
 			return refuse(pa.StaleVersion, "network_grant")
 		}
 	} else if errors.Is(e, sql.ErrNoRows) {

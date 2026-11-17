@@ -3,6 +3,11 @@
   "routes": [
     {
       "method": "POST",
+      "pattern": "/v1/bot-network/consents/",
+      "guide": "project"
+    },
+    {
+      "method": "POST",
       "pattern": "/hooks/routines/",
       "guide": "project"
     },

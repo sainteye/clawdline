@@ -593,6 +593,20 @@ Wait for the person's sent agreement before using the suggested tool. Existing
 conversations and resumes keep their original instructions; turning this setting
 on does not install, load or authorize tools or paid APIs.
 
+**Local Bot consent synchronization (API level 86).** When the person asks to
+synchronize an existing approved Bot consent, run
+`clawdline project-assistants network-consent-sync <consent-id>` on its source.
+It sends `POST /v1/bot-network/consents/<consent-id>/sync` without a body or query,
+using this machine's local-owner credential. Cloud forwarding, machine/native
+credentials, LAN and read-only devices are refused. The source reads the existing
+private consent, verifies its independently pinned signed pair, and synchronizes
+only that consent. This does not create consent, pair machines, execute Bot work,
+or configure the external assistant gateway. A `synced: true` reply confirms only
+local consent metadata synchronization; execution still needs fresh live authority.
+Repeated identical synchronization is safe. Preserve typed refusals and unknown
+outcomes; resolve revoked, stale or unavailable authority rather than changing
+credentials or reinstalling a grant. See `docs/project-assistants-network-cloud.md`.
+
 ## 2a. A Feature Root's ordinary path
 
 This is everything an ordinary Feature Root — a Session that owns one Board item — runs, in order.

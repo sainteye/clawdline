@@ -2,6 +2,8 @@ package botnetwork
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 
 	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
 )
@@ -23,22 +25,26 @@ func (s *Service) Routes(ctx context.Context, source wire.BotEndpoint, resolve f
 	}
 	out := Response{Routes: []Route{}}
 	for _, g := range grants {
-		h := wire.BotHeader{Source: source, Target: g.Target, PairID: g.Pair.PairID, AuthorityID: g.ID, AuthorityEpoch: g.Epoch}
-		if _, e := s.authorize(ctx, h); e == nil {
-			if resolve == nil {
-				continue
-			}
-			transport, e := resolve(ctx, g.ID)
-			if e != nil {
-				continue
-			}
-			result, e := s.Call(ctx, Call{RequestID: Digest([]byte("route-directory-v1\n" + g.ID)), Kind: "directory", AuthorityID: g.ID, Source: source, Target: g.Target}, transport)
-			if e != nil {
-				continue
-			}
-			for _, entry := range result.Bots {
-				out.Routes = append(out.Routes, Route{AuthorityID: g.ID, Target: entry.Endpoint})
-			}
+		if resolve == nil {
+			continue
+		}
+		transport, e := resolve(ctx, g.ID)
+		if e != nil {
+			continue
+		}
+		// A fresh directory observation has a fresh identity; it is not a
+		// retry of a possibly performed message. Call constructs the full
+		// signed header before asking the live private authorizer.
+		var id [16]byte
+		if _, e = rand.Read(id[:]); e != nil {
+			return Response{}, e
+		}
+		result, e := s.Call(ctx, Call{RequestID: "directory-" + hex.EncodeToString(id[:]), Kind: "directory", AuthorityID: g.ID, Source: source, Target: g.Target}, transport)
+		if e != nil {
+			continue
+		}
+		for _, entry := range result.Bots {
+			out.Routes = append(out.Routes, Route{AuthorityID: g.ID, Target: entry.Endpoint})
 		}
 	}
 	if err = s.o.Host.Check(ctx, source, false); err != nil {

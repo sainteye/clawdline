@@ -72,10 +72,12 @@ type Options struct {
 	Authority            BotAuthority
 	AccountID, MachineID string
 	Private              *ecdh.PrivateKey
-	Signer               ed25519.PrivateKey
-	Repository           Repository
-	Host                 Host
-	Clock                func() time.Time
+	// PrivateFor resolves each original pair's existing local key custody.
+	PrivateFor func(context.Context, string) (*ecdh.PrivateKey, error)
+	Signer     ed25519.PrivateKey
+	Repository Repository
+	Host       Host
+	Clock      func() time.Time
 }
 type Service struct{ o Options }
 type BotAuthority interface {
@@ -90,12 +92,50 @@ func (s *Service) CheckRequest(ctx context.Context, h wire.BotHeader) error {
 	return s.o.Host.Check(ctx, h.Target, true)
 }
 
+// CheckEnvelope authenticates transport delivery without claiming admission or
+// performing native work. Replies keep their original reversed captures.
+func (s *Service) CheckEnvelope(ctx context.Context, e wire.BotEnvelope) error {
+	g, err := s.o.Repository.Grant(ctx, e.Header.AuthorityID)
+	if err != nil {
+		return err
+	}
+	h := e.Header
+	if h.Target.MachineID != s.o.MachineID || g.Revoked || g.Epoch != h.AuthorityEpoch || !s.o.Clock().Before(g.ExpiresAt) {
+		return failure(pa.Revoked, "bot_network_delivery")
+	}
+	a, b := h.Source, h.Target
+	if h.Kind == "reply" {
+		a, b = b, a
+	}
+	if !sameIdentity(a, g.Source) || !sameIdentity(b, g.Target) || h.PairID != g.Pair.PairID || g.AccountID != s.o.AccountID || wire.VerifyTranscript(g.Pair, s.o.MachineID, g.ComparedFingerprint) != nil {
+		return failure(pa.ScopeDenied, "bot_network_delivery")
+	}
+	signer, err := pairSigner(g, h.Source.MachineID)
+	if err != nil {
+		return err
+	}
+	private, err := s.private(ctx, h.PairID)
+	if err != nil {
+		return err
+	}
+	if _, err = wire.OpenBot(e, pairKeys(g), private, signer); err != nil {
+		return failure(pa.ScopeDenied, "bot_network_delivery_wire")
+	}
+	return s.o.Authority.CheckBotAuthority(ctx, h)
+}
+
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
 func New(o Options) (*Service, error) {
-	if o.AccountID == "" || o.MachineID == "" || o.Private == nil || len(o.Signer) != ed25519.PrivateKeySize || o.Repository == nil || o.Host == nil || o.Clock == nil || o.Authority == nil {
+	if o.AccountID == "" || o.MachineID == "" || o.Private == nil && o.PrivateFor == nil || len(o.Signer) != ed25519.PrivateKeySize || o.Repository == nil || o.Host == nil || o.Clock == nil || o.Authority == nil {
 		return nil, failure(pa.Invalid, "bot_network_options")
 	}
 	return &Service{o: o}, nil
+}
+func (s *Service) private(ctx context.Context, pair string) (*ecdh.PrivateKey, error) {
+	if s.o.PrivateFor != nil {
+		return s.o.PrivateFor(ctx, pair)
+	}
+	return s.o.Private, nil
 }
 func Digest(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
 func pairKeys(g Grant) wire.PairKeys {
@@ -145,7 +185,11 @@ func (s *Service) Receive(ctx context.Context, envelope wire.BotEnvelope) (wire.
 	if e != nil {
 		return wire.BotEnvelope{}, e
 	}
-	body, e := wire.OpenBot(envelope, pairKeys(g), s.o.Private, signer)
+	private, e := s.private(ctx, h.PairID)
+	if e != nil {
+		return wire.BotEnvelope{}, e
+	}
+	body, e := wire.OpenBot(envelope, pairKeys(g), private, signer)
 	if e != nil {
 		return wire.BotEnvelope{}, failure(pa.ScopeDenied, "bot_network_wire")
 	}
@@ -170,7 +214,7 @@ func (s *Service) Receive(ctx context.Context, envelope wire.BotEnvelope) (wire.
 	out.CorrelationID = h.RequestID
 	out.Source, out.Target = h.Target, h.Source
 	out.BodyDigest = Digest(reply)
-	return wire.SealBot(out, reply, pairKeys(g), s.o.Private, s.o.Signer)
+	return wire.SealBot(out, reply, pairKeys(g), private, s.o.Signer)
 }
 
 func (s *Service) dispatch(ctx context.Context, h wire.BotHeader, body []byte) (Response, error) {

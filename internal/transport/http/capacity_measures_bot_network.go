@@ -1,6 +1,62 @@
 package http
 
-import "github.com/sainteye/clawdline/internal/domain/capacity"
+import (
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"time"
+)
+
+func (s *Server) botCloudMeasure(kind string) func() capacity.Reading {
+	return func() capacity.Reading {
+		if kind == "receipts" {
+			if s.store == nil {
+				return capacity.Unmeasured("Bot Cloud store unavailable")
+			}
+			db := s.store.ProjectAssistantDatabase()
+			var exists, used int64
+			if e := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_network_cloud_receipts'`).Scan(&exists); e != nil {
+				return capacity.Unmeasured("Bot Cloud receipt table unreadable")
+			}
+			if exists == 0 {
+				return capacity.Reading{Known: true, Note: "optional Bot Cloud transport store absent"}
+			}
+			if e := db.QueryRow(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_network_cloud_receipts GROUP BY machine)`).Scan(&used); e != nil {
+				return capacity.Unmeasured("Bot Cloud transport receipts unreadable")
+			}
+			return capacity.Reading{Known: true, Used: used, Note: "retained send and target transport correlation; never native execution"}
+		}
+		s.projectAssistants.mu.RLock()
+		n := s.projectAssistants.network
+		s.projectAssistants.mu.RUnlock()
+		if n == nil {
+			return capacity.Reading{Known: true, Note: "Bot Cloud source unconfigured"}
+		}
+		n.mu.Lock()
+		rail, lease, next := n.rail, n.lease, n.nextRefresh
+		n.mu.Unlock()
+		var used int64
+		var refused int64
+		switch kind {
+		case "pending", "frames":
+			if rail != nil {
+				frames, pending, count := rail.Usage()
+				if kind == "frames" {
+					refused = count
+				}
+				used = int64(frames)
+				if kind == "pending" {
+					used = int64(pending)
+				}
+			}
+		case "endpoints":
+			used = int64(len(lease.Endpoints))
+		case "lease":
+			used = max(0, lease.ExpiresAt-time.Now().Unix())
+		case "refresh":
+			used = max(0, int64(time.Until(next).Seconds()))
+		}
+		return capacity.Reading{Known: true, Used: used, Counters: capacity.Counters{Refused: refused}, Note: "current dedicated Bot source occupancy; no viewer or Session queue"}
+	}
+}
 
 func (s *Server) botNetworkGrantMeasure() capacity.Reading {
 	if s.store == nil {

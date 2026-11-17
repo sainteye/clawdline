@@ -1015,6 +1015,11 @@ func (l *Link) ScheduleWebhooks() (schedulewebhook.Identity, schedulewebhook.Clo
 		adaptercloud.NewScheduleWebhookClient(l.settings.APIBase, l.identity.MachineCredential), true
 }
 
+// BotNetworkTransport returns the existing machine socket for the independent Bot rail.
+// Its lifecycle belongs to the Cloud line; callers must retire the Bot worker
+// before opening a replacement link. No viewer or Session authority is added.
+func (l *Link) BotNetworkTransport() *adaptercloud.Transport { return l.transport }
+
 // BotRoutineHooks is separate from the opaque Relay and ordinary command lanes.
 // The machine credential is captured only by the control-plane adapter.
 func (l *Link) BotRoutineHooks() (botroutinehooks.Identity, botroutinehooks.Cloud, bool) {

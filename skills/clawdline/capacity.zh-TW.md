@@ -67,6 +67,12 @@
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.cloud_endpoints` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.cloud_frames` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.cloud_lease_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
+| `bots.cloud_pending` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.cloud_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.cloud_refresh_seconds` | 20 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.config_choices` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_options` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_probes` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |

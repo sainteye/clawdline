@@ -499,6 +499,7 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 	var done chan struct{}
 	var webhooksDone <-chan struct{}
 	var botHooksDone <-chan struct{}
+	var botNetworkDone <-chan struct{}
 	const maxCloudReloadStopSeconds = 15
 	stopWait := time.Duration(min(int64(maxCloudReloadStopSeconds), httptransport.CapacityLimit(capacity.CloudReloadStopSeconds))) * time.Second
 	reload := func() error {
@@ -525,9 +526,17 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 					return fmt.Errorf("the previous Bot webhook worker did not stop within %s", stopWait)
 				}
 			}
+			if botNetworkDone != nil {
+				select {
+				case <-botNetworkDone:
+				case <-time.After(stopWait):
+					return fmt.Errorf("the previous Bot network worker did not stop within %s", stopWait)
+				}
+			}
 			stop, done = nil, nil
 			webhooksDone = nil
 			botHooksDone = nil
+			botNetworkDone = nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -553,6 +562,7 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		if identity, hooks, ok := link.BotRoutineHooks(); ok {
 			botHooksDone = srv.StartBotRoutineHooks(lineCtx, identity, hooks)
 		}
+		botNetworkDone = srv.StartBotNetwork(lineCtx, link.BotNetworkTransport())
 		finished := done
 		go func() {
 			defer close(finished)
@@ -580,7 +590,7 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		if stop != nil {
 			stop()
 		}
-		for _, worker := range []<-chan struct{}{done, webhooksDone, botHooksDone} {
+		for _, worker := range []<-chan struct{}{done, webhooksDone, botHooksDone, botNetworkDone} {
 			if worker == nil {
 				continue
 			}

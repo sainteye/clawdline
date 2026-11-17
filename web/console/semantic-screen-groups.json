@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13145,
-  "riskKeys": 5691,
-  "nonRiskCount": 7454,
+  "englishContentKeys": 13157,
+  "riskKeys": 5702,
+  "nonRiskCount": 7455,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 668,
+      "count": 670,
       "sources": [
         null
       ],
@@ -545,6 +545,8 @@
         "capacityRow.bots.carry_quote_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.cleanup_ms.what",
+        "capacityRow.bots.cloud_endpoints.what",
+        "capacityRow.bots.cloud_lease_seconds.what",
         "capacityRow.bots.config_choices.what",
         "capacityRow.bots.config_probes.what",
         "capacityRow.bots.dispatch_seconds.what",
@@ -7520,7 +7522,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 206,
+      "count": 205,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7634,7 +7636,6 @@
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
-        "transparency.card.persistent-bot-network.how",
         "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",
         "transparency.card.persistent-bot-outputs.title",

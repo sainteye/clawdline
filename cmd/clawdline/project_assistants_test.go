@@ -3,11 +3,51 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestBotConsentSyncUsesLocalOwnerAndReportsRefusals(t *testing.T) {
+	state := t.TempDir()
+	if err := os.WriteFile(filepath.Join(state, "local-token"), []byte("test-local"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var responseStatus atomic.Int32
+	responseStatus.Store(http.StatusOK)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || len(body) != 0 || r.Method != http.MethodPost || r.URL.Path != "/v1/bot-network/consents/approved-consent/sync" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer test-local" || r.Header.Get("X-Clawdline-Orchestrator") != "" {
+			t.Error("consent synchronization changed its scope or credential")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		status := int(responseStatus.Load())
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = io.WriteString(w, `{"synced":true,"authority_id":"approved-consent"}`)
+		} else {
+			_, _ = io.WriteString(w, `{"error":"pa_revoked","detail":"Consent was revoked"}`)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	t.Setenv("CLAWDLINE_NEXT_PORT", strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	var out, errs bytes.Buffer
+	if code := projectAssistantsCommand(context.Background(), []string{"network-consent-sync", "approved-consent"}, state, &out, &errs); code != 0 || !strings.Contains(out.String(), `"synced":true`) || errs.Len() != 0 {
+		t.Fatalf("sync: code=%d output=%q error=%q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	responseStatus.Store(http.StatusForbidden)
+	if code := projectAssistantsCommand(context.Background(), []string{"network-consent-sync", "approved-consent"}, state, &out, &errs); code != 1 || out.Len() != 0 || !strings.Contains(errs.String(), "pa_revoked") {
+		t.Fatalf("refusal: code=%d output=%q error=%q", code, out.String(), errs.String())
+	}
+}
 
 func TestClaudeSetupWithoutClaudeCodeChangesNothing(t *testing.T) {
 	state := t.TempDir()

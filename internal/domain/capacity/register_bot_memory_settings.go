@@ -4,6 +4,12 @@ import pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 
 func memorySettingsBounds() []Entry {
 	return []Entry{
+		{Name: "bots.cloud_receipts", Class: Evidence, Unit: Rows, Limit: pa.MaxNetworkCloudReceipts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudReceipts"}},
+		{Name: "bots.cloud_pending", Class: Buffer, Unit: Rows, Limit: pa.MaxNetworkCloudPending, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudPending"}},
+		{Name: "bots.cloud_frames", Class: Buffer, Unit: Rows, Limit: pa.MaxNetworkCloudFrames, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudFrames", "internal/adapters/botnetwork.NewCloudRail:chan(pa.MaxNetworkCloudFrames)"}},
+		{Name: "bots.cloud_endpoints", Class: Buffer, Unit: Rows, Limit: pa.MaxNetworkCloudEndpoints, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudEndpoints"}},
+		{Name: "bots.cloud_lease_seconds", Class: Cache, Unit: Seconds, Limit: pa.MaxNetworkCloudLeaseSeconds, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudLeaseSeconds"}},
+		{Name: "bots.cloud_refresh_seconds", Class: Cache, Unit: Seconds, Limit: pa.MaxNetworkCloudRefreshSeconds, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxNetworkCloudRefreshSeconds"}},
 		{Name: "bots.network_grants", Class: Evidence, Unit: Rows, Limit: pa.MaxNetworkGrants, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxNetworkGrants"}},
 		{Name: "bots.assistant_grants", Class: Evidence, Unit: Rows, Limit: pa.MaxNetworkAssistantGrants, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxNetworkAssistantGrants"}},
 		{Name: "bots.assistant_receipts", Class: Evidence, Unit: Rows, Limit: pa.MaxNetworkAssistantReceipts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxNetworkAssistantReceipts"}},

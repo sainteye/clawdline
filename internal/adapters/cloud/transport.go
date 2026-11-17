@@ -129,6 +129,9 @@ type Options struct {
 
 // Transport is one line to the relay.
 type Transport struct {
+	botCallback     func(uint64, []byte)
+	botReady        uint64
+	botWanted       uint64
 	rawRekeyPending chan struct{}
 	opts            Options
 
@@ -527,6 +530,9 @@ func (t *Transport) handleFrame(conn *Conn, data []byte, h connectionhealth.Hand
 		return nil
 	}
 	switch kind {
+	case "bot_network_ready", "bot_network_delivery", "bot_network_envelope", "bot_network_ack", "bot_network_delivery_recorded", "bot_network_error":
+		t.handleBotFrame(conn, kind, data)
+		return nil
 	case "content_key_routed", "content_key_error":
 		t.handleRekeyControl(data, kind)
 		return nil

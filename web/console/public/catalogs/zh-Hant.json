@@ -13107,7 +13107,7 @@
   "transparency.card.persistent-bot-network.title": "已授權來源之間的 Bot 請求",
   "transparency.card.persistent-bot-network.condition": "開發版 Bots 必須具備已設定且通過驗證的連線設施。Bot 偏好本身不授予帳號、機器、Project 或助理存取權；尚未設定的來源顯示無法使用。",
   "transparency.card.persistent-bot-network.summary": "來源自有的 Bot 身分使用獨立簽章與加密協定，保存請求關聯，並提供獨立的助理主體驗證邊界。",
-  "transparency.card.persistent-bot-network.how": "Host 擷取真正的 Bot、Project、對話與執行授權。來源接收、原生效果與回覆發布時，重新檢查目前授權及接收者偏好。接收者收到不受信任工作通知，沿用自己的原生權限。助理專用金鑰、帳號同意及有限 Bot 範圍，與人類網頁登入分開管理。",
+  "transparency.card.persistent-bot-network.how": "Host 擷取真正的 Bot、Project、對話與執行授權。來源接收、原生效果與回覆發布時，重新檢查目前授權及接收者偏好。機器來源介面使用即時 Bot 專用授權與獨立協商的連線；本機管理者只能同步已核准的同意，以及另外核對並固定的完整簽章配對。接收者收到不受信任工作通知，沿用自己的原生權限。助理專用金鑰、帳號同意及有限 Bot 範圍，與人類網頁登入分開管理。",
   "transparency.card.persistent-bot-network.effect": "只有取得執行授權的請求，才可能消耗接收者的原生帳號額度。同儕工作不能聯絡其他 Bot、發布檔案、設定排程或寫入持久記憶。已接受請求保留持久身分；結果未知的效果不自動重播。讀取保存的回覆不代表 Agent 已觀測。合成本機來源證據不代表正式 Cloud 已接通；私有 API、Relay 與助理 gateway 仍須另外整合。",
   "projectAssistants.templateCreate": "建立範本",
   "projectAssistants.templatePrivacy": "將這些設定複製為可重用的參考。範本不含對話識別資料、歷史、記憶、登入資料與憑證。已設定的指示會包含在內，分享前請先檢查。",
@@ -13145,5 +13145,17 @@
   "projectAssistants.editInformation": "編輯固定指示",
   "projectAssistants.roomTarget": "回覆對象",
   "projectAssistants.roomEveryone": "所有成員",
-  "projectAssistants.permissionAnswerFailed": "無法確認回答結果。再次回答前，請先核對目前的請求。"
+  "projectAssistants.permissionAnswerFailed": "無法確認回答結果。再次回答前，請先核對目前的請求。",
+  "capacityRow.bots.cloud_receipts.what": "在連線寫入或簽署送達確認前，保存傳送與目標送達的精確關聯；未知與已結束的嘗試共用保留額度。",
+  "capacityRow.bots.cloud_receipts.full": "額度用完時拒絕新的傳輸嘗試，保留既有證據；不會為了騰出空間而重播結果未知的工作。",
+  "capacityRow.bots.cloud_pending.what": "計算正在等待關聯加密回覆的 Bot 專用請求；這份等待佇列與 Session、網頁檢視分開。",
+  "capacityRow.bots.cloud_pending.full": "等待額滿時拒絕新請求，直到既有等待結束。逾時或斷線會保留未知結果，不會重新送出原生工作。",
+  "capacityRow.bots.cloud_frames.what": "計算從 Bot 連線複製出來、等待另外處理的資料框；API 與原生工作不會卡住一般連線的讀取。",
+  "capacityRow.bots.cloud_frames.full": "佇列額滿時停止 Bot 管道並記錄拒絕次數；一般 Session 與網頁檢視繼續使用原有管道。",
+  "capacityRow.bots.cloud_endpoints.what": "限制單份短效來源能力租約可宣告的實際 Bot 對話擷取數；每筆都保留目前的儲存身分與世代。",
+  "capacityRow.bots.cloud_endpoints.full": "超過額度時拒絕整份宣告；來源不會捏造對象，也不會把不完整的租約宣稱為成功。",
+  "capacityRow.bots.cloud_lease_seconds.what": "顯示最近確認的 Bot 來源能力租約還剩幾秒；租約最多延長至一分鐘後。",
+  "capacityRow.bots.cloud_lease_seconds.full": "新租約達到最大時長是正常狀態；租約到期後不再證明來源可用，也不授予執行權限。",
+  "capacityRow.bots.cloud_refresh_seconds.what": "限制能力更新失敗後，再次核對 Bot 能力資料前的等待時間；這段等待不會排入新的原生效果。",
+  "capacityRow.bots.cloud_refresh_seconds.full": "達到這段等待時間時，來源等候後再查能力資料；結果未知的原生工作繼續保留，不會自動重送。"
 }

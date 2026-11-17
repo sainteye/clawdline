@@ -1258,6 +1258,126 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.cloud_endpoints",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudEndpoints"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cloud_frames",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudFrames",
+      "internal/adapters/botnetwork.NewCloudRail:chan(pa.MaxNetworkCloudFrames)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cloud_lease_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudLeaseSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cloud_pending",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudPending"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cloud_receipts",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cloud_refresh_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNetworkCloudRefreshSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.config_choices",
     "Class": "buffer",
     "Unit": "rows",

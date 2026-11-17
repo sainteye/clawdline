@@ -17,6 +17,34 @@ type NetworkHost struct {
 	AccountID string
 }
 
+// NetworkCaptures reads actual current fences, never a directory selector or
+// guessed generation. Only opted-in, writable current Bots are advertised.
+func (h *Host) NetworkCaptures(ctx context.Context, account string) ([]wire.BotEndpoint, error) {
+	h.mu.Lock()
+	st, enabled := h.store, h.enabled && !h.closed
+	h.mu.Unlock()
+	if st == nil || !enabled {
+		return []wire.BotEndpoint{}, nil
+	}
+	page, err := st.List(ctx, pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows})
+	if err != nil {
+		return nil, err
+	}
+	out := []wire.BotEndpoint{}
+	for _, row := range page.Items {
+		b := row.Bot
+		c, e := st.Conversation(ctx, b.Key, b.ConversationID)
+		if e != nil {
+			return nil, e
+		}
+		ep := wire.BotEndpoint{AccountID: account, MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID, BotID: b.Key.BotID, ConversationID: c.ID, Generation: c.Generation}
+		if e = (NetworkHost{Host: h, AccountID: account}).Check(ctx, ep, true); e == nil {
+			out = append(out, ep)
+		}
+	}
+	return out, nil
+}
+
 func (n NetworkHost) Check(ctx context.Context, e wire.BotEndpoint, write bool) error {
 	return n.check(ctx, e, write, false)
 }

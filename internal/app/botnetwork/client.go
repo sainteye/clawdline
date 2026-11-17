@@ -63,7 +63,11 @@ func (s *Service) Call(ctx context.Context, q Call, t Transport) (Response, erro
 	if e = s.o.Host.Check(ctx, q.Source, true); e != nil {
 		return Response{}, e
 	}
-	envelope, e := wire.SealBot(h, body, pairKeys(g), s.o.Private, s.o.Signer)
+	private, e := s.private(ctx, h.PairID)
+	if e != nil {
+		return Response{}, e
+	}
+	envelope, e := wire.SealBot(h, body, pairKeys(g), private, s.o.Signer)
 	if e != nil {
 		return Response{}, e
 	}
@@ -87,7 +91,7 @@ func (s *Service) Call(ctx context.Context, q Call, t Transport) (Response, erro
 	if e != nil {
 		return Response{}, e
 	}
-	plain, e := wire.OpenBot(reply, pairKeys(g), s.o.Private, signer)
+	plain, e := wire.OpenBot(reply, pairKeys(g), private, signer)
 	if e != nil {
 		return Response{}, failure(pa.ScopeDenied, "bot_network_reply_wire")
 	}

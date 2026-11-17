@@ -5,6 +5,14 @@ package projectassistant
 const MaxNetworkReceipts = 64
 const MaxNetworkGrants = 64
 
+// Cloud transport evidence is retained independently of native effect receipts.
+const MaxNetworkCloudReceipts = 64
+const MaxNetworkCloudPending = 8
+const MaxNetworkCloudFrames = 16
+const MaxNetworkCloudEndpoints = 64
+const MaxNetworkCloudLeaseSeconds = 60
+const MaxNetworkCloudRefreshSeconds = 20
+
 // Dedicated assistant authority and receipts remain retained after revocation
 // or unknown effects, independently of the machine-to-machine Bot namespace.
 const MaxNetworkAssistantGrants = 64

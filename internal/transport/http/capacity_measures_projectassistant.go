@@ -69,6 +69,12 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.cloud_receipts":             s.botCloudMeasure("receipts"),
+		"bots.cloud_pending":              s.botCloudMeasure("pending"),
+		"bots.cloud_frames":               s.botCloudMeasure("frames"),
+		"bots.cloud_endpoints":            s.botCloudMeasure("endpoints"),
+		"bots.cloud_lease_seconds":        s.botCloudMeasure("lease"),
+		"bots.cloud_refresh_seconds":      s.botCloudMeasure("refresh"),
 		"bots.network_grants":             s.botNetworkGrantMeasure,
 		"bots.assistant_grants":           s.botAssistantRowsMeasure("project_assistant_gateway_grants"),
 		"bots.assistant_receipts":         s.botAssistantRowsMeasure("project_assistant_gateway_receipts"),

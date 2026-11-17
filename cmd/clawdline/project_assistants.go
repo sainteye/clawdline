@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
@@ -16,6 +17,30 @@ import (
 // send also sets up on demand. It finds the person's Claude Code and Node and
 // installs the adapter Clawdline supplies into local state.
 func projectAssistantsCommand(ctx context.Context, args []string, state string, stdout, stderr io.Writer) int {
+	if len(args) == 2 && args[0] == "network-consent-sync" {
+		req, e := daemonRequest(http.MethodPost, "/v1/bot-network/consents/"+url.PathEscape(args[1])+"/sync", nil)
+		if e != nil {
+			fmt.Fprintln(stderr, e)
+			return 1
+		}
+		req = req.WithContext(ctx)
+		res, e := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		if e != nil {
+			fmt.Fprintln(stderr, e)
+			return 1
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			fmt.Fprintln(stderr, refusalText(res))
+			return 1
+		}
+		_, e = io.Copy(stdout, io.LimitReader(res.Body, 1<<16))
+		if e != nil {
+			fmt.Fprintln(stderr, e)
+			return 1
+		}
+		return 0
+	}
 	if len(args) == 1 && (args[0] == "enable" || args[0] == "disable" || args[0] == "status") {
 		return projectAssistantsSwitch(args[0], stdout, stderr, daemonProjectAssistants)
 	}

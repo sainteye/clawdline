@@ -527,6 +527,16 @@ POST `/v1/tool-library/prepare` 接受
 才使用該工具。既有對話與恢復的 Session 保留原本指令；開啟不代表安裝、載入或授權工具
 及付費 API。
 
+**本機 Bot 同意同步（API 等級 86）。** 當使用者要求同步既有且已核准的 Bot 同意時，
+在該來源執行 `clawdline project-assistants network-consent-sync <consent-id>`。
+它以這台機器的本機擁有者憑證，傳送不含本文與查詢的
+`POST /v1/bot-network/consents/<consent-id>/sync`。Cloud 轉送、機器／原生憑證、
+區域網路與唯讀裝置都會遭拒絕。來源讀取既有私有同意，核對另外固定的完整簽章配對，
+只同步該筆同意；這不會建立同意、配對機器、執行 Bot 工作或設定外部助理 gateway。
+`synced: true` 只確認本機同意中繼資料已同步；實際執行仍需新的即時授權。
+完全相同的同步可安全重複。保留具型別拒絕與未知結果，先處理撤銷、版本過時或無法使用的
+授權，不改用其他憑證或重新安裝 grant。詳見 `docs/project-assistants-network-cloud.md`。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令

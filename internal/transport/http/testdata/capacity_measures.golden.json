@@ -301,6 +301,36 @@
     "Note": true
   },
   {
+    "Name": "bots.cloud_endpoints",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cloud_frames",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cloud_lease_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cloud_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cloud_receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cloud_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.config_choices",
     "Known": true,
     "Note": true

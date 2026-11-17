@@ -4581,6 +4581,26 @@
         {
           "path": "internal/adapters/botnetwork/assistant_store.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/cloud/bot_network_api.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/botnetwork/cloud.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/botnetwork/cloud_rail.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/project_assistants_network_cloud.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/project_assistants_network_consent.go",
+          "line": 1
         }
       ],
       "original": [
@@ -4597,8 +4617,8 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "23e5329da7a5de658acef61e60c4c4aa4bf85b5ec00ce3a0a55958b0c065b885",
-    "cmd/clawdline/project_assistants.go": "d4ded77207df9fa557b0095cfddd4447065a8678749777cbbb2e8163d7be13f0",
+    "cmd/clawdline/main.go": "335fa3a518d2c759e81d704f0c1918fb6ede2cc2a14e68898989f64f6d69afeb",
+    "cmd/clawdline/project_assistants.go": "10f49fb20002a803506e3688fe29b00c9ad6d3949009f13fb4c2c7b1fef49bce",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -4621,10 +4641,13 @@
     "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
     "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
     "internal/adapters/botnetwork/assistant_store.go": "77f56ac961f408428879967f9ae78a81d7aad36adb4bb4de96903b38a1d3e2c1",
+    "internal/adapters/botnetwork/cloud.go": "633dc4e9a120526b607c85b9ce47fb37b8f2988a2a7e52110db4a3a0e3034087",
+    "internal/adapters/botnetwork/cloud_rail.go": "249aaea2e61073a45388a47b5e3b377597e042cab39eeefbf4a2584f22e90a22",
     "internal/adapters/botnetwork/local_authority.go": "fcf9c598cfa46095ea0802b276372ed049ef30daf79dcd1f25bde270b4fb98c4",
     "internal/adapters/botnetwork/receipt_publication.go": "b3e84f8a304699fd01724822b16b1f10c2909626e8a7d632ba9100a1db5561bb",
-    "internal/adapters/botnetwork/store.go": "744e5281d44c3e417ae701c7fe065abc81f3b04a679ddaf1e781bcc53c48b65e",
+    "internal/adapters/botnetwork/store.go": "20e8f2bd497af2e30ce9f24b0e3bcc7c28f6e8056d04b0ca86ad205608cac254",
     "internal/adapters/botprofilevault/files.go": "d4a768036c567d4050c30060abdc9a12983fbcf7b7143d4710884c99817805f5",
+    "internal/adapters/cloud/bot_network_api.go": "dd5a9831f5ac368537f88f2ce14161217ea8c6750a71e5ef6f21009066eed6c0",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
     "internal/adapters/codegraph/codegraph.go": "1f43b427f6c582c759aa2a7bd7cab17c20bbe37d5bb7408a13e0ee8a1aef9339",
@@ -4657,7 +4680,7 @@
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
     "internal/adapters/projectassistantacp/session_configuration.go": "16577174c1c0b9c8858f0eb5815ca06a838836a6a8d98c06eb7cff380b7b63a4",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
-    "internal/adapters/projectassistanthost/network.go": "c7fae39a51aa69afe4fb6d19069608340052c86ed0b4014317123bf5152a1b8e",
+    "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
     "internal/adapters/projectassistanthost/provider.go": "f7ef1a0a04939b182aba463d637de65e8dba686e798dc40b993738ddf22241dd",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
@@ -4682,8 +4705,8 @@
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "3758f2ceed371f4e869d904a0a22f1aaab3f877b46f5e277fe7494a1ac0681b5",
     "internal/app/botnetwork/assistant.go": "46e79bd575f62e4c476ae4fe0c6300fcd09ab182cf6e05a8f22c825a7a1877ea",
-    "internal/app/botnetwork/routes.go": "319ecec6228be796d87be687459c6d91d97f86547fa8408694aee6d12de8a146",
-    "internal/app/botnetwork/service.go": "68277e92751b584ce46763b01950711913a2ed537740f7110fd9dd731e31679c",
+    "internal/app/botnetwork/routes.go": "2ce97e7608f8668d38cd4050786a1cc9265cc5b6b44942373e37710f0b4ed2d9",
+    "internal/app/botnetwork/service.go": "aacef6e3c1c85adf0772f468fd955b8cbeb99e1e33611563bbd7f73c5d6639cb",
     "internal/app/browserbridge/profiles.go": "f41aacbc491f0cb2bbb95008d09bf358b0664ffb01b0b515364f348b550f3834",
     "internal/app/orchestrator/brief.go": "c972bc12d78e728177d0ea800eca27c4907579be3f0bb16f6b6de41648bc4891",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
@@ -4765,9 +4788,11 @@
     "internal/transport/http/integration_settings.go": "39cd9213de52243300696d2d75afaa658ea326e28a10b45b239caad3c1b9b7a4",
     "internal/transport/http/project_assistants_artifacts.go": "f4c03c31dd5899e69cf6ecc043792265d8cc7c5c61b0043b48ccf9d411a3baa6",
     "internal/transport/http/project_assistants_connector_credentials.go": "d5734c4e6ebff636c46b24c87a044df390b26d226f95dff6308b4d7f70caf89f",
-    "internal/transport/http/project_assistants_host.go": "50d05bfd72d19d78300d66359a9baafc3ece8d0fc97a7fadc471c274481f1041",
+    "internal/transport/http/project_assistants_host.go": "d37ad1a76bae41d9f012d3105f7cd0a12807dd906f6fb1db5dda8d3d56a3616a",
     "internal/transport/http/project_assistants_login_profiles.go": "10a43acbb279c6455d8d7adf226ffdb36da32b18e124b37d23849da0aec73ad2",
     "internal/transport/http/project_assistants_memory_settings.go": "78b5e2408ec7f730d1d596b94974eee6baeb07700d5e0ef4cec900f257544223",
+    "internal/transport/http/project_assistants_network_cloud.go": "a4a4bda0c2d797650b5f6a0d62295c9a2c9d74af9ec02454dc690c93ea7c4c72",
+    "internal/transport/http/project_assistants_network_consent.go": "4c5d03575488ae078d2ff19192d266d12e222bcfdb05ec733fb867e1dc80f497",
     "internal/transport/http/project_assistants_routine_hooks.go": "60170d1af2fa2948944103afd16ccb8559a62822e54ea4d4152de86cfd7a2a20",
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
@@ -4783,8 +4808,8 @@
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "613800cb8fc28cd9fe1b4672c4950d9d2527ed34996d837623b909a59cacd0a5",
-    "skills/clawdline/guide.zh-TW.md": "c8b1106155c0a70eacdcee8ea273b5637df97b68a03c948eb8b5efe8cca92393",
+    "skills/clawdline/guide.md": "c1ed8c18456b2b8cdd08749eee16a2e5cad38cf3460f94b6853893dc74da63dd",
+    "skills/clawdline/guide.zh-TW.md": "aaabfd00d2addc643faa04fd08eea1fafb671b9ddc9ef19c2bb3300eb72432e5",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -4839,7 +4864,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "2536beb94f09e91261486570939a80b4b886e590ce832e4af274e6c1a3c1b148",
-    "zh-Hant": "684f489c8308aa9fc27e9e192afbe9791b6fb244c731bfc2628ad580727543f5"
+    "en": "1bc082ed2659ff9d0cf6297c3e5e72bf2d75d657207dfdb0b1d30f76b7e68e79",
+    "zh-Hant": "6105dadd71361f549f76324fb13ccfe01242de890fe544a719784a0cb05f3813"
   }
 }

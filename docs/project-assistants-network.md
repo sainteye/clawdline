@@ -1,5 +1,10 @@
 # Bot network source boundary
 
+The normal Host prerequisite, dedicated machine API/socket adapter, local consent
+sync ingress, API 86 dependency and remaining acceptance boundary are described
+in [Cloud source composition](project-assistants-network-cloud.md). The frozen
+wire and authority rules below remain unchanged.
+
 This source construction extends API 83 and Bot schema 9. Bot schema 10 adds
 an account-scoped, source-owned preference table; it does not rewrite historical
 Bot aggregates, events, command receipts or archive data. Public Release still

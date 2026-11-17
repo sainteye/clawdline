@@ -36,6 +36,7 @@ import (
 // One composition owner per Server. transition serializes lifecycle IO, while
 // mu protects only process-local state and is never held during Host/SQL IO.
 type projectAssistantServer struct {
+	network          *projectAssistantNetwork
 	cloudHooks       botRoutineHookServer
 	transition       sync.Mutex
 	mu               sync.RWMutex
@@ -155,8 +156,11 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		}
 		extensions = attachConnectorCredentials(inventory, s.store.ProjectAssistantDatabase(), account, i.MachineID)
 	}
+	netSource := s.prepareBotNetwork(i)
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
-		Extensions: extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
+		Network: netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
+		NetworkTransport: s.botNetworkTransport,
+		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,
 		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: clock,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
@@ -177,6 +181,10 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		return nil, err
 	}
 	p.mu.Lock()
+	p.network = netSource
+	if netSource != nil {
+		netSource.host.Host = h
+	}
 	p.host, p.account, p.machine = h, i.AccountID, i.MachineID
 	p.inspectionFailed = false
 	p.mu.Unlock()
@@ -225,11 +233,24 @@ func (s *Server) StopProjectAssistants(ctx context.Context) error {
 	p.mu.Lock()
 	p.allowed, p.stopped = false, true
 	h := p.host
+	netSource := p.network
 	p.mu.Unlock()
+	if netSource != nil {
+		netSource.stop()
+	}
 	if h == nil {
 		return nil
 	}
-	return h.Close(ctx)
+	err := h.Close(ctx)
+	if netSource != nil {
+		netSource.mu.Lock()
+		if netSource.pairs != nil {
+			err = errors.Join(err, netSource.pairs.Close())
+			netSource.pairs = nil
+		}
+		netSource.mu.Unlock()
+	}
+	return err
 }
 
 func (s *Server) projectAssistantFeature(ctx context.Context) (pa.FeatureState, error) {

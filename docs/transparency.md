@@ -20,6 +20,11 @@ captured execution fences, untrusted peer input and the dedicated assistant
 principal boundary. Its English and Taiwan Chinese copies distinguish source
 construction from the private Cloud API, relay and assistant gateway that still
 need integration. A saved preference is never account or assistant consent.
+Its source-composition explanation now also names live machine Bot authorization,
+independent socket negotiation and local synchronization of already approved
+consent with a pinned signed pair. Source transport ACKs do not assert native
+execution or Agent observation; production lifecycle attachment and real private
+bridge acceptance remain separately pending.
 
 The selected Bot extension card now covers execution-owned folder skill snapshots,
 selected stdio and HTTP MCP transports, dedicated encrypted connector credentials,

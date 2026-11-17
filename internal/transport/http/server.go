@@ -758,6 +758,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/settings"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/browser"}, s.settingsRoute},
 		{Route{"*", "/v1/settings/project-assistants"}, s.projectAssistantSettingsRoute},
+		{Route{"POST", "/v1/bot-network/consents/"}, s.botNetworkConsentRoute},
 		{Route{"*", "/v1/project-assistants"}, s.projectAssistantsRoute},
 		{Route{"*", "/v1/project-assistants/"}, s.projectAssistantsRoute},
 		{Route{"POST", "/hooks/routines/"}, s.routineHooksRoute},
