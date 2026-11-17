@@ -115,10 +115,12 @@ func (d *Daemon) Start(ctx context.Context, req Request) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A reader may call Wait as soon as downloading becomes visible. Register
+	// the execution before publishing that state, not after its disk write.
+	d.wg.Add(1)
 	// Recorded before the answer, so the caller's first read already names
 	// the release it follows; Execute records it again as it starts.
 	_ = d.Env.record(contract.UpdateApplyStateDownloading, plan.From, plan.Manifest.Version, nil, "")
-	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
 		// Not the request's context: the answer has gone, and the update
