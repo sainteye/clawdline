@@ -141,7 +141,7 @@ test("nine catalogs render numeric sentences at phone and desktop widths", async
   const address = server.address()
   const origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`
   const profile = mkdtempSync(join(tmpdir(), "clawdline-catalog-render-"))
-  const process = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--no-first-run", "--user-data-dir=" + profile, "about:blank"])
+  const process = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--no-first-run", "--user-data-dir=" + profile, "about:blank"])
   let browser: Browser | undefined
   try {
     browser = await browserConnect(await browserEndpoint(process))

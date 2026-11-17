@@ -224,6 +224,7 @@ elif [ "${#private_paths[@]}" -gt 0 ]; then
 fi
 check "check-console-tests.mjs" node tools/check-console-tests.mjs
 check "check-mirror-tests.mjs" node tools/check-mirror-tests.mjs
+check "check-browser-switches.mjs" node tools/check-browser-switches.mjs
 check "workflow evaluation evidence" env PYTHONDONTWRITEBYTECODE=1 python3 tools/test-workflow-eval.py
 if selected tooling; then
 check "test-notify-release-success.sh" sh tools/test-notify-release-success.sh

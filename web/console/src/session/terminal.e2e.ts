@@ -541,7 +541,7 @@ before(async () => {
   project = place.id
   profile = mkdtempSync(join(tmpdir(), "clawdline-terminal-"))
   browserProcess = spawn(chrome, [
-    "--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
+    "--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--user-data-dir=" + profile,
     "--no-first-run", "--no-default-browser-check", "--lang=zh-TW", "about:blank",
   ])
   const endpoint = await new Promise<string>((ok, fail) => {
