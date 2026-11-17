@@ -17,12 +17,23 @@ type nativeToolTrace struct {
 	Diffs  []pa.PermissionDiff
 }
 
+// The supplied codex-acp 2.6 adapter streams command output through these
+// existing ACP v1 metadata fields (its ToolCallRenderer.outputChunk).
+type nativeTerminalOutput struct {
+	Data       string `json:"data"`
+	TerminalID string `json:"terminal_id"`
+}
+
 type nativeTraceUpdate struct {
 	SessionUpdate string          `json:"sessionUpdate"`
 	ToolCallID    string          `json:"toolCallId"`
 	Title         string          `json:"title"`
 	Status        string          `json:"status"`
 	Content       json.RawMessage `json:"content"`
+	Meta          struct {
+		Delta  *nativeTerminalOutput `json:"terminal_output_delta"`
+		Output *nativeTerminalOutput `json:"terminal_output"`
+	} `json:"_meta"`
 }
 
 func (c *Client) traceUpdate(raw json.RawMessage) error {
@@ -52,6 +63,17 @@ func (c *Client) traceUpdate(raw json.RawMessage) error {
 	case "tool_call", "tool_call_update":
 		if category == "tool_call" {
 			c.traceSegment = pa.Trace{}
+		}
+		chunk := u.Meta.Delta
+		if chunk == nil {
+			chunk = u.Meta.Output
+		}
+		if chunk != nil && chunk.TerminalID != "" {
+			if u.ToolCallID != "" && u.ToolCallID != chunk.TerminalID {
+				c.mu.Unlock()
+				return refusal(pa.Invalid, "tool_terminal_id")
+			}
+			u.ToolCallID = chunk.TerminalID
 		}
 		if u.ToolCallID == "" {
 			u.ToolCallID = "event-" + e.ID
@@ -98,6 +120,9 @@ func (c *Client) traceUpdate(raw json.RawMessage) error {
 		}
 		if len(diffs) > 0 {
 			t.Diffs = diffs
+		}
+		if chunk != nil {
+			t.Output += chunk.Data
 		}
 		c.traceTools[u.ToolCallID] = t
 		parts := []string{t.Title}

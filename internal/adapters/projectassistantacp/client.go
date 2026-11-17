@@ -641,6 +641,7 @@ func (c *Client) handle(f frame) error {
 				Content    json.RawMessage `json:"content"`
 				ToolCallID string          `json:"toolCallId"`
 				Status     string          `json:"status"`
+				Meta       json.RawMessage `json:"_meta"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {

@@ -12,8 +12,9 @@ now matches delivery: after any explicit message, final text remains in trace.
 Native narration, supplied thoughts and per-tool status/output/diffs retain
 separate step identities. Text is persisted as deltas and joined only for a
 requested step revision, under the existing read budget and source authority.
-No new execution permission, memory source or model call is added by reading
-these traces. The public website snapshot must follow this reviewed product tree.
+The supplied Codex adapter's existing terminal-output metadata is appended
+in order to the owning tool, rather than dropped. No new execution permission,
+memory source or model call is added by reading these traces. The public website snapshot must follow this reviewed product tree.
 
 The interrupted-Bot update retains allowlisted failure diagnostics through the
 native reply, durable turn and bounded chat read view. Review of the persistent

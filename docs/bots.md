@@ -68,7 +68,8 @@ first-use setup ahead of time and prints which Claude Code version it found;
    stays in the trace. Longer reports can be published as an HTML artifact.
    **Show what it did** keeps separate native narration, thoughts when the agent
    supplies them, and individual tool calls with their status, text output and
-   diffs. Text chunks join within their own step; later steps do not overwrite
+   diffs. The supplied Codex adapter's terminal-output metadata is joined in
+   order within its own tool, alongside ordinary ACP text output. Text chunks join within their own step; later steps do not overwrite
    earlier ones. An expanded step refreshes when new content arrives. Older
    category-only records retain their original representation; omitted thoughts
    and outputs from earlier turns cannot be recovered by this change.

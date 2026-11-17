@@ -860,3 +860,28 @@ func TestConversationTraceKeepsNativeStepsAndTextSegments(t *testing.T) {
 		t.Fatal("thought or tool output leaked into fallback reply")
 	}
 }
+
+func TestNativeTerminalOutputMetadataStaysWithItsTool(t *testing.T) {
+	var events []app.ProtocolEvent
+	c := &Client{sessionID: "s", turnID: "t", ctx: context.Background(), sink: func(_ context.Context, e app.ProtocolEvent) error { events = append(events, e); return nil }}
+	update := func(fields map[string]any) {
+		t.Helper()
+		if err := c.handle(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "s", "update": fields})}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "read", "title": "Read state.txt", "status": "in_progress"})
+	for _, text := range []string{"status: ", "READY-FOR-REVIEW-42\n"} {
+		update(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "read", "_meta": map[string]any{"terminal_output_delta": map[string]string{"terminal_id": "read", "data": text}}})
+	}
+	update(map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "read", "status": "completed"})
+	got := events[len(events)-1].Trace
+	if got.ID != "tool-read" || !got.Complete || !strings.Contains(got.Text, "status: READY-FOR-REVIEW-42") || strings.Count(got.Text, "READY-FOR-REVIEW-42") != 1 {
+		t.Fatalf("terminal output lost: %+v", got)
+	}
+	update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "other", "title": "Another command", "status": "in_progress", "_meta": map[string]any{"terminal_output": map[string]string{"terminal_id": "other", "data": "separate output"}}})
+	other := events[len(events)-1].Trace
+	if strings.Contains(other.Text, "READY-FOR-REVIEW") || !strings.Contains(other.Text, "separate output") {
+		t.Fatalf("tool outputs mixed: %+v", other)
+	}
+}
