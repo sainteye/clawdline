@@ -153,7 +153,7 @@ test("a Bot reply renders Markdown while the person's message stays literal",()=
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const message=(id,kind,text,seq)=>({id,kind,text,seq,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"})
   const items=[{id:"u",kind:"message",anchor_message_seq:1,observed_event_seq:1,message:message("u","user","**not bold**",1)},{id:"a",kind:"message",anchor_message_seq:2,observed_event_seq:1,message:message("a","assistant","**bold**\n\n- one\n- two\n\n<script>x()</script>",2)}]
-  const html=render(ChatRows,{timeline:items,w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:items,w:words("en"),language:"en",onQuote:()=>{}})
   assert.match(html,/<strong>bold<\/strong>/);assert.match(html,/<li>one<\/li>/)
   assert.match(html,/\*\*not bold\*\*/)
   assert.ok(!html.includes("<script>"),"a reply's markup was not escaped")
@@ -161,14 +161,14 @@ test("a Bot reply renders Markdown while the person's message stays literal",()=
 test("a message shows no Reply button until it is tapped",()=>{
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const messages=[{id:"u",kind:"user",text:"Hi",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
-  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),language:"en",onQuote:()=>{}})
   assert.ok(!html.includes(">Reply<"),"a Reply button was shown on an untouched message")
   assert.match(html,/aria-haspopup="menu"/)
 })
 test("a Bot's reply keeps a visible Reply button",()=>{
   const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"x",generation:1}
   const messages=[{id:"a",kind:"assistant",text:"A long answer",seq:1,fence,turn_id:"t",quote_message_id:"",at:"2026-11-14T00:00:00Z"}]
-  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),onQuote:()=>{}})
+  const html=render(ChatRows,{timeline:timeline(messages),w:words("en"),language:"en",onQuote:()=>{}})
   assert.match(html,/class="pa-quote"[^>]*>.*Reply<\/button>/)
   assert.ok(!html.includes("aria-haspopup"),"a Bot reply opened a menu instead")
 })

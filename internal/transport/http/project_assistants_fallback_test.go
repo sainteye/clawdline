@@ -140,6 +140,10 @@ func TestProjectAssistantFallbackHTTPKeepsLogicalTurnAndDurableRest(t *testing.T
 	if got := fallbackAttemptStages(first.Attempts); got != fallbackRefusedThenAnswered || !pa.SafeAttemptClosed(pa.Turn{Attempts: first.Attempts[:3]}) || first.Attempts[3].Agent != pa.Codex || first.Attempts[3].Fence.Generation <= first.Attempts[0].Fence.Generation {
 		t.Fatalf("attempt ledger: %+v", first.Attempts)
 	}
+	final := first.Attempts[len(first.Attempts)-1]
+	if !final.Opened || !final.SendStarted || !final.SendReturned || !final.AnswerObserved || !final.CleanupConfirmed || final.Effect != "unknown" || pa.SafeAttemptClosed(first) {
+		t.Fatalf("completed attempt confused cleanup with replay authority: %+v", final)
+	}
 	counts := map[pa.MessageKind]int{}
 	for _, m := range x.Messages {
 		counts[m.Kind]++
@@ -300,7 +304,10 @@ func TestProjectAssistantFallbackHTTPTransitionFailureRemainsUnknown(t *testing.
 			}
 			f.enable(t)
 			fallbackHTTPCreate(t, f)
-			condition := map[string]string{"refusal": "NEW.command_key LIKE 'runtime-refused-%'", "closed": "NEW.command_key LIKE 'runtime-attempt-%-3'", "alternate-start": "NEW.command_key LIKE 'runtime-start-%' AND EXISTS(SELECT 1 FROM project_assistant_receipts WHERE command_key LIKE 'runtime-refused-%')", "send": "NEW.command_key LIKE 'runtime-attempt-%-5'"}[boundary]
+			// The aggregate is written before its receipt in the same transaction.
+			// Select the actual lifecycle fact, independent of ledger length.
+			latest := `(SELECT json_extract(t.value,'$.attempts[#-1].stage') FROM project_assistant_bots b,json_each(b.data,'$.Turns') t WHERE b.machine=NEW.machine AND b.bot=NEW.bot AND json_extract(t.value,'$.id')=json_extract(NEW.data,'$.resource_id'))`
+			condition := map[string]string{"refusal": "NEW.command_key LIKE 'runtime-refused-%'", "closed": "NEW.command_key LIKE 'runtime-attempt-%' AND " + latest + "='closed'", "alternate-start": "NEW.command_key LIKE 'runtime-start-%' AND EXISTS(SELECT 1 FROM project_assistant_receipts WHERE command_key LIKE 'runtime-refused-%')", "send": "NEW.command_key LIKE 'runtime-attempt-%' AND " + latest + "='sending'"}[boundary]
 			_, err := f.s.store.ProjectAssistantDatabase().Exec(`CREATE TRIGGER fallback_receipt_failure BEFORE INSERT ON project_assistant_receipts WHEN ` + condition + ` BEGIN SELECT RAISE(ABORT,'scripted receipt failure'); END`)
 			if err != nil {
 				t.Fatal(err)

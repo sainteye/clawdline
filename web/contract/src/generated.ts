@@ -5188,13 +5188,56 @@ export interface ProjectAssistantAttachment {
 
 export interface ProjectAssistantAttemptFact {
   agent: ProjectAssistantAgent
+
+  /**
+   * PendingPrompt.Wait returned an answer.
+   */
+  answer_observed?: boolean
+
+  /**
+   * Last source message already seen by the selected Agent/session; 0 when absent.
+   */
+  carry_after_seq?: number
+
+  /**
+   * Prepared route: recap or catch_up; not an immutable disclosure of exact sent
+   * content.
+   */
+  carry_kind?: string
   cleanup_confirmed: boolean
   effect: string
   fence: ProjectAssistantFence
+
+  /**
+   * Source-admitted native activity was observed.
+   */
+  native_activity?: boolean
+
+  /**
+   * Provider Open returned an owned session.
+   */
+  opened?: boolean
   ordinal: number
   reason?: string
+
+  /**
+   * Historical resume candidate provenance, never execution authority or proof of
+   * native loading.
+   */
+  resume_binding_id?: string
+
+  /**
+   * Send returned a pending handle; this is not model acknowledgement or
+   * completion.
+   */
+  send_returned?: boolean
   send_started: boolean
   stage: string
+
+  /**
+   * A tool/permission observation or pre-effect tool journal committed.
+   */
+  tool_activity?: boolean
 }
 
 export interface ProjectAssistantBot {
@@ -6276,6 +6319,8 @@ export interface ProjectAssistantReadTraceSummary {
 }
 
 export interface ProjectAssistantReadTurnSummary {
+  attempts?: ProjectAssistantAttemptFact[]
+
   /**
    * Empty when absent; no captured instructions or failure narrative.
    */

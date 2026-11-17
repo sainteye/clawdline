@@ -64,6 +64,13 @@ func TestProjectAssistantFallbackNetworkKeepsOneAcceptedInput(t *testing.T) {
 	if len(saved.Turns) != 1 || saved.Turns[0].ID != admission.ResourceID || saved.Turns[0].State != pa.TurnSucceeded || fallbackAttemptStages(saved.Turns[0].Attempts) != fallbackRefusedThenAnswered {
 		t.Fatalf("logical turn changed: %+v", saved.Turns)
 	}
+	if len(exported.Turns) != 1 {
+		t.Fatal("export lost logical turn")
+	}
+	final := exported.Turns[0].Attempts[len(exported.Turns[0].Attempts)-1]
+	if !final.Opened || !final.SendReturned || !final.AnswerObserved || !final.CleanupConfirmed || final.Effect != "unknown" || pa.SafeAttemptClosed(saved.Turns[0]) {
+		t.Fatalf("wire lifecycle facts: %+v", final)
+	}
 	for _, attempt := range saved.Turns[0].Attempts {
 		if attempt.Fence.Key != saved.Bot.Key || attempt.Fence.Project != saved.Bot.Project || attempt.Fence.ConversationID != saved.Conversation.ID {
 			t.Fatal("attempt escaped the accepted scope")

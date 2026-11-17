@@ -20,7 +20,8 @@
     "pretest": "npm run deps --silent",
     "test": "node ../tools/console-tests.mjs",
     "test:deps": "node --test ../tools/ensure-web-deps.test.mjs",
-    "e2e:bots-send-recovery": "node console/tools/project-assistants-send-recovery.e2e.mjs"
+    "e2e:bots-send-recovery": "node console/tools/project-assistants-send-recovery.e2e.mjs",
+    "test:fallback-progress": "node --experimental-strip-types --test console/src/project-assistants/fallback-progress.test.ts"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

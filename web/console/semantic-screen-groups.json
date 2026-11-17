@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12810,
-  "riskKeys": 5529,
-  "nonRiskCount": 7281,
+  "englishContentKeys": 12876,
+  "riskKeys": 5555,
+  "nonRiskCount": 7321,
   "groups": [
     {
       "name": "acp / other",
@@ -374,6 +374,34 @@
         "botBrowser.disconnected",
         "botBrowser.open",
         "botBrowser.unsupported"
+      ]
+    },
+    {
+      "name": "botExchange / other",
+      "count": 19,
+      "sources": [
+        "src/project-assistants/exchange-words.ts"
+      ],
+      "keys": [
+        "botExchange.close",
+        "botExchange.delivery",
+        "botExchange.delivery_queued",
+        "botExchange.detail",
+        "botExchange.hops",
+        "botExchange.identity",
+        "botExchange.loading",
+        "botExchange.open",
+        "botExchange.queued",
+        "botExchange.refresh",
+        "botExchange.reply",
+        "botExchange.request",
+        "botExchange.requester",
+        "botExchange.responder",
+        "botExchange.retry",
+        "botExchange.revision",
+        "botExchange.sent",
+        "botExchange.state",
+        "botExchange.title"
       ]
     },
     {
@@ -5831,7 +5859,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 232,
+      "count": 253,
       "sources": [
         null
       ],
@@ -5881,10 +5909,31 @@
         "projectAssistants.failGeneric",
         "projectAssistants.failInvalid",
         "projectAssistants.fallbackAdd",
+        "projectAssistants.fallbackAnswerObserved",
+        "projectAssistants.fallbackAttempt",
+        "projectAssistants.fallbackCarryCatchUp",
+        "projectAssistants.fallbackCarryRecap",
+        "projectAssistants.fallbackCleanupConfirmed",
+        "projectAssistants.fallbackEffective",
         "projectAssistants.fallbackMoveDown",
         "projectAssistants.fallbackMoveUp",
+        "projectAssistants.fallbackOpened",
         "projectAssistants.fallbackOrder",
+        "projectAssistants.fallbackPrimary",
+        "projectAssistants.fallbackProgress",
+        "projectAssistants.fallbackReason_out_of_credits",
+        "projectAssistants.fallbackReason_overloaded",
+        "projectAssistants.fallbackReason_rate_limited",
+        "projectAssistants.fallbackReason_unknown",
+        "projectAssistants.fallbackReason_usage_limit",
+        "projectAssistants.fallbackResumeCandidate",
         "projectAssistants.fallbackSaveStale",
+        "projectAssistants.fallbackSendStarted",
+        "projectAssistants.fallbackStage_answered",
+        "projectAssistants.fallbackStage_opened",
+        "projectAssistants.fallbackStage_opening",
+        "projectAssistants.fallbackStage_sending",
+        "projectAssistants.fallbackWatermark",
         "projectAssistants.fallbacks",
         "projectAssistants.filesUnavailable",
         "projectAssistants.fixBotsOff",

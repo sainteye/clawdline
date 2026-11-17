@@ -48,6 +48,7 @@ type ReadTurnSummary struct {
 	State       pa.TurnState
 	FailureCode pa.ErrorCode
 	StartedAt   string
+	Attempts    []pa.AttemptFact
 }
 
 type ReadSnapshot struct {

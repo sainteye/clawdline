@@ -137,7 +137,7 @@ func viewCheckFence(f pa.Fence, h app.ReadViewHead, current bool) error {
 func viewTurnProjection(value string) string {
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
- 'failure',json_object('code',json_extract(` + value + `,'$.failure.code')),'started_at',json_extract(` + value + `,'$.started_at'))`
+ 'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code')),'started_at',json_extract(` + value + `,'$.started_at'))`
 }
 
 func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
@@ -148,7 +148,7 @@ func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
 	if err := viewCheckFence(turn.Fence, h, false); err != nil {
 		return app.ReadTurnSummary{}, err
 	}
-	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State}
+	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts}
 	if turn.StartedAt != nil {
 		summary.StartedAt = turn.StartedAt.UTC().Format(time.RFC3339)
 	}

@@ -4436,14 +4436,40 @@ type ProjectAssistantAttachment struct {
 }
 
 type ProjectAssistantAttemptFact struct {
-	Agent            ProjectAssistantAgent `json:"agent"`
+	Agent ProjectAssistantAgent `json:"agent"`
+
+	// PendingPrompt.Wait returned an answer.
+	AnswerObserved bool `json:"answer_observed,omitempty"`
+
+	// Last source message already seen by the selected Agent/session; 0 when absent.
+	CarryAfterSeq int64 `json:"carry_after_seq,omitempty"`
+
+	// Prepared route: recap or catch_up; not an immutable disclosure of exact sent
+	// content.
+	CarryKind        string                `json:"carry_kind,omitempty"`
 	CleanupConfirmed bool                  `json:"cleanup_confirmed"`
 	Effect           string                `json:"effect"`
 	Fence            ProjectAssistantFence `json:"fence"`
-	Ordinal          int64                 `json:"ordinal"`
-	Reason           string                `json:"reason,omitempty"`
-	SendStarted      bool                  `json:"send_started"`
-	Stage            string                `json:"stage"`
+
+	// Source-admitted native activity was observed.
+	NativeActivity bool `json:"native_activity,omitempty"`
+
+	// Provider Open returned an owned session.
+	Opened  bool   `json:"opened,omitempty"`
+	Ordinal int64  `json:"ordinal"`
+	Reason  string `json:"reason,omitempty"`
+
+	// Historical resume candidate provenance, never execution authority or proof of
+	// native loading.
+	ResumeBindingID string `json:"resume_binding_id,omitempty"`
+
+	// Send returned a pending handle; this is not model acknowledgement or completion.
+	SendReturned bool   `json:"send_returned,omitempty"`
+	SendStarted  bool   `json:"send_started"`
+	Stage        string `json:"stage"`
+
+	// A tool/permission observation or pre-effect tool journal committed.
+	ToolActivity bool `json:"tool_activity,omitempty"`
 }
 
 type ProjectAssistantBot struct {
@@ -5466,6 +5492,8 @@ type ProjectAssistantReadTraceSummary struct {
 }
 
 type ProjectAssistantReadTurnSummary struct {
+	Attempts []ProjectAssistantAttemptFact `json:"attempts,omitempty"`
+
 	// Empty when absent; no captured instructions or failure narrative.
 	FailureCode string                `json:"failure_code"`
 	Fence       ProjectAssistantFence `json:"fence"`

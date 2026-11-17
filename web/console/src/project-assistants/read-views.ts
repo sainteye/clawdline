@@ -62,6 +62,7 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   // started_at arrived with API level 63; an older daemon omits it.
   if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
   own(t.fence,scope,current)
+  if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
   if(!p||!text(p.id)||!text(p.turn_id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!Array.isArray(p.options)||typeof p.native_request_id!=="string"||typeof p.selected_option_id!=="string")throw failure("pa_invalid")
@@ -131,7 +132,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       seq=e.seq;own(e.fence,scope)
       if(e.message)message(e.message,scope)
       if(e.work)work(e.work,scope)
-      if(e.turn){const t=e.turn;if(!object(t)||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states))throw failure("pa_invalid");own(t.fence,scope);if(t.failure!==undefined)sourceFailure(t.failure)}
+      if(e.turn){const t=e.turn;if(!object(t)||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states))throw failure("pa_invalid");own(t.fence,scope);if(t.failure!==undefined)sourceFailure(t.failure);if(t.attempts!==undefined)validateAttempts(t.attempts,scope)}
       if(e.permission)offer(e.permission,scope)
       if(e.trace)trace(e.trace)
       if(e.source)readSource(e.source,q.key.machine_id)
@@ -170,4 +171,14 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
   return mergeTimeline([rows,added])
 }
 
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??""}}
+export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:ReadScope) {
+ if(!Array.isArray(attempts))throw failure("pa_invalid")
+ for(const f of attempts){
+  if(!object(f)||!integer(f.ordinal,1)||!oneOf(f.agent,ProjectAssistantAgentValues)||typeof f.stage!=="string"||typeof f.send_started!=="boolean"||typeof f.effect!=="string"||typeof f.cleanup_confirmed!=="boolean")throw failure("pa_invalid")
+  own(f.fence,scope)
+  for(const k of ["opened","send_returned","native_activity","tool_activity","answer_observed"] as const)if(f[k]!==undefined&&typeof f[k]!=="boolean")throw failure("pa_invalid")
+  for(const k of ["reason","resume_binding_id","carry_kind"] as const)if(f[k]!==undefined&&typeof f[k]!=="string")throw failure("pa_invalid")
+  if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
+ }
+}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??"",attempts:t.attempts}}

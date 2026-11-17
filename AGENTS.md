@@ -55,6 +55,19 @@ capacity limit; state that effect instead of implying a latency improvement.
 See [the local API review](docs/performance/local-api-review-2026-11-08.md) for the
 baseline, rejected attempts and the next observability priorities.
 
+## Board steps follow code completion
+
+Complete each implementation step automatically as soon as its code is finished, its focused
+checks pass and the change is on main. Do not wait for a dev installation, production Cloud
+deployment or visual acceptance to check off completed implementation work.
+
+Finish the construction scope before the shared review. When the person asks to separate them,
+use one Board item for construction and another for acceptance; begin the acceptance item after
+construction is complete. Keep deployment versions, native runs and human acceptance evidence
+separate and truthful. A checked construction step does not claim that those destinations have
+been accepted or that a public Release exists. Steps whose scope is acceptance itself still need
+their actual acceptance evidence.
+
 ## Before anything is committed
 
 The workflow targets **ten seconds during development and one minute for an ordinary local

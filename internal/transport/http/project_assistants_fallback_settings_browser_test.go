@@ -72,7 +72,7 @@ func TestProjectAssistantFallbackSettingsBrowser(t *testing.T) {
 	for _, m := range saved.Messages {
 		counts[m.Kind]++
 	}
-	if saved.Bot.Agent != pa.ClaudeCode || len(saved.Bot.FallbackAgents.Agents()) != 1 || saved.Bot.FallbackAgents.Agents()[0] != pa.Codex || len(saved.Turns) != 1 || len(saved.Turns[0].Attempts) != 6 || counts[pa.UserMessage] != 1 || counts[pa.AssistantMessage] != 1 || counts[pa.NoticeMessage] != 1 || opens.Load() != 2 || sends.Load() != 1 || closes.Load() != 2 {
+	if saved.Bot.Agent != pa.ClaudeCode || len(saved.Bot.FallbackAgents.Agents()) != 1 || saved.Bot.FallbackAgents.Agents()[0] != pa.Codex || len(saved.Turns) != 1 || fallbackAttemptStages(saved.Turns[0].Attempts) != fallbackRefusedThenAnswered || counts[pa.UserMessage] != 1 || counts[pa.AssistantMessage] != 1 || counts[pa.NoticeMessage] != 1 || opens.Load() != 2 || sends.Load() != 1 || closes.Load() != 2 {
 		t.Fatalf("primary=%s turns=%d messages=%v open/send/close=%d/%d/%d", saved.Bot.Agent, len(saved.Turns), counts, opens.Load(), sends.Load(), closes.Load())
 	}
 	t.Log("real browser + TCP + Host + SQLite: primary unchanged; one user/turn/alternate answer/notice; Open/Send/Close=2/1/2; installed-native/vendor/model/API requests=0")

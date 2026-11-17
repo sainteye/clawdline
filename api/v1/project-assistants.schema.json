@@ -2266,6 +2266,12 @@
         "started_at": {
           "type": "string",
           "description": "When the turn began running, RFC 3339; empty while it waits."
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantAttemptFact"
+          }
         }
       },
       "required": [
@@ -2966,6 +2972,38 @@
         },
         "reason": {
           "type": "string"
+        },
+        "opened": {
+          "type": "boolean",
+          "description": "Provider Open returned an owned session."
+        },
+        "send_returned": {
+          "type": "boolean",
+          "description": "Send returned a pending handle; this is not model acknowledgement or completion."
+        },
+        "native_activity": {
+          "type": "boolean",
+          "description": "Source-admitted native activity was observed."
+        },
+        "tool_activity": {
+          "type": "boolean",
+          "description": "A tool/permission observation or pre-effect tool journal committed."
+        },
+        "answer_observed": {
+          "type": "boolean",
+          "description": "PendingPrompt.Wait returned an answer."
+        },
+        "resume_binding_id": {
+          "type": "string",
+          "description": "Historical resume candidate provenance, never execution authority or proof of native loading."
+        },
+        "carry_kind": {
+          "type": "string",
+          "description": "Prepared route: recap or catch_up; not an immutable disclosure of exact sent content."
+        },
+        "carry_after_seq": {
+          "type": "integer",
+          "description": "Last source message already seen by the selected Agent/session; 0 when absent."
         }
       },
       "required": [

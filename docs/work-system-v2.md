@@ -180,6 +180,14 @@ is analysis, not a checklist; its owner adds steps explicitly. Any `item.convert
 item's history marks it, since every conversion has a Plan on one side. The description remains the authoritative full text; an overlong step
 label is shortened only for the bounded TODO presentation.
 
+For this Project, implementation steps are checked off automatically once their code is complete,
+focused checks pass and the change reaches main. Dev installation, production Cloud deployment
+and visual acceptance are tracked separately and do not delay that implementation checkpoint.
+When the person authorizes separate construction and acceptance items, finish the construction
+item's scope first, then review each flow in the acceptance item. Completing a construction step
+never establishes deployment, native execution, human acceptance or public release evidence.
+An acceptance step still needs the observation that step requests.
+
 Steps do not create Board items, do not assign Sessions, and do not automatically advance the
 item's lifecycle. The owning Agent must explicitly complete or cancel every step before `done` is accepted;
 other phase transitions do not silently complete them. A completed item retains its steps as

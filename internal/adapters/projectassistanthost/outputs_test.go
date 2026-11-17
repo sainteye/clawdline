@@ -89,16 +89,30 @@ func TestOutputToolsUseCurrentTurnAndDurableIdempotency(t *testing.T) {
 func TestOutputStopCancelsCopyWithoutHoldingActorOrPublishingPartialCard(t *testing.T) {
 	type copying struct{}
 	started, release := make(chan struct{}), make(chan struct{})
-	var checks atomic.Int32
+	var paused atomic.Bool
 	n := startNative(t, func(f *hostFixture) {
 		f.o.Outputs = store.Outputs{Dir: t.TempDir()}
 		source := f.o.Source
 		f.o.Source = func(ctx context.Context, key pa.BotKey, write bool) (pa.SourceStatus, error) {
-			if ctx.Value(copying{}) == true && checks.Add(1) == 3 {
-				close(started)
-				select {
-				case <-release:
-				case <-ctx.Done():
+			if ctx.Value(copying{}) == true && !paused.Load() {
+				// Pause only once the snapshot has created its own temporary file.
+				// Authorization and the pre-effect journal must remain unblocked.
+				copyStarted := false
+				if err := filepath.WalkDir(f.o.Outputs.Dir, func(_ string, d os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					copyStarted = copyStarted || !d.IsDir()
+					return nil
+				}); err != nil {
+					return pa.SourceStatus{}, err
+				}
+				if copyStarted && paused.CompareAndSwap(false, true) {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+					}
 				}
 			}
 			return source(ctx, key, write)

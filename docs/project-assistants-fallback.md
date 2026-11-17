@@ -7,6 +7,60 @@ adds a separate authoritative guarantee and cleanup transition. A running
 prompt that fails remains unknown under
 the existing runtime policy, even when its error is classified as quota.
 
+## Console progress and Host tool journals
+
+The optional attempt fields are carried by both complete turns and bounded
+read-view summaries. Snapshot SQL retains the stored attempt ledger, and the
+console retains it when projecting incremental turn events. A fresh snapshot
+therefore displays the same observations as the event stream. Feature schema
+version 5 and artifact display-title overlays remain unchanged by this addition.
+
+The chat's expandable progress view names the configured primary and effective
+Agent and shows the latest normalized stage for each attempt. `send_returned`
+means the local Send call returned a pending handle; `answer_observed` means
+Wait returned an answer. Neither is remote execution acknowledgement. Cleanup
+is displayed separately from `effect`; successful cleanup and an answer can
+still leave effects unknown and never authorize replay. Unknown stage/reason
+strings receive a neutral label rather than becoming provider-authored status.
+
+Prepared `recap` / `catch_up` routes, their source-message watermark and the
+presence of a historical resume candidate are shown as provenance only. An
+adapter can refuse opaque resume and receive a fresh filtered recap instead.
+The view explicitly does not claim native history was loaded or reconstruct an
+immutable exact sent-text disclosure from later mutable memory. It adds no
+switch-back mutation. Primary rest expiry applies to the next explicit input.
+
+The Host journals every authorized NativeWork callback before its operation:
+team availability and calls, Bot directory and messaging, routines, output
+publication and artifact listing, memory read/edit, browser status/commands,
+chat publication, dispatch and work status. Each callback allocates a
+source-owned invocation identity from its execution binding, category and
+atomic invocation sequence. The identity remains fixed for that journal
+attempt. This is an invocation record, not a tool-completion or effect receipt;
+it contains no provider arguments, output text or credentials. Existing native
+observations and work/output receipts keep their own meanings.
+
+A journal error prevents the tool operation, including read-only operations.
+Existing source, exact turn/fence, lifetime and sealing checks still apply.
+Owned Send marks its bounded write context and refuses synchronous tool/event
+callbacks using that context during the write, before any store mutation.
+Independent native consumers keep their own context and may await the lock. Providers must deliver tools
+through their independent consumer or Wait; a callback cannot synchronously
+wait on a journal while Send holds the memory lock. No no-effect guarantee is
+derived from that refusal.
+
+Construction verification includes SQLite journal-failure injection across the
+14 actual Host callbacks, durable distinct read invocation IDs and Send callback
+refusal. `TestProjectAssistantFallbackProgressStoredHTTP` exercises real
+authenticated TCP, Host execution and SQLite while an alternate is waiting for
+an answer and after it closes. Set `CLAWDLINE_FALLBACK_PROGRESS_DIR` to a
+task-owned directory to additionally render the production component in English
+and Taiwan Traditional Chinese from those same HTTP snapshots. The Node
+harness validates the production read envelope and saves HTML and JSON without
+opening a browser or using a model. It establishes rendered data/copy behavior;
+browser layout, installed native switching and production Cloud acceptance are
+separate acceptance work. Public Releases continue to hide Bots.
+
 ## Internal contract
 
 `internal/app/projectassistant.ProviderFailure` is an application-only error
@@ -348,10 +402,11 @@ another PATCH, and a fixed mode keeping the saved order without an Add picker.
 
 ## Durable runtime progress and return to the primary
 
-This increment owns runtime and SQLite behavior. Contract generation, installed
-Host interception, UI presentation, schema-version coordination and deployment
-must be integrated before claiming complete product acceptance. It makes no
-model recap requests and changes no native provider's fallback qualification.
+The original runtime/SQLite increment established the lifecycle below. The
+console and Host construction described above now carries its facts through
+contracts and read views and journals all Host callbacks. Installed native
+qualification, browser/Cloud acceptance and deployment remain separate. No
+model recap requests or native provider fallback qualification are added.
 
 `Turn.Attempts` remains an append-only ledger in the aggregate's SQLite
 transaction, together with its command receipt and events. The normal lifecycle
@@ -372,8 +427,9 @@ NativeWork tool, including tools without visible output. Failure must propagate
 without invoking the tool. Calls use a source-owned stable invocation identity;
 repeating the journal is idempotent and conveys no replay permission. The
 existing owned-provider lifetime check still seals calls on refusal/cleanup.
-Until this boundary is connected in all Host callbacks, this increment proves
-observed events and runtime dispatch, not comprehensive native tool interception.
+The Host callbacks listed above now await this boundary. This proves Host
+invocation admission, not completion or comprehensive native file/command/server
+effect verification; native observations keep their separate source semantics.
 
 The worker reloads the durable turn when it appends lifecycle facts, so a
 concurrent tool or permission event cannot be overwritten by the older worker
@@ -427,9 +483,10 @@ Differences from the pinned CodyNC implementation are deliberate:
   This increment does not give Bots permission to edit their own fallback chain;
   the existing explicit settings and authority checks remain the mapping owner.
 - `apps/desktop/src/renderer/views/thread/HandoffNotice.tsx:24-42` expands an
-  Agent switch notice to show what was carried. Console parity needs the wire/UI
-  integration listed in the task handoff, including a deliberate switch-back
-  action if that action is exposed. No switch-back HTTP command is added here.
+  Agent switch notice to show what was carried. This console shows persisted
+  route/watermark facts instead of reconstructing an exact carried-text
+  disclosure from mutable memory. It adds no switch-back command; any future
+  action needs a separately fenced and authorized mutation.
 
 `TestFallbackLedgerSQLiteParksAndCatchesUpAcrossReopen` exercises scripted
 A/B/A/B/A, reopening real SQLite between B and A, exact native IDs, increasing

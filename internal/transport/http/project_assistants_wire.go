@@ -118,7 +118,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	out.ExchangeID = value.ExchangeID
 	out.Hops = int64(value.Hops)
 	for _, f := range value.Attempts {
-		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason})
+		out.Attempts = append(out.Attempts, contract.ProjectAssistantAttemptFact{Ordinal: int64(f.Ordinal), Agent: contract.ProjectAssistantAgent(f.Agent), Fence: paWireFence(f.Fence), Stage: string(f.Stage), SendStarted: f.SendStarted, Effect: f.Effect, CleanupConfirmed: f.CleanupConfirmed, Reason: f.Reason, Opened: f.Opened, SendReturned: f.SendReturned, NativeActivity: f.NativeActivity, ToolActivity: f.ToolActivity, AnswerObserved: f.AnswerObserved, ResumeBindingID: f.ResumeBindingID, CarryKind: f.CarryKind, CarryAfterSeq: f.CarryAfterSeq})
 	}
 	out.ID = value.ID
 	out.Fence = paWireFence(value.Fence)

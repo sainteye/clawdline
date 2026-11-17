@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -125,8 +126,11 @@ func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEd
 	return w.edit(ctx, id, edit)
 }
 
+type sendWriteContextKey struct{}
+
 type workLifetime struct {
 	closed     atomic.Bool
+	sending    atomic.Bool
 	used       atomic.Bool
 	mu         sync.Mutex
 	unregister func()
@@ -136,6 +140,12 @@ type workLifetime struct {
 	// for its host is withdrawn when this execution ends.
 	sealed context.Context
 	seal   context.CancelFunc
+}
+
+// Only the context of the bounded Send write is non-reentrant. Independent
+// native consumers may wait for the memory lock without blocking Send.
+func (l *workLifetime) insideSend(ctx context.Context) bool {
+	return l.sending.Load() && ctx.Value(sendWriteContextKey{}) == l
 }
 
 func (l *workLifetime) invalidate() {
@@ -216,6 +226,9 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 		if life.closed.Load() {
 			return failure(pa.Revoked, "native_event_lifetime")
 		}
+		if life.insideSend(ctx) {
+			return failure(pa.ExecutionEffectUnknown, "native_event_during_send")
+		}
 		return sink(ctx, e)
 	})
 	if err != nil {
@@ -241,6 +254,14 @@ func (p *ownedProvider) Open(ctx context.Context, q app.OpenRequest, sink func(c
 type ownedSession struct {
 	app.ProviderSession
 	life *workLifetime
+}
+
+// Send is a bounded write inside the engine memory lock. A provider must defer
+// tool callbacks to its independent consumer/Wait, never await a journal here.
+func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	s.life.sending.Store(true)
+	defer s.life.sending.Store(false)
+	return s.ProviderSession.Send(context.WithValue(ctx, sendWriteContextKey{}, s.life), q)
 }
 
 // Steer forwards Send now to a native session that can take it.
@@ -312,6 +333,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	life.watching(context.AfterFunc(openCtx, life.invalidate))
 	bound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
 		life.used.Store(true)
+		if life.insideSend(ctx) {
+			return nil, nil, failure(pa.ExecutionEffectUnknown, "native_tool_during_send")
+		}
 		if life.closed.Load() || openCtx.Err() != nil {
 			return nil, nil, failure(pa.Revoked, "native_work_lifetime")
 		}
@@ -338,6 +362,16 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return ctx, finish, nil
 	}
+	// Each actual Host callback owns one invocation identity. IDs are independent
+	// of model titles/content and stay fixed across the journal's commit attempt.
+	var invocation atomic.Uint64
+	journal := func(ctx context.Context, tool string) error {
+		id := "host-" + q.Binding.Fence.BindingID + "-" + tool + "-" + strconv.FormatUint(invocation.Add(1), 10)
+		if life.closed.Load() || life.insideSend(ctx) || ctx.Err() != nil {
+			return failure(pa.Revoked, "native_work_journal_lifetime")
+		}
+		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
+	}
 	tools := NativeWork{}
 	tools.teamAvailable = func(ctx context.Context) error {
 		ctx, cancel, e := bound(ctx)
@@ -345,6 +379,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return e
 		}
 		defer cancel()
+		if e = journal(ctx, "teamAvailable"); e != nil {
+			return e
+		}
 		_, e = r.ManagerContext(ctx, q.Binding.Fence, turnID)
 		return e
 	}
@@ -354,6 +391,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return nil, e
 		}
 		defer cancel()
+		if e = journal(ctx, "team"); e != nil {
+			return nil, e
+		}
 		h.mu.Lock()
 		team := h.team
 		h.mu.Unlock()
@@ -368,6 +408,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.BotDirectoryPage{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "listBots"); e != nil {
+			return pa.BotDirectoryPage{}, e
+		}
 		return r.ListBots(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.messageBot = func(ctx context.Context, request pa.BotMessageRequest) (pa.Exchange, error) {
@@ -376,6 +419,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.Exchange{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "messageBot"); e != nil {
+			return pa.Exchange{}, e
+		}
 		return r.MessageBot(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
@@ -387,6 +433,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return app.RoutineResult{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "routines"); e != nil {
+			return app.RoutineResult{}, e
+		}
 		return r.Routine(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
@@ -398,6 +447,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.Output{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "output"); e != nil {
+			return pa.Output{}, e
+		}
 		if id == "" || len(id) > pa.MaxNameRunes || request.Path == "" {
 			return pa.Output{}, failure(pa.Invalid, "output_request")
 		}
@@ -497,6 +549,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return nil, e
 		}
 		defer cancel()
+		if e = journal(ctx, "artifacts"); e != nil {
+			return nil, e
+		}
 		x, e := h.store.Export(ctx, q.Bot.Key)
 		if e != nil {
 			return nil, e
@@ -519,6 +574,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return nil, e
 		}
 		defer cancel()
+		if e = journal(ctx, "memory"); e != nil {
+			return nil, e
+		}
 		return r.MemoryEntries(ctx, q.Bot.Key)
 	}
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
@@ -530,6 +588,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return e
 		}
 		defer cancel()
+		if e = journal(ctx, "edit"); e != nil {
+			return e
+		}
 		_, e = r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
 		return e
 	}
@@ -555,6 +616,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return app.BrowserStatus{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "browserStatus"); e != nil {
+			return app.BrowserStatus{}, e
+		}
 		return browser.Status(ctx, owner)
 	}
 	tools.browserCommand = func(ctx context.Context, command app.BrowserCommand) (app.BrowserResult, error) {
@@ -563,6 +627,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return app.BrowserResult{}, e
 		}
 		defer cancel()
+		if e = journal(ctx, "browserCommand"); e != nil {
+			return app.BrowserResult{}, e
+		}
 		// A Bot hands a page to the person by keeping its tab: release would
 		// drop the Bot as owner, and the person could no longer reach the tab
 		// from the Bot's chat. Close still ends a tab the Bot is done with.
@@ -577,6 +644,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return e
 		}
 		defer cancel()
+		if e = journal(ctx, "send"); e != nil {
+			return e
+		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
 	tools.dispatch = func(ctx context.Context, id, brief string, claims []string) (pa.WorkLink, error) {
@@ -587,6 +657,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		defer cancel()
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
+		}
+		if e = journal(ctx, "dispatch"); e != nil {
+			return pa.WorkLink{}, e
 		}
 		payload, _ := json.Marshal(struct {
 			Fence       pa.Fence
@@ -605,6 +678,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		defer cancel()
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
+		}
+		if e = journal(ctx, "status"); e != nil {
+			return pa.WorkLink{}, e
 		}
 		return b.Status(ctx, actor, taskID)
 	}
