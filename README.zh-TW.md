@@ -106,6 +106,12 @@ curl -fsSL https://clawdline.com/install.sh | sh
 
 [實驗性視圖 Plugin](docs/plugins/view-plugin-v1.md)可動態載入獨立 ZIP 視圖。套件依瀏覽器／介面儲存；內附星系與清單，讀取明確授權範圍內的 Session 摘要。公開 Release 是否提供此功能，取決於已安裝的宿主版本。
 
+## Bots 架構與致謝
+
+Clawdline 的 **Bots 架構參考自 [Codync](https://github.com/leepokai/Codync)**，包含持續存在的 Bot 身分、每個 Bot 的訊息佇列、記憶，以及原生 Agent Session 的邊界設計。Clawdline 將這些概念改寫並整合至 Go 常駐服務與 React 主控台。感謝 Codync 作者與貢獻者的工作。
+
+詳見[重用範圍與架構參考](docs/project-assistants-reuse.md)、[改寫紀錄](third_party/codync/DERIVATION.md)，以及保留的[授權條款](third_party/codync/LICENSE)與[來源聲明](third_party/codync/NOTICE)。
+
 ## 授權
 
 [MIT](LICENSE)

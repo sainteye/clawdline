@@ -106,6 +106,12 @@ The short URL points to a reviewed verifier script and installs the latest stabl
 
 [Experimental View Plugins](docs/plugins/view-plugin-v1.md) load independent ZIP views at runtime. Packages are stored per browser/interface; the included Galaxy and List read explicitly scoped Session summaries. Public Release availability depends on the installed host version.
 
+## Bots architecture and acknowledgments
+
+Clawdline's **Bots architecture draws on [Codync](https://github.com/leepokai/Codync)**, including persistent Bot identity, per-Bot message queues, memory, and native agent session boundaries. Clawdline adapts these concepts to its Go daemon and React console. We thank the Codync authors and contributors for their work.
+
+See the [reuse and architecture reference](docs/project-assistants-reuse.md), [adaptation record](third_party/codync/DERIVATION.md), and preserved [license](third_party/codync/LICENSE) and [attribution notice](third_party/codync/NOTICE).
+
 ## License
 
 [MIT](LICENSE)
