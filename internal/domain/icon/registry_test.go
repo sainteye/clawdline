@@ -158,11 +158,18 @@ func TestAHomeRowNamesOnlyTheHomeDirectory(t *testing.T) {
 	if got := r.Label(home); got != "home" {
 		t.Errorf("the home directory itself is called %q", got)
 	}
-	homeMark := r.For(home)
+	if _, source := r.Resolve(home); source != SourceRegistry {
+		t.Errorf("the home directory's mark source = %q, want registry", source)
+	}
 	under := filepath.Join(home, "projects", "dualjs")
-	if got := r.For(under); reflect.DeepEqual(got, homeMark) {
-		t.Error("a project under home is drawn with the home row's mark")
-	} else if !reflect.DeepEqual(got, creatureFromSeed(StableHash(under))) {
+	got, source := r.Resolve(under)
+	if source != SourceGenerated {
+		t.Errorf("a project under home has mark source %q, want generated", source)
+	}
+	// Generated marks come from a finite palette and can equal the home
+	// row's mark. Check the selected source and exact path-derived result,
+	// rather than requiring different paths to have different artwork.
+	if !reflect.DeepEqual(got, creatureFromSeed(StableHash(under))) {
 		t.Error("a project under home is not drawn from its own path")
 	}
 
