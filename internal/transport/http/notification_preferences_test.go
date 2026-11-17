@@ -9,6 +9,15 @@ import (
 func TestNotificationPreferencesKeepLegacyChoicesAndSeparateEvents(t *testing.T) {
 	s := pushServer(t)
 	file := nextconfig.Open(s.cfg.Dir)
+	if !s.notificationEnabled("push_on_bot_done") {
+		t.Fatal("Bot completion default is off")
+	}
+	if _, err := file.Set(map[string]any{"push_on_bot_done": false}); err != nil {
+		t.Fatal(err)
+	}
+	if s.notificationEnabled("push_on_bot_done") {
+		t.Fatal("Bot completion ignores explicit false")
+	}
 	if !s.notificationEnabled("push_on_model_capacity") {
 		t.Fatal("model capacity default is off")
 	}

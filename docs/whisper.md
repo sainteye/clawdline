@@ -250,6 +250,14 @@ to switch on beyond the one that was already needed to type from a phone at all
 button; what it records is uploaded, read by the model on this disk, and comes back as text in the
 box.
 
+Bots use the same browser recorder, selected voice host and `/v1/voice` route as
+Session dictation. The microphone sits beside the attachment control. Stopping
+appends the transcript to the latest draft without sending it; press Send after
+reviewing the words. The shared status row offers Cancel and recovery without
+recording again. Leaving the Bot cancels its recording and discards a late
+transcription. An active microphone can still be stopped if sending becomes
+unavailable.
+
 **The point is where the audio does not go.** Every phone already has a recogniser behind a
 permission prompt, and it is good, and it is free — and what it costs is that the sentence goes to
 whoever wrote it. That is the same trade the top of this page is about, met a second time on a

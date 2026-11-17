@@ -9661,6 +9661,10 @@
   "notifications.smart_notifications": "完成通知顯示交件與任務內容",
   "notifications.smart_notificationsHint": "在通知中帶入 Session 交件摘要或任務名稱；不會多送一則通知。",
   "notifications.title": "通知",
+  "notifications.push_on_bot_done": "Bot 完成任務",
+  "notifications.push_on_bot_doneHint": "每次主對話任務成功完成時通知一次，點開即進入該 Bot 的對話。",
+  "notifications.botSound": "Bots 完成提示音",
+  "notifications.botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",
   "ops.add": "新增",
   "ops.addMenu": "新增到 Ops",
   "ops.addProjectFile": "加入 Project 檔案",
@@ -10168,6 +10172,12 @@
   "projectAssistants.messageActions": "訊息動作",
   "projectAssistants.pictureLoading": "正在讀取圖片…",
   "projectAssistants.pictureUnavailable": "無法讀取圖片",
+  "projectAssistants.sourceConnecting": "正在連線至機器",
+  "projectAssistants.sourceOffline": "暫時連不上這台機器。",
+  "projectAssistants.sourceRetrying": "正在重試…",
+  "projectAssistants.sourceRetryHint": "會自動重試，連線恢復後便會更新 Bot 清單。",
+  "projectAssistants.sourcePairingRequired": "請確認這台機器的配對與存取權限。",
+  "projectAssistants.sourceDetails": "連線詳細資訊",
   "playbook.boardDriveTitle": "看板項目推進",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
@@ -12899,5 +12909,7 @@
   "transparency.card.voice-call-ending.condition": "只在 Realtime 或 GPT-Live 已連線，且本人要求掛斷或直接道別時使用。",
   "transparency.card.voice-call-ending.summary": "中英文通話控制指示區分結束這通電話、關閉終端 Session 及替別人傳話。",
   "transparency.card.voice-call-ending.how": "程式辨識中英文直接掛斷用語；簡短的「對／好」只確認緊接在前的明確掛斷問題。即使後端沒有呼叫 end_call，本機期限仍會結束通話；否定要求會取消。",
-  "transparency.card.voice-call-ending.effect": "先停止本機收音與播放，再播下降的兩聲提示音。舊音訊環境會在提示音後關閉，不會關掉新通話；沒有 Web Audio 時可能無聲。Live 最終用量接收與本機掛斷分開。指示已送出、轉寫時間與合成測試不能證明真實語音理解或手機播放。提示音不額外呼叫模型。"
+  "transparency.card.voice-call-ending.effect": "先停止本機收音與播放，再播下降的兩聲提示音。舊音訊環境會在提示音後關閉，不會關掉新通話；沒有 Web Audio 時可能無聲。Live 最終用量接收與本機掛斷分開。指示已送出、轉寫時間與合成測試不能證明真實語音理解或手機播放。提示音不額外呼叫模型。",
+  "botBrowser.handingBack": "正在將控制權交回 Bot…",
+  "botBrowser.handbackFailed": "尚未確認控制權已交回，請打開操作畫面檢查（{code}）。"
 }

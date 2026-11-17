@@ -206,3 +206,28 @@ have separate acceptance below.
 - The transparency page has no card describing the `browser_status` and
   `browser_command` tool text a Bot receives; only the source receipts were
   refreshed. A card needs its English and Taiwan Traditional Chinese copy.
+
+
+## Leaving the person's browser panel
+
+Closing the Bot browser panel, pressing Escape or unmounting it while returning
+to another view now hands its human-controlled tabs back automatically. The
+panel captures the exact source, Bot and conversation; handback first waits for
+an in-flight takeover or open, then reads fresh ownership, returns only that
+owner's human-controlled tabs in their exact Chrome profiles, and reads again
+to confirm the handback. It leaves the tabs open for the Bot.
+
+Explicit close waits for confirmation. A refusal keeps the panel open with its
+code; a forced view exit reports failure through the existing toast. An unknown
+handback is never blindly repeated: another explicit exit first reads current
+ownership. Changing source authority cannot retarget the old request. Pending
+panel reads are cancelled after the handback settles, while React StrictMode's
+effect replay on a still-connected panel does not relinquish control. This is
+view-exit behavior, not a guarantee that a network request survives terminating
+the entire browser or losing connectivity.
+
+`browser-handback.test.ts` covers profile/tab isolation, pending takeover,
+unknown outcomes and malformed ownership. `bot-feedback.e2e.mjs` uses the actual
+Bot panel in Chromium/WebKit, in English and Traditional Chinese, and checks
+close, Escape, unmount and leaving during takeover. Its source and Chrome facts
+are synthetic; it does not drive the person's real tabs.

@@ -328,3 +328,39 @@ is no model turn, no timeout and no fallback to arrange.
 route; it is on by default, and turning it off does not stop the task itself.
 
 A session that has stopped to ask is under none of them, in either direction, on purpose.
+
+
+## Bot completion and browser sound
+
+A successful visible main-chat Bot turn writes its `bot.completed.push` intent
+in the same primary SQLite transaction as its terminal state and durable
+completion marker. A failed transaction publishes neither. Receipt replay and
+a later write of the same succeeded turn do not create another intent.
+Hidden Bots, internal peer requests, individual group-member turns and joined
+inputs do not generate these completion notices. Failed, cancelled and unknown
+outcomes do not claim success.
+
+The existing broker outbox sends outside the transaction and applies its normal
+restart recovery: an unattempted intent can recover, while an uncertain attempted
+push is not automatically repeated. `push_on_bot_done` is an independent machine
+notification preference, enabled by default and available through both full
+settings and the narrow Cloud notification settings route. Existing device
+subscriptions and permission remain necessary; this change does not subscribe
+a device or override a disabled preference. The notification's destination is
+the source machine, Bot and conversation, without a terminal Session alias.
+
+The roster's optional `completed_turn_id` carries the latest committed success
+through existing snapshot/SSE transports. The mounted App observes it while the
+Bots view is open and closed. Initial observations, reconnect replay, account or
+authorization replacement and unhiding a Bot stay quiet. New successes play the
+shared short rising chime after browser audio has been unlocked by interaction.
+The Notifications page has a separate browser-only sound switch. Browser audio
+and ringer restrictions remain in force; an inactive or closed page relies on
+push delivery rather than guaranteed custom audio.
+
+`completion_test.go` injects a transaction failure and checks receipt replay and
+the actual roster projection. `bot_completion_push_test.go` checks shared-primary
+rollback, recovered delivery, destination and mute preference with a fake sender.
+`completion-sound.test.ts` and `bot-feedback.e2e.mjs` cover new/replayed markers,
+storage-denied mute and the real App host in Chromium/WebKit. These tests do not
+claim that a particular physical phone received or audibly presented a push.

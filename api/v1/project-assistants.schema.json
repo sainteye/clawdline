@@ -1102,6 +1102,7 @@
       "additionalProperties": false,
       "description": "",
       "properties": {
+        "completed_turn_id": {"type": "string", "description": "The latest committed successful main-chat task. Empty or absent on older sources."},
         "bot": {
           "$ref": "#/$defs/ProjectAssistantBot"
         },

@@ -5288,6 +5288,12 @@ export interface ProjectAssistantBotSummary {
   activity: string
   activity_at: string
   bot: ProjectAssistantBot
+
+  /**
+   * The latest committed successful main-chat task. Empty or absent on older
+   * sources.
+   */
+  completed_turn_id?: string
   failure?: ProjectAssistantFailure
   latest_message: string
   pending_permissions: number
@@ -10261,6 +10267,11 @@ export interface SettingsRequest {
   push_on_board_done: boolean | null
 
   /**
+   * Notify when a Bot completes a task successfully.
+   */
+  push_on_bot_done: boolean | null
+
+  /**
    * Notify when a capacity threshold is crossed.
    */
   push_on_capacity: boolean | null
@@ -10679,6 +10690,11 @@ export interface SettingsSnapshot {
    * Notify when a Board item is completed.
    */
   push_on_board_done: boolean | null
+
+  /**
+   * Notify when a Bot completes a task successfully.
+   */
+  push_on_bot_done: boolean | null
 
   /**
    * Notify when a capacity threshold is crossed.

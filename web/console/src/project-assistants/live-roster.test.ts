@@ -4,7 +4,7 @@ import {readFileSync} from "node:fs"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error -- Node executes source extensions.
-import {emptyLiveRoster,applyLiveRoster,liveRosterItems,followLiveRoster,type LiveRosterUpdate} from "./live-roster.ts"
+import {emptyLiveRoster,applyLiveRoster,liveRosterItems,followLiveRoster,createRosterReconnect,type LiveRosterUpdate} from "./live-roster.ts"
 // @ts-expect-error -- Node executes source extensions.
 import {RosterStreamFailure} from "./roster-stream.ts"
 // @ts-expect-error -- Node executes source extensions.
@@ -104,4 +104,58 @@ test("an incomplete snapshot restarts fresh and revocation clears its rows witho
   assert.equal(updates.filter(u=>u.items?.length).length,1)
   assert.deepEqual(updates.at(-1)!.items,[])
   assert.equal(updates.at(-1)!.error,"pa_revoked")
+  assert.equal(updates.at(-1)!.retryable,false)
+})
+
+
+test("manual reconnect wakes one existing wait and cannot start parallel work",async t=>{
+  t.mock.timers.enable({apis:["setTimeout","Date"]})
+  const reconnect=createRosterReconnect(),control=new AbortController()
+  reconnect.retry() // No read or stream is created while there is no wait.
+  let resumed=0
+  const waiting=reconnect.wait(control.signal,3000).then(()=>resumed++)
+  reconnect.retry();reconnect.retry();await waiting
+  assert.equal(resumed,1)
+  t.mock.timers.tick(3000);await Promise.resolve();assert.equal(resumed,1)
+  reconnect.retry();assert.equal(resumed,1)
+  const cancelled=reconnect.wait(control.signal,3000).then(()=>resumed++)
+  control.abort();await cancelled;assert.equal(resumed,2)
+})
+
+test("manual reconnect respects the server cooldown and timers cannot overflow",async t=>{
+  t.mock.timers.enable({apis:["setTimeout","Date"]})
+  const reconnect=createRosterReconnect(),control=new AbortController()
+  let finished=false
+  const waiting=reconnect.wait(control.signal,3000,5000).then(()=>{finished=true})
+  reconnect.retry();t.mock.timers.tick(4999);await Promise.resolve();assert.equal(finished,false)
+  t.mock.timers.tick(1);await waiting;assert.equal(finished,true)
+  finished=false
+  const long=reconnect.wait(control.signal,3000,Number.MAX_SAFE_INTEGER).then(()=>{finished=true})
+  reconnect.retry();t.mock.timers.tick(3000);await Promise.resolve();assert.equal(finished,false)
+  control.abort();await long
+})
+
+test("a transient status failure retries serially and reports pending until recovery",async()=>{
+  const control=new AbortController(),updates:LiveRosterUpdate[]=[],waits:number[][]=[]
+  let attempts=0
+  const source={machineID:"machine",authorizationRevision:"grant",current:()=>true,
+    status:async()=>{if(++attempts===1)throw {error:{code:"pa_offline",retry_after_seconds:5}};return {sources:[status]}},
+    subscribeRoster:async(_q:W.ProjectAssistantRosterRequest,receive:(f:W.ProjectAssistantRosterFrame)=>void)=>{
+      receive(hello);receive(frame("snapshot-complete","ready",[row(1)]));control.abort()
+    },
+  } as unknown as SourceClient
+  await followLiveRoster(source,()=>[source],control.signal,3000,value=>updates.push(value),async(_signal,ms,minimum)=>{waits.push([ms,minimum??0])})
+  assert.deepEqual(waits,[[3000,5000]])
+  assert.deepEqual(updates.map(u=>[u.error,u.pending]),[["",true],["pa_offline",false],["pa_offline",true],["",false]])
+  assert.equal(attempts,2)
+})
+
+test("an oversized fresh snapshot stops and does not promise automatic retry",async()=>{
+  const control=new AbortController(),updates:LiveRosterUpdate[]=[]
+  const source={machineID:"machine",authorizationRevision:"grant",status:async()=>({sources:[status]}),
+    subscribeRoster:async()=>{throw new RosterStreamFailure("capacity")},
+  } as unknown as SourceClient
+  await followLiveRoster(source,()=>[source],control.signal,3000,value=>updates.push(value),async()=>assert.fail("permanent capacity refusal cannot reconnect"))
+  assert.equal(updates.at(-1)!.error,"pa_capacity_full")
+  assert.equal(updates.at(-1)!.retryable,false)
 })

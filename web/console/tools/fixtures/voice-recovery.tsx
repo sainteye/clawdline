@@ -34,6 +34,10 @@ import "../../src/brand-handle.css"
 import "../../src/font-scale.css"
 // Synthetic failure injection around real Composer, transcript and voice code.
 // No physical microphone, daemon, provider or remote transcription is used.
+import { useState } from "react"
+import { Composer as BotComposer } from "../../src/project-assistants/Composer.js"
+import { words as botWords } from "../../src/project-assistants/words.js"
+import "../../src/project-assistants/styles.css"
 import { createRoot } from "react-dom/client"
 import { Composer } from "../../src/session/Composer.js"
 import { TranscriptEntries } from "../../src/session/Transcript.js"
@@ -112,6 +116,10 @@ const json = (value: unknown, code = 200) => new Response(JSON.stringify(value),
 window.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href)
   if (!url.pathname.startsWith("/v1/")) return real(input, init)
+  if (url.pathname === "/v1/voice") {
+    try { return json(await remote.transcribe()) }
+    catch { return json({ error: { code: "offline", message: "Synthetic offline" } }, 503) }
+  }
   if (url.pathname === "/v1/voice/source") return json({ machine: "fixture", platform: "darwin", name: "Test host" })
   if (url.pathname === "/v1/personas") return json({ personas: [] })
   return json({ error: { code: "not_found", message: "Synthetic fixture" } }, 404)
@@ -134,6 +142,17 @@ const entries = [
   { id: "fixture-user", role: "user", text: lang === "en" ? "Check that Stop ends the microphone and keeps my recording if processing fails." : "確認按停止就停止收音，處理失敗時也能保住剛剛說的話。", at: Date.now() / 1000 - 60 },
   { id: "fixture-assistant", role: "assistant", text: lang === "en" ? "Tap the microphone, then Stop. Failure recovery keeps this recording for retry." : "點麥克風開始，再按停止。若後續處理失敗，可保留這段錄音並重試轉文字。", at: Date.now() / 1000 - 45 },
 ]
+let sends = 0
+function BotInput() {
+  const [value, setValue] = useState("")
+  const [mounted, setMounted] = useState(true)
+  const [disabled, setDisabled] = useState(false)
+  return <div className="project-assistants" style={{ padding: 12 }}>
+    <button onClick={() => setMounted(false)}>Unmount input</button>
+    <button onClick={() => setDisabled(old => !old)}>Toggle disabled</button>
+    {mounted && <BotComposer text={value} onText={setValue} onSend={() => { sends++ }} disabled={disabled} busy={false} onClearQuote={() => {}} w={botWords(lang)} onImages={() => {}} />}
+  </div>
+}
 document.documentElement.classList.remove("booting")
 createRoot(document.getElementById("root")!).render(<main className="app" data-view="detail" style={{ width: "100%", height: "100dvh", display: "flex" }}>
   <section className="pane-detail" style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
@@ -142,11 +161,11 @@ createRoot(document.getElementById("root")!).render(<main className="app" data-v
       <div id="test-microphone" style={{ color: "var(--dim)", marginTop: 4 }}>{lang === "en" ? "Test microphone: off" : "測試麥克風：已關閉"}</div>
     </div>
     <div className="transcript" style={{ flex: 1, overflow: "auto" }}><TranscriptEntries entries={entries as never} assistant="codex" /></div>
-    <Composer row={null} remote={remote} onDid={() => {}} />
+    {q.get("composer") === "bots" ? <BotInput /> : <Composer row={null} remote={remote} onDid={() => {}} />}
     <StatusLine row={row as never} />
   </section>
 </main>)
 Object.assign(window, { voiceFixture: {
   finish: () => finish?.(), succeed: () => { failRead = false; resolveRead?.({ text }) },
-  snapshot: () => ({ state: Voice.voiceState(), opens, posts, tracks: tracks.map(track => track.readyState) }),
+  snapshot: () => ({ state: Voice.voiceState(), opens, posts, sends, tracks: tracks.map(track => track.readyState) }),
 } })

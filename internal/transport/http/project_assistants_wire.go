@@ -318,6 +318,7 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.Bot = convertedBot
 	out.Status = value.Status
+	out.CompletedTurnID = value.CompletedTurnID
 	if value.Failure != nil {
 		converted := paWireFailure(*value.Failure)
 		out.Failure = &converted

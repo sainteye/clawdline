@@ -304,6 +304,25 @@ applied cursor. Incomplete snapshots restart fresh. The existing 3-second
 interval schedules serial reconnection, never a List poll. Source revocation,
 scope denial or unpairing clears retained rows and stops the subscription.
 
+Transient read failures now use a neutral per-machine connection card, with the
+original typed error behind Connection details. The card says automatic retry
+is active and offers Try again; an in-flight attempt disables that button.
+Manual local retry wakes only the existing serial reconnect wait, preserves
+the applied cursor and respects a source-provided retry-after floor. It cannot
+create a parallel subscription. Cloud snapshot retry goes through the existing
+single-flight loader, while foreground automatic refresh retains its cadence.
+Both paths retain previously loaded observations as stale. An unavailable first
+read says Connecting rather than claiming an authoritative zero Bots. Permanent
+authority/protocol refusals and an oversized initial live snapshot do not claim
+that automatic retry is still active.
+
+`roster-recovery.e2e.mjs` injects status failures and dropped subscriptions
+around the actual Bots UI, in Chromium/WebKit and English/Traditional Chinese.
+It checks initial failures, manual recovery, automatic snapshot recovery,
+retained rows, disabled in-flight controls, cursor resume and source-specific
+revocation. These are synthetic local sources, not encrypted Cloud transport
+or a diagnosis of a particular production disconnection.
+
 The registered 1,000-row client budget includes removal revisions. Overflow
 requests a fresh snapshot, reclaiming removal history; an oversized fresh
 snapshot stops with a capacity error. Hidden Bots retain their authorized

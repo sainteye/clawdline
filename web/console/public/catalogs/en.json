@@ -9661,6 +9661,10 @@
   "notifications.smart_notifications": "Use details in completion notifications",
   "notifications.smart_notificationsHint": "Uses the Session's delivery summary or task titles instead of generic wording. This does not create another notification.",
   "notifications.title": "Notifications",
+  "notifications.push_on_bot_done": "A Bot finishes a task",
+  "notifications.push_on_bot_doneHint": "Once per successful main-chat task; opens that Bot’s conversation.",
+  "notifications.botSound": "Bots completion sound",
+  "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "ops.add": "Add",
   "ops.addMenu": "Add to Ops",
   "ops.addProjectFile": "Add Project file",
@@ -10168,6 +10172,12 @@
   "projectAssistants.messageActions": "Message actions",
   "projectAssistants.pictureLoading": "Loading picture…",
   "projectAssistants.pictureUnavailable": "Picture unavailable",
+  "projectAssistants.sourceConnecting": "Connecting to your machines",
+  "projectAssistants.sourceOffline": "This machine is temporarily unavailable.",
+  "projectAssistants.sourceRetrying": "Retrying…",
+  "projectAssistants.sourceRetryHint": "We will retry automatically. The Bot list will update when the connection returns.",
+  "projectAssistants.sourcePairingRequired": "Check this machine’s pairing and access permissions.",
+  "projectAssistants.sourceDetails": "Connection details",
   "playbook.boardDriveTitle": "Drive Board Items to Done",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
@@ -12899,5 +12909,7 @@
   "transparency.card.voice-call-ending.condition": "During a connected Realtime or GPT-Live voice call, when the person requests hangup or directly says goodbye.",
   "transparency.card.voice-call-ending.summary": "Bilingual call-control instructions distinguish ending this voice call from closing a terminal Session or relaying a message.",
   "transparency.card.voice-call-ending.how": "The client recognizes direct English and Chinese call-ending phrases. A short yes confirms only the immediately preceding explicit hangup question. A local deadline ends the call even if the backend never calls end_call; a negative request cancels it.",
-  "transparency.card.voice-call-ending.effect": "Local capture and playback stop before a descending two-note cue. The old audio context closes after its cue; it cannot close a new call. Missing Web Audio can make the cue silent. Live final-usage collection is separate from local hangup. Sent instructions, transcript timing and synthetic tests do not prove real audio comprehension or phone playback. No extra model request generates the tone."
+  "transparency.card.voice-call-ending.effect": "Local capture and playback stop before a descending two-note cue. The old audio context closes after its cue; it cannot close a new call. Missing Web Audio can make the cue silent. Live final-usage collection is separate from local hangup. Sent instructions, transcript timing and synthetic tests do not prove real audio comprehension or phone playback. No extra model request generates the tone.",
+  "botBrowser.handingBack": "Returning control to the Bot…",
+  "botBrowser.handbackFailed": "Could not confirm control was returned. Open the browser panel to check ({code})."
 }

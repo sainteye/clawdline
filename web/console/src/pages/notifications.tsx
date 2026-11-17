@@ -1,3 +1,4 @@
+import {botCompletionSoundEnabled,setBotCompletionSound,subscribeBotCompletionSound} from "../project-assistants/completion-sound.js"
 import { catalogWord } from "../catalog.js"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import type { SettingsRequest, SettingsSnapshot } from "@clawdline/contract"
@@ -18,6 +19,10 @@ const notificationsEn = {
   "orchestrator_agent_notifyHint": "Includes unsolicited notes; subject to the agent notification limit.",
   "push_on_board_decision": "A Board decision needs an answer",
   "push_on_board_decisionHint": "Once per pending decision.",
+  "push_on_bot_done": "A Bot finishes a task",
+  "push_on_bot_doneHint": "Once per successful main-chat task; opens that Bot’s conversation.",
+  "botSound": "Bots completion sound",
+  "botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "push_on_board_done": "A Board item is done",
   "push_on_board_doneHint": "Opens its assigned Session while that Session exists.",
   "push_on_schedule_failure": "A schedule fails or cannot run",
@@ -65,6 +70,10 @@ const notificationsZh: Record<keyof typeof notificationsEn, string> = {
   "orchestrator_agent_notifyHint": "包含主動建立的待辦 Note，並受 Agent 通知次數限制。",
   "push_on_board_decision": "看板決策等我回答",
   "push_on_board_decisionHint": "每個待回答決策最多通知一次。",
+  "push_on_bot_done": "Bot 完成任務",
+  "push_on_bot_doneHint": "每次主對話任務成功完成時通知一次，點開即進入該 Bot 的對話。",
+  "botSound": "Bots 完成提示音",
+  "botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",
   "push_on_board_done": "看板項目完成",
   "push_on_board_doneHint": "若指派的 Session 還在，就開啟它。",
   "push_on_schedule_failure": "排程失敗或無法執行",
@@ -111,7 +120,7 @@ function word(key: keyof typeof notificationsEn): string {
 
 type Preference = keyof Pick<SettingsRequest,
   "push_on_model_capacity" | "push_on_waiting" | "orchestrator_agent_notify" | "push_on_board_decision" |
-  "push_on_board_done" | "push_on_schedule_failure" | "push_on_capacity" |
+  "push_on_bot_done" | "push_on_board_done" | "push_on_schedule_failure" | "push_on_capacity" |
   "push_on_dead_letter" | "push_on_app_release_success" | "push_on_cloud_release_success" | "push_on_release_failure" |
   "push_on_delivery" | "push_on_fanout" | "smart_notifications">
 
@@ -122,6 +131,7 @@ const rows: Row[] = [
   { key: "push_on_waiting", destination: "Session" },
   { key: "orchestrator_agent_notify", destination: "optional-session" },
   { key: "push_on_board_decision", destination: "list" },
+  { key: "push_on_bot_done", destination: "none" },
   { key: "push_on_board_done", destination: "none" },
   { key: "push_on_schedule_failure", destination: "list" },
   { key: "push_on_capacity", destination: "list" },
@@ -144,6 +154,7 @@ function current(snapshot: Partial<SettingsSnapshot>, key: Preference): boolean 
 }
 
 function NotificationsPage({ shown }: { shown: boolean }) {
+  const sound=useSyncExternalStore(subscribeBotCompletionSound,botCompletionSoundEnabled)
   const push = useSyncExternalStore(subscribePush, pushShape)
   const [settings, setSettings] = useState<Partial<SettingsSnapshot> | null>(null)
   const [pending, setPending] = useState<Preference | null>(null)
@@ -184,6 +195,7 @@ function NotificationsPage({ shown }: { shown: boolean }) {
         {push.state === "on" && <button type="button" disabled={push.testing} onClick={() => sendPushTest(legacyState.openId || legacyState.selectedId || null)}>{word("sendTest")}</button>}
         <p role="status">{push.said}</p>
       </div>
+      <label className="notification-row"><span><strong>{word("botSound")}</strong><small>{word("botSoundHint")}</small></span><input type="checkbox" checked={sound} onChange={()=>setBotCompletionSound(!sound)}/></label>
       <h2>{word("eventsTitle")}</h2>
       {error && <p className="notification-error" role="alert">{error}</p>}
       {!settings && !error && <p>{word("loading")}</p>}

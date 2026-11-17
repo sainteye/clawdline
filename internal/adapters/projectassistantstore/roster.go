@@ -226,7 +226,7 @@ const rosterProjectionSQL = `WITH a AS MATERIALIZED (
  'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
  'Messages',json((SELECT json_group_array(json(message)) FROM u)),
  'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')))) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id'))),
- 'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
+ 'Completion',json_extract(j,'$.Completion'),'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
  coalesce((SELECT value FROM json_each(j,'$.ReadCursors') WHERE key=?),'') read_cursor,
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
  coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.updated_at')) activity_at,
