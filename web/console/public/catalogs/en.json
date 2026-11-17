@@ -12585,7 +12585,7 @@
   "projectAssistants.fallbackMode": "Alternates currently require Auto mode. The saved order is kept; fixed modes do not switch.",
   "projectAssistants.fallbackSaveUnknown": "The save outcome is unknown. Your form is kept and nothing is sent again. Close and reopen settings to check the source before making another change.",
   "projectAssistants.fallbackSaveStale": "Settings changed elsewhere. Your form is kept. Close and reopen settings to review the latest version.",
-  "transparency.card.voice-list-briefing.effect": "The person can interrupt and resume the retained batch. Realtime continuation requires completed playback and matching spoken names; GPT-Live uses observed transcript activity and its existing quiet window, and pauses when no named speech was observed. These are not proof of audible playback or listening comprehension. Read failures and unread overflow remain explicit. Briefing does not answer a question or approve an action for the person.",
+  "transparency.card.voice-list-briefing.effect": "The application retains completed item progress and one prepared next batch. Live submits one item at a time and uses uninterrupted transcript activity plus a quiet window for presentation progress; this is not proof of audible playback. Exact spoken names remain independently required for positional references and never authorize writes. A continuation consumes the current input instead of waiting for speech to clear it. Read, speaking, pause and missing-speech states are visible. Read failures and unread overflow remain explicit. Briefing never answers a question or approves an action for the person.",
   "transparency.card.voice-list-briefing.summary": "Starts a report automatically in Realtime and GPT-Live. Sessions waiting for the person, including unresolved Notes, are read first; ordinary work follows in batches of one or two.",
   "transparency.card.voice-list-briefing.title": "Automatic Session briefing from the list",
   "transparency.card.voice-list-briefing.how": "Reads current summaries, the latest reply, and the current question or unresolved Notes on the exact machine. It respects the existing recap setting and cache policy; an enabled recap may use that Session assistant’s quota. It uses no extra organizer model or persistent task. One next batch can prepare while the current one is presented.",
@@ -12773,5 +12773,15 @@
   "projectAssistants.artifactTitle": "Artifact title",
   "projectAssistants.renamingArtifact": "Renaming…",
   "projectAssistants.renameArtifactFailed": "Couldn’t rename the artifact. Refresh and try again.",
-  "projectAssistants.renameArtifactUnknown": "The rename result is unknown. Retry checks the same request; the title stays locked until it resolves."
+  "projectAssistants.renameArtifactUnknown": "The rename result is unknown. Retry checks the same request; the title stays locked until it resolves.",
+  "next.copilotReportPreparing": "Preparing the next Sessions…",
+  "next.copilotReportSpeaking": "Reporting Sessions; the next prepared item follows automatically.",
+  "next.copilotReportReady": "The next Session report is ready.",
+  "next.copilotReportUnconfirmed": "No report speech was observed. Paused; continue to retry the unread item.",
+  "next.copilotReportReadFailed": "The next Session could not be read. The report has stopped.",
+  "transparency.card.voice-call-ending.title": "Ending a voice call",
+  "transparency.card.voice-call-ending.condition": "During a connected Realtime or GPT-Live voice call, when the person requests hangup or directly says goodbye.",
+  "transparency.card.voice-call-ending.summary": "Bilingual call-control instructions distinguish ending this voice call from closing a terminal Session or relaying a message.",
+  "transparency.card.voice-call-ending.how": "The client recognizes direct English and Chinese call-ending phrases. A short yes confirms only the immediately preceding explicit hangup question. A local deadline ends the call even if the backend never calls end_call; a negative request cancels it.",
+  "transparency.card.voice-call-ending.effect": "Local capture and playback stop before a descending two-note cue. The old audio context closes after its cue; it cannot close a new call. Missing Web Audio can make the cue silent. Live final-usage collection is separate from local hangup. Sent instructions, transcript timing and synthetic tests do not prove real audio comprehension or phone playback. No extra model request generates the tone."
 }

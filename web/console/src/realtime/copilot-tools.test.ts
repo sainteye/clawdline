@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import {CallEndIntent,callControlGuidance} from './copilot-call-control.ts'
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
@@ -2160,4 +2162,28 @@ test("a Cloud carried question is answered from its returned row without polling
  assert.equal(out.answered,true)
  assert.equal(calls.length,2)
  assert.deepEqual(sleeps,[])
+})
+
+test('ending this conversation and standalone goodbyes end the call in either language',()=>{
+ for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.'])assert.equal(asksToEndCall(text),true,text)
+ for(const text of ['不要掛斷電話','先不要拜拜','Tell that Session goodbye','請你跟那個 Session 說拜拜','How do I hang up?','我們先不要結束通話','Please fix the end call button','請修正掛斷電話的問題'])assert.equal(asksToEndCall(text),false,text)
+})
+
+test('a current hangup question accepts yes in both languages and loses stale confirmation',()=>{
+ for(const [question,yes] of [['你是要我現在掛斷這通電話嗎？','對'],['Would you like me to hang up now?','Yes']]){
+  const intent=new CallEndIntent();intent.assistant(question);assert.equal(intent.user(yes),true)
+  intent.reset();assert.equal(intent.user(yes),false,'an unprompted yes is not hangup consent')
+  intent.assistant(question);intent.user('Report another Session');assert.equal(intent.user(yes),false,'another request consumes the pending question')
+ }
+ assert.match(callControlGuidance('en'),/goodbye/);assert.match(callControlGuidance('zh-Hant'),/拜拜/)
+})
+
+
+test('a streamed confirmation survives partial words but unrelated completed input consumes it',()=>{
+ const intent=new CallEndIntent();intent.assistant('Would you like me to hang up?')
+ assert.equal(intent.user('y',false),false)
+ assert.equal(intent.user('yes',false),true)
+ intent.reset();intent.assistant('Would you like me to hang up?')
+ intent.user('Report',false);intent.user('Report the next Session',true)
+ assert.equal(intent.user('yes'),false)
 })

@@ -155,14 +155,28 @@ export class CallMeter {
     if (this.context) playChime(this.context)
   }
 
-  close(): void {
+  close(ended=false): void {
     this.drop(this.input)
     this.drop(this.output)
     this.input = null
     this.output = null
     const context = this.context
     this.context = null
-    if (context) void context.close().catch(() => undefined)
+    if (!context)return
+    const close=()=>{void context.close().catch(()=>undefined)}
+    if(!ended||context.state!=='running'){close();return}
+    // Local capture/playback are already detached. A descending pair confirms
+    // this call ended; an older call never closes the next call's context.
+    try{
+      const gain=context.createGain();gain.connect(context.destination)
+      for(const [index,hz] of [660,480].entries()){
+        const tone=context.createOscillator(),at=context.currentTime+index*CHIME_NOTE_S
+        tone.connect(gain);tone.frequency.value=hz
+        gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(RING_LEVEL/4,at+0.01);gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
+        tone.onended=()=>{tone.disconnect();if(index===1){gain.disconnect();close()}}
+        tone.start(at);tone.stop(at+CHIME_NOTE_S)
+      }
+    }catch{close()}
   }
 
   private side(stream: MediaStream): Side | string {

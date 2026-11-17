@@ -22,3 +22,10 @@ test('ready and processing cues still sound after the completion chime moves to 
  assert.equal(audio.gains.every(g=>g.disconnected),true)
  audio.state='suspended';meter.pending();meter.connected();assert.equal(audio.tones.length,3)
 })
+
+test('ending a local call detaches capture before a descending cue and closes only its own context',()=>{
+ const meter=new CallMeter(),audio=context();audio.closed=0;audio.close=async()=>{audio.closed++};meter.context=audio
+ meter.close(true)
+ assert.deepEqual(audio.tones.map(t=>t.hz),[660,480]);assert.equal(audio.closed,1);assert.equal(meter.context,null)
+ meter.close(true);assert.equal(audio.tones.length,2,'repeated close cannot replay the hangup sound')
+})

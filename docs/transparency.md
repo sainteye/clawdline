@@ -682,3 +682,13 @@ work. Focused-analysis usage is recorded independently by the machine to avoid
 counting it twice in daily estimates. The refreshed source receipts establish
 reviewed sources, not listening quality or deployment acceptance. The public
 website snapshot must import the delivered revision after it lands.
+
+## Voice continuation and local hangup (2026-11-17)
+
+The bilingual list-briefing entry now separates per-item presentation progress
+from exact spoken-reference evidence. Live's transcript quiet window remains an
+estimate, not playback completion. The new conditional call-ending entry records
+the English and Taiwan Traditional Chinese instructions, current-question yes
+handling, local ending deadline and provider-free hangup cue. Neither mechanism
+grants terminal writes or background task approval. Both source excerpts and
+language copies were reviewed; the website must import this delivered revision.

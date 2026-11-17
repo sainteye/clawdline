@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12773,
-  "riskKeys": 5517,
-  "nonRiskCount": 7256,
+  "englishContentKeys": 12783,
+  "riskKeys": 5521,
+  "nonRiskCount": 7262,
   "groups": [
     {
       "name": "acp / other",
@@ -4016,7 +4016,7 @@
     },
     {
       "name": "next / other",
-      "count": 1200,
+      "count": 1203,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4400,6 +4400,9 @@
         "next.copilotRemembered",
         "next.copilotReportContinue",
         "next.copilotReportPaused",
+        "next.copilotReportPreparing",
+        "next.copilotReportReady",
+        "next.copilotReportSpeaking",
         "next.copilotSaid",
         "next.copilotSettingsTitle",
         "next.copilotSourceHint",
@@ -7313,7 +7316,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 197,
+      "count": 200,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7472,6 +7475,9 @@
         "transparency.card.tool-library.title",
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
+        "transparency.card.voice-call-ending.condition",
+        "transparency.card.voice-call-ending.summary",
+        "transparency.card.voice-call-ending.title",
         "transparency.card.voice-list-briefing.title",
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",

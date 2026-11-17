@@ -12585,7 +12585,7 @@
   "projectAssistants.fallbackMode": "替代 Agent 目前需要 Auto 模式。已儲存的順序會保留；固定模式不會切換。",
   "projectAssistants.fallbackSaveUnknown": "儲存結果未知。表單會保留，也不會重送。再次變更前，請關閉並重新開啟設定，向來源核對。",
   "projectAssistants.fallbackSaveStale": "設定已在其他地方變更。表單會保留。請關閉並重新開啟設定，查看最新版本。",
-  "transparency.card.voice-list-briefing.effect": "可以插話暫停，再沿用已準備的批次繼續。Realtime 須完成播放並核對實際講出的名稱；GPT-Live 依已觀察的轉寫活動與既有安靜視窗接續，沒觀察到帶名稱的講述就暫停。這不代表已驗證實際音訊播放或聽懂程度。讀取失敗及超出範圍而未讀的內容會保留說明；報告不會替使用者回答問題或核准操作。",
+  "transparency.card.voice-list-briefing.effect": "程式保留已完成項目的進度與一批預讀。Live 每次只交付一項，以未被打斷的轉寫活動與安靜視窗判斷介紹進度；這不是已播完音訊的證明。第幾個等指稱仍須獨立核對實際講出的完整名稱，不能用來核准寫入。接續會先消耗目前輸入，不再等助理開口才清空。畫面顯示準備、報告、暫停與未觀察到語音等狀態。讀取失敗及未讀範圍仍會明示；介紹不替使用者回答問題或核准操作。",
   "transparency.card.voice-list-briefing.summary": "Realtime 與 GPT-Live 都會自動開始報告。先讀需要本人回覆的 Session，包括未解便條，再以每批一至兩個介紹其他工作。",
   "transparency.card.voice-list-briefing.title": "從列表撥號自動介紹 Session",
   "transparency.card.voice-list-briefing.how": "向確切機器讀取目前摘要、最後回覆，以及現在的問題或未解便條。沿用既有摘要設定與快取規則；摘要啟用時可能使用該 Session 助理的額度。不另開整理模型或持久任務；目前講述期間可準備一個下一批。",
@@ -12773,5 +12773,15 @@
   "projectAssistants.artifactTitle": "作品名稱",
   "projectAssistants.renamingArtifact": "正在重新命名…",
   "projectAssistants.renameArtifactFailed": "無法重新命名作品，請重新整理後再試。",
-  "projectAssistants.renameArtifactUnknown": "改名結果尚未確認。重試會使用同一筆請求；確認前暫時鎖住名稱。"
+  "projectAssistants.renameArtifactUnknown": "改名結果尚未確認。重試會使用同一筆請求；確認前暫時鎖住名稱。",
+  "next.copilotReportPreparing": "正在準備接下來的 Session…",
+  "next.copilotReportSpeaking": "正在報告 Session；準備好的下一項會自動接續。",
+  "next.copilotReportReady": "接下來的 Session 報告已準備好。",
+  "next.copilotReportUnconfirmed": "尚未觀察到報告語音，已暫停；可繼續尚未報告的項目。",
+  "next.copilotReportReadFailed": "下一項 Session 讀取失敗，報告已停止。",
+  "transparency.card.voice-call-ending.title": "結束語音通話",
+  "transparency.card.voice-call-ending.condition": "只在 Realtime 或 GPT-Live 已連線，且本人要求掛斷或直接道別時使用。",
+  "transparency.card.voice-call-ending.summary": "中英文通話控制指示區分結束這通電話、關閉終端 Session 及替別人傳話。",
+  "transparency.card.voice-call-ending.how": "程式辨識中英文直接掛斷用語；簡短的「對／好」只確認緊接在前的明確掛斷問題。即使後端沒有呼叫 end_call，本機期限仍會結束通話；否定要求會取消。",
+  "transparency.card.voice-call-ending.effect": "先停止本機收音與播放，再播下降的兩聲提示音。舊音訊環境會在提示音後關閉，不會關掉新通話；沒有 Web Audio 時可能無聲。Live 最終用量接收與本機掛斷分開。指示已送出、轉寫時間與合成測試不能證明真實語音理解或手機播放。提示音不額外呼叫模型。"
 }

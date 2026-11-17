@@ -173,10 +173,11 @@ function fixture(capabilities=["sessions.read","sessions.open"], initial=reading
   const bridge = pluginBridge({port:channel.port1,instanceId:"instance",capabilities,reading:initial,context,open:async key => {opened.push(key)},close:()=>closes++,fault:e=>faults.push(e)})
   const send = (method,params={},extra={}) => {const id="r"+Math.random();channel.port2.postMessage({v:1,instanceId:"instance",id,method,params,...extra});return id}
   const answer = id => new Promise((resolve,reject)=>{
-    const found=answers.find(message=>message.id===id)
+    const matches=typeof id==="function"?id:message=>message.id===id
+    const found=answers.find(matches)
     if(found){resolve(found);return}
     const cleanup=()=>{clearTimeout(timer);channel.port2.removeEventListener("message",receive)}
-    const receive=event=>{if(event.data.id===id){cleanup();resolve(event.data)}}
+    const receive=event=>{if(matches(event.data)){cleanup();resolve(event.data)}}
     const timer=setTimeout(()=>{cleanup();reject(new Error(`No bridge answer for ${id} within 2000ms`))},2000)
     channel.port2.addEventListener("message",receive)
   })
@@ -406,11 +407,13 @@ test("Callback waits come from live broker targets without exposing task names o
  const cloud=cloudPluginRows([{destination:{machineID:'machine',sessionID:'private-id'},title:'Example',status:waiting,observedAt:1,projection:{freshness:'current'}}])
  assert.equal(cloud[0].waitKind,'callback')
  const f=fixture();try{
-  f.send('sessions.subscribe');await tick()
-  f.bridge.update({sessions:[{...row,...rows[0]}],connected:true},context);await tick()
-  const value=f.answers.at(-1).data.sessions[0]
+  await f.answer(f.send('sessions.subscribe'))
+  const first=f.answer(message=>message.event==='sessions.snapshot'&&message.data.revision===2)
+  f.bridge.update({sessions:[{...row,...rows[0]}],connected:true},context)
+  const value=(await first).data.sessions[0]
   assert.equal(value.waitKind,'callback');assert.ok(!JSON.stringify(value).includes('private'))
-  f.bridge.update({sessions:[{...row,waitKind:'not-confirmed'}],connected:true},context);await tick()
-  assert.equal(f.answers.at(-1).data.sessions[0].waitKind,undefined)
+  const second=f.answer(message=>message.event==='sessions.snapshot'&&message.data.revision===3)
+  f.bridge.update({sessions:[{...row,waitKind:'not-confirmed'}],connected:true},context)
+  assert.equal((await second).data.sessions[0].waitKind,undefined)
  }finally{f.dispose()}
 })

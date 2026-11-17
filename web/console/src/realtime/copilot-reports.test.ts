@@ -109,3 +109,13 @@ test('Project batches keep each Project together and never cross into the next o
  assert.equal(projectBatchSize(grouped.slice(4)),2)
  assert.equal(projectBatchSize(grouped.slice(6)),1,'a Project with one Session is its own batch')
 })
+
+test('resuming an active report is idempotent and confirmed items survive interruption',async()=>{
+ const spoken:SessionReportPage[]=[],queue=new SessionReportQueue()
+ queue.start({sessions:[{session_id:a.id,label:a.label},{session_id:b.id,label:b.label}]},async()=>assert.fail('no next read'),p=>spoken.push(structuredClone(p)))
+ queue.resume();queue.resume()
+ assert.equal(spoken.length,1,'already presenting is not a second narration request')
+ queue.played([a]);queue.interrupt();queue.resume()
+ assert.deepEqual(spoken.at(-1)?.sessions?.map(r=>r.session_id),[b.id],'a completed item cannot be replayed with its interrupted batch')
+ queue.played([b]);assert.equal(queue.hasPending(),false)
+})
