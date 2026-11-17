@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12742,
-  "riskKeys": 5509,
-  "nonRiskCount": 7233,
+  "englishContentKeys": 12768,
+  "riskKeys": 5516,
+  "nonRiskCount": 7252,
   "groups": [
     {
       "name": "acp / other",
@@ -419,7 +419,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 642,
+      "count": 643,
       "sources": [
         null
       ],
@@ -686,6 +686,7 @@
         "capacityRow.console.copilot_help_sections.what",
         "capacityRow.console.copilot_kept_recap_seconds.what",
         "capacityRow.console.copilot_live_append_tokens.what",
+        "capacityRow.console.copilot_live_close_wait_milliseconds.what",
         "capacityRow.console.copilot_live_note_characters.full",
         "capacityRow.console.copilot_live_note_characters.what",
         "capacityRow.console.copilot_live_opening_wait_milliseconds.full",
@@ -4015,7 +4016,7 @@
     },
     {
       "name": "next / other",
-      "count": 1182,
+      "count": 1200,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4292,6 +4293,22 @@
         "next.copilotConnectingSettings",
         "next.copilotConnectingTransport",
         "next.copilotCost",
+        "next.copilotDailyAnalysis",
+        "next.copilotDailyAudioInput",
+        "next.copilotDailyAudioOutput",
+        "next.copilotDailyCached",
+        "next.copilotDailyHint",
+        "next.copilotDailyImage",
+        "next.copilotDailyInput",
+        "next.copilotDailyLoading",
+        "next.copilotDailyOther",
+        "next.copilotDailyOutput",
+        "next.copilotDailyRates",
+        "next.copilotDailyRefresh",
+        "next.copilotDailyTitle",
+        "next.copilotDailyTokens",
+        "next.copilotDailyVoice",
+        "next.copilotDailyWrite",
         "next.copilotDemoClose",
         "next.copilotDemoNote",
         "next.copilotDemoTitle",
@@ -4406,6 +4423,7 @@
         "next.copilotToolsUsed",
         "next.copilotTranscript",
         "next.copilotTranscriptWaiting",
+        "next.copilotUsageHint",
         "next.copilotVoiceLabel",
         "next.copilotVoicePreview",
         "next.copilotVoicePreviewCost",
@@ -5137,6 +5155,7 @@
         "next.voiceStopping",
         "next.voiceTabSettings",
         "next.voiceTabTools",
+        "next.voiceTabUsage",
         "next.voiceToolsCardJump",
         "next.voiceToolsCardJumpHint",
         "next.voiceToolsCategoryAll",

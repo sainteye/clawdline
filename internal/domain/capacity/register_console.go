@@ -190,6 +190,8 @@ func baseConsoleBounds() []Entry {
 		// longer context is sent in pieces.
 		{Name: "console.copilot_live_append_tokens", Class: Buffer, Unit: Tokens, Limit: 400, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_live_update_characters", Class: Buffer, Unit: Characters, Limit: 150, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		// LIVE_CLOSE_WAIT_MS releases a transport whose final provider usage never arrives.
+		{Name: "console.copilot_live_close_wait_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 5000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_live_opening_wait_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 60000, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_fresh_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_kept_recap_seconds", Class: Buffer, Unit: Seconds, Limit: 1800, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},

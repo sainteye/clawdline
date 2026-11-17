@@ -3295,12 +3295,12 @@ test("a GPT-Live call start carries the offer and instructions to a machine with
   }
   const client = new Fleet()
   const { reader } = seam(client)
-  const opened = await reader.fetch("/v1/voice/copilot-live", post({ sdp: "v=0 offer", instructions: "Speak briefly." }, { "Idempotency-Key": "live-1" }))
+  const opened = await reader.fetch("/v1/voice/copilot-live", post({ sdp: "v=0 offer", instructions: "Speak briefly.", call:"call-live-1" }, { "Idempotency-Key": "live-1" }))
   assert.equal(opened.status, 200)
   assert.equal((await json<{ sdp: string }>(opened)).sdp, "v=0 answer")
   assert.deepEqual(client.calls.map((call) => call[2]), ["mac-a", "mac-b"])
   assert.equal(client.calls[1][3], "copilot-live")
-  assert.deepEqual(client.calls[1][4], { live: { sdp: "v=0 offer", instructions: "Speak briefly." } })
+  assert.deepEqual(client.calls[1][4], { live: { sdp: "v=0 offer", instructions: "Speak briefly.",call:"call-live-1" } })
   // Later reads of this call go to the machine that opened it.
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-briefing", post({}, { "Idempotency-Key": "brief-live" }))
@@ -3351,6 +3351,10 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   await reader.fetch("/v1/voice/copilot-question", post({session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant",extra:"discard"}, {"Idempotency-Key":"question-1","X-Clawdline-Unopened-Machine":"mac-c"}))
   assert.deepEqual(client.calls[0].slice(1,5),["question-1","mac-c","copilot-question",{question:{session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant"}}])
 
+  // A late final receipt keeps the old call's machine even after routing changes.
+  client.calls.length=0
+  await reader.fetch('/v1/voice/copilot-journal',post({call:'call-old',entries:[]},{'Idempotency-Key':'journal-old','X-Clawdline-Unopened-Machine':'mac-a'}))
+  assert.equal(client.calls[0][2],'mac-a')
   // And the call's journal lines are kept there too.
   client.calls.length = 0
   await reader.fetch("/v1/voice/copilot-journal", post({ call: "call-0001", entries: [{ at: 1, kind: "heard", text: "hi" }] }, { "Idempotency-Key": "journal-1" }))

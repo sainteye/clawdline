@@ -1,0 +1,12 @@
+────────────────────────────────────────────────────────────────────────────────
+ Adding a new directory:
+ /tmp/assistant-tasks
+ This session hasn't worked here before. Is this a directory you created or one
+ you trust?
+ Claude Code'll be able to read, edit, and execute files here. Its skills,
+ commands, and agents load and can run commands, and so can the git settings of
+ its repository. Your answer holds for this session.
+ Security guide
+ ❯ No, exit
+   Yes, add it
+ Enter to confirm · Esc to cancel

@@ -27,7 +27,7 @@ import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThis
 import { nextWord } from '../next-strings.js'
 import { browserMarks } from './copilot-marks.js'
 import { sessionsInFragment } from '../session/address.js'
-import { LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveContextPieces, liveReportNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
+import { closeLiveSession, liveBackendUsage, LIVE_GREETING, LiveTranscript, liveCost, liveLatestNote, liveUpdatesText, LIVE_OPENING_WAIT_MS, LIVE_NEWS_SHARE, newShare, liveContextPieces, liveReportNote, liveOpeningNote, liveReadNotes, liveBackendUSD, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingUpdate, liveNote, liveToolReply } from './copilot-live.js'
 
 export interface CopilotLogItem {
   id: string
@@ -220,6 +220,8 @@ export class RealtimeCopilotClient {
   private cueTimer?:ReturnType<typeof setInterval>
   private responseInputs = new Map<string,string>()
   private openingRevision = 0
+  private openingAbort?: AbortController
+  private openingReadKey?: string
   /** Moves with each Session a GPT-Live call opens on, so a slower read for the previous one is not said. */
   private liveFocusRevision = 0
   private personSpoke = false
@@ -255,7 +257,13 @@ export class RealtimeCopilotClient {
   /** The backend's function calls still running in this browser. */
   private livePending = new Set<string>()
   private liveSeconds = 0
+  private liveFinalized = false
   private liveBackendUsd = 0
+  private usageResponses = new Set<string>()
+  private backendParts:Record<string,number> = {}
+  private backendTokens = {input:0,output:0,cached:0}
+  private usageStarted = 0
+  private usageSequence = 0
   /** When this GPT-Live call connected, for the call's running length and cost. */
   private liveStarted = 0
   /** Monotonic setup timings; never compared with another device's clock. */
@@ -591,6 +599,7 @@ export class RealtimeCopilotClient {
    * heard, said and did can be read on the machine.
    */
   private journalCall = ''
+  private journalMachine = ''
   private journalLines: { at: number; kind: string; text: string; tool?: Record<string, unknown> }[] = []
 
   private journal(kind: 'heard' | 'said' | 'tool' | 'error' | 'notice' | 'start' | 'end', text: string, tool?: Record<string, unknown>) {
@@ -603,9 +612,26 @@ export class RealtimeCopilotClient {
     const entries = this.journalLines.splice(0, this.journalLines.length)
     void fetch('/v1/voice/copilot-journal', {
       method: 'POST', keepalive: true,
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), ...(this.journalMachine?{[UNOPENED_MACHINE_HEADER]:this.journalMachine}:{}) },
       body: JSON.stringify({ call: this.journalCall, entries }),
     }).catch(() => undefined) // refusal-ok: the journal is a record for later; a lost turn costs the call nothing.
+  }
+
+  private recordUsage(final = false) {
+    if(!this.journalCall||!this.state.cost)return
+    const cost=this.state.cost
+    const seconds=cost.live?.seconds??0
+    const parts=this.live?{voice:seconds*0.05/60,...this.backendParts}:cost.parts??{}
+    this.journal('notice','usage_snapshot',{
+      seq:++this.usageSequence,started:this.usageStarted,engine:this.live?'live':'realtime',model:this.live?'gpt-live-1':cost.model,
+      usd:Object.values(parts).reduce((a,b)=>a+b,0),parts,seconds,
+      input_tokens:this.live?this.backendTokens.input:cost.inputTokens,
+      output_tokens:this.live?this.backendTokens.output:cost.outputTokens,
+      cached_tokens:this.live?this.backendTokens.cached:cost.cachedTokens??0,
+      // Live's immediate local close cannot prove the provider's final seconds.
+      final:final&&(!this.live||this.liveFinalized),priced:cost.priced,
+    })
+    this.flushJournal()
   }
 
   private addLog(level: 'info' | 'tool' | 'error', text: string) {
@@ -674,8 +700,9 @@ export class RealtimeCopilotClient {
     this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
     clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.screenLooked=false
-    this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveBackendUsd=0
+    this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveFinalized=false;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
+    this.journalMachine='';this.usageSequence=0;this.usageStarted=Date.now();this.usageResponses.clear();this.backendParts={};this.backendTokens={input:0,output:0,cached:0}
     this.journalLines = []
     this.connectionStarted = performance.now(); this.connectionStageAt = this.connectionStarted
     // Which build and tools this call has: on 2026-11-13 a call could not be
@@ -820,10 +847,10 @@ export class RealtimeCopilotClient {
         this.connectionStage('provider')
         const opened = await fetch('/v1/voice/copilot-live', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-          body: JSON.stringify({ sdp: own.pc.localDescription?.sdp ?? offer.sdp, instructions: liveInstructions(this.call.options) }),
+          body: JSON.stringify({ sdp: own.pc.localDescription?.sdp ?? offer.sdp, instructions: liveInstructions(this.call.options), ...(configured.usage ? {call:this.journalCall} : {}) }),
         })
         check()
-        const body = (await opened.json().catch(() => null)) as { sdp?: string; session_id?: string } | null
+        const body = (await opened.json().catch(() => null)) as { sdp?: string; session_id?: string; usage_machine?:string } | null
         if (!opened.ok || !body?.sdp) {
           const { code, message } = copilotRefusal(body, opened.status)
           // refusal-ok: a missing key points to Settings, an older machine to its update; every other refusal is shown with its own code and the machine's sentence.
@@ -831,6 +858,7 @@ export class RealtimeCopilotClient {
             : COPILOT_MACHINE_LACKS.has(code) ? nextWord('copilotErrorMachineLacks', { code })
             : message ? nextWord('copilotErrorNoPassDetail', { code, message }) : nextWord('copilotErrorNoPass', { code }))
         }
+        this.journalMachine=body.usage_machine??'';this.liveSeconds=15;this.updateLiveCost();this.recordUsage()
         answerSdp = body.sdp
       } else {
         // 6. Connect with OpenAI Realtime API endpoint (GA)
@@ -968,6 +996,8 @@ export class RealtimeCopilotClient {
   }
 
   private cancelOpening() {
+    this.openingAbort?.abort();this.openingAbort=undefined
+    if(this.openingReadKey){this.pendingTools.delete(this.openingReadKey);this.openingReadKey=undefined}
     this.openingRevision++
     this.narrator.discard('opening')
   }
@@ -1170,9 +1200,11 @@ export class RealtimeCopilotClient {
         }
         this.flushJournal()
         this.updateState({})
-        if (event.response?.usage) {
+        if (event.response?.usage && !this.usageResponses.has(event.response.id)) {
+          this.usageResponses.add(event.response.id)
           const cost = addUsage(this.state.cost ?? emptyCost(this.model), event.response.usage)
           this.updateState({ cost })
+          this.recordUsage()
         }
         break
       }
@@ -1219,9 +1251,12 @@ export class RealtimeCopilotClient {
     this.resetSessionReports()
     const revision=++this.openingRevision,attempt=this.attempt,dc=this.dc
     const current=()=>revision===this.openingRevision&&attempt===this.attempt&&this.dc===dc&&dc?.readyState==='open'
-    const deps:ToolDeps={...this.toolDeps(),marks:undefined,summaryLimit:SESSION_REPORT_BATCH,summaryAttentionFirst:true,onRead:ref=>{if(current())this.spokenSessions.observe(ref)}}
+    this.openingAbort?.abort()
+    const abort=new AbortController();this.openingAbort=abort
+    const base=this.toolDeps()
+    const deps:ToolDeps={...base,fetch:(path,init)=>base.fetch(path,{...init,signal:init?.signal?AbortSignal.any([init.signal,abort.signal]):abort.signal}),marks:undefined,summaryLimit:SESSION_REPORT_BATCH,summaryAttentionFirst:true,onRead:ref=>{if(current())this.spokenSessions.observe(ref)}}
     const args={which:'all',fresh:true}
-    const key='opening-list-report';this.pendingTools.add(key);this.updateState({})
+    const key=`opening-list-report:${revision}`;this.openingReadKey=key;this.pendingTools.add(key);this.updateState({})
     try {
       const result=await runCopilotTool('get_sessions_summary',JSON.stringify(args),deps)
       if(!current()||this.personSpoke)return
@@ -1231,7 +1266,7 @@ export class RealtimeCopilotClient {
       this.startSessionReport(page,args,deps,attempt,dc,true)
       if(page.error||!page.sessions?.length)this.presentSessionReport(page,current)
       else this.sessionReports.resume()
-    } finally {this.pendingTools.delete(key);if(current())this.updateState({})}
+    } finally {this.pendingTools.delete(key);if(this.openingReadKey===key)this.openingReadKey=undefined;if(this.openingAbort===abort)this.openingAbort=undefined;this.updateState({})}
   }
 
   private presentSessionReport(page:SessionReportPage,current:()=>boolean) {
@@ -1596,10 +1631,16 @@ export class RealtimeCopilotClient {
       case 'session.usage.updated':
         this.liveSeconds = Math.max(this.liveSeconds, Number(event.usage?.seconds) || 0)
         this.updateLiveCost()
+        this.recordUsage()
         return
       case 'response.event': {
-        const usd = liveBackendUSD(event)
-        if (usd) { this.liveBackendUsd += usd; this.updateLiveCost() }
+        const reading=liveBackendUsage(event)
+        if(reading?.id && !this.usageResponses.has(reading.id)) {
+          this.usageResponses.add(reading.id)
+          this.backendTokens.input+=reading.input;this.backendTokens.output+=reading.output;this.backendTokens.cached+=reading.cached
+          for(const [key,usd] of Object.entries(reading.parts))this.backendParts[key]=(this.backendParts[key]??0)+usd
+          this.liveBackendUsd+=reading.usd;this.updateLiveCost();this.recordUsage()
+        }
         const call = liveFunctionCall(event)
         if (call) void this.runLiveTool(call.callID, call.name, call.arguments)
         return
@@ -1608,6 +1649,7 @@ export class RealtimeCopilotClient {
         this.addLog('error', nextWord('copilotLogLiveError', { code: event.error?.code ?? '?', message: event.error?.message ?? '' }))
         return
       case 'session.closed':
+        if(typeof event.usage?.seconds==='number'&&Number.isFinite(event.usage.seconds)){this.liveSeconds=Math.max(this.liveSeconds,event.usage.seconds);this.liveFinalized=true;this.updateLiveCost()}
         if (this.state.status === 'connected') this.disconnect()
         return
     }
@@ -1615,7 +1657,7 @@ export class RealtimeCopilotClient {
 
   private updateLiveCost() {
     const elapsed = this.liveStarted ? (Date.now() - this.liveStarted) / 1000 : 0
-    const { seconds, usd } = liveCost(elapsed, this.liveSeconds, this.liveBackendUsd + this.questionUSD)
+    const { seconds, usd } = liveCost(this.liveFinalized?0:elapsed, this.liveSeconds, this.liveBackendUsd + this.questionUSD)
     this.updateState({ cost: { ...emptyCost(this.model), usd, priced: this.questionCostKnown, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd + this.questionUSD } } })
   }
 
@@ -1700,6 +1742,9 @@ export class RealtimeCopilotClient {
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
 
+    const closingCall=this.journalCall
+    if(this.live)this.updateLiveCost()
+    this.recordUsage(true)
     this.journal('end', this.state.status)
     this.connectionStarted = 0
     this.flushJournal()
@@ -1707,24 +1752,30 @@ export class RealtimeCopilotClient {
     this.attempt += 1
     // The last length and cost stay on the sheet; only the clock stops.
     clearInterval(this.liveTicker);this.liveTicker=undefined
-    if (this.dc) {
-      // GPT-Live finalizes on session.close; the connection closing right after still ends billing.
-      if (this.live && this.dc.readyState === 'open') { try { this.dc.send(JSON.stringify({ type: 'session.close', event_id: `close_${crypto.randomUUID()}` })) } catch { /* refusal-ok: the channel is closing anyway. */ } }
-      try {
-        this.dc.close()
-      } catch {
-        // refusal-ok: closing an already closed data channel is safe to ignore.
-      }
-      this.dc = null
-    }
-
-    if (this.pc) {
-      try {
-        this.pc.close()
-      } catch {
-        // refusal-ok: closing an already closed peer connection is safe to ignore.
-      }
-      this.pc = null
+    const dc=this.dc,pc=this.pc
+    this.dc=null;this.pc=null
+    if(this.live && !this.liveFinalized && dc?.readyState==='open' && typeof dc.addEventListener==='function') {
+      const seq=this.usageSequence+1,call=closingCall,machine=this.journalMachine,priced=this.state.cost?.priced??false,started=this.usageStarted,parts={...this.backendParts},tokens={...this.backendTokens},seen=new Set(this.usageResponses)
+      let seconds=this.liveSeconds,finalUsage=false
+      const fallback=this.state.cost?.live?.seconds??seconds
+      void closeLiveSession(dc,event=>{
+        if(event.type==='session.usage.updated'||event.type==='session.closed'){
+          const n=(event.usage as {seconds?:unknown}|undefined)?.seconds
+          if(typeof n==='number'&&Number.isFinite(n)&&n>=0){seconds=Math.max(seconds,n);if(event.type==='session.closed')finalUsage=true}
+        }
+        const reading=liveBackendUsage(event)
+        if(reading?.id&&!seen.has(reading.id)){seen.add(reading.id);tokens.input+=reading.input;tokens.output+=reading.output;tokens.cached+=reading.cached;for(const [key,usd]of Object.entries(reading.parts))parts[key]=(parts[key]??0)+usd}
+      }).then(confirmed=>{
+        const duration=confirmed&&finalUsage?seconds:Math.max(seconds,fallback)
+        const allParts={...parts,voice:duration*0.05/60}
+        if(call)void fetch('/v1/voice/copilot-journal',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID(),...(machine?{[UNOPENED_MACHINE_HEADER]:machine}:{})},body:JSON.stringify({call,entries:[{at:Date.now(),kind:'notice',text:'usage_snapshot',tool:{seq,started,engine:'live',model:'gpt-live-1',usd:Object.values(allParts).reduce((a,b)=>a+b,0),parts:allParts,seconds:duration,input_tokens:tokens.input,output_tokens:tokens.output,cached_tokens:tokens.cached,final:confirmed&&finalUsage,priced}}]})}).catch(()=>undefined)
+        try{dc.close()}catch{/* already closed */}
+        try{pc?.close()}catch{/* already closed */}
+      })
+    } else {
+      if(this.live&&!this.liveFinalized&&dc?.readyState==='open')try{dc.send(JSON.stringify({type:'session.close',event_id:`close_${crypto.randomUUID()}`}))}catch{/* finalization remains unconfirmed */}
+      try{dc?.close()}catch{/* already closed */}
+      try{pc?.close()}catch{/* already closed */}
     }
 
     if (this.mediaStream) {

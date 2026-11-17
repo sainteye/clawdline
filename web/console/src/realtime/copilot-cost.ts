@@ -25,6 +25,8 @@ export const RATES: Record<string, Rates> = {
 }
 
 export interface CallCost {
+  parts?: Record<string, number>
+  cachedTokens?: number
   model: string
   responses: number
   inputTokens: number
@@ -63,6 +65,19 @@ export function usageUSD(usage: unknown, rates: Rates): number {
   return perToken / 1_000_000
 }
 
+/** Costs by source, so an input-heavy call is distinguishable from long speech. */
+export function usageParts(usage: unknown, rates: Rates): Record<string, number> {
+ const u = (usage ?? {}) as Record<string, any>, d=u.input_token_details??{}, c=d.cached_tokens_details??{}, o=u.output_token_details??{}
+ return {
+  text_input: Math.max(0,n(d.text_tokens)-n(c.text_tokens))*rates.textIn/1e6,
+  cached_input: (n(c.text_tokens)*rates.textCached+n(c.audio_tokens)*rates.audioCached+n(c.image_tokens)*rates.imageCached)/1e6,
+  text_output: n(o.text_tokens)*rates.textOut/1e6,
+  audio_input: Math.max(0,n(d.audio_tokens)-n(c.audio_tokens))*rates.audioIn/1e6,
+  audio_output: n(o.audio_tokens)*rates.audioOut/1e6,
+  image_input: Math.max(0,n(d.image_tokens)-n(c.image_tokens))*rates.imageIn/1e6,
+ }
+}
+
 /** The call's running total after one more `response.done`. */
 export function addUsage(total: CallCost, usage: unknown): CallCost {
   if (!usage || typeof usage !== 'object') return total
@@ -71,11 +86,13 @@ export function addUsage(total: CallCost, usage: unknown): CallCost {
   return {
     ...total,
     responses: total.responses + 1,
+    cachedTokens: (total.cachedTokens??0)+n(u.input_token_details?.cached_tokens),
+    parts: Object.fromEntries(Object.entries(rates?usageParts(u,rates):{}).map(([k,v])=>[k,(total.parts?.[k]??0)+v])),
     inputTokens: total.inputTokens + n(u.input_tokens),
     outputTokens: total.outputTokens + n(u.output_tokens),
     audioOutTokens: total.audioOutTokens + n(u.output_token_details?.audio_tokens),
     usd: total.usd + (rates ? usageUSD(u, rates) : 0),
-    priced: total.priced && !!rates,
+    priced: total.priced && !!rates && n(u.input_token_details?.text_tokens)+n(u.input_token_details?.audio_tokens)+n(u.input_token_details?.image_tokens)>=n(u.input_tokens) && n(u.output_token_details?.text_tokens)+n(u.output_token_details?.audio_tokens)>=n(u.output_tokens),
   }
 }
 

@@ -93,3 +93,17 @@
   .voice-tools-grid{grid-template-columns:1fr}
   .voice-work-tabs.settings-tabs{gap:18px}
 }
+
+.sw-copilot-usage-day { padding-block: 12px; border-bottom: 1px solid var(--line); }
+.sw-copilot-usage-parts { margin: 8px 0; }
+.sw-copilot-usage-parts > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sw-copilot-usage-parts dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.voice-usage-history{max-width:760px;color:var(--ink)}
+.voice-usage-history h2{margin:0 0 12px;font-size:18px}
+.voice-usage-history>.sw-hint{color:var(--dim);font-size:13px;line-height:1.6}
+.voice-usage-history>.voice-work-call-btn{margin:12px 0}
+.voice-usage-history details summary{cursor:pointer;font-size:14px;font-weight:500;padding:4px 0}
+.voice-usage-history details .sw-hint{color:var(--dim);font-size:12px;line-height:1.6}
+.voice-usage-history dl{font-size:13px;line-height:1.8}
+.voice-usage-history a{color:var(--accent)}

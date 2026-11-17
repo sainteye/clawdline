@@ -268,6 +268,7 @@ func (s *Server) copilotQuestionRoute(w http.ResponseWriter, r *http.Request, se
 	}
 	var usage copilotChatUsage
 	content, status, detail := copilotChatJSONRecord(ctx, settings.Key, copilotQuestionRequest(question, c, s.copilotLanguage(language)), &usage)
+	s.recordCopilotChatUsage(copilotRecapModel, usage)
 	if detail != "" {
 		code := "copilot_question_failed"
 		if status == 401 {

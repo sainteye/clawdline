@@ -668,3 +668,17 @@ expiry. Opening summaries and their five-minute freshness policy do not invoke t
 The revised bilingual voice-question-menu entry covers this provider input, its usage estimate,
 its demand-only trigger and its failure behavior. A new route fails on an older machine instead
 of accidentally starting an unrelated paid recap. No live paid call was used for local tests.
+
+## Voice menu receipts and usage estimates (2026-11-17)
+
+The voice-work, list-briefing, live-pacing and question-menu explanations were
+reviewed in English and Taiwan Traditional Chinese. These changes do not add or
+alter model instructions: a completed rich-row receipt is consumed directly,
+interruption cancels the pending opening read, and native menu navigation uses
+arrow keys with selection confirmation. Conversation, execution, machine and
+question-fingerprint checks remain in force. Usage snapshots, cache-write pricing
+and the bounded final-usage receiver record costs rather than adding provider
+work. Focused-analysis usage is recorded independently by the machine to avoid
+counting it twice in daily estimates. The refreshed source receipts establish
+reviewed sources, not listening quality or deployment acceptance. The public
+website snapshot must import the delivered revision after it lands.

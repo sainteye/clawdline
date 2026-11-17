@@ -1212,7 +1212,7 @@ export class RelayReader {
             const look = this.only(url, path, "look").look ?? ""
             if (!look) return this.refuse(method, path, 400, "invalid_session", "No Session was named to read again.")
             this.questionAsked = null
-            return await this.askRow(init?.signal, method, path, look)
+            return await this.askRow(init?.signal, method, path, look, unopenedMachine(init) ?? this.machine)
           }
           this.note(method, path, "local")
           return json(200, await this.initialSnapshot(init?.signal,
@@ -2911,20 +2911,20 @@ export class RelayReader {
    * to its channel as before.
    */
   private async askRow(signal: AbortSignal | null | undefined, method: string, path: string,
-    session: string): Promise<Response> {
-    if (!this.machineImplements("sessions.row")) {
-      return await this.machineRead(signal, method, path, "sessions.snapshot", {})
+    session: string, machine = this.machine): Promise<Response> {
+    if (!this.machineImplements("sessions.row", machine)) {
+      return await this.machineRead(signal, method, path, "sessions.snapshot", {}, machine)
     }
     const client = this.client
-    const mark = client?._sessionRowMark?.(this.machine, session) ?? 0
-    const res = await this.machineRead(signal, method, path, "sessions.row", { row: session })
+    const mark = client?._sessionRowMark?.(machine, session) ?? 0
+    const res = await this.machineRead(signal, method, path, "sessions.row", { row: session }, machine)
     // The mark belongs to the client it was read from; a page that connected
     // or reconnected while the ask was out leaves the row to its channel.
     if (!res.ok || !client || this.client !== client || typeof client._applyAnsweredSessionRow !== "function") return res
     try {
       const answer = await res.clone().json() as { row?: unknown } | null
       if (answer && typeof answer === "object" && answer.row !== undefined) {
-        client._applyAnsweredSessionRow(this.machine, session, answer.row, mark)
+        client._applyAnsweredSessionRow(machine, session, answer.row, mark)
       }
     } catch { /* an answer without a readable row leaves the row to its channel */ }
     return res

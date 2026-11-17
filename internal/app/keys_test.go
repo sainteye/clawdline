@@ -224,3 +224,40 @@ func TestAMalformedExpectationIsABadRequest(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestAnUnnumberedDirectoryMenuUsesArrowKeysAndOnlyThenReturn(t *testing.T) {
+	screen := func(caret int) string {
+		a, b := " ❯ No, exit", "   Yes, add it"
+		if caret == 2 {
+			a, b = "   No, exit", " ❯ Yes, add it"
+		}
+		return "────────────────────────\n Adding a new directory:\n /tmp/assistant-tasks\n Is this a directory you created or one you trust?\n" + a + "\n" + b + "\n Enter to confirm · Esc to cancel\n"
+	}
+	pane := &menuTerminal{s: paneFor("%7"), screen: screen(1)}
+	pane.onKey = func(p *menuTerminal, b []byte) {
+		if string(b) == "\x1b[B" {
+			p.show(screen(2))
+		}
+	}
+	_, err := menuActions(pane).Key(context.Background(), "%7", "2", session.MenuFingerprint(seenMenu(t, screen(1))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typed := pane.keys(); len(typed) != 2 || typed[0] != "\x1b[B" || typed[1] != "\r" {
+		t.Fatalf("typed %q", typed)
+	}
+}
+
+func TestAMenuWhoseHighlightDoesNotMoveCannotReportSuccess(t *testing.T) {
+	screen := "────────────────────────\n Adding a new directory:\n /tmp/assistant-tasks\n Is this a directory you created or one you trust?\n ❯ No, exit\n   Yes, add it\n Enter to confirm · Esc to cancel\n"
+	pane := &menuTerminal{s: paneFor("%7"), screen: screen}
+	_, err := menuActions(pane).Key(context.Background(), "%7", "2", session.MenuFingerprint(seenMenu(t, screen)))
+	if err == nil {
+		t.Fatal("an unmoved menu was reported as answered")
+	}
+	for _, key := range pane.keys() {
+		if key == "\r" {
+			t.Fatal("confirmed the wrong option")
+		}
+	}
+}

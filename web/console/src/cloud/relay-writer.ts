@@ -2153,7 +2153,7 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
         const sent = await bodyOf(init)
-        return this.copilotSession(client, headerOf(init, "idempotency-key"), "copilot-live", { live: { sdp: String(sent.sdp ?? ""), instructions: String(sent.instructions ?? "") } })
+        return this.copilotSession(client, headerOf(init, "idempotency-key"), "copilot-live", { live: { sdp: String(sent.sdp ?? ""), instructions: String(sent.instructions ?? ""), ...(typeof sent.call === "string" ? {call:sent.call} : {}) } })
       }
       case "copilot-decide": {
         // The person's transcribed sentence, judged by the machine that gave
@@ -2196,7 +2196,7 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
         const sent = await bodyOf(init)
-        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), this.callMachine(client))
+        return this.machineWorkV2(client, route.word, { journal: { call: String(sent.call ?? ""), entries: Array.isArray(sent.entries) ? sent.entries : [] } }, headerOf(init, "idempotency-key"), unopenedMachine(init) ?? this.callMachine(client))
       }
       case "update-apply": {
         // The press installs the newest release of the machine's channel and
@@ -2483,7 +2483,7 @@ export class RelayWriter {
       try {
         const answer = await this.machineWorkV2(client, word, body, index === 0 ? request : this.requestID(), machine)
         this.copilotMachine = machine
-        return answer
+        return answer && typeof answer === "object" ? {...answer,usage_machine:machine} : answer
       } catch (error) {
         const code = (error as CloudFailureLike)?.code
         if (!COPILOT_PASSES_ON.has(String(code))) throw error

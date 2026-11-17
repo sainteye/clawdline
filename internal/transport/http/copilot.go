@@ -104,30 +104,31 @@ func (s *Server) changeCopilot(c copilot.Change) (copilot.Settings, error) {
 // copilotSettingsAnswer is the Settings card: every choice and what the
 // machine offers for it, and of the key only whether it is set.
 type copilotSettingsAnswer struct {
-	WorkAutoContinue   int      `json:"work_auto_continue"`
-	MaxAutoContinue    int      `json:"max_auto_continue"`
-	KeySet             bool     `json:"key_set"`
-	KeyHint            string   `json:"key_hint"`
-	Model              string   `json:"model"`
-	Eagerness          string   `json:"eagerness"`
-	Voice              string   `json:"voice"`
-	Speed              string   `json:"speed"`
-	ExtraInstructions  string   `json:"extra_instructions"`
-	Briefing           bool     `json:"briefing"`
-	Brief              bool     `json:"brief"`
-	SessionRecaps      string   `json:"session_recaps"`
-	RecapModes         []string `json:"session_recap_modes"`
-	Engine             string   `json:"engine"`
-	Engines            []string `json:"engines"`
-	BriefingAssistant  string   `json:"briefing_assistant"`
-	WorkEnabled        bool     `json:"work_enabled"`
-	WorkAssistant      string   `json:"work_assistant"`
-	Models             []string `json:"models"`
-	Eagernesses        []string `json:"eagernesses"`
-	Voices             []string `json:"voices"`
-	Speeds             []string `json:"speeds"`
-	BriefingAssistants []string `json:"briefing_assistants"`
-	MaxInstructions    int      `json:"max_extra_instructions"`
+	Usage              *copilotUsageHistory `json:"usage,omitempty"`
+	WorkAutoContinue   int                  `json:"work_auto_continue"`
+	MaxAutoContinue    int                  `json:"max_auto_continue"`
+	KeySet             bool                 `json:"key_set"`
+	KeyHint            string               `json:"key_hint"`
+	Model              string               `json:"model"`
+	Eagerness          string               `json:"eagerness"`
+	Voice              string               `json:"voice"`
+	Speed              string               `json:"speed"`
+	ExtraInstructions  string               `json:"extra_instructions"`
+	Briefing           bool                 `json:"briefing"`
+	Brief              bool                 `json:"brief"`
+	SessionRecaps      string               `json:"session_recaps"`
+	RecapModes         []string             `json:"session_recap_modes"`
+	Engine             string               `json:"engine"`
+	Engines            []string             `json:"engines"`
+	BriefingAssistant  string               `json:"briefing_assistant"`
+	WorkEnabled        bool                 `json:"work_enabled"`
+	WorkAssistant      string               `json:"work_assistant"`
+	Models             []string             `json:"models"`
+	Eagernesses        []string             `json:"eagernesses"`
+	Voices             []string             `json:"voices"`
+	Speeds             []string             `json:"speeds"`
+	BriefingAssistants []string             `json:"briefing_assistants"`
+	MaxInstructions    int                  `json:"max_extra_instructions"`
 }
 
 func copilotAnswer(v copilot.Settings) copilotSettingsAnswer {
@@ -152,7 +153,10 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, http.StatusInternalServerError, "copilot_settings_unreadable", "The voice copilot settings on this machine cannot be read.")
 			return
 		}
-		writeJSON(w, copilotAnswer(v))
+		answer := copilotAnswer(v)
+		history := s.copilotUsageHistory(time.Now())
+		answer.Usage = &history
+		writeJSON(w, answer)
 	case http.MethodPost:
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "a voice copilot settings write is application/json")
@@ -176,7 +180,10 @@ func (s *Server) copilotSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			writeRefusal(w, http.StatusInternalServerError, "copilot_settings_unwritable", "The voice copilot settings on this machine cannot be saved.")
 		default:
-			writeJSON(w, copilotAnswer(v))
+			answer := copilotAnswer(v)
+			history := s.copilotUsageHistory(time.Now())
+			answer.Usage = &history
+			writeJSON(w, answer)
 		}
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use GET or POST.")

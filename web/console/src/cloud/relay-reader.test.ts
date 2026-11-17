@@ -2610,3 +2610,17 @@ test("an open Session recovered from the pinned list moves when its status says 
   assert.equal(moved.state, "working", "the answer lands while the row still says working")
   assert.equal(moved.activity?.reply_at, 1000)
 })
+
+test("a voice question read targets its named machine and applies the returned row there",async()=>{
+ const client=new FakeClient()
+ Object.assign(client,{_machineImplements:(_machine:string,word:string)=>word==='sessions.row'?'yes':'unknown'})
+ const row={session:{id:'%19',state:'waiting',menu:{options:[{n:1,label:'Yes'}]}},at:1,scan:{}}
+ client.readAnswer=async()=>({sessions:['%19'],complete:true,row})
+ const applied:string[]=[]
+ Object.assign(client,{_sessionRowMark:(machine:string)=>{assert.equal(machine,'mac-b');return 1},_applyAnsweredSessionRow:(machine:string)=>{applied.push(machine);return true}})
+ const r=reader(client,{t:10000})
+ const res=await r.fetch('/v1/sessions?look=%2519',{headers:{'X-Clawdline-Unopened-Read':'1','X-Clawdline-Unopened-Machine':'mac-b'}})
+ assert.equal(res.status,200)
+ assert.deepEqual(client.reads.at(-1),{machine:'mac-b',word:'sessions.row',body:{row:'%19'}})
+ assert.deepEqual(applied,['mac-b'])
+})
