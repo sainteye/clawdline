@@ -22,6 +22,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_LOGIN_API_LEVEL = 81
 export const PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL = 79
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
@@ -318,7 +319,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   enableRoutine(r:W.ProjectAssistantRoutineEnabledRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/enabled"),r,s) }
   deleteRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)),r,s,"DELETE") }
   testRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/runs"),r,s) }
-  create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST") }
+  create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST",true,r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
   async get(r: W.ProjectAssistantBotKey,s: AbortSignal) {
     this.key(r)
     const answer = await this.request<W.ProjectAssistantGetResponse>(endpoint(r)+query({machine_id:this.machineID}),s)
@@ -331,7 +332,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return answer
   }
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
@@ -416,9 +417,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }
   extensions(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantExtensionsResponse>(endpoint(key,"/extensions")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  canKeyProfiles(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL);return true}catch{return false}}
+  canFallbackProfiles(){return this.canKeyProfiles()}
+  loginSecret(r:W.ProjectAssistantLoginProfileAction,value:string,signal:AbortSignal){const submission:W.ProjectAssistantLoginSecretSubmission={...r,target:r.target??"",value};return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-secret"),signal,submission,"POST",true,PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL)}
   canLoginProfiles(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL);return true}catch{return false}}
   loginProfiles(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantLoginProfilesResponse>(endpoint(key,"/login-profiles")+query({machine_id:this.machineID,conversation_id:conversation,agent}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
-  loginProfileAction(r:W.ProjectAssistantLoginProfileAction,signal:AbortSignal){return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-profile"),signal,r,"POST",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  loginProfileAction(r:W.ProjectAssistantLoginProfileAction,signal:AbortSignal){return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-profile"),signal,r,"POST",true,r.kind==="api_key"||r.action==="prepare-key"?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
   canMemorySettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL);return true}catch{return false}}
   async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}){
     this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
@@ -567,7 +571,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
-    tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
+    tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }

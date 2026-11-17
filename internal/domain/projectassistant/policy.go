@@ -124,6 +124,12 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	if err := ValidateMode(in.Agent, in.Mode); err != nil {
 		return err
 	}
+	if len(in.FallbackSteps) > 0 && len(in.FallbackAgents) > 0 {
+		return fail(Invalid, "fallback_conflict")
+	}
+	if err := ValidateFallbackSteps(FallbackStep{Agent: in.Agent}, in.FallbackSteps); err != nil {
+		return err
+	}
 	if err := ValidateFallbacks(in.Agent, in.FallbackAgents); err != nil {
 		return err
 	}
@@ -141,6 +147,7 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		bot.LoginProfile = ""
 		bot.Extensions = ExtensionSelection{}
 		bot.FallbackAgents = FallbackConfig{}
+		bot.FallbackSteps = FallbackStepConfig{}
 	}
 	if in.RuntimeSettings != nil {
 		if err := ValidateRuntimeSettings(*in.RuntimeSettings); err != nil {
@@ -181,18 +188,36 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		}
 		bot.PermissionPolicy, bot.Mode = in.PermissionPolicy, in.Mode
 	}
+	if in.FallbackSteps != nil {
+		if len(*in.FallbackSteps) > 0 && in.FallbackAgents != nil && len(*in.FallbackAgents) > 0 {
+			return bot, fail(Invalid, "fallback_conflict")
+		}
+		if err := ValidateFallbackSteps(FallbackStep{Agent: bot.Agent, LoginProfile: bot.LoginProfile}, *in.FallbackSteps); err != nil {
+			return bot, err
+		}
+		bot.FallbackSteps = FallbackStepConfigOf(*in.FallbackSteps)
+		if len(*in.FallbackSteps) > 0 {
+			bot.FallbackAgents = FallbackConfig{}
+		}
+	}
 	if in.FallbackAgents != nil {
+		if len(*in.FallbackAgents) > 0 && len(bot.FallbackSteps.Steps()) > 0 {
+			return bot, fail(Invalid, "fallback_conflict")
+		}
 		if err := ValidateFallbacks(bot.Agent, *in.FallbackAgents); err != nil {
 			return bot, err
 		}
 		bot.FallbackAgents = FallbackConfigOf(*in.FallbackAgents)
+	}
+	if err := ValidateFallbackSteps(FallbackStep{Agent: bot.Agent, LoginProfile: bot.LoginProfile}, bot.FallbackSteps.Steps()); err != nil {
+		return bot, err
 	}
 	if in.ManageTeam != nil {
 		bot.ManageTeam = *in.ManageTeam
 	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance
-	if bot.Instructions.Text != in.Instructions || bot.Agent != previous.Agent || bot.LoginProfile != previous.LoginProfile || !SameExtensions(bot.Extensions, previous.Extensions) || !SameRuntimeSettings(bot.RuntimeSettings, previous.RuntimeSettings) {
+	if bot.Instructions.Text != in.Instructions || bot.Agent != previous.Agent || bot.LoginProfile != previous.LoginProfile || bot.FallbackSteps != previous.FallbackSteps || bot.FallbackAgents != previous.FallbackAgents || !SameExtensions(bot.Extensions, previous.Extensions) || !SameRuntimeSettings(bot.RuntimeSettings, previous.RuntimeSettings) {
 		bot.Instructions.Text = in.Instructions
 		bot.Instructions.Revision++
 	}

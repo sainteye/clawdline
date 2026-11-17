@@ -1978,6 +1978,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.login_secret_targets",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginSecretTargets"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.manager_approval_seconds",
     "Class": "buffer",
     "Unit": "seconds",

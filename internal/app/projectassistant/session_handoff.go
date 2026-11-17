@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -21,7 +22,18 @@ type SessionHandoff struct {
 	Bookmark             SessionBookmark        `json:"history_bookmark"`
 	Unfinished           []SessionPending       `json:"unfinished"`
 	Continuation         []SessionContinuation  `json:"continuation,omitempty"`
+	Recap                *SessionRecap          `json:"recap,omitempty"`
 	verifiedContinuation []SessionContinuation
+	verifiedRecap        *SessionRecap
+}
+
+// SessionRecap summarizes earlier omitted conversation history when dynamic
+// token budget or maximum message bounds omit earlier turns.
+type SessionRecap struct {
+	OmittedTurns    int    `json:"omitted_turns"`
+	OmittedMessages int    `json:"omitted_messages"`
+	EarliestSeq     int64  `json:"earliest_seq,omitempty"`
+	Summary         string `json:"summary,omitempty"`
 }
 
 // SessionContinuation preserves the source of quoted chat without asserting
@@ -108,11 +120,15 @@ func newSessionHandoffForAgent(x Export, turn pa.Turn, filtered pa.ContextSnapsh
 		return strings.Compare(a.ID, b.ID)
 	})
 	var err error
-	h.Continuation, err = sessionContinuation(x, turn, filtered.Memory)
+	h.Continuation, h.Recap, err = sessionContinuation(x, turn, filtered.Memory)
 	if err != nil {
 		return nil, err
 	}
 	h.verifiedContinuation = slices.Clone(h.Continuation)
+	if h.Recap != nil {
+		rc := *h.Recap
+		h.verifiedRecap = &rc
+	}
 	return h, nil
 }
 
@@ -121,17 +137,18 @@ func mainChatTurn(t pa.Turn) bool {
 }
 
 // Select inside the final WithCurrent fence from the one source-owned Export.
-// As in CodyNC carry.rs repeated(None), no window estimate or model recap is
-// invented. Forget exclusions use the same rules as explicit message quotes.
-func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]SessionContinuation, error) {
+// Aligns with Codync carry.rs dynamic token/byte budget and turn boundary
+// protection, preserving turn pairs and generating structured SessionRecap
+// when earlier history is omitted.
+func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]SessionContinuation, *SessionRecap, error) {
 	if !mainChatTurn(turn) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var before int64
 	for _, m := range x.Messages {
 		if m.ID == turn.MessageID {
 			if before != 0 {
-				return nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_input")
+				return nil, nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_input")
 			}
 			before = m.Seq
 		}
@@ -151,14 +168,24 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 		}
 		return 0
 	})
-	var selected []SessionContinuation
-	for i := len(chat) - 1; i >= 0 && len(selected) < capacity.MaximumBotContinuationMessages; i-- {
-		m := chat[i]
+
+	type candidateItem struct {
+		msg    pa.Message
+		source pa.Turn
+		state  pa.TurnState
+		text   string
+		trunc  bool
+	}
+
+	var candidates []candidateItem
+	turnSet := make(map[string]bool)
+
+	for _, m := range chat {
 		var source *pa.Turn
 		for j := range x.Turns {
 			if x.Turns[j].ID == m.TurnID {
 				if source != nil {
-					return nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_turn")
+					return nil, nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_turn")
 				}
 				source = &x.Turns[j]
 			}
@@ -172,7 +199,7 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 				continue
 			}
 			if !sameSessionOwner(binding.Fence, turn.Fence) || binding.Agent != pa.ClaudeCode && binding.Agent != pa.Codex {
-				return nil, runtimeFailure(pa.ScopeDenied, "handoff_binding")
+				return nil, nil, runtimeFailure(pa.ScopeDenied, "handoff_binding")
 			}
 			if binding.SessionSlot != "" {
 				mainSlot = false
@@ -181,7 +208,6 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 		if !mainSlot {
 			continue
 		}
-		// Queued/withdrawn inputs are not earlier delivered conversation.
 		unknown := source.State == pa.TurnUnknown || source.Failure != nil && source.Failure.Code == pa.ExecutionEffectUnknown
 		if source.State != pa.TurnSucceeded && !unknown {
 			continue
@@ -196,7 +222,7 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 		for j := range x.Messages {
 			if x.Messages[j].ID == source.MessageID {
 				if input != nil {
-					return nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_source")
+					return nil, nil, runtimeFailure(pa.Invalid, "ambiguous_handoff_source")
 				}
 				input = &x.Messages[j]
 			}
@@ -209,12 +235,12 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if _, err = resolvePromptQuote(x, input.ID, turn.Fence, memory); pa.Code(err) == pa.ContextStale {
 			continue
 		} else if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if quote == nil || strings.TrimSpace(quote.Text) == "" {
 			continue
@@ -232,10 +258,107 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 		if unknown {
 			state = pa.TurnUnknown
 		}
-		selected = append(selected, SessionContinuation{MessageID: m.ID, TurnID: source.ID, InputID: source.MessageID, Seq: m.Seq, Kind: m.Kind, State: state, MemoryRevision: source.MemoryRevision, Text: text, Truncated: shortened})
+		candidates = append(candidates, candidateItem{
+			msg:    m,
+			source: *source,
+			state:  state,
+			text:   text,
+			trunc:  shortened,
+		})
+		turnSet[source.ID] = true
 	}
+
+	totalValidCandidates := len(candidates)
+	totalValidTurns := len(turnSet)
+	byteBudget := capacity.MaximumBotContinuationMessages * capacity.MaximumBotContinuationQuoteBytes
+	var accumulatedBytes int
+	var selected []SessionContinuation
+
+	for i := len(candidates) - 1; i >= 0 && len(selected) < capacity.MaximumBotContinuationMessages; i-- {
+		c := candidates[i]
+		itemBytes := len(c.text)
+		if len(selected) > 0 && accumulatedBytes+itemBytes > byteBudget {
+			break
+		}
+		accumulatedBytes += itemBytes
+		selected = append(selected, SessionContinuation{
+			MessageID:      c.msg.ID,
+			TurnID:         c.source.ID,
+			InputID:        c.source.MessageID,
+			Seq:            c.msg.Seq,
+			Kind:           c.msg.Kind,
+			State:          c.state,
+			MemoryRevision: c.source.MemoryRevision,
+			Text:           c.text,
+			Truncated:      c.trunc,
+		})
+	}
+
+	// Boundary protection: If the earliest selected message is an AssistantMessage,
+	// ensure its corresponding UserMessage is also present to avoid orphan replies.
+	if len(selected) > 0 && selected[len(selected)-1].Kind == pa.AssistantMessage {
+		neededInputID := selected[len(selected)-1].InputID
+		hasInput := false
+		for _, s := range selected {
+			if s.MessageID == neededInputID {
+				hasInput = true
+				break
+			}
+		}
+		if !hasInput {
+			// Find if the input candidate exists earlier
+			var foundCandidate *candidateItem
+			for idx := range candidates {
+				if candidates[idx].msg.ID == neededInputID {
+					foundCandidate = &candidates[idx]
+					break
+				}
+			}
+			if foundCandidate != nil && len(selected) < capacity.MaximumBotContinuationMessages {
+				selected = append(selected, SessionContinuation{
+					MessageID:      foundCandidate.msg.ID,
+					TurnID:         foundCandidate.source.ID,
+					InputID:        foundCandidate.source.MessageID,
+					Seq:            foundCandidate.msg.Seq,
+					Kind:           foundCandidate.msg.Kind,
+					State:          foundCandidate.state,
+					MemoryRevision: foundCandidate.source.MemoryRevision,
+					Text:           foundCandidate.text,
+					Truncated:      foundCandidate.trunc,
+				})
+			} else {
+				// Evict orphan assistant message to maintain clean turn boundary
+				selected = selected[:len(selected)-1]
+			}
+		}
+	}
+
 	slices.Reverse(selected)
-	return selected, nil
+
+	var recap *SessionRecap
+	if len(selected) < totalValidCandidates {
+		selectedTurnSet := make(map[string]bool)
+		for _, s := range selected {
+			selectedTurnSet[s.TurnID] = true
+		}
+		omittedTurns := totalValidTurns - len(selectedTurnSet)
+		if omittedTurns < 0 {
+			omittedTurns = 0
+		}
+		omittedMsgs := totalValidCandidates - len(selected)
+		var earliestSeq int64
+		if len(selected) > 0 {
+			earliestSeq = selected[0].Seq
+		}
+		recap = &SessionRecap{
+			OmittedTurns:    omittedTurns,
+			OmittedMessages: omittedMsgs,
+			EarliestSeq:     earliestSeq,
+			Summary:         fmt.Sprintf("%d earlier conversation turns (%d messages) omitted due to context budget; conversation continues from sequence %d", omittedTurns, omittedMsgs, earliestSeq),
+		}
+	}
+
+	return selected, recap, nil
 }
 
 // Opening binds the prepared data to the exact turn and the final memory check.
@@ -260,6 +383,9 @@ func (h SessionHandoff) Opening(turn pa.Turn, filtered pa.ContextSnapshot) (stri
 	}
 	if !slices.Equal(h.Continuation, h.verifiedContinuation) {
 		return "", runtimeFailure(pa.ContextStale, "handoff_continuation_source")
+	}
+	if (h.Recap == nil) != (h.verifiedRecap == nil) || (h.Recap != nil && *h.Recap != *h.verifiedRecap) {
+		return "", runtimeFailure(pa.ContextStale, "handoff_recap_source")
 	}
 	for _, q := range h.Continuation {
 		if q.MemoryRevision > filtered.Memory.Revision || filtered.Memory.ForgottenThrough > 0 && (q.MemoryRevision < filtered.Memory.ForgottenThrough || q.State == pa.TurnUnknown) {

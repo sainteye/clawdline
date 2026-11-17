@@ -28,7 +28,7 @@ import (
 // Human artifact title changes arrive at level 78.
 // Layered Bot memory and native configuration discovery arrive at level 79.
 // Managed task-resource inspection, planning and guarded execution arrive at level 80.
-const APILevel = 81
+const APILevel = 82
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

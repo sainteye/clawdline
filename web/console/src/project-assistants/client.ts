@@ -10,6 +10,9 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+ canKeyProfiles?():boolean
+ canFallbackProfiles?():boolean
+ loginSecret?(request:W.ProjectAssistantLoginProfileAction,value:string,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfileResponse>
  canLoginProfiles?():boolean
  loginProfiles?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfilesResponse>
  loginProfileAction?(request:W.ProjectAssistantLoginProfileAction,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfileResponse>

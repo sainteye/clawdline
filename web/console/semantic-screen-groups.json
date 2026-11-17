@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13021,
-  "riskKeys": 5626,
-  "nonRiskCount": 7395,
+  "englishContentKeys": 13034,
+  "riskKeys": 5633,
+  "nonRiskCount": 7401,
   "groups": [
     {
       "name": "acp / other",
@@ -5896,7 +5896,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 287,
+      "count": 291,
       "sources": [
         null
       ],
@@ -6020,14 +6020,18 @@
         "projectAssistants.libraryPicture",
         "projectAssistants.loading",
         "projectAssistants.loginCreate",
+        "projectAssistants.loginCreateKey",
         "projectAssistants.loginDefault",
+        "projectAssistants.loginKeyValue",
         "projectAssistants.loginName",
+        "projectAssistants.loginPrepareKey",
         "projectAssistants.loginProfile",
         "projectAssistants.loginProfiles",
         "projectAssistants.loginRename",
         "projectAssistants.loginReplay",
         "projectAssistants.loginReplayHint",
         "projectAssistants.loginSignedIn",
+        "projectAssistants.loginSubmitKey",
         "projectAssistants.loginUnavailable",
         "projectAssistants.machine",
         "projectAssistants.memory",
@@ -7467,7 +7471,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 200,
+      "count": 202,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7571,6 +7575,8 @@
         "transparency.card.notice.effect",
         "transparency.card.notice.summary",
         "transparency.card.notice.title",
+        "transparency.card.persistent-bot-api-key.summary",
+        "transparency.card.persistent-bot-api-key.title",
         "transparency.card.persistent-bot-fallback.summary",
         "transparency.card.persistent-bot-fallback.title",
         "transparency.card.persistent-bot-group-rooms.condition",

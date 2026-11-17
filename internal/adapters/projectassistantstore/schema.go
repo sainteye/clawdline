@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -50,6 +50,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS project_assistant_login_kinds (source TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(source,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_login_profiles (source TEXT NOT NULL,id TEXT NOT NULL,agent TEXT NOT NULL,name TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,removed INTEGER NOT NULL,PRIMARY KEY(source,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_login_holds (source TEXT NOT NULL,profile TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(source,profile,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hook_schema (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL CHECK(version=1))`,
@@ -74,6 +75,14 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_receipts (machine TEXT NOT NULL, bot TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, receipt_id TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,operation,command_key), UNIQUE(machine,bot,receipt_id))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	// V8 makes login kind durable; old source-owned profiles are accounts.
+	// Backfill only during migration. Missing kind authority in schema8 must
+	// refuse, never silently turn an encrypted-key identity into an account.
+	if version < 8 {
+		if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO project_assistant_login_kinds(source,id,kind) SELECT source,id,'account' FROM project_assistant_login_profiles`); err != nil {
 			return err
 		}
 	}

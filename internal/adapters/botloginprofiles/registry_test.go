@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -43,6 +44,50 @@ func (*nativeFixture) Status(context.Context, pa.Agent, []string) (string, error
 	return "signed_in", nil
 }
 func (*nativeFixture) SignOut(context.Context, pa.Agent, []string) error { return nil }
+
+func TestSchemaSevenKindsMigrateWithoutReplacingMissingAuthority(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	db, e := sql.Open("sqlite", filepath.Join(state, "fixture.db"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	if e = (store.Installer{}).Install(ctx, db); e != nil {
+		t.Fatal(e)
+	}
+	r, e := New(ctx, db, state, "synthetic-source", "machine", &nativeFixture{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	q := pa.LoginProfileAction{Command: pa.Command{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}, Operation: pa.LoginProfileOperation, IdempotencyKey: "old-account", ContentHash: strings.Repeat("a", 64)}, Agent: pa.Codex, Action: "create", Name: "Synthetic legacy account"}
+	p, e := r.Apply(ctx, q, func(context.Context) error { return nil })
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Exec(`DROP TABLE project_assistant_login_kinds`); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Exec(`UPDATE project_assistant_schema SET version=7`); e != nil {
+		t.Fatal(e)
+	}
+	if e = (store.Installer{}).Install(ctx, db); e != nil {
+		t.Fatal(e)
+	}
+	migrated, e := r.get(ctx, p.ID)
+	if e != nil || migrated.Kind != "account" {
+		t.Fatal("schema7 account migration", e)
+	}
+	if _, e = db.Exec(`DELETE FROM project_assistant_login_kinds`); e != nil {
+		t.Fatal(e)
+	}
+	if e = (store.Installer{}).Install(ctx, db); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = r.get(ctx, p.ID); pa.Code(e) != pa.OutcomeUnknown {
+		t.Fatal("missing schema8 authority was regenerated", e)
+	}
+}
 
 func TestProfileAuthorityBusyRemovalAndRestartKeepUnknownBytes(t *testing.T) {
 	ctx := context.Background()
@@ -102,7 +147,7 @@ func TestProfileAuthorityBusyRemovalAndRestartKeepUnknownBytes(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if replay, e := r.Apply(ctx, start, func(context.Context) error { t.Fatal("replay reran effect admission"); return nil }); e != nil || replay != accepted || native.starts != 1 {
+	if replay, e := r.Apply(ctx, start, func(context.Context) error { t.Fatal("replay reran effect admission"); return nil }); e != nil || !reflect.DeepEqual(replay, accepted) || native.starts != 1 {
 		t.Fatal("lost response started another native login", replay, e)
 	}
 	// A new source instance cannot prove that the old sign-in has ended. It

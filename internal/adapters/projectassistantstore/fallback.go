@@ -40,7 +40,7 @@ func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation
 				continue
 			}
 			b, ok := a.Bindings[fact.ResumeBindingID]
-			if !ok || b.Agent != fact.Agent || b.SessionSlot != "" || b.NativeSessionID == "" || b.Fence.Key != fact.Fence.Key || b.Fence.Project != fact.Fence.Project || b.Fence.ConversationID != fact.Fence.ConversationID || b.Fence.Generation >= fact.Fence.Generation || fact.CarryAfterSeq > a.Conversation.LastMessageSeq {
+			if !ok || b.Agent != fact.Agent || b.LoginProfile != fact.LoginProfile || b.SessionSlot != "" || b.NativeSessionID == "" || b.Fence.Key != fact.Fence.Key || b.Fence.Project != fact.Fence.Project || b.Fence.ConversationID != fact.Fence.ConversationID || b.Fence.Generation >= fact.Fence.Generation || fact.CarryAfterSeq > a.Conversation.LastMessageSeq {
 				return failure(pa.ScopeDenied, "attempt_resume_provenance")
 			}
 		}
@@ -108,9 +108,9 @@ func checkAttemptFacts(next pa.Turn) error {
 	if len(next.Attempts) > 0 && next.Attempts[len(next.Attempts)-1].Fence != next.Fence {
 		return failure(pa.ScopeDenied, "attempt_current_fence")
 	}
-	tried := map[pa.Agent]bool{}
+	tried := map[pa.FallbackStep]bool{}
 	for i, f := range next.Attempts {
-		if f.Ordinal < 1 || f.Ordinal > pa.MaxFallbackAgents+1 || f.Agent != pa.ClaudeCode && f.Agent != pa.Codex || f.Fence.Key != next.Fence.Key || f.Fence.Project != next.Fence.Project || f.Fence.ConversationID != next.Fence.ConversationID {
+		if !pa.ValidLoginProfileID(f.LoginProfile) || f.Ordinal < 1 || f.Ordinal > pa.MaxFallbackAgents+1 || f.Agent != pa.ClaudeCode && f.Agent != pa.Codex || f.Fence.Key != next.Fence.Key || f.Fence.Project != next.Fence.Project || f.Fence.ConversationID != next.Fence.ConversationID {
 			return failure(pa.Invalid, "attempt")
 		}
 		if f.ToolActivity && !f.NativeActivity || f.SendReturned && !f.SendStarted || f.AnswerObserved && !f.SendReturned || f.CarryAfterSeq < 0 || f.CarryKind != "" && f.CarryKind != "recap" && f.CarryKind != "catch_up" || f.CarryKind == "catch_up" && f.ResumeBindingID == "" {
@@ -120,15 +120,15 @@ func checkAttemptFacts(next pa.Turn) error {
 			if f.Ordinal != 1 || !validAttemptOpening(f) {
 				return failure(pa.Invalid, "attempt_start")
 			}
-			tried[f.Agent] = true
+			tried[pa.FallbackStep{Agent: f.Agent, LoginProfile: f.LoginProfile}] = true
 			continue
 		}
 		p := next.Attempts[i-1]
 		if f.Ordinal == p.Ordinal+1 {
-			if !pa.SafeAttemptClosed(pa.Turn{Attempts: []pa.AttemptFact{p}}) || !validAttemptOpening(f) || f.Fence.Generation <= p.Fence.Generation || f.Fence.BindingID == p.Fence.BindingID || tried[f.Agent] {
+			if !pa.SafeAttemptClosed(pa.Turn{Attempts: []pa.AttemptFact{p}}) || !validAttemptOpening(f) || f.Fence.Generation <= p.Fence.Generation || f.Fence.BindingID == p.Fence.BindingID || tried[pa.FallbackStep{Agent: f.Agent, LoginProfile: f.LoginProfile}] {
 				return failure(pa.ScopeDenied, "attempt_transition")
 			}
-			tried[f.Agent] = true
+			tried[pa.FallbackStep{Agent: f.Agent, LoginProfile: f.LoginProfile}] = true
 			continue
 		}
 		if f.Ordinal != p.Ordinal || f.Agent != p.Agent || f.LoginProfile != p.LoginProfile || f.Fence != p.Fence || p.SendStarted && !f.SendStarted || p.Opened && !f.Opened || p.SendReturned && !f.SendReturned || p.NativeActivity && !f.NativeActivity || p.ToolActivity && !f.ToolActivity || p.AnswerObserved && !f.AnswerObserved || p.ResumeBindingID != f.ResumeBindingID || p.CarryKind != f.CarryKind || p.CarryAfterSeq != f.CarryAfterSeq || p.CleanupConfirmed {

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,13 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 		return
 	}
 	slot := os.Getenv("CODEX_HOME")
+	if slot == "" {
+		slot = os.Getenv("CLAUDE_CONFIG_DIR")
+	}
+	profileKey := os.Getenv("CODEX_API_KEY")
+	if profileKey == "" {
+		profileKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
 	selected := "default"
 	if slot != "" {
 		selected = filepath.Base(slot)
@@ -58,6 +66,9 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 		}
 		os.Exit(3)
 	}
+	if key := profileKey; key != "" && key != "SYNTHETIC_PROFILE_KEY_ONLY" {
+		os.Exit(7)
+	}
 	skillSeen := false
 	var connectorURL, connectorBearer string
 	scanner := bufio.NewScanner(os.Stdin)
@@ -74,7 +85,11 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 		var result any = map[string]any{}
 		switch f.Method {
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "@agentclientprotocol/codex-acp", "version": "fixture"}, "agentCapabilities": map[string]any{"mcpCapabilities": map[string]any{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}}}
+			adapterName := "@agentclientprotocol/codex-acp"
+			if os.Getenv("CLAWDLINE_LOGIN_PEER_AGENT") == "claude" {
+				adapterName = "@agentclientprotocol/claude-agent-acp"
+			}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": adapterName, "version": "fixture"}, "agentCapabilities": map[string]any{"mcpCapabilities": map[string]any{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "_meta": map[string]any{"claudeCode": map[string]any{}}}}
 		case "session/new":
 			skillSeen = strings.Contains(string(f.Params["systemPrompt"]), "Selected application skill")
 			var servers []struct {
@@ -123,12 +138,12 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 					os.Exit(6)
 				}
 			}
-			if slot != "" {
+			if slot != "" && profileKey == "" {
 				if _, e := os.Stat(filepath.Join(slot, "synthetic-signed")); e != nil {
 					os.Exit(4)
 				}
 			}
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-login-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": fmt.Sprintf("Synthetic selected login %s / skill=%t / connector=%t", selected, skillSeen, connectorSeen)}}}})
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-login-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": fmt.Sprintf("Synthetic selected login %s / skill=%t / connector=%t / key=%t", selected, skillSeen, connectorSeen, profileKey != "")}}}})
 			result = map[string]string{"stopReason": "end_turn"}
 		case "session/cancel":
 			continue
@@ -149,8 +164,8 @@ func (p loginFixtureProvider) provider(ctx context.Context, b pa.Bot) (*acp.Prov
 	if e != nil {
 		return nil, func() {}, e
 	}
-	env = append(env, "CLAWDLINE_LOGIN_PEER=acp", "CLAWDLINE_LOGIN_PEER_STATE="+p.state)
-	provider, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: p.exe, Arguments: []string{"-test.run=^TestLoginCapabilitiesPeer$"}, Environment: env}}, Limits: acp.Limits{RPCPending: 16, IncomingPermissions: 16, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, c acp.Configuration) (pa.Capabilities, error) {
+	env = append(env, "CLAWDLINE_LOGIN_PEER_AGENT="+string(b.Agent), "CLAWDLINE_LOGIN_PEER=acp", "CLAWDLINE_LOGIN_PEER_STATE="+p.state)
+	provider, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: p.exe, Arguments: []string{"-test.run=^TestLoginCapabilitiesPeer$"}, Environment: env}, pa.ClaudeCode: {Executable: p.exe, Arguments: []string{"-test.run=^TestLoginCapabilitiesPeer$"}, Environment: env}}, Limits: acp.Limits{RPCPending: 16, IncomingPermissions: 16, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, c acp.Configuration) (pa.Capabilities, error) {
 		// The exact selected environment is the evidence subject. No default
 		// profile receipt is reused for a managed profile.
 		if b.LoginProfile != "" && !strings.Contains(strings.Join(c.Environment, "\n"), "/"+b.LoginProfile) {
@@ -218,7 +233,7 @@ func (n observedLoginNative) Start(ctx context.Context, a pa.Agent, env []string
 	return p, e
 }
 
-func loginCapabilitiesFixture(t *testing.T) (*paServerFixture, *botloginprofiles.Registry) {
+func loginCapabilitiesFixture(t *testing.T, wraps ...func(app.Provider) app.Provider) (*paServerFixture, *botloginprofiles.Registry) {
 	t.Helper()
 	f := newPAServerFixture(t, true)
 	exe, e := os.Executable()
@@ -247,7 +262,13 @@ func loginCapabilitiesFixture(t *testing.T) (*paServerFixture, *botloginprofiles
 		e = json.Unmarshal(b, &skills)
 		return skills, e
 	}}
-	f.s.projectAssistants.provider = func() (app.Provider, error) { return loginFixtureProvider{profiles, exe, f.s.cfg.Dir}, nil }
+	f.s.projectAssistants.provider = func() (app.Provider, error) {
+		var provider app.Provider = loginFixtureProvider{profiles, exe, f.s.cfg.Dir}
+		for _, wrap := range wraps {
+			provider = wrap(provider)
+		}
+		return provider, nil
+	}
 	f.enable(t)
 	create := f.create()
 	create.Settings.Agent = contract.ProjectAssistantAgentCodex
@@ -316,7 +337,7 @@ func TestLoginProfilesStoredHTTPAndNativeIsolation(t *testing.T) {
 	}
 	signed := awaitLogin(t, f, first.ID, "signed_in")
 	// Lost-response replay returns the original acceptance snapshot, no new login.
-	if replay := loginAct(t, f, start); replay != accepted {
+	if replay := loginAct(t, f, start); !reflect.DeepEqual(replay, accepted) {
 		t.Fatal("lost response replay changed", replay, accepted)
 	}
 	loginAct(t, f, loginAction(f, g, "start", second, ""))

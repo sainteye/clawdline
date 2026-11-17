@@ -121,6 +121,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.list":                  genDecodeProjectAssistantsList,
 	"project-assistants.login-profile":         genDecodeProjectAssistantsLoginProfile,
 	"project-assistants.login-profiles":        genDecodeProjectAssistantsLoginProfiles,
+	"project-assistants.login-secret":          genDecodeProjectAssistantsLoginSecret,
 	"project-assistants.memory":                genDecodeProjectAssistantsMemory,
 	"project-assistants.memory-view":           genDecodeProjectAssistantsMemoryView,
 	"project-assistants.observed":              genDecodeProjectAssistantsObserved,
@@ -2650,7 +2651,7 @@ func genDecodeProjectAssistantsEdit(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"edit"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name"}, closed: true}) {
+	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "fallback_steps": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "login_profile": genRule{kind: "string"}}, required: []string{"agent"}, closed: true}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)
@@ -3086,10 +3087,11 @@ func genDecodeProjectAssistantsList(b body) (plan, LocalRequest, bool) {
 func genDecodeProjectAssistantsLoginProfile(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "action", "agent", "command", "expected_version", "fence", "name", "profile_id", "request", "revision", "session"},
+		[]string{"type", "action", "agent", "command", "expected_version", "fence", "kind", "name", "profile_id", "request", "revision", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("action", genRule{kind: "string", enum: []string{"create", "rename", "start", "cancel", "check", "remove"}}) {
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"create", "rename", "start", "cancel", "check", "remove", "prepare-key"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("agent", genRule{kind: "string", enum: []string{"claude", "codex"}}) {
@@ -3102,6 +3104,9 @@ func genDecodeProjectAssistantsLoginProfile(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("kind", genRule{kind: "string", enum: []string{"account", "api_key"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("name", genRule{kind: "string"}) {
@@ -3123,7 +3128,7 @@ func genDecodeProjectAssistantsLoginProfile(b body) (plan, LocalRequest, bool) {
 	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "agent": genValue{from: "agent"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "name": genValue{from: "name"}, "profile_id": genValue{from: "profile_id"}, "revision": genValue{from: "revision"}})
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "agent": genValue{from: "agent"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "kind": genValue{from: "kind"}, "name": genValue{from: "name"}, "profile_id": genValue{from: "profile_id"}, "revision": genValue{from: "revision"}})
 	return p, req, true
 }
 
@@ -3154,6 +3159,61 @@ func genDecodeProjectAssistantsLoginProfiles(b body) (plan, LocalRequest, bool) 
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"agent": genValue{from: "agent"}, "conversation_id": genValue{from: "conversation_id"}, "machine_id": genValue{from: "machine_id"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsLoginSecret is the `project-assistants.login-secret` row's decode.
+func genDecodeProjectAssistantsLoginSecret(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "agent", "command", "expected_version", "fence", "name", "profile_id", "request", "revision", "session", "target", "value"},
+		[]string{"type", "action", "agent", "command", "expected_version", "fence", "kind", "name", "profile_id", "request", "revision", "session", "target", "value"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"submit-key"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("agent", genRule{kind: "string", enum: []string{"claude", "codex"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"login-profile"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("kind", genRule{kind: "string", enum: []string{"account", "api_key"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("name", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("profile_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("target", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("value", genRule{kind: "string", maxBytes: 16384}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/login-secret"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "agent": genValue{from: "agent"}, "command": genValue{from: "command"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "kind": genValue{from: "kind"}, "name": genValue{from: "name"}, "profile_id": genValue{from: "profile_id"}, "revision": genValue{from: "revision"}, "target": genValue{from: "target"}, "value": genValue{from: "value"}})
 	return p, req, true
 }
 
@@ -3941,7 +4001,7 @@ func genDecodeProjectAssistantsTeamSettings(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"edit"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "manage_team": genRule{kind: "bool"}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name", "manage_team"}, closed: true}) {
+	if !b.genValid("settings", genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "appearance": genRule{kind: "object", properties: map[string]genRule{"color": genRule{kind: "string"}, "shape": genRule{kind: "string", enum: []string{"blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"}}}, required: []string{"color", "shape"}, closed: true}, "expected_version": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "extensions": genRule{kind: "object", properties: map[string]genRule{"connectors": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}, "skills": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"fingerprint": genRule{kind: "string", length: 64, checks: []func(string) bool{genLowerHex}}, "id": genRule{kind: "string"}}, required: []string{"fingerprint", "id"}, closed: true}, maxItems: genCount(32)}}, required: []string{"connectors", "skills"}, closed: true}, "fallback_agents": genRule{kind: "list", items: &genRule{kind: "string", enum: []string{"claude", "codex"}}, maxItems: genCount(3)}, "fallback_steps": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"agent": genRule{kind: "string", enum: []string{"claude", "codex"}}, "login_profile": genRule{kind: "string"}}, required: []string{"agent"}, closed: true}, maxItems: genCount(3)}, "instructions": genRule{kind: "string", maxBytes: 16384}, "login_profile": genRule{kind: "object", properties: map[string]genRule{"id": genRule{kind: "string"}}, required: []string{"id"}, closed: true}, "manage_team": genRule{kind: "bool"}, "mode": genRule{kind: "string"}, "name": genRule{kind: "string"}, "notify": genRule{kind: "string", enum: []string{"on", "off"}}, "permission_policy": genRule{kind: "string", enum: []string{"ask", "auto_read", "approve"}}, "runtime_settings": genRule{kind: "object", properties: map[string]genRule{"model": genRule{kind: "string", maxBytes: 16384}, "options": genRule{kind: "object", maxBytes: 32768, maxKeys: 100}}, required: []string{"model", "options"}, closed: true}}, required: []string{"appearance", "expected_version", "instructions", "name", "manage_team"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

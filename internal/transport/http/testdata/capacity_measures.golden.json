@@ -486,6 +486,11 @@
     "Note": true
   },
   {
+    "Name": "bots.login_secret_targets",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.manager_approval_seconds",
     "Known": true,
     "Note": true

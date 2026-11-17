@@ -478,6 +478,13 @@
         },
         "extensions": {
           "$ref": "#/$defs/ProjectAssistantExtensionSelection"
+        },
+        "fallback_steps": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantFallbackStep"
+          }
         }
       },
       "required": [
@@ -533,6 +540,13 @@
         },
         "manage_team": {
           "type": "boolean"
+        },
+        "fallback_steps": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantFallbackStep"
+          }
         }
       },
       "required": [
@@ -598,6 +612,13 @@
         },
         "extensions": {
           "$ref": "#/$defs/ProjectAssistantExtensionSelection"
+        },
+        "fallback_steps": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantFallbackStep"
+          }
         }
       },
       "required": [
@@ -789,6 +810,10 @@
         },
         "login_profile": {
           "type": "string"
+        },
+        "primary_superseded_at": {
+          "type": "integer",
+          "description": "Source-recorded configuration revision that replaced this binding’s primary Agent; absent for current or legacy unchanged primary bindings."
         }
       },
       "required": [
@@ -3848,6 +3873,15 @@
         },
         "revision": {
           "type": "integer"
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "handoff": {
+          "$ref": "#/$defs/ProjectAssistantLoginSecretTarget"
         }
       },
       "required": [
@@ -3885,6 +3919,12 @@
           "type": "string"
         },
         "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "target": {
           "type": "string"
         }
       },
@@ -4029,6 +4069,89 @@
       "required": [
         "contract_version",
         "catalog"
+      ]
+    },
+    "ProjectAssistantLoginSecretTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "expires"
+      ]
+    },
+    "ProjectAssistantLoginSecretSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "profile_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "action": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "expected_version",
+        "profile_id",
+        "revision",
+        "agent",
+        "action",
+        "name",
+        "value",
+        "target"
+      ]
+    },
+    "ProjectAssistantFallbackStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "login_profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent"
       ]
     }
   }

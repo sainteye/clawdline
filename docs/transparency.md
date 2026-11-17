@@ -716,3 +716,10 @@ The 2026-11-17 portability correction keeps the same child storage policy in bot
 languages. Both Chinese tags share the reviewed compact wording; launch-size
 checks now choose their language explicitly instead of inheriting the host locale.
 The original briefing excerpt and source receipts follow this wording correction.
+
+Bot API-key identities have a separate conditional entry, `persistent-bot-api-key`.
+It describes dedicated Secret Handoff input, protected-file encryption, explicit
+provider environment allowlists and the separation from ordinary model context.
+The fallback entry now names ordered Agent/login identities, including another
+login of the same Agent. Synthetic local proof does not establish provider,
+production Cloud or installed-native acceptance.

@@ -203,7 +203,7 @@ func runLoginCommand(ctx context.Context, c Configuration, capture bool) ([]byte
 func nativeProfileOnly(env []string) []string {
 	out := []string{}
 	for _, v := range env {
-		if strings.HasPrefix(v, "CODEX_HOME=") || strings.HasPrefix(v, "CLAUDE_CONFIG_DIR=") {
+		if strings.HasPrefix(v, "CODEX_HOME=") || strings.HasPrefix(v, "CLAUDE_CONFIG_DIR=") || strings.HasPrefix(v, "ANTHROPIC_API_KEY=") || strings.HasPrefix(v, "CODEX_API_KEY=") {
 			out = append(out, v)
 		}
 	}

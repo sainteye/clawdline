@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,5 +84,53 @@ func TestSafeAttemptClosedRefusesEveryObservedEffect(t *testing.T) {
 		if SafeAttemptClosed(Turn{Attempts: []AttemptFact{fact}}) {
 			t.Fatalf("observed effect authorized another attempt: %+v", fact)
 		}
+	}
+}
+
+func TestSelectedFallbacksUseDistinctLoginsAndPreserveLegacyOmission(t *testing.T) {
+	first, second := strings.Repeat("1", 32), strings.Repeat("2", 32)
+	primary := FallbackStep{Agent: Codex, LoginProfile: first}
+	steps := []FallbackStep{{Agent: Codex, LoginProfile: second}, {Agent: ClaudeCode}}
+	if err := ValidateFallbackSteps(primary, steps); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]FallbackStep{{primary}, {steps[0], steps[0]}, {{Agent: Codex, LoginProfile: "unknown"}}} {
+		if err := ValidateFallbackSteps(primary, bad); err == nil {
+			t.Fatalf("accepted duplicate or malformed login %+v", bad)
+		}
+	}
+	bot := Bot{Agent: Codex, LoginProfile: first, Name: "Synthetic", Appearance: Appearance{Blob, EntryColor}, Version: 1, Instructions: InstructionSnapshot{Revision: 1}}
+	edit := EditBot{ExpectedVersion: 1, Name: bot.Name, Appearance: bot.Appearance, FallbackSteps: &steps}
+	next, err := ApplyEdit(bot, edit)
+	if err != nil || next.FallbackSteps.Steps()[0] != steps[0] || next.Instructions.Revision != 2 {
+		t.Fatalf("new chain: %+v %v", next, err)
+	}
+	empty := []Agent{}
+	oldEdit := EditBot{ExpectedVersion: next.Version, Name: next.Name, Appearance: next.Appearance, FallbackAgents: &empty}
+	preserved, err := ApplyEdit(next, oldEdit)
+	if err != nil || preserved.FallbackSteps != next.FallbackSteps {
+		t.Fatalf("old empty client erased new logins: %+v %v", preserved, err)
+	}
+	legacy := []Agent{ClaudeCode}
+	oldEdit.ExpectedVersion = preserved.Version
+	oldEdit.FallbackAgents = &legacy
+	if _, err = ApplyEdit(preserved, oldEdit); Code(err) != Invalid {
+		t.Fatalf("conflicting old writer accepted: %v", err)
+	}
+	clear := []FallbackStep{}
+	oldEdit.ExpectedVersion = preserved.Version
+	oldEdit.FallbackSteps = &clear
+	migrated, err := ApplyEdit(preserved, oldEdit)
+	if err != nil || len(migrated.FallbackSteps.Steps()) != 0 || len(migrated.FallbackAgents.Agents()) != 1 {
+		t.Fatalf("explicit reverse migration failed: %+v %v", migrated, err)
+	}
+	raw, err := json.Marshal(Bot{Agent: Codex})
+	if err != nil || strings.Contains(string(raw), "fallback_steps") {
+		t.Fatalf("new zero field changed legacy canonical input: %s %v", raw, err)
+	}
+	var round Bot
+	raw, err = json.Marshal(next)
+	if err != nil || json.Unmarshal(raw, &round) != nil || round.FallbackSteps != next.FallbackSteps {
+		t.Fatal("selected identities lost JSON value semantics")
 	}
 }

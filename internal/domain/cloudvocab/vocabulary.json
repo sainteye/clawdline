@@ -2688,8 +2688,82 @@
                   "off"
                 ]
               },
-              "login_profile":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"closed":true},
-              "extensions":{"type":"object","closed":true,"properties":{"skills":{"type":"list","max_items":32,"copies":{"max_items":"projectassistant.MaxBotExtensions"},"items":{"type":"object","closed":true,"properties":{"id":{"type":"string"},"fingerprint":{"type":"string","length":64,"checks":["lower_hex"]}},"required":["fingerprint","id"]}},"connectors":{"type":"list","max_items":32,"copies":{"max_items":"projectassistant.MaxBotExtensions"},"items":{"type":"object","closed":true,"properties":{"id":{"type":"string"},"fingerprint":{"type":"string","length":64,"checks":["lower_hex"]}},"required":["fingerprint","id"]}}},"required":["connectors","skills"]},
+              "login_profile": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "closed": true
+              },
+              "extensions": {
+                "type": "object",
+                "closed": true,
+                "properties": {
+                  "skills": {
+                    "type": "list",
+                    "max_items": 32,
+                    "copies": {
+                      "max_items": "projectassistant.MaxBotExtensions"
+                    },
+                    "items": {
+                      "type": "object",
+                      "closed": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string",
+                          "length": 64,
+                          "checks": [
+                            "lower_hex"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "id"
+                      ]
+                    }
+                  },
+                  "connectors": {
+                    "type": "list",
+                    "max_items": 32,
+                    "copies": {
+                      "max_items": "projectassistant.MaxBotExtensions"
+                    },
+                    "items": {
+                      "type": "object",
+                      "closed": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string",
+                          "length": 64,
+                          "checks": [
+                            "lower_hex"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "id"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "connectors",
+                  "skills"
+                ]
+              },
               "runtime_settings": {
                 "type": "object",
                 "closed": true,
@@ -2736,6 +2810,32 @@
                     "claude",
                     "codex"
                   ]
+                },
+                "copies": {
+                  "max_items": "projectassistant.MaxFallbackAgents"
+                }
+              },
+              "fallback_steps": {
+                "type": "list",
+                "max_items": 3,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "agent": {
+                      "type": "string",
+                      "enum": [
+                        "claude",
+                        "codex"
+                      ]
+                    },
+                    "login_profile": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "agent"
+                  ],
+                  "closed": true
                 },
                 "copies": {
                   "max_items": "projectassistant.MaxFallbackAgents"
@@ -3586,7 +3686,8 @@
         "revision": 0,
         "agent": "codex",
         "action": "create",
-        "name": "Synthetic account"
+        "name": "Synthetic account",
+        "kind": "account"
       },
       "shapes": [
         {
@@ -3609,6 +3710,33 @@
             "command",
             "expected_version",
             "fence",
+            "name",
+            "profile_id",
+            "revision"
+          ]
+        },
+        {
+          "body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "kind",
+            "name",
+            "profile_id",
+            "request",
+            "revision",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/login-profile",
+          "local_body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "kind",
             "name",
             "profile_id",
             "revision"
@@ -3761,7 +3889,8 @@
               "start",
               "cancel",
               "check",
-              "remove"
+              "remove",
+              "prepare-key"
             ]
           },
           "name": {
@@ -3771,6 +3900,13 @@
             "type": "integer",
             "min": 1,
             "max": 9007199254740991
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "account",
+              "api_key"
+            ]
           }
         },
         "route": {
@@ -3805,12 +3941,16 @@
               },
               "expected_version": {
                 "from": "expected_version"
+              },
+              "kind": {
+                "from": "kind"
               }
             }
           }
         }
       }
     },
+
     {
       "op": "project-assistants.login-profiles",
       "kind": "read",
@@ -3883,6 +4023,341 @@
             },
             "agent": {
               "from": "agent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "project-assistants.login-secret",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{bot_id}/login-secret",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "routine-fixture"
+          },
+          "operation": "login-profile",
+          "idempotency_key": "stable-routine",
+          "content_hash": ""
+        },
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "routine-fixture"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "",
+          "generation": 0
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-routine",
+        "expected_version": 1,
+        "profile_id": "",
+        "revision": 0,
+        "agent": "codex",
+        "action": "submit-key",
+        "name": "Synthetic account",
+        "target": "synthetic-target",
+        "value": "SAFE_FIXTURE",
+        "kind": "api_key"
+      },
+      "shapes": [
+        {
+          "body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "name",
+            "profile_id",
+            "request",
+            "revision",
+            "session",
+            "target",
+            "value"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/login-secret",
+          "local_body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "name",
+            "profile_id",
+            "revision",
+            "target",
+            "value"
+          ]
+        },
+        {
+          "body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "kind",
+            "name",
+            "profile_id",
+            "request",
+            "revision",
+            "session",
+            "target",
+            "value"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/login-secret",
+          "local_body": [
+            "action",
+            "agent",
+            "command",
+            "expected_version",
+            "fence",
+            "kind",
+            "name",
+            "profile_id",
+            "revision",
+            "target",
+            "value"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "login-profile"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "submit-key"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "integer",
+            "min": 1,
+            "max": 9007199254740991
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "account",
+              "api_key"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "max_bytes": 16384,
+            "copies": {
+              "max_bytes": "app.MaxSecretHandoffBytes"
+            }
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/login-secret",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "profile_id": {
+                "from": "profile_id"
+              },
+              "revision": {
+                "from": "revision"
+              },
+              "agent": {
+                "from": "agent"
+              },
+              "action": {
+                "from": "action"
+              },
+              "name": {
+                "from": "name"
+              },
+              "expected_version": {
+                "from": "expected_version"
+              },
+              "kind": {
+                "from": "kind"
+              },
+              "target": {
+                "from": "target"
+              },
+              "value": {
+                "from": "value"
+              }
             }
           }
         }
@@ -6496,7 +6971,363 @@
     },
     {"op":"project-assistants.team-answer","kind":"command","write_gate":true,"console":"carried","console_route":"captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-answer","console_seam":"client","local":{"method":"POST","device":true,"headers":["Idempotency-Key"]},"special":["guard","partial_answer","shaped_answer"],"example":{"command":{"key":{"machine_id":"source-one","bot_id":"manager-one"},"operation":"answer","idempotency_key":"stable-team-answer","content_hash":""},"plan_id":"plan-one","allow":true,"session":"__clawdline_machine__","request":"stable-team-answer"},"shapes":[{"body":["allow","command","plan_id","request","session"],"path":"/v1/project-assistants/{command.key.bot_id}/team-answer","local_body":["allow","command","plan_id"]}],"decode":{"reply":"action","fields":{"command":{"type":"object","properties":{"key":{"type":"object","properties":{"machine_id":{"type":"string","non_empty":true},"bot_id":{"type":"string","checks":["pa_bot_id"]}},"required":["bot_id","machine_id"],"closed":true},"operation":{"type":"string","enum":["answer"]},"idempotency_key":{"type":"string","non_empty":true,"same_as":"request","checks":["request_name"]},"content_hash":{"type":"string"}},"required":["content_hash","idempotency_key","key","operation"],"closed":true},"plan_id":{"type":"string","non_empty":true},"allow":{"type":"bool"}},"route":{"path":"/v1/project-assistants/{command.key.bot_id}/team-answer","headers":{"Idempotency-Key":{"from":"command.idempotency_key"}},"body":{"fields":{"command":{"from":"command"},"plan_id":{"from":"plan_id"},"allow":{"from":"allow"}}}}}},
     {"op":"project-assistants.team-plans","kind":"read","write_gate":false,"console":"carried","console_route":"captured Bot source GET /v1/project-assistants/{key.bot_id}/team-plans","console_seam":"client","local":{"method":"GET","device":true},"special":["partial_answer","shaped_answer"],"example":{"key":{"machine_id":"source-one","bot_id":"manager-one"},"session":"__clawdline_machine__","request":"stable-team-plans"},"shapes":[{"body":["key","request","session"],"path":"/v1/project-assistants/{key.bot_id}/team-plans","query":["machine_id"]}],"decode":{"reply":"machine","fields":{"key":{"type":"object","properties":{"machine_id":{"type":"string","non_empty":true},"bot_id":{"type":"string","checks":["pa_bot_id"]}},"required":["bot_id","machine_id"],"closed":true}},"route":{"path":"/v1/project-assistants/{key.bot_id}/team-plans","query":{"machine_id":{"from":"key.machine_id"}}}}},
-    {"op":"project-assistants.team-settings","kind":"command","write_gate":true,"console":"carried","console_route":"captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-settings","console_seam":"client","local":{"method":"POST","device":true,"headers":["Idempotency-Key"]},"special":["guard","partial_answer","shaped_answer"],"example":{"command":{"key":{"machine_id":"source-one","bot_id":"manager-one"},"operation":"edit","idempotency_key":"stable-team-settings","content_hash":""},"settings":{"expected_version":1,"name":"Bot 名稱","appearance":{"shape":"blob","color":"#e39567"},"instructions":"","manage_team":true},"session":"__clawdline_machine__","request":"stable-team-settings"},"shapes":[{"body":["command","request","session","settings"],"path":"/v1/project-assistants/{command.key.bot_id}/team-settings","local_body":["command","settings"]}],"decode":{"reply":"action","fields":{"command":{"type":"object","properties":{"key":{"type":"object","properties":{"machine_id":{"type":"string","non_empty":true},"bot_id":{"type":"string","checks":["pa_bot_id"]}},"required":["bot_id","machine_id"],"closed":true},"operation":{"type":"string","enum":["edit"]},"idempotency_key":{"type":"string","non_empty":true,"same_as":"request","checks":["request_name"]},"content_hash":{"type":"string"}},"required":["content_hash","idempotency_key","key","operation"],"closed":true},"settings":{"type":"object","properties":{"expected_version":{"type":"integer","min":0,"max":9007199254740991,"copies":{"max":"cloud.MaxSafeInteger"}},"name":{"type":"string"},"appearance":{"type":"object","properties":{"shape":{"type":"string","enum":["blob","squircle","wedge","pebble","tablet","hex","cloud","teardrop"]},"color":{"type":"string"}},"required":["color","shape"],"closed":true},"instructions":{"type":"string","max_bytes":16384,"copies":{"max_bytes":"projectassistant.MaxInstructionBytes"}},"manage_team":{"type":"bool"},"mode":{"type":"string"},"permission_policy":{"type":"string","enum":["ask","auto_read","approve"]},"fallback_agents":{"type":"list","max_items":3,"items":{"type":"string","enum":["claude","codex"]},"copies":{"max_items":"projectassistant.MaxFallbackAgents"}},"agent":{"type":"string","enum":["claude","codex"]},"notify":{"type":"string","enum":["on","off"]},"login_profile":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"closed":true},"extensions":{"type":"object","closed":true,"properties":{"skills":{"type":"list","max_items":32,"copies":{"max_items":"projectassistant.MaxBotExtensions"},"items":{"type":"object","closed":true,"properties":{"id":{"type":"string"},"fingerprint":{"type":"string","length":64,"checks":["lower_hex"]}},"required":["fingerprint","id"]}},"connectors":{"type":"list","max_items":32,"copies":{"max_items":"projectassistant.MaxBotExtensions"},"items":{"type":"object","closed":true,"properties":{"id":{"type":"string"},"fingerprint":{"type":"string","length":64,"checks":["lower_hex"]}},"required":["fingerprint","id"]}}},"required":["connectors","skills"]},"runtime_settings":{"type":"object","closed":true,"properties":{"model":{"type":"string","max_bytes":16384,"copies":{"max_bytes":"projectassistant.MaxInstructionBytes"}},"options":{"type":"object","max_keys":100,"max_bytes":32768,"copies":{"max_keys":"projectassistant.MaxConfigurationOptions","max_bytes":"projectassistant.MaxMessageBytes"}}},"required":["model","options"]}},"required":["appearance","expected_version","instructions","name","manage_team"],"closed":true}},"route":{"path":"/v1/project-assistants/{command.key.bot_id}/team-settings","headers":{"Idempotency-Key":{"from":"command.idempotency_key"}},"body":{"fields":{"command":{"from":"command"},"settings":{"from":"settings"}}}}}},
+    {
+      "op": "project-assistants.team-settings",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-settings",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "manager-one"
+          },
+          "operation": "edit",
+          "idempotency_key": "stable-team-settings",
+          "content_hash": ""
+        },
+        "settings": {
+          "expected_version": 1,
+          "name": "Bot 名稱",
+          "appearance": {
+            "shape": "blob",
+            "color": "#e39567"
+          },
+          "instructions": "",
+          "manage_team": true
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-team-settings"
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "request",
+            "session",
+            "settings"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/team-settings",
+          "local_body": [
+            "command",
+            "settings"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "edit"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              },
+              "name": {
+                "type": "string"
+              },
+              "appearance": {
+                "type": "object",
+                "properties": {
+                  "shape": {
+                    "type": "string",
+                    "enum": [
+                      "blob",
+                      "squircle",
+                      "wedge",
+                      "pebble",
+                      "tablet",
+                      "hex",
+                      "cloud",
+                      "teardrop"
+                    ]
+                  },
+                  "color": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "color",
+                  "shape"
+                ],
+                "closed": true
+              },
+              "instructions": {
+                "type": "string",
+                "max_bytes": 16384,
+                "copies": {
+                  "max_bytes": "projectassistant.MaxInstructionBytes"
+                }
+              },
+              "manage_team": {
+                "type": "bool"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "permission_policy": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "auto_read",
+                  "approve"
+                ]
+              },
+              "fallback_agents": {
+                "type": "list",
+                "max_items": 3,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "claude",
+                    "codex"
+                  ]
+                },
+                "copies": {
+                  "max_items": "projectassistant.MaxFallbackAgents"
+                }
+              },
+              "agent": {
+                "type": "string",
+                "enum": [
+                  "claude",
+                  "codex"
+                ]
+              },
+              "notify": {
+                "type": "string",
+                "enum": [
+                  "on",
+                  "off"
+                ]
+              },
+              "login_profile": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "closed": true
+              },
+              "extensions": {
+                "type": "object",
+                "closed": true,
+                "properties": {
+                  "skills": {
+                    "type": "list",
+                    "max_items": 32,
+                    "copies": {
+                      "max_items": "projectassistant.MaxBotExtensions"
+                    },
+                    "items": {
+                      "type": "object",
+                      "closed": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string",
+                          "length": 64,
+                          "checks": [
+                            "lower_hex"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "id"
+                      ]
+                    }
+                  },
+                  "connectors": {
+                    "type": "list",
+                    "max_items": 32,
+                    "copies": {
+                      "max_items": "projectassistant.MaxBotExtensions"
+                    },
+                    "items": {
+                      "type": "object",
+                      "closed": true,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "fingerprint": {
+                          "type": "string",
+                          "length": 64,
+                          "checks": [
+                            "lower_hex"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "fingerprint",
+                        "id"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "connectors",
+                  "skills"
+                ]
+              },
+              "runtime_settings": {
+                "type": "object",
+                "closed": true,
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "max_bytes": 16384,
+                    "copies": {
+                      "max_bytes": "projectassistant.MaxInstructionBytes"
+                    }
+                  },
+                  "options": {
+                    "type": "object",
+                    "max_keys": 100,
+                    "max_bytes": 32768,
+                    "copies": {
+                      "max_keys": "projectassistant.MaxConfigurationOptions",
+                      "max_bytes": "projectassistant.MaxMessageBytes"
+                    }
+                  }
+                },
+                "required": [
+                  "model",
+                  "options"
+                ]
+              },
+              "fallback_steps": {
+                "type": "list",
+                "max_items": 3,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "agent": {
+                      "type": "string",
+                      "enum": [
+                        "claude",
+                        "codex"
+                      ]
+                    },
+                    "login_profile": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "agent"
+                  ],
+                  "closed": true
+                },
+                "copies": {
+                  "max_items": "projectassistant.MaxFallbackAgents"
+                }
+              }
+            },
+            "required": [
+              "appearance",
+              "expected_version",
+              "instructions",
+              "name",
+              "manage_team"
+            ],
+            "closed": true
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/team-settings",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "settings": {
+                "from": "settings"
+              }
+            }
+          }
+        }
+      }
+    },
     {
       "op": "project-assistants.upload",
       "kind": "command",

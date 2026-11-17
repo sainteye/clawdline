@@ -67,6 +67,9 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	for _, a := range value.FallbackAgents.Agents() {
 		out.FallbackAgents = append(out.FallbackAgents, contract.ProjectAssistantAgent(a))
 	}
+	for _, step := range value.FallbackSteps.Steps() {
+		out.FallbackSteps = append(out.FallbackSteps, contract.ProjectAssistantFallbackStep{Agent: contract.ProjectAssistantAgent(step.Agent), LoginProfile: step.LoginProfile})
+	}
 	out.Mode = value.Mode
 	out.Notify = value.Notify
 	out.LoginProfile = value.LoginProfile
@@ -152,6 +155,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 
 func paWireExecutionBinding(value pa.ExecutionBinding) contract.ProjectAssistantExecutionBinding {
 	var out contract.ProjectAssistantExecutionBinding
+	out.PrimarySupersededAt = value.PrimarySupersededAt
 	out.LoginProfile = value.LoginProfile
 	out.Fence = paWireFence(value.Fence)
 	out.Agent = contract.ProjectAssistantAgent(value.Agent)
@@ -809,4 +813,22 @@ func paWireExtensions(v pa.ExtensionSelection) *contract.ProjectAssistantExtensi
 		out.Connectors = append(out.Connectors, contract.ProjectAssistantExtensionRef{ID: r.ID, Fingerprint: r.Fingerprint})
 	}
 	return out
+}
+
+func paDomainFallbackSteps(steps []contract.ProjectAssistantFallbackStep) []pa.FallbackStep {
+	if steps == nil {
+		return nil
+	}
+	out := make([]pa.FallbackStep, len(steps))
+	for i, step := range steps {
+		out[i] = pa.FallbackStep{Agent: pa.Agent(step.Agent), LoginProfile: step.LoginProfile}
+	}
+	return out
+}
+func paDomainOptionalFallbackSteps(steps []contract.ProjectAssistantFallbackStep) *[]pa.FallbackStep {
+	if steps == nil {
+		return nil
+	}
+	out := paDomainFallbackSteps(steps)
+	return &out
 }

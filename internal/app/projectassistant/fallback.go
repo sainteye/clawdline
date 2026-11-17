@@ -61,21 +61,24 @@ func (r *Engine) checkAttemptBoundary(ctx context.Context, a *runtimeActor, bot 
 	return nil
 }
 
+// selectAgent retains the old internal query for callers that need only the Agent.
 func (r *Engine) selectAgent(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.Agent, error) {
-	// This slice selects on visible human turns only. Routines retain the
-	// primary route and its separate main-session qualification; a shared rest
-	// must not silently substitute a different routine provider.
-	if t.RoutineRunID != "" || len(t.Attempts) == 0 && len(bot.FallbackAgents.Agents()) == 0 {
-		return bot.Agent, nil
+	step, err := r.selectStep(ctx, bot, t)
+	return step.Agent, err
+}
+func (r *Engine) selectStep(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.FallbackStep, error) {
+	primary := pa.FallbackStep{Agent: bot.Agent, LoginProfile: bot.LoginProfile}
+	if t.RoutineRunID != "" || len(t.Attempts) == 0 && !pa.HasFallbacks(bot) {
+		return primary, nil
 	}
 	rests, ok := r.o.Repository.(AgentRestRepository)
-	if !ok && len(bot.FallbackAgents.Agents()) > 0 {
-		return "", runtimeFailure(pa.Unsupported, "agent_rests")
+	if !ok && pa.HasFallbacks(bot) {
+		return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "agent_rests")
 	}
-	for _, agent := range pa.AgentChain(bot) {
+	for _, step := range pa.StepChain(bot) {
 		tried := false
 		for _, f := range t.Attempts {
-			if f.Agent == agent {
+			if f.Agent == step.Agent && f.LoginProfile == step.LoginProfile {
 				tried = true
 				break
 			}
@@ -84,35 +87,26 @@ func (r *Engine) selectAgent(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.Age
 			continue
 		}
 		if ok {
-			profile := ""
-			if agent == bot.Agent {
-				profile = bot.LoginProfile
-			}
-			rest, err := loginRest(ctx, rests, bot.Key.MachineID, agent, profile)
+			rest, err := loginRest(ctx, rests, bot.Key.MachineID, step.Agent, step.LoginProfile)
 			if err != nil {
-				return "", err
+				return pa.FallbackStep{}, err
 			}
 			if rest != nil && r.o.Clock().Before(rest.Until) {
 				continue
 			}
 		}
-		// Stand-in mode mapping is not qualified yet. Auto preserves native policy;
-		// a fixed mode must never become a more permissive alternate implicitly.
-		if agent != bot.Agent && bot.Mode != "" && bot.Mode != pa.AutoMode {
+		if step.Agent != bot.Agent && bot.Mode != "" && bot.Mode != pa.AutoMode {
 			if len(t.Attempts) == 0 {
-				return bot.Agent, nil
+				return primary, nil
 			}
-			return "", runtimeFailure(pa.Unsupported, "fallback_mode")
+			return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "fallback_mode")
 		}
-		return agent, nil
+		return step, nil
 	}
-	// Codync starts new input on primary when every login is resting. Rest
-	// selects an alternate; it is never a machine-wide admission prohibition.
-	// An existing turn still cannot retry an agent it already attempted.
 	if len(t.Attempts) == 0 {
-		return bot.Agent, nil
+		return primary, nil
 	}
-	return "", runtimeFailure(pa.Unsupported, "agents_resting_or_attempted")
+	return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "agents_resting_or_attempted")
 }
 
 func (r *Engine) appendAttempt(ctx context.Context, a *runtimeActor, t *pa.Turn, stage pa.AttemptStage, binding *pa.ExecutionBinding, rest *pa.AgentRest) error {
@@ -276,24 +270,27 @@ func knownFallbackReason(reason ProviderFailureReason) bool {
 	return false
 }
 
-func attemptSwitchNotice(x Export, t pa.Turn, primary pa.Agent) string {
+func attemptSwitchNotice(x Export, t pa.Turn, primary pa.Agent, profiles ...string) string {
 	if len(t.Attempts) == 0 {
 		return ""
 	}
 	first := t.Attempts[0]
-	effective := t.Attempts[len(t.Attempts)-1].Agent
-	before := primary
+	effective := t.Attempts[len(t.Attempts)-1]
+	before := pa.FallbackStep{Agent: primary}
+	if len(profiles) > 0 {
+		before.LoginProfile = profiles[0]
+	}
 	var generation int64
 	for _, b := range x.Bindings {
 		if b.SessionSlot == "" && b.Fence.Generation < first.Fence.Generation && b.Fence.Generation > generation {
-			before = b.Agent
+			before = pa.FallbackStep{Agent: b.Agent, LoginProfile: b.LoginProfile}
 			generation = b.Fence.Generation
 		}
 	}
-	if before == effective {
+	if before.Agent == effective.Agent && before.LoginProfile == effective.LoginProfile {
 		return ""
 	}
-	return "Agent switched before sending / 送出前已切換 Agent：" + string(before) + " → " + string(effective)
+	return "Login switched before sending / 送出前已切換登入身分：" + pa.LoginKey(before.Agent, before.LoginProfile) + " → " + pa.LoginKey(effective.Agent, effective.LoginProfile)
 }
 
 func loginRest(ctx context.Context, store AgentRestRepository, machine string, agent pa.Agent, profile string) (*pa.AgentRest, error) {

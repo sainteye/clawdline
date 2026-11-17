@@ -190,7 +190,7 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 	}
 	now := s.opts.Clock().UTC()
 	bot := pa.Bot{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: settings.Name,
-		Appearance: settings.Appearance, Agent: settings.Agent, FallbackAgents: pa.FallbackConfigOf(settings.FallbackAgents), PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode, ManageTeam: settings.ManageTeam,
+		Appearance: settings.Appearance, Agent: settings.Agent, FallbackAgents: pa.FallbackConfigOf(settings.FallbackAgents), FallbackSteps: pa.FallbackStepConfigOf(settings.FallbackSteps), PermissionPolicy: settings.PermissionPolicy, Mode: settings.Mode, ManageTeam: settings.ManageTeam,
 		Instructions: pa.InstructionSnapshot{Revision: 1, Text: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef},
 		Version:      1, CreatedAt: now, UpdatedAt: now}
 	conversation := pa.Conversation{Key: c.Key, ID: bot.ConversationID, MemoryRevision: 1, Version: 1}
@@ -201,9 +201,25 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 		return pa.Bot{}, pa.Receipt{}, err
 	}
 	summary.Source = a.Source
-	r, err := s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: 0, Bot: &bot, Conversation: &conversation,
-		Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
-		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotCreated, At: now, Bot: &summary}}})
+	var r pa.Receipt
+	commit := func() error {
+		var e error
+		r, e = s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: 0, Bot: &bot, Conversation: &conversation,
+			Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
+			Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotCreated, At: now, Bot: &summary}}})
+		return e
+	}
+	if pa.HasLoginSelection(bot) {
+		if err = s.validateLoginSelection(ctx, bot); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+		if s.opts.LoginProfiles == nil {
+			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Unsupported, "login_profiles")
+		}
+		err = s.opts.LoginProfiles.WithSelection(ctx, bot, commit)
+	} else {
+		err = commit()
+	}
 	if err == nil {
 		// A simultaneous identical create may have won with different generated
 		// IDs. Return the committed conversation, never a discarded candidate.
@@ -236,8 +252,18 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
 	}
-	if next.LoginProfile != "" {
+	if pa.HasLoginSelection(next) {
 		if err = s.validateLoginSelection(ctx, next); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+	}
+	// Validate every referenced identity before any model/configuration probe.
+	// WithSelection checks again at the publication transaction after slow reads.
+	if pa.HasLoginSelection(next) {
+		if s.opts.LoginProfiles == nil {
+			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Unsupported, "login_profiles")
+		}
+		if err = s.opts.LoginProfiles.WithSelection(ctx, next, func() error { return nil }); err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}
 	}
@@ -273,7 +299,7 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	}
 	if s.opts.LoginProfiles != nil {
 		err = s.opts.LoginProfiles.WithSelection(ctx, next, commit)
-	} else if next.LoginProfile != "" {
+	} else if pa.HasLoginSelection(next) {
 		err = serviceFailure(pa.Unsupported, "login_profiles")
 	} else {
 		err = commit()

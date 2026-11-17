@@ -104,6 +104,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.inputs_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

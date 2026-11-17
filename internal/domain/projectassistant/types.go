@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 7
+	SchemaVersion       = 8
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -116,6 +116,7 @@ type Bot struct {
 	Appearance       Appearance         `json:"appearance"`
 	Agent            Agent              `json:"agent"`
 	FallbackAgents   FallbackConfig     `json:"fallback_agents,omitempty,omitzero"`
+	FallbackSteps    FallbackStepConfig `json:"fallback_steps,omitempty,omitzero"`
 	PermissionPolicy PermissionPolicy   `json:"permission_policy"`
 	// Mode is the agent mode the Bot works in, as in Codync: AutoMode (or
 	// empty) is the agent's own Auto mode, otherwise one of AgentModes.
@@ -142,6 +143,7 @@ type CreateBot struct {
 	Appearance       Appearance       `json:"appearance"`
 	Agent            Agent            `json:"agent"`
 	FallbackAgents   []Agent          `json:"fallback_agents,omitempty"`
+	FallbackSteps    []FallbackStep   `json:"fallback_steps,omitempty"`
 	PermissionPolicy PermissionPolicy `json:"permission_policy"`
 	Mode             string           `json:"mode,omitempty"`
 	Instructions     string           `json:"instructions"`
@@ -158,6 +160,7 @@ type EditBot struct {
 	RuntimeSettings *RuntimeSettings    `json:"runtime_settings,omitempty"`
 	Notify          string              `json:"notify,omitempty"`
 	FallbackAgents  *[]Agent            `json:"fallback_agents,omitempty"`
+	FallbackSteps   *[]FallbackStep     `json:"fallback_steps,omitempty"`
 	ExpectedVersion int64               `json:"expected_version"`
 	Name            string              `json:"name"`
 	Appearance      Appearance          `json:"appearance"`
@@ -232,6 +235,9 @@ type Turn struct {
 }
 
 type ExecutionBinding struct {
+	// PrimarySupersededAt records the configuration revision that replaced
+	// this binding's primary Agent. Only the source store writes this fact.
+	PrimarySupersededAt int64  `json:"primary_superseded_at,omitempty"`
 	LoginProfile        string `json:"login_profile,omitempty"`
 	SessionSlot         string `json:"session_slot,omitempty"`
 	Fence               Fence  `json:"fence"`

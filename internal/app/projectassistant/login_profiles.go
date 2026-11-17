@@ -53,6 +53,15 @@ func (s *Service) LoginProfiles(ctx context.Context, q MemoryReadRequest, agent 
 }
 
 func (s *Service) LoginProfileAction(ctx context.Context, q pa.LoginProfileAction) (pa.LoginProfile, func(context.Context) error, error) {
+	return s.loginProfileAction(ctx, q, nil, false)
+}
+
+// SubmitLoginSecret is a dedicated person-to-source input. The value is never
+// part of a canonical command, receipt, model context or ordinary edit shape.
+func (s *Service) SubmitLoginSecret(ctx context.Context, q pa.LoginProfileAction, value []byte) (pa.LoginProfile, func(context.Context) error, error) {
+	return s.loginProfileAction(ctx, q, value, true)
+}
+func (s *Service) loginProfileAction(ctx context.Context, q pa.LoginProfileAction, value []byte, secret bool) (pa.LoginProfile, func(context.Context) error, error) {
 	b, a, resolved, epoch, err := s.memoryOwner(ctx, MemoryReadRequest{Key: q.Command.Key, ConversationID: q.Fence.ConversationID})
 	if err != nil {
 		return pa.LoginProfile{}, nil, err
@@ -68,6 +77,7 @@ func (s *Service) LoginProfileAction(ctx context.Context, q pa.LoginProfileActio
 			return pa.LoginProfile{}, nil, e
 		}
 	}
+	q.Authority = epoch
 	payload := q
 	payload.Command = pa.Command{}
 	q.Command, err = canonicalCommand(q.Command, pa.LoginProfileOperation, a.PrincipalID, payload)
@@ -109,7 +119,18 @@ func (s *Service) LoginProfileAction(ctx context.Context, q pa.LoginProfileActio
 		}
 		return pa.CheckFence(q.Fence, now)
 	}
-	out, err := s.opts.LoginProfiles.Apply(ctx, q, admit)
+	var out pa.LoginProfile
+	if secret {
+		profiles, ok := s.opts.LoginProfiles.(interface {
+			SubmitSecret(context.Context, pa.LoginProfileAction, []byte, func(context.Context) error) (pa.LoginProfile, error)
+		})
+		if !ok {
+			return out, nil, serviceFailure(pa.Unsupported, "login_secret")
+		}
+		out, err = profiles.SubmitSecret(ctx, q, value, admit)
+	} else {
+		out, err = s.opts.LoginProfiles.Apply(ctx, q, admit)
+	}
 	return out, check, err
 }
 

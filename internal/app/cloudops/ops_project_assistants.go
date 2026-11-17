@@ -20,7 +20,7 @@ func init() {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
-	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove", "send-pictures", "send-files", "upload", "rename-artifact", "login-profile"} {
+	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "rule-remove", "send-pictures", "send-files", "upload", "rename-artifact", "login-profile", "login-secret"} {
 		register(op{name: "project-assistants." + word,
 			readLevel: word == "read" || word == "observed",
 			guard:     projectAssistantGuard, shape: projectAssistantReply, partial: projectAssistantFailure})

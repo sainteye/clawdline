@@ -65,6 +65,32 @@ func TestParkedAttemptNeverResurrectsAnOlderOrForeignSession(t *testing.T) {
 	}
 }
 
+func TestParkedAttemptsKeepSeparateNativeHistoryForSameAgentLogins(t *testing.T) {
+	first, second := strings.Repeat("1", 32), strings.Repeat("2", 32)
+	fence := pa.Fence{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}, Project: pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}, ConversationID: "chat", BindingID: "first", Generation: 1}
+	one := pa.ExecutionBinding{Fence: fence, Agent: pa.Codex, LoginProfile: first, NativeSessionID: "first-profile-history"}
+	two := one
+	two.Fence.Generation++
+	two.Fence.BindingID = "second"
+	two.LoginProfile = second
+	two.NativeSessionID = "second-profile-history"
+	turns := []pa.Turn{}
+	for _, binding := range []pa.ExecutionBinding{one, two} {
+		turns = append(turns, pa.Turn{ID: binding.Fence.BindingID, Fence: binding.Fence, State: pa.TurnSucceeded, Attempts: []pa.AttemptFact{{Fence: binding.Fence, Agent: binding.Agent, LoginProfile: binding.LoginProfile, Stage: pa.AttemptClosed, SendStarted: true, CleanupConfirmed: true, Effect: "unknown"}}})
+	}
+	x := Export{Bindings: []pa.ExecutionBinding{one, two}, Turns: turns}
+	current := pa.Turn{Fence: fence}
+	for _, want := range []pa.ExecutionBinding{one, two} {
+		got, _, ok := parkedAttempt(x, current, pa.Codex, want.LoginProfile)
+		if !ok || got.NativeSessionID != want.NativeSessionID || got.LoginProfile != want.LoginProfile {
+			t.Fatalf("parked login crossed native history: %+v %v", got, ok)
+		}
+	}
+	if _, _, ok := parkedAttempt(x, current, pa.Codex); ok {
+		t.Fatal("default login borrowed managed history")
+	}
+}
+
 func TestFallbackOpeningQuotesReportsWithoutTrustingOrRestoringForgottenEffects(t *testing.T) {
 	x, turn, filtered := continuationFixture()
 	old := x.Turns[0]

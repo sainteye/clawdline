@@ -1,6 +1,7 @@
 package cloudops
 
 import (
+	"github.com/sainteye/clawdline/internal/app"
 	"sort"
 	"testing"
 
@@ -22,6 +23,7 @@ import (
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
+	"app.MaxSecretHandoffBytes":                        app.MaxSecretHandoffBytes,
 	"projectassistant.MaxBotExtensions":                projectassistant.MaxBotExtensions,
 	"projectassistant.MaxConfigurationOptions":         projectassistant.MaxConfigurationOptions,
 	"projectassistant.MaxFallbackAgents":               projectassistant.MaxFallbackAgents,

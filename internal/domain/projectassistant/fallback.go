@@ -55,7 +55,7 @@ type AttemptFact struct {
 	CarryAfterSeq   int64  `json:"carry_after_seq,omitempty"`
 }
 
-// AgentRest belongs to one machine's default login identity, never Bot memory.
+// AgentRest belongs to one machine and one login identity, never Bot memory.
 type AgentRest struct {
 	LoginProfile string    `json:"login_profile,omitempty"`
 	RecordedAt   time.Time `json:"recorded_at"`
@@ -83,7 +83,15 @@ func ValidateFallbacks(primary Agent, agents []Agent) error {
 	return nil
 }
 
-func AgentChain(bot Bot) []Agent { return append([]Agent{bot.Agent}, bot.FallbackAgents.Agents()...) }
+// AgentChain is a display projection; execution selection uses StepChain so
+// repeated Agents on different logins keep their separate identity.
+func AgentChain(bot Bot) []Agent {
+	out := []Agent{}
+	for _, step := range StepChain(bot) {
+		out = append(out, step.Agent)
+	}
+	return out
+}
 
 // RestAfter does not classify errors and does not decide replay eligibility.
 // No reset telemetry is qualified in this slice, so usage uses upstream's 1h.
@@ -169,4 +177,89 @@ func LoginKey(agent Agent, profile string) string {
 		return string(agent)
 	}
 	return string(agent) + "#profile-" + profile
+}
+
+// FallbackStep names a real Agent and its source-owned login. Empty profile means
+// that Agent's existing default login; it never inherits the primary's profile.
+type FallbackStep struct {
+	Agent        Agent  `json:"agent"`
+	LoginProfile string `json:"login_profile,omitempty"`
+}
+
+// Fixed-size value semantics and omitzero preserve genuine pre-feature archives.
+type FallbackStepConfig [MaxFallbackAgents]FallbackStep
+
+func FallbackStepConfigOf(steps []FallbackStep) FallbackStepConfig {
+	var c FallbackStepConfig
+	copy(c[:], steps)
+	return c
+}
+func (c FallbackStepConfig) Steps() []FallbackStep {
+	out := []FallbackStep{}
+	for _, step := range c {
+		if step.Agent != "" {
+			out = append(out, step)
+		}
+	}
+	return out
+}
+func (c FallbackStepConfig) MarshalJSON() ([]byte, error) { return json.Marshal(c.Steps()) }
+func (c *FallbackStepConfig) UnmarshalJSON(raw []byte) error {
+	var steps []FallbackStep
+	if err := json.Unmarshal(raw, &steps); err != nil {
+		return err
+	}
+	if len(steps) > MaxFallbackAgents {
+		return fail(CapacityFull, "fallback_steps")
+	}
+	for _, step := range steps {
+		if step.Agent != ClaudeCode && step.Agent != Codex {
+			return fail(Unsupported, "fallback_agent")
+		}
+		if !ValidLoginProfileID(step.LoginProfile) {
+			return fail(Invalid, "login_profile")
+		}
+	}
+	*c = FallbackStepConfigOf(steps)
+	return nil
+}
+func ValidateFallbackSteps(primary FallbackStep, steps []FallbackStep) error {
+	if len(steps) > MaxFallbackAgents {
+		return fail(CapacityFull, "fallback_steps")
+	}
+	seen := map[FallbackStep]bool{primary: true}
+	for _, step := range steps {
+		if step.Agent != ClaudeCode && step.Agent != Codex {
+			return fail(Unsupported, "fallback_agent")
+		}
+		if !ValidLoginProfileID(step.LoginProfile) {
+			return fail(Invalid, "login_profile")
+		}
+		if seen[step] {
+			return fail(Invalid, "fallback_identity")
+		}
+		seen[step] = true
+	}
+	return nil
+}
+func StepChain(bot Bot) []FallbackStep {
+	out := []FallbackStep{{Agent: bot.Agent, LoginProfile: bot.LoginProfile}}
+	if steps := bot.FallbackSteps.Steps(); len(steps) > 0 {
+		return append(out, steps...)
+	}
+	for _, agent := range bot.FallbackAgents.Agents() {
+		out = append(out, FallbackStep{Agent: agent})
+	}
+	return out
+}
+func HasFallbacks(bot Bot) bool {
+	return len(bot.FallbackSteps.Steps())+len(bot.FallbackAgents.Agents()) > 0
+}
+func HasLoginSelection(bot Bot) bool {
+	for _, step := range StepChain(bot) {
+		if step.LoginProfile != "" {
+			return true
+		}
+	}
+	return false
 }

@@ -801,16 +801,17 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
-	effectiveAgent, err := r.selectAgent(ctx, bot, t)
+	effectiveStep, err := r.selectStep(ctx, bot, t)
+	effectiveAgent := effectiveStep.Agent
 	if err != nil {
 		a.mu.Unlock()
 		return err
 	}
 	effectiveBot := bot
 	effectiveBot.Agent = effectiveAgent
-	if effectiveAgent != bot.Agent {
+	effectiveBot.LoginProfile = effectiveStep.LoginProfile
+	if effectiveAgent != bot.Agent || effectiveStep.LoginProfile != bot.LoginProfile {
 		effectiveBot.RuntimeSettings = pa.RuntimeSettings{}
-		effectiveBot.LoginProfile = ""
 	}
 	caps, err := r.o.Provider.Capabilities(ctx, effectiveBot)
 	if err == nil {
@@ -906,7 +907,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Each configured identity keeps its own native conversation. A switch
 	// chooses only its newest confirmed-clean binding, never the active
 	// alternate's history. All execution authority is minted afresh below.
-	if !isolatedRoutine && len(bot.FallbackAgents.Agents()) > 0 && binding.Agent != effectiveAgent {
+	if !isolatedRoutine && pa.HasFallbacks(bot) && (binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile) {
 		carryKind = "recap"
 		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent, effectiveBot.LoginProfile); ok {
 			binding = parked
@@ -960,6 +961,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	t.Fence = currentFence(bot, c)
 	binding.Fence = t.Fence
+	binding.PrimarySupersededAt = 0
 	binding.Revoked = false
 	if !resume {
 		binding.NativeSessionID = ""
@@ -982,7 +984,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if len(t.Attempts) > 0 {
 		ordinal = t.Attempts[len(t.Attempts)-1].Ordinal + 1
 	}
-	if len(bot.FallbackAgents.Agents()) > 0 {
+	if pa.HasFallbacks(bot) {
 		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, LoginProfile: effectiveBot.LoginProfile, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter})
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID+"-"+binding.Fence.BindingID, t)
@@ -1360,7 +1362,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		}
 	}
 	if state == pa.TurnSucceeded {
-		if notice := attemptSwitchNotice(export, t, bot.Agent); notice != "" {
+		if notice := attemptSwitchNotice(export, t, bot.Agent, bot.LoginProfile); notice != "" {
 			messages = append(messages, pa.Message{ID: "switch-" + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.NoticeMessage, Text: notice, At: r.o.Clock()})
 		}
 	}
@@ -1950,5 +1952,5 @@ func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa
 }
 
 func sameExecutionConfig(a, b pa.Bot) bool {
-	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameExtensions(a.Extensions, b.Extensions) && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
+	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameExtensions(a.Extensions, b.Extensions) && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.FallbackSteps == b.FallbackSteps && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
 }

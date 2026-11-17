@@ -60,8 +60,20 @@ func (t RoutineTrigger) Validate() error {
 	return nil
 }
 
+func isCronDescriptor(expr string) bool {
+	switch strings.ToLower(strings.TrimSpace(expr)) {
+	case "@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly":
+		return true
+	default:
+		return false
+	}
+}
+
 func (t RoutineTrigger) cron() (cron.Schedule, error) {
-	if len(strings.Fields(t.Expression)) != 5 || strings.Contains(t.Expression, "=") {
+	expr := strings.TrimSpace(t.Expression)
+	fields := strings.Fields(expr)
+	isDesc := isCronDescriptor(expr)
+	if (!isDesc && len(fields) != 5) || strings.Contains(expr, "=") || strings.HasPrefix(strings.ToLower(expr), "@every") {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}
 	if t.TimeZone == "" || t.TimeZone == "Local" || len(strings.Fields(t.TimeZone)) != 1 {
@@ -70,8 +82,8 @@ func (t RoutineTrigger) cron() (cron.Schedule, error) {
 	if _, err := time.LoadLocation(t.TimeZone); err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_time_zone"}
 	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	s, err := parser.Parse("CRON_TZ=" + t.TimeZone + " " + t.Expression)
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	s, err := parser.Parse("CRON_TZ=" + t.TimeZone + " " + expr)
 	if err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}

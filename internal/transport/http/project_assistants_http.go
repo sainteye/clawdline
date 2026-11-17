@@ -231,7 +231,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -369,7 +369,7 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 			}
 		}
 	}
-	if route.action == "login-profiles" || route.action == "login-profile" || route.action == "extensions" {
+	if route.action == "login-profiles" || route.action == "login-profile" || route.action == "login-secret" || route.action == "extensions" {
 		return h.loginProfiles(w, r, route)
 	}
 	if r.Method == http.MethodGet {
@@ -561,7 +561,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if settings.Target.MachineID != command.Key.MachineID {
 			return nil, paHTTPFailure(pa.ScopeDenied, "target_machine")
 		}
-		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), FallbackAgents: paDomainAgents(settings.FallbackAgents), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
+		bot, receipt, err := s.Create(ctx, command, pa.CreateBot{Target: paDomainProjectSelection(settings.Target), Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Agent: pa.Agent(settings.Agent), FallbackAgents: paDomainAgents(settings.FallbackAgents), FallbackSteps: paDomainFallbackSteps(settings.FallbackSteps), PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Instructions: settings.Instructions, RoleSnapshotRef: settings.RoleSnapshotRef})
 		return paHTTPBot(bot, receipt, err)
 	case "edit":
 		request, err := paDecodeHTTP[contract.ProjectAssistantEditRequest](w, r)
@@ -573,7 +573,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
@@ -819,6 +819,9 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 		outSettings, _ := outObject["settings"].(map[string]any)
 		if agents, ok := inSettings["fallback_agents"].([]any); ok && len(agents) == 0 && outSettings != nil {
 			outSettings["fallback_agents"] = []any{}
+		}
+		if steps, ok := inSettings["fallback_steps"].([]any); ok && len(steps) == 0 && outSettings != nil {
+			outSettings["fallback_steps"] = []any{}
 		}
 	}
 	if _, object := input.(map[string]any); !object || !paJSONShape(input, expected) {

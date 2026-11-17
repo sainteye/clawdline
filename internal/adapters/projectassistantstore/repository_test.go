@@ -399,3 +399,42 @@ func TestAnAnsweredPermissionMovesFromUnknownToResolvedOnly(t *testing.T) {
 	}
 	requireCode(t, step("reopened", 4, pa.PermissionPending), pa.StaleVersion)
 }
+
+func TestPrimaryAgentChangesRequireANewerInstructionSnapshot(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "primary-agent-change")
+	populate(t, s, b, pa.EffectDelivered)
+	b, err := s.Bot(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := b
+	changed.Agent = pa.Codex
+	_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "stale-primary"), ExpectedVersion: b.Version, Bot: &changed, Receipt: pa.Receipt{ID: "stale-primary", State: pa.EffectAccepted}})
+	requireCode(t, err, pa.StaleVersion)
+	changed.Instructions.Revision++
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "fresh-primary"), ExpectedVersion: b.Version, Bot: &changed, Receipt: pa.Receipt{ID: "fresh-primary", State: pa.EffectAccepted}}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.Bot(testContext, b.Key)
+	if err != nil || saved.Agent != pa.Codex {
+		t.Fatal(saved, err)
+	}
+	archive, err := s.ExportArchive(testContext, b.Key)
+	if err != nil || len(archive.Data.Bindings) != 1 || archive.Data.Bindings[0].PrimarySupersededAt != changed.Instructions.Revision {
+		t.Fatal("old primary provenance was not retained", archive, err)
+	}
+	_, restored, _ := testDB(t)
+	if err = restored.RestoreArchive(testContext, archive); err != nil {
+		t.Fatal("primary history did not survive archive restore", err)
+	}
+	forged := archive.Data.Bindings[0]
+	forged.PrimarySupersededAt++
+	_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "forged-primary-history"), ExpectedVersion: saved.Version, Binding: &forged, Receipt: pa.Receipt{ID: "forged-primary-history", State: pa.EffectAccepted}})
+	requireCode(t, err, pa.ScopeDenied)
+	moved := saved
+	moved.Project.CanonicalID = "another-project"
+	moved.Instructions.Revision++
+	_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "foreign-primary-project"), ExpectedVersion: saved.Version, Bot: &moved, Receipt: pa.Receipt{ID: "foreign-primary-project", State: pa.EffectAccepted}})
+	requireCode(t, err, pa.ScopeDenied)
+}

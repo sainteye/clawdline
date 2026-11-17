@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,5 +104,42 @@ func TestAnUnqualifiedAlternateModeDoesNotBlockNewPrimaryInput(t *testing.T) {
 	agent, err = r.selectAgent(context.Background(), bot, pa.Turn{Attempts: []pa.AttemptFact{{Agent: pa.ClaudeCode}}})
 	if pa.Code(err) != pa.Unsupported || agent != "" {
 		t.Fatalf("existing turn relaxed its alternate mode: %s %v", agent, err)
+	}
+}
+
+type selectedRestReader struct {
+	Repository
+	now     time.Time
+	profile string
+}
+
+func (s selectedRestReader) AgentRest(context.Context, string, pa.Agent) (*pa.AgentRest, error) {
+	return nil, nil
+}
+func (s selectedRestReader) ProfileRest(_ context.Context, machine string, agent pa.Agent, profile string) (*pa.AgentRest, error) {
+	if profile != s.profile {
+		return nil, nil
+	}
+	rest := pa.RestAfter(machine, agent, "usage_limit", s.now, nil)
+	rest.LoginProfile = profile
+	return rest, nil
+}
+func TestSelectedFallbackRestAndAttemptsOnlyExcludeTheirExactLogin(t *testing.T) {
+	now := time.Now()
+	first, second := strings.Repeat("1", 32), strings.Repeat("2", 32)
+	bot := pa.Bot{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}, Agent: pa.Codex, LoginProfile: first, FallbackSteps: pa.FallbackStepConfigOf([]pa.FallbackStep{{Agent: pa.Codex, LoginProfile: second}, {Agent: pa.ClaudeCode}})}
+	r := Engine{o: RuntimeOptions{Repository: selectedRestReader{now: now, profile: first}, Clock: func() time.Time { return now }}}
+	step, err := r.selectStep(context.Background(), bot, pa.Turn{})
+	if err != nil || step.Agent != pa.Codex || step.LoginProfile != second {
+		t.Fatalf("one login rested the whole Agent: %+v %v", step, err)
+	}
+	tried := pa.Turn{Attempts: []pa.AttemptFact{{Agent: pa.Codex, LoginProfile: first}, {Agent: pa.Codex, LoginProfile: second}}}
+	step, err = r.selectStep(context.Background(), bot, tried)
+	if err != nil || step.Agent != pa.ClaudeCode || step.LoginProfile != "" {
+		t.Fatalf("different-Agent default inherited a login: %+v %v", step, err)
+	}
+	step, err = r.selectStep(context.Background(), bot, pa.Turn{RoutineRunID: "routine"})
+	if err != nil || step.Agent != bot.Agent || step.LoginProfile != first {
+		t.Fatalf("routine changed identity: %+v %v", step, err)
 	}
 }

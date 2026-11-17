@@ -48,7 +48,7 @@ func TestGroupMembershipFollowsStoredBots(t *testing.T) {
 	}{
 		{"valid with hidden member", []BotKey{key("a"), key("h")}, "", ""},
 		{"empty", nil, Invalid, "group_members"},
-		{"duplicate", []BotKey{key("a"), key("a")}, Invalid, "group_member_duplicate"},
+		{"duplicate silently deduplicated", []BotKey{key("a"), key("a")}, "", ""},
 		{"nested", []BotKey{key("a"), key("g2")}, Invalid, "group_member_nested"},
 		{"self", []BotKey{key("g")}, Invalid, "group_member_self"},
 		{"deleted", []BotKey{key("a"), key("gone")}, NotFound, "group_member"},
@@ -75,6 +75,19 @@ func TestGroupMembershipFollowsStoredBots(t *testing.T) {
 	}
 	if _, err := NewGroup(GroupDraft{Key: key("a"), Project: scope, ConversationID: "room", Name: "Room", Members: []BotKey{key("b")}}, cat, testGroupLimits, groupAt); Code(err) != Invalid {
 		t.Fatalf("a group used a Bot's key: %v", err)
+	}
+	// Codync silent deduplication: [a, b, a] becomes [a, b]
+	dedupGroup, err := NewGroup(GroupDraft{Key: key("g_dedup"), Project: scope, ConversationID: "room", Name: "Room", Members: []BotKey{key("a"), key("b"), key("a")}}, cat, testGroupLimits, groupAt)
+	if err != nil {
+		t.Fatalf("NewGroup with duplicates failed: %v", err)
+	}
+	if len(dedupGroup.Members) != 2 || dedupGroup.Members[0].Key != key("a") || dedupGroup.Members[1].Key != key("b") {
+		t.Fatalf("unexpected dedupGroup members: %+v", dedupGroup.Members)
+	}
+	// Dynamic capacity scaling: limits with MaxMembers <= 0 adopts DefaultMaxGroupMembers
+	dynLimits := GroupLimits{MaxMembers: 0, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
+	if err := ValidateGroupMembers(key("g_dyn"), scope, []BotKey{key("a"), key("b")}, cat, dynLimits); err != nil {
+		t.Fatalf("dynamic limits refused valid members: %v", err)
 	}
 }
 

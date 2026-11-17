@@ -25,6 +25,11 @@ func TestRoutineCalendarPreservesWallClockAndDST(t *testing.T) {
 		{"30 1 * * *", "America/New_York", "2026-11-01T05:30:00Z", "2026-11-01T06:30:00Z"},
 		{"0 9 * * *", "America/New_York", "2026-03-07T14:00:00Z", "2026-03-08T13:00:00Z"},
 		{"0 0 29 2 *", "UTC", "2026-03-01T00:00:00Z", "2028-02-29T00:00:00Z"},
+		{"@daily", "Asia/Taipei", "2026-09-27T01:07:00Z", "2026-09-27T16:00:00Z"},
+		{"@hourly", "Asia/Taipei", "2026-09-27T01:07:00Z", "2026-09-27T02:00:00Z"},
+		{"@weekly", "Asia/Taipei", "2026-09-27T01:07:00Z", "2026-10-03T16:00:00Z"},
+		{"@monthly", "Asia/Taipei", "2026-09-27T01:07:00Z", "2026-09-30T16:00:00Z"},
+		{"@yearly", "Asia/Taipei", "2026-09-27T01:07:00Z", "2026-12-31T16:00:00Z"},
 	} {
 		t.Run(tc.zone+"/"+tc.expression+"/"+tc.after, func(t *testing.T) {
 			trigger := RoutineTrigger{Type: "cron", Expression: tc.expression, TimeZone: tc.zone}

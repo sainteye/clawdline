@@ -1,11 +1,12 @@
 # Bot login profiles and selected application extensions
 
-This construction starts from `f5da4df1c328c29e6f65b5e805db25ed61de4281`
-(API 80). Its compatibility tier is API 81 and feature schema 7. Integration
+This construction extends `b3a182748e8bfd1b6c538a26d7f428d90143ff14`
+(API 81). Its compatibility tier is API 82 and feature schema 8. Integration
 must choose a higher monotonic tier if another API change lands first.
-The construction is **partial**: account profiles, application text skills
-and configured HTTP connectors are implemented. API-key profiles, selected
-fallback profiles and network reachability remain open. No deployment,
+The login construction includes account and encrypted API-key profiles and
+selected fallback identities. Application text skills and configured HTTP
+connectors retain the previous implementation. Folder skills, additional
+connector transports and actual network reachability remain open. No deployment,
 installed-native account acceptance or public Release is claimed here.
 
 ## Account identity and native launch
@@ -50,8 +51,10 @@ An active turn retains its captured Bot and profile. The next generation gets
 the new profile and cannot load the old account's opaque native history. Native
 owner identities include profile identity while retaining legacy default-history
 bytes. Attempt facts, bindings and rests also retain profile identity. A fallback
-on a different Agent gets that Agent's own default login and settings. This slice
-does not expose a selected fallback-profile chain or same-Agent account rotation.
+on a different Agent gets that Agent's own default login and settings. Each optional `fallback_steps` entry names an Agent and its own opaque login
+profile. The same Agent may appear with distinct logins. Legacy
+`fallback_agents` remains compatible; omitted or empty legacy edits preserve
+selected steps, while conflicting nonempty representations are refused.
 
 ## Commands, sign-in and cleanup
 
@@ -219,7 +222,77 @@ sandbox denials of `/bin/ps` are retained separately from permission-enabled
 native/browser passes. The decoder golden audit retains 276,750 previous inputs
 with zero removals or changed decisions; added probes are distinct new inputs.
 
-Remaining construction is explicit: API-key Secret Handoff/vault integration,
-selected fallback login identities, folder-skill and stdio/authenticated
+Remaining construction is explicit: folder-skill and stdio/authenticated
 connector support, and true remote-Bot/Cloud-assistant reachability. These
 limitations do not complete the parent Board step or its later acceptance card.
+
+## API-key Secret Handoff and protected-file vault
+
+API 82 adds the dedicated `project-assistants.login-secret` encrypted Cloud
+command and local `POST .../login-secret` endpoint. Ordinary profile actions
+accept `kind: api_key` on creation and `prepare-key` to obtain an expiring
+source-owned target. `submit-key` is refused on the ordinary action route.
+Only the dedicated person input carries `value`; there is no terminal Session,
+human bearer handed to a Bot, shell import, environment dictionary or argv key.
+A target binds current source/principal authority, full Project/Bot/conversation
+fence, Agent, profile ID and revision. Targets expire after the existing
+15-minute Secret Handoff period and disappear on source restart. Up to 128
+unexpired targets may exist in one registry; the capacity panel reads their
+actual count. The 16 KiB input ceiling reuses Secret Handoff's registered bound.
+
+Persistent submission receipts hash only the nonsensitive operation and scope,
+never the value, length or a content fingerprint. Replaying the same operation
+returns its original acceptance even with a different or empty value; it cannot
+compare or replace a key. The browser persists only that nonsensitive command
+for explicit recovery and clears the dedicated textarea before awaiting IO.
+The source rechecks authority before persistence and before publishing success.
+
+`botprofilevault` uses AES-256-GCM, fresh nonces and source/Agent/profile AAD.
+Its purpose-specific key is an owner-only file, independent from all Cloud
+identity/content keys. This is protected-file storage, **not an OS or hardware
+keychain**. Private directory components, regular-file identity checks, exclusive
+key creation, synced temporary writes and atomic replacement protect its path.
+An existing namespace with a missing/unreadable key, tampered ciphertext or
+missing encrypted record is unknown/refusal; it never mints replacement
+authority over existing state. SQLite stores only profile kind and lifecycle
+metadata. No credential or credential fingerprint enters DB, export, receipts
+or fixture diagnostic output. Unknown writes/cleanup retain bytes and holds.
+
+The first supported allowlist is deliberately one key per supported Agent:
+`ANTHROPIC_API_KEY` for Claude Code and `CODEX_API_KEY` for Codex. The installed
+Codex binary contains both CODEX_API_KEY and OPENAI_API_KEY support; the
+application selects CODEX_API_KEY explicitly. Each key profile retains its own
+empty native configuration/history namespace. Capability/version discovery,
+model catalog, memory-isolation probe and execution use the same selected
+identity and its key. Saved means locally available, not provider-verified.
+Native automatic memory stays disabled; idle dreaming remains deferred.
+
+Rekeying and removal share the selection/hold lock and refuse all primary and
+fallback references and native/probe holds. Changing selections advances
+instruction/config revisions; captured native turns retain their selected
+identity. Per-login rests, attempts, parked history and rest clearing use that
+identity. Safe fallback still requires confirmed no send/effect and confirmed
+cleanup; unknown/late outcomes remain barriers. A different Agent's default
+login never inherits the primary profile or model settings.
+
+Verification includes actual authenticated HTTP/Host/SQLite and local ACP key
+execution, source/Host reopen, different-value/empty-value replay, expiration,
+encrypted-at-rest inspection limited to owned fixture files, vault tamper/key
+loss refusal, same-Agent/two-profile fallback and different-Agent default
+isolation. Production UI/SourceClient is exercised in English desktop and
+Taiwan Traditional Chinese narrow view. These synthetic checks make zero
+vendor/model API calls and do not establish installed-native, Cloud, phone or
+public Release acceptance. Root retains deployment and integration.
+
+## Primary Agent changes and stored generations
+
+Changing the primary Agent is a configuration change, not a Project move. The
+store accepts the change only with a newer instruction/configuration snapshot;
+Bot key, Project and conversation remain immutable. The next native turn gets
+its own compatible binding. A real HTTP/Host/SQLite/local ACP regression covers
+a completed Codex turn, saving Claude as primary, and a separate Claude binding
+answering the next turn. This is scripted protocol evidence, not installed-model
+acceptance.
+The source records the revision that superseded each former primary binding.
+This preserves old no-fallback histories and archive restores without inventing
+attempt facts. Later native updates cannot alter or erase that stored provenance.

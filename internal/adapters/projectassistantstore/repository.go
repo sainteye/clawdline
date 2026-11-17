@@ -350,11 +350,19 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		if b.Key != m.Command.Key {
 			return failure(pa.ScopeDenied, "bot")
 		}
-		if m.ExpectedVersion > 0 && (b.Project != a.Bot.Project || b.ConversationID != a.Bot.ConversationID || b.Agent != a.Bot.Agent) {
+		if m.ExpectedVersion > 0 && (b.Project != a.Bot.Project || b.ConversationID != a.Bot.ConversationID) {
 			return failure(pa.ScopeDenied, "immutable_bot")
 		}
-		if m.ExpectedVersion > 0 && (!b.CreatedAt.Equal(a.Bot.CreatedAt) || b.Instructions.Revision < a.Bot.Instructions.Revision || b.Instructions != a.Bot.Instructions && b.Instructions.Revision <= a.Bot.Instructions.Revision) {
+		if m.ExpectedVersion > 0 && (!b.CreatedAt.Equal(a.Bot.CreatedAt) || b.Instructions.Revision < a.Bot.Instructions.Revision || (b.Instructions != a.Bot.Instructions || b.Agent != a.Bot.Agent) && b.Instructions.Revision <= a.Bot.Instructions.Revision) {
 			return failure(pa.StaleVersion, "bot_instructions")
+		}
+		if m.ExpectedVersion > 0 && b.Agent != a.Bot.Agent {
+			for id, binding := range a.Bindings {
+				if binding.Agent == a.Bot.Agent && binding.PrimarySupersededAt == 0 {
+					binding.PrimarySupersededAt = b.Instructions.Revision
+					a.Bindings[id] = binding
+				}
+			}
 		}
 		a.Bot = b
 	}
@@ -376,6 +384,13 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	}
 	if m.Binding != nil {
 		b := *m.Binding
+		old, exists := a.Bindings[b.Fence.BindingID]
+		if b.PrimarySupersededAt != 0 && (!exists || b.PrimarySupersededAt != old.PrimarySupersededAt) {
+			return failure(pa.ScopeDenied, "binding_primary_history")
+		}
+		if exists {
+			b.PrimarySupersededAt = old.PrimarySupersededAt
+		}
 		if old, ok := a.Bindings[b.Fence.BindingID]; ok && (old.Fence != b.Fence || old.Agent != b.Agent || old.SessionSlot != b.SessionSlot || old.Revoked && !b.Revoked) {
 			return failure(pa.StaleGeneration, "binding")
 		}
@@ -489,6 +504,12 @@ func validateAggregate(a aggregate) error {
 	if err := pa.ValidateCreate(pa.CreateBot{Target: pa.ProjectSelection{MachineID: b.Key.MachineID, ProjectID: b.Project.ProjectID}, Name: b.Name, Appearance: b.Appearance, Agent: b.Agent, PermissionPolicy: b.PermissionPolicy, Mode: b.Mode, FallbackAgents: b.FallbackAgents.Agents(), Instructions: b.Instructions.Text}, pa.ProjectResolution{Scope: b.Project, Directory: "host-resolved", Current: true, Available: true}); err != nil {
 		return err
 	}
+	if len(b.FallbackSteps.Steps()) > 0 && len(b.FallbackAgents.Agents()) > 0 {
+		return failure(pa.Invalid, "fallback_conflict")
+	}
+	if err := pa.ValidateFallbackSteps(pa.FallbackStep{Agent: b.Agent, LoginProfile: b.LoginProfile}, b.FallbackSteps.Steps()); err != nil {
+		return err
+	}
 	if b.Instructions.Revision < 1 {
 		return failure(pa.Invalid, "instructions_revision")
 	}
@@ -534,8 +555,11 @@ func validateAggregate(a aggregate) error {
 		}
 	}
 	for id, binding := range a.Bindings {
+		if binding.PrimarySupersededAt != 0 && (binding.PrimarySupersededAt <= binding.InstructionRevision || binding.PrimarySupersededAt > b.Instructions.Revision) {
+			return failure(pa.ScopeDenied, "binding_primary_history")
+		}
 		if binding.Agent != b.Agent {
-			qualified := false
+			qualified := binding.PrimarySupersededAt != 0
 			for _, turn := range a.Turns {
 				for _, fact := range turn.Attempts {
 					if fact.Agent == binding.Agent && fact.Fence == binding.Fence {

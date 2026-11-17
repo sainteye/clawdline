@@ -4405,6 +4405,55 @@
         "Realtime and GPT-Live call instructions",
         "Local hangup and Web Audio cue"
       ]
+    },
+    {
+      "id": "persistent-bot-api-key",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general",
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/botprofilevault/files.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/botloginprofiles/registry.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/botloginprofiles/secrets.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/login_profiles.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/login_profiles.go",
+          "line": 1
+        },
+        {
+          "path": "internal/transport/http/project_assistants_login_profiles.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "env = append(env, pa.LoginKeyVariable(p.Agent)+\"=\"+string(value))"
+      ],
+      "locations": [
+        "Bot settings → Login profiles → Add API-key login profile",
+        "Bot settings → Fallback order",
+        "<state>/project-assistants/login-profiles/<source>/key-vault-v1"
+      ]
     }
   ],
   "sourceChecks": {
@@ -4429,7 +4478,9 @@
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "0e37dc41dcf875f0cbc8d12ddeee5e9fb603ac309a400fb4d2ab594f8c09d32d",
     "internal/adapters/botcapabilities/inventory.go": "957337e98e9369ffbd0178c5391506aa8bfa9752a61fe19073bd9a8669f5a6b2",
-    "internal/adapters/botloginprofiles/registry.go": "41c4c775b1f12057ed55dc6d3fa2227777e54a70303007de7f9fe16d2abe9cc0",
+    "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
+    "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
+    "internal/adapters/botprofilevault/files.go": "4ef1c374059fe4061ffacac742660aba928e67cf4d20d197f35f9e9499975ab8",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
     "internal/adapters/codegraph/codegraph.go": "1f43b427f6c582c759aa2a7bd7cab17c20bbe37d5bb7408a13e0ee8a1aef9339",
@@ -4452,7 +4503,7 @@
     "internal/adapters/projectassistantacp/installation.go": "a8c506a3239983e48f51be52224d3c125f56dff4b62322498415c52b8b2d8803",
     "internal/adapters/projectassistantacp/installation_codex.go": "229fd1007a373608c378f75257823846b09f03157b260773057e0657c8062551",
     "internal/adapters/projectassistantacp/installation_isolation.go": "2e3d55848a1fa2d18842539a306cd591334df3e01bfa00cdff7ef8d1c293c3cf",
-    "internal/adapters/projectassistantacp/login_profiles.go": "52fbbbc9c7338562e93eb20cae0124f0d0fb1c6d12d1c2c42498ab04c3ffe2fa",
+    "internal/adapters/projectassistantacp/login_profiles.go": "3b612a6d02e2ad26d7be0d91d4643d83281b3ee713331c137052afa40440aa51",
     "internal/adapters/projectassistantacp/mcp.go": "652c9bc3149dbc6638fe206b7e579481ff07db97ec926b3d0ea7df1f571abfdd",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "84f2205ee212a418c957a34a8fe47405f66deb9f4618d3aff073cbcc5caa19b3",
     "internal/adapters/projectassistantacp/model_configuration.go": "a27e154c02f76a7bbe9383b2c503998c017b58e92f7ed531ea4728056b00003b",
@@ -4463,13 +4514,13 @@
     "internal/adapters/projectassistanthost/provider.go": "8d74df6e203eae0cca48ec8f3f8b5f31a63058275fd840278d7a63281b9da1df",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
-    "internal/adapters/projectassistantstore/fallback.go": "c84f7ec5d51066f64cb35705f4605f706713822d187a62226f8ae2de7f748968",
+    "internal/adapters/projectassistantstore/fallback.go": "2a4649823fe00c9a3abfcf54ec34d1baa1a379899d9ea834a39a6460436b2550",
     "internal/adapters/projectassistantstore/groups.go": "be40b1957a7d4886a8447c6bd6eacd528a87d17c29a02fb6055fbf0f3e9d005e",
     "internal/adapters/projectassistantstore/inputs.go": "b9f68823dcbd69ca9d5f2ad1e7d19e07da813299e62d4ca02b2f15c3cdf8319b",
     "internal/adapters/projectassistantstore/memory.go": "a3183682d04e07f5299602ac8f5a40780749c18e4f1966fb6292868856762505",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
-    "internal/adapters/projectassistantstore/team.go": "9660507f7e678ba56e91e38a7c4271a6a7bd93ef76b941ad9fd7bc4ccf3610ee",
+    "internal/adapters/projectassistantstore/team.go": "58dbafc531786727a2c365344f5dc840223875ad45aeb5df8f3bfb79ca94f99f",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -4503,21 +4554,21 @@
     "internal/app/projectassistant/collaboration.go": "0604599a5ccff8f288fe6568f72c4b51e592d080b37e125558d40312e32b56ae",
     "internal/app/projectassistant/configuration.go": "d9c4057274edf057084c29c105b838333c2865a527a610752d329314eb9fa419",
     "internal/app/projectassistant/extensions.go": "4e80f041f85346f8623ad2fcee7016024e7ac47d75992c00e35fa571ffb6af00",
-    "internal/app/projectassistant/fallback.go": "ad81095b1db7b0f82d64b0b2b68b036d88724d028fbadf5f6233336f3e15e4da",
+    "internal/app/projectassistant/fallback.go": "e38c623d975f00da1828816136af2fb22f4e029e7a8a1e78d706bea46f3aab52",
     "internal/app/projectassistant/fallback_ledger.go": "cb9f9c74df2301746c19505087db8ed97e9ab8703fbdd436cf597e48eba3828c",
     "internal/app/projectassistant/group_rooms.go": "bf057e5ebf4f1ae25c326c30e08d05347a6bdb7feaa8a260dd6830381487f068",
     "internal/app/projectassistant/inputs.go": "745f888b5c7279a0fbb8cea53e76ba4b60a3e50140819f821552cbf01d47fdb8",
     "internal/app/projectassistant/lifecycle.go": "4665edd5b683c5cdcee7a88a2ffeafc3c6f753acbab0b2db9a74a112306b8ee6",
-    "internal/app/projectassistant/login_profiles.go": "9713e63a196587e2e61e9352dfeb7f5e85f463d03cce34696ab596d56cec178f",
+    "internal/app/projectassistant/login_profiles.go": "b9a49710ccc1396c49b0e82bff8154de64012d57f7acd936161ed626615ef693",
     "internal/app/projectassistant/memory_view.go": "6b1790845689fbcf594c640660862077334e806c859d4880c11323ce192d800b",
     "internal/app/projectassistant/provider_failure.go": "79cdabf8f144fcf7987e609b7b4db45b893be5e486d8ff3825e558d6cb4df1fd",
     "internal/app/projectassistant/routines.go": "c4c264e07f013c24a776a9f46953bc13389fb34fab81a42e3cfa6adbbd07e2bd",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "14a16cae0beee3e4f0047a6e908a30c3e327d2e82c82a931a656d0bb7ca175cc",
+    "internal/app/projectassistant/runtime.go": "37f2127019a1571afa44ca1b8ef35891177bbd2437ba8d2f4f2d8896c00b1c40",
     "internal/app/projectassistant/runtime_groups.go": "2dd32405b1c057c8d95563f85370cf3785a22c947fe977577833cdedb59e0254",
     "internal/app/projectassistant/service_routines.go": "99c896ad0067bbb55647dc18f58886414a7e51b4087b6f6ff5b700cc8b0d82f4",
     "internal/app/projectassistant/service_team.go": "c2a78a6266d3329c06c3067ef3bc69cc54ae0f478c7974ff3cfcca3189a2c4b3",
-    "internal/app/projectassistant/session_handoff.go": "7f276e56758f01c05f875e398c18543743c281829a6b9798c9e532fda738393f",
+    "internal/app/projectassistant/session_handoff.go": "6d9c299a773da96bafc70eea7bfce4bb22705ddd0de35439eef785fd443e070d",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -4525,11 +4576,11 @@
     "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
-    "internal/domain/projectassistant/fallback.go": "099208d5651ca4c15442c28540150e65f8aa917d34e689bd8602deeebe509d89",
+    "internal/domain/projectassistant/fallback.go": "b8c9ed170a6b24c01c7943d6697310c3abe4c6c3df0c2b1937220c80415f0ee6",
     "internal/domain/projectassistant/inputs.go": "f7b8825cf13e1a6573dcf33b985f7010b5771a1421f611efc184f823d5118f37",
     "internal/domain/projectassistant/routine_events.go": "e21f014f2d4723215a6946034b363c8d8ffd1336303c424721a21476281adb81",
     "internal/domain/projectassistant/routine_progress.go": "b1db1a4bde2710b01edf53eedf6d3fafac63fc7bef2e0343a1c1456075575cc1",
-    "internal/domain/projectassistant/routine_schedule.go": "a083cfa2a543fe530a8610baccc925e83385bc98334d8f1ba1dab33a81eff4fa",
+    "internal/domain/projectassistant/routine_schedule.go": "1b81b3183f4ae673d767e6c72a4ed9d6c66548a74f7d070391e7e6cf473f31b5",
     "internal/domain/schedulewebhook/investigation.go": "3d861f7d9b01654f933775c48e018217b1e35b669c122b6f15148f80bfc5b33d",
     "internal/domain/snippet/default_playbook.go": "e8c0b1df907ff7844f92ac202050da8d0f04af4335cc04e6ef4cac38a4ae40a1",
     "internal/domain/toollibrary/library.go": "230190e585bc8973983be00cf23194d46750e3db49be80e256f061f9e5f36a20",
@@ -4559,7 +4610,7 @@
     "internal/transport/http/integration_settings.go": "39cd9213de52243300696d2d75afaa658ea326e28a10b45b239caad3c1b9b7a4",
     "internal/transport/http/project_assistants_artifacts.go": "1d127583671c1b1b444d5ed2d872abe5bad92575e0795c92ca0284898bd2393d",
     "internal/transport/http/project_assistants_host.go": "b8086e186cab1ea7c9d070dd210145877d27dcdd99dfd8c36a119ebe0a20fff2",
-    "internal/transport/http/project_assistants_login_profiles.go": "e0acd1f42025e12a57ba6166cfaaad8f59f6f9548bf28dc52a5bea4eab85bac7",
+    "internal/transport/http/project_assistants_login_profiles.go": "10a43acbb279c6455d8d7adf226ffdb36da32b18e124b37d23849da0aec73ad2",
     "internal/transport/http/project_assistants_memory_settings.go": "78b5e2408ec7f730d1d596b94974eee6baeb07700d5e0ef4cec900f257544223",
     "internal/transport/http/project_assistants_routine_hooks.go": "60170d1af2fa2948944103afd16ccb8559a62822e54ea4d4152de86cfd7a2a20",
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
@@ -4586,7 +4637,7 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/cloud/project-assistants.ts": "3f5f55a297e4e720a1f9f6435f312cbcabbe22cf0422fd372655bcd054a0e86e",
+    "web/console/src/cloud/project-assistants.ts": "5c6b1f1118186f1809e4886792d112944aa0a9a84108742320fc69b3937a10de",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "17100201bc9b50a0b8c4afb8e97c60d4d14a6e446ad1dac579831f175b845285",
@@ -4631,7 +4682,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "d80257dd0a2c3bdf8fde68c7bc48bb405bea3ca2440a587172bd75b1b6892bce",
-    "zh-Hant": "7b898644e31cfd5b29ea3aef7bd3edbcd7c8c7fbe2b791c657fffa0d6c605396"
+    "en": "e3fc627019e06e5c5132db54cfa6e91edc41b7711f0f47a45dfe9a323064af19",
+    "zh-Hant": "f620898031b2f66727c1523444aa02a749b991d04babf4eff23f34660db87ed0"
   }
 }

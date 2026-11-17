@@ -58,7 +58,23 @@ func (h *projectAssistantHTTP) loginProfiles(w http.ResponseWriter, r *http.Requ
 		if _, e := paHTTPQuery(r); e != nil {
 			return nil, e
 		}
-		q, e := paDecodeHTTP[contract.ProjectAssistantLoginProfileAction](w, r)
+		var q contract.ProjectAssistantLoginProfileAction
+		var secretValue []byte
+		var e error
+		if route.action == "login-secret" {
+			w.Header().Set("Cache-Control", "no-store")
+			var request contract.ProjectAssistantLoginSecretSubmission
+			request, e = paDecodeHTTP[contract.ProjectAssistantLoginSecretSubmission](w, r)
+			q = contract.ProjectAssistantLoginProfileAction{Command: request.Command, Fence: request.Fence, ExpectedVersion: request.ExpectedVersion, ProfileID: request.ProfileID, Revision: request.Revision, Agent: request.Agent, Action: request.Action, Name: request.Name, Kind: request.Kind, Target: request.Target}
+			secretValue = []byte(request.Value)
+			defer func() {
+				for i := range secretValue {
+					secretValue[i] = 0
+				}
+			}()
+		} else {
+			q, e = paDecodeHTTP[contract.ProjectAssistantLoginProfileAction](w, r)
+		}
 		if e != nil {
 			return nil, e
 		}
@@ -66,7 +82,14 @@ func (h *projectAssistantHTTP) loginProfiles(w http.ResponseWriter, r *http.Requ
 		if e != nil {
 			return nil, e
 		}
-		profile, revalidate, e := h.options.Service.LoginProfileAction(r.Context(), pa.LoginProfileAction{Command: c, Fence: paDomainFence(q.Fence), ExpectedVersion: q.ExpectedVersion, ProfileID: q.ProfileID, Revision: q.Revision, Agent: pa.Agent(q.Agent), Action: q.Action, Name: q.Name})
+		action := pa.LoginProfileAction{Command: c, Fence: paDomainFence(q.Fence), ExpectedVersion: q.ExpectedVersion, ProfileID: q.ProfileID, Revision: q.Revision, Agent: pa.Agent(q.Agent), Action: q.Action, Name: q.Name, Kind: q.Kind, Target: q.Target}
+		var profile pa.LoginProfile
+		var revalidate func(context.Context) error
+		if route.action == "login-secret" {
+			profile, revalidate, e = h.options.Service.SubmitLoginSecret(r.Context(), action, secretValue)
+		} else {
+			profile, revalidate, e = h.options.Service.LoginProfileAction(r.Context(), action)
+		}
 		if e != nil {
 			return nil, e
 		}

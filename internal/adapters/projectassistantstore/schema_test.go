@@ -487,7 +487,7 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				delete(after, table)
 			}
 			delete(after, "project_assistant_cloud_hook_schema")
-			for _, table := range []string{"project_assistant_login_profiles", "project_assistant_login_holds"} {
+			for _, table := range []string{"project_assistant_login_profiles", "project_assistant_login_holds", "project_assistant_login_kinds"} {
 				if len(after[table]) != 0 {
 					t.Fatal("migration manufactured native login authority", table)
 				}

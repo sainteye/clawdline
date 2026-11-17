@@ -4483,7 +4483,8 @@ type ProjectAssistantBot struct {
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
-	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
+	FallbackAgents []ProjectAssistantAgent        `json:"fallback_agents,omitempty"`
+	FallbackSteps  []ProjectAssistantFallbackStep `json:"fallback_steps,omitempty"`
 
 	// Kept out of the Bot list and its badge (API level 67).
 	Hidden       bool                         `json:"hidden,omitempty"`
@@ -4620,9 +4621,10 @@ type ProjectAssistantCreateSettings struct {
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
-	FallbackAgents []ProjectAssistantAgent `json:"fallback_agents,omitempty"`
-	Instructions   string                  `json:"instructions"`
-	ManageTeam     bool                    `json:"manage_team,omitempty"`
+	FallbackAgents []ProjectAssistantAgent        `json:"fallback_agents,omitempty"`
+	FallbackSteps  []ProjectAssistantFallbackStep `json:"fallback_steps,omitempty"`
+	Instructions   string                         `json:"instructions"`
+	ManageTeam     bool                           `json:"manage_team,omitempty"`
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
@@ -4655,6 +4657,7 @@ type ProjectAssistantEditSettings struct {
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
 	FallbackAgents []ProjectAssistantAgent         `json:"fallback_agents,omitempty"`
+	FallbackSteps  []ProjectAssistantFallbackStep  `json:"fallback_steps,omitempty"`
 	Instructions   string                          `json:"instructions"`
 	LoginProfile   *ProjectAssistantLoginSelection `json:"login_profile,omitempty"`
 	ManageTeam     bool                            `json:"manage_team,omitempty"`
@@ -4823,7 +4826,11 @@ type ProjectAssistantExecutionBinding struct {
 	LoginProfile        string                `json:"login_profile,omitempty"`
 	MemoryRevision      int64                 `json:"memory_revision"`
 	NativeSessionID     string                `json:"native_session_id"`
-	Revoked             bool                  `json:"revoked"`
+
+	// Source-recorded configuration revision that replaced this binding’s primary
+	// Agent; absent for current or legacy unchanged primary bindings.
+	PrimarySupersededAt int64 `json:"primary_superseded_at,omitempty"`
+	Revoked             bool  `json:"revoked"`
 }
 
 // Authenticated export only, never roster cache. SQLite remains authoritative.
@@ -4985,6 +4992,11 @@ type ProjectAssistantFailure struct {
 	Code              ProjectAssistantErrorCode `json:"code"`
 	Field             string                    `json:"field"`
 	RetryAfterSeconds int64                     `json:"retry_after_seconds"`
+}
+
+type ProjectAssistantFallbackStep struct {
+	Agent        ProjectAssistantAgent `json:"agent"`
+	LoginProfile string                `json:"login_profile,omitempty"`
 }
 
 // Must match current source authority on every RPC, permission answer, native
@@ -5180,12 +5192,14 @@ type ProjectAssistantListResponse struct {
 }
 
 type ProjectAssistantLoginProfile struct {
-	Agent    ProjectAssistantAgent `json:"agent"`
-	ID       string                `json:"id"`
-	Kind     string                `json:"kind"`
-	Name     string                `json:"name"`
-	Revision int64                 `json:"revision"`
-	State    string                `json:"state"`
+	Agent     ProjectAssistantAgent              `json:"agent"`
+	Handoff   *ProjectAssistantLoginSecretTarget `json:"handoff,omitempty"`
+	ID        string                             `json:"id"`
+	Kind      string                             `json:"kind"`
+	Name      string                             `json:"name"`
+	Revision  int64                              `json:"revision"`
+	State     string                             `json:"state"`
+	Variables []string                           `json:"variables,omitempty"`
 }
 
 type ProjectAssistantLoginProfileAction struct {
@@ -5194,9 +5208,11 @@ type ProjectAssistantLoginProfileAction struct {
 	Command         ProjectAssistantCommand `json:"command"`
 	ExpectedVersion int64                   `json:"expected_version"`
 	Fence           ProjectAssistantFence   `json:"fence"`
+	Kind            string                  `json:"kind,omitempty"`
 	Name            string                  `json:"name"`
 	ProfileID       string                  `json:"profile_id"`
 	Revision        int64                   `json:"revision"`
+	Target          string                  `json:"target,omitempty"`
 }
 
 type ProjectAssistantLoginProfileResponse struct {
@@ -5207,6 +5223,25 @@ type ProjectAssistantLoginProfileResponse struct {
 type ProjectAssistantLoginProfilesResponse struct {
 	ContractVersion string                         `json:"contract_version"`
 	Profiles        []ProjectAssistantLoginProfile `json:"profiles"`
+}
+
+type ProjectAssistantLoginSecretSubmission struct {
+	Action          string                  `json:"action"`
+	Agent           ProjectAssistantAgent   `json:"agent"`
+	Command         ProjectAssistantCommand `json:"command"`
+	ExpectedVersion int64                   `json:"expected_version"`
+	Fence           ProjectAssistantFence   `json:"fence"`
+	Kind            string                  `json:"kind,omitempty"`
+	Name            string                  `json:"name"`
+	ProfileID       string                  `json:"profile_id"`
+	Revision        int64                   `json:"revision"`
+	Target          string                  `json:"target"`
+	Value           string                  `json:"value"`
+}
+
+type ProjectAssistantLoginSecretTarget struct {
+	Expires string `json:"expires"`
+	ID      string `json:"id"`
 }
 
 type ProjectAssistantLoginSelection struct {
@@ -6087,6 +6122,7 @@ type ProjectAssistantTeamEditSettings struct {
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
 	FallbackAgents []ProjectAssistantAgent         `json:"fallback_agents,omitempty"`
+	FallbackSteps  []ProjectAssistantFallbackStep  `json:"fallback_steps,omitempty"`
 	Instructions   string                          `json:"instructions"`
 	LoginProfile   *ProjectAssistantLoginSelection `json:"login_profile,omitempty"`
 	ManageTeam     bool                            `json:"manage_team"`

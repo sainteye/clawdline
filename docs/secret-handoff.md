@@ -57,3 +57,20 @@ The protection is against incidental retention and disclosure by Clawdline's nor
 1. Open the **Secret Handoff** request in the intended Session and check its purpose and Session name.
 2. Paste the value into the dedicated field and submit. The button shows progress, then the Note moves to recently handled as soon as the machine receives the value, before the panel folds away. Clawdline never shows the value again.
 3. The Session uses the one-time handoff. If it expires or the machine restarts before use, ask the Session for a fresh Secret Handoff Note.
+
+## Bot login-key delivery
+
+Bot API-key profiles use a dedicated person-to-source Secret Handoff target,
+not a terminal Note or an assistant-readable credential. The Bot settings sheet
+creates an opaque profile, prepares a target, and shows a dedicated secret
+textarea. `POST /v1/project-assistants/{bot}/login-secret` alone accepts its
+value over the authenticated local/encrypted Cloud path. The target binds the
+current authority, full Project/Bot/conversation, Agent, profile and revision;
+it expires in 15 minutes and on source restart. Ordinary settings/chat/Notes
+never carry the key. Its persistent idempotency digest excludes both the value
+and its length. Replays acknowledge the original operation without comparison
+or replacement. Unknown outcomes require explicit recovery, never automatic
+resubmission. Values are encrypted in a separate protected-file AES-GCM vault;
+this is not an operating-system keychain. See
+[Bot login capabilities](project-assistants-login-capabilities.md) for lifecycle,
+allowlists, refusal boundaries and synthetic verification limits.

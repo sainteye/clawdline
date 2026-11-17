@@ -5254,6 +5254,7 @@ export interface ProjectAssistantBot {
    * an explicit empty array clears them.
    */
   fallback_agents?: ProjectAssistantAgent[]
+  fallback_steps?: ProjectAssistantFallbackStep[]
 
   /**
    * Kept out of the Bot list and its badge (API level 67).
@@ -5409,6 +5410,7 @@ export interface ProjectAssistantCreateSettings {
    * an explicit empty array clears them.
    */
   fallback_agents?: ProjectAssistantAgent[]
+  fallback_steps?: ProjectAssistantFallbackStep[]
   instructions: string
   manage_team?: boolean
 
@@ -5451,6 +5453,7 @@ export interface ProjectAssistantEditSettings {
    * an explicit empty array clears them.
    */
   fallback_agents?: ProjectAssistantAgent[]
+  fallback_steps?: ProjectAssistantFallbackStep[]
   instructions: string
   login_profile?: ProjectAssistantLoginSelection
   manage_team?: boolean
@@ -5621,6 +5624,12 @@ export interface ProjectAssistantExecutionBinding {
   login_profile?: string
   memory_revision: number
   native_session_id: string
+
+  /**
+   * Source-recorded configuration revision that replaced this binding’s primary
+   * Agent; absent for current or legacy unchanged primary bindings.
+   */
+  primary_superseded_at?: number
   revoked: boolean
 }
 
@@ -5785,6 +5794,11 @@ export interface ProjectAssistantFailure {
   code: ProjectAssistantErrorCode
   field: string
   retry_after_seconds: number
+}
+
+export interface ProjectAssistantFallbackStep {
+  agent: ProjectAssistantAgent
+  login_profile?: string
 }
 
 /**
@@ -5989,11 +6003,13 @@ export interface ProjectAssistantListResponse {
 
 export interface ProjectAssistantLoginProfile {
   agent: ProjectAssistantAgent
+  handoff?: ProjectAssistantLoginSecretTarget
   id: string
   kind: string
   name: string
   revision: number
   state: string
+  variables?: string[]
 }
 
 export interface ProjectAssistantLoginProfileAction {
@@ -6002,9 +6018,11 @@ export interface ProjectAssistantLoginProfileAction {
   command: ProjectAssistantCommand
   expected_version: number
   fence: ProjectAssistantFence
+  kind?: string
   name: string
   profile_id: string
   revision: number
+  target?: string
 }
 
 export interface ProjectAssistantLoginProfileResponse {
@@ -6015,6 +6033,25 @@ export interface ProjectAssistantLoginProfileResponse {
 export interface ProjectAssistantLoginProfilesResponse {
   contract_version: string
   profiles: ProjectAssistantLoginProfile[]
+}
+
+export interface ProjectAssistantLoginSecretSubmission {
+  action: string
+  agent: ProjectAssistantAgent
+  command: ProjectAssistantCommand
+  expected_version: number
+  fence: ProjectAssistantFence
+  kind?: string
+  name: string
+  profile_id: string
+  revision: number
+  target: string
+  value: string
+}
+
+export interface ProjectAssistantLoginSecretTarget {
+  expires: string
+  id: string
 }
 
 export interface ProjectAssistantLoginSelection {
@@ -6970,6 +7007,7 @@ export interface ProjectAssistantTeamEditSettings {
    * an explicit empty array clears them.
    */
   fallback_agents?: ProjectAssistantAgent[]
+  fallback_steps?: ProjectAssistantFallbackStep[]
   instructions: string
   login_profile?: ProjectAssistantLoginSelection
   manage_team: boolean

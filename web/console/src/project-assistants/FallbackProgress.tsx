@@ -15,7 +15,7 @@ export function FallbackProgress({primary,turn,w}:{primary:W.ProjectAssistantAge
   return <details className="pa-turn" data-fallback-progress={turn?.id}>
     <summary>{w.fallbackProgress} · {w.fallbackPrimary}: {agentName(primary)} · {w.fallbackEffective}: {agentName(progress.effective)} · {w[progress.attempts[progress.attempts.length-1].stage]}</summary>
     <ol>{progress.attempts.map(({fact,stage,reason,cleanup,effect,carry})=><li key={fact.ordinal}>
-      <p>{w.fallbackAttempt} {fact.ordinal} · {agentName(fact.agent)} · {w[stage]}{reason&&<> · {w[reason]}</>}</p>
+      <p>{w.fallbackAttempt} {fact.ordinal} · {agentName(fact.agent)} · {w.loginProfile}: {fact.login_profile??w.loginDefault} · {w[stage]}{reason&&<> · {w[reason]}</>}</p>
       <ul>{observations.filter(([field])=>fact[field]).map(([field,label])=><li key={field}>{w[label]}</li>)}</ul>
       <p>{w[cleanup]} · {w[effect]}</p>
       {(carry||fact.resume_binding_id)&&<div>

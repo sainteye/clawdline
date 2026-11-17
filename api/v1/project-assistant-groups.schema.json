@@ -571,6 +571,13 @@
         },
         "extensions": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantExtensionSelection"
+        },
+        "fallback_steps": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantFallbackStep"
+          }
         }
       },
       "required": [
