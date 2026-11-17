@@ -4800,7 +4800,7 @@
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "b69ca676b64595930452486840d602b2b04b1549e91562468bb502abd26ccbf3",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
-    "web/console/src/project-assistants/ChatRows.tsx": "b46c653690236965084eac61f077dda0134627a415d3d0ac0948e23cdc8003a7",
+    "web/console/src/project-assistants/ChatRows.tsx": "afb439b7594620d48543945d9d5500b844fc9eb735fa1b41ea64f44179058b74",
     "web/console/src/project-assistants/ExchangePanel.tsx": "b8d736bc5a4213aac0cd9e133919d114be76b086da76d6592c3f502fa6d1fabe",
     "web/console/src/project-assistants/NetworkSettings.tsx": "9bed4cfacee38582d10746410ea38781414a6da9409f343a1779fe1d592eda97",
     "web/console/src/project-assistants/OutputCard.tsx": "042da49f7fc9b35758ff541dc45b4e427e9f76732390a7f6a4f12102deb52670",

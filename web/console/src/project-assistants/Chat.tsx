@@ -175,7 +175,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     refreshBusy.current=true
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current;eventControl.current=control
     try {
-      if(recovery.current||!currentData.current){await recoverSnapshot(control.signal);if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")])}
+      if(recovery.current||!currentData.current||manual||!!error){await recoverSnapshot(control.signal);if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")])}
       else {
         const before=headRef.current!,capturedEpoch=epoch.current
         const page=await read(request("events","",256),control.signal)
@@ -484,7 +484,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!valid()||control.signal.aborted||recovery.current||capturedEpoch!==epoch.current||!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
       if(!sameFence(page.head.current_fence,captured.current_fence)){if(!quiet)lock();throw failure("pa_stale_generation")}
       const row=page.items[0]
-      if(row.kind!==kind||kind==="permission"&&row.permission?.id!==id||kind==="trace"&&!traceRows.current.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category))throw failure("pa_invalid")
+      if(!row||row.kind!==kind||kind==="permission"&&row.permission?.id!==id)throw failure("pa_invalid")
+      if(kind==="trace"){
+        if(!row.trace)throw failure("pa_invalid")
+        if(!traceRows.current.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category)){
+          if(quiet)return
+          throw failure("pa_stale_generation")
+        }
+      }
       adoptHead(page);const next={...detailRows.current,[id]:row.permission??row.trace!};detailRows.current=next;setDetails(next)
       if(row.trace){requestedTraceReferences.current.set(id,reference);if(browserToolTrace(row.trace)){const trace=row.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}}
     }catch(e){if(!quiet&&!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
