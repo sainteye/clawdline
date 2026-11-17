@@ -353,7 +353,9 @@ func (s *Server) copilotRecapRoute(w http.ResponseWriter, r *http.Request) {
 	lines, clipped := copilotRecapFit(lines)
 	progress := s.copilotRecapProgressFor(ctx, session, strings.TrimSpace(body.Conversation), now)
 	input, _ := json.Marshal(map[string]any{"progress": progress, "timeline": lines, "complete": complete && !clipped})
-	content, status, detail := copilotChatJSON(ctx, v.Key, copilotRecapRequest(input, s.copilotLanguage(body.Language)))
+	var usage copilotChatUsage
+	content, status, detail := copilotChatJSONRecord(ctx, v.Key, copilotRecapRequest(input, s.copilotLanguage(body.Language)), &usage)
+	s.recordCopilotChatUsage(copilotRecapModel, usage)
 	if detail != "" {
 		code := "copilot_recap_failed"
 		if status == http.StatusUnauthorized {

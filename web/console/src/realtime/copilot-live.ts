@@ -22,7 +22,7 @@ export const LIVE_BACKEND_MODEL = 'gpt-6-luna'
 /** GPT-Live's price per second of a session, as OpenAI lists it ($0.05 a minute). */
 export const LIVE_USD_PER_SECOND = 0.05 / 60
 /** The backend model's price per 1M tokens (gpt-6-luna, standard short context). */
-export const LIVE_BACKEND_RATES = { input: 0.1, cached: 0.01, output: 0.5 }
+export const LIVE_BACKEND_RATES = { input: 0.1, cached: 0.01, output: 0.5, write: 0.125, write12h: 0.25 }
 
 /** Qualitative pacing for the existing speed choices; Live does not promise playback multipliers. */
 const LIVE_PACING = {
@@ -127,16 +127,18 @@ export function liveToolReply(callID: string, output: string, last: boolean): Re
 }
 
 /** The backend's token usage from a forwarded `response.completed`, priced at the backend's rates. */
-export function liveBackendUSD(event: unknown): number {
-  const e = event as { type?: string; event?: { type?: string; response?: { usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } } } } }
-  if (e?.type !== 'response.event' || e.event?.type !== 'response.completed') return 0
-  const u = e.event.response?.usage
-  if (!u) return 0
-  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
-  const cached = n(u.input_tokens_details?.cached_tokens)
-  const fresh = Math.max(0, n(u.input_tokens) - cached)
-  return (fresh * LIVE_BACKEND_RATES.input + cached * LIVE_BACKEND_RATES.cached + n(u.output_tokens) * LIVE_BACKEND_RATES.output) / 1_000_000
+export function liveBackendUsage(event: unknown): {id:string;usd:number;parts:Record<string,number>;input:number;output:number;cached:number} | undefined {
+ const e=event as {type?:string;event?:{type?:string;response?:{id?:string;usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number;cache_write_tokens?:number;cache_write_tokens_details?:{ttl_12h_tokens?:number}}}}}}
+ if(e?.type!=='response.event'||e.event?.type!=='response.completed'||!e.event.response?.usage)return undefined
+ const u=e.event.response.usage,n=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>0?v:0
+ const input=n(u.input_tokens),output=n(u.output_tokens),cached=Math.min(input,n(u.input_tokens_details?.cached_tokens))
+ const written=Math.min(input-cached,n(u.input_tokens_details?.cache_write_tokens)),longWrite=Math.min(written,n(u.input_tokens_details?.cache_write_tokens_details?.ttl_12h_tokens))
+ const long=input>272000
+ const parts={text_input:(input-cached-written)*LIVE_BACKEND_RATES.input*(long?2:1)/1e6,cached_input:cached*LIVE_BACKEND_RATES.cached*(long?2:1)/1e6,cache_write:((written-longWrite)*LIVE_BACKEND_RATES.write+longWrite*LIVE_BACKEND_RATES.write12h)*(long?2:1)/1e6,text_output:output*LIVE_BACKEND_RATES.output*(long?1.5:1)/1e6}
+ return {id:e.event.response.id??'',usd:Object.values(parts).reduce((a,b)=>a+b,0),parts,input,output,cached}
 }
+
+export function liveBackendUSD(event: unknown): number { return liveBackendUsage(event)?.usd??0 }
 
 /**
  * A GPT-Live call's running cost. OpenAI bills the seconds `session.usage.updated`
@@ -319,4 +321,19 @@ export class LiveTranscript {
   /** What was said since the last take, trimmed; empty when nothing was. */
   take(): string { const out = this.text.trim(); this.text = ''; return out }
   peek(): string { return this.text.trim() }
+}
+
+/** Wait for final provider usage before releasing the transport. Microphone and
+ * playback can stop immediately; this receiver is bound to the old call only. */
+export const LIVE_CLOSE_WAIT_MS = 5000
+export function closeLiveSession(dc: RTCDataChannel, receive:(event:Record<string,unknown>)=>void, waitMs=LIVE_CLOSE_WAIT_MS):Promise<boolean> {
+ return new Promise(resolve=>{
+  let done=false
+  const finish=(confirmed:boolean)=>{if(done)return;done=true;clearTimeout(timer);dc.removeEventListener('message',message);dc.removeEventListener('close',closed);resolve(confirmed)}
+  const message=(raw:MessageEvent)=>{try{const event=JSON.parse(raw.data);receive(event);if(event.type==='session.closed')finish(true)}catch{/* malformed provider events cannot confirm finalization */}}
+  const closed=()=>finish(false)
+  const timer=setTimeout(()=>finish(false),waitMs)
+  dc.addEventListener('message',message);dc.addEventListener('close',closed)
+  try{dc.send(JSON.stringify({type:'session.close',event_id:`close_${crypto.randomUUID()}`}))}catch{finish(false)}
+ })
 }

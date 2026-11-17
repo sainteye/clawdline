@@ -2328,20 +2328,25 @@ function questionRoute(row: CopilotSessionRow): Record<string, unknown> {
  * machine for a current rich row; never fall back to another machine or execution. */
 export async function readQuestionRow(deps: ToolDeps, row: CopilotSessionRow): Promise<CopilotSessionRow | { error: string }> {
   const fetchRow = rowFetch(deps, row)
-  let response = await fetchRow(`/v1/sessions?look=${encodeURIComponent(sid(row))}`, NAMED_READ)
-  for (let attempt = 1; attempt <= SCREEN_READ_ATTEMPTS; attempt++) {
-    if (!response.ok) return { error: `voice_question_unavailable: ${await refusalText(response)}` }
-    const rows = rowsOf(await response.json())
-    const current = uniqueSessionID(rows, sid(row))
-    if (current) {
-      if (row.conversation && current.conversation !== row.conversation || row.execution && current.execution !== row.execution)
-        return { error: 'voice_session_identity_changed' }
-      if (current.menu && current.choices?.length) return { ...current, id: row.id, label: row.label, session: row.session, machine: row.machine }
-      if (current.state !== 'waiting') return { error: 'voice_question_unavailable' }
-    }
-    if (attempt === SCREEN_READ_ATTEMPTS) break
-    await deps.sleep(SCREEN_READ_INTERVAL_MS)
-    response = await fetchRow('/v1/sessions', NAMED_READ)
+  const response = await fetchRow(`/v1/sessions?look=${encodeURIComponent(sid(row))}`, NAMED_READ)
+  if (!response.ok) return { error: `voice_question_unavailable: ${await refusalText(response)}` }
+  const answer = await response.json() as { row?: { session?: unknown }; sessions?: unknown }
+  // Cloud returns the rich row inside its receipt; the display list deliberately
+  // omits menus for unopened Sessions. Re-reading that list cannot recover it.
+  const carried = answer?.row?.session
+  let rows = rowsOf(carried ? { sessions: [carried] } : answer)
+  // An older Cloud machine acknowledges the read without carrying its row.
+  // Read its published snapshot once; a completed missing menu is not pending.
+  if (!carried && !rows.length && !Array.isArray(answer?.sessions)) {
+    const fallback = await fetchRow('/v1/sessions', NAMED_READ)
+    if (!fallback.ok) return { error: 'voice_question_unavailable' }
+    rows = rowsOf(await fallback.json())
+  }
+  const current = uniqueSessionID(rows, sid(row))
+  if (current) {
+    if (row.conversation && current.conversation !== row.conversation || row.execution && current.execution !== row.execution)
+      return { error: 'voice_session_identity_changed' }
+    if (current.menu && current.choices?.length) return { ...current, id: row.id, label: row.label, session: row.session, machine: row.machine }
   }
   return { error: 'voice_question_unavailable' }
 }

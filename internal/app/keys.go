@@ -290,17 +290,17 @@ func (p presser) answer(ctx context.Context, want int, bytes []byte, seen *sessi
 }
 
 // highlight answers a picker that takes no digits by walking its highlight
-// with j/k and confirming there. If the reading was wrong the highlight never
+// with arrow keys and confirming there. If the reading was wrong the highlight never
 // lands and no Return is sent: a button that did nothing, not an answer
 // nobody chose.
 func (p presser) highlight(ctx context.Context, want int, menu session.Menu) error {
 	if menu.Selected == nil {
 		p.note["verdict"] = "no_caret"
-		return nil
+		return errors.New("the menu has no confirmed selection; nothing was submitted")
 	}
 	key, times := session.Walk(*menu.Selected, want)
 	for i := 0; i < times; i++ {
-		if err := p.press(ctx, []byte{key}); err != nil {
+		if err := p.press(ctx, []byte(key)); err != nil {
 			return err
 		}
 	}
@@ -337,7 +337,7 @@ func (p presser) confirm(ctx context.Context, want int, asked *session.Menu) err
 		}
 	}
 	p.note["verdict"] = "no_return"
-	return nil
+	return errors.New("the requested selection could not be confirmed; refresh before trying again")
 }
 
 // submitMenu is Targets.submitMenu: press the button under a multi-select's

@@ -222,7 +222,11 @@ async function callVoiceSettings(init: RequestInit): Promise<VoiceSettingsSnapsh
 }
 
 /** Settings › Voice copilot, as `/v1/settings/copilot` answers it: never the key. */
+export interface CopilotUsageDay {
+ date:string;known:number;calls:number;missing:number;partial:number;usd:number;parts:Record<string,number>;seconds:number;input_tokens:number;output_tokens:number;cached_tokens:number
+}
 export interface CopilotSettingsSnapshot {
+  usage?: {days:CopilotUsageDay[];error?:string}
   work_auto_continue?:number
   max_auto_continue?:number
   work_enabled?: boolean

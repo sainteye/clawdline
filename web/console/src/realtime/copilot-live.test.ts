@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, newShare, LIVE_NEWS_SHARE, liveTokens, liveContextPieces, liveReportNote, LIVE_APPEND_TOKENS, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
+import { closeLiveSession, liveBackendUsage, LIVE_NOTE_CHARS, LiveTranscript, liveBackendUSD, liveCost, liveReadNotes, clipRecap, liveUpdatesText, newShare, LIVE_NEWS_SHARE, liveTokens, liveContextPieces, liveReportNote, LIVE_APPEND_TOKENS, liveBackendUpdate, liveFunctionCall, liveInstructions, livePacingInstructions, livePacingUpdate, liveNote, liveToolReply } from "./copilot-live.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { formatDuration } from "./copilot-cost.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
@@ -164,4 +164,36 @@ test("a GPT-Live append is cut to fit what OpenAI accepts", () => {
   const note = liveReportNote([{ label: "Release 2.4", recap: "很長的摘要。".repeat(200) }, { label: "Checkout redesign", latest: "Waits for you." }])
   assert.ok(liveTokens(note) <= LIVE_APPEND_TOKENS)
   assert.match(note, /"Release 2.4".*"Checkout redesign": Waits for you\./)
+})
+
+
+test("backend pricing separates cache writes and applies the long context tier",()=>{
+ const event=(input:number)=>({type:'response.event',event:{type:'response.completed',response:{id:'response-1',usage:{input_tokens:input,output_tokens:1000,input_tokens_details:{cached_tokens:2000,cache_write_tokens:3000,cache_write_tokens_details:{ttl_12h_tokens:1000}}}}}})
+ const cost=liveBackendUsage(event(10000))!
+ assert.equal(cost.parts.text_input,5000*0.1/1e6)
+ assert.equal(cost.parts.cache_write,(2000*0.125+1000*0.25)/1e6)
+ assert.equal(cost.usd,Object.values(cost.parts).reduce((a,b)=>a+b,0))
+ const longer=liveBackendUsage(event(300000))!
+ assert.equal(longer.parts.text_input,295000*0.2/1e6)
+ assert.equal(longer.parts.text_output,1000*0.75/1e6)
+})
+
+test("Live close retains the receiver until final usage, or marks a lost close incomplete",async()=>{
+ class Channel extends EventTarget {
+  sent:string[]=[]
+  send(text:string){this.sent.push(text)}
+  event(body:unknown){this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(body)}))}
+ }
+ const channel=new Channel(),events:unknown[]=[]
+ const done=closeLiveSession(channel as unknown as RTCDataChannel,e=>events.push(e),100)
+ assert.equal(JSON.parse(channel.sent[0]).type,'session.close')
+ channel.event({type:'session.usage.updated',usage:{seconds:20}})
+ channel.event({type:'session.closed',usage:{seconds:21},reason:'close_requested'})
+ assert.equal(await done,true)
+ assert.equal(events.length,2)
+ channel.event({type:'session.closed',usage:{seconds:999}})
+ assert.equal(events.length,2,'receiver is released after the final event')
+ const lost=new Channel(),pending=closeLiveSession(lost as unknown as RTCDataChannel,()=>{},100)
+ lost.dispatchEvent(new Event('close'));assert.equal(await pending,false)
+ assert.equal(await closeLiveSession(new Channel() as unknown as RTCDataChannel,()=>{},1),false)
 })

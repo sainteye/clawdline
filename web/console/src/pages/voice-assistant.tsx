@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PageModule } from './types.js'
 import { nextWord as W } from '../next-strings.js'
 import { CopilotSettingsCard } from './settings/window/CopilotSettingsCard.js'
+import {VoiceUsage} from './voice-assistant-usage.js'
 import { VoiceToolsCatalog } from './voice-assistant-tools.js'
 import { COPILOT_OPEN } from '../overlays/events.js'
 import './voice-assistant.css'
 
-export type VoiceAssistantTab = 'settings' | 'tools'
+export type VoiceAssistantTab = 'settings' | 'tools' | 'usage'
 
 function parseTabFromHash(): VoiceAssistantTab {
   if (typeof window === 'undefined') return 'settings'
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-  return params.get('tab') === 'tools' ? 'tools' : 'settings'
+  const tab=params.get('tab')
+  return tab==='tools'||tab==='usage'?tab:'settings'
 }
 
 function VoiceAssistant({ shown }: { shown: boolean }) {
@@ -38,7 +40,7 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
       <header className="voice-work-header">
         <div>
           <h1 id="voice-work-heading">{W('voiceWorkTitle')}</h1>
-          <p>{tab === 'tools' ? W('voiceToolsCardJumpHint') : W('copilotSettingsHint')}</p>
+          <p>{tab === 'tools' ? W('voiceToolsCardJumpHint') : tab==='usage'?W('copilotUsageHint'):W('copilotSettingsHint')}</p>
         </div>
         <button
           type="button"
@@ -73,6 +75,9 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
           <span>{W('voiceTabTools')}</span>
           <span className="voice-work-tab-count">27</span>
         </button>
+        <button type="button" role="tab" id="voice-tab-usage" aria-selected={tab==='usage'} aria-controls="voice-pane-usage" className={`voice-work-tab-btn ${tab==='usage'?'active':''}`} onClick={()=>switchTab('usage')}>
+          {W('voiceTabUsage')}
+        </button>
       </div>
 
       <div
@@ -85,6 +90,10 @@ function VoiceAssistant({ shown }: { shown: boolean }) {
         <div className="sw-window sw-voice voice-work-settings">
           <CopilotSettingsCard shown={shown && tab === 'settings'} />
         </div>
+      </div>
+
+      <div id="voice-pane-usage" role="tabpanel" aria-labelledby="voice-tab-usage" hidden={tab!=='usage'} className="voice-tab-pane">
+        <VoiceUsage shown={shown&&tab==='usage'}/>
       </div>
 
       <div

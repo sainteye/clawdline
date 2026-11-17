@@ -544,3 +544,47 @@ setup latency; timestamps on different devices also do not establish an exact el
 time. A controlled slow-directory test demonstrated a possible serial wait before
 transport setup, but did not establish its frequency or contribution in a real phone
 call. The startup ordering and ICE policy remain unchanged pending measured stages.
+
+
+### Call waiting and daily cost evidence (2026-11-17)
+
+A Cloud `sessions.row` receipt carries a rich row in `row.session`, while the
+fleet list intentionally omits unopened menus. The voice reader consumes that
+returned row, verifies its conversation and execution, and never polls the display
+list for a menu that list cannot carry. An older acknowledgment gets one snapshot
+read. A completed read without choices returns `voice_question_unavailable`.
+Interrupting the automatic opening aborts its outstanding reads and releases its
+progress cue; the interrupted report cannot speak over the new request.
+
+Claude's current unnumbered directory dialog retains `j/k` as text instead of
+moving the selection. The shared menu-walk function now returns native arrows for every caller, then menu answers read back the requested
+selection before Return. Failure to land on the requested option is an error,
+never an answered receipt. The question fingerprint and exact target still apply.
+
+The voice assistant's separate Usage tab shows this machine's daily USD estimates from its private fourteen-day
+call journal. Calls belong to their UTC start date, including calls across midnight.
+Only the newest cumulative snapshot of each call counts, so reordering and duplicate
+snapshots do not inflate totals. Missing historical usage stays unknown; incomplete
+finalization and unreadable records remain visible. The breakdown separates Live
+connection time, ordinary/cached inputs, cache writes, outputs, Realtime modalities,
+and independently billed Session matching, summary and question analysis requests.
+No conversation text or keys appear in the history response. This is an estimate,
+not a provider invoice or an organization-wide total. It excludes other machines,
+voice previews, caption transcription, and assistant subscription usage.
+
+Live bills silence and backend waits as active connection time. WebRTC initialization
+bills fifteen seconds credited against the running duration, not an extra fifteen
+seconds on every completed call. A successful creation records that initial estimate
+on the machine when the client supplies a call identity; older clients remain
+compatible. Backend completions are counted once by response ID; cache writes and
+the long-context price tier are included at standard GPT-6 Luna rates.
+
+On hangup microphone capture and playback stop immediately. The old connection's
+receiver stays attached until `session.closed` supplies final usage, or the registered
+five-second close deadline expires. Its final receipt belongs only to the old call,
+including if a new call starts meanwhile. A lost connection or deadline marks the
+estimate incomplete. No automatic provider request or reconnect is made to repair
+missing usage. The official billing and lifecycle references are
+[voice costs](https://developers.openai.com/api/docs/guides/voice-latency-cost),
+[Live closure](https://developers.openai.com/api/docs/guides/live-conversations), and
+[prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).

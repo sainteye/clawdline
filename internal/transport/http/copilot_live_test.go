@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/config"
 )
@@ -110,5 +111,23 @@ func TestARejectedGPTLiveStartSaysOpenAIsReason(t *testing.T) {
 	rec := liveCall(t, s, `{"sdp":"v=0"}`)
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "copilot_live_failed") || !strings.Contains(rec.Body.String(), "does not have access") {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestALiveCreationKeepsItsInitializationEstimateEvenWithoutAConnectedPhone(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	copilotCall(t, s, s.copilotSettingsRoute, http.MethodPost, "/v1/settings/copilot", `{"openai_key":"`+testCopilotKey+`"}`)
+	fakeLiveOpenAI(t, http.StatusCreated, `{"session":{"id":"sess_1"},"transport":{"type":"webrtc","sdp":"v=0 answer"}}`)
+	rec := liveCall(t, s, `{"sdp":"v=0 offer","call":"call-init-only"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	history := s.copilotUsageHistory(time.Now())
+	if len(history.Days) != 1 {
+		t.Fatalf("%+v", history)
+	}
+	day := history.Days[0]
+	if day.Calls != 1 || day.Partial != 1 || day.Seconds != 15 || day.USD != 0.0125 {
+		t.Fatalf("%+v", day)
 	}
 }

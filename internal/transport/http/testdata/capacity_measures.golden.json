@@ -1812,6 +1812,11 @@
     "Note": true
   },
   {
+    "Name": "console.copilot_live_close_wait_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.copilot_live_note_characters",
     "Known": true,
     "Note": true
