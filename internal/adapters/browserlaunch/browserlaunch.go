@@ -375,7 +375,7 @@ func Launch(o Options) (Started, error) {
 		return Started{}, fmt.Errorf("the native messaging host could not be registered: %w", err)
 	}
 	args := []string{"--user-data-dir=" + profile, "--load-extension=" + real, "--disable-extensions-except=" + real,
-		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--window-size=1280,860"}
+		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--disable-features=OmniboxEverywhere", "--window-size=1280,860"}
 	args = append(args, keepRendering...)
 	cmd := exec.Command(o.Browser, append(args, "about:blank")...)
 	detach(cmd)
