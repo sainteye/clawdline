@@ -11,12 +11,20 @@ import { LoadingSkeleton } from "../LoadingSkeleton"
 import { useShowAfter } from "./PaLoading"
 import type { SourceClient } from "./client"
 import { Groups } from "./Groups"
+import { getRosterState } from "./roster-state"
 export function BotRoster({items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,retrying={},onRetry,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],groupsItems}: {
   items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   retrying?:Readonly<Record<string,boolean>>;onRetry?:(id:string)=>void;errors:readonly [string,string,boolean][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
-  const shown=items.filter(i=>!machine||i.bot.key.machine_id===machine)
+  const rosterState = getRosterState()
+  const sortedItems = [...items].sort((a, b) => {
+    const aPinned = rosterState.pinnedBotKeys.includes(botIdentity(a.bot.key))
+    const bPinned = rosterState.pinnedBotKeys.includes(botIdentity(b.bot.key))
+    if (aPinned !== bPinned) return aPinned ? -1 : 1
+    return 0
+  })
+  const shown = sortedItems.filter(i => !machine || i.bot.key.machine_id === machine)
   // One machine needs no machine filter and no machine name on every row.
   const several=machines.length>1,named=(id:string)=>machineNames?.get(id)||w.thisMachine
   // The first read draws placeholder rows after 150ms; once Bots are listed, a later read only says so.
@@ -34,8 +42,8 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
       <details><summary>{w.sourceDetails}</summary><code>{code}</code></details>
     </section>)}{loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
       <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected}/>
-      {groupByProject(shown).map(group=><section className="pa-project-group" key={group.key} aria-label={projectNames.get(group.key)||w.unnamedProject}>
-        <h2 className="pa-project-heading"><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{projectNames.get(group.key)||w.unnamedProject}</span>{several&&<small>{named(group.machineID)}</small>}</h2>
+      {groupByProject(shown, rosterState.pinnedBotKeys).map(group=><section className="pa-project-group" key={group.key} aria-label={projectNames.get(group.key)||w.unnamedProject}>
+        <h2 className="pa-project-heading">{group.key === "pinned" ? w.pinned : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{projectNames.get(group.key)||w.unnamedProject}</span></>}{several&&<small>{named(group.machineID)}</small>}</h2>
         {group.items.map(item=><BotRow key={botIdentity(item.bot.key)} item={item} grouped selected={selected===botIdentity(item.bot.key)} onSelect={()=>onSelect(item)} w={w} language={language} projectName={projectNames.get(group.key)} machineName={several?named(item.bot.key.machine_id):undefined}/>)}
       </section>)}
       {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
