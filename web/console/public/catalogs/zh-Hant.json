@@ -13214,5 +13214,6 @@
   "projectAssistants.rosterSort": "調整對話順序",
   "projectAssistants.rosterSortDone": "完成",
   "capacityRow.bots.group_preview_avatars.what": "群組對話在清單預覽中顯示的成員頭像數。",
-  "capacityRow.bots.group_preview_avatars.full": "其餘成員以人數顯示，開啟房間即可查看所有成員。"
+  "capacityRow.bots.group_preview_avatars.full": "其餘成員以人數顯示，開啟房間即可查看所有成員。",
+  "projectAssistants.backToGroup": "返回群組"
 }

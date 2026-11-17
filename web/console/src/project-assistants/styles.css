@@ -52,6 +52,7 @@
 .project-assistants .pa-chat-header h2 { font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-chat-header small { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-chat-back { display:none; }
+.project-assistants .pa-chat-back[data-show-back] { display:grid; }
 .project-assistants .pa-chat-scroll { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px 24px 30px; }
 .project-assistants .pa-chat-content { max-width:800px;margin:auto; }
 .project-assistants .pa-separator { text-align:center;font-size:11px;color:var(--pa-dim);margin:15px 0 26px; }

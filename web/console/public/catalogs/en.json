@@ -13214,5 +13214,6 @@
   "projectAssistants.rosterSort": "Reorder conversations",
   "projectAssistants.rosterSortDone": "Done",
   "capacityRow.bots.group_preview_avatars.what": "Member avatars shown in a group conversation’s list preview.",
-  "capacityRow.bots.group_preview_avatars.full": "Additional members appear as a count. Open the room to see every member."
+  "capacityRow.bots.group_preview_avatars.full": "Additional members appear as a count. Open the room to see every member.",
+  "projectAssistants.backToGroup": "Back to group"
 }
