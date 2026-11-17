@@ -145,7 +145,7 @@ test("type never discloses field text across focus boundaries", { skip: !browser
   })
   server.listen(0, "127.0.0.1"); await once(server, "listening")
   chromeProcess = spawn(browser, ["--headless=new", "--no-first-run", "--no-default-browser-check",
-    "--use-mock-keychain", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+    "--use-mock-keychain", "--disable-features=OmniboxEverywhere", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
     `--user-data-dir=${join(dir, "profile")}`, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
   const endpoint = await new Promise((resolve, reject) => {
     let stderr = ""
@@ -375,7 +375,7 @@ test("the hello names the folder Chrome loaded", { skip: !browser, timeout: 6000
         ${workerSource}
         globalThis.ready = true;`)
       chromeProcess = spawn(browser, ["--headless=new", "--no-first-run", "--no-default-browser-check",
-        "--use-mock-keychain", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+        "--use-mock-keychain", "--disable-features=OmniboxEverywhere", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
         `--user-data-dir=${join(dir, "profile")}`, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] })
       const endpoint = await new Promise((resolve, reject) => {
         let stderr = ""

@@ -134,7 +134,7 @@ func testBrowserBridgeEndToEnd(t *testing.T, mode string) {
 		t.Fatalf("an explicit browser request bypassed missing setup: %d %s", code, errOut)
 	}
 	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+ext, "--disable-extensions-except="+ext,
-		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--window-size=1280,860", "about:blank")
+		"--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--disable-features=OmniboxEverywhere", "--window-size=1280,860", "about:blank")
 	// TestMain gives this package an empty HOME; --use-mock-keychain keeps
 	// Chromium from stalling on the macOS keychain there. The launcher pins
 	// the daemon itself, so the host needs nothing else from this environment.
@@ -452,7 +452,7 @@ func testConcurrentNativeProfiles(t *testing.T, s *Server, bin, chromium, extens
 	if _, err := browserlaunch.InstallHostForMode(s.cfg.Dir, s.cfg.Port, bin, id, profile, "user_chrome"); err != nil {
 		t.Fatal(err)
 	}
-	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+extension, "--disable-extensions-except="+extension, "--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "about:blank")
+	chrome := exec.Command(chromium, "--user-data-dir="+profile, "--load-extension="+extension, "--disable-extensions-except="+extension, "--no-first-run", "--no-default-browser-check", "--use-mock-keychain", "--disable-features=OmniboxEverywhere", "about:blank")
 	if err := chrome.Start(); err != nil {
 		t.Fatal(err)
 	}
