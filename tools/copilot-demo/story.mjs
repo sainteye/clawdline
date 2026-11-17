@@ -108,6 +108,7 @@ const WORDS = {
       pT: ['cedar', 'Anything need me right now?'],
       pC: ['cedar', 'How long have we been on, and what has it cost so far?'],
       pE: ['cedar', "That's it for today. You can hang up."],
+      pI: ['cedar', "Got it. I'll open the others myself."],
       c6: ['marin', 'Sounds good. Talk soon!'],
     },
     // How much faster than spoken each voice is played (voices.mjs applies it).
@@ -193,6 +194,7 @@ const WORDS = {
       pT: ['ash', '現在有什麼要我處理的嗎？'],
       pC: ['ash', '我們講多久了？目前花了多少錢？'],
       pE: ['ash', '我們這一次的對話已經結束了，可以關閉。'],
+      pI: ['ash', '好，其他的我自己點進去看。'],
       c6: ['marin', '好，有事再找我！'],
     },
     // Spoken Chinese came out about 4.1 characters a second, slower than talk;
@@ -235,8 +237,14 @@ export const LIVE_SCRIPTS = {
   // stopped for a decision (Release 2.4). A single Session that wanted a
   // decision showed none of that.
   tour: [
-    { call: true, report: true }, { minimize: true },
-    { open: 'search', read: true }, { open: 'sync' }, { open: 'release' },
+    // The call's report goes on batch after batch; the person opens a Session
+    // right after the first, which stops it, so each is told once (a take on
+    // 2026-11-17 let it report all six, and every opened Session was told again;
+    // saying "I'll open the others myself" came too late, the next batch had begun).
+    // Opening a Session supersedes the report, so the finger stops it.
+    // The sheet shrinks to its bubble while the first batch is told, so the list is free to tap.
+    { call: true, noWait: true }, { minimize: true }, { firstBatch: true }, { open: 'search', read: true, quick: true },
+    { open: 'sync' }, { open: 'release' },
     { say: 'p3o' }, { sayUnsent: 'p4' }, { say: 'pC' }, { say: 'pE', byVoice: true },
   ],
   // A call from the list reports the Sessions by
@@ -275,7 +283,8 @@ export function story(lang, { live = false } = {}) {
   const delivered = (title, secondsAgo) => ({ disposition: { evidence: 'authenticated_session_delivery', receiptAt: now - secondsAgo, scope: 'session', title } })
   const codex = { assistant: 'codex', isClaude: false }
   // A GPT-Live take's list carries each Session's kept recap, written 20 minutes ago.
-  const kept = (key) => live && w.recaps?.[key] ? { recap: { text: w.recaps[key].kept, at: now - 1200, current: false } } : {}
+  const written = {} // the latest recaps written during the call, which the list then shows
+  const kept = (key) => !live || !w.recaps?.[key] ? {} : written[key] ? { recap: written[key] } : { recap: { text: w.recaps[key].kept, at: now - 1200, current: false } }
   const latest = (key) => {
     const r = w.recaps?.[key]
     if (!r) return ''
@@ -285,7 +294,9 @@ export function story(lang, { live = false } = {}) {
     latest(id) {
       const key = Object.keys(IDS).find((k) => IDS[k] === id)
       if (key === 'release') state.releaseFailed = true
-      return key ? latest(key) : ''
+      const text = key ? latest(key) : ''
+      if (key && text) written[key] = { text, at: Math.floor(Date.now() / 1000), current: true }
+      return text
     },
     lang, words: w, state, places: PLACES, lines: w.lines, briefing: live ? w.liveBriefing : w.briefing, send: w.send,
     sessions: () => [
