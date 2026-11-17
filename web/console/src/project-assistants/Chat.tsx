@@ -152,6 +152,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const page=await read(request(mode,cursor),control.signal)
       if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||!headRef.current||!sameFence(before.current_fence,headRef.current.current_fence)||recovery.current)return
       if(!sameFence(page.head.current_fence,before.current_fence)){lock();throw failure("pa_stale_generation")}
+      if(!cursor)collectionCursors.current[mode]=new Set()
       const cursors=collectionCursors.current[mode]
       if(page.has_more&&cursors.has(page.next_cursor))throw failure("pa_invalid")
       if(cursor)cursors.add(cursor)
@@ -163,7 +164,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         const added=page.items.map(row=>row.trace_summary!)
         const base=cursor?traceRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];traceRows.current=rows;setTraceSummaries(rows);setTraceMore(page.next_cursor)
       }
-    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
+    }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock();throw e}}
     finally{reads.current.delete(control);if(collectionBusy.current.get(mode)===control)collectionBusy.current.delete(mode)}
   },[read,request,valid,adoptHead,lock,fail])
   const refresh=useCallback(async(manual=false)=>{
@@ -201,7 +202,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)
     }catch(e){if(!control.signal.aborted&&valid()){
       lock()
-      if(errorCode(e)==="pa_cursor_expired"&&!rebuilding){try{await recoverSnapshot(control.signal);if(valid()&&!control.signal.aborted){await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source))timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}}catch(snapshotError){fail(snapshotError)}}else fail(e)
+      if((errorCode(e)==="pa_cursor_expired"||errorCode(e)==="pa_stale_generation"||errorCode(e)==="pa_invalid")&&!rebuilding){try{await recoverSnapshot(control.signal);if(valid()&&!control.signal.aborted){await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source))timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}}catch(snapshotError){fail(snapshotError)}}else fail(e)
     }}finally{refreshBusy.current=false}
   },[valid,read,request,recoverSnapshot,collection,adoptHead,lock,fail])
   useEffect(()=>{
@@ -481,7 +482,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!valid()||control.signal.aborted||recovery.current||capturedEpoch!==epoch.current||!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
       if(!sameFence(page.head.current_fence,captured.current_fence)){if(!quiet)lock();throw failure("pa_stale_generation")}
       const row=page.items[0]
-      if(row.kind!==kind||kind==="permission"&&row.permission?.id!==id||kind==="trace"&&!traceSummaries.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category))throw failure("pa_invalid")
+      if(row.kind!==kind||kind==="permission"&&row.permission?.id!==id||kind==="trace"&&!traceRows.current.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category))throw failure("pa_invalid")
       adoptHead(page);const next={...detailRows.current,[id]:row.permission??row.trace!};detailRows.current=next;setDetails(next)
       if(row.trace){requestedTraceReferences.current.set(id,reference);if(browserToolTrace(row.trace)){const trace=row.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}}
     }catch(e){if(!quiet&&!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
@@ -628,8 +629,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content"><TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
       {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={botBrowserSupported(source)?()=>setBrowser(true):undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
-      <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore)} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
-      {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore)}>{w.more}</button>}</section>}
+      <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore).catch(()=>{})} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
+      {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)).map(t=><p className="pa-turn" key={t.id}>{w[t.state]}{t.failure_code&&` (${t.failure_code})`}</p>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={activeTurn} activity={activeTurn?activity[activeTurn.id]??"":""} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}/>
