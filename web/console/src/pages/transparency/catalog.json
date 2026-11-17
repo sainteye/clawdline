@@ -4454,7 +4454,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "9f17b2894e51a258caf4534cf5b5770ca3f8b69853c1373ddfd030521383b520",
+    "web/console/src/next-strings.ts": "32bcd00a8c163d879d27d53ea3cf0107e7a15572c59042ace3294a3ad5b0edf9",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "b69ca676b64595930452486840d602b2b04b1549e91562468bb502abd26ccbf3",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",

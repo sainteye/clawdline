@@ -191,3 +191,22 @@ test("automatic completion requires both observations for the exact offer and ta
   assert.deepEqual(readPairAgentEvent({ task_id: TASK, state: "done", comparison }, TASK)?.comparison, comparison)
   assert.equal(readPairAgentEvent({ task_id: "old-task", state: "done", comparison }, TASK), null)
 })
+
+
+test("local completion evidence belongs to the requested handover and a completed native reply", async () => {
+  const good = { ok: true, machine_id: INPUT.machineID, pairing: {
+    phase: "paired", viewer_fingerprint: "ABCD-EFGH-IJKL-MNOP", machine_fingerprint: "QRST-UVWX-YZ23-4567",
+  } }
+  const reply = (value: unknown) => ({ webkit: { messageHandlers: { clawdlinePairLocal: { postMessage: async () => value } } } })
+  assert.deepEqual((await localPairing(INPUT, reply(good))).comparison, {
+    machineID: INPUT.machineID, viewerFingerprint: good.pairing.viewer_fingerprint, machineFingerprint: good.pairing.machine_fingerprint,
+  })
+  for (const value of [
+    { ...good, ok: false }, { ...good, machine_id: "mac_other" },
+    { ...good, pairing: { ...good.pairing, phase: "waiting" } },
+    { ...good, pairing: { ...good.pairing, viewer_fingerprint: "" } },
+    { ...good, pairing: { ...good.pairing, machine_fingerprint: 1 } },
+  ]) assert.equal((await localPairing(INPUT, reply(value))).comparison, undefined)
+  assert.equal((await localPairing({ machineID: INPUT.machineID }, reply(good))).comparison, undefined,
+    "reading status cannot become evidence of a new handover")
+})

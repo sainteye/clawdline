@@ -3,7 +3,7 @@ import { supportWord } from "../support/words.js"
 import { ProjectAssistantRegistry, capturedAssistantRelayFetch, cloudAssistantGrants, type AssistantWorkIntent } from "./project-assistants.js"
 import { words as assistantWords } from "../project-assistants/words.js"
 import { errorCode as assistantErrorCode } from "../project-assistants/client.js"
-import { BrowserPairingBlock } from "../pages/settings/BrowserPairingBlock.js"
+import { nativePairingAvailable } from "./native-pairing.js"
 import { LocalMachineSetup } from "./LocalMachineSetup.js"
 import { accessProblemAfterRead, readProblemOffersPairing } from "./state.js"
 import { toast } from "../overlays/toast.js"
@@ -1104,7 +1104,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setAsking(null)
     setNaming(null)
     setPairState({ phase: "idle" })
-    setPairRequest({ mode: "offer", machine })
+    setPairRequest({ mode: "offer", machine, startLocal: nativePairingAvailable() })
   }, [])
 
   /** Answer the machine's link this page was opened with, once the person has said so. */
@@ -2682,8 +2682,8 @@ function GateCard(props: {
       case "sign_in":
         return (
           <>
-            <p className="lede">{nextWord("cloudSignInLede")}</p>
-            <p className="fine">{nextWord("cloudSignInFine")}</p>
+            <p className="lede">{nativePairingAvailable() ? catalogWord("browserPairing", "appSignInTitle") : nextWord("cloudSignInLede")}</p>
+            <p className="fine">{nativePairingAvailable() ? catalogWord("browserPairing", "appSignInHint") : nextWord("cloudSignInFine")}</p>
             <button className="go" type="button" id="cloud-sign-in" onClick={() => location.assign(screen.url)}>
               {T.webPlanSignIn}
             </button>
@@ -2701,12 +2701,13 @@ function GateCard(props: {
       case "pairing":
         return (
           <>
-            <p className="lede">{nextWord("cloudConnectLede")}</p>
-            <p className="fine">{nextWord("cloudConnectFine")}</p>
-            <LocalMachineSetup onPair={onPair}><BrowserPairingBlock shown /></LocalMachineSetup>
-            <button className="go" type="button" id="cloud-pair-start" onClick={() => onPair(null)}>
-              {nextWord("cloudPairStart")}
-            </button>
+            <p className="lede">{nativePairingAvailable() ? catalogWord("browserPairing", "appAccessTitle") : nextWord("cloudConnectLede")}</p>
+            <p className="fine">{nativePairingAvailable() ? catalogWord("browserPairing", "appSignInHint") : nextWord("cloudConnectFine")}</p>
+            <LocalMachineSetup onPair={onPair}>
+              <button className="go" type="button" id="cloud-pair-start" onClick={() => onPair(null)}>
+                {catalogWord("browserPairing", nativePairingAvailable() ? "pairApp" : "startBrowser")}
+              </button>
+            </LocalMachineSetup>
             <p className="fine cloud-account-line">{nextWord("cloudMachinesAccount", { account: screen.account })}</p>
           </>
         )
@@ -2941,11 +2942,12 @@ function GateCard(props: {
             )}
             {machineList.phase === "empty_authoritative" && (
               <>
-                <p className="fine">{nextWord("cloudConnectFine")}</p>
-            <LocalMachineSetup onPair={onPair}><BrowserPairingBlock shown /></LocalMachineSetup>
-                <button className="go" type="button" id="cloud-machines-pair" onClick={() => onPair(null)}>
-                  {nextWord("cloudPairStart")}
-                </button>
+                <p className="fine">{nativePairingAvailable() ? catalogWord("browserPairing", "appSignInHint") : nextWord("cloudConnectFine")}</p>
+                <LocalMachineSetup onPair={onPair}>
+                  <button className="go" type="button" id="cloud-machines-pair" onClick={() => onPair(null)}>
+                    {catalogWord("browserPairing", nativePairingAvailable() ? "pairApp" : "startBrowser")}
+                  </button>
+                </LocalMachineSetup>
                 <a className="cloud-install-link" href="https://clawdline.com" target="_blank" rel="noreferrer">
                   {nextWord("cloudConnectInstall")}
                 </a>

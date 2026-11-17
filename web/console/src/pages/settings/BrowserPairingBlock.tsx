@@ -54,7 +54,8 @@ export function BrowserPairingBlock({ shown, onPair }: { shown: boolean; onPair?
     <b>{word("title")}</b>
     <p className="say">{word("intro")}</p>
     {!available ? <>
-      {onPair && <button type="button" className="chip" onClick={onPair}>{word("pairBrowser")}</button>}
+      {onPair && <button type="button" className="go chip" onClick={onPair}>{word("pairBrowser")}</button>}
+      <details><summary>{word("otherWays")}</summary>
       <p className="say">{word("localOnly")}</p>
       <a className="chip" href="clawdline-next://setup">{word("openSetup")}</a>
       <p className="say">{word("terminal")}</p>
@@ -63,14 +64,16 @@ export function BrowserPairingBlock({ shown, onPair }: { shown: boolean; onPair?
         await navigator.clipboard.writeText("clawdline cloud pair")
         setSaid(word("copied"))
       })}>{word("copyCommand")}</button>
+      </details>
     </> : <>
       <p className="say">{machine?.machine_name}</p>
-      {machine?.pairing_invitation ? <button type="button" className="chip" disabled={busy} onClick={invite}>{word("qr")}</button>
+      {machine?.pairing_invitation ? <button type="button" className="go chip" disabled={busy} onClick={invite}>{word("qr")}</button>
         : machine && <p className="say">{word("update")}</p>}
       {(pairing?.machine_fingerprint || machine?.fingerprint) && <p>{word("machineFingerprint")}: <code>{pairing?.machine_fingerprint || machine?.fingerprint}</code></p>}
       {pairing?.viewer_fingerprint && <p>{word("viewerFingerprint")}: <code>{pairing.viewer_fingerprint}</code></p>}
       {pairing && <PairingQr pairing={pairing} busy={busy} onRenew={invite} automaticRenew={false} />}
       {pairing?.phase === "paired" && <p role="status">{word("paired")}</p>}
+      <details><summary>{word("useCode")}</summary>
       <label htmlFor="settings-browser-pairing-code">{word("code")}</label>
       <textarea id="settings-browser-pairing-code" rows={3} value={code} disabled={busy}
         spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={event => setCode(event.currentTarget.value)} />
@@ -81,6 +84,7 @@ export function BrowserPairingBlock({ shown, onPair }: { shown: boolean; onPair?
           setCode("")
           setSaid(word("paired"))
         })}>{word("submit")}</button>
+      </details>
     </>}
     <p className="said" role="status">{said}</p>
   </div>
