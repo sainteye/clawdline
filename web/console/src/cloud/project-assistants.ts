@@ -13,6 +13,10 @@ import { createViewState, canRead } from "../project-assistants/view-state.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { rosterMood, type BotMood } from "../project-assistants/working.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
+// @ts-expect-error -- Node executes source extensions.
+import {validRoutineTrigger, isHookTrigger} from "../project-assistants/routine-events.ts"
+// @ts-expect-error -- Node executes source extensions.
+import {validRoutineHookAnswer} from "../project-assistants/routine-hook-intent.ts"
 import type { WorkV2Item } from "../pages/work/api.js"
 
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
@@ -21,6 +25,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
+export const PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL = 75
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
 export const PROJECT_ASSISTANTS_INPUTS_API_LEVEL = 70
@@ -269,6 +274,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
       else if (body) void body.cancel().catch(() => undefined)
     }
   }
+  canRoutineEvents() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL }
   canRoutines() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINES_API_LEVEL }
   async routines(r: W.ProjectAssistantRoutineListRequest,s: AbortSignal) {
     this.key(r.key)
@@ -283,13 +289,30 @@ export class ProjectAssistantSourceClient implements SourceClient {
     answer.source={...answer.source,writable:answer.source.writable&&this.currentGrant()?.writable===true};this.access=answer.source.access;this.lastStatus=answer.source
     return answer
   }
-  private async routineWrite(path:string,r:{command:W.ProjectAssistantCommand},s:AbortSignal,method="POST") {
-    const answer=await this.request<W.ProjectAssistantReceiptResponse>(path,s,r,method,true,PROJECT_ASSISTANTS_ROUTINES_API_LEVEL)
+  private async routineWrite(path:string,r:{command:W.ProjectAssistantCommand},s:AbortSignal,method="POST",minimum=PROJECT_ASSISTANTS_ROUTINES_API_LEVEL) {
+    const answer=await this.request<W.ProjectAssistantReceiptResponse>(path,s,r,method,true,minimum)
     const receipt=answer?.receipt,c=receipt?.command,key=r.command.key
     if(answer?.contract_version!=="project-assistants.v1"||!receipt?.id||!receipt.resource_id||!c||c.key?.machine_id!==key.machine_id||c.key.bot_id!==key.bot_id||c.operation!=="edit"||c.idempotency_key!==r.command.idempotency_key||!['accepted','delivered'].includes(receipt.state))throw new AssistantTransportFailure("pa_outcome_unknown",answer)
     return answer
   }
-  saveRoutine(r:W.ProjectAssistantRoutineSaveRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines"),r,s) }
+  saveRoutine(r:W.ProjectAssistantRoutineSaveRequest,s:AbortSignal) {
+    if(!Array.isArray(r.triggers)||r.triggers.some(t=>!validRoutineTrigger(t)))throw notSent(failure("pa_invalid"))
+    if(r.triggers.some(isHookTrigger)&&!this.canRoutineEvents())throw notSent(failure("pa_unsupported"))
+    return this.routineWrite(endpoint(r.command.key,"/routines"),r,s,"POST",r.triggers.some(isHookTrigger)?PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL:PROJECT_ASSISTANTS_ROUTINES_API_LEVEL)
+  }
+  async routineHook(r:W.ProjectAssistantRoutineHookRequest,s:AbortSignal) {
+    try {
+      const k=r.command.key,f=r.fence
+      if(!r.id||!Number.isSafeInteger(r.expected_revision)||r.expected_revision<1||typeof r.rotate!=="boolean"||r.command.operation!=="edit"||f.key.machine_id!==k.machine_id||f.key.bot_id!==k.bot_id||f.project.machine_id!==k.machine_id||!f.project.project_id||!f.project.canonical_id||!f.conversation_id)throw notSent(failure("pa_scope_denied"))
+      const answer=await this.request<W.ProjectAssistantRoutineHookResponse>(endpoint(k,"/routines/"+encodeURIComponent(r.id)+"/hook"),s,r,"POST",true,PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL)
+      if(!validRoutineHookAnswer(answer,r.id))throw new AssistantTransportFailure("pa_outcome_unknown",null)
+      return answer
+    } catch(error) {
+      // A hook response may contain a key. Never retain it in diagnostic evidence.
+      if(error instanceof AssistantTransportFailure)throw new AssistantTransportFailure(error.error.code,null)
+      throw error
+    }
+  }
   enableRoutine(r:W.ProjectAssistantRoutineEnabledRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/enabled"),r,s) }
   deleteRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)),r,s,"DELETE") }
   testRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/runs"),r,s) }

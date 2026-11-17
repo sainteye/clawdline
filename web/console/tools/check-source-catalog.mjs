@@ -63,6 +63,7 @@ const dispatchPolicy = table("src/pages/settings/window/DispatchPolicyPane.tsx",
 const promo = table("src/pages/plan/promo.ts", "export { promoSourceWords as sourceWords }", "en", ["promoEn", "promoZh", "promoSourceWords"]).sourceWords
 const planSimulation = table("src/legacy/js/net/billing.js", "export { planSimulationSourceWords as sourceWords }", "en", ["simulationEn", "simulationZh", "planSimulationSourceWords"]).sourceWords
 const transcript = table("src/session/Transcript.tsx", "export { planWords as sourceWords }", "en", ["planWords"]).sourceWords
+const botRoutineControls = table("src/project-assistants/routine-words.ts", "export { en as sourceEn, zhHant as sourceZh }", "en", ["en", "zhHant"])
 const projectAssistants = table("src/project-assistants/words.ts", "export { en as sourceEn, zhHant as sourceZh }", "en", ["en", "zhHant"])
 
 // `english: false` where the table's "English" column is already translated
@@ -72,6 +73,7 @@ const survey = table("src/onboarding/words.ts", "export { surveyEn as en, survey
 const viewPlugins = table("src/view-plugins/words.ts", "export { en as sourceEn, zh as sourceZh }", "en", ["en", "zh"])
 const pluginTable = words => Object.fromEntries(Object.entries(words).flatMap(([key,value]) => typeof value === "string" ? [[key,value]] : Object.entries(value).map(([code,text]) => [`error_${code}`,text])))
 const domains = [
+  { name: "botRoutineControls", en: botRoutineControls.sourceEn, zh: botRoutineControls.sourceZh, english: true },
   { name: "viewPlugins", en: pluginTable(viewPlugins.sourceEn), zh: pluginTable(viewPlugins.sourceZh), english: true },
   { name: "projectAssistants", en: projectAssistants.sourceEn, zh: projectAssistants.sourceZh, english: true },
   { name: "survey", en: survey.en, zh: survey.zh, english: true },

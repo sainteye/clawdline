@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12773,
-  "riskKeys": 5517,
-  "nonRiskCount": 7256,
+  "englishContentKeys": 12810,
+  "riskKeys": 5529,
+  "nonRiskCount": 7281,
   "groups": [
     {
       "name": "acp / other",
@@ -374,6 +374,40 @@
         "botBrowser.disconnected",
         "botBrowser.open",
         "botBrowser.unsupported"
+      ]
+    },
+    {
+      "name": "botRoutineControls / other",
+      "count": 25,
+      "sources": [
+        "src/project-assistants/routine-words.ts"
+      ],
+      "keys": [
+        "botRoutineControls.addFilter",
+        "botRoutineControls.confirmRotate",
+        "botRoutineControls.delivery",
+        "botRoutineControls.event",
+        "botRoutineControls.eventName",
+        "botRoutineControls.eventRun",
+        "botRoutineControls.eventUnsupported",
+        "botRoutineControls.filterKey",
+        "botRoutineControls.filterValue",
+        "botRoutineControls.filters",
+        "botRoutineControls.followUp",
+        "botRoutineControls.followUpChain",
+        "botRoutineControls.hideKey",
+        "botRoutineControls.key",
+        "botRoutineControls.localURL",
+        "botRoutineControls.manageHook",
+        "botRoutineControls.otherRun",
+        "botRoutineControls.retryCount",
+        "botRoutineControls.rotateKey",
+        "botRoutineControls.rotateWarning",
+        "botRoutineControls.scheduledRun",
+        "botRoutineControls.source",
+        "botRoutineControls.testRun",
+        "botRoutineControls.viewKey",
+        "botRoutineControls.webhook"
       ]
     },
     {

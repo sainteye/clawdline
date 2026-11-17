@@ -3826,6 +3826,22 @@
         {
           "path": "internal/adapters/projectassistantwebhook/input.go",
           "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/routine-events.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/routine-hook-intent.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/RoutineHook.tsx",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/cloud/project-assistants.ts",
+          "line": 1
         }
       ],
       "original": [
@@ -3842,7 +3858,8 @@
       "locations": [
         "Execution-bound native MCP routine management tools",
         "Enabled source Host timer and persistent Bot actor",
-        "Isolated routine session slot and existing Bot conversation"
+        "Isolated routine session slot and existing Bot conversation",
+        "Human routine event/key controls and delivery/retry history"
       ]
     },
     {
@@ -4452,6 +4469,7 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
+    "web/console/src/cloud/project-assistants.ts": "fc2492691181eeb09b29ff5fc8b3ee1253f9974add4a45c673f0b496ea9e0f82",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "9f17b2894e51a258caf4534cf5b5770ca3f8b69853c1373ddfd030521383b520",
@@ -4460,10 +4478,13 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
     "web/console/src/project-assistants/OutputCard.tsx": "042da49f7fc9b35758ff541dc45b4e427e9f76732390a7f6a4f12102deb52670",
     "web/console/src/project-assistants/OutputViewer.tsx": "9574aef07b7df14997ed92457397b22a64db2ec87c8c2d74af9ac57c4ad2fcc6",
-    "web/console/src/project-assistants/Routines.tsx": "b4b06b9d501d12b7721d981b5f11e8e1e47c150cbf555a5bcd2d415fe93bb252",
+    "web/console/src/project-assistants/RoutineHook.tsx": "e20ee183f784c1bdc7c253cdb531958322869ea8a9bd9649521db18efac3b468",
+    "web/console/src/project-assistants/Routines.tsx": "9b53d124cfe98d1dcc8c88efa17e863a7ff562fdb0551c6f44b4e5d66352f4a7",
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
     "web/console/src/project-assistants/outputs.ts": "52cab6393ead99002f32d29b6df1e0fc43f61eac1c18dc5e8cf05732c2be664f",
-    "web/console/src/project-assistants/routine-intent.ts": "3fe5a42378fd7adfc75895ff458e52693b18f90f9c27a1f849cb9b4f8dadf4fa",
+    "web/console/src/project-assistants/routine-events.ts": "a85129e50ef6cf234e41ec9d283c5b497c25ede4b8d7c59f3fb70c2dff86b3aa",
+    "web/console/src/project-assistants/routine-hook-intent.ts": "b78d3b12d992c627d89e7942fa1857773459ccb7eaedb32d0259ffd4a7735f43",
+    "web/console/src/project-assistants/routine-intent.ts": "3d912787d9a1cb7a9e989c9c7e69af298eed5a5d08d95dab854a3f760a1ddd85",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
@@ -4488,7 +4509,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "7d3ff8e73e14a997637fe826afc418fc3274671cf95cd69f823007aa86f6aab4",
-    "zh-Hant": "645ed2086cc86cc40bdeadb4d6e8b41e84eb764c278646cee5494e1bd873e4f4"
+    "en": "a7b1bf839e34fdd8582464a08a5c456d95df18bbc68dd491e8ff23dc51459ea3",
+    "zh-Hant": "e372b4017bc98604621219f9e86b6ec7b0cadfee81396608e66a0f2d837c6988"
   }
 }
