@@ -1,5 +1,16 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "templateCreate": "Create template",
+  "templatePrivacy": "Copy these settings as a reusable reference. Conversation identity, history, memory, login details and credentials are excluded. Configured instructions are included; review them before sharing.",
+  "templateCoverage": "Includes appearance, primary Agent, instructions, permission mode, notifications and supported model, reasoning and fast settings. Projects, tools, fallback identities and team or network grants require separate setup. This reference does not import or create a Bot.",
+  "templatePreview": "Template JSON preview",
+  "templateLoading": "Reading current Bot settings…",
+  "templateCopy": "Copy template",
+  "templateCopying": "Checking settings before copying…",
+  "templateCopied": "Template copied",
+  "templateUnavailable": "Current settings cannot be verified, or have changed. Close this preview and open it again from the current Bot. Nothing was copied.",
+  "templateClipboardError": "Clipboard access failed or is unsupported. Select the preview text and copy it manually.",
+
   "networkTitle": "Bot reachability",
   "networkHint": "Choose who can discover and message this Bot. Account authorization and source setup are managed separately.",
   "networkPeer": "Offered to other computers",
@@ -444,6 +455,17 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "templateCreate": "建立範本",
+  "templatePrivacy": "將這些設定複製為可重用的參考。範本不含對話識別資料、歷史、記憶、登入資料與憑證。已設定的指示會包含在內，分享前請先檢查。",
+  "templateCoverage": "包含外觀、主要 Agent、指示、權限模式、通知，以及支援的模型、推理與快速模式設定。專案、工具、備援身分及團隊或網路授權須另行設定。此參考範本不會匯入或建立 Bot。",
+  "templatePreview": "範本 JSON 預覽",
+  "templateLoading": "正在讀取 Bot 目前的設定…",
+  "templateCopy": "複製範本",
+  "templateCopying": "正在核對設定並準備複製…",
+  "templateCopied": "已複製範本",
+  "templateUnavailable": "無法核對目前設定，或設定已變更。請關閉預覽，再從目前的 Bot 重新開啟。本次未複製範本。",
+  "templateClipboardError": "無法存取剪貼簿，或瀏覽器不支援。請選取預覽文字並手動複製。",
+
   "networkTitle": "Bot 連線對象",
   "networkHint": "選擇誰能找到這個 Bot 並傳訊。帳號授權與來源設定須另外管理。",
   "networkPeer": "開放給其他電腦",

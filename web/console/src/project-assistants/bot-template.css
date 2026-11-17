@@ -1,0 +1,10 @@
+.pa-bot-template{color:inherit;background:var(--bg,#181818);border:1px solid var(--border,#555);border-radius:12px;padding:20px;width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);box-sizing:border-box;overflow:auto}
+.pa-bot-template::backdrop{background:rgb(0 0 0 / 55%)}
+.pa-bot-template header,.pa-bot-template footer{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.pa-bot-template h2{font-size:18px;margin:0}
+.pa-bot-template p{font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.pa-bot-template textarea{box-sizing:border-box;width:100%;height:min(45dvh,420px);padding:12px;resize:vertical;white-space:pre;font:12px/1.6 ui-monospace,monospace;color:inherit;background:transparent;border:1px solid var(--border,#555);border-radius:6px;user-select:text}
+.pa-bot-template footer{justify-content:flex-end;margin-top:12px}
+.pa-bot-template button{font:inherit;color:inherit;background:transparent;border:1px solid var(--border,#555);border-radius:6px;padding:8px 12px;cursor:pointer}
+.pa-bot-template button:disabled{opacity:.5;cursor:default}
+.pa-bot-template :focus-visible{outline:2px solid currentColor;outline-offset:2px}

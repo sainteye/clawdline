@@ -13085,5 +13085,15 @@
   "transparency.card.persistent-bot-network.condition": "開發版 Bots 必須具備已設定且通過驗證的連線設施。Bot 偏好本身不授予帳號、機器、Project 或助理存取權；尚未設定的來源顯示無法使用。",
   "transparency.card.persistent-bot-network.summary": "來源自有的 Bot 身分使用獨立簽章與加密協定，保存請求關聯，並提供獨立的助理主體驗證邊界。",
   "transparency.card.persistent-bot-network.how": "Host 擷取真正的 Bot、Project、對話與執行授權。來源接收、原生效果與回覆發布時，重新檢查目前授權及接收者偏好。接收者收到不受信任工作通知，沿用自己的原生權限。助理專用金鑰、帳號同意及有限 Bot 範圍，與人類網頁登入分開管理。",
-  "transparency.card.persistent-bot-network.effect": "只有取得執行授權的請求，才可能消耗接收者的原生帳號額度。同儕工作不能聯絡其他 Bot、發布檔案、設定排程或寫入持久記憶。已接受請求保留持久身分；結果未知的效果不自動重播。讀取保存的回覆不代表 Agent 已觀測。合成本機來源證據不代表正式 Cloud 已接通；私有 API、Relay 與助理 gateway 仍須另外整合。"
+  "transparency.card.persistent-bot-network.effect": "只有取得執行授權的請求，才可能消耗接收者的原生帳號額度。同儕工作不能聯絡其他 Bot、發布檔案、設定排程或寫入持久記憶。已接受請求保留持久身分；結果未知的效果不自動重播。讀取保存的回覆不代表 Agent 已觀測。合成本機來源證據不代表正式 Cloud 已接通；私有 API、Relay 與助理 gateway 仍須另外整合。",
+  "projectAssistants.templateCreate": "建立範本",
+  "projectAssistants.templatePrivacy": "將這些設定複製為可重用的參考。範本不含對話識別資料、歷史、記憶、登入資料與憑證。已設定的指示會包含在內，分享前請先檢查。",
+  "projectAssistants.templateCoverage": "包含外觀、主要 Agent、指示、權限模式、通知，以及支援的模型、推理與快速模式設定。專案、工具、備援身分及團隊或網路授權須另行設定。此參考範本不會匯入或建立 Bot。",
+  "projectAssistants.templatePreview": "範本 JSON 預覽",
+  "projectAssistants.templateLoading": "正在讀取 Bot 目前的設定…",
+  "projectAssistants.templateCopy": "複製範本",
+  "projectAssistants.templateCopying": "正在核對設定並準備複製…",
+  "projectAssistants.templateCopied": "已複製範本",
+  "projectAssistants.templateUnavailable": "無法核對目前設定，或設定已變更。請關閉預覽，再從目前的 Bot 重新開啟。本次未複製範本。",
+  "projectAssistants.templateClipboardError": "無法存取剪貼簿，或瀏覽器不支援。請選取預覽文字並手動複製。"
 }

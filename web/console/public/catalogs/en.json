@@ -13085,5 +13085,15 @@
   "transparency.card.persistent-bot-network.condition": "Development-only Bots require configured authenticated network infrastructure. A Bot preference alone never grants account, machine, Project or assistant access. Unconfigured sources show unavailable status.",
   "transparency.card.persistent-bot-network.summary": "Source-owned Bot identities use a separate signed and encrypted protocol, with durable request correlation and a distinct assistant principal boundary.",
   "transparency.card.persistent-bot-network.how": "The Host captures the actual Bot, Project, conversation and execution fence. Source admission, native effect and reply publication recheck current authority and recipient preferences. The recipient receives an untrusted-work notice and uses its own native permissions. A dedicated assistant key, account consent and limited Bot scopes are independent of human viewer login.",
-  "transparency.card.persistent-bot-network.effect": "Requests can consume the recipient’s native account only when execution is authorized. Peer work cannot contact Bots, publish files, schedule work or write persistent memory. Exact accepted requests retain durable identities; unknown effects are not replayed. Reading a stored reply does not assert Agent observation. Local synthetic source evidence does not establish production Cloud reachability; private API, relay and assistant gateway integration remain separate."
+  "transparency.card.persistent-bot-network.effect": "Requests can consume the recipient’s native account only when execution is authorized. Peer work cannot contact Bots, publish files, schedule work or write persistent memory. Exact accepted requests retain durable identities; unknown effects are not replayed. Reading a stored reply does not assert Agent observation. Local synthetic source evidence does not establish production Cloud reachability; private API, relay and assistant gateway integration remain separate.",
+  "projectAssistants.templateCreate": "Create template",
+  "projectAssistants.templatePrivacy": "Copy these settings as a reusable reference. Conversation identity, history, memory, login details and credentials are excluded. Configured instructions are included; review them before sharing.",
+  "projectAssistants.templateCoverage": "Includes appearance, primary Agent, instructions, permission mode, notifications and supported model, reasoning and fast settings. Projects, tools, fallback identities and team or network grants require separate setup. This reference does not import or create a Bot.",
+  "projectAssistants.templatePreview": "Template JSON preview",
+  "projectAssistants.templateLoading": "Reading current Bot settings…",
+  "projectAssistants.templateCopy": "Copy template",
+  "projectAssistants.templateCopying": "Checking settings before copying…",
+  "projectAssistants.templateCopied": "Template copied",
+  "projectAssistants.templateUnavailable": "Current settings cannot be verified, or have changed. Close this preview and open it again from the current Bot. Nothing was copied.",
+  "projectAssistants.templateClipboardError": "Clipboard access failed or is unsupported. Select the preview text and copy it manually."
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13085,
-  "riskKeys": 5672,
-  "nonRiskCount": 7413,
+  "englishContentKeys": 13095,
+  "riskKeys": 5675,
+  "nonRiskCount": 7420,
   "groups": [
     {
       "name": "acp / other",
@@ -5897,7 +5897,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 298,
+      "count": 305,
       "sources": [
         null
       ],
@@ -6180,6 +6180,13 @@
         "projectAssistants.teamManage",
         "projectAssistants.teamManageHint",
         "projectAssistants.teamUnavailable",
+        "projectAssistants.templateCopied",
+        "projectAssistants.templateCopy",
+        "projectAssistants.templateCopying",
+        "projectAssistants.templateCreate",
+        "projectAssistants.templateLoading",
+        "projectAssistants.templatePreview",
+        "projectAssistants.templatePrivacy",
         "projectAssistants.thinking",
         "projectAssistants.thisMachine",
         "projectAssistants.total",

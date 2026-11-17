@@ -8,6 +8,7 @@ import { isSendingAdmitted, partitionMessages } from "./chat-items"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
 import { BotSettings } from "./BotSettings"
+import { BotTemplate } from "./BotTemplate"
 import { TeamApprovals } from "./Groups"
 import { Routines } from "./Routines"
 import { MemoryPanel } from "./MemoryPanel"
@@ -53,6 +54,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [library,setLibrary]=useState(false)
+  const [template,setTemplate]=useState(false)
   const [browser,setBrowser]=useState(false)
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
@@ -625,6 +627,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"routines",label:w.routines,onSelect:()=>setRoutines(true)},
       {id:"memory",label:w.memory,onSelect:()=>void memoryPanel.current?.open()},
       {id:"refresh",label:w.refresh,onSelect:()=>void refresh(true)},
+      {id:"template",label:w.templateCreate,disabled:!data||recoveryRequired||!canRead(data.source),onSelect:()=>setTemplate(true)},
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content"><TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
@@ -651,6 +654,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     </div>
     {browser&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowser(false)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
     {library&&<OutputLibrary source={source} bot={bot} messages={messages} w={w} onClose={()=>setLibrary(false)}/>}
+    {template&&<BotTemplate source={source} current={current} scope={scope} available={()=>valid()&&!recovery.current&&!!currentData.current&&canRead(currentData.current.source)&&sameConversation({key:currentData.current.bot.key,project:currentData.current.bot.project,conversation_id:currentData.current.conversation.id},scope)} w={w} onClose={()=>setTemplate(false)}/>}
     {settings&&<BotSettings teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>setSettings(false)} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettings(false)}}catch(e){fail(e);throw e}}}/>}
   </section>
 }
