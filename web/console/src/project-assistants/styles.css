@@ -491,6 +491,10 @@
 }
 .project-assistants .pa-trace-row {
   display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.4; color: var(--pa-dim);
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 4px; transition: background 0.2s ease;
+}
+.project-assistants .pa-trace-row:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 .project-assistants .pa-trace-line, .project-assistants .pa-trace-toggle {
   display: flex; align-items: center; gap: 7px; padding: 3px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
