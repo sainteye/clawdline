@@ -5,28 +5,24 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
     return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{summaries.map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
-      return <section key={row.id} data-trace-id={row.id} className="pa-trace-step">
-        <div className="pa-trace-head">
-          <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
-          <h4 className="pa-trace-title">{info.label}</h4>
-        </div>
-        {info.text ? <pre className="pa-trace-body">{info.text}</pre> : <button type="button" className="pa-trace-detail-btn" onClick={() => onDetail?.(row)}>{w.details}</button>}
-      </section>
+      return <div key={row.id} data-trace-id={row.id} className="pa-trace-row">
+        <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+        <span className="pa-trace-title">{info.label}</span>
+        {info.text ? <span className="pa-trace-desc">{info.text}</span> : <button type="button" className="pa-trace-detail-btn" onClick={() => onDetail?.(row)}>{w.details}</button>}
+      </div>
     })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.more}</button>}</div></details>
   }
   if (!items.length) return null
   const turns = new Map<string, ProjectAssistantTrace[]>()
   for (const item of items) turns.set(item.turn_id, [...(turns.get(item.turn_id) ?? []), item])
-  return <details className="pa-trace"><summary>{w.trace} · {items.length}</summary><div className="pa-trace-list">{[...turns].map(([id, rows]) => <section key={id} className="pa-trace-turn">{rows.map((row, i) => {
+  return <details className="pa-trace"><summary>{w.trace} · {items.length}</summary><div className="pa-trace-list">{[...turns].map(([id, rows]) => <div key={id} className="pa-trace-turn">{rows.map((row, i) => {
     const info = formatTraceItem(row.category, row.text, w)
-    return <div key={i} className="pa-trace-step">
-      <div className="pa-trace-head">
-        <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
-        <h4 className="pa-trace-title">{info.label}</h4>
-      </div>
-      <pre className="pa-trace-body">{info.text}</pre>
+    return <div key={i} className="pa-trace-row">
+      <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+      <span className="pa-trace-title">{info.label}</span>
+      {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
     </div>
-  })}</section>)}</div></details>
+  })}</div>)}</div></details>
 }
 
 /** What one trace step is, in the person's words; the provider's own category name stays out of view. */
