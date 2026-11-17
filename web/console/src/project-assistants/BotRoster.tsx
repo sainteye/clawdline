@@ -33,7 +33,7 @@ export function BotRoster({items,machines,selected,query,onQuery,machine,onMachi
       {retryable&&<p className="pa-connection-hint">{w.sourceRetryHint}</p>}
       <details><summary>{w.sourceDetails}</summary><code>{code}</code></details>
     </section>)}{loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}{!loading&&!items.length&&!errors.length&&<p className="pa-empty">{w.empty}</p>}
-      <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} query={query} machine={machine} selected={selected}/>
+      <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected}/>
       {groupByProject(shown).map(group=><section className="pa-project-group" key={group.key} aria-label={projectNames.get(group.key)||w.unnamedProject}>
         <h2 className="pa-project-heading"><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{projectNames.get(group.key)||w.unnamedProject}</span>{several&&<small>{named(group.machineID)}</small>}</h2>
         {group.items.map(item=><BotRow key={botIdentity(item.bot.key)} item={item} grouped selected={selected===botIdentity(item.bot.key)} onSelect={()=>onSelect(item)} w={w} language={language} projectName={projectNames.get(group.key)} machineName={several?named(item.bot.key.machine_id):undefined}/>)}
