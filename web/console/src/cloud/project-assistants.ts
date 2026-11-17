@@ -18,6 +18,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
@@ -323,6 +324,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
   upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
   input(r:W.ProjectAssistantInputRequest,s:AbortSignal) { this.key(r.key);const {key,...fields}=r;return this.request<W.ProjectAssistantInputResponse>(endpoint(key,"/input")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
+  get intentAccount() { return this.grant.accountKey }
+  canRenameArtifact() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_RENAME_API_LEVEL && this.currentGrant()?.writable===true }
+  renameArtifact(r:W.ProjectAssistantRenameArtifactRequest,s:AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/artifacts/"+encodeURIComponent(r.artifact_id)+"/rename"),s,r,"POST",true,PROJECT_ASSISTANTS_RENAME_API_LEVEL) }
   canOutputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_OUTPUTS_API_LEVEL }
   output(r:W.ProjectAssistantOutputRequest,s:AbortSignal):Promise<W.ProjectAssistantOutputResponse> {
     this.key(r.key)
@@ -506,6 +510,11 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   if(tail==="/team-answer"||tail==="/team-settings") {
     if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
     return {word:"project-assistants."+(tail==="/team-answer"?"team-answer":"team-settings"),kind:"action" as const,fields,id:command.idempotency_key}
+  }
+  const rename=/^\/artifacts\/([^/]+)\/rename$/.exec(tail)
+  if(rename) {
+    if(method!=="POST"||url.search||decodeURIComponent(rename[1])!==fields.artifact_id||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
+    return {word:"project-assistants.rename-artifact",kind:"action" as const,fields,id:command.idempotency_key}
   }
   const routine=/^\/routines(?:\/([^/]+)(?:\/(enabled|runs|hook))?)?$/.exec(tail)
   if(routine) {

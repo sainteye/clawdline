@@ -236,7 +236,8 @@
         "read_advanced",
         "trace_updated",
         "source_updated",
-        "feature_disabled"
+        "feature_disabled",
+        "artifact_renamed"
       ],
       "description": "Each event has exactly the corresponding typed payload. trace_updated uses Trace; event sequences never count as unread messages."
     },
@@ -1835,6 +1836,12 @@
         },
         "group_schema_version": {
           "type": "integer"
+        },
+        "artifact_titles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantArtifactTitle"
+          }
         }
       },
       "required": [
@@ -1973,7 +1980,8 @@
         "forget",
         "memory_save",
         "dispatch",
-        "upload"
+        "upload",
+        "rename-artifact"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -2693,6 +2701,10 @@
         },
         "artifact_id": {
           "type": "string"
+        },
+        "title_version": {
+          "type": "integer",
+          "description": "Display-title revision for artifacts; absent on older sources means 1."
         }
       },
       "required": [
@@ -3386,6 +3398,63 @@
       "required": [
         "group",
         "room"
+      ]
+    },
+    "ProjectAssistantRenameArtifactRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Human title metadata change, API 78. CAS checks publication ID and title revision; immutable output bytes remain unchanged.",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "expected_output_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "artifact_id",
+        "expected_output_id",
+        "title",
+        "expected_version"
+      ]
+    },
+    "ProjectAssistantArtifactTitle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "output_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "output_id",
+        "title",
+        "version"
       ]
     }
   }

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"sort"
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -551,6 +552,15 @@ func paDomainMemoryEntry(value contract.ProjectAssistantMemoryEntry) pa.MemoryEn
 
 func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 	var out contract.ProjectAssistantExport
+	ids := make([]string, 0, len(value.ArtifactTitles))
+	for id := range value.ArtifactTitles {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		t := value.ArtifactTitles[id]
+		out.ArtifactTitles = append(out.ArtifactTitles, contract.ProjectAssistantArtifactTitle{ArtifactID: t.ArtifactID, OutputID: t.OutputID, Title: t.Title, Version: t.Version})
+	}
 	out.GroupSchemaVersion = int64(value.GroupSchemaVersion)
 	for _, routine := range value.Routines {
 		converted, err := paWireExportRoutine(routine)
@@ -725,7 +735,7 @@ func paWireExchange(x pa.Exchange) contract.ProjectAssistantExchange {
 }
 
 func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {
-	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID}
+	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID, TitleVersion: o.TitleVersion}
 }
 
 func paDomainAgents(agents []contract.ProjectAssistantAgent) []pa.Agent {

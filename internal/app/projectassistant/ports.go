@@ -82,6 +82,7 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
+	ArtifactTitle     *pa.ArtifactDisplayTitle
 	AgentRest         *pa.AgentRest
 	ClearAgentRest    pa.Agent
 	Routine           *pa.Routine
@@ -170,7 +171,8 @@ type ExchangeAdmission struct {
 // Export is a versioned data transfer, not a second Markdown authority. Restore
 // is PA-03's installer/store operation and must reject a newer unknown version.
 type Export struct {
-	Exchanges []pa.Exchange `json:"Exchanges,omitempty"`
+	ArtifactTitles map[string]pa.ArtifactDisplayTitle `json:"ArtifactTitles,omitempty"`
+	Exchanges      []pa.Exchange                      `json:"Exchanges,omitempty"`
 	// Groups are the rooms this Bot belongs to, or belonged to when they
 	// were deleted (Group.Deleted marks the tombstone), with their members
 	// and room state. They are versioned by GroupSchemaVersion, separately

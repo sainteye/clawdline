@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"reflect"
 
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -42,6 +43,12 @@ func validateStoredEvent(a aggregate, e pa.Event) error {
 	case pa.MessageCreated:
 		for _, m := range a.Messages {
 			if reflect.DeepEqual(m, *e.Message) && m.Fence == f {
+				match = true
+			}
+		}
+	case pa.ArtifactRenamed:
+		for _, m := range a.Messages {
+			if m.Fence == f && reflect.DeepEqual(app.DisplayArtifactMessage(m, a.ArtifactTitles), *e.Message) {
 				match = true
 			}
 		}

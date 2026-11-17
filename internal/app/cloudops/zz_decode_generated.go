@@ -121,6 +121,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.output":          genDecodeProjectAssistantsOutput,
 	"project-assistants.projects":        genDecodeProjectAssistantsProjects,
 	"project-assistants.read":            genDecodeProjectAssistantsRead,
+	"project-assistants.rename-artifact": genDecodeProjectAssistantsRenameArtifact,
 	"project-assistants.routine-delete":  genDecodeProjectAssistantsRoutineDelete,
 	"project-assistants.routine-enabled": genDecodeProjectAssistantsRoutineEnabled,
 	"project-assistants.routine-hook":    genDecodeProjectAssistantsRoutineHook,
@@ -3129,6 +3130,45 @@ func genDecodeProjectAssistantsRead(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "cursor": genValue{from: "cursor"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsRenameArtifact is the `project-assistants.rename-artifact` row's decode.
+func genDecodeProjectAssistantsRenameArtifact(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "artifact_id", "command", "expected_output_id", "expected_version", "fence", "request", "session", "title"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("artifact_id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"rename-artifact"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_output_id", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fence", genRule{kind: "object", properties: map[string]genRule{"binding_id": genRule{kind: "string"}, "conversation_id": genRule{kind: "string"}, "generation": genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string"}, "machine_id": genRule{kind: "string"}}, required: []string{"bot_id", "machine_id"}, closed: true}, "project": genRule{kind: "object", properties: map[string]genRule{"canonical_id": genRule{kind: "string"}, "kind": genRule{kind: "string", enum: []string{"repository", "place"}}, "machine_id": genRule{kind: "string"}, "project_id": genRule{kind: "string"}}, required: []string{"canonical_id", "kind", "machine_id", "project_id"}, closed: true}}, required: []string{"binding_id", "conversation_id", "generation", "key", "project"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("title", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("command.key.bot_id"))) + "/artifacts/" + segment(genText(b["artifact_id"])) + "/rename"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"artifact_id": genValue{from: "artifact_id"}, "command": genValue{from: "command"}, "expected_output_id": genValue{from: "expected_output_id"}, "expected_version": genValue{from: "expected_version"}, "fence": genValue{from: "fence"}, "title": genValue{from: "title"}})
 	return p, req, true
 }
 

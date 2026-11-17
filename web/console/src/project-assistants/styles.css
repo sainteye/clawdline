@@ -399,3 +399,9 @@
 @media(max-width:700px) {
   .project-assistants .pa-chat-header .browser-chip { padding:0 8px;gap:4px; }
 }
+
+.project-assistants .pa-artifact-rename { min-width:0; }
+.project-assistants .pa-artifact-rename form { display:flex;flex-wrap:wrap;align-items:end;gap:8px; }
+.project-assistants .pa-artifact-rename label { flex:1;min-width:120px; }
+.project-assistants .pa-artifact-rename input { width:100%; }
+.project-assistants .pa-output-overlay header { flex-wrap:wrap; }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -61,4 +62,32 @@ func (h *projectAssistantHTTP) readOutput(r *http.Request, route paHTTPRoute) (a
 		return nil, paHTTPFailure(pa.CapacityFull, "output_reply_bytes")
 	}
 	return paEncodedOutput{body: body, check: result.Check}, nil
+}
+
+func (h *projectAssistantHTTP) renameArtifact(w http.ResponseWriter, r *http.Request, route paHTTPRoute) (any, error) {
+	q, err := paDecodeHTTP[contract.ProjectAssistantRenameArtifactRequest](w, r)
+	if err != nil {
+		return nil, err
+	}
+	if q.ArtifactID != route.offer {
+		return nil, paHTTPFailure(pa.ScopeDenied, "artifact_id")
+	}
+	c, err := h.command(r, route, q.Command, pa.RenameArtifactOperation)
+	if err != nil {
+		return nil, err
+	}
+	fence, err := paHTTPFence(c, q.Fence)
+	if err != nil {
+		return nil, err
+	}
+	check, err := h.options.Service.HumanRoutinePublication(r.Context(), c.Key)
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := h.options.Service.RenameArtifact(r.Context(), app.RenameArtifactRequest{Command: c, Fence: fence, ArtifactID: q.ArtifactID, ExpectedOutputID: q.ExpectedOutputID, ExpectedVersion: q.ExpectedVersion, Title: q.Title})
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(contract.ProjectAssistantReceiptResponse{ContractVersion: pa.ContractVersion, Receipt: paWireReceipt(receipt)})
+	return paEncodedOutput{body: body, check: check}, err
 }

@@ -33,7 +33,8 @@ func (s *Service) Output(ctx context.Context, key pa.BotKey, conversation, messa
 	}
 	var found *pa.Message
 	for i := len(x.Messages) - 1; i >= 0; i-- {
-		m := &x.Messages[i]
+		projected := DisplayArtifactMessage(x.Messages[i], x.ArtifactTitles)
+		m := &projected
 		if m.Output == nil {
 			continue
 		}

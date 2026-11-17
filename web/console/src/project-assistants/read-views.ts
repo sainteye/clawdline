@@ -126,7 +126,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       const e=row.event
       if(!text(e.id)||!integer(e.seq,1)||e.seq<=seq||e.seq!==row.observed_event_seq||e.version!=="project-assistants.v1"||!date(e.at)||!oneOf(e.kind,ProjectAssistantEventKindValues))throw failure("pa_invalid")
       const payloads=["bot","message","work","turn","permission","trace","source","memory","read"] as const
-      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
+      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",artifact_renamed:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
       if(payloads.filter(k=>e[k]!==undefined).length!==(expected?1:0)||expected&&!(e as unknown as Record<string,unknown>)[expected])throw failure("pa_invalid")
       seq=e.seq;own(e.fence,scope)
       if(e.message)message(e.message,scope)
@@ -161,6 +161,7 @@ export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadVie
 /** Event work has no invented admission anchor: retain a source anchor when already known. */
 export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],events:readonly W.ProjectAssistantReadViewItem[]):W.ProjectAssistantReadViewItem[] {
   const added:W.ProjectAssistantReadViewItem[]=[]
+  rows=rows.map(row=>{const rename=[...events].reverse().find(e=>e.event?.kind==="artifact_renamed"&&e.event.message?.output?.artifact_id===row.message?.output?.artifact_id);if(!rename||!row.message?.output||!rename.event?.message?.output||rename.event.seq<row.observed_event_seq)return row;return {...row,observed_event_seq:rename.event.seq,message:{...row.message,output:{...row.message.output,name:rename.event.message.output.name,title_version:rename.event.message.output.title_version}}}})
   for(const row of events) {
     const e=row.event;if(!e)continue
     if(e.message)added.push({id:e.message.id,kind:"message",anchor_message_seq:e.message.seq,observed_event_seq:e.seq,message:e.message})

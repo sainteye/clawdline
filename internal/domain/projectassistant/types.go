@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 4
+	SchemaVersion       = 5
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -464,6 +464,7 @@ const (
 	BotCreated         EventKind = "bot_created"
 	BotUpdated         EventKind = "bot_updated"
 	MessageCreated     EventKind = "message_created"
+	ArtifactRenamed    EventKind = "artifact_renamed"
 	TurnUpdated        EventKind = "turn_updated"
 	PermissionOffered  EventKind = "permission_offered"
 	PermissionAnswered EventKind = "permission_answered"
@@ -527,21 +528,22 @@ const (
 type Operation string
 
 const (
-	CreateOperation     Operation = "create"
-	EditOperation       Operation = "edit"
-	UploadOperation     Operation = "upload"
-	SendOperation       Operation = "send"
-	StopOperation       Operation = "stop"
-	SendNowOperation    Operation = "send_now"
-	RuleRemoveOperation Operation = "rule_remove"
-	DeleteOperation     Operation = "delete"
-	VisibilityOperation Operation = "visibility"
-	AnswerOperation     Operation = "answer"
-	ReadOperation       Operation = "read"
-	ObserveOperation    Operation = "observe"
-	ForgetOperation     Operation = "forget"
-	MemorySaveOperation Operation = "memory_save"
-	DispatchOperation   Operation = "dispatch"
+	CreateOperation         Operation = "create"
+	EditOperation           Operation = "edit"
+	UploadOperation         Operation = "upload"
+	RenameArtifactOperation Operation = "rename-artifact"
+	SendOperation           Operation = "send"
+	StopOperation           Operation = "stop"
+	SendNowOperation        Operation = "send_now"
+	RuleRemoveOperation     Operation = "rule_remove"
+	DeleteOperation         Operation = "delete"
+	VisibilityOperation     Operation = "visibility"
+	AnswerOperation         Operation = "answer"
+	ReadOperation           Operation = "read"
+	ObserveOperation        Operation = "observe"
+	ForgetOperation         Operation = "forget"
+	MemorySaveOperation     Operation = "memory_save"
+	DispatchOperation       Operation = "dispatch"
 )
 
 type Command struct {

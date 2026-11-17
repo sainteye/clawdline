@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12742,
+  "englishKeys": 12747,
   "counts": {
     "negation": 3408,
     "state": 2149,
     "permission": 752,
     "deletion": 303,
-    "uncertainty": 496
+    "uncertainty": 498
   },
-  "unionCount": 5509,
+  "unionCount": 5510,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7074,6 +7074,7 @@
       "projectAssistants.heldEarlier",
       "projectAssistants.memory_unsafe",
       "projectAssistants.pictureUnavailable",
+      "projectAssistants.renameArtifactUnknown",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
       "projectAssistants.unverifiedExplanation",
@@ -7098,6 +7099,7 @@
       "transparency.card.machine-codegraph.summary",
       "transparency.card.persistent-bot-fallback.effect",
       "transparency.card.persistent-bot-group-rooms.effect",
+      "transparency.card.persistent-bot-outputs.how",
       "transparency.card.persistent-bot-review.effect",
       "transparency.card.persistent-bot-routine-progress.effect",
       "transparency.card.persistent-bot-routine-progress.how",
@@ -11966,6 +11968,7 @@
     "projectAssistants.removeFile",
     "projectAssistants.removePicture",
     "projectAssistants.removeQueued",
+    "projectAssistants.renameArtifactUnknown",
     "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
     "projectAssistants.routineConfirmDelete",

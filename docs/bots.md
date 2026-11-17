@@ -184,8 +184,20 @@ no public links or automatic publishing. All library transfers expose progress,
 cancel and a failure code with explicit retry. Picture reads use their existing
 single-response protocol and report completion after verification; they do not
 claim byte-by-byte streaming progress. Read-only devices can read and download.
-Artifact renaming still needs a new authenticated human mutation route; the
-library does not present a rename control until that route exists.
+On API 78 or newer, **Rename artifact** in the viewer edits the display title.
+The human command uses the captured source, full conversation fence, expected
+publication ID and title revision. Names are trimmed and use the existing
+200-byte artifact-title rule. Read-only devices have no rename control.
+A separate persisted overlay updates library rows, old chat cards, output reads
+and the native `list_artifacts` result without changing immutable messages,
+HTML snapshots, digests or snapshot IDs. Publishing a new revision clears the
+overlay; omitting its title retains the effective current title. A replay with
+the same key and canonical payload returns the original receipt; a changed
+payload conflicts. An uncertain command remains stored under its account,
+source, conversation and artifact identity. Only an explicit retry sends that
+same command; it never generates a fresh key while unresolved. The feature
+schema is 5 so older stores refuse to rewrite title metadata they cannot retain.
+Archives preserve original publications and the display overlay separately.
 
 Copying runs outside the Bot actor and SQL transactions. Current execution
 authority is checked during copying and again at publication; Stop, replaced

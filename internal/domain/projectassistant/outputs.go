@@ -16,14 +16,22 @@ const (
 
 // Output describes an explicit, immutable Bot publication, separate from input pictures.
 // ArtifactID stays stable when a whole HTML snapshot is replaced.
+type ArtifactDisplayTitle struct {
+	ArtifactID string `json:"artifact_id"`
+	OutputID   string `json:"output_id"`
+	Title      string `json:"title"`
+	Version    int64  `json:"version"`
+}
+
 type Output struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Bytes       int64  `json:"bytes"`
-	SHA256      string `json:"sha256"`
-	ArtifactID  string `json:"artifact_id"`
-	RequestHash string `json:"request_hash,omitempty"`
-	SnapshotID  string `json:"snapshot_id,omitempty"`
+	TitleVersion int64  `json:"title_version,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Bytes        int64  `json:"bytes"`
+	SHA256       string `json:"sha256"`
+	ArtifactID   string `json:"artifact_id"`
+	RequestHash  string `json:"request_hash,omitempty"`
+	SnapshotID   string `json:"snapshot_id,omitempty"`
 }
 
 func ValidateOutput(o Output) error {

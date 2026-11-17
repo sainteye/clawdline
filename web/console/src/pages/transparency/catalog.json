@@ -3680,6 +3680,18 @@
         {
           "path": "web/console/src/project-assistants/OutputViewer.tsx",
           "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/artifact_titles.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/artifact_titles.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/ArtifactRename.tsx",
+          "line": 1
         }
       ],
       "original": [
@@ -4321,7 +4333,8 @@
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
     "internal/adapters/projectassistantacp/session_configuration.go": "f5de7ac6654435e88248fee99602a496953ffef79ff723b8f58b96dcb9bbed0f",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
-    "internal/adapters/projectassistanthost/provider.go": "a9b68c5d52d2a25437fe2b340982ec018350edfdbd692ea43faa8cde6de13808",
+    "internal/adapters/projectassistanthost/provider.go": "0147d744ebee67ef7511de37ffd3aa620ba2f1b19fcf906f5e7e13f556962e09",
+    "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
     "internal/adapters/projectassistantstore/fallback.go": "7cb4b1a9dda66fe0ab284863fa4859fa4c4678826715fc5708863e42576f20b3",
     "internal/adapters/projectassistantstore/groups.go": "be40b1957a7d4886a8447c6bd6eacd528a87d17c29a02fb6055fbf0f3e9d005e",
@@ -4359,6 +4372,7 @@
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
+    "internal/app/projectassistant/artifact_titles.go": "cc4e0de5007ffd2d2a12f28e24eb0df9738c791a897cdac36f9b92a31bb50ea5",
     "internal/app/projectassistant/collaboration.go": "0604599a5ccff8f288fe6568f72c4b51e592d080b37e125558d40312e32b56ae",
     "internal/app/projectassistant/fallback.go": "3deadd680ad5ce6ca3d608a469095db06912ac6416776b662d4b68a5fc14f810",
     "internal/app/projectassistant/group_rooms.go": "bf057e5ebf4f1ae25c326c30e08d05347a6bdb7feaa8a260dd6830381487f068",
@@ -4411,7 +4425,7 @@
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "39cd9213de52243300696d2d75afaa658ea326e28a10b45b239caad3c1b9b7a4",
-    "internal/transport/http/project_assistants_artifacts.go": "b5b5720ff89d80f0ffb685edc8a35bc39844c0999e6ab69c5054e6cd95a31bd0",
+    "internal/transport/http/project_assistants_artifacts.go": "1d127583671c1b1b444d5ed2d872abe5bad92575e0795c92ca0284898bd2393d",
     "internal/transport/http/project_assistants_host.go": "8fb171f231c90ab6ef8ab95a46d9bc4ca4e0210911264d68d444107fadd832c4",
     "internal/transport/http/project_assistants_routine_hooks.go": "1efcc54ae4aac8f0bdb9453195e53ab7faf09f51936315692a427219c3d86ded",
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
@@ -4443,11 +4457,12 @@
     "web/console/src/next-strings.ts": "46a89ce37cd641230132acc57eed878dd08d68ef1b264394fcbb688746bf220b",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "b69ca676b64595930452486840d602b2b04b1549e91562468bb502abd26ccbf3",
+    "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
     "web/console/src/project-assistants/OutputCard.tsx": "042da49f7fc9b35758ff541dc45b4e427e9f76732390a7f6a4f12102deb52670",
-    "web/console/src/project-assistants/OutputViewer.tsx": "32867407250c0196a83f63ce58db12cf86c2622ed68b6bacb0577b5fd0330132",
+    "web/console/src/project-assistants/OutputViewer.tsx": "9574aef07b7df14997ed92457397b22a64db2ec87c8c2d74af9ac57c4ad2fcc6",
     "web/console/src/project-assistants/Routines.tsx": "b4b06b9d501d12b7721d981b5f11e8e1e47c150cbf555a5bcd2d415fe93bb252",
     "web/console/src/project-assistants/inputs.ts": "142db25550cc2db93a1bc3104949ed5579daf6c7492c30f5820cbb708f3a64ec",
-    "web/console/src/project-assistants/outputs.ts": "e524a558f00101342032767f0f77d21fd9dc787fb4112a4e689e0e262b3ad9a7",
+    "web/console/src/project-assistants/outputs.ts": "52cab6393ead99002f32d29b6df1e0fc43f61eac1c18dc5e8cf05732c2be664f",
     "web/console/src/project-assistants/routine-intent.ts": "3fe5a42378fd7adfc75895ff458e52693b18f90f9c27a1f849cb9b4f8dadf4fa",
     "web/console/src/realtime/copilot-cost.ts": "3b52811e9148275868fc0c44cca7ed51d8ea99a3ea8a73329748b761113c6fb5",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
@@ -4473,7 +4488,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "ab0c7892271bf256a6097336f38f47a0bd57124e8e8694451011c8d86ed2eb31",
-    "zh-Hant": "2b6d3f36c5f566ac5c8bcea44293029bfe90a5c81167c4392d7109dba4ca5718"
+    "en": "7d3ff8e73e14a997637fe826afc418fc3274671cf95cd69f823007aa86f6aab4",
+    "zh-Hant": "645ed2086cc86cc40bdeadb4d6e8b41e84eb764c278646cee5494e1bd873e4f4"
   }
 }

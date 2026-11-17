@@ -213,8 +213,11 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
 }
 
 const viewTimelineCTE = `, messages AS MATERIALIZED (
- SELECT value j,json_extract(value,'$.id') id,json_extract(value,'$.seq') anchor
- FROM a,json_each(a.j,'$.Messages') WHERE type='object'
+ SELECT CASE WHEN json_extract(m.value,'$.output.artifact_id')!='' THEN
+ json_set(m.value,'$.output.name',coalesce((SELECT json_extract(t.value,'$.title') FROM json_each(a.j,'$.ArtifactTitles') t WHERE t.key=json_extract(m.value,'$.output.artifact_id')),json_extract(m.value,'$.output.name')),
+ '$.output.title_version',coalesce((SELECT json_extract(t.value,'$.version') FROM json_each(a.j,'$.ArtifactTitles') t WHERE t.key=json_extract(m.value,'$.output.artifact_id')),1)) ELSE m.value END j,
+ json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor
+ FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object'
 ), turns AS MATERIALIZED (
  SELECT key id,value j,json_extract(value,'$.message_id') message_id FROM a,json_each(a.j,'$.Turns') WHERE type='object'
 ), timeline AS (

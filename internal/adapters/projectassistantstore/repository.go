@@ -35,17 +35,18 @@ var _ app.Memory = (*Store)(nil)
 var _ app.EventFeed = (*Store)(nil)
 
 type aggregate struct {
-	Bot          pa.Bot
-	Conversation pa.Conversation
-	Turns        map[string]pa.Turn
-	Bindings     map[string]pa.ExecutionBinding
-	Messages     []pa.Message
-	Permissions  map[string]pa.PermissionOffer
-	WorkLinks    map[string]pa.WorkLink
-	Memory       pa.MemoryRevision
-	Entries      map[string]pa.MemoryEntry
-	ReadCursors  map[string]pa.ReadCursor
-	RosterTrace  *pa.Event `json:",omitempty"`
+	ArtifactTitles map[string]pa.ArtifactDisplayTitle `json:",omitempty"`
+	Bot            pa.Bot
+	Conversation   pa.Conversation
+	Turns          map[string]pa.Turn
+	Bindings       map[string]pa.ExecutionBinding
+	Messages       []pa.Message
+	Permissions    map[string]pa.PermissionOffer
+	WorkLinks      map[string]pa.WorkLink
+	Memory         pa.MemoryRevision
+	Entries        map[string]pa.MemoryEntry
+	ReadCursors    map[string]pa.ReadCursor
+	RosterTrace    *pa.Event `json:",omitempty"`
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -161,7 +162,7 @@ func (s *Store) Messages(ctx context.Context, q app.HistoryQuery) (app.MessagePa
 	}
 	out := app.MessagePage{Items: []pa.Message{}}
 	for i := len(a.Messages) - 1; i >= 0; i-- {
-		m := a.Messages[i]
+		m := app.DisplayArtifactMessage(a.Messages[i], a.ArtifactTitles)
 		if q.BeforeSeq > 0 && m.Seq >= q.BeforeSeq {
 			continue
 		}
@@ -275,6 +276,9 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 		}
 	}
 	if err = applyMutation(&a, m); err != nil {
+		return pa.Receipt{}, err
+	}
+	if err = applyArtifactTitle(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
 	if err = applyRoutines(ctx, tx, a, m); err != nil {
@@ -409,6 +413,9 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		if msg.Seq != next {
 			return failure(pa.StaleVersion, "message_seq")
 		}
+		if msg.Output != nil && msg.Output.ArtifactID != "" {
+			delete(a.ArtifactTitles, msg.Output.ArtifactID)
+		}
 		a.Messages = append(a.Messages, msg)
 	}
 	a.Conversation.LastMessageSeq = int64(len(a.Messages))
@@ -441,6 +448,22 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	return nil
 }
 func validateAggregate(a aggregate) error {
+	for id, t := range a.ArtifactTitles {
+		if id != t.ArtifactID || !pa.ArtifactTitle(t.Title) || t.Version < 2 {
+			return failure(pa.Invalid, "artifact_title")
+		}
+		found := false
+		for i := len(a.Messages) - 1; i >= 0; i-- {
+			o := a.Messages[i].Output
+			if o != nil && o.ArtifactID == id {
+				found = o.ID == t.OutputID
+				break
+			}
+		}
+		if !found {
+			return failure(pa.ScopeDenied, "artifact_title")
+		}
+	}
 	b := a.Bot
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")

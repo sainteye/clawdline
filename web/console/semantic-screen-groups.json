@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12742,
-  "riskKeys": 5509,
-  "nonRiskCount": 7233,
+  "englishContentKeys": 12747,
+  "riskKeys": 5510,
+  "nonRiskCount": 7237,
   "groups": [
     {
       "name": "acp / other",
@@ -5778,7 +5778,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 228,
+      "count": 232,
       "sources": [
         null
       ],
@@ -5792,6 +5792,7 @@
         "projectAssistants.approvalActivity",
         "projectAssistants.approveAutomatically",
         "projectAssistants.artifact",
+        "projectAssistants.artifactTitle",
         "projectAssistants.ask",
         "projectAssistants.attachFiles",
         "projectAssistants.attachPicture",
@@ -5914,6 +5915,9 @@
         "projectAssistants.reject_once",
         "projectAssistants.reloadProjects",
         "projectAssistants.remember",
+        "projectAssistants.renameArtifact",
+        "projectAssistants.renameArtifactFailed",
+        "projectAssistants.renamingArtifact",
         "projectAssistants.retry",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",

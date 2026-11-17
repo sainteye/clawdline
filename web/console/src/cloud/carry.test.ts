@@ -400,6 +400,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     "project-assistants.input": "captured Bot source GET /v1/project-assistants/{bot_id}/input",
     "project-assistants.upload": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/upload",
     "project-assistants.send-files": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
+    "project-assistants.rename-artifact": "captured Bot source POST /v1/project-assistants/{bot_id}/artifacts/{artifact_id}/rename",
     "project-assistants.output": "captured Bot source GET /v1/project-assistants/{bot_id}/output",
     "project-assistants.list": "captured Bot source GET /v1/project-assistants",
     "project-assistants.create": "captured Bot source POST /v1/project-assistants",
@@ -427,7 +428,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     assert.ok(!(word in DEFERRED), word)
     assert.ok(!(word in NO_MACHINE_ROUTE), word)
   }
-  assert.equal(Object.keys(CARRIED).length, 286)
+  assert.equal(Object.keys(CARRIED).length, 287)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

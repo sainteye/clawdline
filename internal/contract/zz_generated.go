@@ -4421,6 +4421,13 @@ type ProjectAssistantAppearance struct {
 	Shape ProjectAssistantShape `json:"shape"`
 }
 
+type ProjectAssistantArtifactTitle struct {
+	ArtifactID string `json:"artifact_id"`
+	OutputID   string `json:"output_id"`
+	Title      string `json:"title"`
+	Version    int64  `json:"version"`
+}
+
 // A picture sent with a message, named by the SHA-256 of its stored bytes.
 type ProjectAssistantAttachment struct {
 	Bytes     int64  `json:"bytes"`
@@ -4699,10 +4706,11 @@ const (
 	ProjectAssistantEventKindTraceUpdated       ProjectAssistantEventKind = "trace_updated"
 	ProjectAssistantEventKindSourceUpdated      ProjectAssistantEventKind = "source_updated"
 	ProjectAssistantEventKindFeatureDisabled    ProjectAssistantEventKind = "feature_disabled"
+	ProjectAssistantEventKindArtifactRenamed    ProjectAssistantEventKind = "artifact_renamed"
 )
 
 // ProjectAssistantEventKindValues is every value the contract allows, in contract order.
-var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled}
+var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled, ProjectAssistantEventKindArtifactRenamed}
 
 // Durable source-local cursor, page size 1..256; expired cursor is
 // pa_cursor_expired and requires snapshot refresh.
@@ -4760,6 +4768,7 @@ type ProjectAssistantExecutionBinding struct {
 // Attachment/output file bytes and webhook secrets or proofs are never
 // included. New fields are optional for older exports.
 type ProjectAssistantExport struct {
+	ArtifactTitles     []ProjectAssistantArtifactTitle    `json:"artifact_titles,omitempty"`
 	Bindings           []ProjectAssistantExecutionBinding `json:"bindings"`
 	Bot                ProjectAssistantBot                `json:"bot"`
 	Context            ProjectAssistantContextSnapshot    `json:"context"`
@@ -5167,25 +5176,26 @@ type ProjectAssistantObserveRequest struct {
 type ProjectAssistantOperation string
 
 const (
-	ProjectAssistantOperationCreate     ProjectAssistantOperation = "create"
-	ProjectAssistantOperationEdit       ProjectAssistantOperation = "edit"
-	ProjectAssistantOperationSend       ProjectAssistantOperation = "send"
-	ProjectAssistantOperationStop       ProjectAssistantOperation = "stop"
-	ProjectAssistantOperationSendNow    ProjectAssistantOperation = "send_now"
-	ProjectAssistantOperationRuleRemove ProjectAssistantOperation = "rule_remove"
-	ProjectAssistantOperationDelete     ProjectAssistantOperation = "delete"
-	ProjectAssistantOperationVisibility ProjectAssistantOperation = "visibility"
-	ProjectAssistantOperationAnswer     ProjectAssistantOperation = "answer"
-	ProjectAssistantOperationRead       ProjectAssistantOperation = "read"
-	ProjectAssistantOperationObserve    ProjectAssistantOperation = "observe"
-	ProjectAssistantOperationForget     ProjectAssistantOperation = "forget"
-	ProjectAssistantOperationMemorySave ProjectAssistantOperation = "memory_save"
-	ProjectAssistantOperationDispatch   ProjectAssistantOperation = "dispatch"
-	ProjectAssistantOperationUpload     ProjectAssistantOperation = "upload"
+	ProjectAssistantOperationCreate         ProjectAssistantOperation = "create"
+	ProjectAssistantOperationEdit           ProjectAssistantOperation = "edit"
+	ProjectAssistantOperationSend           ProjectAssistantOperation = "send"
+	ProjectAssistantOperationStop           ProjectAssistantOperation = "stop"
+	ProjectAssistantOperationSendNow        ProjectAssistantOperation = "send_now"
+	ProjectAssistantOperationRuleRemove     ProjectAssistantOperation = "rule_remove"
+	ProjectAssistantOperationDelete         ProjectAssistantOperation = "delete"
+	ProjectAssistantOperationVisibility     ProjectAssistantOperation = "visibility"
+	ProjectAssistantOperationAnswer         ProjectAssistantOperation = "answer"
+	ProjectAssistantOperationRead           ProjectAssistantOperation = "read"
+	ProjectAssistantOperationObserve        ProjectAssistantOperation = "observe"
+	ProjectAssistantOperationForget         ProjectAssistantOperation = "forget"
+	ProjectAssistantOperationMemorySave     ProjectAssistantOperation = "memory_save"
+	ProjectAssistantOperationDispatch       ProjectAssistantOperation = "dispatch"
+	ProjectAssistantOperationUpload         ProjectAssistantOperation = "upload"
+	ProjectAssistantOperationRenameArtifact ProjectAssistantOperation = "rename-artifact"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`
@@ -5193,6 +5203,9 @@ type ProjectAssistantOutput struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Sha256     string `json:"sha256"`
+
+	// Display-title revision for artifacts; absent on older sources means 1.
+	TitleVersion int64 `json:"title_version,omitempty"`
 }
 
 type ProjectAssistantOutputRequest struct {
@@ -5577,6 +5590,17 @@ type ProjectAssistantReceipt struct {
 type ProjectAssistantReceiptResponse struct {
 	ContractVersion string                  `json:"contract_version"`
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+// Human title metadata change, API 78. CAS checks publication ID and title
+// revision; immutable output bytes remain unchanged.
+type ProjectAssistantRenameArtifactRequest struct {
+	ArtifactID       string                  `json:"artifact_id"`
+	Command          ProjectAssistantCommand `json:"command"`
+	ExpectedOutputID string                  `json:"expected_output_id"`
+	ExpectedVersion  int64                   `json:"expected_version"`
+	Fence            ProjectAssistantFence   `json:"fence"`
+	Title            string                  `json:"title"`
 }
 
 type ProjectAssistantRoomEntry struct {

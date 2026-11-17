@@ -431,7 +431,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			name = strings.TrimSpace(request.Title)
 			if artifactID != "" {
 				found := false
-				for _, o := range app.PublishedOutputs(x.Messages) {
+				for _, o := range app.PublishedOutputs(x.DisplayMessages()) {
 					if o.ArtifactID == artifactID {
 						found = true
 						if name == "" {
@@ -502,7 +502,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return nil, e
 		}
 		out := []app.ArtifactInfo{}
-		for _, o := range app.PublishedOutputs(x.Messages) {
+		for _, o := range app.PublishedOutputs(x.DisplayMessages()) {
 			if o.ArtifactID != "" {
 				path, err := h.o.Outputs.Path(q.Bot.Key, o)
 				if err != nil {

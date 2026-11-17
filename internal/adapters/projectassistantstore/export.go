@@ -57,7 +57,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // Legacy exports retain their original facts and command identities. Restore
 // validates both versions identically; the next export uses the current schema.
 func restorableSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
@@ -70,7 +70,7 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	if err != nil {
 		return app.Export{}, err
 	}
-	out := app.Export{ContractVersion: pa.ContractVersion, SchemaVersion: pa.SchemaVersion, Bot: a.Bot, Conversation: a.Conversation, Messages: a.Messages, Memory: a.Memory, Context: snapshot(a), Turns: []pa.Turn{}, Bindings: []pa.ExecutionBinding{}, Permissions: []pa.PermissionOffer{}, WorkLinks: []pa.WorkLink{}, MemoryEntries: []pa.MemoryEntry{}, ReadCursors: []pa.ReadCursor{}, Events: []pa.Event{}, Receipts: []pa.Receipt{}}
+	out := app.Export{ArtifactTitles: a.ArtifactTitles, ContractVersion: pa.ContractVersion, SchemaVersion: pa.SchemaVersion, Bot: a.Bot, Conversation: a.Conversation, Messages: a.Messages, Memory: a.Memory, Context: snapshot(a), Turns: []pa.Turn{}, Bindings: []pa.ExecutionBinding{}, Permissions: []pa.PermissionOffer{}, WorkLinks: []pa.WorkLink{}, MemoryEntries: []pa.MemoryEntry{}, ReadCursors: []pa.ReadCursor{}, Events: []pa.Event{}, Receipts: []pa.Receipt{}}
 	for _, v := range a.Turns {
 		out.Turns = append(out.Turns, v)
 	}
@@ -192,7 +192,7 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	}
 	unlock := s.lock(in.Bot.Key)
 	defer unlock()
-	a := aggregate{Bot: in.Bot, Conversation: in.Conversation, Messages: in.Messages, Memory: in.Memory, Turns: map[string]pa.Turn{}, Bindings: map[string]pa.ExecutionBinding{}, Permissions: map[string]pa.PermissionOffer{}, WorkLinks: map[string]pa.WorkLink{}, Entries: map[string]pa.MemoryEntry{}, ReadCursors: map[string]pa.ReadCursor{}}
+	a := aggregate{ArtifactTitles: in.ArtifactTitles, Bot: in.Bot, Conversation: in.Conversation, Messages: in.Messages, Memory: in.Memory, Turns: map[string]pa.Turn{}, Bindings: map[string]pa.ExecutionBinding{}, Permissions: map[string]pa.PermissionOffer{}, WorkLinks: map[string]pa.WorkLink{}, Entries: map[string]pa.MemoryEntry{}, ReadCursors: map[string]pa.ReadCursor{}}
 	for _, v := range in.Turns {
 		a.Turns[v.ID] = v
 	}

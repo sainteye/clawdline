@@ -12363,7 +12363,7 @@
   "transparency.card.persistent-bot-outputs.title": "Bot 明確分享的檔案與 HTML 文件",
   "transparency.card.persistent-bot-outputs.summary": "Bot 可明確將 Project 中的檔案或獨立 HTML 發布為持久聊天卡片，並用同一 artifact ID 更新文件。",
   "transparency.card.persistent-bot-outputs.condition": "持續助理必須已啟用，原生工具呼叫仍須屬於目前已授權的 Bot 回合。瀏覽檔案庫或開啟卡片不啟動模型。",
-  "transparency.card.persistent-bot-outputs.how": "Clawdline 在 Bot 自有 MCP 入口提供 send_file、publish_artifact、list_artifacts。發布時，將 Project 內的一般檔案複製到各 Bot 的私有儲存，驗證大小與 SHA-256，持久保存卡片後才回覆成功。檔案上限為 100 MiB，HTML artifact 為 5 MiB；每次讀取最多 384 KiB。重用工具的冪等鍵不會重複發布。更新文件保留穩定的 artifact ID，另存新的不可變快照。配對檢視端只能讀取所選 Bot 與對話的輸出，下載或顯示前核對完整大小與摘要。",
+  "transparency.card.persistent-bot-outputs.how": "Clawdline 在 Bot 自有 MCP 入口提供 send_file、publish_artifact、list_artifacts。發布時，將 Project 內的一般檔案複製到各 Bot 的私有儲存，驗證大小與 SHA-256，持久保存卡片後才回覆成功。檔案上限為 100 MiB，HTML artifact 為 5 MiB；每次讀取最多 384 KiB。重用工具的冪等鍵不會重複發布。更新文件保留穩定的 artifact ID，另存新的不可變快照。配對檢視端只能讀取所選 Bot 與對話的輸出，下載或顯示前核對完整大小與摘要。人可透過已認證的中繼資料操作重新命名作品；名稱另外保存，更新檔案庫與聊天顯示，不更動已發布位元組，也不呼叫 Agent。確認結果不明時保留同一個冪等鍵。",
   "transparency.card.persistent-bot-outputs.effect": "原始檔修改或刪除後，已發布位元組仍保留。停止、重新設定與授權撤銷會取消尚未發布的複製；失敗不會發布半張卡片。HTML 檢視器在不透明來源的隔離框架中允許內嵌腳本互動，阻擋應用程式儲存、網路請求、彈出視窗與自動導向。文件連結由應用程式另外列出，供明確點擊。輸出發布與明確選取的一般輸入檔案、原生圖片區塊分開處理，不會自動上傳全部 Project 檔案。人也可以從檔案庫或卡片在新分頁開啟整份 HTML；它仍在同樣不連網、隔離來源的沙盒裡，Bot 收到的指示不變。",
   "viewPlugins.error_invalid_cover": "封面圖無效。請使用不超過 256 × 256 像素的內嵌正方形 RGBA8 PNG，並符合 manifest 大小限制。",
   "viewPlugins.coverRequired": "需補封面才能上架",
@@ -12742,5 +12742,10 @@
   "capacityRow.console.view_plugin_update_milliseconds.what": "限制下載官方版本清單或單一更新套件的等待時間。",
   "capacityRow.console.view_plugin_update_milliseconds.full": "下載停滯逾時時會停止；保留已安裝視圖，稍後可再次檢查。",
   "capacityRow.console.view_plugin_kaiju_news_rows.what": "限制同時顯示在城市裡的怪獸快訊卡，保留原作三張卡的視窗。",
-  "capacityRow.console.view_plugin_kaiju_news_rows.full": "超出的已觀察事件會合併顯示數量，對應的 Session 仍可從名冊查看。"
+  "capacityRow.console.view_plugin_kaiju_news_rows.full": "超出的已觀察事件會合併顯示數量，對應的 Session 仍可從名冊查看。",
+  "projectAssistants.renameArtifact": "重新命名作品",
+  "projectAssistants.artifactTitle": "作品名稱",
+  "projectAssistants.renamingArtifact": "正在重新命名…",
+  "projectAssistants.renameArtifactFailed": "無法重新命名作品，請重新整理後再試。",
+  "projectAssistants.renameArtifactUnknown": "改名結果尚未確認。重試會使用同一筆請求；確認前暫時鎖住名稱。"
 }

@@ -31,9 +31,9 @@ import {ProjectAssistantSourceClient,capturedAssistantRelayFetch} from "./src/cl
 import {words} from "./src/project-assistants/words";import {bootCatalog} from "./src/catalog";
 import "./src/project-assistants/styles.css";
 const q=new URL(location.href).searchParams,mode=q.get("mode"),lang=q.get("lang");localStorage.setItem("ui_language",lang);await bootCatalog(tag=>"/catalog/"+tag+".json");
-const grant={accountKey:mode==="cloud"?"synthetic-account":"local",readerID:"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"grant",apiLevel:75,paired:true,online:true,writable:mode!=="read"};
-const verbs=["project-assistants.get","project-assistants.view","project-assistants.output","project-assistants.input","project-assistants.attachment"];
-const relay={machineDescriptor:()=>({machine:{commands:verbs}}),_machineRequest:async(_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json()};
+const grant={accountKey:mode==="cloud"?"synthetic-account":"local",readerID:"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"grant",apiLevel:78,paired:true,online:true,writable:mode!=="read"};
+const verbs=["project-assistants.get","project-assistants.view","project-assistants.output","project-assistants.input","project-assistants.attachment","project-assistants.rename-artifact"];
+const relay={_machineRequestAs:async(id,_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json(),machineDescriptor:()=>({machine:{commands:verbs}}),_machineRequest:async(_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json()};
 const source=new ProjectAssistantSourceClient(grant,mode==="cloud"?capturedAssistantRelayFetch(grant.machineID,()=>relay,verbs):(input,init)=>fetch("/proxy/"+mode+input,init),()=>grant);
 const got=await source.get({machine_id:grant.machineID,bot_id:${JSON.stringify(bot)}},new AbortController().signal);
 function Fixture(){const [messages,setMessages]=useState([]);window.addLibraryItem=()=>setMessages([{id:"live-change",seq:999,at:new Date().toISOString(),fence:{key:got.bot.key,project:got.bot.project,conversation_id:got.bot.conversation_id,binding_id:got.conversation.binding_id,generation:got.conversation.generation},kind:"user",text:"",turn_id:"",quote_message_id:"",files:[{id:"22222222-2222-4222-8222-222222222222",name:"Live attachment",bytes:0,sha256:"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}]}]);return <main className="project-assistants" style={{height:"100vh",background:"#080808"}}><OutputLibrary source={source} bot={got.bot} messages={messages} w={words(lang)} onClose={()=>{}}/></main>}
@@ -45,11 +45,18 @@ const server=createServer(async(req,res)=>{try{
  const url=new URL(req.url,"http://fixture")
  if(url.pathname==="/fault"){fault=url.searchParams.get("kind");res.end("ok");return}
  if(url.pathname.startsWith("/proxy/")||url.pathname.startsWith("/relay/")){
-  const relay=url.pathname.startsWith("/relay/"),mode=relay?"cloud":url.pathname.split("/")[2];let route=url.pathname.replace("/proxy/"+mode,"")+url.search
-  if(relay){const chunks=[];for await(const chunk of req)chunks.push(chunk);const fields=JSON.parse(Buffer.concat(chunks).toString()),word=url.pathname.slice(7).split(".").at(-1),key=fields.key??fields;const {key:_,machine_id:__,bot_id:___,...rest}=fields;route="/v1/project-assistants/"+key.bot_id+(word==="get"?"":word==="attachment"?"/attachments/"+fields.id:"/"+word)+"?"+new URLSearchParams({machine_id:key.machine_id,...(["get","attachment"].includes(word)?{}:rest)})}
-  const record={mode,path:route};requests.push(record)
+  const relay=url.pathname.startsWith("/relay/"),mode=relay?"cloud":url.pathname.split("/")[2];let route=url.pathname.replace("/proxy/"+mode,"")+url.search,method=req.method,bodyToSend,headersToSend={Authorization:"Bearer "+(mode==="read"?readToken:token)}
+  if(!relay&&method!=="GET"){const chunks=[];for await(const chunk of req)chunks.push(chunk);bodyToSend=Buffer.concat(chunks);headersToSend["Content-Type"]="application/json";headersToSend["Idempotency-Key"]=req.headers["idempotency-key"]}
+  if(relay){const chunks=[];for await(const chunk of req)chunks.push(chunk);const fields=JSON.parse(Buffer.concat(chunks).toString()),word=url.pathname.slice(7).split(".").at(-1),key=fields.key??fields.command?.key??fields;const {key:_,machine_id:__,bot_id:___,...rest}=fields;
+    if(word==="rename-artifact"){route="/v1/project-assistants/"+key.bot_id+"/artifacts/"+fields.artifact_id+"/rename";method="POST";bodyToSend=JSON.stringify(fields);headersToSend["Content-Type"]="application/json";headersToSend["Idempotency-Key"]=fields.command.idempotency_key}
+    else {method="GET";route="/v1/project-assistants/"+key.bot_id+(word==="get"?"":word==="attachment"?"/attachments/"+fields.id:"/"+word)+"?"+new URLSearchParams({machine_id:key.machine_id,...(["get","attachment"].includes(word)?{}:rest)})}}
+
+  if(relay&&route.includes("/rename-artifact?")){throw Error("rename routing failed")}
+  const record={mode,path:route,idempotency:headersToSend["Idempotency-Key"]};requests.push(record)
+  const unknownRename=route.endsWith("/rename")&&fault==="unknown";if(unknownRename)fault=""
   if(route.includes("/output?")&&fault){const kind=fault;fault="";if(kind==="fail"){record.status=503;res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"snapshot"}}));return}await new Promise(resolve=>setTimeout(resolve,1200))}
-  const answer=await fetch(upstream+route,{headers:{Authorization:"Bearer "+(mode==="read"?readToken:token)}}),body=Buffer.from(await answer.arrayBuffer()),mediaType=answer.headers.get("content-type")??"application/json";record.status=answer.status;record.mediaType=mediaType;record.bytes=body.length
+  const answer=await fetch(upstream+route,{method,body:bodyToSend,headers:headersToSend}),body=Buffer.from(await answer.arrayBuffer()),mediaType=answer.headers.get("content-type")??"application/json";record.status=answer.status;record.mediaType=mediaType;record.bytes=body.length
+  if(unknownRename&&answer.ok){res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({contract_version:"project-assistants.v1",error:{code:"pa_outcome_unknown",field:"lost_ack"}}));return}
   // The production Cloud attachment operation wraps local image bytes in JSON.
   // Local/read-only HTTP retains the original image response.
   if(relay&&answer.ok&&route.includes("/attachments/")){
@@ -112,6 +119,31 @@ try {
     await run('document.querySelector(".pa-output-overlay header button").click()')
     await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
     await until('!!document.querySelector(".pa-artifact-frame")')
+    if(mode!=="read") {
+      await click(zh?"重新命名作品":"Rename artifact")
+      await run(`(()=>{const field=document.querySelector(".pa-artifact-rename input");const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(field,${JSON.stringify(zh?"手機改名作品":"Renamed library artifact")});field.dispatchEvent(new Event("input",{bubbles:true}))})()`)
+      const unknown=mode==="local"&&!zh,renameStart=requests.filter(r=>r.path.endsWith("/rename")).length
+      if(unknown)await fetch(origin+"/fault?kind=unknown")
+      await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
+      if(unknown){
+        await until('document.querySelector(".pa-artifact-rename [role=alert]")?.textContent.includes("pa_outcome_unknown")')
+        assert.equal(await run('document.querySelector(".pa-artifact-rename input").disabled'),true)
+        assert.equal(requests.filter(r=>r.path.endsWith("/rename")).length,renameStart+1,"unknown command does not replay automatically")
+        await run('document.querySelector(".pa-output-overlay header button").click()')
+        await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
+        await until('document.querySelector(".pa-artifact-rename input")?.disabled===true')
+        await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
+      }
+      await until('document.querySelector(".pa-output-overlay h3")?.textContent==='+JSON.stringify(zh?"手機改名作品":"Renamed library artifact"))
+      if(unknown){const commands=requests.filter(r=>r.path.endsWith("/rename")).slice(renameStart);assert.equal(commands.length,2);assert.equal(commands[0].idempotency,commands[1].idempotency,"explicit retry keeps original intent key")}
+
+      assert.ok(await run('document.querySelector(".pa-library").textContent.includes('+JSON.stringify(zh?"手機改名作品":"Renamed library artifact")+')'))
+      const {data:renameShot}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`rename-${mode}-${lang}-${width}.png`),Buffer.from(renameShot,"base64"))
+      await click(zh?"重新命名作品":"Rename artifact")
+      await run('(()=>{const field=document.querySelector(".pa-artifact-rename input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,"Interactive report");field.dispatchEvent(new Event("input",{bubbles:true}))})()')
+      await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
+      await until('document.querySelector(".pa-output-overlay h3")?.textContent==="Interactive report"')
+    } else assert.equal(await run('document.querySelector(".pa-artifact-rename")'),null,"read-only has no rename control")
     const before=await send("Target.getTargets")
     await click(zh?"在瀏覽器開啟":"Open in browser")
     let opened;const deadline=Date.now()+5000

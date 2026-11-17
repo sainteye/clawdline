@@ -5170,6 +5170,13 @@ export interface ProjectAssistantAppearance {
   shape: ProjectAssistantShape
 }
 
+export interface ProjectAssistantArtifactTitle {
+  artifact_id: string
+  output_id: string
+  title: string
+  version: number
+}
+
 /**
  * A picture sent with a message, named by the SHA-256 of its stored bytes.
  */
@@ -5476,8 +5483,9 @@ export type ProjectAssistantEventKind =
   | "trace_updated"
   | "source_updated"
   | "feature_disabled"
+  | "artifact_renamed"
 
-export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled"] as const
+export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled", "artifact_renamed"] as const
 
 /**
  * Durable source-local cursor, page size 1..256; expired cursor is
@@ -5541,6 +5549,7 @@ export interface ProjectAssistantExecutionBinding {
  * optional for older exports.
  */
 export interface ProjectAssistantExport {
+  artifact_titles?: ProjectAssistantArtifactTitle[]
   bindings: ProjectAssistantExecutionBinding[]
   bot: ProjectAssistantBot
   context: ProjectAssistantContextSnapshot
@@ -5965,8 +5974,9 @@ export type ProjectAssistantOperation =
   | "memory_save"
   | "dispatch"
   | "upload"
+  | "rename-artifact"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string
@@ -5974,6 +5984,11 @@ export interface ProjectAssistantOutput {
   id: string
   name: string
   sha256: string
+
+  /**
+   * Display-title revision for artifacts; absent on older sources means 1.
+   */
+  title_version?: number
 }
 
 export interface ProjectAssistantOutputRequest {
@@ -6419,6 +6434,19 @@ export interface ProjectAssistantReceipt {
 export interface ProjectAssistantReceiptResponse {
   contract_version: string
   receipt: ProjectAssistantReceipt
+}
+
+/**
+ * Human title metadata change, API 78. CAS checks publication ID and title
+ * revision; immutable output bytes remain unchanged.
+ */
+export interface ProjectAssistantRenameArtifactRequest {
+  artifact_id: string
+  command: ProjectAssistantCommand
+  expected_output_id: string
+  expected_version: number
+  fence: ProjectAssistantFence
+  title: string
 }
 
 export interface ProjectAssistantRoomEntry {

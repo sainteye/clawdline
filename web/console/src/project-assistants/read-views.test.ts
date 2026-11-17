@@ -182,3 +182,16 @@ test("timeline and control payloads validate their consumed primitives, enums an
     assert.throws(()=>readView(a,request("events"),fence),e=>errorCode(e)==="pa_invalid")
   }
 })
+
+test("artifact renames update earlier cards while stale rename events cannot downgrade a newer snapshot",()=>{
+  const output:W.ProjectAssistantOutput={id:"publication",artifact_id:"artifact",name:"Original",bytes:0,sha256:"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",title_version:1}
+  const earlier=row({...message("earlier",1),output:{...output,id:"older-publication"}})
+  const latest={...message("latest",2),output}
+  const event:W.ProjectAssistantEvent={id:"rename",seq:604,version:"project-assistants.v1",fence:latest.fence,kind:"artifact_renamed",at:latest.at,message:{...latest,output:{...output,name:"Renamed",title_version:2}}}
+  const changed=eventTimeline([earlier,row(latest)],[{id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:604,event}])
+  assert.deepEqual(changed.map(r=>r.message?.output?.name),["Renamed","Renamed"])
+  assert.equal(changed[0].message?.output?.id,"older-publication")
+  assert.equal(earlier.message?.output?.name,"Original","input publication is unchanged")
+  const newer={...earlier,observed_event_seq:605,message:{...earlier.message!,output:{...earlier.message!.output!,name:"Later title",title_version:3}}}
+  assert.equal(eventTimeline([newer],[{id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:604,event}]).find(r=>r.id==="earlier")?.message?.output?.name,"Later title")
+})

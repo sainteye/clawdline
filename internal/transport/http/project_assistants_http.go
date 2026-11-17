@@ -199,6 +199,9 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					return paHTTPRoute{bot: bot, action: "edit"}, nil
 				}
 			}
+			if r.Method == http.MethodPost && len(parts) == 4 && parts[1] == "artifacts" && paHTTPSafeBotID(parts[2]) && parts[3] == "rename" {
+				return paHTTPRoute{bot: bot, action: "rename-artifact", offer: parts[2]}, nil
+			}
 			if len(parts) == 2 {
 				if r.Method == http.MethodGet {
 					switch parts[1] {
@@ -521,6 +524,8 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 	}
 	s, ctx := h.options.Service, r.Context()
 	switch route.action {
+	case "rename-artifact":
+		return h.renameArtifact(w, r, route)
 	case "create":
 		request, err := paDecodeHTTP[contract.ProjectAssistantCreateRequest](w, r)
 		if err != nil {
