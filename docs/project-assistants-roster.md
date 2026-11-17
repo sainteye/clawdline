@@ -21,9 +21,14 @@ show Project/member metadata instead. Only a real message timestamp participates
 in recent ordering; a missing timestamp keeps its input slot. Group modification
 time and room-local sequence numbers do not impersonate message time.
 
-Selecting a group opens that exact source's room. Returning restores the original
-row's focus and the list's scroll position. Room layout and member-to-Bot
-navigation are integrated with the group-room implementation separately.
+Selecting a group clears the previous Bot selection and opens that exact
+source's room across the chat area. An explicit member action resolves the
+member's complete machine/Bot key against readable roster items from that
+source. It opens the member's single chat while keeping the room mounted and
+inactive. The visible return-to-group control restores that room's draft,
+quoted message, reading position and member control. Closing the room restores
+the original group row's focus and the list's scroll position. A room preview
+or a stored preference never grants read or execution access.
 
 Preferences are stored in this browser's local storage under the authenticated
 account namespace, with machine/Bot, typed machine/group and machine/Project identities as keys. They
@@ -54,6 +59,31 @@ records and CSS viewports for the base and candidate, counts full visible rows,
 and checks group entry/return, pin persistence, default controls and absence of
 per-row history reads. Its local fixture timings do not measure production or
 Codync latency.
+
+`TestGroupMemberNavigationBrowser` runs the actual `Bots` parent, roster,
+room and single chat over authenticated HTTP, the closed Cloud command decoder
+and SQLite. Its in-process provider seeds only synthetic history; it launches
+no native assistant or external model. The browser matrix covers local and
+closed-Cloud transport on desktop and phone viewports, a read-only source and
+an API87 source without the API88 group-context capability. It checks
+Bot-to-room-to-member-to-room-to-list navigation, exact source identity,
+retained room state, focus, scroll position, no history fanout for previews,
+and no frontend prompt sends. The Cloud envelope is simulated; these checks
+do not establish production Cloud delivery or physical-device acceptance.
+
+With already installed Playwright browsers, run it from the repository root:
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/absolute/path/to/installed/browser-cache \
+CLAWDLINE_GROUP_NAV_ARTIFACTS=/absolute/path/to/evidence \
+go test ./internal/transport/http -run '^TestGroupMemberNavigationBrowser$' -count=1
+```
+
+The explicit browser-cache path is necessary because HTTP tests isolate HOME.
+`BOTS_NAV_BASELINE=<commit>` substitutes only the previous parent/roster/group
+implementation to retain a failing selection reproducer. The normal matrix
+uses the current source and does not allow the former narrow room placement.
 
 Run the browser check with an existing Playwright installation:
 
