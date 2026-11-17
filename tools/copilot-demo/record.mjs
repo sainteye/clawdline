@@ -350,14 +350,21 @@ let voice = { start: 0, data: '' }, liveTools = [], liveSaid = [], liveErrors = 
 if (LIVE) {
   // A real GPT-Live call: each of the person's lines waits until the copilot
   // has answered the one before and fallen quiet.
-  const turn = async (label, max = 60000, quiet = 3500) => {
-    const end = Date.now() + max
+  const turn = async (label, max = 60000, quiet = 3500, silentAfter = 0) => {
+    const end = Date.now() + max, began = Date.now()
     // Quiet twice, 0.8 s apart: the copilot often takes the floor again just after a pause.
     for (;;) {
-      if (Date.now() > end) { console.error(`copilot-demo: no finished answer to ${label} within ${max / 1000} s; going on`); return }
+      if (Date.now() > end) throw new Error(`copilot-demo: no finished answer to ${label} within ${max / 1000} s`)
       if (await run(`window.__demo.answered(${quiet})`)) { await sleep(800); if (await run(`window.__demo.answered(${quiet + 800})`)) return }
+      // The copilot may rightly say nothing (a latest state with nothing new): no speech at all after `silentAfter` ms ends the turn.
+      if (silentAfter && Date.now() - began > silentAfter && await run('Math.max(window.__demo.watch.lastVoice, window.__demo.watch.lastSaid) < window.__demo.watch.personEnd')) return
       await sleep(150)
     }
+  }
+  const firstBatch = async () => {
+    // Transcript punctuation runs ahead of the sound; sound alone can pause
+    // between the two Sessions. Require both before the tap.
+    await until('window.__demo.firstBatchFinished(800)', 120000)
   }
   const said = []
   const say = async (id) => {
@@ -367,14 +374,17 @@ if (LIVE) {
   // The person opens Sessions from the list with the pointer or a finger; the
   // copilot tells each one's state without being asked (a call that follows the screen).
   const openRow = async (id) => {
-    // A phone shows one Session at a time: go back to the list first.
-    if (PHONE && !(await run(`[...document.querySelectorAll('li.row')].some((li) => li.offsetParent)`))) {
+    // A phone shows one Session at a time over the list, which stays laid out
+    // beneath it: go back, and wait until the row is what a tap would reach.
+    const label = JSON.stringify(S.sessions().find((r) => r.id === id).label)
+    const reachable = `[...document.querySelectorAll('li.row')].some((li) => { if (!li.offsetParent || !li.textContent.includes(${label})) return false; const r = li.getBoundingClientRect(), at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!at && li.contains(at) })`
+    if (PHONE && !(await run(reachable))) {
       await click('#back')
-      await until(`[...document.querySelectorAll('li.row')].some((li) => li.offsetParent)`, 10000)
-      await sleep(600)
+      await until(reachable, 10000)
+      await sleep(500)
     }
     // The row on screen: a phone page also carries hidden copies of the list.
-    await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => li.offsetParent && li.textContent.includes(${JSON.stringify(S.sessions().find((r) => r.id === id).label)})); document.querySelectorAll('[data-demo-row]').forEach((e) => e.removeAttribute('data-demo-row')); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
+    await run(`(() => { const row = [...document.querySelectorAll('li.row')].find((li) => { if (!li.offsetParent || !li.textContent.includes(${label})) return false; const r = li.getBoundingClientRect(), at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!at && li.contains(at) }); document.querySelectorAll('[data-demo-row]').forEach((e) => e.removeAttribute('data-demo-row')); row?.setAttribute('data-demo-row', ${JSON.stringify(id)}) })()`)
     await click(`[data-demo-row="${id}"]`)
     await run('window.__demo.mark()')
   }
@@ -393,17 +403,22 @@ if (LIVE) {
     if (step.call) {
       await sleep(300)
       await click('#copilot-call')
+      if (step.noWait) { await until(`!!document.querySelector('.realtime-minimize-btn')`, 20000); await sleep(1500); continue }
       await until(`window.__demo.watch.lastSaid > 0`, 40000)
       // The report a call from the list opens with comes in batches with reads between them.
       if (step.report) await turn('the opening report', 180000, 6000)
-      else await turn('the greeting', 30000)
+      else if (step.firstBatch) {
+        await firstBatch()
+      } else await turn('the greeting', 30000)
+    } else if (step.firstBatch) {
+      await firstBatch()
     } else if (step.minimize) {
       await sleep(400)
       await click('.realtime-minimize-btn')
       await moveTo(1250, 560, 25)
       if (PHONE) { await until(`!!document.querySelector('.copilot-bubble-body')`, 5000); await sleep(600); await drag('.copilot-bubble-body', VIEW.width - 40, VIEW.height - 235) }
     } else if (step.open) {
-      await sleep(900)
+      if (!step.quick) await sleep(900)
       await openRow(IDS[step.open])
       const opened = await run('window.__demo.watch.personEnd')
       const reading = step.read ? readDown(IDS[step.open]) : Promise.resolve()
@@ -416,7 +431,7 @@ if (LIVE) {
       while (Date.now() < end && !(await run(`window.__demo.watch.latestNoteAt > ${opened}`))) await sleep(200)
       if (await run(`window.__demo.watch.latestNoteAt > ${opened}`)) {
         await run('window.__demo.watch.personEnd = window.__demo.watch.latestNoteAt')
-        await turn(`${S.words.names[step.open]} (latest)`, 60000)
+        await turn(`${S.words.names[step.open]} (latest)`, 60000, 3500)
       }
     } else if (step.say || step.sayUnsent) {
       // GPT-Live may act on an instruction at once; a yes is said only while nothing has been sent.
