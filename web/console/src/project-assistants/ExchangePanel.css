@@ -1,0 +1,12 @@
+.pa-exchange-panel{box-sizing:border-box;width:min(46rem,calc(100vw - 1.5rem));max-height:calc(100dvh - 2rem);padding:0;border:1px solid var(--pa-line,#303033);border-radius:12px;background:var(--pa-card,#141414);color:#fafafa;overflow:hidden}
+.pa-exchange-panel::backdrop{background:rgb(0 0 0 / .4)}
+.pa-exchange-panel>header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem;border-bottom:1px solid var(--pa-line,#303033)}
+.pa-exchange-panel h3,.pa-exchange-panel h4{margin:0}
+.pa-exchange-scroll{padding:1rem;overflow:auto;max-height:calc(100dvh - 8rem);overscroll-behavior:contain}
+.pa-exchange-panel section{margin-block:1.25rem}
+.pa-exchange-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.6;user-select:text}
+.pa-exchange-panel dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:.5rem 1rem}
+.pa-exchange-panel dd{margin:0;overflow-wrap:anywhere;user-select:text}
+.pa-exchange-note{font-size:.875em;opacity:.75}
+.pa-exchange-entry{margin-block:.5rem;max-width:100%;white-space:normal;text-align:start}
+@media(max-width:480px){.pa-exchange-panel dl{grid-template-columns:minmax(0,1fr)}.pa-exchange-panel dd{margin-bottom:.5rem}}
