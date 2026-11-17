@@ -24,7 +24,7 @@
 .project-assistants .pa-search-clear:hover { color:#fafafa;background:rgba(255,255,255,0.1) !important; }
 .project-assistants .pa-roster-filter { display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--pa-dim);margin:0 5px 10px;gap:6px; }
 .project-assistants .pa-roster-filter select { border:0;background:transparent;max-width:52%;font-size:11px; }
-.project-assistants .pa-roster-scroll { overflow:auto;min-height:0;overscroll-behavior:contain;padding-bottom:16px; }
+.project-assistants .pa-roster-scroll { flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;padding-bottom:16px; }
 .project-assistants .pa-bot-row { display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-radius:12px;background:transparent;min-height:86px;padding:10px 7px; }
 .project-assistants .pa-bot-row:hover,.project-assistants .pa-bot-row[aria-current="true"] { background:#242426; }
 .project-assistants .pa-row-body { display:flex;flex-direction:column;gap:3px;min-width:0;flex:1; }
@@ -229,7 +229,7 @@
 .project-assistants .pa-source-chevron { flex:none; opacity:.6; transition:transform .15s; }
 .project-assistants .pa-source-summary[aria-expanded="true"] .pa-source-chevron { transform:rotate(180deg); }
 .project-assistants .pa-source-checks { display:flex; flex-direction:column; gap:12px; padding:0 14px 14px; }
-.project-assistants .pa-status-bar { flex:none;margin:0 -14px;border-top:1px solid var(--pa-line);background:rgba(14,14,17,0.95);position:relative;z-index:10; }
+.project-assistants .pa-status-bar { flex:none;margin:auto -14px 0;padding-bottom:0;border-top:1px solid var(--pa-line);background:rgba(14,14,17,0.95);position:relative;z-index:10; }
 .project-assistants .pa-status-bar .pa-source-status { margin:0;border:0;border-radius:0;background:transparent;position:static; }
 .project-assistants .pa-status-bar .pa-source-summary { display:flex;align-items:center;gap:8px;width:100%;height:34px;min-height:34px;padding:0 14px;border:0;border-radius:0;background:transparent;color:var(--pa-dim);text-align:left;font-size:11px;cursor:pointer;transition:background 120ms ease,color 120ms ease; }
 .project-assistants .pa-status-bar .pa-source-summary:hover { background:rgba(255,255,255,0.04);color:#fafafa; }
