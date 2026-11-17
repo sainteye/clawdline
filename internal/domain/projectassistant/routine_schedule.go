@@ -60,8 +60,20 @@ func (t RoutineTrigger) Validate() error {
 	return nil
 }
 
+func isCronDescriptor(expr string) bool {
+	switch strings.ToLower(strings.TrimSpace(expr)) {
+	case "@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly":
+		return true
+	default:
+		return false
+	}
+}
+
 func (t RoutineTrigger) cron() (cron.Schedule, error) {
-	if len(strings.Fields(t.Expression)) != 5 || strings.Contains(t.Expression, "=") {
+	expr := strings.TrimSpace(t.Expression)
+	fields := strings.Fields(expr)
+	isDesc := isCronDescriptor(expr)
+	if (!isDesc && len(fields) != 5) || strings.Contains(expr, "=") || strings.HasPrefix(strings.ToLower(expr), "@every") {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}
 	if t.TimeZone == "" || t.TimeZone == "Local" || len(strings.Fields(t.TimeZone)) != 1 {
@@ -70,8 +82,8 @@ func (t RoutineTrigger) cron() (cron.Schedule, error) {
 	if _, err := time.LoadLocation(t.TimeZone); err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_time_zone"}
 	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	s, err := parser.Parse("CRON_TZ=" + t.TimeZone + " " + t.Expression)
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	s, err := parser.Parse("CRON_TZ=" + t.TimeZone + " " + expr)
 	if err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}
@@ -98,11 +110,19 @@ func (t RoutineTrigger) Next(after time.Time) (time.Time, error) {
 		if err != nil {
 			return time.Time{}, err
 		}
-		next := s.Next(after)
-		if next.IsZero() {
-			return time.Time{}, &Failure{Code: Invalid, Field: "routine_cron_future"}
+		// robfig/cron/v3 checks up to 5 years per Next call.
+		// Iteratively step forward across 4-year horizons up to 100 years
+		// to remove the 5-year search window limit while properly handling leap centuries.
+		cursor := after
+		maxHorizon := after.AddDate(100, 0, 0)
+		for cursor.Before(maxHorizon) {
+			next := s.Next(cursor)
+			if !next.IsZero() {
+				return next, nil
+			}
+			cursor = cursor.AddDate(4, 0, 0)
 		}
-		return next, nil
+		return time.Time{}, &Failure{Code: Invalid, Field: "routine_cron_future"}
 	}
 }
 
