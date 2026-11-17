@@ -909,9 +909,9 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
   拒絕並附 `retry_after`。派工不能自稱 `kind callback`（`bad_task`）。Windows 會回
   `501 no_callback_capability`。
 
-受管 callback 儲存（daemon API 80）：命令開始前，daemon 先配置獨立的私有暫存與快取目錄。`TMPDIR` 與 `CLAWDLINE_SCRATCH_DIR` 指向暫存；`GOCACHE`、`XDG_CACHE_HOME`、`npm_config_cache` 指向已登記的快取。`CLAWDLINE_ARTIFACT_DIR` 指向永久保留的 `artifacts/` 目錄。結束前請將成果放到該處；留在暫存或快取的檔案明確屬於可回收資料。命令若自行改寫這些路徑，產生的資料不受管理，daemon 不會自行接管或刪除。原生應用程式編譯仍須使用 `clawdline heavy`；一般測試不需要編譯租約。
+受管 callback 儲存（daemon API 80）：命令開始前，daemon 先配置獨立的私有暫存與快取目錄。`TMPDIR` 與 `CLAWDLINE_SCRATCH_DIR` 指向暫存；`XDG_CACHE_HOME`、`npm_config_cache` 指向命令各自登記的快取。重工作業 callback（`--intent heavy`）的 `GOCACHE` 使用另外登記、同一 Project 共用的 Go 編譯快取；一般等待 callback 仍使用自己的快取。`CLAWDLINE_ARTIFACT_DIR` 指向永久保留的 `artifacts/` 目錄。結束前請將成果放到該處；留在暫存或快取的檔案明確屬於可回收資料。命令若自行改寫這些路徑，產生的資料不受管理，daemon 不會自行接管或刪除。原生應用程式編譯仍須使用 `clawdline heavy`；一般測試不需要編譯租約。
 
-成功、失敗、取消等所有終止任務的暫存與快取至少保留 24 小時；非成果的原始執行紀錄保留 7 天。成果與附件不因這項政策到期。callback 結束後，仍須確認程序群組已消失、鎖已釋放、沒有開啟中的讀取者，且已保存成果未改變。證據不明就保留。若安全回收後仍無法符合快取每個 4 GiB、合計 16 GiB、其他暫存合計 16 GiB、磁碟保留 2 GiB，新的重工作業 callback 或編譯租約會被拒絕；既有租約續期與一般等待 callback 仍可使用。這是啟動門檻，不是執行中的檔案系統硬性配額。
+成功、失敗、取消等所有終止任務的暫存至少保留 24 小時；非成果的原始執行紀錄保留 7 天。可重建快取沒有最低保留時間，但必須確認完成、成果保存及所有使用者均已離開。成果與附件不因這項政策到期。callback 結束後，仍須確認程序群組已消失、鎖已釋放、沒有開啟中的讀取者，且已保存成果未改變。證據不明就保留。若安全回收後仍無法符合快取每個 4 GiB、合計 16 GiB、其他暫存合計 16 GiB、磁碟保留 2 GiB，新的重工作業 callback 或編譯租約會被拒絕；既有租約續期與一般等待 callback 仍可使用。這是啟動門檻，不是執行中的檔案系統硬性配額。
 
 `clawdline resources list [--after ID]` 只讀取一頁（最多 64 筆）。`allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log` 建立新的受管目錄，並回傳分開的成果路徑；不能接管既有路徑。明確配置 Root 資料時，先把成果保存至回傳的成果路徑，留下可持續查核的 Session 交付收據，再安全關閉該 Root 的實際執行者；缺少完成或保存證據就保留。長期執行的 Root 應使用命令範圍的 callback 快取，避免同一份快取一直存活到 Root 關閉。此介面不會刪除既有 Root 指派目錄或 Git worktree。
 
@@ -923,7 +923,7 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
 
 回覆不確定時，沿用保存的 execution UUID 重試；不得暗中重新產生計畫或執行識別碼。內容、政策、保護或使用狀態改變，都會使舊計畫失效。`resources measure` 更新用量；`resources admit` 檢查安全回收及新重工作業的啟動條件。API 為 `/v1/orchestrator/resources`（GET），以及其下的 `/allocate`、`/publish`、`/pin`、`/plan`、`/apply`、`/measure`、`/admit`（POST）。機器 token 路由不是 Bot 憑證。未來 Bot 介面須以自身經核對的 Project 範圍，僅取得檢查與回收權限，不能封存成果、解除保護或重分類資料。本次不建立 Bot 或 Bot 排程。
 
-命令快取按執行個別隔離，因此可能重複編譯相依套件；保留期間內，合計容量門檻可能拒絕後續編譯。共用快取需要追蹤所有使用者，不能僅憑路徑推定可共用。成功檢查以精簡證據作為交付；暫用二進位與原始追蹤紀錄應放在受管暫存或紀錄區，除非任務明確要求保留為成果。既有成果不會重新分類。
+同一正式 Project 的重工作業 callback 重用 daemon 建立的 Go 快取。每個使用者在啟動前登記，登記與清理使用同一道互斥保護。有使用中或狀態不明的命令就保留，不必等整個 Root Session 關閉。快取閒置時，由相同的 resources 檢查／規劃／執行介面，優先回收最久未使用且可辨識的 Go 項目，依既定快取與磁碟預算保留近期內容。新使用者加入後，舊清理計畫失效。非 Go 快取、暫存與成果仍依命令分開；受限驗證工作維持獨立快取。手動指定的舊快取與預設共用快取不會被自動接管或刪除。成功檢查以精簡證據作為交付；暫用二進位與原始追蹤紀錄應放在受管暫存或紀錄區，除非任務明確要求保留為成果。既有成果不會重新分類。
 
 排隊中的編譯請求保留原本位置；容量檢查只在即將核發新租約時執行，不會每次輪詢都掃描磁碟。
 

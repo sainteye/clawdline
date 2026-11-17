@@ -390,7 +390,10 @@ func TestTheLockFencesStartingFromSettling(t *testing.T) {
 }
 
 func TestAVerdictKeepsTheLastLineOfALongOutput(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), strings.Repeat("managed-cache-", 10))
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	files := callbackFiles{dir}
 	var out strings.Builder
 	for i := 0; i < 2000; i++ {
@@ -404,6 +407,20 @@ func TestAVerdictKeepsTheLastLineOfALongOutput(t *testing.T) {
 	}
 	if n := len([]rune(got)); n > summaryLimit {
 		t.Fatalf("verdict is %d runes, past %d", n, summaryLimit)
+	}
+	// A single oversized UTF-8 line still retains the actual failure suffix.
+	if err := os.WriteFile(files.log(), []byte(strings.Repeat("訊息", summaryLimit)+"FAILED: final error\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got = callbackVerdict("exit 1", files)
+	if len([]rune(got)) > summaryLimit || !strings.HasSuffix(got, "FAILED: final error") {
+		t.Fatal("failure suffix lost or verdict unbounded")
+	}
+	if err := os.WriteFile(files.log(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := callbackVerdict(strings.Repeat("status", summaryLimit), files); len([]rune(got)) > summaryLimit {
+		t.Fatal("empty-output verdict unbounded")
 	}
 }
 

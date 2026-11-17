@@ -115,8 +115,11 @@ type Callback struct {
 	// opened in another terminal; keep the original Session for coordination.
 	CallingSessionID string `json:"calling_session_id,omitempty"`
 	// Daemon-created paths; these are never accepted from CallbackRequest.
-	ScratchPath string `json:"scratch_path,omitempty"`
-	CachePath   string `json:"cache_path,omitempty"`
+	ScratchPath    string `json:"scratch_path,omitempty"`
+	CachePath      string `json:"cache_path,omitempty"`
+	GoCacheID      string `json:"go_cache_id,omitempty"`
+	GoCacheProject string `json:"go_cache_project,omitempty"`
+	GoCachePath    string `json:"go_cache_path,omitempty"`
 	// NotStarted is a source-owned refusal before the launch effect; missing
 	// pid/attempt files alone are never proof that no process ran.
 	NotStarted bool `json:"not_started,omitempty"`
@@ -689,22 +692,30 @@ func runCallbackStop(ctx context.Context, b *Broker, e store.Effect) effectResul
 // the whole fits the verdict (summaryLimit) and the last line survives.
 func callbackVerdict(head string, files callbackFiles) string {
 	tail := readTail(files.log(), CallbackTailLimit)
-	budget := summaryLimit - utf8.RuneCountInString(head) - 64
+	prefix := head + "; last lines of " + files.log() + ":\n"
+	budget := summaryLimit - utf8.RuneCountInString(prefix)
+	if budget <= 0 {
+		return truncate(prefix, summaryLimit)
+	}
 	lines := strings.Split(strings.TrimRight(tail, "\n"), "\n")
 	kept := []string{}
 	used := 0
 	for i := len(lines) - 1; i >= 0 && len(kept) < 20; i-- {
 		n := utf8.RuneCountInString(lines[i]) + 1
 		if used+n > budget {
+			if len(kept) == 0 {
+				runes := []rune(lines[i])
+				kept = []string{string(runes[max(0, len(runes)-budget):])}
+			}
 			break
 		}
 		kept = append([]string{lines[i]}, kept...)
 		used += n
 	}
 	if len(kept) == 0 || (len(kept) == 1 && kept[0] == "") {
-		return head + "; it printed nothing — output: " + files.log()
+		return truncate(head+"; it printed nothing — output: "+files.log(), summaryLimit)
 	}
-	return head + "; last lines of " + files.log() + ":\n" + strings.Join(kept, "\n")
+	return prefix + strings.Join(kept, "\n")
 }
 
 func readTail(path string, limit int64) string {
@@ -725,8 +736,9 @@ func readTail(path string, limit int64) string {
 	n, _ := f.ReadAt(buf, from)
 	text := string(buf[:n])
 	if from > 0 {
-		// The first line read is probably cut; drop it.
-		if i := strings.IndexByte(text, '\n'); i >= 0 {
+		// Discard a cut first line only when later content exists. A single
+		// oversized final line must retain its failure suffix.
+		if i := strings.IndexByte(text, '\n'); i >= 0 && strings.TrimSpace(text[i+1:]) != "" {
 			text = text[i+1:]
 		}
 	}

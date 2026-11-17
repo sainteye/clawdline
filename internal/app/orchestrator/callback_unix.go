@@ -102,8 +102,15 @@ func callbackEnviron(r Record) []string {
 		}
 		env = kept
 		env = append(env, "TMPDIR="+r.Callback.ScratchPath, "CLAWDLINE_SCRATCH_DIR="+r.Callback.ScratchPath,
-			"GOCACHE="+r.Callback.CachePath, "XDG_CACHE_HOME="+r.Callback.CachePath, "npm_config_cache="+filepath.Join(r.Callback.CachePath, "npm"),
+			"XDG_CACHE_HOME="+r.Callback.CachePath, "npm_config_cache="+filepath.Join(r.Callback.CachePath, "npm"),
 			"CLAWDLINE_ARTIFACT_DIR="+filepath.Join(r.Dir, "artifacts"))
+	}
+	goCache := r.Callback.CachePath
+	if r.Callback.GoCachePath != "" {
+		goCache = r.Callback.GoCachePath
+	}
+	if goCache != "" {
+		env = append(env, "GOCACHE="+goCache)
 	}
 	sort.Strings(env)
 	env = append(env, "CLAWDLINE_CALLBACK_TASK_ID="+r.ID, "CLAWDLINE_CALLBACK_DIR="+r.Dir)

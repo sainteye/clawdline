@@ -154,6 +154,8 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 				}
 			}
 		}
+	case "shared_go":
+		return b.sharedGoOwner(ctx, id)
 	default:
 		return out, errors.New("resource_owner_unknown")
 	}
@@ -258,7 +260,13 @@ func (b *Broker) prepareCallbackResources(ctx context.Context, r Record) (Record
 		x.Callback.CachePath = paths[taskresource.Cache]
 		return nil
 	})
-	return next, err
+	if err != nil {
+		return next, err
+	}
+	if r.Callback.Intent != CallbackIntentHeavy {
+		return next, nil
+	}
+	return b.prepareSharedGoCache(ctx, next)
 }
 
 // New compile admission is distinct from lease renewal: pressure cannot revoke
@@ -302,7 +310,18 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 // lock evidence. Raw output alone can expire independently.
 func (b *Broker) callbackResourceMetadataNeeded(ctx context.Context, id string) bool {
 	rows, _, err := b.Store.TaskResourcesByOwnerPage(ctx, "task", id, "")
-	return err != nil || len(rows) > 0
+	if err != nil || len(rows) > 0 {
+		return true
+	}
+	r, _, err := b.Record(ctx, id)
+	if err != nil {
+		return true
+	}
+	if r.Callback != nil && r.Callback.GoCacheID != "" {
+		cache, err := b.Store.TaskResource(ctx, r.Callback.GoCacheID)
+		return err != nil || cache.LastOutcome != "removed"
+	}
+	return false
 }
 
 // Use the gate collector's actual durable protocol. A malformed ordinary
