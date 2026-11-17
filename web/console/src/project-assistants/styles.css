@@ -490,7 +490,16 @@
   display: flex; flex-direction: column; gap: 4px;
 }
 .project-assistants .pa-trace-row {
-  display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 12px; line-height: 1.4; color: var(--pa-dim);
+  display: flex; flex-direction: column; gap: 4px; font-size: 12px; line-height: 1.4; color: var(--pa-dim);
+}
+.project-assistants .pa-trace-toggle {
+  display: flex; align-items: center; gap: 7px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .15s;
+}
+.project-assistants .pa-trace-toggle:hover {
+  background: rgba(255,255,255,0.04); color: #fafafa;
+}
+.project-assistants .pa-trace-chevron {
+  font-size: 10px; width: 10px; color: #71717a; flex-shrink: 0;
 }
 .project-assistants .pa-trace-icon {
   font-size: 11px; flex-shrink: 0; opacity: 0.85;
@@ -500,6 +509,15 @@
 }
 .project-assistants .pa-trace-desc {
   font-size: 12px; color: #d1d1d6; word-break: break-all;
+}
+.project-assistants .pa-trace-expanded {
+  margin: 2px 0 6px 20px; padding: 6px 10px; border-radius: 6px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.06);
+}
+.project-assistants .pa-trace-body {
+  margin: 0; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #ccc; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;
+}
+.project-assistants .pa-trace-loading {
+  font-size: 11.5px; color: #71717a; font-style: italic;
 }
 .project-assistants .pa-trace-detail-btn, .project-assistants .pa-trace-more-btn {
   align-self: flex-start; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #aaa; font-size: 11px; cursor: pointer;

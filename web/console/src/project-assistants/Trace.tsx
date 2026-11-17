@@ -1,14 +1,39 @@
 import type { ProjectAssistantTrace,ProjectAssistantReadTraceSummary,ProjectAssistantPermissionOffer } from "@clawdline/contract"
+import { useState } from "react"
 import type { Words } from "./words"
+
 export function Trace({items=[],summaries=[],details={},total=items.length,more=false,onMore,onDetail,w}:{items?:readonly ProjectAssistantTrace[];summaries?:readonly ProjectAssistantReadTraceSummary[];details?:Readonly<Record<string,ProjectAssistantTrace|ProjectAssistantPermissionOffer>>;total?:number;more?:boolean;onMore?:()=>void;onDetail?:(summary:ProjectAssistantReadTraceSummary)=>void;w:Words}) {
+  const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
+
+  const toggle = (id: string, summary?: ProjectAssistantReadTraceSummary) => {
+    setOpenIds(prev => {
+      const next = !prev[id]
+      if (next && summary && !details[id]) {
+        onDetail?.(summary)
+      }
+      return { ...prev, [id]: next }
+    })
+  }
+
+  const isZh = typeof w.trace === "string" && w.trace.includes("處理")
+  const loadingText = isZh ? "載入詳細內容中…" : "Loading details…"
+  const emptyText = isZh ? "（無詳細輸出）" : "(No output)"
+
   if (summaries.length || !items.length && total > 0 && summaries.length > 0) {
     return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{summaries.map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
-      return <div key={row.id} data-trace-id={row.id} className="pa-trace-row">
-        <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
-        <span className="pa-trace-title">{info.label}</span>
-        {info.text ? <span className="pa-trace-desc">{info.text}</span> : <button type="button" className="pa-trace-detail-btn" onClick={() => onDetail?.(row)}>{w.details}</button>}
+      const isOpen = !!openIds[row.id]
+      return <div key={row.id} data-trace-id={row.id} className={`pa-trace-row ${isOpen ? "open" : ""}`}>
+        <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
+          <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
+          <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+          <span className="pa-trace-title">{info.label}</span>
+          {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
+        </button>
+        {isOpen && <div className="pa-trace-expanded">
+          {full ? <pre className="pa-trace-body">{full.text || emptyText}</pre> : <div className="pa-trace-loading">{loadingText}</div>}
+        </div>}
       </div>
     })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.more}</button>}</div></details>
   }
@@ -17,10 +42,18 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
   for (const item of items) turns.set(item.turn_id, [...(turns.get(item.turn_id) ?? []), item])
   return <details className="pa-trace"><summary>{w.trace} · {items.length}</summary><div className="pa-trace-list">{[...turns].map(([id, rows]) => <div key={id} className="pa-trace-turn">{rows.map((row, i) => {
     const info = formatTraceItem(row.category, row.text, w)
-    return <div key={i} className="pa-trace-row">
-      <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
-      <span className="pa-trace-title">{info.label}</span>
-      {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
+    const turnKey = `${id}-${i}`
+    const isOpen = !!openIds[turnKey]
+    return <div key={i} className={`pa-trace-row ${isOpen ? "open" : ""}`}>
+      <button type="button" className="pa-trace-toggle" onClick={() => setOpenIds(prev => ({ ...prev, [turnKey]: !prev[turnKey] }))}>
+        <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
+        <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
+        <span className="pa-trace-title">{info.label}</span>
+        {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
+      </button>
+      {isOpen && <div className="pa-trace-expanded">
+        <pre className="pa-trace-body">{row.text || emptyText}</pre>
+      </div>}
     </div>
   })}</div>)}</div></details>
 }
