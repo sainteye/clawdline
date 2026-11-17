@@ -119,7 +119,7 @@ try{
     const reconnectStart=connections.length
     blocked.add("reader")
     for(const response of active.get("reader")??[])response.end()
-    await page.getByText(/pa_offline/).waitFor({timeout:15000});await state(page,"reading","idle")
+    await page.locator(".pa-connection-notice").waitFor({timeout:15000});await state(page,"reading","idle")
     assert.equal(await row("reading").count(),1,"Offline rows remain available as stale observations")
     await phase("done")
     blocked.delete("reader")

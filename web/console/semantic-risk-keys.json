@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 12786,
+  "englishKeys": 12792,
   "counts": {
     "negation": 3412,
     "state": 2151,
-    "permission": 760,
+    "permission": 761,
     "deletion": 302,
-    "uncertainty": 502
+    "uncertainty": 503
   },
-  "unionCount": 5523,
+  "unionCount": 5525,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6199,6 +6199,7 @@
       "projectAssistants.ruleRevoke",
       "projectAssistants.rulesHint",
       "projectAssistants.setup_cli_not_installed",
+      "projectAssistants.sourcePairingRequired",
       "projectAssistants.teamApprovalHint",
       "projectAssistants.unpaired",
       "projectAssistants.unverifiedUnsaved",
@@ -7092,6 +7093,7 @@
       "projectAssistants.memory_unsafe",
       "projectAssistants.pictureUnavailable",
       "projectAssistants.renameArtifactUnknown",
+      "projectAssistants.sourceOffline",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
       "projectAssistants.unverifiedExplanation",
@@ -12020,6 +12022,8 @@
     "projectAssistants.savedMemory",
     "projectAssistants.setup_cli_not_installed",
     "projectAssistants.sourceError",
+    "projectAssistants.sourceOffline",
+    "projectAssistants.sourcePairingRequired",
     "projectAssistants.statusNotUsed",
     "projectAssistants.statusStale",
     "projectAssistants.statusWithoutBots",

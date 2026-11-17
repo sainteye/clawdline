@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12786,
-  "riskKeys": 5523,
-  "nonRiskCount": 7263,
+  "englishContentKeys": 12792,
+  "riskKeys": 5525,
+  "nonRiskCount": 7267,
   "groups": [
     {
       "name": "acp / other",
@@ -5804,7 +5804,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 232,
+      "count": 236,
       "sources": [
         null
       ],
@@ -5995,7 +5995,11 @@
         "projectAssistants.shape_teardrop",
         "projectAssistants.shape_wedge",
         "projectAssistants.sharedFile",
+        "projectAssistants.sourceConnecting",
+        "projectAssistants.sourceDetails",
         "projectAssistants.sourceIDs",
+        "projectAssistants.sourceRetryHint",
+        "projectAssistants.sourceRetrying",
         "projectAssistants.stale",
         "projectAssistants.status",
         "projectAssistants.statusAgent",

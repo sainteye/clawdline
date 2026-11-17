@@ -36,3 +36,8 @@ export function botFailureText(code: string, w: Record<string, string>): string 
   // refusal-ok: an unrecognised code still shows beside this sentence in small print.
   return w.failGeneric
 }
+
+/** Permanent authorization and protocol refusals need intervention, not reconnect loops. */
+export function retryableSourceError(code:string):boolean {
+  return !!code&&!(["pa_revoked","pa_scope_denied","pa_unpaired","pa_invalid","pa_unsupported","unsupported","pa_disabled"]).includes(code)
+}
