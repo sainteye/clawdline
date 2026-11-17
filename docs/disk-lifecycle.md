@@ -11,7 +11,11 @@ filesystem before and after a cleanup to measure what it actually released.
 
 The task reclaimer in `internal/app/orchestrator/reclaim.go` checks a terminal
 task record, its exact broker-owned path, the grace period, and positive
-evidence that the owner left. Only then does it remove the task's `work/`.
+evidence that the owner left, accepted saved results and an unchanged protected-output
+manifest. It rechecks the scratch tree, owner and open readers after recording
+intent. All terminal outcomes keep scratch for at least 24 hours. Missing output
+proof, nested repositories and uncertain linked trees keep the scratch for review.
+Only then does it remove the task's `work/`.
 `CHILD.md`, `result.json`, and `artifacts/` remain evidence for the Root. Go
 modules downloaded into `work/` may have read-only directories; the removal
 prepares directories under that proved scratch path for deletion and leaves
@@ -128,6 +132,10 @@ space before and after. Do not infer reclaimable space from a sum of directory
 sizes or from allocated bytes alone. An unavailable process or lease reading
 is an unknown owner, not proof that the cache is idle.
 
+The [task resource lifecycle plan](task-resource-lifecycle-plan.md) specifies
+managed scratch ownership, protected outputs and an inspection/cleanup contract
+for a future Bot. Its retention and capacity proposals are not active policy.
+
 ## Remaining product work
 
 These are implementation gaps, not permissions to delete existing data:
@@ -155,3 +163,11 @@ Any new retention window, byte ceiling, row limit, or scan bound belongs in
 `internal/domain/capacity` and its registration guard. A cleanup report should
 distinguish `removed`, `kept`, and `unknown`, give the reason for each kept
 subject, and state the next owner when a person must resolve it.
+
+The shared managed-resource capacity reading includes existing task `work/`,
+registered gate caches and non-artifact callback logs. A cache nested in task
+scratch is subtracted from that scratch total and counted once as cache. This
+accounting does not adopt an external cache or authorize a new deletion path.
+The legacy reclaimer retains its own procedure; pressure admission visits its
+advancing pages before refusing new heavy work. Protected artifacts and entire
+Root assignment directories remain outside eviction budgets.

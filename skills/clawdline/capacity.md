@@ -675,6 +675,14 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `release.state_file_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
 | `release.supervisor_runs` | 5 | `rows` | `refuse` | `diagnostics` | — |
 | `release.unpacked_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics` | — |
+| `resources.cache_bytes` | 4294967296 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.disk_reserve_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `resources.log_seconds` | 604800 | `seconds` | `rotate` | `diagnostics, sender` | — |
+| `resources.page_rows` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `resources.scan_files` | 262144 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `resources.scratch_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `run.claimed_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `run.created_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `schedule.history_page_rows` | 10 | `rows` | `evict_oldest` | `diagnostics` | — |

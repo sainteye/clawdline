@@ -25,6 +25,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -37,6 +38,9 @@ import (
 // exactly that reason.
 type Broker struct {
 	Store *store.Store
+	// Resources owns only newly allocated disposable directories. Legacy paths are never adopted.
+	Resources               *taskresources.Service
+	ResourceServiceRequired bool
 	// AssistantAuthority is opt-in. Without a source-owned verifier and result
 	// sink, the typed Bot door is closed; ordinary Session doors are unchanged.
 	AssistantAuthority   *AssistantAuthority

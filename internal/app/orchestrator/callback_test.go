@@ -410,13 +410,11 @@ func TestAVerdictKeepsTheLastLineOfALongOutput(t *testing.T) {
 func TestAFinishedCallbacksFilesAreReclaimedAfterAWeek(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	id := "c0000000-0000-4000-8000-000000000013"
-	_, files := stranded(t, b, ctx, id, 0)
-	_ = os.WriteFile(files.log(), []byte("out\n"), 0o600)
-	_ = os.WriteFile(files.exit(), []byte("0"), 0o600)
-	r, err := b.Settle(ctx, id, StateSuccess, "exit 0", nil)
-	if err != nil {
+	if _, err := b.StartCallback(ctx, callbackRequest(t, id, "sh", "-c", "echo out")); err != nil {
 		t.Fatal(err)
 	}
+	r := settledWithin(t, b, ctx, id, 10*time.Second)
+	files := callbackFiles{r.Dir}
 	if d := b.reclaimCallback(ctx, r, r.FinishedAt.Add(24*time.Hour), false); d.Outcome != "" {
 		t.Fatalf("a day-old callback was %+v", d)
 	}

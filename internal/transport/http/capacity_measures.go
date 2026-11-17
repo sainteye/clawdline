@@ -27,6 +27,7 @@ var capacityMeasureAreas = []struct {
 	{"projectfiles", (*Server).projectFilesCapacityMeasures},
 	{"projectsync", (*Server).projectSyncCapacityMeasures},
 	{"release", (*Server).releaseCapacityMeasures},
+	{"resources", (*Server).resourcesCapacityMeasures},
 	{"session", (*Server).sessionCapacityMeasures},
 	{"sessions", (*Server).sessionsCapacityMeasures},
 	{"squad", (*Server).squadCapacityMeasures},

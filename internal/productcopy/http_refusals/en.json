@@ -1367,5 +1367,11 @@
   "http.41accd9f619d48df": "Name one Session or Chrome profile for this reading.",
   "http.51774ccca1152d03": "Choose isolated or user_chrome for setup.",
   "http.8eeeba0800c89b1a": "This browser's extension setup is not confirmed. Set it up from Settings, Chrome.",
-  "http.0f180d14e5f39524": "Automatic selection is off for this browser. Use Settings, Chrome, or honor the person's explicit request for this Session after setup is complete."
+  "http.0f180d14e5f39524": "Automatic selection is off for this browser. Use Settings, Chrome, or honor the person's explicit request for this Session after setup is complete.",
+  "http.977dc7314cdb27f9": "Managed resource service is unavailable.",
+  "http.21abb6ecbef66e84": "Resource operation refused; inspect the reason and preserved data before retrying.",
+  "http.068c75f90ddbd81a": "Invalid resource page size.",
+  "http.53864d798d4d0614": "Specify pinned explicitly.",
+  "http.f91d005f881f0074": "Resource response contract is unavailable.",
+  "http.f83c60ec892ca7ae": "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
 }

@@ -270,6 +270,10 @@
 | `request_in_progress` | `internal/transport/http/receipts.go`, `internal/transport/http/work.go` |
 | `request_outcome_unknown` | `internal/transport/http/receipts.go`, `internal/transport/http/work.go` |
 | `reset_failed` | `internal/transport/http/work_v2.go` |
+| `resource_contract_unknown` | `internal/transport/http/task_resources.go` |
+| `resource_page_size_invalid` | `internal/transport/http/task_resources.go` |
+| `resource_protection_invalid` | `internal/transport/http/task_resources.go` |
+| `resource_service_unavailable` | `internal/transport/http/task_resources.go` |
 | `restore_batch_too_large` | `internal/transport/http/session_restore.go` |
 | `review_required_not_applicable` | `internal/domain/work/v2.go` |
 | `role_draft_failed` | `internal/transport/http/squad_role_draft.go` |

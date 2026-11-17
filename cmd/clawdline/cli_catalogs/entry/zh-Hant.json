@@ -143,5 +143,6 @@
   "main_tmux_args_which": "  tmux <args…> | tmux which    此 daemon 執行的 tmux，連到它自己的伺服器：這台機器的，或此版本內附的",
   "main_squad_help": "  squad <catalog|definition|scopes|settings|save|bind|icon>   私人角色、技能與像素機器人；guide squad 提供完整範例",
   "main_playbook": "  playbook <list|create|edit|delete>   管理儲存的啟動訊息；guide project 有完整範例",
-  "toolbox_usage": "用法：clawdline toolbox search [關鍵字]"
+  "toolbox_usage": "用法：clawdline toolbox search [關鍵字]",
+  "main_resources": "  resources <list|allocate|publish|plan|apply|pin|measure|admit>   檢查及回收已登記的暫存資料"
 }

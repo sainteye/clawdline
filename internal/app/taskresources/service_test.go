@@ -1,0 +1,369 @@
+package taskresources
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
+)
+
+type fixture struct {
+	s              *Service
+	owner          *OwnerState
+	scope          Scope
+	allocation     Allocation
+	output, db, fs string
+	now            time.Time
+}
+
+func setup(t *testing.T, class taskresource.Class) fixture {
+	t.Helper()
+	base := t.TempDir()
+	db := filepath.Join(base, "state")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed := filepath.Join(base, "resources")
+	root, err := resourcefs.Open(managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(base, "artifacts")
+	if err := os.Mkdir(output, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(output, "result.txt"), []byte("retained result"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_790_000_000, 0)
+	owner := &OwnerState{Owner: taskresource.Owner{Kind: "task", ID: "30000000-0000-4000-8000-000000000001", Project: base}, Presence: "present", UsePresence: "present", OutputRoot: output, EvidenceDigest: "synthetic-durable-result"}
+	s := &Service{Store: st, FS: root, Clock: func() time.Time { return now.Add(-26 * time.Hour) }, FreeSpace: func() (int64, error) { return 1 << 40, nil }, Owner: func(_ context.Context, kind, id string) (OwnerState, error) {
+		if kind != owner.Owner.Kind || id != owner.Owner.ID {
+			return OwnerState{}, fail("owner_unknown")
+		}
+		return *owner, nil
+	}}
+	t.Cleanup(func() { s.FS.Close(); s.Store.Close() })
+	scope := Scope{Actor: "person", Project: base, Inspect: true, Reclaim: true, Publish: true, Unpin: true}
+	allocation, err := s.Allocate(context.Background(), scope, "task", owner.Owner.ID, class)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(allocation.Path, "rebuildable.tmp"), []byte("temporary computation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.Clock = func() time.Time { return now }
+	owner.Complete = true
+	owner.CompletedAt = now.Add(-25 * time.Hour).Unix()
+	owner.Presence = "absent"
+	owner.UsePresence = "absent"
+	owner.OutputsSaved = true
+	return fixture{s, owner, scope, allocation, output, db, managed, now}
+}
+
+func (f fixture) seal(t *testing.T) Plan {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := f.s.Seal(ctx, f.scope, f.allocation.Resource.ID); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.s.Plan(ctx, f.scope, []string{f.allocation.Resource.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Items) != 1 || p.Items[0].Decision.Outcome != "eligible" {
+		t.Fatal(p)
+	}
+	return p
+}
+
+func preserved(t *testing.T, f fixture) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(f.output, "result.txt"))
+	if err != nil || string(b) != "retained result" {
+		t.Fatal("protected result changed", err)
+	}
+}
+
+func TestInspectionIsReadOnlyAndCleanupReplaysItsReceipt(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	unsealed, err := f.s.Plan(ctx, f.scope, []string{f.allocation.Resource.ID})
+	if err != nil || unsealed.Items[0].Decision.Reason != "outputs_unsealed" {
+		t.Fatal(unsealed, err)
+	}
+	plan := f.seal(t)
+	before, err := f.s.Store.TaskResource(ctx, f.allocation.Resource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.s.Inventory(ctx, f.scope, "", 1)
+	if err != nil || len(page.Items) != 1 || page.Next == "" {
+		t.Fatal(page, err)
+	}
+	after, err := f.s.Store.TaskResource(ctx, f.allocation.Resource.ID)
+	if err != nil || before != after {
+		t.Fatal("inspection changed the register", after, err)
+	}
+	execution := uuid.NewString()
+	result, err := f.s.Apply(ctx, f.scope, plan, execution)
+	if err != nil || len(result.Items) != 1 || result.Items[0].Outcome != "removed" {
+		t.Fatal(result, err)
+	}
+	if absent, err := f.s.FS.Absent(f.allocation.Resource); err != nil || !absent {
+		t.Fatal(absent, err)
+	}
+	replay, err := f.s.Apply(ctx, f.scope, plan, execution)
+	if err != nil || !replay.Replayed || replay.Items[0] != result.Items[0] {
+		t.Fatal(replay, err)
+	}
+	preserved(t, f)
+}
+
+func TestBotCanRequestCleanupButCannotPublishUnpinOrReadAnotherProject(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	plan := f.seal(t)
+	bot := Scope{Actor: "inspection-bot", Project: f.owner.Owner.Project, Inspect: true, Reclaim: true}
+	if _, err := f.s.Seal(ctx, bot, f.allocation.Resource.ID); err == nil {
+		t.Fatal("Bot published an owner's preservation proof")
+	}
+	if _, err := f.s.Pin(ctx, f.scope, f.allocation.Resource.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Pin(ctx, bot, f.allocation.Resource.ID, false); err == nil {
+		t.Fatal("Bot removed a pin")
+	}
+	if _, err := f.s.Apply(ctx, bot, plan, uuid.NewString()); err == nil {
+		t.Fatal("stale plan ignored a pin")
+	}
+	other := bot
+	other.Project = t.TempDir()
+	page, err := f.s.Inventory(ctx, other, "", 1)
+	if err != nil || len(page.Items) != 0 || page.Next == "" {
+		t.Fatal("scope leaked or cursor stalled", page, err)
+	}
+	if _, err := f.s.Plan(ctx, other, []string{f.allocation.Resource.ID}); err == nil {
+		t.Fatal("cross-Project resource read")
+	}
+	preserved(t, f)
+}
+
+func TestChangedBytesOutputsReaderAndPolicyInvalidatePlans(t *testing.T) {
+	for _, change := range []string{"scratch", "output", "reader", "policy"} {
+		t.Run(change, func(t *testing.T) {
+			f := setup(t, taskresource.Scratch)
+			ctx := context.Background()
+			plan := f.seal(t)
+			switch change {
+			case "scratch":
+				if err := os.WriteFile(filepath.Join(f.allocation.Path, "new.tmp"), []byte("changed"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "output":
+				if err := os.WriteFile(filepath.Join(f.output, "new.txt"), []byte("new result"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "reader":
+				f.owner.UsePresence = "present"
+			case "policy":
+				p := taskresource.DefaultPolicy()
+				p.ScratchSeconds++
+				f.s.Policy = func() taskresource.Policy { return p }
+			}
+			if _, err := f.s.Apply(ctx, f.scope, plan, uuid.NewString()); err == nil {
+				t.Fatal("stale plan removed data")
+			}
+			if absent, err := f.s.FS.Absent(f.allocation.Resource); err != nil || absent {
+				t.Fatal("resource removed", err)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
+func TestReaderAppearingAfterIntentIsKept(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	plan := f.seal(t)
+	f.s.Fault = func(point, id string) error {
+		if point == "after_intent" {
+			f.owner.UsePresence = "present"
+		}
+		return nil
+	}
+	result, err := f.s.Apply(context.Background(), f.scope, plan, uuid.NewString())
+	if err != nil || result.Items[0].Outcome != "kept" || result.Items[0].Reason != "resource_changed_before_remove" {
+		t.Fatal(result, err)
+	}
+	if absent, err := f.s.FS.Absent(f.allocation.Resource); err != nil || absent {
+		t.Fatal(absent, err)
+	}
+	preserved(t, f)
+}
+
+func TestInterruptedCleanupReconcilesInsteadOfDeletingTwice(t *testing.T) {
+	for _, point := range []string{"after_intent", "after_remove"} {
+		t.Run(point, func(t *testing.T) {
+			f := setup(t, taskresource.Scratch)
+			ctx := context.Background()
+			plan := f.seal(t)
+			execution := uuid.NewString()
+			f.s.Fault = func(p, id string) error {
+				if p == point {
+					return errors.New("synthetic interruption")
+				}
+				return nil
+			}
+			if _, err := f.s.Apply(ctx, f.scope, plan, execution); err == nil {
+				t.Fatal("fault did not interrupt")
+			}
+			f.s.Fault = nil
+			if err := f.s.recoverPage(ctx, ""); err != nil {
+				t.Fatal(err)
+			}
+			r, err := f.s.Store.TaskResource(ctx, f.allocation.Resource.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if point == "after_intent" && r.LastOutcome != "kept" {
+				t.Fatal("unremoved bytes not retained", r)
+			}
+			if point == "after_remove" && r.LastOutcome != "removed" {
+				t.Fatal("completed unlink not reconciled", r)
+			}
+			replayed, err := f.s.Apply(ctx, f.scope, plan, execution)
+			if err != nil || !replayed.Replayed || !replayed.OutcomeUnknown {
+				t.Fatal(replayed, err)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
+func TestPressureReclaimsOnlyEligibleDataAndKeepsActiveResources(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		t.Run(map[bool]string{false: "eligible", true: "active"}[active], func(t *testing.T) {
+			f := setup(t, taskresource.Scratch)
+			f.seal(t)
+			p := taskresource.DefaultPolicy()
+			p.ScratchTotal = 1
+			f.s.Policy = func() taskresource.Policy { return p }
+			if active {
+				f.owner.UsePresence = "present"
+			}
+			err := f.s.Admit(context.Background())
+			if active && err == nil {
+				t.Fatal("over-budget active resource admitted new work")
+			}
+			if !active && err != nil {
+				t.Fatal("safe pressure reclaim failed", err)
+			}
+			absent, err := f.s.FS.Absent(f.allocation.Resource)
+			if err != nil || absent == active {
+				t.Fatal("wrong pressure disposition", absent, err)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
+func TestPendingResourceIntentSurvivesActualStoreRestart(t *testing.T) {
+	for _, unlinked := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before unlink", true: "after unlink"}[unlinked], func(t *testing.T) {
+			f := setup(t, taskresource.Scratch)
+			ctx := context.Background()
+			plan := f.seal(t)
+			execution := uuid.NewString()
+			key := store.ReceiptKey{Scope: "resources.cleanup", Actor: f.scope.Actor, Key: execution}
+			if _, err := f.s.Store.ClaimReceipt(ctx, key, plan.Digest, store.ReceiptPolicy{}, f.now); err != nil {
+				t.Fatal(err)
+			}
+			r := plan.Items[0].Resource
+			r.LastPlan = plan.Digest
+			r.LastTargets = r.ID
+			if _, err := f.s.mark(ctx, r, execution, f.scope.Actor, "removing", "completed_owned_scratch"); err != nil {
+				t.Fatal(err)
+			}
+			if unlinked {
+				if err := f.s.FS.Remove(ctx, r, plan.Items[0].Snapshot.Digest); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := f.s.Store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.s.FS.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st, err := store.Open(f.db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.s.Store = st
+			root, err := resourcefs.Open(f.fs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.s.FS = root
+			if err := f.s.recoverPage(ctx, ""); err != nil {
+				t.Fatal(err)
+			}
+			current, err := st.TaskResource(ctx, r.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := "kept"
+			if unlinked {
+				expected = "removed"
+			}
+			if current.LastOutcome != expected {
+				t.Fatal(current)
+			}
+			result, err := f.s.Apply(ctx, f.scope, plan, execution)
+			if err != nil || !result.OutcomeUnknown {
+				t.Fatal(result, err)
+			}
+			if len(result.Items) != 1 || result.Items[0].LogicalBytes != 0 {
+				t.Fatal("recovery invented freed bytes", result)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
+func TestScopedInspectionDoesNotExposeCrossProjectRecoveryTargets(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	f.seal(t)
+	targets := f.allocation.Resource.ID + "," + uuid.NewString()
+	if _, err := f.s.Store.UpdateTaskResource(ctx, f.allocation.Resource.ID, "resource.kept", f.now, func(r *taskresource.Resource) error { r.LastTargets = targets; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	bot := Scope{Actor: "inspection-bot", Project: f.owner.Owner.Project, Inspect: true, Reclaim: true}
+	page, err := f.s.Inventory(ctx, bot, "", 1)
+	if err != nil || len(page.Items) != 1 || page.Items[0].Resource.LastTargets != "" {
+		t.Fatal("recovery target list leaked", page, err)
+	}
+	pinned, err := f.s.Pin(ctx, bot, f.allocation.Resource.ID, true)
+	if err != nil || pinned.LastTargets != "" {
+		t.Fatal("protection reply leaked recovery targets", pinned, err)
+	}
+	stored, err := f.s.Store.TaskResource(ctx, f.allocation.Resource.ID)
+	if err != nil || stored.LastTargets != targets {
+		t.Fatal("private recovery evidence was discarded", stored, err)
+	}
+	denied := bot
+	denied.Project = t.TempDir()
+	r, err := f.s.resource(ctx, denied, f.allocation.Resource.ID)
+	if err == nil || r.ID != "" {
+		t.Fatal("denied lookup returned a foreign resource", r, err)
+	}
+}

@@ -66,7 +66,7 @@ CREATE INDEX IF NOT EXISTS broker_go_caches_owner ON broker_go_caches(owner_kind
 `
 
 func openHandover(db *sql.DB) error {
-	_, err := db.Exec(handoverSchema)
+	_, err := db.Exec(handoverSchema + taskResourceSchema)
 	return err
 }
 

@@ -920,6 +920,16 @@
       "method": "*",
       "pattern": "/v1/voice/copilot-work",
       "guide": "connect"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/resources",
+      "guide": "callback"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/orchestrator/resources/",
+      "guide": "callback"
     }
   ]
 }

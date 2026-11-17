@@ -26,7 +26,8 @@ import (
 // Group rooms and the person's team management approvals arrive at level 76.
 // Question-focused voice analysis arrives at level 77.
 // Human artifact title changes arrive at level 78.
-const APILevel = 78
+// Managed task-resource inspection, planning and guarded execution arrive at level 79.
+const APILevel = 79
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

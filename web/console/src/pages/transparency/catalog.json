@@ -1477,8 +1477,14 @@
         "\t}\n",
         "\tw(\"## Where and how long\")\n",
         "\tw(\"\")\n",
-        "\tw(\"- Work inside %s. Keep artifacts in %s/artifacts/; put heavyweight temporary\", cwd, dir)\n",
-        "\tw(\"  work in %s/work/, which is deleted when the task ends.\", dir)\n",
+        "\tif b.DisplayLanguage() == \"zh-Hant\" {\n",
+        "\t\tw(\"- 工作目錄 %s；成果放在 %s/artifacts/。\", cwd, dir)\n",
+        "\t\tw(\"  %s/work/ 為暫存，保留期限到期且安全條件通過後才回收。\", dir)\n",
+        "\t\tw(\"  可重建二進位與原始紀錄放暫存；成果保留精簡驗證證據。\")\n",
+        "\t} else {\n",
+        "\t\tw(\"- Work in %s. Deliverables: %s/artifacts/; temporary files:\", cwd, dir)\n",
+        "\t\tw(\"  %s/work/ (temporary binaries/logs). Retention and safety checks apply.\", dir)\n",
+        "\t}\n",
         "\tif r.Root == nil && r.ScheduleID != \"\" {\n",
         "\t\t// A scheduled run is not ended by its clock while it is still working\n",
         "\t\t// (scheduled_run.go), so the clock is not a reason to cut the work short.\n",
@@ -3155,7 +3161,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/brief.go",
-          "line": 311
+          "line": 322
         },
         {
           "path": "internal/domain/snippet/default_playbook.go",
@@ -4287,7 +4293,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "4ced42a5b6993b6adda6b82e06f707a8889a0f4433a4e20547e0127192396792",
+    "cmd/clawdline/main.go": "e182aca55053fb3400ea0426875f5d7ff924f7a915af062f5ed3fae1f3c4b1bc",
     "cmd/clawdline/project_assistants.go": "d4ded77207df9fa557b0095cfddd4447065a8678749777cbbb2e8163d7be13f0",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
@@ -4355,14 +4361,14 @@
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "3758f2ceed371f4e869d904a0a22f1aaab3f877b46f5e277fe7494a1ac0681b5",
     "internal/app/browserbridge/profiles.go": "f41aacbc491f0cb2bbb95008d09bf358b0664ffb01b0b515364f348b550f3834",
-    "internal/app/orchestrator/brief.go": "fe7b695fe0617cfaaa91e98978630972648e257b8dfd1acb3026cfb01fedd4e7",
+    "internal/app/orchestrator/brief.go": "dd38b8ba01dba9c851d9b6bb7ff336b1fa115341729af2393783c86f739b2d62",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/dispatch.go": "5b4bee253c2f532f4abea577d050465f0e2d3823a42aa273f807c65ff50237e8",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
-    "internal/app/orchestrator/handoffs.go": "c5bec8bf098e10112cff1bd9e4d034310eeb100c98c5d3ff7983e7a2bd53cdeb",
+    "internal/app/orchestrator/handoffs.go": "eeb99f3590d9d1dacdaf8eff263554192647c8e58e73b532f7832a31d1840887",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
     "internal/app/orchestrator/milestone_name.go": "590d98d9d1842636dc58613f86c4e088483f860c098aba0ab9f82eb292a7c641",
     "internal/app/orchestrator/notice.go": "3261eecc450916a8575529eb4b9f753426b1c56b9b1320e3f5860f8bea9c956d",
@@ -4442,8 +4448,8 @@
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "cc6d6175ea8ebc580ee5fbf31a893ecbc60ce6d2e7157ad0f386059f7b3c638d",
-    "skills/clawdline/guide.zh-TW.md": "93e2de82ce6336487ab2a18bb2b8552e492164390c9ebafd27c7f63ad01ff340",
+    "skills/clawdline/guide.md": "404f1c1be0b97dfff271a38cfe09176e127e0bfec8cd0dd335e7af5d87f5dd58",
+    "skills/clawdline/guide.zh-TW.md": "c671a2422dcf3b535a5afe22628fc2aa15f9c97c05ee3d16dadbc506b391db65",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -4488,7 +4494,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "7d3ff8e73e14a997637fe826afc418fc3274671cf95cd69f823007aa86f6aab4",
-    "zh-Hant": "645ed2086cc86cc40bdeadb4d6e8b41e84eb764c278646cee5494e1bd873e4f4"
+    "en": "5edf4b02eba9e0e50faba85b8d8ed29af2adbff39a257b72e73d4825afe5b214",
+    "zh-Hant": "3689b226735caef9d1f96aaf877ee66a112e260ea38838baef05e2fe3e23152a"
   }
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -63,6 +64,11 @@ func w6Checkout(t *testing.T, b *Broker, ctx context.Context, repo, id, pane str
 		Dir: b.Tasks.Path(id), ChildTerminalID: pane, ChildBackend: "tmux",
 		Worktree: &Worktree{Repository: repo, Path: path, Branch: BranchName(id), Base: base, Head: head},
 		Landing:  &Landing{State: LandingPending}}
+	r.Result = &taskdir.Result{Protocol: Protocol, TaskID: id, Status: "success", Summary: "Saved fixture report", Artifacts: []string{"artifacts/report.md"}}
+	resultBytes, _ := json.Marshal(r.Result)
+	if err := os.WriteFile(filepath.Join(r.Dir, "result.json"), resultBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := b.save(ctx, r, HashSecret("s"), "task.success"); err != nil {
 		t.Fatal(err)
 	}

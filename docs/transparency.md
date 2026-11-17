@@ -682,3 +682,11 @@ work. Focused-analysis usage is recorded independently by the machine to avoid
 counting it twice in daily estimates. The refreshed source receipts establish
 reviewed sources, not listening quality or deployment acceptance. The public
 website snapshot must import the delivered revision after it lands.
+
+Managed-resource instructions now distinguish retained deliverables from temporary
+binaries and raw execution logs. The English and Traditional Chinese child
+explanations and original briefing excerpt reflect retention and positive safety
+checks; they do not grant a new deletion authority or tool permission. The
+resource CLI registration and Root artifact directory do not add a provider
+injection trigger. The callback guide describes the shared inspection/cleanup
+contract and its future Bot boundary; reading it does not execute cleanup.

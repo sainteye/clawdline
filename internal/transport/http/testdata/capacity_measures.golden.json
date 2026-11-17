@@ -3291,6 +3291,47 @@
     "Note": true
   },
   {
+    "Name": "resources.cache_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.cache_total_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.disk_reserve_bytes",
+    "HostDependent": true
+  },
+  {
+    "Name": "resources.log_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "resources.page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.scan_files",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.scratch_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "resources.scratch_total_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "run.claimed_items",
     "Known": true,
     "Note": true

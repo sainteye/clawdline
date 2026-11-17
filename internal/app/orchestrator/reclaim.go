@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/git"
+	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
@@ -80,18 +81,19 @@ const (
 	WhyWorkScratch       = "work_scratch"        // a task directory's work/, which the briefing declares disposable
 	WhyCallbackFiles     = "callback_files"      // a callback settled over CallbackRetentionDays ago: its output, pid, exit, attempt and lock files
 	// kept
-	WhyLive         = "task_live"
-	WhyGrace        = "within_grace"
-	WhyOwnerPresent = "owner_present"
-	WhyOwnerUnknown = "owner_unknown"
-	WhyPathNotOwned = "path_not_owned"
-	WhyUnreadable   = "unreadable"
-	WhyNested       = "nested_repository"
-	WhyFiltered     = "filters_present"
-	WhyPreserveFail = "preserve_failed"
-	WhyChanged      = "changed_during_sweep"
-	WhyUnrecorded   = "intent_not_recorded"
-	WhyRemoveFailed = "remove_failed"
+	WhyLive              = "task_live"
+	WhyGrace             = "within_grace"
+	WhyOwnerPresent      = "owner_present"
+	WhyOwnerUnknown      = "owner_unknown"
+	WhyPathNotOwned      = "path_not_owned"
+	WhyUnreadable        = "unreadable"
+	WhyNested            = "nested_repository"
+	WhyFiltered          = "filters_present"
+	WhyPreserveFail      = "preserve_failed"
+	WhyChanged           = "changed_during_sweep"
+	WhyOutputsUnverified = "outputs_unverified"
+	WhyUnrecorded        = "intent_not_recorded"
+	WhyRemoveFailed      = "remove_failed"
 )
 
 // The outcome recorded before a removal is attempted, so a removal that a
@@ -169,7 +171,8 @@ type reclaimState struct {
 	started time.Time
 	// seen is the beat's last reading, for the inventory's `dispose` advice
 	// (G22): a zero reading proves nobody gone.
-	seen reading
+	seen           reading
+	resourcesAfter string
 }
 
 // keepReading remembers the pass's reading for readers off the beat.
@@ -244,6 +247,18 @@ func (b *Broker) reclaimDue(ctx context.Context) {
 		sweep, cancel := context.WithTimeout(context.WithoutCancel(ctx), reclaimDeadline)
 		defer cancel()
 		_, _ = b.Reclaim(sweep, false)
+		if b.Resources != nil {
+			b.reclaim.mu.Lock()
+			after := b.reclaim.resourcesAfter
+			b.reclaim.mu.Unlock()
+			_, next, err := b.SweepTaskResources(sweep, after)
+			if err == nil {
+				b.reclaim.mu.Lock()
+				b.reclaim.resourcesAfter = next
+				b.reclaim.mu.Unlock()
+			}
+			_, _ = b.Resources.Measure(sweep)
+		}
 	}()
 }
 
@@ -880,8 +895,8 @@ func (b *Broker) removeCheckout(ctx context.Context, r Record, snap git.Snapshot
 
 // reclaimTaskDir decides one task directory's `work/` — the scratch the
 // briefing tells the child is deleted when the task ends — once the task is
-// over and its owner provably gone: at once on success, after the grace
-// otherwise.
+// over and its owner provably gone, after the same grace for every terminal
+// outcome. Success does not waive the person's recovery window.
 //
 // Only `work/`. The rest of the directory is the task's evidence: the brief,
 // the result a completion notice tells the root to read, and `artifacts/`,
@@ -902,9 +917,6 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 		return kept(r, ReclaimTaskDir, scratch, WhyPathNotOwned, map[string]any{"root": b.Tasks.Dir})
 	}
 	grace := b.reclaimGrace()
-	if r.State == StateSuccess {
-		grace = 0
-	}
 	if now.Sub(r.FinishedAt) < grace {
 		return kept(r, ReclaimTaskDir, scratch, WhyGrace, map[string]any{"ended_at": r.FinishedAt.Unix(),
 			"grace_seconds": int(grace.Seconds())})
@@ -930,7 +942,26 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 			gateCacheRegistered = true
 		}
 	}
-	bytes, _ := dirBytes(scratch)
+	preservation, err := b.taskPreservationDigest(ctx, r.ID)
+	if err != nil {
+		return kept(r, ReclaimTaskDir, scratch, WhyOutputsUnverified, map[string]any{"owner": owner})
+	}
+	snapshot, err := resourcefs.InspectLegacyScratch(ctx, scratch)
+	if err != nil {
+		return kept(r, ReclaimTaskDir, scratch, WhyUnreadable, map[string]any{"owner": owner, "tree": "unverified"})
+	}
+	presence := resourcefs.UsePresence(ctx, scratch)
+	if presence != "absent" {
+		why := WhyOwnerUnknown
+		if presence == "present" {
+			why = WhyOwnerPresent
+		}
+		return kept(r, ReclaimTaskDir, scratch, why, map[string]any{"open_files": presence})
+	}
+	bytes := snapshot.Logical
+	if snapshot.AllocationKnown {
+		bytes = snapshot.Allocated
+	}
 	d := ReclaimDecision{Task: r.ID, Subject: ReclaimTaskDir, Path: scratch, Reason: WhyWorkScratch, Bytes: bytes,
 		Evidence: map[string]any{"owner": owner}}
 	if dryRun {
@@ -949,6 +980,24 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 			d.Evidence["intent"] = err.Error()
 			return kept(r, ReclaimTaskDir, scratch, WhyUnrecorded, d.Evidence)
 		}
+	}
+	// Refresh all independent proofs after recording intent. Age and a
+	// terminal state never replace preserved output or an idle filesystem.
+	current, _, err := b.Record(ctx, r.ID)
+	if err != nil || !current.State.Terminal() {
+		return kept(r, ReclaimTaskDir, scratch, WhyChanged, d.Evidence)
+	}
+	gone, why, _ = b.ownerGone(ctx, b.read(ctx), current, r.Dir, checkout)
+	if !gone {
+		return kept(r, ReclaimTaskDir, scratch, why, d.Evidence)
+	}
+	currentPreservation, e := b.taskPreservationDigest(ctx, r.ID)
+	currentTree, te := resourcefs.InspectLegacyScratch(ctx, scratch)
+	if e != nil || te != nil || currentPreservation != preservation || currentTree.Digest != snapshot.Digest {
+		return kept(r, ReclaimTaskDir, scratch, WhyChanged, d.Evidence)
+	}
+	if resourcefs.UsePresence(ctx, scratch) != "absent" {
+		return kept(r, ReclaimTaskDir, scratch, WhyOwnerUnknown, d.Evidence)
 	}
 	remove := b.removeTaskScratch
 	if remove == nil {

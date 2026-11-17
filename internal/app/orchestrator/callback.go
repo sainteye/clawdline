@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
+	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -114,6 +115,12 @@ type Callback struct {
 	// daemon. Root.SessionID identifies its conversation, which can later be
 	// opened in another terminal; keep the original Session for coordination.
 	CallingSessionID string `json:"calling_session_id,omitempty"`
+	// Daemon-created paths; these are never accepted from CallbackRequest.
+	ScratchPath string `json:"scratch_path,omitempty"`
+	CachePath   string `json:"cache_path,omitempty"`
+	// NotStarted is a source-owned refusal before the launch effect; missing
+	// pid/attempt files alone are never proof that no process ran.
+	NotStarted bool `json:"not_started,omitempty"`
 	// Intent is declared when the callback is created. An older callback with
 	// no intent is treated as a wait, never as proof of heavy work.
 	Intent string            `json:"intent,omitempty"`
@@ -435,6 +442,20 @@ func runCallbackStart(ctx context.Context, b *Broker, e store.Effect) effectResu
 	if _, err := os.Stat(files.attempt()); err == nil {
 		b.settleCallbackExit(ctx, r.ID, nil, "", 0)
 		return effectResult{state: store.EffectDone, outcome: "started before and ended with no exit status; not run again"}
+	}
+	var resourceErr error
+	r, resourceErr = b.prepareCallbackResources(ctx, r)
+	if resourceErr != nil {
+		_, ids, err := b.settleWith(ctx, r.ID, StateFailure, "resource_admission_refused: "+resourceErr.Error(), nil, func(x *Record) {
+			x.Callback.NotStarted = e.Attempts == 1 && x.Callback.PID == 0 && x.Callback.StartedAt.IsZero()
+		})
+		if err == nil {
+			b.runRecorded(ctx, ids)
+		}
+		if err != nil {
+			return effectResult{state: store.EffectFailed, outcome: "resource admission could not be recorded"}
+		}
+		return effectResult{state: store.EffectDone, outcome: "resource admission refused; no command started"}
 	}
 	proc, err := startCallbackProcess(r, files, b.callbackLive(ctx, r.ID))
 	if errors.Is(err, errCallbackSettled) {
@@ -789,7 +810,12 @@ func (b *Broker) reclaimCallback(ctx context.Context, r Record, now time.Time, d
 	files := callbackFiles{r.Dir}
 	present := []string{}
 	var bytes int64
-	for _, p := range []string{files.log(), files.pid(), files.exit(), files.attempt(), files.lock()} {
+	paths := []string{files.log()}
+	if !b.callbackResourceMetadataNeeded(ctx, r.ID) {
+		paths = append(paths, files.pid(), files.exit(), files.attempt(), files.lock())
+	}
+
+	for _, p := range paths {
 		if info, err := os.Lstat(p); err == nil && info.Mode().IsRegular() {
 			present = append(present, p)
 			bytes += info.Size()
@@ -800,6 +826,19 @@ func (b *Broker) reclaimCallback(ctx context.Context, r Record, now time.Time, d
 	}
 	if !ownedPath(b.Tasks.Dir, r.Dir, r.ID) {
 		return kept(r, ReclaimCallbackFiles, r.Dir, WhyPathNotOwned, map[string]any{"root": b.Tasks.Dir})
+	}
+	// Existing callbacks with recorded process identity must also prove no
+	// descendants remain before raw logs or metadata are unlinked.
+	if b.callbackResourcePresence(r) != "absent" {
+		return kept(r, ReclaimCallbackFiles, r.Dir, WhyOwnerUnknown, nil)
+	}
+	presence := resourcefs.UsePresence(ctx, r.Dir)
+	if presence != "absent" {
+		why := WhyOwnerUnknown
+		if presence == "present" {
+			why = WhyOwnerPresent
+		}
+		return kept(r, ReclaimCallbackFiles, r.Dir, why, map[string]any{"open_files": presence})
 	}
 	d := ReclaimDecision{Task: r.ID, Subject: ReclaimCallbackFiles, Path: r.Dir, Reason: WhyCallbackFiles, Bytes: bytes,
 		Evidence: map[string]any{"ended_at": r.FinishedAt.Unix(), "files": len(present)}}

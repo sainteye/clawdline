@@ -2,17 +2,20 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func cacheTask(t *testing.T, pane string, register bool) (*Broker, context.Context, Record, string) {
+func cacheTask(t *testing.T, pane string, register bool, states ...State) (*Broker, context.Context, Record, string) {
 	t.Helper()
 	b, ctx := newTestBroker(t)
 	id := "b7310000-0000-4000-8000-000000000001"
@@ -22,8 +25,23 @@ func cacheTask(t *testing.T, pane string, register bool) (*Broker, context.Conte
 		t.Fatal(err)
 	}
 	r := Record{Protocol: Protocol, ID: id, Assistant: "codex", Title: "gate", Dir: b.Tasks.Path(id),
-		State: StateSuccess, CreatedAt: time.Now().Add(-time.Hour), FinishedAt: time.Now().Add(-time.Hour),
+		State: StateSuccess, CreatedAt: time.Now().Add(-26 * time.Hour), FinishedAt: time.Now().Add(-25 * time.Hour),
 		ChildBackend: "tmux", ChildTerminalID: pane, Gate: &GateOrigin{}}
+	if len(states) > 0 {
+		r.State = states[0]
+	}
+	status := "success"
+	if r.State != StateSuccess {
+		status = "failure"
+	}
+	r.Result = &taskdir.Result{Protocol: Protocol, TaskID: id, Status: status, Summary: "Saved fixture completion"}
+	if err := os.MkdirAll(filepath.Join(r.Dir, "artifacts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(r.Result)
+	if err := os.WriteFile(filepath.Join(r.Dir, "result.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := b.save(ctx, r, HashSecret("fictional-secret"), "task.success"); err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +56,33 @@ func cacheTask(t *testing.T, pane string, register bool) (*Broker, context.Conte
 			Sources: map[string]bool{"tmux": true}}
 	}
 	return b, ctx, r, cache
+}
+
+func TestEveryCompletedTaskKeepsScratchForTwentyFourHours(t *testing.T) {
+	for _, state := range []State{StateSuccess, StateFailure, StateCancelled} {
+		t.Run(string(state), func(t *testing.T) {
+			b, ctx, r, cache := cacheTask(t, "%child", true, state)
+			b.Clock = func() time.Time { return r.FinishedAt.Add(23 * time.Hour) }
+			rep, err := b.Reclaim(ctx, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := w6Decision(rep, r.ID, ReclaimTaskDir); d.Outcome != ReclaimKept || d.Reason != WhyGrace {
+				t.Fatalf("scratch before 24 hours: %+v", d)
+			}
+			if _, err := os.Stat(cache); err != nil {
+				t.Fatal("fresh scratch removed", err)
+			}
+			b.Clock = func() time.Time { return r.FinishedAt.Add(25 * time.Hour) }
+			rep, err = b.Reclaim(ctx, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := w6Decision(rep, r.ID, ReclaimTaskDir); d.Outcome != ReclaimRemoved {
+				t.Fatalf("eligible old scratch remains: %+v", d)
+			}
+		})
+	}
 }
 
 func oneCache(t *testing.T, b *Broker, ctx context.Context, id string) (outcome, reason string) {
@@ -95,7 +140,7 @@ func TestGateGoCacheRegistrationRejectsSharedAndEscapedPaths(t *testing.T) {
 	}
 }
 
-func TestLegacyUnregisteredGateScratchStillReclaimsByTaskOwnership(t *testing.T) {
+func TestLegacyUnregisteredGateScratchKeepsLinksForReview(t *testing.T) {
 	b, ctx, r, cache := cacheTask(t, "%child", false)
 	outside := t.TempDir()
 	keep := filepath.Join(outside, "keep")
@@ -109,11 +154,11 @@ func TestLegacyUnregisteredGateScratchStillReclaimsByTaskOwnership(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := w6Decision(rep, r.ID, ReclaimTaskDir); d.Outcome != ReclaimRemoved {
-		t.Fatalf("legacy task scratch should follow its owner proof: %+v", d)
+	if d := w6Decision(rep, r.ID, ReclaimTaskDir); d.Outcome != ReclaimKept || d.Reason != WhyUnreadable {
+		t.Fatalf("linked legacy data needs review: %+v", d)
 	}
-	if _, err := os.Stat(cache); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("legacy task scratch remains: %v", err)
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatalf("uncertain legacy scratch was removed: %v", err)
 	}
 	if got, err := os.ReadFile(keep); err != nil || string(got) != "untouched" {
 		t.Fatalf("outside symlink target changed: %q, %v", got, err)
@@ -164,6 +209,16 @@ func TestGateGoCacheKeepsUnknownAndPresentOwnersThenRemovesReadOnlyScratch(t *te
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(cache, "outside")); err != nil {
+		t.Fatal(err)
+	}
+	rep, err = b.Reclaim(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := w6Decision(rep, r.ID, ReclaimTaskDir); d.Outcome != ReclaimKept || d.Reason != WhyUnreadable {
+		t.Fatal("uncertain linked scratch was not retained", d)
+	}
+	if err := os.Remove(filepath.Join(cache, "outside")); err != nil {
 		t.Fatal(err)
 	}
 	rep, err = b.Reclaim(ctx, false)
@@ -221,5 +276,55 @@ func TestGateGoCacheRemovalFailureRetriesAndInterruptedIntentRecovers(t *testing
 	}
 	if outcome, reason := oneCache(t, b2, ctx2, r2.ID); outcome != ReclaimRemoved || reason != WhyWorkScratch {
 		t.Fatalf("recovered intent: %s/%s", outcome, reason)
+	}
+}
+
+func TestLegacyResourceUsageCountsGateCacheOnceInsideScratch(t *testing.T) {
+	b, ctx, r, cache := cacheTask(t, "%child", true)
+	if err := os.WriteFile(filepath.Join(cache, "compiled-entry"), []byte("rebuildable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.Dir, "work", "other-temporary"), []byte("scratch"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := b.legacyResourceUsage(ctx)
+	if err != nil || !usage.Known {
+		t.Fatal(usage, err)
+	}
+	whole, err := resourcefs.LegacySize(ctx, filepath.Join(r.Dir, "work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached, err := resourcefs.LegacySize(ctx, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached <= 0 || usage.CacheTotal != cached || usage.LargestCache != cached || usage.ScratchTotal+usage.CacheTotal != whole {
+		t.Fatal(usage, whole, cached)
+	}
+}
+
+func TestLegacyScratchKeepsMissingOrChangedSavedResults(t *testing.T) {
+	for _, change := range []string{"missing", "changed"} {
+		t.Run(change, func(t *testing.T) {
+			b, ctx, r, cache := cacheTask(t, "%child", true)
+			path := filepath.Join(r.Dir, "result.json")
+			if change == "missing" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.WriteFile(path, []byte(`{"status":"success","summary":"unaccepted replacement"}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			decision := b.reclaimTaskDir(ctx, b.read(ctx), r, time.Now(), false)
+			if decision.Outcome != ReclaimKept || decision.Reason != WhyOutputsUnverified {
+				t.Fatal(decision)
+			}
+			if _, err := os.Stat(cache); err != nil {
+				t.Fatal("unpreserved scratch removed", err)
+			}
+		})
 	}
 }
