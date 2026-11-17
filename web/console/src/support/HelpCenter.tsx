@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm-action.js"
 import { DoctorBlock } from "../doctor/DoctorBlock.js"
 import { SourceList } from "./sources.js"
 import { applyShareMetadata, shareMetadata } from "../community/share-metadata.js"
@@ -117,8 +118,8 @@ export function HelpCenter({ declared }: { declared: string }) {
   }, [session, config])
   useEffect(() => { void bootAdminCatalog(config, document.baseURI).then(() => { setCatalogReady(true); languageChanged(x => x + 1); document.documentElement.classList.remove("booting") }); start() }, [config, start])
   useEffect(() => { const changed = () => setAddress(location.pathname + location.search); window.addEventListener("popstate", changed); return () => window.removeEventListener("popstate", changed) }, [])
-  const go = useCallback((path: string) => {
-    if (dirty.current && (["editor", "thread", "operator"].includes(helpRoute(location.pathname).page) || location.pathname.startsWith("/community/") && ["new","detail"].includes(communityRoute(location.pathname).page)) && !window.confirm(w("leaveDraft"))) return
+  const go = useCallback(async (path: string) => {
+    if (dirty.current && (["editor", "thread", "operator"].includes(helpRoute(location.pathname).page) || location.pathname.startsWith("/community/") && ["new","detail"].includes(communityRoute(location.pathname).page)) && !await confirmAction(w("leaveDraft"))) return
     dirty.current = false; history.pushState(null, "", path); setAddress(path)
   }, [])
   useEffect(() => {

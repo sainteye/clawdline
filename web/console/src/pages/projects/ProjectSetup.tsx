@@ -1,3 +1,4 @@
+import { confirmAction } from "../../confirm-action.js"
 import { graphWord, openCodeGraph } from "../../codegraph/codegraph.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { localizedLiteralMap } from "../../catalog.js"
@@ -103,20 +104,41 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const filesState = useRef({ dirty: false, busy: false })
   const [closeNotice, setCloseNotice] = useState("")
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
-  const mayLeave = useCallback(() => {
+  const mayLeave = useCallback((): boolean | Promise<boolean> => {
     if (!dialog.current?.open) return true
     if (filesState.current.busy || consentBusy.current) { setCloseNotice(catalogWord("literal", "167e00adca12")); return false }
-    if (filesState.current.dirty && !window.confirm(catalogWord("literal", "1167bc91fa0c"))) {
-      dialog.current?.querySelector<HTMLTextAreaElement>(".project-files-editor textarea")?.focus()
-      return false
+    if (filesState.current.dirty) {
+      return confirmAction(catalogWord("literal", "1167bc91fa0c")).then(accepted => {
+        if (!accepted) dialog.current?.querySelector<HTMLTextAreaElement>(".project-files-editor textarea")?.focus()
+        else setCloseNotice("")
+        return accepted
+      })
     }
     setCloseNotice("")
     return true
   }, [])
-  const requestClose = useCallback(() => { if (mayLeave()) dialog.current?.close() }, [mayLeave])
+  const requestClose = useCallback(() => {
+    const allowed = mayLeave()
+    // Closing a clean, hidden sheet remains synchronous: deferring it could
+    // close a different sheet opened by an imperative request in the meantime.
+    if (typeof allowed === "boolean") { if (allowed) dialog.current?.close() }
+    else void allowed.then(answer => { if (answer) dialog.current?.close() })
+  }, [mayLeave])
 
   useEffect(() => {
-    const beforePageChange = (event: Event) => { if (dialog.current?.open && !mayLeave()) event.preventDefault() }
+    const beforePageChange = (event: Event) => {
+      if (!dialog.current?.open || !(filesState.current.dirty || filesState.current.busy || consentBusy.current)) return
+      // Page changes are synchronous vetoes. Resume the requested destination
+      // only after the asynchronous decision, without bypassing other guards.
+      event.preventDefault()
+      const retry = (event as CustomEvent<{ retry?: () => void }>).detail?.retry
+      void Promise.resolve(mayLeave()).then(allowed => {
+        if (!allowed || !retry) return
+        filesState.current = { dirty: false, busy: false }
+        dialog.current?.close()
+        retry()
+      })
+    }
     document.addEventListener(BEFORE_PAGE_CHANGE, beforePageChange)
     return () => document.removeEventListener(BEFORE_PAGE_CHANGE, beforePageChange)
   }, [mayLeave])
@@ -163,23 +185,23 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   }).length
   const visiblePlaces = projectPath ? places.filter(place => place.path === projectPath) : places
 
-  const openUnify = (place: ProjectPlace) => {
-    if (!mayLeave()) return
+  const openUnify = async (place: ProjectPlace) => {
+    if (!await mayLeave()) return
     filesState.current = { dirty: false, busy: false }
     setProjectPath(place.path)
     setView("settings")
     setUnifyRequest(previous => ({ place: place.id, count: previous.count + 1 }))
   }
 
-  const openDevStack = (place: ProjectPlace) => {
-    if (!mayLeave()) return
+  const openDevStack = async (place: ProjectPlace) => {
+    if (!await mayLeave()) return
     filesState.current = { dirty: false, busy: false }
     setProjectPath(place.path)
     setView("devstack")
   }
 
-  const select = (place: ProjectPlace) => {
-    if (!mayLeave()) return
+  const select = async (place: ProjectPlace) => {
+    if (!await mayLeave()) return
     pendingSelection.current = place
     restoreTrigger.current = false
     dialog.current?.close()
@@ -251,14 +273,21 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
             const place = visiblePlaces[0]
             if (place) openCodeGraph({ kind: "project", id: place.id, label: place.label })
           }}>{graphWord("open")}</button>
-          <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>{catalogWord("inline", "c57e45ecd648")}</button>
-          <button type="button" aria-pressed={view === "devstack"} onClick={() => {
-            if (!mayLeave()) return
+          <button type="button" aria-pressed={view === "settings"} onClick={async () => {
+            if (view === "settings") return
+            if (!await mayLeave()) return
+            filesState.current = { dirty: false, busy: false }
+            setView("settings")
+          }}>{catalogWord("inline", "c57e45ecd648")}</button>
+          <button type="button" aria-pressed={view === "devstack"} onClick={async () => {
+            if (view === "devstack") return
+            if (!await mayLeave()) return
             filesState.current = { dirty: false, busy: false }
             setView("devstack")
           }}>{nextWord("devStackTab")}</button>
-          <button type="button" aria-pressed={view === "files"} onClick={() => {
-            if (!mayLeave()) return
+          <button type="button" aria-pressed={view === "files"} onClick={async () => {
+            if (view === "files") return
+            if (!await mayLeave()) return
             filesState.current = { dirty: false, busy: false }
             setView("files")
           }}>{catalogWord("inline", "a11ac5efe91d")}</button>

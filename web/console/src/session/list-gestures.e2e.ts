@@ -4240,3 +4240,28 @@ test("coordination notices use localized cards on phone and desktop", () =>
       }
     } finally { playbookEcho=[]; fixtureLanguage="zh-Hant" }
   }))
+
+test("the Playbook page deletes only after the shared confirmation accepts", () =>
+  inTab(async (tab) => {
+    fixtureLanguage = "en"
+    playbookRecords = [{ id: playbookID, title: "Delete fixture", body: "Synthetic check.", project: "/tmp/fixture", scope: "playbook", position: 100, created_at: 1, updated_at: 1 }]
+    await tab.go("/#page=playbook")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline=Date.now()+8000
+      const look=()=>document.querySelector('.playbook-list-main')?resolve(true):Date.now()>deadline?reject(new Error('Playbook list missing')):setTimeout(look,25)
+      look()
+    })`)
+    await tab.press('.playbook-list-main')
+    await tab.press('.playbook-editor .playbook-delete')
+    assert.equal(playbookRecords.length,1)
+    await tab.press('.app-confirm [data-choice=cancel]')
+    await tab.press('.playbook-editor .playbook-delete')
+    assert.equal(playbookRecords.length,1)
+    await tab.press('.app-confirm [data-choice=confirm]')
+    await tab.run(`new Promise((resolve,reject)=>{
+      const deadline=Date.now()+8000
+      const look=()=>!document.querySelector('.playbook-editor')?resolve(true):Date.now()>deadline?reject(new Error('Playbook deletion did not finish')):setTimeout(look,25)
+      look()
+    })`)
+    assert.equal(playbookRecords.length,0)
+  }))

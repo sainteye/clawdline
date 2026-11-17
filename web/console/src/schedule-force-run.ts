@@ -4,13 +4,13 @@
  */
 export async function runScheduleWithForce<T>(
   run: (force: boolean) => Promise<T>,
-  confirmForce: () => boolean,
+  confirmForce: () => boolean | Promise<boolean>,
 ): Promise<T> {
   try {
     return await run(false)
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code || "") : ""
-    if (code !== "schedule_active" || !confirmForce()) throw error
+    if (code !== "schedule_active" || !await confirmForce()) throw error
     return run(true)
   }
 }

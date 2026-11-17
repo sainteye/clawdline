@@ -253,7 +253,7 @@ export function AdminGate({ declared }: { declared: string }) {
       {phase.kind === "ready" ? (
         <div className={demo ? "adm-demo-control adm-demo-active" : "adm-demo-control"}>
           <div><strong>{demo ? say("demoTitle") : say("liveTitle")}</strong><p>{demo ? say("demoDescription") : say("liveDescription")}</p></div>
-          <button type="button" className="adm-btn adm-btn-small" aria-pressed={demo} onClick={() => { if (mayLeaveCode()) setDemo((value) => !value) }}>
+          <button type="button" className="adm-btn adm-btn-small" aria-pressed={demo} onClick={async () => { if (await mayLeaveCode()) setDemo((value) => !value) }}>
             {demo ? say("showLive") : say("showDemo")}
           </button>
         </div>
@@ -301,12 +301,14 @@ function useAdminRoute() {
       history.replaceState(history.state, "", adminPath("overview"))
       setWhere(read())
     }
-    const onPop = () => {
-      if (!mayLeaveCode()) {
+    const onPop = async () => {
+      const address = location.pathname + location.search
+      if (!await mayLeaveCode()) {
         history.pushState(null, "", currentAddress.current)
         return
       }
-      currentAddress.current = location.pathname + location.search
+      if (address !== location.pathname + location.search) return
+      currentAddress.current = address
       setWhere(read())
       setMoved((m) => m + 1)
     }
@@ -315,10 +317,10 @@ function useAdminRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const go = useCallback((href: string) => {
+  const go = useCallback(async (href: string) => {
     const target = new URL(href, location.href)
     if (target.pathname + target.search === location.pathname + location.search) return
-    if (!mayLeaveCode()) return
+    if (!await mayLeaveCode()) return
     history.pushState(null, "", target.pathname + target.search)
     currentAddress.current = target.pathname + target.search
     setWhere(read())

@@ -2182,6 +2182,8 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
     projectFileText = "first instruction"
     projectFileVersion = "version-one"
     await tab.go("/#page=projects")
+    await tab.run(`localStorage.setItem("ui_language", "zh-Hant")`)
+    await tab.go("/?project-files=1#page=projects")
     const opened = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 6000
       const wait = () => {
@@ -2189,16 +2191,18 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
         if (!gear) { if (Date.now() > deadline) reject(new Error("Project gear did not appear: " + location.href + " " + document.querySelector("#projects-rows")?.innerHTML.slice(0, 1000))); else setTimeout(wait, 25); return }
         gear.click()
         const rows = () => {
-          const dialog = document.querySelector(".project-setup-dialog")
+          const dialog = document.querySelector(".project-setup-dialog:not(.devstack-modal)")
           const file = [...document.querySelectorAll(".project-files-row")].find((node) => node.textContent.includes("AGENTS.md"))
-          if (!dialog?.open || !file) { if (Date.now() > deadline) reject(new Error("file inventory did not appear")); else setTimeout(rows, 25); return }
+          if (!dialog?.open || !file) {
+            if (Date.now() > deadline) reject(new Error("file inventory did not appear: "+dialog?.outerHTML.slice(0,1600))); else setTimeout(rows, 25); return
+          }
           resolve({ groups: [...document.querySelectorAll(".project-files-group h4")].map(n => n.textContent), names: [...document.querySelectorAll(".project-files-row strong")].map(n => n.textContent), fullScreen: dialog.getBoundingClientRect().width === innerWidth, gearLabel: gear.getAttribute("aria-label") })
         }
         rows()
       }
       wait()
     })`)
-    assert.deepEqual(opened.groups, ["Codex 指令", "Claude Code 指令", "Skills 技能"])
+    assert.deepEqual(opened.groups, ["共用規則", "Antigravity 規則", "Codex 規則", "Claude Code 指令", "Skills 技能"])
     assert.deepEqual(opened.names, ["AGENTS.md", "CLAUDE.md", "SKILL.md"])
     assert.equal(opened.fullScreen, true)
     assert.match(opened.gearLabel, /專案設定/)
@@ -2229,9 +2233,11 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
           const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set
           setter.call(textarea, "edited instruction")
           textarea.dispatchEvent(new Event("input", { bubbles: true }))
-          window.confirm = () => false
           document.querySelector(".project-setup-close").click()
-          resolve({ stillOpen: document.querySelector(".project-setup-dialog").open, draft: textarea.value, content: content.textContent, focused: document.activeElement === textarea })
+          const decision = document.querySelector(".app-confirm [data-choice=cancel]")
+          if (!decision) return reject(new Error("discard confirmation did not appear"))
+          decision.click()
+          setTimeout(() => resolve({ stillOpen: document.querySelector(".project-setup-dialog:not(.devstack-modal)").open, draft: textarea.value, content: content.textContent, focused: document.activeElement === textarea }), 0)
         }
         editing()
       }
@@ -2253,14 +2259,14 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
     assert.equal(projectFileText, "edited instruction")
     for (const width of [320, 390, 620, 768, 900]) {
       await tab.view({ width, height: 844, mobile: width < 900 }, "dark")
-      const layout = await tab.run(`(() => ({ viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, dialog: document.querySelector(".project-setup-dialog").getBoundingClientRect().width }))()`)
+      const layout = await tab.run(`(() => ({ viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, dialog: document.querySelector(".project-setup-dialog:not(.devstack-modal)").getBoundingClientRect().width }))()`)
       assert.equal(layout.overflow, false, `horizontal overflow at ${width}px`)
     }
     await tab.run(`document.querySelector(".project-setup-close").click()`)
     const closed = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 3000
       const wait = () => {
-        const dialog = document.querySelector(".project-setup-dialog")
+        const dialog = document.querySelector(".project-setup-dialog:not(.devstack-modal)")
         if (!dialog.open && document.activeElement?.classList.contains("project-row-settings")) return resolve(true)
         if (Date.now() > deadline) return reject(new Error("dialog did not restore focus: " + document.activeElement?.outerHTML.slice(0, 200)))
         setTimeout(wait, 25)
