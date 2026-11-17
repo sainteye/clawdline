@@ -57,9 +57,12 @@ func useProcessPresence(ctx context.Context, path, procRoot string) string {
 			continue
 		}
 		observed = true
+		if processExited(proc) {
+			continue
+		}
 		cwd, err := os.Readlink(filepath.Join(proc, "cwd"))
 		if err != nil {
-			if _, gone := os.Stat(proc); os.IsNotExist(gone) {
+			if processAbsent(proc) {
 				continue
 			}
 			return "unknown"
@@ -73,16 +76,22 @@ func useProcessPresence(ctx context.Context, path, procRoot string) string {
 			return "present"
 		}
 		if eerr != nil && !os.IsNotExist(eerr) {
+			if processAbsent(proc) {
+				continue
+			}
 			return "unknown"
 		}
 		fds, err := os.ReadDir(filepath.Join(proc, "fd"))
 		if os.IsNotExist(err) {
-			if _, gone := os.Stat(proc); os.IsNotExist(gone) {
+			if processAbsent(proc) {
 				continue
 			}
 			return "unknown"
 		}
 		if err != nil {
+			if processAbsent(proc) {
+				continue
+			}
 			return "unknown"
 		}
 		for _, fd := range fds {
@@ -103,12 +112,15 @@ func useProcessPresence(ctx context.Context, path, procRoot string) string {
 		}
 		maps, err := os.Open(filepath.Join(proc, "maps"))
 		if os.IsNotExist(err) {
-			if _, gone := os.Stat(proc); os.IsNotExist(gone) {
+			if processAbsent(proc) {
 				continue
 			}
 			return "unknown"
 		}
 		if err != nil {
+			if processAbsent(proc) {
+				continue
+			}
 			return "unknown"
 		}
 		scanner := bufio.NewScanner(maps)
@@ -138,6 +150,27 @@ func useProcessPresence(ctx context.Context, path, procRoot string) string {
 		return "unknown"
 	}
 	return "absent"
+}
+
+// A zombie has already released its files, mappings and working directory.
+// Its /proc directory can remain until its parent reaps it. Missing access
+// alone is not exit evidence; require the kernel's explicit Z/X state.
+func processExited(proc string) bool {
+	b, err := os.ReadFile(filepath.Join(proc, "stat"))
+	if err != nil {
+		return false
+	}
+	end := strings.LastIndexByte(string(b), ')')
+	if end < 0 {
+		return false
+	}
+	fields := strings.Fields(string(b[end+1:]))
+	return len(fields) > 0 && (fields[0] == "Z" || fields[0] == "X")
+}
+
+func processAbsent(proc string) bool {
+	_, err := os.Stat(proc)
+	return os.IsNotExist(err) || processExited(proc)
 }
 
 // The first five maps columns are whitespace-delimited; a pathname can itself

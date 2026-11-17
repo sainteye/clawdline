@@ -58,3 +58,25 @@ func TestLinuxProcessUseIncludesExecutableAndClosedDescriptorMappings(t *testing
 		t.Fatal("cancelled reading authorized removal", got)
 	}
 }
+
+func TestLinuxExitedProcessDoesNotMakeMissingHandlesAnUnknownReader(t *testing.T) {
+	proc := t.TempDir()
+	pid := filepath.Join(proc, "123")
+	if err := os.Mkdir(pid, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managed := t.TempDir()
+	stat := filepath.Join(pid, "stat")
+	for _, state := range []string{"S", "Z", "X", "S"} {
+		if err := os.WriteFile(stat, []byte("123 (command with ) parentheses) "+state+" 1 2 3\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		want := "unknown"
+		if state == "Z" || state == "X" {
+			want = "absent"
+		}
+		if got := useProcessPresence(context.Background(), managed, proc); got != want {
+			t.Fatalf("kernel state %s: got %s, want %s", state, got, want)
+		}
+	}
+}

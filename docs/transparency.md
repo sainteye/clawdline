@@ -711,3 +711,8 @@ checks; they do not grant a new deletion authority or tool permission. The
 resource CLI registration and Root artifact directory do not add a provider
 injection trigger. The callback guide describes the shared inspection/cleanup
 contract and its future Bot boundary; reading it does not execute cleanup.
+
+The 2026-11-17 portability correction keeps the same child storage policy in both
+languages. Both Chinese tags share the reviewed compact wording; launch-size
+checks now choose their language explicitly instead of inheriting the host locale.
+The original briefing excerpt and source receipts follow this wording correction.

@@ -34,7 +34,7 @@ func LegacySize(ctx context.Context, path string) (int64, error) {
 	}
 	var total int64
 	count := 0
-	err = fs.WalkDir(root.FS(), ".", func(_ string, e fs.DirEntry, err error) error {
+	err = fs.WalkDir(root.FS(), ".", func(path string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -45,7 +45,7 @@ func LegacySize(ctx context.Context, path string) (int64, error) {
 		if count > taskresource.FilesLimit {
 			return ErrInventoryIncomplete
 		}
-		info, err := e.Info()
+		info, err := root.Lstat(path)
 		if err != nil {
 			return err
 		}

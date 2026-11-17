@@ -153,10 +153,9 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 	w("## Where and how long")
 	w("")
-	if b.DisplayLanguage() == "zh-Hant" {
-		w("- 工作目錄 %s；成果放在 %s/artifacts/。", cwd, dir)
-		w("  %s/work/ 為暫存，保留期限到期且安全條件通過後才回收。", dir)
-		w("  可重建二進位與原始紀錄放暫存；成果保留精簡驗證證據。")
+	if strings.HasPrefix(b.DisplayLanguage(), "zh") {
+		w("- %s；成果 %s/artifacts/；暫存 %s/work/。", cwd, dir, dir)
+		w("  暫存放可重建檔／原始紀錄，期滿安全才回收；成果留必要證據。")
 	} else {
 		w("- Work in %s. Deliverables: %s/artifacts/; temporary files:", cwd, dir)
 		w("  %s/work/ (temporary binaries/logs). Retention and safety checks apply.", dir)
