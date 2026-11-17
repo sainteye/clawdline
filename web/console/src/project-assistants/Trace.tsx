@@ -29,7 +29,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
           <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
           <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
           <span className="pa-trace-title">{info.label}</span>
-          {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
+          {info.text ? <span className="pa-trace-desc">{info.text}</span> : <span className="pa-trace-desc pa-trace-detail-hint">{w.details}</span>}
         </button>
         {isOpen && <div className="pa-trace-expanded">
           {full ? <pre className="pa-trace-body">{full.text || emptyText}</pre> : <div className="pa-trace-loading">{loadingText}</div>}

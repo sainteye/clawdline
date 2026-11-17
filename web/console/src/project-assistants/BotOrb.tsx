@@ -9,7 +9,7 @@ export interface BotOrbProps {onOpen:(opener?:HTMLElement)=>void; language?:stri
 const DRAG_START = 5
 const ORB = 60
 
-/** The way into Bots. Floating, it is a draggable orb over the Session list;
+/** The way into Bots. Floating, it is a draggable orb over the view;
  * dropped on the quota bar it docks there as a small icon, and dragging that
  * icon back up floats it again. A press without a drag opens Bots either way. */
 export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,mood="idle",variant="float"}:BotOrbProps) {
@@ -42,8 +42,9 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,mood="idle
     if(!d.moved&&Math.hypot(dx,dy)<DRAG_START)return null
     d.moved=true
     if(variant!=="float")return null
-    const pane=event.currentTarget.closest(".pane-list")?.getBoundingClientRect()
-    return {right:clamp(d.right-dx,0,(pane?.width??innerWidth)-ORB),bottom:clamp(d.bottom-dy,0,(pane?.height??innerHeight)-ORB)}
+    const maxRight=Math.max(0,(window.innerWidth||0)-ORB)
+    const maxBottom=Math.max(0,(window.innerHeight||0)-ORB)
+    return {right:clamp(d.right-dx,0,maxRight),bottom:clamp(d.bottom-dy,0,maxBottom)}
   }
   const move=(event:ReactPointerEvent<HTMLButtonElement>)=>{
     const next=track(event)
@@ -59,10 +60,11 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,mood="idle
       if(top!==null&&event.clientY>=top-8)setOrbPlace({...place,docked:true})
       else if(next)setOrbPlace({docked:false,...next})
     }else if(top===null||event.clientY<top-24){
-      const pane=document.querySelector(".pane-list")?.getBoundingClientRect()
+      const maxRight=Math.max(0,(window.innerWidth||0)-ORB)
+      const maxBottom=Math.max(0,(window.innerHeight||0)-ORB)
       setOrbPlace({docked:false,
-        right:pane?clamp(pane.right-event.clientX-ORB/2,0,pane.width-ORB):place.right,
-        bottom:pane?clamp(pane.bottom-event.clientY-ORB/2,0,pane.height-ORB):place.bottom})
+        right:clamp((window.innerWidth||0)-event.clientX-ORB/2,0,maxRight),
+        bottom:clamp((window.innerHeight||0)-event.clientY-ORB/2,0,maxBottom)})
     }
     reset()
   }

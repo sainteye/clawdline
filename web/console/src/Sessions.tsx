@@ -332,8 +332,7 @@ export function SessionsPage({
         data-mode={terminalMode ? "terminal" : undefined}
         hidden={!onScreen}
       >
-        <section className="pane pane-list" style={assistantEntry ? {position:"relative"} : undefined}>
-          {assistantEntry}
+        <section className="pane pane-list">
           {/* One line: a newer release for this machine and the press that
               installs it, or the dev build running here and the ways on from
               it (machine/UpdateBanner.tsx). */}
@@ -417,6 +416,7 @@ export function SessionsPage({
           : <section className="pane pane-detail terminal-pane-empty" aria-label={nextWord("terminalListMode")}>
             <p>{nextWord("terminalPaneEmpty")}</p>
           </section>)}
+        {assistantEntry}
       </main>
       <StartSheet />
       <FirstTour sessionCount={listUnknown ? null : rows.length} shown={!!onScreen && !terminalMode} />

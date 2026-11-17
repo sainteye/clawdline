@@ -170,8 +170,8 @@
 /* The jump capsule keeps session/jump.css's look over this scope's button reset. */
 .project-assistants .tx-jump-go { padding:0 14px 0 12px;border:1px solid #33333c;border-radius:999px;background:var(--card,#1c1c21);color:var(--dim,#9a9aa3);font-size:12px; }
 .project-assistants .tx-jump-go:hover { background:var(--card-hi,#25252b);color:var(--ink,#ececf1); }
-/* The orb floats over the Session list at its saved offset and can be dragged. */
-.project-assistants.pa-orb-float { position:absolute;z-index:4;touch-action:none; }
+/* The orb floats over the view at its saved offset and can be dragged freely. */
+.project-assistants.pa-orb-float { position:fixed;z-index:100;touch-action:none; }
 .project-assistants.pa-orb-float .pa-orb { touch-action:none;transition:transform 140ms ease,box-shadow 140ms ease; }
 .project-assistants.pa-orb-float[data-dragging] .pa-orb { transform:scale(1.08);box-shadow:0 10px 24px #000a;cursor:grabbing; }
 /* Docked in the quota bar, it is one small icon among the provider readings. */
