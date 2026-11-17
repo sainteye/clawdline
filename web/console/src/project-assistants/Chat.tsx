@@ -55,6 +55,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [library,setLibrary]=useState(false)
   const [template,setTemplate]=useState(false)
+  const [markingRead,setMarkingRead]=useState(false),[readMarked,setReadMarked]=useState(false),markReadControl=useRef<AbortController|null>(null)
   const [browser,setBrowser]=useState(false)
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
@@ -257,6 +258,30 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(seq<=lastRead.current)return
     lastRead.current=seq
     void authorized(source,current,s=>source.markRead({command:command(key,"read"),cursor:{key,conversation_id:d.conversation.id,message_seq:seq,reader_id:readerID}},s),new AbortController().signal).then(()=>{if(valid())onRead?.()}).catch(fail)
+  }
+  // An explicit observation covers the source's latest sequence, including unloaded history.
+  // It does not require execution permission or advance the execution fence.
+  const markAllRead=async()=>{
+    const d=currentData.current
+    if(markReadControl.current||!readerID||!d||!valid()||recovery.current||!canRead(d.source)||d.source.state!=="online")return
+    const control=new AbortController();markReadControl.current=control;reads.current.add(control)
+    setMarkingRead(true);setReadMarked(false);setError("")
+    try{
+      const page=await read(request("snapshot","",1),control.signal)
+      if(!valid()||control.signal.aborted) return
+      if(!canRead(page.source))throw failure("pa_revoked")
+      if(page.source.state!=="online")throw failure("pa_offline")
+      const seq=page.head.conversation.last_message_seq
+      const answer=await authorized(source,current,signal=>source.markRead({command:command(key,"read"),cursor:{key,conversation_id:scope.conversation_id,message_seq:seq,reader_id:readerID}},signal),control.signal)
+      if(!valid()||control.signal.aborted)return
+      const cursor=answer.cursor
+      if(botIdentity(cursor.key)!==identity||cursor.conversation_id!==scope.conversation_id||!Number.isSafeInteger(cursor.message_seq)||cursor.message_seq<seq)throw failure("pa_scope_denied")
+      lastRead.current=Math.max(lastRead.current,cursor.message_seq);setReadMarked(true);onRead?.()
+    }catch(error){if(!control.signal.aborted)fail(error)}
+    finally{
+      reads.current.delete(control)
+      if(markReadControl.current===control){markReadControl.current=null;if(alive.current)setMarkingRead(false)}
+    }
   }
   useEffect(()=>{markVisible()},[messages,data])
   useEffect(()=>{scroll.current?.parentElement?.querySelector<HTMLElement>(".pa-chat-header h2")?.focus({preventScroll:true})},[identity])
@@ -634,10 +659,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"routines",label:w.routines,onSelect:()=>setRoutines(true)},
       {id:"memory",label:w.memory,onSelect:()=>void memoryPanel.current?.open()},
       {id:"refresh",label:w.refresh,onSelect:()=>void refresh(true)},
+      {id:"markRead",label:w.markAllRead,disabled:markingRead||!readerID||!data||recoveryRequired||!canRead(data.source)||data.source.state!=="online",onSelect:()=>void markAllRead()},
       {id:"template",label:w.templateCreate,disabled:!data||recoveryRequired||!canRead(data.source),onSelect:()=>setTemplate(true)},
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
-      <div className="pa-chat-content"><TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
+      <div className="pa-chat-content">{(markingRead||readMarked)&&<p role="status">{markingRead?w.markingRead:w.readMarked}</p>}<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
       {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={botBrowserSupported(source)?()=>setBrowser(true):undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
       <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore).catch(()=>{})} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}

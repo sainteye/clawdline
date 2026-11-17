@@ -13095,5 +13095,8 @@
   "projectAssistants.templateCopying": "Checking settings before copying…",
   "projectAssistants.templateCopied": "Template copied",
   "projectAssistants.templateUnavailable": "Current settings cannot be verified, or have changed. Close this preview and open it again from the current Bot. Nothing was copied.",
-  "projectAssistants.templateClipboardError": "Clipboard access failed or is unsupported. Select the preview text and copy it manually."
+  "projectAssistants.templateClipboardError": "Clipboard access failed or is unsupported. Select the preview text and copy it manually.",
+  "projectAssistants.markAllRead": "Mark all as read",
+  "projectAssistants.markingRead": "Marking as read…",
+  "projectAssistants.readMarked": "Marked all as read"
 }

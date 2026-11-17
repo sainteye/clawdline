@@ -13095,5 +13095,8 @@
   "projectAssistants.templateCopying": "正在核對設定並準備複製…",
   "projectAssistants.templateCopied": "已複製範本",
   "projectAssistants.templateUnavailable": "無法核對目前設定，或設定已變更。請關閉預覽，再從目前的 Bot 重新開啟。本次未複製範本。",
-  "projectAssistants.templateClipboardError": "無法存取剪貼簿，或瀏覽器不支援。請選取預覽文字並手動複製。"
+  "projectAssistants.templateClipboardError": "無法存取剪貼簿，或瀏覽器不支援。請選取預覽文字並手動複製。",
+  "projectAssistants.markAllRead": "全部標為已讀",
+  "projectAssistants.markingRead": "正在標記已讀…",
+  "projectAssistants.readMarked": "已全部標為已讀"
 }

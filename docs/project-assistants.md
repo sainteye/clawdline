@@ -393,3 +393,23 @@ keep the existing byte ceiling and typed failures. The backend retains explicit
 API58 compatibility checks for the original sixteen methods; only the new view
 operation requires API59. Actual TypeScript method17/helper joint acceptance,
 consumer integration and production Cloud/phone acceptance remain separate.
+
+## Explicit conversation read observation
+
+The Bot chat menu includes **Mark all as read**. It requests a fresh bounded
+snapshot and uses the source conversation’s last message sequence, including
+messages outside the currently loaded timeline. Success appears only after an
+authenticated read cursor acknowledgement. The server derives the reader from
+the authenticated principal; it never accepts a different reader from the body.
+Readable online sources allow this observation independently of execution write
+permission. A changed grant, mismatched conversation or leaving the chat before
+the preflight completes cancels the observation. A concurrent native generation
+change within the same conversation does not require execution CAS or grant
+permission to send. The existing automatic visible-message observation remains.
+
+Run the focused real HTTP/Host/SQLite and production Chat browser check with
+`CLAWDLINE_MARK_READ_BROWSER_DIR=<artifacts> CHROME=<existing-test-browser>
+go test ./internal/transport/http -run '^TestProjectAssistantMarkAllReadBrowser$'`.
+It exercises English desktop and Taiwan Traditional Chinese narrow layouts,
+separate authenticated readers, revoked/mismatched late reads and unchanged
+execution state. It uses synthetic local provider replies and no model service.

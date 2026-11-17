@@ -1,5 +1,8 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "markAllRead": "Mark all as read",
+  "markingRead": "Marking as read…",
+  "readMarked": "Marked all as read",
   "templateCreate": "Create template",
   "templatePrivacy": "Copy these settings as a reusable reference. Conversation identity, history, memory, login details and credentials are excluded. Configured instructions are included; review them before sharing.",
   "templateCoverage": "Includes appearance, primary Agent, instructions, permission mode, notifications and supported model, reasoning and fast settings. Projects, tools, fallback identities and team or network grants require separate setup. This reference does not import or create a Bot.",
@@ -455,6 +458,9 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "markAllRead": "全部標為已讀",
+  "markingRead": "正在標記已讀…",
+  "readMarked": "已全部標為已讀",
   "templateCreate": "建立範本",
   "templatePrivacy": "將這些設定複製為可重用的參考。範本不含對話識別資料、歷史、記憶、登入資料與憑證。已設定的指示會包含在內，分享前請先檢查。",
   "templateCoverage": "包含外觀、主要 Agent、指示、權限模式、通知，以及支援的模型、推理與快速模式設定。專案、工具、備援身分及團隊或網路授權須另行設定。此參考範本不會匯入或建立 Bot。",
