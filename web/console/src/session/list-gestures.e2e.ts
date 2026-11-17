@@ -647,6 +647,7 @@ function daemon(): Server {
         closed_at: 2,
         cycle: 1,
         version: 2,
+        images: [{ id: "todo-image-fixture", title: "release-evidence.png", media_type: "image/png", byte_count: 68, width: 1, height: 1, position: 0 }],
         documents: [{
           id: "older-done-report-fixture",
           role: "completion_report",
@@ -3215,7 +3216,7 @@ test("a direct todo attachment is a compact clickable filename on a phone", () =
         if (fold && !fold.open) fold.querySelector('summary')?.click()
         const link = document.querySelector('.session-todo-image-link')
         const box = link?.getBoundingClientRect()
-        if (link?.getAttribute('href')?.startsWith('blob:') && box) return resolve({
+        if (link?.tagName === "BUTTON" && !link.disabled && box) return resolve({
           tag: link.tagName,
           text: link.textContent || '',
           target: link.getAttribute('target'),
@@ -3228,9 +3229,9 @@ test("a direct todo attachment is a compact clickable filename on a phone", () =
       }
       read()
     })`)
-    assert.equal(attachment.tag, "A")
+    assert.equal(attachment.tag, "BUTTON")
     assert.match(attachment.text, /release-evidence\.png/)
-    assert.equal(attachment.target, "_blank")
+    assert.equal(attachment.target, null)
     assert.equal(attachment.imageCount, 0, "the compact attachment still rendered a thumbnail")
     assert.ok(attachment.width > attachment.height * 4,
       `attachment ${attachment.width}x${attachment.height} was not a horizontal row`)
@@ -4239,4 +4240,70 @@ test("coordination notices use localized cards on phone and desktop", () =>
         }
       }
     } finally { playbookEcho=[]; fixtureLanguage="zh-Hant" }
+  }))
+
+test("a direct todo reference opens the shared Lightbox without any popup", () =>
+  inTab(async (tab) => {
+    fixtureLanguage = "en"
+    await tab.go("/#session=" + encodeURIComponent(BLOCKED))
+    await tab.run(`new Promise((resolve,reject)=>{
+      const deadline=Date.now()+8000
+      const read=()=>{
+        const fold=document.querySelector('.session-todos')
+        if(fold&&!fold.open)fold.querySelector('summary')?.click()
+        const trigger=document.querySelector('.session-todo-image-link')
+        if(trigger?.matches('a,button')&&!trigger.disabled&&trigger.getClientRects().length)return resolve(true)
+        if(Date.now()>deadline)return reject(new Error('attachment trigger missing'))
+        setTimeout(read,25)
+      };read()
+    })`)
+    await tab.run(`window.referencePopupCalls=0;window.open=()=>{window.referencePopupCalls++;return null};document.querySelector('.session-todo-image-link').click()`)
+    await tab.run(`new Promise((resolve,reject)=>{
+      const deadline=Date.now()+3000
+      const read=()=>{
+        const box=document.querySelector('#image-lightbox'),image=document.querySelector('#image-lightbox-image')
+        if(box&&!box.hidden&&image?.complete&&image.naturalWidth)return resolve(true)
+        if(Date.now()>deadline)return reject(new Error('shared Lightbox did not open; popup calls='+window.referencePopupCalls))
+        setTimeout(read,25)
+      };read()
+    })`)
+    assert.equal(await tab.run(`window.referencePopupCalls`),0)
+    await tab.key("Escape")
+    assert.equal(await tab.run(`document.querySelector('#image-lightbox').hidden`),true)
+    assert.equal(await tab.run(`document.activeElement.classList.contains('session-todo-image-link')`),true)
+  }))
+
+
+test("a closed Board reference uses the shared Lightbox above its detail dialog", () =>
+  inTab(async (tab) => {
+    fixtureLanguage="en"
+    await tab.go("/#session="+encodeURIComponent(BLOCKED))
+    await tab.run(`new Promise((resolve,reject)=>{
+      const deadline=Date.now()+8000
+      const read=()=>{
+        const fold=document.querySelector('.session-todos')
+        if(fold&&!fold.open)fold.querySelector('summary')?.click()
+        const item=document.querySelector('.session-recent-work .session-owned-summary')
+        if(item&&!document.querySelector('.work-item-detail-modal'))item.click()
+        const trigger=document.querySelector('.work-item-detail-modal .work-reference-preview')
+        if(trigger&&!trigger.disabled)return resolve(true)
+        if(Date.now()>deadline)return reject(new Error('closed Board reference missing'))
+        setTimeout(read,25)
+      };read()
+    })`)
+    await tab.run(`window.referencePopupCalls=0;window.open=()=>{window.referencePopupCalls++;return null};document.querySelector('.work-reference-preview').click()`)
+    await tab.run(`new Promise((resolve,reject)=>{
+      const deadline=Date.now()+5000
+      const read=()=>document.querySelector('#image-lightbox-image')?.naturalWidth&&!document.querySelector('#image-lightbox').hidden?resolve(true):Date.now()>deadline?reject(new Error('Board Lightbox missing')):setTimeout(read,25)
+      read()
+    })`)
+    for(let i=0;i<5;i++) {
+      await tab.key("Tab")
+      assert.equal(await tab.run(`document.querySelector('#image-lightbox').contains(document.activeElement)`),true)
+    }
+    await tab.key("Escape")
+    assert.equal(await tab.run(`document.querySelector('#image-lightbox').hidden`),true)
+    assert.equal(await tab.run(`!!document.querySelector('.work-item-detail-modal')`),true)
+    assert.equal(await tab.run(`document.activeElement.classList.contains('work-reference-preview')`),true)
+    assert.equal(await tab.run(`window.referencePopupCalls`),0)
   }))

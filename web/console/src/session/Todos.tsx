@@ -483,18 +483,19 @@ function DirectTodo({ todo, conversation, busy, onEdit, onAction }: { todo: Dire
 
 function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compact?: boolean }) {
   // The row reads the small copy, which is what says the picture is there;
-  // the link opens the original, read on the press (`useReferenceImage`).
-  const { source, failed, full, fullFailed, openFull } = useReferenceImage(image.id)
-  if (compact) return source ? <a className="session-todo-image-link" href={full || source} target="_blank" rel="noreferrer"
+  // the shared viewer opens the original, read on the press (`useReferenceImage`).
+  const { source, failed, fullFailed, opening, openFull } = useReferenceImage(image.id, image.title)
+  if (compact) return source ? <button type="button" className="session-todo-image-link" disabled={opening} aria-busy={opening}
     aria-label={catalogFormat("template", "8dfb0e13886c", [image.title])} title={image.title} onClick={openFull}>
-    <span>{image.title}</span><span aria-hidden={fullFailed ? undefined : "true"} role={fullFailed ? "alert" : undefined}>{fullFailed || "↗"}</span>
-  </a> : <div className="session-todo-image-link" data-state={failed ? "failed" : "loading"} role={failed ? "alert" : undefined}>
+    <span>{image.title}</span><span aria-hidden={fullFailed ? undefined : "true"} role={fullFailed ? "alert" : undefined}>{fullFailed || <WorkIcon name="eye" />}</span>
+  </button> : <div className="session-todo-image-link" data-state={failed ? "failed" : "loading"} role={failed ? "alert" : undefined}>
     <span title={image.title}>{image.title}</span><span>{failed || catalogWord("literal", "c7821df3194e")}</span>
   </div>
   return <figure className="work-reference-image">
-    {source ? <a href={full || source} target="_blank" rel="noreferrer" aria-label={catalogFormat("template", "8dfb0e13886c", [image.title])} onClick={openFull}>
+    {source ? <button className="work-reference-open work-reference-preview" type="button" disabled={opening} aria-busy={opening}
+      aria-label={catalogFormat("template", "8dfb0e13886c", [image.title])} onClick={openFull}>
       <img src={source} alt={image.title} width={image.width} height={image.height} />
-    </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7d2bc8bc67a4")}</div>}
+    </button> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7d2bc8bc67a4")}</div>}
     <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
   </figure>
 }
