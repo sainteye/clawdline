@@ -39,7 +39,9 @@
 .vp-installed[data-enabled=false] .vp-status i { background:var(--vp-muted) }
 .vp-installed[data-enabled=false]>.vp-art { opacity:.55;filter:saturate(.3) }
 .vp-card-footer,.vp-actions { display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-top:20px }
-.vp-card-footer>.vp-primary { flex:1 }
+.vp-card-footer { align-items:center }
+.vp-card-footer button { white-space:nowrap;flex-shrink:0 }
+.vp-card-footer>.vp-primary { flex:1 0 auto }
 /* Manage floats its options over the page so the card never changes size. */
 .vp-menu-wrap { position:relative;flex:none }
 .vp-host .vp-menu-button { color:var(--vp-muted);border-color:transparent }
@@ -112,3 +114,17 @@
 .vp-manager[aria-busy=true] button:disabled { opacity:1 }
 .vp-manager .vp-example button[data-unavailable=true],.vp-manager .vp-installed[data-enabled=false] .vp-primary { opacity:.45 }
 .vp-installed:focus { outline:none }
+
+/* Update controls use the whole card below the compact mobile heading. */
+@media(max-width:740px) {
+  .vp-installed { display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px 14px }
+  .vp-installed-body { display:contents }
+  .vp-installed>.vp-art { grid-column:1;grid-row:1 / span 2 }
+  .vp-installed-body>.vp-card-heading,.vp-installed-body>.vp-status,.vp-installed-body>.vp-muted { grid-column:2 }
+  .vp-installed .vp-status { margin-top:0 }
+  .vp-installed .vp-update-status { grid-column:1 / -1;margin:0 }
+  .vp-installed .vp-auto-update { grid-column:1 / -1 }
+  .vp-installed .vp-card-footer { grid-column:1 / -1;gap:8px;margin-top:2px }
+  .vp-installed .vp-card-footer button { padding:10px 12px;gap:6px }
+  .vp-installed .vp-menu-wrap { margin-left:auto }
+}
