@@ -81,6 +81,30 @@ final class NextConfig {
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["notch"] as? Bool { notch = v }
     }
+
+    /// Save the chosen mascot to config.json atomically, preserving existing keys.
+    @discardableResult
+    func saveMascot(_ newMascot: String) -> Bool {
+        mascot = newMascot
+        var dict: [String: Any] = [:]
+        if FileManager.default.fileExists(atPath: fileURL.path),
+           let data = try? Data(contentsOf: fileURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            dict = existing
+        }
+        dict["mascot"] = newMascot
+        do {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys, .prettyPrinted])
+            try data.write(to: fileURL, options: .atomic)
+            shellLog("config: saved mascot=\(newMascot) to \(fileURL.path)")
+            return true
+        } catch {
+            shellLog("config: failed to save mascot: \(error.localizedDescription)")
+            return false
+        }
+    }
 }
 
 /// Whether the window has been put away once, which is what the Swift app's
