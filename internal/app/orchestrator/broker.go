@@ -243,6 +243,10 @@ type Broker struct {
 	// answers it — the sweep's proof that nobody is working inside a
 	// checkout it is about to remove. Nil asks `lsof` (reclaim.go).
 	ProcessCWDs func(ctx context.Context) ([]string, error)
+	// ProcessUses observes open descriptors, executable mappings and working
+	// directories under one exact resource boundary. Nil uses the platform
+	// adapter; an incomplete reading must return unknown, never absent.
+	ProcessUses func(ctx context.Context, path string) string
 	// removeTaskScratch is a failure-injection seam for a recorded removal
 	// intent. Production always uses removeOwned.
 	removeTaskScratch func(root, path, name string) error

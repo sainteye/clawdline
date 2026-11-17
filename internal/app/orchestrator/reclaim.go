@@ -950,7 +950,7 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 	if err != nil {
 		return kept(r, ReclaimTaskDir, scratch, WhyUnreadable, map[string]any{"owner": owner, "tree": "unverified"})
 	}
-	presence := resourcefs.UsePresence(ctx, scratch)
+	presence := b.resourceUsePresence(ctx, scratch)
 	if presence != "absent" {
 		why := WhyOwnerUnknown
 		if presence == "present" {
@@ -996,7 +996,7 @@ func (b *Broker) reclaimTaskDir(ctx context.Context, rd reading, r Record, now t
 	if e != nil || te != nil || currentPreservation != preservation || currentTree.Digest != snapshot.Digest {
 		return kept(r, ReclaimTaskDir, scratch, WhyChanged, d.Evidence)
 	}
-	if resourcefs.UsePresence(ctx, scratch) != "absent" {
+	if b.resourceUsePresence(ctx, scratch) != "absent" {
 		return kept(r, ReclaimTaskDir, scratch, WhyOwnerUnknown, d.Evidence)
 	}
 	remove := b.removeTaskScratch

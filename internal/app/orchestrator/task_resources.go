@@ -26,7 +26,7 @@ func (b *Broker) EnableTaskResources() error {
 	}
 	b.Resources = &taskresources.Service{Store: b.Store, FS: root, Clock: b.now, Owner: b.resourceOwner, OtherUsage: b.legacyResourceUsage,
 		Uses: func(ctx context.Context, r taskresource.Resource) string {
-			return resourcefs.UsePresence(ctx, filepath.Join(root.Path(), r.ID))
+			return b.resourceUsePresence(ctx, filepath.Join(root.Path(), r.ID))
 		}, FreeSpace: func() (int64, error) {
 			r := b.Store.Reading(b.Dir)
 			if !r.HasDiskFree {
@@ -35,6 +35,13 @@ func (b *Broker) EnableTaskResources() error {
 			return r.DiskFree, nil
 		}}
 	return nil
+}
+
+func (b *Broker) resourceUsePresence(ctx context.Context, path string) string {
+	if b.ProcessUses != nil {
+		return b.ProcessUses(ctx, path)
+	}
+	return resourcefs.UsePresence(ctx, path)
 }
 
 func ResourceOwnerScope() taskresources.Scope {

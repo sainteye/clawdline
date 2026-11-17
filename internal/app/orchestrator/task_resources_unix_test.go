@@ -17,6 +17,9 @@ import (
 
 func enableTestResources(t *testing.T, b *Broker) {
 	t.Helper()
+	// Policy fixtures own their process observation. Native adapters are
+	// exercised separately; a hosted runner may have unreadable processes.
+	b.ProcessUses = func(context.Context, string) string { return "absent" }
 	if err := b.EnableTaskResources(); err != nil {
 		t.Fatal(err)
 	}
@@ -285,10 +288,68 @@ func TestManagedCallbackRawLogKeepsAnOpenReaderAfterSevenDays(t *testing.T) {
 	}
 	decision := b.reclaimCallback(ctx, r, r.FinishedAt.Add(8*24*time.Hour), false)
 	_ = file.Close()
-	if decision.Outcome != ReclaimKept || decision.Reason != WhyOwnerPresent {
+	if decision.Outcome != ReclaimKept || (decision.Reason != WhyOwnerPresent && decision.Reason != WhyOwnerUnknown) {
 		t.Fatal(decision)
 	}
 	if _, err := os.Stat((callbackFiles{r.Dir}).log()); err != nil {
 		t.Fatal("open log removed", err)
+	}
+}
+
+func TestProcessUseObservationProtectsManagedScratchAndRawLogs(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	req := callbackRequest(t, "d0000000-0000-4000-8000-000000000007", "sh", "-c", `echo temporary > "$TMPDIR/data"; echo result > "$CLAWDLINE_ARTIFACT_DIR/result.txt"`)
+	if _, err := b.StartCallback(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	r := settledWithin(t, b, ctx, req.TaskID, 10*time.Second)
+	rows, _, err := b.Store.TaskResourcesByOwnerPage(ctx, "task", r.ID, "")
+	if err != nil || len(rows) != 2 {
+		t.Fatal(rows, err)
+	}
+	for _, row := range rows {
+		if _, err := b.Resources.Seal(ctx, ResourceOwnerScope(), row.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := r.FinishedAt.Add(8 * 24 * time.Hour)
+	b.Resources.Clock = func() time.Time { return now }
+	for _, observation := range []string{"unknown", "present"} {
+		b.ProcessUses = func(context.Context, string) string { return observation }
+		page, err := b.Resources.Inventory(ctx, ResourceOwnerScope(), "", 2)
+		if err != nil || len(page.Items) != 2 {
+			t.Fatal(page, err)
+		}
+		for _, item := range page.Items {
+			if item.Decision.Outcome != "kept" || item.Decision.Reason != "use_"+observation {
+				t.Fatal(item.Decision)
+			}
+			if _, err := os.Stat(filepath.Join(b.Resources.FS.Path(), item.Resource.ID)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if d := b.reclaimCallback(ctx, r, now, false); d.Outcome != ReclaimKept {
+			t.Fatal(d)
+		}
+		if _, err := os.Stat((callbackFiles{r.Dir}).log()); err != nil {
+			t.Fatal("protected raw log removed", err)
+		}
+	}
+	b.ProcessUses = func(context.Context, string) string { return "absent" }
+	result, _, err := b.SweepTaskResources(ctx, "")
+	if err != nil || len(result.Items) != 2 {
+		t.Fatal(result, err)
+	}
+	for _, item := range result.Items {
+		if item.Outcome != "removed" {
+			t.Fatal(item)
+		}
+	}
+	if d := b.reclaimCallback(ctx, r, now, false); d.Outcome != ReclaimRemoved {
+		t.Fatal(d)
+	}
+	if raw, err := os.ReadFile(filepath.Join(r.Dir, "artifacts", "result.txt")); err != nil || string(raw) != "result\n" {
+		t.Fatal("retained output changed", string(raw), err)
 	}
 }

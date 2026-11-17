@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
-	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -832,7 +831,7 @@ func (b *Broker) reclaimCallback(ctx context.Context, r Record, now time.Time, d
 	if b.callbackResourcePresence(r) != "absent" {
 		return kept(r, ReclaimCallbackFiles, r.Dir, WhyOwnerUnknown, nil)
 	}
-	presence := resourcefs.UsePresence(ctx, r.Dir)
+	presence := b.resourceUsePresence(ctx, r.Dir)
 	if presence != "absent" {
 		why := WhyOwnerUnknown
 		if presence == "present" {

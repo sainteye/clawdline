@@ -265,3 +265,11 @@ proofs. Holder renewals and queue polls remain available without repeated disk
 walks; storage pressure prevents the new grant when it reaches the front.
 Linux use inspection includes executable and mapped-file paths as well as CWD
 and open descriptors; unavailable readings remain unknown.
+
+Policy and transport fixtures supply explicit process-use observations alongside
+their synthetic completion evidence. They must not assume a shared CI host has
+a completely readable process table. The production default remains the native
+platform adapter: an unreadable live process keeps the observation unknown and
+blocks reclamation. Native open-reader checks require preservation for either
+present or incomplete observations; isolated platform tests cover verified
+absence and successful removal.
