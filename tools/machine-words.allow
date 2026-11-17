@@ -78,3 +78,11 @@ web/console/src/next-strings.ts	"Mac App"
 # What the macOS app's Cloud tab sends as its user agent, in the test that
 # holds the device name it registers to it.
 web/console/src/cloud/device-limit.test.ts	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) ClawdlineApp/1"
+
+# The same-computer pairing choice is rendered only for a desktop browser
+# whose navigator.platform identifies macOS (PairPanel.tsx macBrowser).
+# Other platforms keep the generic other-computer path.
+web/console/public/catalogs/en.json	browserPairing.thisMac = "On this Mac (recommended)"
+web/console/public/catalogs/en.json	browserPairing.sameMacIntro = "Connect this browser to Clawdline on this Mac."
+web/console/public/catalogs/zh-Hant.json	browserPairing.thisMac = "這台 Mac（建議）"
+web/console/public/catalogs/zh-Hant.json	browserPairing.sameMacIntro = "讓這個瀏覽器連上這台 Mac 的 Clawdline。"

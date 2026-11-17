@@ -594,3 +594,9 @@
 .cloud-read-problem button { flex: none; min-height: 36px; padding: 4px 8px; color: var(--ink); background: transparent; border: 0; cursor: pointer; }
 .cloud-read-problem button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cloud-read-problem button[data-pair] { color: var(--accent); font-weight: 600; }
+
+.cloud-pair-location { border: 0; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
+.cloud-pair-location legend { margin-bottom: 10px; font-size: 13px; color: var(--dim); }
+.cloud-pair-location label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.cloud-pair-location input { accent-color: var(--accent); }
+.cloud-pair-native-way { margin: 16px 0; }

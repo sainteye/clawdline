@@ -56,7 +56,7 @@ export function LocalMachineSetup({ onPair, children }: { onPair?: (machine: { i
     {waiting ? <>
       <p role="status">{word("approve")}</p>
       {status.connection?.user_code && <p><code>{status.connection.user_code}</code></p>}
-      {status.connection?.verification_url && <a className="chip" href={status.connection.verification_url} target="_blank" rel="noreferrer">{word("approvalPage")}</a>}
+      {status.connection?.verification_url && <a className="go chip" href={status.connection.verification_url} target="_blank" rel="noreferrer">{word("approvalPage")}</a>}
       <button type="button" className="chip" onClick={() => {
         void nativePairing({ kind: "connection-cancel" }).then(value => { setStatus(value); setError("") },
           reason => setError(String(reason?.code || "connection_failed")))
@@ -64,7 +64,7 @@ export function LocalMachineSetup({ onPair, children }: { onPair?: (machine: { i
     </> : !ready ? <button className="go chip" type="button" disabled={busy} onClick={() => void connect()}>{word("connect")}</button> : <>
       <p>{status.machine_name}</p>
       {onPair && <button className="go chip" type="button" onClick={() => onPair({ id: status.machine_id!, name: status.machine_name || status.machine_id! })}>{word("pairApp")}</button>}
-      {children}
+      {children && <details><summary>{word("otherWays")}</summary>{children}</details>}
     </>}
     {status.connection?.phase === "failed" && <p role="status">{word("connectFailed")} ({status.connection.code})</p>}
     {error && <p role="status">{word("connectFailed")} ({error})</p>}

@@ -668,3 +668,12 @@ expiry. Opening summaries and their five-minute freshness policy do not invoke t
 The revised bilingual voice-question-menu entry covers this provider input, its usage estimate,
 its demand-only trigger and its failure behavior. A new route fails on an older machine instead
 of accidentally starting an unrelated paid recap. No live paid call was used for local tests.
+
+## App sign-in and browser pairing (2026-11-17)
+
+The app sign-in, setup completion and pairing labels changed in
+`next-strings.ts`. They are interface copy, not provider instructions. The
+`session-rotation` card's condition, original excerpt and effects were reviewed
+in English and Taiwan Traditional Chinese and remain accurate. No handoff
+request, injection sink or assistant launch behavior changed. The source
+receipt follows this copy update; website snapshot publication is separate.
