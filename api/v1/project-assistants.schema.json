@@ -563,7 +563,7 @@
     "ProjectAssistantEditSettings": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Primary Agent and Project remain immutable.",
+      "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Project remains fixed; qualified sources may change the primary Agent for the next idle turn.",
       "properties": {
         "expected_version": {
           "type": "integer"

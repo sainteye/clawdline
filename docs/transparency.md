@@ -792,3 +792,13 @@ publication identity, bytes and dates remain intact. This adds no model call,
 permission or automatic command replay. Closing the viewer returns focus to
 the originating card. The source inventory includes the library projection
 and title merge; the public website snapshot must follow the delivered tree.
+
+
+The Bot information panel now keeps one explicit settings draft across Details
+and Bot settings. Instructions, Agent/model, selected-login and fallback values
+keep their existing source validation and next-turn semantics. Secondary controls
+open on request; changing the layout does not add model calls, prompt text,
+memory sources, execution permissions or automatic save/replay. The existing
+English and Taiwan Traditional Chinese Bot explanations were reviewed against
+those unchanged boundaries. Conversation compaction remains an unqualified
+capability gap rather than a placeholder control.

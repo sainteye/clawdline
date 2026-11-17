@@ -7,7 +7,7 @@ export type BotInfoTab="details"|"library"|"memory"|"settings"
 const tabs:BotInfoTab[]=["details","library","memory","settings"]
 
 /** Keep visited editors mounted so switching tabs cannot discard an unsaved form. */
-export function BotSidePanel({bot,tab,onTab,onClose,children,w}:{bot:W.ProjectAssistantBot;tab:BotInfoTab|null;onTab:(tab:BotInfoTab)=>void;onClose:()=>void;children:Record<BotInfoTab,ReactNode>;w:Words}) {
+export function BotSidePanel({bot,tab,onTab,onClose,children,editor,w}:{bot:W.ProjectAssistantBot;tab:BotInfoTab|null;onTab:(tab:BotInfoTab)=>void;onClose:()=>void;children:Record<BotInfoTab,ReactNode>;editor?:ReactNode;w:Words}) {
   const id=useId(),panel=useRef<HTMLElement>(null),opener=useRef<HTMLElement|null>(null),wasOpen=useRef(false)
   const [visited,setVisited]=useState<BotInfoTab[]>([])
   const close=useRef(onClose);close.current=onClose
@@ -31,6 +31,11 @@ export function BotSidePanel({bot,tab,onTab,onClose,children,w}:{bot:W.ProjectAs
       const next=event.key==="Home"?tabs[0]:event.key==="End"?tabs.at(-1):offset?tabs[(tabs.indexOf(value)+offset+tabs.length)%tabs.length]:undefined
       if(next){event.preventDefault();onTab(next);panel.current?.querySelector<HTMLElement>(`[id="${id}-${next}"]`)?.focus()}
     }}>{label(value)}</button>)}</div>
-    <div className="pa-info-content">{tabs.filter(value=>visited.includes(value)||tab===value).map(value=><section key={value} role="tabpanel" id={`${id}-${value}-panel`} aria-labelledby={`${id}-${value}`} hidden={tab!==value}>{children[value]}</section>)}</div>
+    <div className="pa-info-content">
+      {editor&&(visited.some(value=>value==="details"||value==="settings")||tab==="details"||tab==="settings")&&<section role="tabpanel" id={`${id}-${tab==="settings"?"settings":"details"}-panel`} aria-labelledby={`${id}-${tab==="settings"?"settings":"details"}`} hidden={tab!=="details"&&tab!=="settings"}>
+        {editor}{tab==="settings"?children.settings:children.details}
+      </section>}
+      {tabs.filter(value=>(!editor||value!=="details"&&value!=="settings")&&(visited.includes(value)||tab===value)).map(value=><section key={value} role="tabpanel" id={`${id}-${value}-panel`} aria-labelledby={`${id}-${value}`} hidden={tab!==value}>{children[value]}</section>)}
+    </div>
   </aside>
 }

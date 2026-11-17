@@ -7,8 +7,9 @@ import type {Words} from "./words"
 
 /** Native sign-in belongs to the source. Every explicit replay keeps its exact
  * command; mounting or refreshing this component never starts a sign-in. */
-export function LoginProfiles({source,bot,agent,value,onChange,onStatusChange,w}:{source?:SourceClient;bot:W.ProjectAssistantBot;agent:W.ProjectAssistantAgent;value:string;onChange:(id:string)=>void;onStatusChange?:(state:string)=>void;w:Words}){
+export function LoginProfiles({source,bot,agent,value,onChange,onStatusChange,w,compact=false}:{source?:SourceClient;bot:W.ProjectAssistantBot;agent:W.ProjectAssistantAgent;value:string;onChange:(id:string)=>void;onStatusChange?:(state:string)=>void;w:Words;compact?:boolean}){
  const [profiles,setProfiles]=useState<W.ProjectAssistantLoginProfile[]>([]),[name,setName]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[pending,setPending]=useState<W.ProjectAssistantLoginProfileAction|null>(null)
+ const [manageOpen,setManageOpen]=useState(false)
  const [handoff,setHandoff]=useState<W.ProjectAssistantLoginProfile|null>(null),secretField=useRef<HTMLTextAreaElement>(null)
  const generation=useRef(0),scope=source?routineScopeIdentity(source,bot):"",journal="clawdline.bot-login-intent:"+scope
  const refresh=async(signal:AbortSignal)=>{if(!source?.loginProfiles)return;const n=generation.current,answer=await source.loginProfiles(bot.key,bot.conversation_id,agent,signal);if(n===generation.current&&!signal.aborted)setProfiles(answer.profiles)}
@@ -26,16 +27,20 @@ export function LoginProfiles({source,bot,agent,value,onChange,onStatusChange,w}
  }
  const selected=profiles.find(p=>p.id===value),available=source?.canLoginProfiles?.()===true
  useEffect(()=>{onStatusChange?.(selected?.state??"")},[value,selected?.state,onStatusChange])
- return <section className="pa-rules" aria-label={w.loginProfiles}>
-  <h3>{w.loginProfiles}</h3><p>{w.loginHint}</p>
-  {available?<>
-   <label>{w.loginProfile}<select aria-label={w.loginProfile} disabled={busy||!!pending} value={value} onChange={e=>onChange(e.target.value)}><option value="">{w.loginDefault}</option>{profiles.map(p=><option key={p.id} value={p.id} disabled={p.state!=="signed_in"&&p.state!=="signed_out"}>{p.name}</option>)}{value&&!selected&&<option value={value} disabled>{w.loginMissing}</option>}</select></label>
-   {selected&&<p role="status">{w.loginState}: {({signed_in:selected.kind==="api_key"?w.loginKeyStored:w.loginSignedIn,signed_out:w.loginSignedOut,accepted:w.loginAccepted,running:w.loginRunning,unknown:w.loginUnknown,removed:w.loginMissing} as Record<string,string>)[selected.state]??w.loginUnknown}</p>}
+ useEffect(()=>{if(pending||handoff)setManageOpen(true)},[pending,handoff])
+ const management=<>
    <label>{w.loginName}<input aria-label={w.loginName} value={name} disabled={busy||!!pending} onChange={e=>setName(e.target.value)}/></label>
    <div className="pa-toolbar" style={{flexWrap:"wrap",justifyContent:"flex-start"}}><button type="button" disabled={busy||!!pending||!name.trim()} onClick={()=>void action("create")}>{w.loginCreate}</button>{source?.canKeyProfiles?.()&&<button type="button" disabled={busy||!!pending||!name.trim()} onClick={()=>void action("create",undefined,true)}>{w.loginCreateKey}</button>}<button type="button" disabled={busy} onClick={()=>void refresh(new AbortController().signal).catch(e=>setError(errorCode(e)))}>{w.refresh}</button></div>
    {selected&&<div className="pa-toolbar" style={{flexWrap:"wrap",justifyContent:"flex-start"}}>{selected.kind==="api_key"?<button type="button" disabled={busy||!!pending||selected.state==="unknown"} onClick={()=>void action("prepare-key",selected)}>{w.loginPrepareKey}</button>:<><button type="button" disabled={busy||!!pending||selected.state==="running"||selected.state==="unknown"} onClick={()=>void action("start",selected)}>{w.loginStart}</button><button type="button" disabled={busy||!!pending||selected.state!=="running"} onClick={()=>void action("cancel",selected)}>{w.loginCancel}</button></>}<button type="button" disabled={busy||!!pending} onClick={()=>void action("check",selected)}>{w.loginCheck}</button><button type="button" disabled={busy||!!pending||!name.trim()} onClick={()=>void action("rename",selected)}>{w.loginRename}</button><button type="button" disabled={busy||!!pending} onClick={()=>void action("remove",selected)}>{w.loginRemove}</button></div>}
    {handoff?.id===value&&handoff.handoff&&<form className="secret-handoff-form" onSubmit={e=>{e.preventDefault();void action("submit-key",handoff)}}><label htmlFor="pa-login-secret">{handoff.variables?.join(", ")}<textarea id="pa-login-secret" aria-label={w.loginKeyValue} ref={secretField} autoComplete="off" spellCheck={false} required disabled={busy||!!pending}/></label><p>{w.loginKeyHint}</p><button type="submit" disabled={busy||!!pending}>{w.loginSubmitKey}</button></form>}
    {pending&&<><p role="status">{w.loginReplayHint}</p><button type="button" disabled={busy} onClick={()=>void perform(pending)}>{w.loginReplay}</button></>}
+ </>
+ return <section className={compact?"pa-rules pa-login-compact":"pa-rules"} aria-label={w.loginProfiles}>
+  {!compact&&<><h3>{w.loginProfiles}</h3><p>{w.loginHint}</p></>}
+  {available?<>
+   <label>{w.loginProfile}<select aria-label={w.loginProfile} disabled={busy||!!pending} value={value} onChange={e=>onChange(e.target.value)}><option value="">{w.loginDefault}</option>{profiles.map(p=><option key={p.id} value={p.id} disabled={p.state!=="signed_in"&&p.state!=="signed_out"}>{p.name}</option>)}{value&&!selected&&<option value={value} disabled>{w.loginMissing}</option>}</select></label>
+   {selected&&<p role="status">{w.loginState}: {({signed_in:selected.kind==="api_key"?w.loginKeyStored:w.loginSignedIn,signed_out:w.loginSignedOut,accepted:w.loginAccepted,running:w.loginRunning,unknown:w.loginUnknown,removed:w.loginMissing} as Record<string,string>)[selected.state]??w.loginUnknown}</p>}
+   {compact?<details className="pa-login-management" open={manageOpen} onToggle={event=>setManageOpen(event.currentTarget.open)}><summary>{w.settingsLoginManage}</summary><div className="pa-login-management-body">{management}</div></details>:management}
   </>:<p>{w.loginUnavailable}</p>}
   {error&&<p role="alert">{w.unavailable} ({error})</p>}
  </section>

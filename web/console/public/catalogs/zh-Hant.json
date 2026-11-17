@@ -13215,5 +13215,14 @@
   "projectAssistants.rosterSortDone": "完成",
   "capacityRow.bots.group_preview_avatars.what": "群組對話在清單預覽中顯示的成員頭像數。",
   "capacityRow.bots.group_preview_avatars.full": "其餘成員以人數顯示，開啟房間即可查看所有成員。",
-  "projectAssistants.backToGroup": "返回群組"
+  "projectAssistants.backToGroup": "返回群組",
+  "projectAssistants.settingsDraftHint": "儲存後套用草稿；取消會捨棄變更。",
+  "projectAssistants.settingsNoFallbacks": "尚無備援",
+  "projectAssistants.settingsFrequent": "編輯對話設定",
+  "projectAssistants.settingsIdentity": "名稱與外觀",
+  "projectAssistants.settingsAccess": "權限與通知",
+  "projectAssistants.settingsNetwork": "網路存取",
+  "projectAssistants.settingsRules": "已儲存的權限規則",
+  "projectAssistants.settingsLoginManage": "管理登入設定",
+  "projectAssistants.settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}"
 }

@@ -381,10 +381,30 @@ add/move/remove saved with the form, and distinct-login choices.
 `FallbackSourceScope` carries only the selected SourceClient from Bots into its
 settings descendant. An older injected client has no editing capability by
 default. API72 gating remains independent of installed-native qualification.
-The Add picker reuses `PaSelect`; rows reuse the `pa-rules` list style. Model,
-login profile, rest status and switch-back are not carried (see the doc).
+The Add picker reuses `PaSelect`; rows reuse the `pa-rules` list style.
+API82-qualified sources also carry each fallback step's selected login profile.
+Per-step model options, rest status and switch-back are not carried (see the doc).
 Original version/configuration are captured on mount; unchanged alternates are
 omitted, clearing is explicit, and uncertain saves retain a locked visible form.
 See [the fallback boundary](../../../../docs/project-assistants-fallback.md)
 for the real TCP/browser fixture, its known source-event projection limitation,
 and the native/status/switch-back work that this increment does not complete.
+
+
+## One information-panel settings draft
+
+Details and Bot settings share one mounted `BotSettings` editor. Details owns
+standing instructions and the primary Agent/model, login and fallback summary.
+Bot settings shows only the secondary disclosures and a link back to the same
+conversation setup draft. Library and memory keep their existing independent
+panels. The common editor retains draft and unknown-outcome state across tabs
+and panel closure; explicit Save/Cancel keep their existing version fencing.
+
+`SettingsDisclosure` mounts its content only after the first explicit expansion,
+then keeps it mounted across tab and editor-part changes.
+Opening Details therefore does not immediately probe native model configuration,
+load extension definitions or read network/rule state. The chosen login profile
+still loads its source-owned status. Native login and network commands retain
+their own explicit controls; Bot Save does not stage those independent actions.
+See [the settings boundary](../../../../docs/project-assistants-settings.md) for
+conversation-compaction gaps and the isolated browser acceptance scope.

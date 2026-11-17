@@ -89,10 +89,10 @@ try{
     assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,"Memory stays within viewport")
     // A detail finishing after switching layers cannot publish into the new layer.
     holdNext=true;held=false;await browser("click",read+": shared-note");await waitHeld();await browser("click",local);releaseHeld();await waitText("Synthetic local fact");await waitText("Synthetic authorized Project note.",false)
-    await browser("click",settings);await waitText(zh?"沿用 Agent 預設":"Use Agent default")
+    await browser("click",settings);await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")][0].click()');await waitText(zh?"Agent 模型設定":"Agent model settings")
     if(readonly){assert.equal((await browser("click",save)).disabled,true);assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
     else{
-      await select(zh?"模型":"Model","synthetic-large");await waitText("Reasoning effort");await select("Reasoning effort","high");await select("Fast mode","true")
+      await waitText("Reasoning effort");await select(zh?"模型":"Model","synthetic-large");await waitText("Reasoning effort");await select("Reasoning effort","high");await select("Fast mode","true")
       await browser("screenshot","--out",path.join(artifacts,language+"-settings.jpg"));await writeFile(path.join(artifacts,language+"-settings.html"),await evaluate("document.documentElement.outerHTML"))
       await browser("click",save);await waitText("Settings saved")
       if(!zh){await browser("click","Send scripted input");await waitText("Scripted input accepted")}

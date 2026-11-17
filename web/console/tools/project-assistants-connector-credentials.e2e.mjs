@@ -73,9 +73,9 @@ try{
   await connect()
   for(const language of ["en","zh-Hant"]){
     const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save";
-    await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText("Owned folder fixture");
+    await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==='+JSON.stringify(zh?"應用程式技能與連接器":"Application skills and connectors")+').click()');await waitText("Owned folder fixture");
     await evaluate(`(()=>{for(const label of document.querySelectorAll("label")){if(label.textContent==="Owned folder fixture"||label.textContent==="fixture-connector"){const checkbox=label.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked)checkbox.click()}}})()`);
-    await browser("click",save);await waitText("Settings saved");await browser("click",settings);await waitText(zh?"輸入或更換連接器憑證":"Enter or replace connector credential");
+    await browser("click",save);await waitText("Settings saved");await browser("click",settings);await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==='+JSON.stringify(zh?"應用程式技能與連接器":"Application skills and connectors")+').click()');await waitText(zh?"輸入或更換連接器憑證":"Enter or replace connector credential");
     await browser("click",zh?"輸入或更換連接器憑證":"Enter or replace connector credential");await waitText(zh?"連接器機密":"Connector secret");
     await evaluate(`document.querySelector('textarea[aria-label="${zh?"連接器機密":"Connector secret"}"]').scrollIntoView({block:"center"})`);
     await browser("screenshot","--out",path.join(artifacts,language+"-connector-secret.jpg"));await writeFile(path.join(artifacts,language+"-connector-secret.html"),await evaluate("document.documentElement.outerHTML"));

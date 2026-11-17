@@ -73,7 +73,7 @@ try{
   await connect()
   for(const [language,readonly] of [["en",true],["en",false],["zh-Hant",false]]){
     const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save",label=zh?"登入設定":"Login profile",name=zh?"登入設定名稱":"Login profile name",create=zh?"新增獨立帳號登入":"Add account login profile",start=zh?"開啟原生登入":"Open native sign-in",refresh=zh?"檢查新訊息":"Check for updates";
-    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"預設登入設定":"Default login profile");
+    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"預設登入設定":"Default login profile");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
     if(readonly){assert.equal((await browser("click",save)).disabled,true);assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
     else{
       const account=zh?"Synthetic second browser key":"Synthetic first browser key";
@@ -91,7 +91,7 @@ try{
       await waitText(alternate);await browser("screenshot","--out",path.join(artifacts,language+"-fallbacks.jpg"));
       await waitText("Synthetic installed skill");await evaluate(`(()=>{for(const label of document.querySelectorAll("label")){if(label.textContent==="Synthetic installed skill"||label.textContent==="fixture-connector"){const checkbox=label.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked)checkbox.click()}}})()`);await browser("screenshot","--out",path.join(artifacts,language+"-login.jpg"));await writeFile(path.join(artifacts,language+"-login.html"),await evaluate("document.documentElement.outerHTML"));assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
       await evaluate(`document.querySelector('section[aria-label="${zh?"應用程式技能與連接器":"Application skills and connectors"}"]').scrollIntoView()`);await browser("screenshot","--out",path.join(artifacts,language+"-extensions.jpg"));await browser("click",save);await waitText("Settings saved");await browser("click","Send scripted input");await waitText("Scripted input accepted");
-      await browser("click",settings);await waitText(zh?"輸入或更換 API 金鑰":"Enter or replace API key");await browser("click",zh?"輸入或更換 API 金鑰":"Enter or replace API key");await waitText("pa_scope_denied");
+      await browser("click",settings);await evaluate('document.querySelector(".pa-login-management>summary").click()');await waitText(zh?"輸入或更換 API 金鑰":"Enter or replace API key");await browser("click",zh?"輸入或更換 API 金鑰":"Enter or replace API key");await waitText("pa_scope_denied");
       assert.equal(await evaluate(`Object.keys(localStorage).filter(k=>k.startsWith("clawdline.bot-login-intent:")).length`),0,"a refused referenced-key replacement must not trap the settings journal");
     }
     await browser("close");tab=undefined;

@@ -1,5 +1,15 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}",
+  "settingsDraftHint": "Save applies this draft. Cancel discards it.",
+  "settingsNoFallbacks": "No fallbacks",
+  "settingsFrequent": "Edit conversation setup",
+  "settingsIdentity": "Name and appearance",
+  "settingsAccess": "Permissions and notifications",
+  "settingsNetwork": "Network access",
+  "settingsRules": "Saved permission rules",
+  "settingsLoginManage": "Manage login profiles",
+
   "pinned": "Pinned",
   "rosterSortDone": "Done",
   "rosterSort": "Reorder conversations",
@@ -497,6 +507,16 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}",
+  "settingsDraftHint": "儲存後套用草稿；取消會捨棄變更。",
+  "settingsNoFallbacks": "尚無備援",
+  "settingsFrequent": "編輯對話設定",
+  "settingsIdentity": "名稱與外觀",
+  "settingsAccess": "權限與通知",
+  "settingsNetwork": "網路存取",
+  "settingsRules": "已儲存的權限規則",
+  "settingsLoginManage": "管理登入設定",
+
   "pinned": "已釘選",
   "rosterSortDone": "完成",
   "rosterSort": "調整對話順序",

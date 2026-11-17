@@ -102,11 +102,12 @@ try{
   await open();const initialPosts=posts().length
   await hit(".pa-info-toggle");await waitFor('document.activeElement?.getAttribute("role")==="tab"');await capture("after-details")
   await key("End");await waitFor('document.querySelector("[role=tab][aria-selected=true]")?.textContent==="Bot settings"')
-  const name='.pa-info-panel [role="tabpanel"]:not([hidden]) label input:not([type="checkbox"])'
-  await fill(name,"Synthetic draft name");await hit('.pa-info-tabs [role="tab"]:nth-child(2)');await waitText("No shared files or artifacts yet")
-  await capture("after-library");await hit('.pa-info-tabs [role="tab"]:nth-child(4)');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(name)}).value`),"Synthetic draft name")
+  if(!await evaluate('document.querySelector(".pa-settings-part:not([hidden]) .pa-settings-disclosure").open'))await hit(".pa-settings-part:not([hidden]) .pa-settings-disclosure>summary");
+  const name='.pa-info-panel [role="tabpanel"]:not([hidden]) input[aria-label="Name"]'
+  await waitFor(`!!document.querySelector(${JSON.stringify(name)})`);await fill(name,"Synthetic draft name");await hit('.pa-info-tabs [role="tab"]:nth-child(2)');await waitText("No shared files or artifacts yet")
+  await capture("after-library");await hit('.pa-info-tabs [role="tab"]:nth-child(4)');if(!await evaluate('document.querySelector(".pa-settings-part:not([hidden]) .pa-settings-disclosure").open'))await hit(".pa-settings-part:not([hidden]) .pa-settings-disclosure>summary");assert.equal(await evaluate(`document.querySelector(${JSON.stringify(name)}).value`),"Synthetic draft name")
   await fill(name,"Synthetic saved name");await browser("click","Save");await waitFor('document.querySelector(".pa-info-panel").hidden');assert.ok(posts().some(r=>r.method==="PATCH"&&r.status===200))
-  await hit(".pa-info-toggle");await hit('.pa-info-tabs [role="tab"]:nth-child(4)');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(name)}).value`),"Synthetic saved name");await capture("after-settings")
+  await hit(".pa-info-toggle");await hit('.pa-info-tabs [role="tab"]:nth-child(4)');if(!await evaluate('document.querySelector(".pa-settings-part:not([hidden]) .pa-settings-disclosure").open'))await hit(".pa-settings-part:not([hidden]) .pa-settings-disclosure>summary");await waitFor(`document.querySelector(${JSON.stringify(name)})?.value==="Synthetic saved name"`);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(name)}).value`),"Synthetic saved name");await capture("after-settings")
   await hit('.pa-info-tabs [role="tab"]:nth-child(3)');await waitFor('!!document.querySelector(".pa-memory textarea")');await fill(".pa-memory textarea","Synthetic durable memory");await hit(".pa-memory form button[type=submit]");await waitText("Synthetic durable memory");await waitFor('document.querySelector(".pa-memory textarea").value===""');await capture("after-memory")
   const memoryPosts=posts().filter(r=>r.path.endsWith("/memory"));assert.equal(memoryPosts.length,1);assert.equal(memoryPosts[0].status,200)
   await browser("viewport","mobile");await capture("after-phone-memory");assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true)

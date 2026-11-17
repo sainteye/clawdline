@@ -5470,7 +5470,8 @@ export interface ProjectAssistantEditRequest {
 
 /**
  * Editable settings; omitted fallback_agents preserves the saved chain, while an
- * empty array clears it. Primary Agent and Project remain immutable.
+ * empty array clears it. Project remains fixed; qualified sources may change the
+ * primary Agent for the next idle turn.
  */
 export interface ProjectAssistantEditSettings {
   agent?: ProjectAssistantAgent

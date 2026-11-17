@@ -70,7 +70,7 @@ try{
  await connect()
  for(const language of ["en","zh-Hant"]){
   const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",title=zh?"Bot 連線對象":"Bot reachability",unavailable=zh?"這個來源尚未設定連線服務。":"This source has no configured reachability service.";
-  await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(title);await waitText(unavailable);
+  await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==='+JSON.stringify(zh?"網路存取":"Network access")+').click()');await waitText(title);await waitText(unavailable);
   assert.equal(await evaluate('document.querySelectorAll(".pa-network-settings [role=switch]").length'),0,"unconfigured source offers no working switch");
   await evaluate('document.querySelector(".pa-network-settings").scrollIntoView({block:"center"})');
   await browser("screenshot","--out",path.join(artifacts,language+"-network-unavailable.jpg"));await writeFile(path.join(artifacts,language+"-network-unavailable.html"),await evaluate("document.documentElement.outerHTML"));
@@ -81,7 +81,7 @@ try{
   holdNext=true;held=false;await evaluate("window.pendingRead=fixtureRead();'started'");await waitHeld();await evaluate("fixtureRevoke()");releaseHeld();assert.equal(await evaluate("window.pendingRead"),"pa_revoked");
   await browser("close");tab=undefined;
  }
- await browser("open",origin+"/?lang=en&read=1");await browser("viewport","desktop");await waitText("Bot settings");await browser("click","Bot settings");await waitText("Bot reachability");assert.equal(await evaluate("fixturePreference(false)"),"pa_read_only");await browser("close");tab=undefined;
+ await browser("open",origin+"/?lang=en&read=1");await browser("viewport","desktop");await waitText("Bot settings");await browser("click","Bot settings");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==="Network access").click()');await waitText("Bot reachability");assert.equal(await evaluate("fixturePreference(false)"),"pa_read_only");await browser("close");tab=undefined;
  assert.ok(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/network-settings")).some(r=>r.status===200));
  console.log("Production English desktop and Taiwan Chinese narrow network settings, SourceClient, authenticated HTTP/Host/SQLite; no fake capability. Default unavailable, refused enable, actual false preference save, read-only, API downgrade and late-source refusal passed. External/model API requests=0.")
 }finally{
