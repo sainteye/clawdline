@@ -24,8 +24,9 @@ export function chatMood(source:W.ProjectAssistantSourceStatus,turn:W.ProjectAss
  */
 export function activityOf(trace: W.ProjectAssistantTrace | undefined): string | "writing" | "" {
   if (!trace) return ""
-  if (trace.category === "tool_call") return trace.text.trim()
+  if (trace.category === "tool_call") return trace.text.split("\n",1)[0].trim()
   if (trace.category === "agent_message_chunk") return "writing"
+  if (trace.category === "agent_thought_chunk") return "thinking"
   return ""
 }
 

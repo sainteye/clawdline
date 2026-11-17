@@ -593,12 +593,12 @@ func TestAResumedPromptAfterAMemoryChangeCarriesTheWholeMemory(t *testing.T) {
 }
 
 // As Codync keeps text segments apart, a tool call or a new message starts a
-// new paragraph of the reply, and a segment that is only tool-call markup is
-// not part of it.
+// trace segment. Only the last text segment becomes the fallback reply;
+// narration and tool-call markup stay in the trace.
 func TestReplySegmentsAreSeparatedAndToolMarkupIsDropped(t *testing.T) {
 	c, _ := openTestClient(t, "segments", func(context.Context, app.ProtocolEvent) error { return nil })
 	result, err := sendTestPrompt(t, c).Wait(context.Background())
-	want := "Previous run didn't finish; rerunning.\n\nRESUME-CHECK-77 done, see <invoke name=\"x\"></invoke> above"
+	want := "RESUME-CHECK-77 done, see <invoke name=\"x\"></invoke> above"
 	if err != nil || result.FinalText != want {
 		t.Fatalf("reply=%q %v", result.FinalText, err)
 	}
@@ -622,7 +622,7 @@ func TestAToolCallTitleIsTheBotsActivity(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(traces) == 0 || traces[0].Category != "tool_call" || traces[0].Text != "Read notes.md" {
+	if len(traces) == 0 || traces[0].Category != "tool_call" || !strings.HasPrefix(traces[0].Text, "Read notes.md\n") {
 		t.Fatalf("traces=%+v", traces)
 	}
 }
@@ -816,5 +816,47 @@ func TestACPNativeOutputStopsRemainTyped(t *testing.T) {
 				t.Fatalf("native stop lost: %v", err)
 			}
 		})
+	}
+}
+
+func TestConversationTraceKeepsNativeStepsAndTextSegments(t *testing.T) {
+	var events []app.ProtocolEvent
+	c := &Client{sessionID: "trace-session", turnID: "trace-turn", ctx: context.Background(), sink: func(_ context.Context, e app.ProtocolEvent) error {
+		events = append(events, e)
+		return nil
+	}}
+	update := func(kind string, fields map[string]any) {
+		t.Helper()
+		fields["sessionUpdate"] = kind
+		if err := c.handle(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "trace-session", "update": fields})}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chunk := func(kind, text string) {
+		update(kind, map[string]any{"content": map[string]string{"type": "text", "text": text}})
+	}
+	chunk("agent_thought_chunk", "Check ")
+	chunk("agent_thought_chunk", "the source.")
+	update("tool_call", map[string]any{"toolCallId": "read", "title": "Read source.go", "status": "in_progress", "rawInput": map[string]string{"path": "source.go"}})
+	update("tool_call_update", map[string]any{"toolCallId": "read", "status": "completed", "content": []any{map[string]any{"type": "content", "content": map[string]string{"type": "text", "text": "Source found"}}}})
+	chunk("agent_message_chunk", "First ")
+	chunk("agent_message_chunk", "finding.")
+	update("tool_call", map[string]any{"toolCallId": "check", "title": "Check result", "status": "in_progress"})
+	chunk("agent_message_chunk", "Final result.")
+	if len(events) != 8 {
+		t.Fatalf("got %d trace events, want all eight", len(events))
+	}
+	if events[0].Trace.Category != "agent_thought_chunk" || events[0].Trace.Text+events[1].Trace.Text != "Check the source." || events[0].Trace.ID == "" || events[0].Trace.ID != events[1].Trace.ID {
+		t.Fatalf("thought chunks lost: %+v", events)
+	}
+	tool := events[3].Trace
+	if tool.ID != events[2].Trace.ID || !tool.Complete || !strings.Contains(tool.Text, "Read source.go") || !strings.Contains(tool.Text, "Source found") {
+		t.Fatalf("tool snapshot lost: %+v", tool)
+	}
+	if events[4].Trace.Text+events[5].Trace.Text != "First finding." || events[5].Trace.ID != events[4].Trace.ID || events[7].Trace.ID == events[5].Trace.ID {
+		t.Fatal("narration segments collapsed")
+	}
+	if strings.Contains(c.partial, "Check the source") || strings.Contains(c.partial, "Source found") {
+		t.Fatal("thought or tool output leaked into fallback reply")
 	}
 }

@@ -6279,8 +6279,12 @@ type ProjectAssistantTeamSettingsRequest struct {
 type ProjectAssistantTrace struct {
 	Category string `json:"category"`
 	Complete bool   `json:"complete"`
-	Text     string `json:"text"`
-	TurnID   string `json:"turn_id"`
+
+	// Optional stable step identity within the turn. Absent on legacy category
+	// snapshots.
+	ID     string `json:"id,omitempty"`
+	Text   string `json:"text"`
+	TurnID string `json:"turn_id"`
 }
 
 type ProjectAssistantTurn struct {

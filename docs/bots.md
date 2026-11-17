@@ -60,7 +60,19 @@ first-use setup ahead of time and prints which Claude Code version it found;
    picture too large for one encrypted read shows an explicit error. Loading
    and failed reads remain visible; retrying a picture read does not resend
    the message.
-   The Bot answers in the chat. While it works, the chat shows what it is
+   The Bot can send several separate messages during one turn, each delivered
+   immediately with `send_message`, as in Codync. Each message carries one useful
+   finding, result or question. Once it has sent a message, later final text stays
+   in the process trace; it must send any further result explicitly too. If it sends
+   no message, its last text segment becomes the fallback reply. Earlier narration
+   stays in the trace. Longer reports can be published as an HTML artifact.
+   **Show what it did** keeps separate native narration, thoughts when the agent
+   supplies them, and individual tool calls with their status, text output and
+   diffs. Text chunks join within their own step; later steps do not overwrite
+   earlier ones. An expanded step refreshes when new content arrives. Older
+   category-only records retain their original representation; omitted thoughts
+   and outputs from earlier turns cannot be recovered by this change.
+   While it works, the chat shows what it is
    doing (the tool it is using, or that it is writing) and how long the turn
    has run. A message sent while it is still working waits in line and is
    shown as pending; **×** on a pending message takes it back before it is

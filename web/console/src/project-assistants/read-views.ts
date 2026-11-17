@@ -74,7 +74,7 @@ function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.Pr
   const ids=new Set<string>()
   for(const option of p.options){if(!option||!text(option.id)||ids.has(option.id)||typeof option.label!=="string"||typeof option.allow!=="boolean"||typeof option.read_only!=="boolean"||!["allow_once","allow_always","reject_once","reject_always"].includes(option.kind))throw failure("pa_invalid");ids.add(option.id)}
 }
-function trace(t:W.ProjectAssistantTrace) {if(!t||!text(t.turn_id)||!text(t.category)||typeof t.text!=="string"||typeof t.complete!=="boolean")throw failure("pa_invalid")}
+function trace(t:W.ProjectAssistantTrace) {if(t?.id!==undefined&&typeof t.id!=="string")throw failure("pa_invalid");if(!t||!text(t.turn_id)||!text(t.category)||typeof t.text!=="string"||typeof t.complete!=="boolean")throw failure("pa_invalid")}
 
 /** The existing wire limits are shared with the source: 100/256 rows, 16 turns, 4096 cursor bytes. */
 export function readViewRequest(q:W.ProjectAssistantReadViewRequest):W.ProjectAssistantReadViewRequest {
@@ -116,7 +116,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     ids.add(rowIdentity)
     const kinds=["message","work","event","permission_summary","trace_summary","permission","trace"] as const
     if(kinds.filter(kind=>row[kind]!==undefined).length!==1||!row[row.kind])throw failure("pa_invalid")
-    const payloadID=row.message?.id??row.work?.id??row.permission_summary?.id??row.trace_summary?.id??row.permission?.id??(row.trace?JSON.stringify([row.trace.turn_id,row.trace.category]):row.event?.id)
+    const payloadID=row.message?.id??row.work?.id??row.permission_summary?.id??row.trace_summary?.id??row.permission?.id??(row.trace?JSON.stringify([row.trace.turn_id,row.trace.id||row.trace.category]):row.event?.id)
     const identity=JSON.stringify([row.kind,payloadID]);if(identities.has(identity))throw failure("pa_invalid");identities.add(identity)
     if(row.message){message(row.message,scope);if(row.anchor_message_seq!==row.message.seq)throw failure("pa_invalid")}
     if(row.work)work(row.work,scope)

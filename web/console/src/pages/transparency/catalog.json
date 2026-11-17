@@ -3594,6 +3594,10 @@
         {
           "path": "internal/transport/http/project_assistants_login_profiles.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/trace.go",
+          "line": 1
         }
       ],
       "original": [
@@ -3645,7 +3649,8 @@
         "\t}\n",
         "\treturn &promptPending{rpc: p}, nil\n",
         "}\n",
-        "Managed account selection reaches the native process environment; selected application text skills enter only captured Bot context, and configured HTTP connectors use the execution-owned MCP proxy. Unknown cleanup retains profile holds. API-key/fallback-profile and network reachability construction remain open."
+        "Managed account selection reaches the native process environment; selected application text skills enter only captured Bot context, and configured HTTP connectors use the execution-owned MCP proxy. Unknown cleanup retains profile holds. API-key/fallback-profile and network reachability construction remain open.",
+        "\"Messages: in your own chat, send_message delivers one message immediately as its own bubble. Send several for several thoughts whenever you have something worth telling the user: a result, a finding that changes the next step, or a question only they can answer. Write short and plain, one thought per message, in the user's language; lead with the result, then what needs the user. Once you send a message, your final reply stays in the trace and is not delivered, so send all user-facing results through send_message. If you send nothing, your final text is delivered as a fallback. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. For a report, plan or comparison they will read as a whole, write self-contained HTML and use publish_artifact rather than a long message. 訊息：在自己的聊天中，send_message 會立即送出一個獨立氣泡，同一回合可送出多則，各自表達一個重點。有值得告知的結果、會改變下一步的發現，或只有使用者能回答的問題時再傳送；不要只報開工、持續工作或重複內容。使用 send_message 後，最後文字只留在處理過程，所有要讓使用者讀到的結果都要用 send_message 傳送。完全沒傳訊息時才以最後文字作為回覆。較長的報告、計畫或比較請用 publish_artifact 分享完整 HTML。\","
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -4666,20 +4671,21 @@
     "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "6a062d16b12e3082d46747c00d28c7904cc56b9fc52c0aba13754f67040e3845",
-    "internal/adapters/projectassistantacp/client.go": "0321200ad5d03f527497fb14e00912ebeac62a26197c2118fb1b82984801ec8b",
+    "internal/adapters/projectassistantacp/client.go": "5c4c45a02bb4e68b69eb4593c2d020faeceea19915e0c2490a00469042b7a399",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/installation.go": "a8c506a3239983e48f51be52224d3c125f56dff4b62322498415c52b8b2d8803",
     "internal/adapters/projectassistantacp/installation_codex.go": "229fd1007a373608c378f75257823846b09f03157b260773057e0657c8062551",
     "internal/adapters/projectassistantacp/installation_isolation.go": "2e3d55848a1fa2d18842539a306cd591334df3e01bfa00cdff7ef8d1c293c3cf",
     "internal/adapters/projectassistantacp/login_profiles.go": "3b612a6d02e2ad26d7be0d91d4643d83281b3ee713331c137052afa40440aa51",
-    "internal/adapters/projectassistantacp/mcp.go": "e1a7b2338403efffad2527897b9209496925fce5a0b617687c6c2abdee059b1a",
+    "internal/adapters/projectassistantacp/mcp.go": "0cf3e8296dc98812314b617cc91c44359359f8b66370b4c64c0e5e7597b1fed1",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
     "internal/adapters/projectassistantacp/model_configuration.go": "a27e154c02f76a7bbe9383b2c503998c017b58e92f7ed531ea4728056b00003b",
     "internal/adapters/projectassistantacp/native_history.go": "1234f4216751ac3b7d1845e1bdf48ec39ca07af28c0360d55aa189d6053e7079",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "16577174c1c0b9c8858f0eb5815ca06a838836a6a8d98c06eb7cff380b7b63a4",
+    "internal/adapters/projectassistantacp/session_configuration.go": "9121c15f3395769b40cebf5fb6322a8ce81ca2b6ecca542222f1baaea493c009",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
+    "internal/adapters/projectassistantacp/trace.go": "df75e0f6fccf6a409acba6c33e9663670518e6ad1948408f794c34581a895044",
     "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
     "internal/adapters/projectassistanthost/provider.go": "f7ef1a0a04939b182aba463d637de65e8dba686e798dc40b993738ddf22241dd",
@@ -4864,7 +4870,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "1bc082ed2659ff9d0cf6297c3e5e72bf2d75d657207dfdb0b1d30f76b7e68e79",
-    "zh-Hant": "6105dadd71361f549f76324fb13ccfe01242de890fe544a719784a0cb05f3813"
+    "en": "00f51b5649a59958b96711a92a7e78511138b7b5f711e5d6e832c05717ab7653",
+    "zh-Hant": "47e537ca8ded2a89d7517c4c8ba14e913dda82d587127f560b8ce2ec6aedf5d8"
   }
 }

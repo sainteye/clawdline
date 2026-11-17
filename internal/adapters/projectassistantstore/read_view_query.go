@@ -242,11 +242,14 @@ ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC`
 func viewTraceCTE() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + `, traces AS MATERIALIZED (
  SELECT e.seq,json_extract(CAST(e.data AS TEXT),'$.trace') j,
- row_number() OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),json_extract(CAST(e.data AS TEXT),'$.trace.category') ORDER BY e.seq DESC) rn
+ row_number() OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category')) ORDER BY e.seq DESC) rn,
+ min(e.seq) OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category'))) first_seq
  FROM a,project_assistant_events e
  WHERE e.machine=? AND e.bot=? AND json_extract(CAST(e.data AS TEXT),'$.kind')='trace_updated'
  AND ` + viewFenceSQL("CAST(e.data AS TEXT)", true) + `
-), latest AS MATERIALIZED (SELECT seq,j FROM traces WHERE rn=1) `
+), latest AS MATERIALIZED (
+ SELECT seq,CASE WHEN coalesce(json_extract(j,'$.id'),'')!='' THEN first_seq ELSE seq END anchor,j FROM traces WHERE rn=1
+) `
 }
 
 func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.ReadViewHead) error {

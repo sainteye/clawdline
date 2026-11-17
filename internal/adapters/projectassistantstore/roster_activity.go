@@ -79,7 +79,7 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 	if e := a.RosterTrace; e != nil && e.Trace != nil && e.Fence == turn.Fence && e.Trace.TurnID == turn.ID && !e.Trace.Complete {
 		switch e.Trace.Category {
 		case "tool_call":
-			if text := strings.TrimSpace(e.Trace.Text); text != "" {
+			if text := strings.TrimSpace(strings.SplitN(e.Trace.Text, "\n", 2)[0]); text != "" {
 				out.Activity = text
 			}
 		case "agent_message_chunk":

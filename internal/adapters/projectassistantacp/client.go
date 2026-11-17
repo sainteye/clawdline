@@ -75,6 +75,8 @@ type Client struct {
 	sessionID      string
 	turnID         string
 	partial        string
+	traceSegment   pa.Trace
+	traceTools     map[string]nativeToolTrace
 	// reply segments, as Codync's text segments: a tool call or a new message
 	// closes one, and the next starts after a blank line.
 	segmentStart      int
@@ -446,6 +448,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	}
 	c.turnID = q.Turn.ID
 	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
+	c.traceSegment, c.traceTools = pa.Trace{}, nil
 	sid := c.sessionID
 	c.mu.Unlock()
 	// Only fresh filtered context is sent. Displayed history is never implicit
@@ -488,7 +491,8 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	}
 	p.rpc.c.mu.Lock()
 	p.rpc.c.closeSegment()
-	partial := strings.TrimSpace(p.rpc.c.partial)
+	partial := strings.TrimSpace(p.rpc.c.partial[p.rpc.c.segmentStart:])
+	p.rpc.c.traceSegment, p.rpc.c.traceTools = pa.Trace{}, nil
 	cancelled := p.rpc.c.cancelled
 	p.rpc.c.turnID = ""
 	p.rpc.c.mu.Unlock()
@@ -634,7 +638,9 @@ func (c *Client) handle(f frame) error {
 				Title         string `json:"title"`
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
-				Content json.RawMessage `json:"content"`
+				Content    json.RawMessage `json:"content"`
+				ToolCallID string          `json:"toolCallId"`
+				Status     string          `json:"status"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
@@ -653,18 +659,15 @@ func (c *Client) handle(f frame) error {
 			c.mu.Lock()
 			c.segmentClosed = true
 			c.mu.Unlock()
-			// As Codync's working indicator, the call's title is the Bot's
-			// current activity; the console reads it from this trace.
-			title := strings.TrimSpace(p.Update.Title)
-			if title == "" || pa.ValidateMessage(title) != nil {
-				return nil
-			}
-			e := c.event(c.eventID())
-			e.Trace = &pa.Trace{TurnID: e.TurnID, Category: "tool_call", Text: title}
-			return c.sink(c.ctx, e)
+			return c.traceUpdate(raw(p.Update))
 		}
 		if p.Update.SessionUpdate != "agent_message_chunk" {
-			return nil
+			if p.Update.SessionUpdate == "agent_thought_chunk" {
+				c.mu.Lock()
+				c.segmentClosed = true
+				c.mu.Unlock()
+			}
+			return c.traceUpdate(raw(p.Update))
 		}
 		var content struct {
 			Type string `json:"type"`
@@ -677,11 +680,13 @@ func (c *Client) handle(f frame) error {
 			c.mu.Lock()
 			if p.Update.MessageID != "" && c.messageID != "" && p.Update.MessageID != c.messageID {
 				c.segmentClosed = true
+				c.traceSegment = pa.Trace{}
 			}
 			if p.Update.MessageID != "" {
 				c.messageID = p.Update.MessageID
 			}
 			if c.segmentClosed {
+				c.traceSegment = pa.Trace{}
 				c.closeSegment()
 				if strings.TrimSpace(c.partial) != "" {
 					c.partial += "\n\n"
@@ -690,9 +695,7 @@ func (c *Client) handle(f frame) error {
 			}
 			c.partial += content.Text
 			c.mu.Unlock()
-			e := c.event(c.eventID())
-			e.Trace = &pa.Trace{TurnID: e.TurnID, Category: "agent_message_chunk", Text: content.Text}
-			return c.sink(c.ctx, e)
+			return c.traceUpdate(raw(p.Update))
 		}
 		return nil
 	case "session/request_permission":
@@ -875,6 +878,7 @@ var toolMarkup = regexp.MustCompile(`^(?s)(<function_calls>\s*)?(<invoke name="[
 func (c *Client) closeSegment() {
 	if c.segmentStart <= len(c.partial) && toolMarkup.MatchString(strings.TrimSpace(c.partial[c.segmentStart:])) {
 		c.partial = strings.TrimRight(c.partial[:c.segmentStart], "\n")
+		c.segmentStart = len(c.partial)
 	}
 	c.segmentClosed = false
 }
