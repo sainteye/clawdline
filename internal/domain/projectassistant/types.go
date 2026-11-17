@@ -431,8 +431,21 @@ type ReadCursor struct {
 	ReaderID       string `json:"reader_id"`
 	MessageSeq     int64  `json:"message_seq"`
 }
+
+// BotCompletion identifies a committed successful main-chat task, without its text.
+type BotCompletion struct {
+	TurnID         string `json:"turn_id"`
+	ConversationID string `json:"conversation_id"`
+}
+
+// NotifiableCompletion excludes hidden Bots, peer requests, group members and joined inputs.
+func NotifiableCompletion(bot Bot, turn Turn) bool {
+	return !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && turn.Room == nil && turn.JoinedTurnID == ""
+}
+
 type BotSummary struct {
-	Bot Bot `json:"bot"`
+	CompletedTurnID string `json:"completed_turn_id,omitempty"`
+	Bot             Bot    `json:"bot"`
 	// Status is the current roster presentation; unread and source connection
 	// are independent. Activity carries a live tool title or a localized key.
 	Status             string       `json:"status,omitempty"`

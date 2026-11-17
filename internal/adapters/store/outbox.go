@@ -133,6 +133,13 @@ func (s *Store) ownerGone(name string) bool {
 	return known && gone
 }
 
+// AppendEffectTx shares an existing transaction on this Store's primary database.
+// The composition owner supplies that transaction; no network or nested write lock is used.
+func (s *Store) AppendEffectTx(ctx context.Context, tx *sql.Tx, effect Effect) error {
+	_, err := s.insertEffect(ctx, tx, effect)
+	return err
+}
+
 func (s *Store) insertEffect(ctx context.Context, tx *sql.Tx, e Effect) (int64, error) {
 	var scope, actor, key string
 	if e.Receipt != nil {

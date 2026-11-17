@@ -144,6 +144,9 @@ func (h *Host) makeService() error {
 		return nil
 	}
 	h.store = featurestore.New(h.o.Database)
+	if h.o.Broker.Store != nil {
+		h.store.CompletionIntent = h.o.Broker.BotCompletionIntent
+	}
 	views := h.o.ReadViews
 	if views == nil && h.o.Reader != nil {
 		var err error

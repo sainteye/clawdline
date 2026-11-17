@@ -22,6 +22,9 @@ func rememberRosterTrace(a *aggregate, event pa.Event) {
 }
 
 func projectRosterActivity(a aggregate, out *pa.BotSummary) {
+	if a.Completion != nil && a.Completion.ConversationID == a.Conversation.ID {
+		out.CompletedTurnID = a.Completion.TurnID
+	}
 	out.Status = "idle"
 	turn, active := a.Turns[a.Conversation.ActiveTurnID]
 	if !active {

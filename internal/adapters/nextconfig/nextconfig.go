@@ -610,6 +610,7 @@ var Settables = []Settable{
 	{Name: "push_on_waiting", Kind: "bool"},
 	{Name: "push_on_model_capacity", Kind: "bool"},
 	{Name: "push_on_board_decision", Kind: "bool"},
+	{Name: "push_on_bot_done", Kind: "bool"},
 	{Name: "push_on_board_done", Kind: "bool"},
 	{Name: "push_on_schedule_failure", Kind: "bool"},
 	{Name: "push_on_capacity", Kind: "bool"},

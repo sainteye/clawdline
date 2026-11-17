@@ -51,25 +51,36 @@ export interface LiveRosterUpdate {
   statuses?: W.ProjectAssistantSourceStatus[]
   error: string
   pending: boolean
+  retryable?: boolean
 }
-function reconnectWait(signal:AbortSignal,ms:number):Promise<void> {
-  return new Promise(resolve=>{
-    if(signal.aborted){resolve();return}
-    const finish=()=>{clearTimeout(timer);signal.removeEventListener("abort",finish);resolve()}
-    const timer=setTimeout(finish,ms)
-    signal.addEventListener("abort",finish,{once:true})
-  })
+/** Manual retry only wakes the serial reconnect wait; it never replaces an active read. */
+export function createRosterReconnect() {
+  let wake:(()=>void)|undefined
+  return {
+    retry:()=>wake?.(),
+    wait:(signal:AbortSignal,ms:number,minimumMs=0):Promise<void>=>new Promise(resolve=>{
+      if(signal.aborted){resolve();return}
+      const earliest=Date.now()+minimumMs
+      let deadline=Date.now()+Math.max(ms,minimumMs),timer:ReturnType<typeof setTimeout>
+      const finish=()=>{clearTimeout(timer);wake=undefined;signal.removeEventListener("abort",finish);resolve()}
+      // Keep each timer within the existing cadence, even for a long server cooldown.
+      const schedule=()=>{const left=deadline-Date.now();if(left<=0)finish();else timer=setTimeout(schedule,Math.min(ms,left))}
+      wake=()=>{clearTimeout(timer);deadline=earliest;schedule()}
+      signal.addEventListener("abort",finish,{once:true})
+      schedule()
+    }),
+  }
 }
 
 /** One serial subscription per source. Timers reconnect; they never list Bots. */
-export async function followLiveRoster(source:SourceClient,current:()=>readonly SourceClient[],signal:AbortSignal,retryMs:number,update:(value:LiveRosterUpdate)=>void,wait=reconnectWait):Promise<void> {
+export async function followLiveRoster(source:SourceClient,current:()=>readonly SourceClient[],signal:AbortSignal,retryMs:number,update:(value:LiveRosterUpdate)=>void,wait=createRosterReconnect().wait):Promise<void> {
   if(!source.subscribeRoster)return
   const revision=source.authorizationRevision,request={machine_id:source.machineID}
   const held=()=>!signal.aborted&&source.authorizationRevision===revision&&current().some(s=>s===source)
   const fence=()=>{if(!held()||source.current?.()===false)throw failure("pa_revoked")}
-  let state=emptyLiveRoster(),statuses:W.ProjectAssistantSourceStatus[]=[]
-  update({error:"",pending:true})
+  let state=emptyLiveRoster(),statuses:W.ProjectAssistantSourceStatus[]=[],lastError=""
   while(held()) {
+    update({error:lastError,pending:true})
     try {
       const answer=await authorized(source,current,s=>source.status(s),signal)
       fence()
@@ -84,6 +95,7 @@ export async function followLiveRoster(source:SourceClient,current:()=>readonly 
         if(state.complete&&frame.type!=="hello") {
           const items=liveRosterItems(state),observed=frame.changes?.find(c=>c.summary)?.summary?.source
           if(observed)statuses=[observed]
+          lastError=""
           update({items,statuses,error:"",pending:false})
         }
       },signal)
@@ -91,15 +103,17 @@ export async function followLiveRoster(source:SourceClient,current:()=>readonly 
     }catch(error) {
       if(signal.aborted||!held())return
       const code=errorCode(error)
+      lastError=code
       const denied=code==="pa_revoked"||code==="pa_scope_denied"||code==="pa_unpaired"
-      update({...(denied?{items:[]}:{}),statuses:statuses.map(s=>({...s,fresh:false,writable:false})),error:code,pending:false})
-      if(denied||code==="pa_invalid"||code==="pa_unsupported"||code==="pa_disabled")return
-      // A fresh snapshot still exceeding the cache budget needs intervention;
-      // a replay full of removal markers gets one fresh snapshot to reclaim it.
-      if(error instanceof RosterStreamFailure&&error.kind==="capacity"&&!state.complete)return
+      // A fresh oversized snapshot requires intervention; replay tombstones get one reset.
+      const stopped=denied||code==="pa_invalid"||code==="pa_unsupported"||code==="pa_disabled"||error instanceof RosterStreamFailure&&error.kind==="capacity"&&!state.complete||source.current?.()===false
+      update({...(denied?{items:[]}:{}),statuses:statuses.map(s=>({...s,fresh:false,writable:false})),error:code,pending:false,retryable:!stopped})
+      if(stopped)return
       if(code==="pa_cursor_expired"||code==="pa_capacity_full"||!state.complete)state=emptyLiveRoster()
       if(source.current?.()===false)return
-      await wait(signal,retryMs)
+      const after=(error as {error?:{retry_after_seconds?:number}})?.error?.retry_after_seconds
+      const minimumMs=typeof after==="number"&&Number.isFinite(after)&&after>0?after*1000:0
+      await wait(signal,retryMs,minimumMs)
     }
   }
 }

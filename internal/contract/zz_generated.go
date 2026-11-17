@@ -4511,9 +4511,13 @@ type ProjectAssistantBotResponse struct {
 }
 
 type ProjectAssistantBotSummary struct {
-	Activity           string                       `json:"activity"`
-	ActivityAt         string                       `json:"activity_at"`
-	Bot                ProjectAssistantBot          `json:"bot"`
+	Activity   string              `json:"activity"`
+	ActivityAt string              `json:"activity_at"`
+	Bot        ProjectAssistantBot `json:"bot"`
+
+	// The latest committed successful main-chat task. Empty or absent on older
+	// sources.
+	CompletedTurnID    string                       `json:"completed_turn_id,omitempty"`
 	Failure            *ProjectAssistantFailure     `json:"failure,omitempty"`
 	LatestMessage      string                       `json:"latest_message"`
 	PendingPermissions int64                        `json:"pending_permissions"`
@@ -8711,6 +8715,9 @@ type SettingsRequest struct {
 	// Notify when a Board item is completed.
 	PushOnBoardDone *bool `json:"push_on_board_done"`
 
+	// Notify when a Bot completes a task successfully.
+	PushOnBotDone *bool `json:"push_on_bot_done"`
+
 	// Notify when a capacity threshold is crossed.
 	PushOnCapacity *bool `json:"push_on_capacity"`
 
@@ -8983,6 +8990,9 @@ type SettingsSnapshot struct {
 
 	// Notify when a Board item is completed.
 	PushOnBoardDone *bool `json:"push_on_board_done"`
+
+	// Notify when a Bot completes a task successfully.
+	PushOnBotDone *bool `json:"push_on_bot_done"`
 
 	// Notify when a capacity threshold is crossed.
 	PushOnCapacity *bool `json:"push_on_capacity"`

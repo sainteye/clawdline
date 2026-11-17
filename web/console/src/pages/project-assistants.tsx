@@ -11,6 +11,7 @@ import { requestPage } from "../overlays/events.js"
 import { toast } from "../overlays/toast.js"
 import { words } from "../project-assistants/words.js"
 import { errorCode, botFromFragment } from "../project-assistants/client.js"
+import {createCompletionTracker,startBotCompletionSound} from "../project-assistants/completion-sound.js"
 import { followLiveRoster } from "../project-assistants/live-roster.js"
 
 const BADGE_REFRESH_MS = 15_000
@@ -44,6 +45,18 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") setBadgeTick(n => n+1) }, BADGE_REFRESH_MS)
     return () => clearInterval(timer)
   },[opened,sources])
+  const completion=useRef(createCompletionTracker()),sound=useRef<ReturnType<typeof startBotCompletionSound>|null>(null)
+  useEffect(()=>{sound.current=startBotCompletionSound();return()=>{sound.current?.stop();sound.current=null}},[])
+  const completionScope=useCallback((source: typeof sources[number])=>JSON.stringify([registry.accountKey,source.machineID,source.authorizationRevision]),[registry.accountKey])
+  useEffect(()=>completion.current.retain(sources.map(completionScope)),[sources,completionScope])
+  const observeCompletions=useCallback((items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[])=>{
+    let done=false
+    for(const source of sources.filter(source=>loadedSources.includes(source.machineID)))done=completion.current.observe(completionScope(source),items.filter(item=>item.bot.key.machine_id===source.machineID))||done
+    if(done)sound.current?.play()
+  },[sources,completionScope])
+  const observeSource=useCallback((source:typeof sources[number],items:readonly W.ProjectAssistantBotSummary[])=>{
+    if(completion.current.observe(completionScope(source),items))sound.current?.play()
+  },[completionScope])
   const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
   useEffect(() => {
     if (cloud || supplied || apiLevel === undefined || apiLevel < PROJECT_ASSISTANTS_API_LEVEL) return
@@ -76,14 +89,14 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
             seen.add(cursor)
           } while (cursor && !control.signal.aborted)
         }
-        if (!control.signal.aborted) setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))
+        if (!control.signal.aborted) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
       } catch {
         // Keep unread counts, but cached work must stop animating on a failed read.
         if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,items:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
       }
     })()
     return () => control.abort()
-  },[sources,opened,badgeTick])
+  },[sources,opened,badgeTick,observeSource])
   useEffect(()=>{
     if(opened)return
     const control=new AbortController()
@@ -91,6 +104,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       if(!source.canRoster?.()||!source.subscribeRoster)continue
       void followLiveRoster(source,()=>sources,control.signal,BADGE_REFRESH_MS,value=>{
         if(control.signal.aborted)return
+        if(value.items)observeSource(source,value.items)
         setMetadata(old=>{
           const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
           const items=value.items??(value.error?previous?.items.map(item=>({...item,source:{...item.source,fresh:false}})):previous?.items)??[]
@@ -99,7 +113,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       })
     }
     return()=>control.abort()
-  },[sources,opened])
+  },[sources,opened,observeSource])
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const admitted = current.some(([,data]) => data.readable)
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
@@ -163,7 +177,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
-    <Bots key={entry} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
+    <Bots key={entry} onRosterObserved={observeCompletions} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
       viewState={registry.viewState} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
   </section> : null

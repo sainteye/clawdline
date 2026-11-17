@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { shownSourceError } from "./source-errors.ts"
+import { retryableSourceError, shownSourceError } from "./source-errors.ts"
 test("a machine without Bots is left out of the roster's errors, a real failure is not",()=>{
   assert.equal(shownSourceError("pa_unsupported"), false)
   assert.equal(shownSourceError("pa_disabled"), false)
@@ -28,4 +28,9 @@ test("a failed Bot action says what to do, never only its code",()=>{
   assert.equal(botFailureText("pa_stale_version", w), "再按一次")
   assert.equal(botFailureText("pa_offline", w), "連不上")
   assert.equal(botFailureText("something_new", w), "失敗了")
+})
+
+test("retryable source reads are separate from permanent authority or protocol errors",()=>{
+  for(const code of ["pa_offline","unavailable","pa_capacity_full","pa_cursor_expired"])assert.equal(retryableSourceError(code),true)
+  for(const code of ["","pa_revoked","pa_scope_denied","pa_unpaired","pa_invalid","pa_unsupported","pa_disabled"])assert.equal(retryableSourceError(code),false)
 })

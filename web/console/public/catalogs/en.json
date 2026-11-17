@@ -12926,5 +12926,17 @@
   "capacityRow.bots.hook_revision.what": "Enrollment revisions are positive integers within the JavaScript safe-integer range.",
   "capacityRow.bots.hook_revision.full": "At the ceiling, a changed snapshot is refused instead of wrapping or overwriting a higher Cloud revision.",
   "capacityRow.bots.hook_pending.what": "One forwarding or acknowledgment barrier may wait per source account and machine.",
-  "capacityRow.bots.hook_pending.full": "Another delivery waits until the original result is resolved; an ambiguous effect never receives a replacement identity."
+  "capacityRow.bots.hook_pending.full": "Another delivery waits until the original result is resolved; an ambiguous effect never receives a replacement identity.",
+  "notifications.push_on_bot_done": "A Bot finishes a task",
+  "notifications.push_on_bot_doneHint": "Once per successful main-chat task; opens that Bot’s conversation.",
+  "notifications.botSound": "Bots completion sound",
+  "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
+  "projectAssistants.sourceConnecting": "Connecting to your machines",
+  "projectAssistants.sourceOffline": "This machine is temporarily unavailable.",
+  "projectAssistants.sourceRetrying": "Retrying…",
+  "projectAssistants.sourceRetryHint": "We will retry automatically. The Bot list will update when the connection returns.",
+  "projectAssistants.sourcePairingRequired": "Check this machine’s pairing and access permissions.",
+  "projectAssistants.sourceDetails": "Connection details",
+  "botBrowser.handingBack": "Returning control to the Bot…",
+  "botBrowser.handbackFailed": "Could not confirm control was returned. Open the browser panel to check ({code})."
 }

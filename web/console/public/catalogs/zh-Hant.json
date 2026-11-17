@@ -12926,5 +12926,17 @@
   "capacityRow.bots.hook_revision.what": "登錄版本必須是 JavaScript 安全整數範圍內的正整數。",
   "capacityRow.bots.hook_revision.full": "達上限後會拒絕變更的快照，不會溢位或覆寫 Cloud 較新的版本。",
   "capacityRow.bots.hook_pending.what": "每個來源帳號與機器最多保留一筆轉送或確認屏障。",
-  "capacityRow.bots.hook_pending.full": "原始結果釐清前，其他傳遞必須等待；效果不明時不會改用新的識別碼。"
+  "capacityRow.bots.hook_pending.full": "原始結果釐清前，其他傳遞必須等待；效果不明時不會改用新的識別碼。",
+  "notifications.push_on_bot_done": "Bot 完成任務",
+  "notifications.push_on_bot_doneHint": "每次主對話任務成功完成時通知一次，點開即進入該 Bot 的對話。",
+  "notifications.botSound": "Bots 完成提示音",
+  "notifications.botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",
+  "projectAssistants.sourceConnecting": "正在連線至機器",
+  "projectAssistants.sourceOffline": "暫時連不上這台機器。",
+  "projectAssistants.sourceRetrying": "正在重試…",
+  "projectAssistants.sourceRetryHint": "會自動重試，連線恢復後便會更新 Bot 清單。",
+  "projectAssistants.sourcePairingRequired": "請確認這台機器的配對與存取權限。",
+  "projectAssistants.sourceDetails": "連線詳細資訊",
+  "botBrowser.handingBack": "正在將控制權交回 Bot…",
+  "botBrowser.handbackFailed": "尚未確認控制權已交回，請打開操作畫面檢查（{code}）。"
 }

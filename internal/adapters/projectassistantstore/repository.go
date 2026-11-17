@@ -20,9 +20,11 @@ import (
 // Store neither opens a database nor installs schema implicitly. Share a Store
 // per database so WithCurrent and all memory writers share the same Bot lock.
 type Store struct {
-	db     *sql.DB
-	locks  sync.Map
-	roster rosterBus
+	// CompletionIntent adds only database writes to this Bot transaction. It must not perform external IO.
+	CompletionIntent func(context.Context, *sql.Tx, pa.Bot, pa.Turn) error
+	db               *sql.DB
+	locks            sync.Map
+	roster           rosterBus
 	// groupHook, when set by a test, fails a group write at the named stage
 	// inside a Store transaction (DeleteBot, FinishRoomTurn).
 	groupHook func(stage string) error
@@ -35,6 +37,7 @@ var _ app.Memory = (*Store)(nil)
 var _ app.EventFeed = (*Store)(nil)
 
 type aggregate struct {
+	Completion     *pa.BotCompletion                  `json:",omitempty"`
 	ArtifactTitles map[string]pa.ArtifactDisplayTitle `json:",omitempty"`
 	Bot            pa.Bot
 	Conversation   pa.Conversation
@@ -275,6 +278,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 			return pa.Receipt{}, failure(pa.StaleVersion, "bot")
 		}
 	}
+	completed := m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -308,6 +312,14 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 		}
 		result.EventSeq = seq
 		rememberRosterTrace(&a, event)
+	}
+	if completed {
+		a.Completion = &pa.BotCompletion{TurnID: m.Turn.ID, ConversationID: m.Turn.Fence.ConversationID}
+		if s.CompletionIntent != nil {
+			if err = s.CompletionIntent(ctx, tx, a.Bot, *m.Turn); err != nil {
+				return pa.Receipt{}, err
+			}
+		}
 	}
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
 		return pa.Receipt{}, err

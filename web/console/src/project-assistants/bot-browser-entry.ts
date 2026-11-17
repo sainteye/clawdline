@@ -4,7 +4,7 @@ import type { SourceClient } from "./client"
 export interface BotBrowserStatus {
   owner?: string
   mode?: string
-  status: { tabs: { tab: number; conversation: string; browser_mode?: string; current: boolean }[] }
+  status: { tabs: { tab: number; conversation: string; browser_mode?: string; person?: boolean; current: boolean }[] }
 }
 
 /** Older sources may ignore Bot target fields and expose unrelated tabs. */

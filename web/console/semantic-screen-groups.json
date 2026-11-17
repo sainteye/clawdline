@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12926,
-  "riskKeys": 5579,
-  "nonRiskCount": 7347,
+  "englishContentKeys": 12938,
+  "riskKeys": 5583,
+  "nonRiskCount": 7355,
   "groups": [
     {
       "name": "acp / other",
@@ -366,12 +366,13 @@
     },
     {
       "name": "botBrowser / other",
-      "count": 3,
+      "count": 4,
       "sources": [
         null
       ],
       "keys": [
         "botBrowser.disconnected",
+        "botBrowser.handingBack",
         "botBrowser.open",
         "botBrowser.unsupported"
       ]
@@ -5615,11 +5616,12 @@
     },
     {
       "name": "notifications / other",
-      "count": 34,
+      "count": 37,
       "sources": [
         "src/pages/notifications.tsx"
       ],
       "keys": [
+        "notifications.botSound",
         "notifications.destinationList",
         "notifications.destinationSession",
         "notifications.deviceBlocked",
@@ -5636,6 +5638,8 @@
         "notifications.push_on_app_release_success",
         "notifications.push_on_board_decision",
         "notifications.push_on_board_doneHint",
+        "notifications.push_on_bot_done",
+        "notifications.push_on_bot_doneHint",
         "notifications.push_on_capacity",
         "notifications.push_on_capacityHint",
         "notifications.push_on_cloud_release_success",
@@ -5882,7 +5886,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 253,
+      "count": 257,
       "sources": [
         null
       ],
@@ -6094,7 +6098,11 @@
         "projectAssistants.shape_teardrop",
         "projectAssistants.shape_wedge",
         "projectAssistants.sharedFile",
+        "projectAssistants.sourceConnecting",
+        "projectAssistants.sourceDetails",
         "projectAssistants.sourceIDs",
+        "projectAssistants.sourceRetryHint",
+        "projectAssistants.sourceRetrying",
         "projectAssistants.stale",
         "projectAssistants.status",
         "projectAssistants.statusAgent",
