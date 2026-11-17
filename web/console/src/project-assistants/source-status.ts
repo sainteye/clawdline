@@ -19,8 +19,8 @@ function agentProblem(code: string, w: Record<string, string>) {
 
 /**
  * The Bots roster's status line and checklist (the person's choice on
- * 2026-11-14: a line at the top of the list, a card when something is wrong,
- * and a short checklist behind it). Every paired device may act, so the only
+ * 2026-11-18: a compact footer with connection problems, recovery controls
+ * and the checklist behind it). Every paired device may act, so the only
  * write problem shown is a machine that turned Cloud operation off.
  */
 export function sourceHealth(statuses: readonly W.ProjectAssistantSourceStatus[], names: ReadonlyMap<string, string>, withoutBots: readonly string[], w: Record<string, string>): SourceHealth {

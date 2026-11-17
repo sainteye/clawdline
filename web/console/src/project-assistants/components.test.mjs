@@ -34,7 +34,7 @@ test("permission options keep the persistent grants and disable them in history"
   assert.equal((html.match(/disabled=""/g)||[]).length,3)
   assert.match(html,/Always allow/)
 })
-test("an offline machine shows as a problem at the top of the list, with its fix",async()=>{
+test("an offline machine shows in the collapsed connection summary, with its fix",async()=>{
   const s=fixtureSource();s.setState("offline")
   const value=await s.status(new AbortController().signal),w=words("zh-Hant")
   const html=render(SourceStatusPanel,{health:sourceHealth(value.sources,new Map(),[],w),w})
