@@ -547,11 +547,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
         if window.isMiniaturized {
             window.deminiaturize(nil)
-        } else if !window.isVisible {
+        } else if !window.isVisible || !window.occlusionState.contains(.visible) {
             placeOnPointerScreen()
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         updateHotKeyScope()
     }
 
@@ -1007,12 +1008,13 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     }
 
     /// The packs there are, with the configured one ticked. The island draws
-    /// the ticked one; picking a different one from here is not wired, so the
-    /// items are listed and off, and the config file is what chooses.
+    /// the ticked one. Picking a different one from here saves to config.json
+    /// and switches the displayed character.
     private func buildMascotMenu() -> NSMenu {
         let sub = NSMenu()
         for name in readings.mascots {
-            let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: name, action: #selector(chooseMascot(_:)), keyEquivalent: "")
+            item.target = self
             item.state = (name == NextConfig.shared.mascot) ? .on : .off
             sub.addItem(item)
         }
@@ -1020,6 +1022,16 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             sub.addItem(NSMenuItem(title: MascotPacks.userDirectory.path, action: nil, keyEquivalent: ""))
         }
         return sub
+    }
+
+    @objc private func chooseMascot(_ sender: NSMenuItem) {
+        let name = sender.title
+        guard readings.mascots.contains(name) else { return }
+        NextConfig.shared.saveMascot(name)
+        statusItem.menu = buildMenu()
+        NotchIsland.shared.install()
+        sendSettingsState()
+        shellLog("mascot: switched to \(name)")
     }
 
     /// The readings that start programs — `claude --version`, `codex
@@ -1051,36 +1063,45 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     @objc private func showHome() {
         showConsole()
         if showingCloud { showTab(cloud: false) }
+        web.evaluateJavaScript("window.location.hash = ''")
     }
 
-    /// Launch at login, through SMAppService, off until somebody turns it on.
+    /// Launch at login, through SMAppService and ServiceMode, off until somebody turns it on.
     /// Registering changes the person's login items; nothing here does it on
     /// its own.
     @objc private func toggleLogin() {
-        // In service mode it is the LaunchAgent that starts at login, and the
-        // app is only its window.
+        var failed = false
         if let service = serviceMode {
             do {
                 try service.setRunsAtLoad(!service.runsAtLoad)
                 shellLog("login item: \(service.name) RunAtLoad now \(service.runsAtLoad ? "on" : "off")")
             } catch {
+                failed = true
                 let a = NSAlert()
                 a.messageText = L.t.loginFailed
                 a.informativeText = error.localizedDescription
                 a.runModal()
             }
-            return
         }
         let svc = SMAppService.mainApp
         do {
-            if svc.status == .enabled { try svc.unregister() } else { try svc.register() }
-            shellLog("login item: now \(svc.status == .enabled ? "on" : "off")")
+            if svc.status == .enabled {
+                try svc.unregister()
+            } else {
+                try svc.register()
+            }
+            shellLog("login item: app service now \(svc.status == .enabled ? "on" : "off")")
         } catch {
-            let a = NSAlert()
-            a.messageText = L.t.loginFailed
-            a.informativeText = error.localizedDescription
-            a.runModal()
+            if serviceMode == nil || failed {
+                let a = NSAlert()
+                a.messageText = L.t.loginFailed
+                a.informativeText = error.localizedDescription
+                a.runModal()
+            } else {
+                shellLog("login item: app service register note: \(error.localizedDescription)")
+            }
         }
+        statusItem.menu = buildMenu()
     }
 
     /// Read the config again and re-apply what it can change.
@@ -1097,6 +1118,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         refreshStatusItem()
         NotchIsland.shared.install()
         sendSettingsState()
+        web.evaluateJavaScript("window.dispatchEvent(new Event('clawdline:config-reloaded'))")
     }
 
     @objc private func openReleases() {
@@ -1482,7 +1504,7 @@ extension Shell: NSMenuDelegate {
             menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(L.t.menuNoTarget)"
         }
         menu.item(withTag: Self.mascotTag)?.submenu = buildMascotMenu()
-        let loginOn = serviceMode.map { $0.runsAtLoad } ?? (SMAppService.mainApp.status == .enabled)
+        let loginOn = (serviceMode?.runsAtLoad ?? false) || (SMAppService.mainApp.status == .enabled)
         menu.item(withTag: Self.loginTag)?.state = loginOn ? .on : .off
     }
 }

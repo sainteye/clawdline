@@ -270,6 +270,16 @@ struct ShellPairingPermissionTest {
         check(!localAdmitted(true, "https", "app.clawdline.com", 0, cloud), "Cloud cannot use a local-origin bridge")
         check(!admitted(true, "http", "127.0.0.1", 7999, local), "local cannot use a Cloud-origin bridge")
         check(!localAdmitted(true, "http", "127.0.0.1", 7999, nil), "missing local top-level page cannot pair")
+        // Mascot configuration persistence
+        let config = NextConfig.shared
+        check(config.saveMascot("mochi"), "saveMascot mochi returns true")
+        check(config.mascot == "mochi", "NextConfig.shared.mascot is now mochi")
+        config.load()
+        check(config.mascot == "mochi", "NextConfig.shared.load reads mochi from config.json")
+        check(config.saveMascot("clawd"), "saveMascot clawd returns true")
+        check(config.mascot == "clawd", "NextConfig.shared.mascot is now clawd")
+        config.load()
+        check(config.mascot == "clawd", "NextConfig.shared.load reads clawd from config.json")
         try requests()
         outcomes()
         client()
