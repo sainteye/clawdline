@@ -508,6 +508,7 @@ const (
 )
 
 type Trace struct {
+	ID       string `json:"id,omitempty"` // Stable step within a turn; empty for legacy category snapshots.
 	TurnID   string `json:"turn_id"`
 	Category string `json:"category"`
 	Text     string `json:"text"`

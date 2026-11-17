@@ -449,11 +449,20 @@ func TestRuntimePermissionAndExplicitReplyWhilePromptPending(t *testing.T) {
 	if err = s.sink(context.Background(), e); err != nil {
 		t.Fatal(err)
 	}
+	second := e
+	second.ID = "visible-result"
+	second.Message = "second result"
+	if err = s.sink(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.sink(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
 	s.reply <- PromptResult{FinalText: "duplicate fallback"}
 	awaitTurn(t, f, rec.ResourceID, pa.TurnSucceeded)
 	f.store.mu.Lock()
 	defer f.store.mu.Unlock()
-	if len(f.store.messages) != 2 || f.store.messages[1].Text != "explicit" {
+	if len(f.store.messages) != 3 || f.store.messages[1].Text != "explicit" || f.store.messages[2].Text != "second result" {
 		t.Fatalf("reply=%+v", f.store.messages)
 	}
 }

@@ -55,3 +55,8 @@ test("chat avatars require a current readable source and a live turn or pending 
   assert.equal(chatMood(source,{state:"succeeded"} as never,0),"idle")
   for(const delta of [{fresh:false},{state:"offline"},{readable:false},{access:"hidden"}])assert.equal(chatMood({...source,...delta} as never,{state:"running"} as never,1),"idle")
 })
+
+test("tool detail stays out of the activity caption and thought events become thinking",()=>{
+  assert.equal(activityOf(trace("tool_call","Read source\ncompleted\nSource found")),"Read source")
+  assert.equal(activityOf(trace("agent_thought_chunk","Check source")),"thinking")
+})

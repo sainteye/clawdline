@@ -225,3 +225,13 @@ test("reaction events preserve artifact titles, chips survive renames and unload
  assert.deepEqual(eventTimeline([], [wrap(react)]),[])
  assert.equal(m.output.name,"Renamed")
 })
+
+test("trace details retain distinct step identities and accept legacy category identities",()=>{
+  for(const id of [undefined,"segment-1","tool-read"]){
+    const a=answer("detail"),trace={...(id?{id}:{}),turn_id:"turn",category:"agent_message_chunk",text:"Complete step",complete:false}
+    a.items=[{id:JSON.stringify([trace.turn_id,id||trace.category]),kind:"trace",anchor_message_seq:0,observed_event_seq:602,trace}]
+    assert.equal(readView(a,request("detail"),fence).items[0].trace?.text,"Complete step")
+    a.items[0].trace!.id=42 as never
+    assert.throws(()=>readView(a,request("detail"),fence),e=>errorCode(e)==="pa_invalid")
+  }
+})

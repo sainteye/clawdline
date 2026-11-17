@@ -1,29 +1,38 @@
 import type { ProjectAssistantTrace,ProjectAssistantReadTraceSummary,ProjectAssistantPermissionOffer } from "@clawdline/contract"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { plainPreview } from "./BotRow"
+import { richText } from "../legacy/js/view/markdown.js"
 import type { Words } from "./words"
 
 export function Trace({items=[],summaries=[],details={},total=items.length,more=false,onMore,onDetail,w}:{items?:readonly ProjectAssistantTrace[];summaries?:readonly ProjectAssistantReadTraceSummary[];details?:Readonly<Record<string,ProjectAssistantTrace|ProjectAssistantPermissionOffer>>;total?:number;more?:boolean;onMore?:()=>void;onDetail?:(summary:ProjectAssistantReadTraceSummary)=>void;w:Words}) {
+  const requested = useRef(new Map<string,string>())
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
 
-  const toggle = (id: string, summary?: ProjectAssistantReadTraceSummary) => {
+  const toggle = (id: string) => {
     setOpenIds(prev => {
       const next = !prev[id]
-      if (next && summary && !details[id]) {
-        onDetail?.(summary)
-      }
+      if(next)requested.current.delete(id)
       return { ...prev, [id]: next }
     })
   }
 
+  useEffect(() => {
+    for (const row of summaries) {
+      if (!openIds[row.id] || requested.current.get(row.id) === row.detail_cursor) continue
+      requested.current.set(row.id,row.detail_cursor)
+      onDetail?.(row)
+    }
+  },[summaries,openIds,onDetail])
+
   if (summaries.length || !items.length && total > 0 && summaries.length > 0) {
-    return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{summaries.map(row => {
+    return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{[...summaries].reverse().map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
       const trimmedFull = full?.text?.trim() ?? ""
-      const hasBody = !full || (trimmedFull.length > 0 && trimmedFull !== (info.text ?? "").trim() && trimmedFull !== info.label)
+      const hasBody = !full || isNarration(row.category) || (trimmedFull.length > 0 && trimmedFull !== (info.text ?? "").trim() && trimmedFull !== info.label)
       const isOpen = !!openIds[row.id]
       return <div key={row.id} data-trace-id={row.id} className="pa-trace-row">
-        {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
+        {hasBody ? <button type="button" className="pa-trace-toggle" aria-expanded={isOpen} onClick={() => toggle(row.id)}>
           <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
           <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
           <span className="pa-trace-title">{info.label}</span>
@@ -33,7 +42,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
           <span className="pa-trace-title">{info.label}</span>
           {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
         </div>}
-        {hasBody && isOpen && <pre className="pa-trace-body">{trimmedFull}</pre>}
+        {hasBody && isOpen && <TraceBody category={row.category} text={trimmedFull}/>}
       </div>
     })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.more}</button>}</div></details>
   }
@@ -44,10 +53,10 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
     const info = formatTraceItem(row.category, row.text, w)
     const turnKey = `${id}-${i}`
     const trimmed = row.text?.trim() ?? ""
-    const hasBody = trimmed.length > 0 && trimmed !== (info.text ?? "").trim() && trimmed !== info.label
+    const hasBody = isNarration(row.category) || trimmed.length > 0 && trimmed !== (info.text ?? "").trim() && trimmed !== info.label
     const isOpen = !!openIds[turnKey]
     return <div key={i} className="pa-trace-row">
-      {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => setOpenIds(prev => ({ ...prev, [turnKey]: !prev[turnKey] }))}>
+      {hasBody ? <button type="button" className="pa-trace-toggle" aria-expanded={isOpen} onClick={() => setOpenIds(prev => ({ ...prev, [turnKey]: !prev[turnKey] }))}>
         <span className="pa-trace-chevron">{isOpen ? "▾" : "▸"}</span>
         <span className="pa-trace-icon" aria-hidden="true">{info.icon}</span>
         <span className="pa-trace-title">{info.label}</span>
@@ -57,7 +66,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
         <span className="pa-trace-title">{info.label}</span>
         {info.text ? <span className="pa-trace-desc">{info.text}</span> : null}
       </div>}
-      {hasBody && isOpen && <pre className="pa-trace-body">{trimmed}</pre>}
+      {hasBody && isOpen && <TraceBody category={row.category} text={trimmed}/>}
     </div>
   })}</div>)}</div></details>
 }
@@ -71,7 +80,7 @@ export function traceLabel(category:string,w:Words){
 /** Present trace steps with clear icons and human-readable tool descriptions. */
 export function formatTraceItem(category: string, rawText: string | undefined, w: Words): { label: string; text?: string; icon: string } {
   let label = traceLabel(category, w)
-  let text = rawText
+  let text = rawText?.split("\n",1)[0]
   let icon = "⚡"
 
   if (category === "agent_thought_chunk" || category === "thought") {
@@ -122,5 +131,10 @@ export function formatTraceItem(category: string, rawText: string | undefined, w
     }
   }
 
-  return { label, text, icon }
+  return { label, text: text&&isNarration(category)?plainPreview(text):text, icon }
+}
+
+function isNarration(category:string) {return category==="agent_message_chunk"||category==="agent_thought_chunk"}
+function TraceBody({category,text}:{category:string;text:string}) {
+  return isNarration(category)?<div className="pa-trace-body pa-message-text" dangerouslySetInnerHTML={{__html:richText(text)}}/>:<pre className="pa-trace-body">{text}</pre>
 }

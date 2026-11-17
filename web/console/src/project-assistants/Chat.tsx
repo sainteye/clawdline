@@ -500,6 +500,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!row||row.kind!==kind||kind==="permission"&&row.permission?.id!==id)throw failure("pa_invalid")
       if(kind==="trace"){
         if(!row.trace)throw failure("pa_invalid")
+        if(row.trace.id&&row.id!==id)throw failure("pa_invalid")
+        if(traceRows.current.find(t=>t.id===id)?.detail_cursor!==reference)return
         if(!traceRows.current.some(t=>t.id===id&&t.turn_id===row.trace?.turn_id&&t.category===row.trace?.category)){
           if(quiet)return
           throw failure("pa_stale_generation")

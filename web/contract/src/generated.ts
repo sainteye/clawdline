@@ -7172,6 +7172,12 @@ export interface ProjectAssistantTeamSettingsRequest {
 export interface ProjectAssistantTrace {
   category: string
   complete: boolean
+
+  /**
+   * Optional stable step identity within the turn. Absent on legacy category
+   * snapshots.
+   */
+  id?: string
   text: string
   turn_id: string
 }

@@ -6,6 +6,15 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+The Bot dialogue alignment explains explicit multi-message delivery and the
+last-text fallback in English and Taiwan Traditional Chinese. Its fixed prompt
+now matches delivery: after any explicit message, final text remains in trace.
+Native narration, supplied thoughts and per-tool status/output/diffs retain
+separate step identities. Text is persisted as deltas and joined only for a
+requested step revision, under the existing read budget and source authority.
+No new execution permission, memory source or model call is added by reading
+these traces. The public website snapshot must follow this reviewed product tree.
+
 The interrupted-Bot update retains allowlisted failure diagnostics through the
 native reply, durable turn and bounded chat read view. Review of the persistent
 Bot, input, fallback, routine and group entries in English and Taiwan Traditional

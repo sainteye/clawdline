@@ -382,6 +382,7 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 
 func paWireTrace(value pa.Trace) contract.ProjectAssistantTrace {
 	var out contract.ProjectAssistantTrace
+	out.ID = value.ID
 	out.TurnID = value.TurnID
 	out.Category = value.Category
 	out.Text = value.Text
