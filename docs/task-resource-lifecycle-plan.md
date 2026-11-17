@@ -12,7 +12,7 @@ gate caches and callback logs are included in accounting without path adoption;
 nested gate-cache bytes are counted once. Legacy scratch removal also refreshes
 saved-result, protected-output, tree and open-reader proofs. Ownership-root failure keeps
 reads and ordinary waits available while fencing new heavy work. The machine CLI/API is at
-API level 79. The existing background reclaimer visits one advancing registered
+API level 80. The existing background reclaimer visits one advancing registered
 page per sweep; pressure admission examines all pages. Retention is the earliest
 eligibility time, not a promise of deletion at that exact hour.
 

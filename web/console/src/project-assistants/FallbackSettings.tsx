@@ -10,6 +10,7 @@ const FallbackSource = createContext<SourceClient | undefined>(undefined)
 export function FallbackSourceScope({ source, children }: { source: SourceClient; children: ReactNode }) {
   return <FallbackSource.Provider value={source}>{children}</FallbackSource.Provider>
 }
+export function useSettingsSource(){return useContext(FallbackSource)}
 export function useFallbackSource(): boolean { return useContext(FallbackSource)?.canFallbacks?.() === true }
 
 /**

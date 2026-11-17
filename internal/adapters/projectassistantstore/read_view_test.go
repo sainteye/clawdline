@@ -123,7 +123,7 @@ func TestReadViewSQLCapabilitiesAndLegacyCollections(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := readView(t, views, viewQuery(b))
-		if got.Snapshot == nil || got.Snapshot.Bot != b || len(got.Items) != 0 || got.Items == nil || got.Snapshot.PendingTurns == nil || got.Snapshot.QueuedMessages == nil || got.Head.EventFrontier != 1 {
+		if got.Snapshot == nil || !reflect.DeepEqual(got.Snapshot.Bot, b) || len(got.Items) != 0 || got.Items == nil || got.Snapshot.PendingTurns == nil || got.Snapshot.QueuedMessages == nil || got.Head.EventFrontier != 1 {
 			t.Fatalf("legacy %s: %+v", data, got)
 		}
 	}

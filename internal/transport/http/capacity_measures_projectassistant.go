@@ -174,9 +174,26 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsAttachmentsPerMessage: pure,
 		capacity.BotsAttachmentBytes:       pure,
 		capacity.BotsMemoryEntries:         pure,
-		capacity.BotsMemorySearchResults:   pure,
-		capacity.BotsSteerAnswer:           pure,
-		capacity.BotsRulesFileBytes:        pure,
+		"bots.config_probes": func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed := p.host, p.inspectionFailed
+			p.mu.RUnlock()
+			if failed {
+				return capacity.Unmeasured("Bot Host inspection failed")
+			}
+			if h == nil {
+				return capacity.Reading{Known: true, Note: "no Bot Host or discovery allocation"}
+			}
+			return capacity.Reading{Known: true, Used: int64(h.ConfigurationUsage()), Note: "currently owned disposable native configuration probes"}
+		},
+		"bots.config_options":            s.memorySettingsMeasure(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_bots b,json_each(CAST(b.data AS TEXT),'$.Bot.runtime_settings.options') GROUP BY b.machine,b.bot)`, "largest persisted configuration option count per Bot; discovery catalogs hold no retained allocation"),
+		"bots.config_value_bytes":        s.memorySettingsMeasure(`SELECT coalesce(max(max(length(CAST(t.value AS BLOB)),length(CAST(t.key AS BLOB)))),0) FROM project_assistant_bots b,json_tree(CAST(b.data AS TEXT),'$.Bot.runtime_settings') t WHERE t.type='text'`, "largest persisted model, option key or value in UTF-8 bytes per Bot"),
+		"bots.config_choices":            pure,
+		"bots.memory_preview":            pure,
+		capacity.BotsMemorySearchResults: pure,
+		capacity.BotsSteerAnswer:         pure,
+		capacity.BotsRulesFileBytes:      pure,
 
 		// Group rooms: per-room-turn and per-prompt bounds hold no occupancy.
 		// Bots created by managers is a live count that no surface reads yet.

@@ -29,8 +29,10 @@ type ReaderRepository interface {
 }
 
 type ServiceOptions struct {
-	Repository Repository
-	ReadViews  ReadViews
+	ProjectMemory func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	Configuration func(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
+	Repository    Repository
+	ReadViews     ReadViews
 	// ReadViewByteLimit is supplied by trusted composition from the existing
 	// Cloud plaintext ceiling. It is never accepted from a wire request.
 	ReadViewByteLimit int
@@ -231,6 +233,11 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	next, err := pa.ApplyEdit(bot, settings)
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
+	}
+	if settings.RuntimeSettings != nil && !pa.SameRuntimeSettings(next.RuntimeSettings, bot.RuntimeSettings) {
+		if err = s.validateConfiguration(ctx, next); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
 	}
 	next.UpdatedAt = s.opts.Clock().UTC()
 	conversation, err := s.opts.Repository.Conversation(ctx, c.Key, bot.ConversationID)

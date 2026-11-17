@@ -462,6 +462,16 @@
         },
         "created_by": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "runtime_settings": {
+          "$ref": "#/$defs/ProjectAssistantRuntimeSettings"
+        },
+        "notify": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
         }
       },
       "required": [
@@ -563,6 +573,19 @@
         },
         "manage_team": {
           "type": "boolean"
+        },
+        "runtime_settings": {
+          "$ref": "#/$defs/ProjectAssistantRuntimeSettings"
+        },
+        "notify": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
         }
       },
       "required": [
@@ -1102,7 +1125,10 @@
       "additionalProperties": false,
       "description": "",
       "properties": {
-        "completed_turn_id": {"type": "string", "description": "The latest committed successful main-chat task. Empty or absent on older sources."},
+        "completed_turn_id": {
+          "type": "string",
+          "description": "The latest committed successful main-chat task. Empty or absent on older sources."
+        },
         "bot": {
           "$ref": "#/$defs/ProjectAssistantBot"
         },
@@ -1909,6 +1935,10 @@
         },
         "forgotten": {
           "type": "boolean"
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "Source-owned last write time. Absent for legacy entries whose time was never recorded."
         }
       },
       "required": [
@@ -3494,6 +3524,276 @@
         "output_id",
         "title",
         "version"
+      ]
+    },
+    "ProjectAssistantRuntimeSettings": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "model",
+        "options"
+      ]
+    },
+    "ProjectAssistantConfigChoice": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "name"
+      ]
+    },
+    "ProjectAssistantConfigOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "current": {
+          "type": "string"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantConfigChoice"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "current",
+        "choices"
+      ]
+    },
+    "ProjectAssistantConfigurationCatalog": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/ProjectAssistantAgent"
+        },
+        "model": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantConfigOption"
+          }
+        }
+      },
+      "required": [
+        "agent",
+        "model",
+        "options"
+      ]
+    },
+    "ProjectAssistantConfigurationResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "catalog": {
+          "$ref": "#/$defs/ProjectAssistantConfigurationCatalog"
+        }
+      },
+      "required": [
+        "contract_version",
+        "catalog"
+      ]
+    },
+    "ProjectAssistantMemoryRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemorySource"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "author",
+        "updated_at",
+        "sources"
+      ]
+    },
+    "ProjectAssistantMemoryLayer": {
+      "type": "object",
+      "properties": {
+        "layer": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "used": {
+          "type": "integer"
+        },
+        "cap": {
+          "type": "integer"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemoryRow"
+          }
+        }
+      },
+      "required": [
+        "layer",
+        "revision",
+        "used",
+        "cap",
+        "available",
+        "truncated",
+        "entries"
+      ]
+    },
+    "ProjectAssistantMemoryView": {
+      "type": "object",
+      "properties": {
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBot"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "memory": {
+          "$ref": "#/$defs/ProjectAssistantMemoryViewState"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemoryLayer"
+          }
+        }
+      },
+      "required": [
+        "bot",
+        "conversation_id",
+        "memory",
+        "layers"
+      ]
+    },
+    "ProjectAssistantMemoryDetail": {
+      "type": "object",
+      "properties": {
+        "layer": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "layer",
+        "id",
+        "revision",
+        "text",
+        "truncated"
+      ]
+    },
+    "ProjectAssistantMemoryViewResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "source_epoch": {
+          "type": "string"
+        },
+        "view": {
+          "$ref": "#/$defs/ProjectAssistantMemoryView"
+        },
+        "detail": {
+          "$ref": "#/$defs/ProjectAssistantMemoryDetail"
+        }
+      },
+      "required": [
+        "contract_version",
+        "source_epoch",
+        "view"
+      ]
+    },
+    "ProjectAssistantMemoryViewState": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "forgotten_through": {
+          "type": "integer"
+        },
+        "forgotten_count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "project",
+        "revision",
+        "forgotten_through",
+        "forgotten_count"
       ]
     }
   }

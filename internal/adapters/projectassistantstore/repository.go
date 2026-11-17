@@ -477,6 +477,12 @@ func validateAggregate(a aggregate) error {
 		}
 	}
 	b := a.Bot
+	if err := pa.ValidateRuntimeSettings(b.RuntimeSettings); err != nil {
+		return err
+	}
+	if b.Notify != "" && b.Notify != "on" && b.Notify != "off" {
+		return failure(pa.Invalid, "notify")
+	}
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")
 	}

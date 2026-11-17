@@ -5267,8 +5267,10 @@ export interface ProjectAssistantBot {
    */
   mode?: string
   name: string
+  notify?: string
   permission_policy: ProjectAssistantPermissionPolicy
   project: ProjectAssistantProjectScope
+  runtime_settings?: ProjectAssistantRuntimeSettings
   updated_at: string
   version: number
 }
@@ -5338,6 +5340,30 @@ export interface ProjectAssistantCommand {
   idempotency_key: string
   key: ProjectAssistantBotKey
   operation: ProjectAssistantOperation
+}
+
+export interface ProjectAssistantConfigChoice {
+  name: string
+  value: string
+}
+
+export interface ProjectAssistantConfigOption {
+  category: string
+  choices: ProjectAssistantConfigChoice[]
+  current: string
+  id: string
+  name: string
+}
+
+export interface ProjectAssistantConfigurationCatalog {
+  agent: ProjectAssistantAgent
+  model: string
+  options: ProjectAssistantConfigOption[]
+}
+
+export interface ProjectAssistantConfigurationResponse {
+  catalog: ProjectAssistantConfigurationCatalog
+  contract_version: string
 }
 
 /**
@@ -5412,6 +5438,7 @@ export interface ProjectAssistantEditRequest {
  * empty array clears it. Primary Agent and Project remain immutable.
  */
 export interface ProjectAssistantEditSettings {
+  agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   expected_version: number
 
@@ -5429,11 +5456,13 @@ export interface ProjectAssistantEditSettings {
    */
   mode?: string
   name: string
+  notify?: string
 
   /**
    * Empty leaves the permission setting unchanged (API level 65).
    */
   permission_policy?: ProjectAssistantPermissionPolicy
+  runtime_settings?: ProjectAssistantRuntimeSettings
 }
 
 /**
@@ -5925,6 +5954,14 @@ export interface ProjectAssistantListResponse {
   sources: ProjectAssistantSourceStatus[]
 }
 
+export interface ProjectAssistantMemoryDetail {
+  id: string
+  layer: string
+  revision: string
+  text: string
+  truncated: boolean
+}
+
 export interface ProjectAssistantMemoryEntry {
   forgotten: boolean
   id: string
@@ -5933,6 +5970,22 @@ export interface ProjectAssistantMemoryEntry {
   revision: number
   sources: ProjectAssistantMemorySource[]
   text: string
+
+  /**
+   * Source-owned last write time. Absent for legacy entries whose time was never
+   * recorded.
+   */
+  updated_at?: string
+}
+
+export interface ProjectAssistantMemoryLayer {
+  available: boolean
+  cap: number
+  entries: ProjectAssistantMemoryRow[]
+  layer: string
+  revision: string
+  truncated: boolean
+  used: number
 }
 
 export interface ProjectAssistantMemoryResponse {
@@ -5952,10 +6005,40 @@ export interface ProjectAssistantMemoryRevision {
   revision: number
 }
 
+export interface ProjectAssistantMemoryRow {
+  author: string
+  id: string
+  sources: ProjectAssistantMemorySource[]
+  text: string
+  updated_at: string
+}
+
 export interface ProjectAssistantMemorySource {
   id: string
   key: ProjectAssistantBotKey
   kind: string
+  project: ProjectAssistantProjectScope
+  revision: number
+}
+
+export interface ProjectAssistantMemoryView {
+  bot: ProjectAssistantBot
+  conversation_id: string
+  layers: ProjectAssistantMemoryLayer[]
+  memory: ProjectAssistantMemoryViewState
+}
+
+export interface ProjectAssistantMemoryViewResponse {
+  contract_version: string
+  detail?: ProjectAssistantMemoryDetail
+  source_epoch: string
+  view: ProjectAssistantMemoryView
+}
+
+export interface ProjectAssistantMemoryViewState {
+  forgotten_count: number
+  forgotten_through: number
+  key: ProjectAssistantBotKey
   project: ProjectAssistantProjectScope
   revision: number
 }
@@ -6697,6 +6780,11 @@ export interface ProjectAssistantRulesResponse {
   rules: ProjectAssistantPermissionRule[]
 }
 
+export interface ProjectAssistantRuntimeSettings {
+  model: string
+  options: Record<string, string>
+}
+
 /**
  * Sends one queued message into the running turn, as Codync's steer (API level 64).
  */
@@ -6804,6 +6892,7 @@ export interface ProjectAssistantTeamAnswerResponse {
  * empty array clears it. Primary Agent and Project remain immutable.
  */
 export interface ProjectAssistantTeamEditSettings {
+  agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
   expected_version: number
 
@@ -6821,11 +6910,13 @@ export interface ProjectAssistantTeamEditSettings {
    */
   mode?: string
   name: string
+  notify?: string
 
   /**
    * Empty leaves the permission setting unchanged (API level 65).
    */
   permission_policy?: ProjectAssistantPermissionPolicy
+  runtime_settings?: ProjectAssistantRuntimeSettings
 }
 
 export interface ProjectAssistantTeamPlan {

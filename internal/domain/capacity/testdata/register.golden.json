@@ -1216,6 +1216,87 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.config_choices",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationChoices"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.config_options",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationOptions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.config_probes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationProbes",
+      "internal/adapters/projectassistanthost.New:chan(pa.MaxConfigurationProbes)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.config_value_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationValueBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.dispatch_seconds",
     "Class": "buffer",
     "Unit": "seconds",
@@ -1954,6 +2035,25 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxMemoryEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.memory_preview",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxMemoryPreviewRunes"
     ]
   },
   {

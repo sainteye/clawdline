@@ -65,6 +65,10 @@
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.config_choices` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.config_options` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.config_probes` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.config_value_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -103,6 +107,7 @@
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_pending` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.memory_entries` | 256 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.memory_preview` | 128 | `characters` | `coalesce` | `diagnostics` | — |
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.message_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |

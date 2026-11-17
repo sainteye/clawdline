@@ -82,6 +82,21 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		paWriteHTTPFailure(w, err)
 		return
 	}
+	if result, ok := payload.(paEncodedMemorySettings); ok {
+		if h.options.BeforeViewPublish != nil {
+			h.options.BeforeViewPublish()
+		}
+		if _, err = h.status(r.Context(), true); err == nil {
+			err = result.check(r.Context())
+		}
+		if err != nil {
+			paWriteHTTPFailure(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result.body)
+		return
+	}
 	if view, ok := payload.(paEncodedReadView); ok {
 		if h.options.BeforeViewPublish != nil {
 			h.options.BeforeViewPublish()
@@ -208,7 +223,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output", "input":
+					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -364,6 +379,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if route.action == "memory-view" || route.action == "configuration" {
+		return h.readMemorySettings(r, route)
+	}
 	if route.action == "routines" || route.action == "routine-runs" {
 		return h.readRoutines(r, route)
 	}
@@ -552,7 +570,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)

@@ -57,7 +57,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // Legacy exports retain their original facts and command identities. Restore
 // validates both versions identically; the next export uses the current schema.
 func restorableSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == 4 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {

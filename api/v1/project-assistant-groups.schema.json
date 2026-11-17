@@ -552,6 +552,19 @@
         },
         "manage_team": {
           "type": "boolean"
+        },
+        "agent": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantAgent"
+        },
+        "notify": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        "runtime_settings": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantRuntimeSettings"
         }
       },
       "required": [

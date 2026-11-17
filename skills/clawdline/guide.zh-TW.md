@@ -909,7 +909,7 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
   拒絕並附 `retry_after`。派工不能自稱 `kind callback`（`bad_task`）。Windows 會回
   `501 no_callback_capability`。
 
-受管 callback 儲存（daemon API 79）：命令開始前，daemon 先配置獨立的私有暫存與快取目錄。`TMPDIR` 與 `CLAWDLINE_SCRATCH_DIR` 指向暫存；`GOCACHE`、`XDG_CACHE_HOME`、`npm_config_cache` 指向已登記的快取。`CLAWDLINE_ARTIFACT_DIR` 指向永久保留的 `artifacts/` 目錄。結束前請將成果放到該處；留在暫存或快取的檔案明確屬於可回收資料。命令若自行改寫這些路徑，產生的資料不受管理，daemon 不會自行接管或刪除。原生應用程式編譯仍須使用 `clawdline heavy`；一般測試不需要編譯租約。
+受管 callback 儲存（daemon API 80）：命令開始前，daemon 先配置獨立的私有暫存與快取目錄。`TMPDIR` 與 `CLAWDLINE_SCRATCH_DIR` 指向暫存；`GOCACHE`、`XDG_CACHE_HOME`、`npm_config_cache` 指向已登記的快取。`CLAWDLINE_ARTIFACT_DIR` 指向永久保留的 `artifacts/` 目錄。結束前請將成果放到該處；留在暫存或快取的檔案明確屬於可回收資料。命令若自行改寫這些路徑，產生的資料不受管理，daemon 不會自行接管或刪除。原生應用程式編譯仍須使用 `clawdline heavy`；一般測試不需要編譯租約。
 
 成功、失敗、取消等所有終止任務的暫存與快取至少保留 24 小時；非成果的原始執行紀錄保留 7 天。成果與附件不因這項政策到期。callback 結束後，仍須確認程序群組已消失、鎖已釋放、沒有開啟中的讀取者，且已保存成果未改變。證據不明就保留。若安全回收後仍無法符合快取每個 4 GiB、合計 16 GiB、其他暫存合計 16 GiB、磁碟保留 2 GiB，新的重工作業 callback 或編譯租約會被拒絕；既有租約續期與一般等待 callback 仍可使用。這是啟動門檻，不是執行中的檔案系統硬性配額。
 

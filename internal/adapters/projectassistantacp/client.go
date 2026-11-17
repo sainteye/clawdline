@@ -52,24 +52,27 @@ type nativePermission struct {
 }
 
 type Client struct {
-	p           *Process
-	l           Limits
-	fence       pa.Fence
-	sink        func(context.Context, app.ProtocolEvent) error
-	readOnly    func([]byte) bool
-	mu          sync.Mutex
-	next        uint64
-	pending     map[string]pendingResponse
-	permissions map[string]nativePermission
-	queue       []incoming
-	queueReady  *sync.Cond
-	done        chan struct{}
-	workerDone  chan struct{}
-	stop        sync.Once
-	failure     error
-	sessionID   string
-	turnID      string
-	partial     string
+	discovery      bool
+	discoveryApply bool
+	configuration  pa.ConfigurationCatalog
+	p              *Process
+	l              Limits
+	fence          pa.Fence
+	sink           func(context.Context, app.ProtocolEvent) error
+	readOnly       func([]byte) bool
+	mu             sync.Mutex
+	next           uint64
+	pending        map[string]pendingResponse
+	permissions    map[string]nativePermission
+	queue          []incoming
+	queueReady     *sync.Cond
+	done           chan struct{}
+	workerDone     chan struct{}
+	stop           sync.Once
+	failure        error
+	sessionID      string
+	turnID         string
+	partial        string
 	// reply segments, as Codync's text segments: a tool call or a new message
 	// closes one, and the next starts after a blank line.
 	segmentStart      int
@@ -210,6 +213,13 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	c.mu.Lock()
 	c.sessionID = session.SessionID
 	c.mu.Unlock()
+	c.configuration, err = c.configureModel(ctx, q.Bot, b, !c.discovery || c.discoveryApply)
+	if err != nil {
+		return err
+	}
+	if c.discovery {
+		return nil
+	}
 	if session.Modes == nil {
 		return nil
 	}

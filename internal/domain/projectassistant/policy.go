@@ -130,6 +130,28 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	return validateSettings(in.Name, in.Appearance, in.Instructions)
 }
 func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
+	previous := bot
+	if in.Agent != "" && in.Agent != bot.Agent {
+		if in.Agent != ClaudeCode && in.Agent != Codex {
+			return bot, fail(Unsupported, "agent")
+		}
+		bot.Agent = in.Agent
+		bot.Mode = ""
+		bot.RuntimeSettings = RuntimeSettings{}
+		bot.FallbackAgents = FallbackConfig{}
+	}
+	if in.RuntimeSettings != nil {
+		if err := ValidateRuntimeSettings(*in.RuntimeSettings); err != nil {
+			return bot, err
+		}
+		bot.RuntimeSettings = *in.RuntimeSettings
+	}
+	if in.Notify != "" {
+		if in.Notify != "on" && in.Notify != "off" {
+			return bot, fail(Invalid, "notify")
+		}
+		bot.Notify = in.Notify
+	}
 	if in.ExpectedVersion != bot.Version {
 		return bot, fail(StaleVersion, "bot")
 	}
@@ -156,7 +178,7 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	}
 	bot.Name = in.Name
 	bot.Appearance = in.Appearance
-	if bot.Instructions.Text != in.Instructions {
+	if bot.Instructions.Text != in.Instructions || bot.Agent != previous.Agent || !SameRuntimeSettings(bot.RuntimeSettings, previous.RuntimeSettings) {
 		bot.Instructions.Text = in.Instructions
 		bot.Instructions.Revision++
 	}

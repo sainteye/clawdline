@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 5
+	SchemaVersion       = 6
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -105,6 +105,8 @@ type InstructionSnapshot struct {
 	RoleSnapshotRef string `json:"role_snapshot_ref"`
 }
 type Bot struct {
+	RuntimeSettings  RuntimeSettings  `json:"runtime_settings,omitempty,omitzero"`
+	Notify           string           `json:"notify,omitempty"`
 	Key              BotKey           `json:"key"`
 	Project          ProjectScope     `json:"project"`
 	ConversationID   string           `json:"conversation_id"`
@@ -146,14 +148,16 @@ type CreateBot struct {
 	ManageTeam bool `json:"manage_team,omitempty"`
 }
 
-// EditBot is a complete replacement of the three editable settings; Agent,
-// model, Project and permission policy are intentionally not patchable in v1.
+// EditBot preserves optional settings omitted by older clients; Project is fixed.
 type EditBot struct {
-	FallbackAgents  *[]Agent   `json:"fallback_agents,omitempty"`
-	ExpectedVersion int64      `json:"expected_version"`
-	Name            string     `json:"name"`
-	Appearance      Appearance `json:"appearance"`
-	Instructions    string     `json:"instructions"`
+	Agent           Agent            `json:"agent,omitempty"`
+	RuntimeSettings *RuntimeSettings `json:"runtime_settings,omitempty"`
+	Notify          string           `json:"notify,omitempty"`
+	FallbackAgents  *[]Agent         `json:"fallback_agents,omitempty"`
+	ExpectedVersion int64            `json:"expected_version"`
+	Name            string           `json:"name"`
+	Appearance      Appearance       `json:"appearance"`
+	Instructions    string           `json:"instructions"`
 	// An empty policy leaves the permission setting as it is, so a console
 	// older than this setting cannot reset it.
 	PermissionPolicy PermissionPolicy `json:"permission_policy,omitempty"`
@@ -387,6 +391,7 @@ type MemoryRevision struct {
 }
 
 type MemoryEntry struct {
+	UpdatedAt time.Time      `json:"updated_at,omitempty,omitzero"`
 	ID        string         `json:"id"`
 	Key       BotKey         `json:"key"`
 	Project   ProjectScope   `json:"project"`
@@ -440,7 +445,7 @@ type BotCompletion struct {
 
 // NotifiableCompletion excludes hidden Bots, peer requests, group members and joined inputs.
 func NotifiableCompletion(bot Bot, turn Turn) bool {
-	return !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && turn.Room == nil && turn.JoinedTurnID == ""
+	return (bot.Notify != "off") && !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && turn.Room == nil && turn.JoinedTurnID == ""
 }
 
 type BotSummary struct {

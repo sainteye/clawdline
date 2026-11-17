@@ -1,6 +1,6 @@
 # 此 build 的 Agent 路由索引
 
-由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：79。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
+由已註冊的路由與 `api/v1/agent-routes.json` 產生；API 等級：80。請先讀 `clawdline guide`，再讀表格指定的部分。路由出現在此只表示可以探索，**不授權呼叫，也不代表操作完成**。每個前綴下的具體動作、輸入、權限、拒絕與收據，必須由該部分及本 build 的 schema 明示；若未載明該動作，Agent 就不得呼叫。缺少能力或版本、身分不符、結果未知時停止，不改走另一台機器或舊介面。
 
 | 方法 | 已註冊路由 | 起始 API 等級 | Agent 指南 | 使用者目標 |
 | --- | --- | ---: | --- | --- |
@@ -100,8 +100,8 @@
 | `*` | `/v1/orchestrator/proposals` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/orchestrator/proposals/` | 1 | `clawdline guide board` | `docs/user/board.md` |
 | `*` | `/v1/orchestrator/reclaim` | 1 | `clawdline guide landing` | `docs/user/clawdfather-and-dispatch.md` |
-| `*` | `/v1/orchestrator/resources` | 79 | `clawdline guide callback` | `docs/user/clawdfather-and-dispatch.md` |
-| `*` | `/v1/orchestrator/resources/` | 79 | `clawdline guide callback` | `docs/user/clawdfather-and-dispatch.md` |
+| `*` | `/v1/orchestrator/resources` | 80 | `clawdline guide callback` | `docs/user/clawdfather-and-dispatch.md` |
+| `*` | `/v1/orchestrator/resources/` | 80 | `clawdline guide callback` | `docs/user/clawdfather-and-dispatch.md` |
 | `*` | `/v1/orchestrator/root-assignments` | 1 | `clawdline guide landing` | `docs/user/clawdfather-and-dispatch.md` |
 | `*` | `/v1/orchestrator/root-assignments/` | 1 | `clawdline guide landing` | `docs/user/clawdfather-and-dispatch.md` |
 | `*` | `/v1/orchestrator/schedule-exports` | 1 | `clawdline guide schedule` | `docs/user/schedules.md` |

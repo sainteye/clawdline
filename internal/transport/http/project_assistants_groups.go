@@ -369,7 +369,7 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return nil, err
 		}
-		settings := pa.EditBot{FallbackAgents: paDomainOptionalAgents(v.Settings.FallbackAgents), ExpectedVersion: v.Settings.ExpectedVersion, Name: v.Settings.Name, Appearance: paDomainAppearance(v.Settings.Appearance), Instructions: v.Settings.Instructions, PermissionPolicy: pa.PermissionPolicy(v.Settings.PermissionPolicy), Mode: v.Settings.Mode, ManageTeam: &v.Settings.ManageTeam}
+		settings := pa.EditBot{Agent: pa.Agent(v.Settings.Agent), Notify: v.Settings.Notify, RuntimeSettings: paDomainRuntimeSettings(v.Settings.RuntimeSettings), FallbackAgents: paDomainOptionalAgents(v.Settings.FallbackAgents), ExpectedVersion: v.Settings.ExpectedVersion, Name: v.Settings.Name, Appearance: paDomainAppearance(v.Settings.Appearance), Instructions: v.Settings.Instructions, PermissionPolicy: pa.PermissionPolicy(v.Settings.PermissionPolicy), Mode: v.Settings.Mode, ManageTeam: &v.Settings.ManageTeam}
 		return paHTTPBot(h.options.Service.Edit(r.Context(), c, settings))
 	case "team-answer":
 		v, err := paDecodeHTTP[contract.ProjectAssistantTeamAnswerRequest](w, r)
