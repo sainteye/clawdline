@@ -13115,5 +13115,21 @@
   "projectAssistants.templateClipboardError": "無法存取剪貼簿，或瀏覽器不支援。請選取預覽文字並手動複製。",
   "projectAssistants.markAllRead": "全部標為已讀",
   "projectAssistants.markingRead": "正在標記已讀…",
-  "projectAssistants.readMarked": "已全部標為已讀"
+  "projectAssistants.readMarked": "已全部標為已讀",
+  "projectAssistants.reactions": "表情回應",
+  "projectAssistants.addReaction": "加入表情",
+  "projectAssistants.chooseReaction": "選擇表情",
+  "projectAssistants.reactWith": "回應表情",
+  "projectAssistants.removeReaction": "移除自己的表情",
+  "projectAssistants.yourReaction": "自己的表情",
+  "projectAssistants.youReaction": "自己",
+  "projectAssistants.otherReaction": "其他人",
+  "projectAssistants.reactionUnknown": "表情回應的結果不明，請用原操作確認。",
+  "projectAssistants.reactionFailed": "無法加入表情回應。",
+  "projectAssistants.retryReaction": "確認原表情操作",
+  "capacityRow.bots.human_reactions.what": "每個人在同一則訊息保留的不同表情數。",
+  "capacityRow.bots.human_reactions.full": "請先移除自己的一個表情，再加入其他表情。",
+  "capacityRow.bots.reaction_emoji_bytes.what": "單個表情去除頭尾空白後的 UTF-8 位元組。",
+  "capacityRow.bots.reaction_emoji_bytes.full": "超過大小或不是表情時會拒絕加入。",
+  "projectAssistants.reactionsUnavailable": "這個來源目前無法變更表情回應。"
 }

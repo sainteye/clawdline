@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1408,7 +1409,17 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 	for i := range messages {
 		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.MessageCreated, Message: &messages[i]})
 	}
-	if state == pa.TurnSucceeded && len(messages) == 0 && text == "" {
+	reacted := false
+	for _, record := range export.Reactions {
+		if record.MessageID == t.MessageID && record.Actor.Kind == "bot" && record.Actor.Bot != nil && *record.Actor.Bot == bot.Key && len(record.Actor.Emojis) == 1 {
+			for _, receipt := range export.Receipts {
+				if receipt.Command.Operation == pa.ReactOperation && strings.HasPrefix(receipt.Command.IdempotencyKey, "native-react-"+t.ID+"-") && receipt.ResourceID == t.MessageID && receipt.State == pa.EffectDelivered {
+					reacted = true
+				}
+			}
+		}
+	}
+	if state == pa.TurnSucceeded && len(messages) == 0 && text == "" && !reacted {
 		trace := pa.Trace{TurnID: t.ID, Category: "no_visible_reply", Complete: true}
 		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.TraceUpdated, Trace: &trace})
 	}

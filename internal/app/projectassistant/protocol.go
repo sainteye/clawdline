@@ -214,3 +214,8 @@ type NetworkToolRequest struct {
 	Target        wire.BotEndpoint `json:"target"`
 	Text          string           `json:"text,omitempty"`
 }
+
+// ReactionTools targets only the actual message captured by the running turn.
+type ReactionTools interface {
+	React(context.Context, string, string) (pa.Receipt, error)
+}

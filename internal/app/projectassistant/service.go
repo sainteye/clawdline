@@ -373,7 +373,8 @@ func (s *Service) Get(ctx context.Context, key pa.BotKey) (pa.Bot, pa.Conversati
 }
 
 func (s *Service) History(ctx context.Context, q HistoryQuery) (MessagePage, error) {
-	if _, err := s.authorize(ctx, q.Key, false); err != nil {
+	a, err := s.authorize(ctx, q.Key, false)
+	if err != nil {
 		return MessagePage{}, err
 	}
 	if err := pa.CheckPage(q.PageSize, false); err != nil {
@@ -382,11 +383,16 @@ func (s *Service) History(ctx context.Context, q HistoryQuery) (MessagePage, err
 	if q.BeforeSeq < 0 {
 		return MessagePage{}, serviceFailure(pa.Invalid, "before_seq")
 	}
-	return s.opts.Repository.Messages(ctx, q)
+	page, e := s.opts.Repository.Messages(ctx, q)
+	for i := range page.Items {
+		personalizeReaction(&page.Items[i], a.ReaderID)
+	}
+	return page, e
 }
 
 func (s *Service) Events(ctx context.Context, q pa.EventQuery) (pa.EventPage, error) {
-	if _, err := s.authorize(ctx, q.Key, false); err != nil {
+	a, err := s.authorize(ctx, q.Key, false)
+	if err != nil {
 		return pa.EventPage{}, err
 	}
 	if err := pa.CheckPage(q.PageSize, true); err != nil {
@@ -395,7 +401,11 @@ func (s *Service) Events(ctx context.Context, q pa.EventQuery) (pa.EventPage, er
 	if q.AfterSeq < 0 {
 		return pa.EventPage{}, serviceFailure(pa.Invalid, "after_seq")
 	}
-	return s.opts.Events.Read(ctx, q)
+	page, e := s.opts.Events.Read(ctx, q)
+	for i := range page.Items {
+		personalizeReaction(page.Items[i].Message, a.ReaderID)
+	}
+	return page, e
 }
 
 func (s *Service) Export(ctx context.Context, key pa.BotKey) (Export, error) {

@@ -169,6 +169,17 @@ func paWireExecutionBinding(value pa.ExecutionBinding) contract.ProjectAssistant
 
 func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	var out contract.ProjectAssistantMessage
+	for _, a := range value.Reactions {
+		v := contract.ProjectAssistantReactionActor{ID: a.ID, Kind: a.Kind, Name: a.Name, Revision: a.Revision, Emojis: a.Emojis, Own: a.Own}
+		if a.Appearance != nil {
+			v.Appearance = &contract.ProjectAssistantAppearance{Color: a.Appearance.Color, Shape: contract.ProjectAssistantShape(a.Appearance.Shape)}
+		}
+		if a.Bot != nil {
+			b := paWireBotKey(*a.Bot)
+			v.Bot = &b
+		}
+		out.Reactions = append(out.Reactions, v)
+	}
 	if value.Exchange != nil {
 		x := paWireExchange(*value.Exchange)
 		out.Exchange = &x
@@ -633,6 +644,7 @@ func paWireExport(value app.Export) (contract.ProjectAssistantExport, error) {
 	for i := range value.MemoryEntries {
 		out.MemoryEntries[i] = paWireMemoryEntry(value.MemoryEntries[i])
 	}
+	value.Messages = value.DisplayMessages()
 	out.Messages = make([]contract.ProjectAssistantMessage, len(value.Messages))
 	for i := range value.Messages {
 		converted, err := paWireMessage(value.Messages[i])

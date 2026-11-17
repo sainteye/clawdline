@@ -13115,5 +13115,21 @@
   "projectAssistants.templateClipboardError": "Clipboard access failed or is unsupported. Select the preview text and copy it manually.",
   "projectAssistants.markAllRead": "Mark all as read",
   "projectAssistants.markingRead": "Marking as read…",
-  "projectAssistants.readMarked": "Marked all as read"
+  "projectAssistants.readMarked": "Marked all as read",
+  "projectAssistants.reactions": "Reactions",
+  "projectAssistants.addReaction": "React",
+  "projectAssistants.chooseReaction": "Choose a reaction",
+  "projectAssistants.reactWith": "React with",
+  "projectAssistants.removeReaction": "Remove your reaction",
+  "projectAssistants.yourReaction": "Your reaction",
+  "projectAssistants.youReaction": "You",
+  "projectAssistants.otherReaction": "Person",
+  "projectAssistants.reactionUnknown": "The reaction outcome is unknown. Check with the same request.",
+  "projectAssistants.reactionFailed": "The reaction was refused.",
+  "projectAssistants.retryReaction": "Check original reaction",
+  "capacityRow.bots.human_reactions.what": "Distinct emoji retained for each person on one message.",
+  "capacityRow.bots.human_reactions.full": "Remove one of your emoji before adding another.",
+  "capacityRow.bots.reaction_emoji_bytes.what": "UTF-8 bytes in one trimmed reaction.",
+  "capacityRow.bots.reaction_emoji_bytes.full": "An oversized or non-emoji reaction is refused.",
+  "projectAssistants.reactionsUnavailable": "This source cannot change reactions."
 }

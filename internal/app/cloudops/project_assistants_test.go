@@ -53,6 +53,7 @@ func projectAssistantOperationCases() []operationCase {
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
 		{"memory-view", "GET", "/bot/memory-view", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}},
 		{"configuration-profile", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}},
+		{"react", "POST", "/bot/react", map[string]any{"fence": fence, "message_id": "message", "emoji": "👍", "present": true, "expected_revision": 0}, nil},
 		{"network-settings", "GET", "/bot/network-settings", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
 		{"network-settings-save", "POST", "/bot/network-settings", map[string]any{"fence": fence, "expected_version": 1, "expected_revision": 0, "patch": map[string]any{"offered_to_network": map[string]any{"enabled": false}}}, nil},
 		{"extensions", "GET", "/bot/extensions", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
@@ -133,7 +134,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 57 {
+	if len(out) != 58 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

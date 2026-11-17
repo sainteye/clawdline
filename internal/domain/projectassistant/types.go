@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 10
+	SchemaVersion       = 11
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -260,15 +260,16 @@ const (
 )
 
 type Message struct {
-	Exchange       *Exchange   `json:"exchange,omitempty"`
-	ID             string      `json:"id"`
-	Fence          Fence       `json:"fence"`
-	Seq            int64       `json:"seq"`
-	TurnID         string      `json:"turn_id"`
-	Kind           MessageKind `json:"kind"`
-	Text           string      `json:"text"`
-	QuoteMessageID string      `json:"quote_message_id"`
-	At             time.Time   `json:"at"`
+	Reactions      []ReactionActor `json:"reactions,omitempty"`
+	Exchange       *Exchange       `json:"exchange,omitempty"`
+	ID             string          `json:"id"`
+	Fence          Fence           `json:"fence"`
+	Seq            int64           `json:"seq"`
+	TurnID         string          `json:"turn_id"`
+	Kind           MessageKind     `json:"kind"`
+	Text           string          `json:"text"`
+	QuoteMessageID string          `json:"quote_message_id"`
+	At             time.Time       `json:"at"`
 	// Attachments are pictures sent with the message, kept by content
 	// digest; the model receives them as native image blocks.
 	Attachments []Attachment `json:"attachments,omitempty"`

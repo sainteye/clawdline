@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13115,
-  "riskKeys": 5682,
-  "nonRiskCount": 7433,
+  "englishContentKeys": 13131,
+  "riskKeys": 5688,
+  "nonRiskCount": 7443,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 666,
+      "count": 668,
       "sources": [
         null
       ],
@@ -578,6 +578,7 @@
         "capacityRow.bots.hook_poll_seconds.what",
         "capacityRow.bots.hook_response_bytes.what",
         "capacityRow.bots.hook_revision.what",
+        "capacityRow.bots.human_reactions.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",
@@ -601,6 +602,7 @@
         "capacityRow.bots.permission_action_bytes.full",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.prompt_ms.what",
+        "capacityRow.bots.reaction_emoji_bytes.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.review_hops.what",
         "capacityRow.bots.review_pending.what",
@@ -5897,11 +5899,12 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 318,
+      "count": 326,
       "sources": [
         null
       ],
       "keys": [
+        "projectAssistants.addReaction",
         "projectAssistants.agent",
         "projectAssistants.agentTooOld",
         "projectAssistants.allBots",
@@ -5925,6 +5928,7 @@
         "projectAssistants.checkSend",
         "projectAssistants.checkingSend",
         "projectAssistants.chooseProject",
+        "projectAssistants.chooseReaction",
         "projectAssistants.close",
         "projectAssistants.collapse",
         "projectAssistants.compose",
@@ -6083,6 +6087,7 @@
         "projectAssistants.offline",
         "projectAssistants.online",
         "projectAssistants.openingOutput",
+        "projectAssistants.otherReaction",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",
         "projectAssistants.permissionExecute",
@@ -6102,6 +6107,8 @@
         "projectAssistants.queued",
         "projectAssistants.quote",
         "projectAssistants.quoteMissing",
+        "projectAssistants.reactWith",
+        "projectAssistants.reactions",
         "projectAssistants.read",
         "projectAssistants.readMarked",
         "projectAssistants.readOnlySource",
@@ -6113,6 +6120,7 @@
         "projectAssistants.renameArtifactFailed",
         "projectAssistants.renamingArtifact",
         "projectAssistants.retry",
+        "projectAssistants.retryReaction",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",
         "projectAssistants.routineCron",
@@ -6219,7 +6227,9 @@
         "projectAssistants.version",
         "projectAssistants.work",
         "projectAssistants.writingReply",
-        "projectAssistants.yes"
+        "projectAssistants.yes",
+        "projectAssistants.youReaction",
+        "projectAssistants.yourReaction"
       ]
     },
     {

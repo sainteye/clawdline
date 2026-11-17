@@ -237,7 +237,8 @@
         "trace_updated",
         "source_updated",
         "feature_disabled",
-        "artifact_renamed"
+        "artifact_renamed",
+        "reactions_changed"
       ],
       "description": "Each event has exactly the corresponding typed payload. trace_updated uses Trace; event sequences never count as unread messages."
     },
@@ -813,7 +814,7 @@
         },
         "primary_superseded_at": {
           "type": "integer",
-          "description": "Source-recorded configuration revision that replaced this binding\u2019s primary Agent; absent for current or legacy unchanged primary bindings."
+          "description": "Source-recorded configuration revision that replaced this binding’s primary Agent; absent for current or legacy unchanged primary bindings."
         }
       },
       "required": [
@@ -872,6 +873,12 @@
         },
         "exchange": {
           "$ref": "#/$defs/ProjectAssistantExchange"
+        },
+        "reactions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantReactionActor"
+          }
         }
       },
       "required": [
@@ -2055,7 +2062,8 @@
         "rename-artifact",
         "login-profile",
         "connector-credential",
-        "network-settings"
+        "network-settings",
+        "react"
       ]
     },
     "ProjectAssistantGetResponse": {
@@ -4439,6 +4447,82 @@
       "required": [
         "enabled"
       ]
+    },
+    "ProjectAssistantReactionActor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "bot"
+          ]
+        },
+        "bot": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "emojis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "appearance": {
+          "$ref": "#/$defs/ProjectAssistantAppearance"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "revision",
+        "emojis"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantReactRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "message_id",
+        "emoji",
+        "present",
+        "expected_revision"
+      ],
+      "additionalProperties": false
     }
   }
 }

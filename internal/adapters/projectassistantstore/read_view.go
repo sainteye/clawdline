@@ -115,6 +115,20 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 	if err != nil {
 		return app.ReadView{}, err
 	}
+	if out.Snapshot != nil {
+		for i := range out.Snapshot.QueuedMessages {
+			if err = messageReactions(ctx, tx, &out.Snapshot.QueuedMessages[i]); err != nil {
+				return app.ReadView{}, err
+			}
+		}
+	}
+	for i := range out.Items {
+		if m := out.Items[i].Message; m != nil {
+			if err = messageReactions(ctx, tx, m); err != nil {
+				return app.ReadView{}, err
+			}
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return app.ReadView{}, err
 	}

@@ -486,6 +486,11 @@
     "Note": true
   },
   {
+    "Name": "bots.human_reactions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.input_bytes",
     "Known": true,
     "Note": true
@@ -622,6 +627,11 @@
   },
   {
     "Name": "bots.prompt_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.reaction_emoji_bytes",
     "Known": true,
     "Note": true
   },

@@ -173,6 +173,9 @@ func (s *Store) Messages(ctx context.Context, q app.HistoryQuery) (app.MessagePa
 			out.HasMore = true
 			break
 		}
+		if err = messageReactions(ctx, s.db, &m); err != nil {
+			return app.MessagePage{}, err
+		}
 		out.Items = append(out.Items, m)
 		out.NextBeforeSeq = m.Seq
 	}
@@ -629,6 +632,9 @@ func validateAggregate(a aggregate) error {
 	messageFacts := map[string]pa.Message{}
 	inputOwners := map[string]bool{}
 	for i, msg := range a.Messages {
+		if len(msg.Reactions) != 0 {
+			return failure(pa.Invalid, "reaction_journal_metadata")
+		}
 		if msg.Exchange != nil {
 			x := msg.Exchange
 			if x.Project != b.Project || (x.Source.Key != b.Key || x.Source.ConversationID != c.ID) && (x.Target.Key != b.Key || x.Target.ConversationID != c.ID) || x.Source.Key == x.Target.Key {
@@ -1026,7 +1032,7 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return failure(pa.NotFound, "bot")
 	}
-	for _, table := range []string{"project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
+	for _, table := range []string{"project_assistant_reactions", "project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
 			return err
 		}

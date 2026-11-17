@@ -167,7 +167,7 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  CASE WHEN m.type!='object' THEN 1 ELSE NOT coalesce((json_type(m.value,'$.id')='text' AND json_extract(m.value,'$.id')!=''
  AND json_type(m.value,'$.seq')='integer' AND json_extract(m.value,'$.seq')>0
  AND json_extract(m.value,'$.kind') IN ('user','assistant','work','notice')
- AND json_type(m.value,'$.text')='text'
+ AND json_type(m.value,'$.text')='text' AND coalesce(json_type(m.value,'$.reactions'),'missing')='missing'
  AND ` + viewFenceSQL("m.value", false) + `),0) END)
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p WHERE a.permissions_type!='null' AND
  CASE WHEN p.type!='object' THEN 1 ELSE NOT coalesce((json_type(p.value,'$.id')='text' AND p.key=json_extract(p.value,'$.id') AND p.key!=''

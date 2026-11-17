@@ -419,6 +419,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }
   extensions(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantExtensionsResponse>(endpoint(key,"/extensions")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  canReactions(){try{this.check(new AbortController().signal,true,true,85);return true}catch{return false}}
+  react(r:W.ProjectAssistantReactRequest,s:AbortSignal){return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/react"),s,r,"POST",true,85)}
   canNetworkSettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL);return true}catch{return false}}
   networkSettings(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(key,"/network-settings")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
   saveNetworkSettings(r:W.ProjectAssistantNetworkSettingsRequest,signal:AbortSignal){return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(r.command.key,"/network-settings"),signal,r,"POST",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
@@ -580,7 +582,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
-    tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
+    tail === "/react" ? "react" : tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }

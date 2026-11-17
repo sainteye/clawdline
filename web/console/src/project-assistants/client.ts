@@ -10,6 +10,8 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+ canReactions?():boolean
+ react?(request:W.ProjectAssistantReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
  canNetworkSettings?():boolean
  networkSettings?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>
  saveNetworkSettings?(request:W.ProjectAssistantNetworkSettingsRequest,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>

@@ -5993,6 +5993,255 @@
       }
     },
     {
+      "op": "project-assistants.react",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{bot_id}/react",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "routine-fixture"
+          },
+          "operation": "react",
+          "idempotency_key": "stable-routine",
+          "content_hash": ""
+        },
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "routine-fixture"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "",
+          "generation": 0
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-routine",
+        "expected_revision": 0,
+        "message_id": "message",
+        "emoji": "👍",
+        "present": true
+      },
+      "shapes": [
+        {
+          "body": [
+            "command",
+            "emoji",
+            "expected_revision",
+            "fence",
+            "message_id",
+            "present",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/react",
+          "local_body": [
+            "command",
+            "emoji",
+            "expected_revision",
+            "fence",
+            "message_id",
+            "present"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "react"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "expected_revision": {
+            "type": "integer",
+            "min": 0,
+            "max": 9007199254740991,
+            "copies": {
+              "max": "cloud.MaxSafeInteger"
+            }
+          },
+          "emoji": {
+            "type": "string",
+            "non_empty": true
+          },
+          "message_id": {
+            "type": "string",
+            "non_empty": true
+          },
+          "present": {
+            "type": "bool"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/react",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "expected_revision": {
+                "from": "expected_revision"
+              },
+              "emoji": {
+                "from": "emoji"
+              },
+              "message_id": {
+                "from": "message_id"
+              },
+              "present": {
+                "from": "present"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.read",
       "kind": "command",
       "write_gate": false,

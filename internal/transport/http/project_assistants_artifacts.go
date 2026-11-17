@@ -14,8 +14,9 @@ import (
 )
 
 type paEncodedOutput struct {
-	body  []byte
-	check func(context.Context) error
+	outcomeUnknown bool
+	body           []byte
+	check          func(context.Context) error
 }
 
 func (h *projectAssistantHTTP) readOutput(r *http.Request, route paHTTPRoute) (any, error) {

@@ -54,6 +54,7 @@ function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
 
 function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
   if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues)||(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.some(a=>!a||!/^[0-9a-f]{64}$/.test(a.id)||typeof a.media_type!=="string"||!integer(a.bytes,1)))))throw failure("pa_invalid")
+  if(m.reactions!==undefined){if(!Array.isArray(m.reactions))throw failure("pa_invalid");const actors=new Set<string>();for(const a of m.reactions){if(!a||!text(a.id)||actors.has(a.id)||!["human","bot"].includes(a.kind)||typeof a.name!=="string"||!integer(a.revision,1)||!Array.isArray(a.emojis)||a.emojis.some(e=>typeof e!=="string"||!e||new TextEncoder().encode(e).length>32)||a.own!==undefined&&typeof a.own!=="boolean"||a.kind==="bot"&&(!key(a.bot)||a.bot.machine_id!==scope.key.machine_id||a.emojis.length!==1)||a.kind==="human"&&(a.bot!==undefined||a.emojis.length>8))throw failure("pa_invalid");if(a.appearance!==undefined&&(!object(a.appearance)||typeof a.appearance.color!=="string"||!oneOf(a.appearance.shape,ProjectAssistantShapeValues)))throw failure("pa_invalid");actors.add(a.id)}}
   if(m.files!==undefined){if(!Array.isArray(m.files)||m.files.length>4||m.kind!=="user")throw failure("pa_invalid");m.files.forEach(inputMetadata)}
   if(m.output!==undefined){outputMetadata(m.output);if(m.kind!=="assistant")throw failure("pa_invalid")}
   own(m.fence,scope)
@@ -127,7 +128,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       const e=row.event
       if(!text(e.id)||!integer(e.seq,1)||e.seq<=seq||e.seq!==row.observed_event_seq||e.version!=="project-assistants.v1"||!date(e.at)||!oneOf(e.kind,ProjectAssistantEventKindValues))throw failure("pa_invalid")
       const payloads=["bot","message","work","turn","permission","trace","source","memory","read"] as const
-      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",artifact_renamed:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
+      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",artifact_renamed:"message",reactions_changed:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
       if(payloads.filter(k=>e[k]!==undefined).length!==(expected?1:0)||expected&&!(e as unknown as Record<string,unknown>)[expected])throw failure("pa_invalid")
       seq=e.seq;own(e.fence,scope)
       if(e.message)message(e.message,scope)
@@ -161,14 +162,23 @@ export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadVie
 
 /** Event work has no invented admission anchor: retain a source anchor when already known. */
 export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],events:readonly W.ProjectAssistantReadViewItem[]):W.ProjectAssistantReadViewItem[] {
-  const added:W.ProjectAssistantReadViewItem[]=[]
-  rows=rows.map(row=>{const rename=[...events].reverse().find(e=>e.event?.kind==="artifact_renamed"&&e.event.message?.output?.artifact_id===row.message?.output?.artifact_id);if(!rename||!row.message?.output||!rename.event?.message?.output||rename.event.seq<row.observed_event_seq)return row;return {...row,observed_event_seq:rename.event.seq,message:{...row.message,output:{...row.message.output,name:rename.event.message.output.name,title_version:rename.event.message.output.title_version}}}})
-  for(const row of events) {
+  let next=[...rows]
+  for(const row of events){
     const e=row.event;if(!e)continue
-    if(e.message)added.push({id:e.message.id,kind:"message",anchor_message_seq:e.message.seq,observed_event_seq:e.seq,message:e.message})
-    if(e.work){const previous=rows.find(r=>r.work?.id===e.work!.id);added.push({id:previous?.id??e.work.id,kind:"work",anchor_message_seq:previous?.anchor_message_seq??0,observed_event_seq:e.seq,work:e.work})}
+    if(e.kind==="reactions_changed"&&e.message){
+      // A metadata event cannot introduce unloaded content or overwrite a title.
+      next=next.map(r=>r.message?.id===e.message!.id&&e.seq>=r.observed_event_seq?{...r,observed_event_seq:e.seq,message:{...r.message,reactions:e.message!.reactions}}:r)
+      continue
+    }
+    if(e.kind==="artifact_renamed"&&e.message?.output){
+      const output=e.message.output
+      next=next.map(r=>r.message?.output?.artifact_id===output.artifact_id&&e.seq>=r.observed_event_seq?{...r,observed_event_seq:e.seq,message:{...r.message,output:{...r.message.output,name:output.name,title_version:output.title_version}}}:r)
+      continue
+    }
+    if(e.message)next=mergeTimeline([next,[{id:e.message.id,kind:"message",anchor_message_seq:e.message.seq,observed_event_seq:e.seq,message:e.message}]])
+    if(e.work){const previous=next.find(r=>r.work?.id===e.work!.id);next=mergeTimeline([next,[{id:previous?.id??e.work.id,kind:"work",anchor_message_seq:previous?.anchor_message_seq??0,observed_event_seq:e.seq,work:e.work}]])}
   }
-  return mergeTimeline([rows,added])
+  return next
 }
 
 export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:ReadScope) {

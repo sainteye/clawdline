@@ -173,6 +173,7 @@ type ExchangeAdmission struct {
 // Export is a versioned data transfer, not a second Markdown authority. Restore
 // is PA-03's installer/store operation and must reject a newer unknown version.
 type Export struct {
+	Reactions      []pa.ReactionRecord                `json:"Reactions,omitempty"`
 	ArtifactTitles map[string]pa.ArtifactDisplayTitle `json:"ArtifactTitles,omitempty"`
 	Exchanges      []pa.Exchange                      `json:"Exchanges,omitempty"`
 	// Groups are the rooms this Bot belongs to, or belonged to when they
