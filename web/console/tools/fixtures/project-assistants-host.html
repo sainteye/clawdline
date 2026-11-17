@@ -102,6 +102,7 @@ const workOpened = token => {if(pendingWork?.token === token){pendingWork=null;p
 const paint = () => root.render(<React.StrictMode><App key={appKey} projectAssistants={registry} fleetReaderMachine={active}
   onOpenAssistantWork={openWork} assistantWorkIntent={pendingWork} onAssistantWorkOpened={workOpened}/></React.StrictMode>)
 const fixture = {a,b,registry,requests,log,paint,
+  enableFeature(){feature=true},
   quota(mode){quotaMode=mode;releaseQuota?.();releaseQuota=null},
   quotaVisible(layout,on){setQuotaVisible(layout,on)},
   dockOrb(docked){setOrbPlace({docked,right:16,bottom:72})},
