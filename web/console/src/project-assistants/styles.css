@@ -529,3 +529,72 @@
   color: #fff; background: rgba(255,255,255,0.1);
 }
 
+/* Conversation inspectors share the existing scoped editors and BR-06 identity. */
+.project-assistants .pa-chat-layout,.project-assistants .pa-room-layout { display:grid;grid-template-columns:minmax(0,1fr);height:100%;min-height:0;position:relative;overflow:hidden; }
+.project-assistants .pa-chat-layout.pa-info-open,.project-assistants .pa-room-layout.pa-members-open { grid-template-columns:minmax(0,1fr) minmax(280px,38%); }
+.project-assistants .pa-chat-layout>.pa-chat,.project-assistants .pa-room-layout>.pa-chat { min-height:0;overflow:hidden; }
+.project-assistants .pa-info-panel,.project-assistants .pa-room-members { min-width:0;min-height:0;overflow:auto;background:var(--pa-bg);border-left:1px solid var(--pa-line);padding:20px; }
+.project-assistants [hidden] { display:none!important; }
+.project-assistants .pa-info-identity { display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;padding:30px 0 22px; }
+.project-assistants .pa-info-identity h2 { font-size:20px;overflow-wrap:anywhere; }
+.project-assistants .pa-info-close { position:absolute;top:0;right:0; }
+.project-assistants .pa-info-tabs { display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-bottom:24px; }
+.project-assistants .pa-info-tabs button { padding:6px 10px;border:0;background:transparent;font-size:13px; }
+.project-assistants .pa-info-tabs button[aria-selected="true"] { background:var(--pa-line); }
+.project-assistants .pa-info-content { min-width:0; }
+.project-assistants .pa-info-content .pa-card { margin:12px 0 24px; }
+.project-assistants .pa-info-content .pa-form-body { margin-top:16px; }
+.project-assistants .pa-embedded-form { min-width:0; }
+.project-assistants .pa-embedded-form .pa-toolbar { flex-wrap:wrap; }
+.project-assistants .pa-bot-details h3 { font-size:14px; }
+.project-assistants .pa-info-instructions { white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:16px; }
+.project-assistants .pa-bot-details dt { color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-bot-details dd { margin:0 0 14px;overflow-wrap:anywhere; }
+.project-assistants .pa-room-message { max-width:86%;width:fit-content;margin:0 0 24px;overflow-wrap:anywhere; }
+.project-assistants .pa-room-author { display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:13px; }
+.project-assistants .pa-room-bubble { background:var(--pa-card);border-radius:20px;padding:12px 16px;white-space:pre-wrap; }
+.project-assistants .pa-room-person { margin-left:auto; }
+.project-assistants .pa-room-person .pa-room-bubble { background:#303033; }
+.project-assistants .pa-room-context { color:var(--pa-dim);font-size:12px;margin-bottom:8px; }
+.project-assistants .pa-room-reply { border:0;background:transparent;padding:5px 8px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-room-member { width:100%;display:flex;align-items:center;gap:12px;border:0;background:transparent;text-align:left;padding:12px 0; }
+.project-assistants .pa-room-member span { display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere; }
+.project-assistants .pa-room-target { flex:none;max-width:34%;align-self:center;min-width:0; }
+.project-assistants .pa-room-target select { width:100%;min-width:0;max-width:130px;border:0;background:transparent;border-radius:12px;padding:5px 6px;font-size:12px;color:var(--pa-dim);text-overflow:ellipsis; }
+.project-assistants .pa-room-composer { gap:6px; }
+.project-assistants .pa-room-composer .pa-editor { max-height:30dvh; }
+.project-assistants .pa-room-composer textarea { font-size:16px; }
+.project-assistants .pa-room-layout .pa-chat-footer { padding-top:8px; }
+.project-assistants .pa-permission { max-width:100%;width:min(360px,100%);border:0;border-radius:24px;padding:20px;background:#202022; }
+.project-assistants .pa-permission h3 { display:flex;align-items:center;gap:8px;margin:0 0 10px; }
+.project-assistants .pa-permission-dot { width:7px;height:7px;border-radius:50%;background:#e3bc6b; }
+.project-assistants .pa-permission-title { font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;margin-bottom:8px; }
+.project-assistants .pa-permission-source { display:block;overflow-wrap:anywhere;margin-bottom:8px; }
+.project-assistants .pa-permission-state { color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-permission-detail { margin-top:12px; }
+.project-assistants .pa-permission-detail summary { cursor:pointer;padding:8px 0;color:var(--pa-dim); }
+.project-assistants .pa-permission-detail pre { max-width:100%;overflow:auto; }
+.project-assistants .pa-permission-options { display:flex;flex-direction:column;margin-top:16px;background:var(--pa-bg);border-radius:18px;overflow:hidden; }
+.project-assistants .pa-permission-options button { display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;background:transparent;border:0;border-radius:0;min-height:48px;padding:14px 18px; }
+.project-assistants .pa-permission-options button+button { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-permission-options [data-option-kind^="reject"] { color:#f0a7a7; }
+.project-assistants .pa-permission-options [data-option-kind="allow_once"] { font-weight:600; }
+@media(max-width:1000px) {
+  .project-assistants .pa-chat-layout.pa-info-open,.project-assistants .pa-room-layout.pa-members-open { grid-template-columns:minmax(0,1fr); }
+  .project-assistants .pa-info-panel,.project-assistants .pa-room-members { position:absolute;inset:0 0 0 auto;width:min(420px,100%);z-index:6;box-shadow:-16px 0 32px #0006; }
+}
+@media(max-width:700px) {
+  .project-assistants .pa-info-panel,.project-assistants .pa-room-members { width:100%;border:0; }
+  .project-assistants .pa-room-message { max-width:94%; }
+  .project-assistants .pa-info-toggle { padding:6px 10px;font-size:12px; }
+}
+@media(max-width:700px) {
+  .project-assistants .pa-info-open>.pa-chat,.project-assistants .pa-members-open>.pa-chat { visibility:hidden; }
+}
+
+/* Keep every native choice reachable above the floating jump control. */
+.project-assistants .pa-permissions { padding-bottom:48px; }
+@media(max-width:700px) {
+  .project-assistants .pa-chat:has(.pa-permission) .pa-jump { display:none; }
+  .project-assistants .pa-permissions { padding-bottom:16px; }
+}

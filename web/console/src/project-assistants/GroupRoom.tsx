@@ -3,11 +3,27 @@ import type * as W from "@clawdline/contract"
 import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canWrite } from "./view-state"
 import { GroupEditor, TeamApprovals, groupWord } from "./Groups"
+import {PaMenu} from "./PaSelect"
+import {composerEnter} from "./composer-keyboard"
+import {BotAvatar} from "./BotAvatar"
+import {words} from "./words"
+import {currentCatalogTag} from "../catalog"
 import { EventRefreshMs } from "./Chat"
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
 export function GroupRoom({source,current,group:initial,bots,projectNames,onClose,onChanged}:{source:SourceClient;current:()=>readonly SourceClient[];group:W.ProjectAssistantGroup;bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;onClose:()=>void;onChanged:(group:W.ProjectAssistantGroup)=>void}) {
   const [group,setGroup]=useState(initial),[page,setPage]=useState<W.ProjectAssistantGroupHistoryResponse|null>(null),[lines,setLines]=useState<W.ProjectAssistantRoomEntry[]>([]),[text,setText]=useState(""),[reply,setReply]=useState<W.ProjectAssistantBotKey|undefined>(),[error,setError]=useState(""),[busy,setBusy]=useState(false),[unknown,setUnknown]=useState(false),[editing,setEditing]=useState(false),[deleting,setDeleting]=useState(false)
+  const [membersOpen,setMembersOpen]=useState(false)
+  const composing=useRef(false),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),w=words(currentCatalogTag())
+  const botFor=(key?:W.ProjectAssistantBotKey)=>key?bots.find(b=>identity(b.key)===identity(key)):undefined
+  const target=(key?:W.ProjectAssistantBotKey)=>{setReply(key);pending.current=null;requestAnimationFrame(()=>composer.current?.focus())}
+  useEffect(()=>{
+    if(!membersOpen)return
+    membersPanel.current?.querySelector<HTMLElement>("button")?.focus({preventScroll:true})
+    const escape=(event:KeyboardEvent)=>{if(event.key==="Escape"&&!event.isComposing&&!event.defaultPrevented&&event.target===document.body){setMembersOpen(false);requestAnimationFrame(()=>memberToggle.current?.focus())}}
+    document.addEventListener("keydown",escape)
+    return()=>document.removeEventListener("keydown",escape)
+  },[membersOpen])
   const pending=useRef<W.ProjectAssistantGroupSendRequest|null>(null),control=useRef(new AbortController()),refresh=useRef<()=>Promise<void>>(async()=>{})
   const currentRef=useRef(current);currentRef.current=current
   const scroll=useRef<HTMLDivElement>(null),[more,setMore]=useState<{before:number;hasMore:boolean}|null>(null)
@@ -44,23 +60,35 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     pending.current=request
     await effect(async signal=>{const answer=await source.sendGroup!(request,signal);pending.current=null;setText("");setReply(undefined);const next=merge(linesRef.current,[answer.entry]);linesRef.current=next;setLines(next);requestAnimationFrame(()=>scroll.current?.scrollTo({top:scroll.current.scrollHeight}));return answer})
   }
-  return <section className="pa-form-panel pa-chat" role="dialog" aria-modal="true" aria-label={group.name} style={{maxWidth:"min(900px, 100%)",padding:0,zIndex:8}}>
-    <header className="pa-chat-header"><button type="button" onClick={onClose}>{groupWord("groupBack")}</button><div><h2>{group.name}</h2><small>{group.members.map(m=>author(m.key)).join(" · ")}</small></div><button type="button" disabled={!writable||busy||unknown} onClick={()=>setEditing(true)}>{groupWord("groupEdit")}</button></header>
-    <details style={{padding:"8px 20px"}}><summary>{groupWord("groupMembers")} ({group.members.length})</summary><ul>{group.members.map(m=><li key={identity(m.key)}>{author(m.key)}</li>)}</ul></details>
+  return <section className={`pa-form-panel pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-modal="true" aria-label={group.name} style={{maxWidth:"100%",padding:0,zIndex:8}} onKeyDown={event=>{if(membersOpen&&!editing&&event.key==="Escape"&&!event.nativeEvent.isComposing&&!event.defaultPrevented){event.stopPropagation();setMembersOpen(false);requestAnimationFrame(()=>memberToggle.current?.focus())}}}>
+    <div className="pa-chat"><header className="pa-chat-header"><button type="button" onClick={onClose}>{groupWord("groupBack")}</button><div><h2>{group.name}</h2><small>{group.members.map(m=>author(m.key)).join(" · ")}</small></div><button ref={memberToggle} type="button" aria-expanded={membersOpen} onClick={()=>setMembersOpen(open=>!open)}>{groupWord("groupMembers")} ({group.members.length})</button><PaMenu label={w.moreActions} items={[
+      {id:"edit",label:groupWord("groupEdit"),disabled:!writable||busy||unknown,onSelect:()=>setEditing(true)},
+      {id:"stop",label:groupWord("groupStop"),disabled:!writable||busy||unknown,onSelect:()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))},
+      {id:"delete",label:groupWord("groupDelete"),disabled:!writable||busy||unknown,onSelect:()=>setDeleting(true)}
+    ]}/></header>
+
     <div className="pa-chat-scroll" ref={scroll}><div className="pa-chat-content">
       <TeamApprovals sources={[source]} bots={page?.room.running?bots.filter(bot=>group.members.some(m=>identity(m.key)===identity(bot.key))):[]}/>
       {more?.hasMore&&<button type="button" disabled={busy} onClick={()=>void load(more.before)}>{groupWord("groupOlder")}</button>}
-      {lines.map(line=><article key={line.seq} className={line.kind==="person"?"pa-message pa-person":"pa-message pa-assistant"} data-room-seq={line.seq}><strong>{line.kind==="person"?groupWord("groupPerson"):author(line.author)}</strong>{line.reply_to_author&&<small> · {groupWord("groupReplyTo")} {author(line.reply_to_author)}</small>}<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{line.text}</p>{line.kind==="member"&&line.author&&<button type="button" disabled={!writable||busy||unknown} onClick={()=>setReply(line.author)}>{groupWord("groupReply")}</button>}</article>)}
+      {lines.map(line=>{const member=botFor(line.author),person=line.kind==="person";return <article key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}>
+        {!person&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{author(line.author)}</strong></div>}
+        <div className="pa-room-bubble">{line.reply_to_author&&<div className="pa-room-context">↳ {groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}<p>{line.text}</p></div>
+        {line.kind==="member"&&line.author&&<button className="pa-room-reply" type="button" disabled={!writable||busy||unknown} onClick={()=>target(line.author)}>{groupWord("groupReply")} {author(line.author)}</button>}
+      </article>})}
       {!lines.length&&<p>{groupWord("groupEmpty")}</p>}
     </div></div>
     <footer className="pa-chat-footer">
       {!!page?.room.running&&<p role="status">{groupWord("groupRunning")}</p>}
-      {reply&&<p>{groupWord("groupReplyTo")} {author(reply)} <button type="button" disabled={busy||unknown} onClick={()=>{setReply(undefined);pending.current=null}}>{groupWord("groupCancel")}</button></p>}
-      <label>{groupWord("groupMessage")}<textarea value={text} disabled={!writable||busy||unknown} onChange={e=>{setText(e.target.value);pending.current=null}}/></label>
-      <div className="pa-chat-tools"><button type="button" disabled={!writable||busy||unknown||!text.trim()} onClick={()=>void send()}>{groupWord(busy?"groupWorking":"groupSend")}</button><button type="button" disabled={!writable||busy||unknown} onClick={()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))}>{groupWord("groupStop")}</button><button type="button" disabled={!writable||busy||unknown} onClick={()=>setDeleting(true)}>{groupWord("groupDelete")}</button></div>
+      <form className="pa-composer pa-room-composer" onSubmit={event=>{event.preventDefault();if(!composing.current)void send()}}>
+        <div className="pa-room-target"><select aria-label={w.roomTarget} disabled={!writable||busy||unknown} value={reply?identity(reply):""} onChange={e=>target(group.members.find(member=>identity(member.key)===e.target.value)?.key)}><option value="">@{w.roomEveryone}</option>{group.members.map(member=><option key={identity(member.key)} value={identity(member.key)}>@{author(member.key)}</option>)}</select></div>
+        <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={composer} rows={1} aria-label={groupWord("groupMessage")} placeholder={groupWord("groupMessage")} value={text} disabled={!writable||busy||unknown}
+          onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onChange={event=>{setText(event.target.value);pending.current=null}} onKeyDown={event=>{if(composerEnter(event.nativeEvent,composing.current)==="send"){event.preventDefault();void send()}}}/></div>
+        <button className="pa-send" type="submit" aria-label={groupWord(busy?"groupWorking":"groupSend")} disabled={!writable||busy||unknown||!text.trim()}>↑</button>
+      </form>
       {deleting&&<div role="alert"><p>{groupWord("groupDeleteHint")}</p><button type="button" disabled={busy||unknown} onClick={()=>setDeleting(false)}>{groupWord("groupCancel")}</button><button type="button" disabled={busy||unknown} onClick={()=>void effect(async signal=>{const result=await source.deleteGroup!({command:command(group.key,"delete"),expected_version:group.version},signal);onChanged({...group,deleted:true});return result})}>{groupWord("groupDeleteConfirm")}</button></div>}
       {(error||unknown)&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} {error&&`(${error})`}</p>}
     </footer>
+    </div><aside ref={membersPanel} hidden={!membersOpen} tabIndex={-1} className="pa-room-members" aria-label={groupWord("groupMembers")}><header className="pa-toolbar"><h3>{groupWord("groupMembers")}</h3><button type="button" aria-label={w.closeInformation} onClick={()=>{setMembersOpen(false);requestAnimationFrame(()=>memberToggle.current?.focus())}}>×</button></header><h2>{group.name}</h2><p>{group.members.length} {groupWord("groupMembers")}</p>{group.members.map(member=>{const bot=botFor(member.key);return <button className="pa-room-member" key={identity(member.key)} type="button" disabled={!writable||busy||unknown} onClick={()=>{target(member.key);if(matchMedia("(max-width: 700px)").matches)setMembersOpen(false)}}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<span><strong>{author(member.key)}</strong><small>{w.roomTarget}</small></span></button>})}<button type="button" disabled={!writable||busy||unknown} onClick={()=>setEditing(true)}>{groupWord("groupEdit")}</button></aside>
     {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} onClose={()=>setEditing(false)} onSaved={(_,changed)=>{setGroup(changed);setEditing(false);onChanged(changed);void load()}}/>}
   </section>
 }

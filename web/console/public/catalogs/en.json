@@ -13131,5 +13131,13 @@
   "capacityRow.bots.human_reactions.full": "Remove one of your emoji before adding another.",
   "capacityRow.bots.reaction_emoji_bytes.what": "UTF-8 bytes in one trimmed reaction.",
   "capacityRow.bots.reaction_emoji_bytes.full": "An oversized or non-emoji reaction is refused.",
-  "projectAssistants.reactionsUnavailable": "This source cannot change reactions."
+  "projectAssistants.reactionsUnavailable": "This source cannot change reactions.",
+  "projectAssistants.botInformation": "Bot information",
+  "projectAssistants.infoDetails": "Details",
+  "projectAssistants.closeInformation": "Close information",
+  "projectAssistants.noInstructions": "No standing instructions yet.",
+  "projectAssistants.editInformation": "Edit instructions",
+  "projectAssistants.roomTarget": "Reply to",
+  "projectAssistants.roomEveryone": "Everyone",
+  "projectAssistants.permissionAnswerFailed": "The answer could not be confirmed. Check the current request before answering again."
 }

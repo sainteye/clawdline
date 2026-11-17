@@ -45,7 +45,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
     {rows.map(({source,group})=><button type="button" className="pa-row" key={identity(group.key)} data-group-key={identity(group.key)} onClick={()=>setSelected({source,group})}><span aria-hidden="true">◎</span><span><strong>{group.name}</strong><small>{projectNames.get(JSON.stringify([group.key.machine_id,group.project.project_id]))??groupWord("groupProject")} · {group.members.length} {groupWord("groupMembers")}</small></span></button>)}
     {error&&<p role="status">{groupWord("groupUnavailable")} ({error})</p>}
     {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} projectIcons={projectIcons} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);setSelected({source,group});refresh(n=>n+1)}}/>}
-    {selected&&sources.includes(selected.source)&&selected.source.current?.()!==false&&<GroupRoom source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} onClose={()=>setSelected(null)} onChanged={group=>{setSelected(group.deleted?null:{...selected,group});refresh(n=>n+1)}}/>}
+    {selected&&sources.includes(selected.source)&&selected.source.current?.()!==false&&<GroupRoom key={identity(selected.group.key)} source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} onClose={()=>setSelected(null)} onChanged={group=>{setSelected(group.deleted?null:{...selected,group});refresh(n=>n+1)}}/>}
     <TeamApprovals sources={sources} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
   </section>
 }

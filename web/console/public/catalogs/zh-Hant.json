@@ -13131,5 +13131,13 @@
   "capacityRow.bots.human_reactions.full": "請先移除自己的一個表情，再加入其他表情。",
   "capacityRow.bots.reaction_emoji_bytes.what": "單個表情去除頭尾空白後的 UTF-8 位元組。",
   "capacityRow.bots.reaction_emoji_bytes.full": "超過大小或不是表情時會拒絕加入。",
-  "projectAssistants.reactionsUnavailable": "這個來源目前無法變更表情回應。"
+  "projectAssistants.reactionsUnavailable": "這個來源目前無法變更表情回應。",
+  "projectAssistants.botInformation": "Bot 資訊",
+  "projectAssistants.infoDetails": "詳情",
+  "projectAssistants.closeInformation": "關閉資訊",
+  "projectAssistants.noInstructions": "尚未設定固定指示。",
+  "projectAssistants.editInformation": "編輯固定指示",
+  "projectAssistants.roomTarget": "回覆對象",
+  "projectAssistants.roomEveryone": "所有成員",
+  "projectAssistants.permissionAnswerFailed": "無法確認回答結果。再次回答前，請先核對目前的請求。"
 }

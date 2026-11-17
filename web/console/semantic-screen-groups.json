@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13131,
-  "riskKeys": 5688,
-  "nonRiskCount": 7443,
+  "englishContentKeys": 13139,
+  "riskKeys": 5690,
+  "nonRiskCount": 7449,
   "groups": [
     {
       "name": "acp / other",
@@ -5899,7 +5899,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 326,
+      "count": 332,
       "sources": [
         null
       ],
@@ -5920,6 +5920,7 @@
         "projectAssistants.attachPicture",
         "projectAssistants.attachedFile",
         "projectAssistants.back",
+        "projectAssistants.botInformation",
         "projectAssistants.botNotify",
         "projectAssistants.bots",
         "projectAssistants.cancel",
@@ -5930,6 +5931,7 @@
         "projectAssistants.chooseProject",
         "projectAssistants.chooseReaction",
         "projectAssistants.close",
+        "projectAssistants.closeInformation",
         "projectAssistants.collapse",
         "projectAssistants.compose",
         "projectAssistants.connectorSubmit",
@@ -5946,6 +5948,7 @@
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
+        "projectAssistants.editInformation",
         "projectAssistants.executing",
         "projectAssistants.export",
         "projectAssistants.extensionChanged",
@@ -6026,6 +6029,7 @@
         "projectAssistants.hidden",
         "projectAssistants.hiddenBots",
         "projectAssistants.hideBot",
+        "projectAssistants.infoDetails",
         "projectAssistants.inputLimits",
         "projectAssistants.instructions",
         "projectAssistants.interactive",
@@ -6121,6 +6125,8 @@
         "projectAssistants.renamingArtifact",
         "projectAssistants.retry",
         "projectAssistants.retryReaction",
+        "projectAssistants.roomEveryone",
+        "projectAssistants.roomTarget",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",
         "projectAssistants.routineCron",
