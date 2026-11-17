@@ -33,9 +33,11 @@ type GroupMember struct {
 	JoinedRevision int64  `json:"joined_revision"`
 }
 
+const DefaultMaxGroupMembers = 64
+
 // GroupLimits are supplied by the caller that registers the product bounds.
-// Upstream has no member maximum; MaxMembers is the caller's own registered
-// bound, never a number this package invents. Every field must be positive.
+// Upstream has no member maximum; MaxMembers can be dynamically defaulted to
+// DefaultMaxGroupMembers when omitted or non-positive.
 type GroupLimits struct {
 	MaxMembers   int `json:"max_members"`
 	MaxRounds    int `json:"max_rounds"`
@@ -44,10 +46,17 @@ type GroupLimits struct {
 }
 
 func (l GroupLimits) Validate() error {
-	if l.MaxMembers < 1 || l.MaxRounds < 1 || l.MaxReplies < 1 || l.MaxLateTurns < 1 {
+	if l.MaxRounds < 1 || l.MaxReplies < 1 || l.MaxLateTurns < 1 {
 		return fail(Invalid, "group_limits")
 	}
 	return nil
+}
+
+func (l GroupLimits) EffectiveMaxMembers() int {
+	if l.MaxMembers > 0 {
+		return l.MaxMembers
+	}
+	return DefaultMaxGroupMembers
 }
 
 // GroupCatalog is what the source machine actually stores, read in the same
@@ -75,10 +84,26 @@ func (g Group) Member(key BotKey) (GroupMember, bool) {
 	return GroupMember{}, false
 }
 
+// DeduplicateGroupMembers returns requested members with duplicate keys
+// silently dropped, preserving first appearance order (aligning with Codync host/src/chat/group.rs).
+func DeduplicateGroupMembers(members []BotKey) []BotKey {
+	if len(members) == 0 {
+		return nil
+	}
+	seen := make(map[BotKey]bool, len(members))
+	out := make([]BotKey, 0, len(members))
+	for _, k := range members {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // ValidateGroupMembers checks a requested member list against the stored
-// Bots. Upstream silently drops duplicates and unknown ids; here each is a
-// refusal, so the stored list is exactly what was asked for and a replayed
-// command cannot mean something else. Hidden Bots are valid members.
+// Bots. In accordance with Codync (host/src/chat/group.rs), duplicate member
+// keys are deduplicated silently while preserving first appearance order.
 func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, catalog GroupCatalog, limits GroupLimits) error {
 	if err := limits.Validate(); err != nil {
 		return err
@@ -89,14 +114,14 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 	if group.MachineID != scope.MachineID {
 		return fail(ScopeDenied, "group_machine")
 	}
-	if len(requested) == 0 {
+	deduped := DeduplicateGroupMembers(requested)
+	if len(deduped) == 0 {
 		return fail(Invalid, "group_members")
 	}
-	if len(requested) > limits.MaxMembers {
+	if len(deduped) > limits.EffectiveMaxMembers() {
 		return fail(CapacityFull, "group_members")
 	}
-	seen := map[BotKey]bool{}
-	for _, key := range requested {
+	for _, key := range deduped {
 		switch {
 		case key.MachineID == "" || key.BotID == "":
 			return fail(Invalid, "group_member")
@@ -106,10 +131,7 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 			return fail(Invalid, "group_member_self")
 		case catalog.Groups[key]:
 			return fail(Invalid, "group_member_nested")
-		case seen[key]:
-			return fail(Invalid, "group_member_duplicate")
 		}
-		seen[key] = true
 		bot, ok := catalog.Bots[key]
 		if !ok {
 			return fail(NotFound, "group_member")
@@ -159,8 +181,9 @@ func NewGroup(d GroupDraft, catalog GroupCatalog, limits GroupLimits, at time.Ti
 	if err := ValidateGroupMembers(d.Key, d.Project, d.Members, catalog, limits); err != nil {
 		return Group{}, err
 	}
+	deduped := DeduplicateGroupMembers(d.Members)
 	g := Group{Key: d.Key, Project: d.Project, ConversationID: d.ConversationID, Name: d.Name, MembershipRevision: 1, Version: 1, CreatedAt: at, UpdatedAt: at}
-	for _, k := range d.Members {
+	for _, k := range deduped {
 		g.Members = append(g.Members, GroupMember{Key: k, JoinedRevision: 1})
 	}
 	return g, nil
@@ -186,13 +209,14 @@ func EditGroup(g Group, e GroupEdit, catalog GroupCatalog, limits GroupLimits, a
 	if err := ValidateGroupMembers(g.Key, g.Project, e.Members, catalog, limits); err != nil {
 		return g, err
 	}
+	deduped := DeduplicateGroupMembers(e.Members)
 	next := g
 	next.Name, next.Version, next.UpdatedAt = e.Name, g.Version+1, at
 	next.Members = nil
-	if !SameMembers(g.MemberKeys(), e.Members) {
+	if !SameMembers(g.MemberKeys(), deduped) {
 		next.MembershipRevision = g.MembershipRevision + 1
 	}
-	for _, k := range e.Members {
+	for _, k := range deduped {
 		m, kept := g.Member(k)
 		if !kept {
 			m = GroupMember{Key: k, JoinedRevision: next.MembershipRevision}
@@ -569,16 +593,28 @@ func roomResponders(members []RoomSpeaker, since []RoomEntry) []RoomSpeaker {
 		everyone = everyone || namesEveryone(e.Text)
 	}
 	var named []RoomSpeaker
+	seen := map[BotKey]bool{}
 	for _, m := range members {
 		for _, e := range since {
 			if e.ReplyToAuthor == m.Key || namesSpeaker(e.Text, m.Name) {
-				named = append(named, m)
+				if !seen[m.Key] {
+					seen[m.Key] = true
+					named = append(named, m)
+				}
 				break
 			}
 		}
 	}
 	if everyone || len(named) == 0 {
-		return slices.Clone(members)
+		var unique []RoomSpeaker
+		seenAll := map[BotKey]bool{}
+		for _, m := range members {
+			if !seenAll[m.Key] {
+				seenAll[m.Key] = true
+				unique = append(unique, m)
+			}
+		}
+		return unique
 	}
 	return named
 }

@@ -92,7 +92,6 @@ func TestGroupLifecycleAgainstStoredBots(t *testing.T) {
 		code    pa.ErrorCode
 	}{
 		{"other Project", []pa.BotKey{a.Key, gk("x")}, pa.ScopeDenied},
-		{"duplicate", []pa.BotKey{a.Key, a.Key}, pa.Invalid},
 		{"missing", []pa.BotKey{a.Key, gk("none")}, pa.NotFound},
 		{"foreign machine", []pa.BotKey{a.Key, {MachineID: "other", BotID: "a"}}, pa.ScopeDenied},
 	} {
@@ -101,6 +100,17 @@ func TestGroupLifecycleAgainstStoredBots(t *testing.T) {
 		if _, err := groups.CreateGroup(testContext, groupCmd(d.Key, pa.CreateOperation, "bad-"+c.name, c.name), d, groupLimits, groupTime); pa.Code(err) != c.code {
 			t.Fatalf("%s: %v", c.name, err)
 		}
+	}
+	// Codync silent deduplication: [a, a] creates successfully with 1 member
+	dupDraft := draft
+	dupDraft.Key = gk("g_dup")
+	dupDraft.Members = []pa.BotKey{a.Key, a.Key}
+	if _, err := groups.CreateGroup(testContext, groupCmd(dupDraft.Key, pa.CreateOperation, "create-dup", "dup"), dupDraft, groupLimits, groupTime); err != nil {
+		t.Fatalf("duplicate create failed: %v", err)
+	}
+	dupGroup, err := groups.Group(testContext, dupDraft.Key)
+	if err != nil || len(dupGroup.Members) != 1 || dupGroup.Members[0].Key != a.Key {
+		t.Fatalf("unexpected deduped group in store: %+v %v", dupGroup, err)
 	}
 	create := groupCmd(draft.Key, pa.CreateOperation, "create-g", "a,h")
 	r, err := groups.CreateGroup(testContext, create, draft, groupLimits, groupTime)
