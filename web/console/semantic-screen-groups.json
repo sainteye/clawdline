@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13157,
-  "riskKeys": 5702,
-  "nonRiskCount": 7455,
+  "englishContentKeys": 13164,
+  "riskKeys": 5704,
+  "nonRiskCount": 7460,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 670,
+      "count": 671,
       "sources": [
         null
       ],
@@ -565,6 +565,7 @@
         "capacityRow.bots.group_member_wait_seconds.what",
         "capacityRow.bots.group_peer_line_chars.full",
         "capacityRow.bots.group_peer_line_chars.what",
+        "capacityRow.bots.group_preview_avatars.what",
         "capacityRow.bots.group_replies.full",
         "capacityRow.bots.group_replies.what",
         "capacityRow.bots.group_rounds.what",
@@ -5901,7 +5902,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 337,
+      "count": 341,
       "sources": [
         null
       ],
@@ -6130,10 +6131,14 @@
         "projectAssistants.roomEveryone",
         "projectAssistants.roomTarget",
         "projectAssistants.rosterDropPin",
+        "projectAssistants.rosterOptions",
         "projectAssistants.rosterPin",
+        "projectAssistants.rosterPinGroup",
         "projectAssistants.rosterReorder",
         "projectAssistants.rosterReorderHint",
+        "projectAssistants.rosterSort",
         "projectAssistants.rosterUnpin",
+        "projectAssistants.rosterUnpinGroup",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",
         "projectAssistants.routineCron",

@@ -96,6 +96,7 @@
 | `bots.group_late_turns` | 3 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_member_wait_seconds` | 600 | `seconds` | `coalesce` | `diagnostics` | — |
 | `bots.group_peer_line_chars` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
+| `bots.group_preview_avatars` | 4 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.group_replies` | 10 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_rounds` | 3 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.hook_backoff_seconds` | 60 | `seconds` | `refuse` | `diagnostics` | — |

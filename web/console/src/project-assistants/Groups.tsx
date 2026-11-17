@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import type {GroupRosterEntry} from "./roster-conversations"
 import type * as W from "@clawdline/contract"
 import { catalogWord } from "../catalog"
 import { authorized, command, errorCode, type SourceClient } from "./client"
@@ -16,8 +17,19 @@ const identity=(key:W.ProjectAssistantBotKey)=>JSON.stringify([key.machine_id,ke
 type GroupSource={source:SourceClient;groups:W.ProjectAssistantGroup[];status:W.ProjectAssistantSourceStatus}
 
 /** Group entries live beside Bots, but open a room rather than a native chat. */
-export function Groups({sources,items,projectNames,projectIcons,query="",machine="",selected:selectedBot}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;query?:string;machine?:string;selected?:string|null}) {
+export function Groups({sources,items,projectNames,projectIcons,query="",machine="",selected:selectedBot,children}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;query?:string;machine?:string;selected?:string|null;children?:(rows:readonly GroupRosterEntry[],open:(entry:GroupRosterEntry,opener?:HTMLElement)=>void,selected:string|null)=>ReactNode}) {
   const [pages,setPages]=useState<GroupSource[]>([]),[error,setError]=useState(""),[creating,setCreating]=useState(false),[selected,setSelected]=useState<{source:SourceClient;group:W.ProjectAssistantGroup}|null>(null)
+  const opener=useRef<HTMLElement|null>(null),originScroll=useRef<{element:HTMLElement;top:number}|null>(null)
+  const open=(entry:GroupRosterEntry,target?:HTMLElement)=>{
+    opener.current=target??(document.activeElement instanceof HTMLElement?document.activeElement:null)
+    const scroll=opener.current?.closest<HTMLElement>(".pa-roster-scroll")
+    originScroll.current=scroll?{element:scroll,top:scroll.scrollTop}:null
+    setSelected(entry)
+  }
+  const close=()=>{setSelected(null);requestAnimationFrame(()=>{
+    if(opener.current?.isConnected)opener.current.focus({preventScroll:true})
+    if(originScroll.current?.element.isConnected)originScroll.current.element.scrollTop=originScroll.current.top
+  })}
   const live=useRef(sources);live.current=sources
   const current=()=>live.current
   const [revision,refresh]=useState(0)
@@ -38,16 +50,15 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
   },[sources,revision])
   const active=pages.filter(p=>sources.includes(p.source)&&p.source.current?.()!==false)
   const canCreate=active.some(p=>canWrite(p.status)&&items.some(b=>b.bot.key.machine_id===p.source.machineID))
-  const rows=active.flatMap(p=>p.groups.filter(g=>(!machine||g.key.machine_id===machine)&&(!query||g.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()))).map(group=>({source:p.source,group})))
-  if(!supported.length)return null
-  return <section aria-label={groupWord("groups")} className="pa-project-group">
-    <div className="pa-toolbar"><h2>{groupWord("groups")}</h2>{canCreate&&<button type="button" onClick={()=>setCreating(true)}>{groupWord("groupCreate")}</button>}</div>
-    {rows.map(({source,group})=><button type="button" className="pa-row" key={identity(group.key)} data-group-key={identity(group.key)} onClick={()=>setSelected({source,group})}><span aria-hidden="true">◎</span><span><strong>{group.name}</strong><small>{projectNames.get(JSON.stringify([group.key.machine_id,group.project.project_id]))??groupWord("groupProject")} · {group.members.length} {groupWord("groupMembers")}</small></span></button>)}
+  const rows=active.flatMap(p=>p.groups.filter(g=>(!machine||g.key.machine_id===machine)&&(!query||[g.name,projectNames.get(JSON.stringify([g.key.machine_id,g.project.project_id]))??""].some(text=>text.toLocaleLowerCase().includes(query.toLocaleLowerCase())))).map(group=>({source:p.source,group,status:p.status})))
+  return <>
+    {canCreate&&<div className="pa-roster-group-tools"><button type="button" onClick={()=>setCreating(true)}>{groupWord("groupCreate")}</button></div>}
+    {children?children(rows,open,selected?identity(selected.group.key):null):rows.map(entry=><button type="button" className="pa-row" key={identity(entry.group.key)} data-group-key={identity(entry.group.key)} onClick={()=>open(entry)}><span aria-hidden="true">◎</span><span><strong>{entry.group.name}</strong><small>{entry.group.members.length} {groupWord("groupMembers")}</small></span></button>)}
     {error&&<p role="status">{groupWord("groupUnavailable")} ({error})</p>}
     {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} projectIcons={projectIcons} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);setSelected({source,group});refresh(n=>n+1)}}/>}
-    {selected&&sources.includes(selected.source)&&selected.source.current?.()!==false&&<GroupRoom key={identity(selected.group.key)} source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} onClose={()=>setSelected(null)} onChanged={group=>{setSelected(group.deleted?null:{...selected,group});refresh(n=>n+1)}}/>}
+    {selected&&sources.includes(selected.source)&&selected.source.current?.()!==false&&<GroupRoom key={identity(selected.group.key)} source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} onClose={close} onChanged={group=>{setSelected(group.deleted?null:{...selected,group});refresh(n=>n+1)}}/>}
     <TeamApprovals sources={sources} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
-  </section>
+  </>
 }
 
 export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {

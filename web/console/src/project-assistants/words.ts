@@ -1,6 +1,11 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
   "pinned": "Pinned",
+  "rosterSortDone": "Done",
+  "rosterSort": "Reorder conversations",
+  "rosterOptions": "List options",
+  "rosterUnpinGroup": "Unpin group",
+  "rosterPinGroup": "Pin group",
   "rosterPin": "Pin Bot",
   "rosterUnpin": "Unpin Bot",
   "rosterReorder": "Reorder",
@@ -491,6 +496,11 @@ export const en = {
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
   "pinned": "已釘選",
+  "rosterSortDone": "完成",
+  "rosterSort": "調整對話順序",
+  "rosterOptions": "清單選項",
+  "rosterUnpinGroup": "取消釘選群組",
+  "rosterPinGroup": "釘選群組",
   "rosterPin": "釘選 Bot",
   "rosterUnpin": "取消釘選 Bot",
   "rosterReorder": "調整順序",

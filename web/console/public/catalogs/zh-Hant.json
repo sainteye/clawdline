@@ -13157,5 +13157,12 @@
   "capacityRow.bots.cloud_lease_seconds.what": "顯示最近確認的 Bot 來源能力租約還剩幾秒；租約最多延長至一分鐘後。",
   "capacityRow.bots.cloud_lease_seconds.full": "新租約達到最大時長是正常狀態；租約到期後不再證明來源可用，也不授予執行權限。",
   "capacityRow.bots.cloud_refresh_seconds.what": "限制能力更新失敗後，再次核對 Bot 能力資料前的等待時間；這段等待不會排入新的原生效果。",
-  "capacityRow.bots.cloud_refresh_seconds.full": "達到這段等待時間時，來源等候後再查能力資料；結果未知的原生工作繼續保留，不會自動重送。"
+  "capacityRow.bots.cloud_refresh_seconds.full": "達到這段等待時間時，來源等候後再查能力資料；結果未知的原生工作繼續保留，不會自動重送。",
+  "projectAssistants.rosterPinGroup": "釘選群組",
+  "projectAssistants.rosterUnpinGroup": "取消釘選群組",
+  "projectAssistants.rosterOptions": "清單選項",
+  "projectAssistants.rosterSort": "調整對話順序",
+  "projectAssistants.rosterSortDone": "完成",
+  "capacityRow.bots.group_preview_avatars.what": "群組對話在清單預覽中顯示的成員頭像數。",
+  "capacityRow.bots.group_preview_avatars.full": "其餘成員以人數顯示，開啟房間即可查看所有成員。"
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13157,
+  "englishKeys": 13164,
   "counts": {
     "negation": 3494,
-    "state": 2233,
+    "state": 2235,
     "permission": 805,
     "deletion": 310,
     "uncertainty": 541
   },
-  "unionCount": 5702,
+  "unionCount": 5704,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3650,6 +3650,7 @@
       "capacityRow.bots.follow_up_seconds.full",
       "capacityRow.bots.follow_up_tokens.full",
       "capacityRow.bots.frame_bytes.full",
+      "capacityRow.bots.group_preview_avatars.full",
       "capacityRow.bots.hook_enroll_bytes.full",
       "capacityRow.bots.hook_event_bytes.full",
       "capacityRow.bots.hook_header_bytes.full",
@@ -5465,6 +5466,7 @@
       "projectAssistants.outputFailed",
       "projectAssistants.reactionFailed",
       "projectAssistants.resumedNotice",
+      "projectAssistants.rosterSortDone",
       "projectAssistants.rosterUnsaved",
       "projectAssistants.routineDeleteConfirm",
       "projectAssistants.routineHeld",
@@ -7760,6 +7762,7 @@
     "capacityRow.bots.frame_bytes.full",
     "capacityRow.bots.frame_bytes.what",
     "capacityRow.bots.group_late_turns.full",
+    "capacityRow.bots.group_preview_avatars.full",
     "capacityRow.bots.group_rounds.full",
     "capacityRow.bots.hook_backoff_seconds.full",
     "capacityRow.bots.hook_enroll_bytes.full",
@@ -12417,6 +12420,7 @@
     "projectAssistants.renameArtifactUnknown",
     "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
+    "projectAssistants.rosterSortDone",
     "projectAssistants.rosterUnsaved",
     "projectAssistants.routineConfirmDelete",
     "projectAssistants.routineDelete",

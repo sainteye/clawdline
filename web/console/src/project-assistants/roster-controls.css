@@ -12,3 +12,26 @@
 .project-assistants .pa-roster-pin-target { padding:14px 8px;border:1px dashed var(--pa-dim);border-radius:8px;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-roster-save-error { padding:8px;color:var(--warning,#f0a030);font-size:13px; }
 @media (prefers-reduced-motion:reduce) { .project-assistants .pa-roster-entry { transition:none; } }
+.project-assistants .pa-roster-group-tools { display:flex;justify-content:flex-end;padding:0 6px 4px; }
+.project-assistants .pa-roster-group-tools button { padding:4px 8px;font-size:12px; }
+.project-assistants .pa-group-avatars { position:relative;display:grid;grid-template-columns:repeat(2,22px);width:44px;min-width:44px;height:44px;align-content:center; }
+.project-assistants .pa-group-avatars > span { display:flex;align-items:center;justify-content:center;width:22px;height:22px; }
+.project-assistants .pa-group-unknown { color:var(--pa-dim);font-size:15px; }
+.project-assistants .pa-group-avatars > .pa-group-more { position:absolute;right:-4px;bottom:-4px;width:auto;min-width:20px;height:16px;background:var(--pa-panel,#18181b);border-radius:5px;color:var(--pa-text);font-size:10px; }
+.project-assistants .pa-roster-compact .pa-bot-row { min-height:72px; }
+.project-assistants .pa-roster-compact .pa-project-heading { margin-top:8px;margin-bottom:4px; }
+.project-assistants .pa-roster-compact .pa-toolbar h1 { flex:1; }
+.project-assistants .pa-roster-sort-done { padding:4px 8px;font-size:13px; }
+.project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-actions .pa-circle { width:28px;height:28px;padding:4px; }
+@media (hover:hover) and (pointer:fine) {
+  .project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-entry .pa-roster-actions .pa-menu { visibility:hidden; }
+  .project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-entry:hover .pa-roster-actions .pa-menu,
+  .project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-entry:focus-within .pa-roster-actions .pa-menu,
+  .project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-entry .pa-roster-actions .pa-menu[data-open] { visibility:visible; }
+}
+@media (hover:none), (pointer:coarse) {
+  .project-assistants .pa-roster-compact:not([data-sorting]) .pa-roster-actions .pa-circle,
+  .project-assistants .pa-roster-compact .pa-roster-pin,
+  .project-assistants .pa-roster-compact .pa-roster-handle { width:44px;height:44px; }
+}
+.project-assistants .pa-roster-compact .pa-row-meta time { max-width:none;white-space:nowrap; }
