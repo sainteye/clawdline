@@ -4646,7 +4646,7 @@
     "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
     "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
     "internal/adapters/botnetwork/assistant_store.go": "77f56ac961f408428879967f9ae78a81d7aad36adb4bb4de96903b38a1d3e2c1",
-    "internal/adapters/botnetwork/cloud.go": "633dc4e9a120526b607c85b9ce47fb37b8f2988a2a7e52110db4a3a0e3034087",
+    "internal/adapters/botnetwork/cloud.go": "b180683ae344bbaa9c25f0d20fb55ecb37926ee99238218813e798eac6f41b4f",
     "internal/adapters/botnetwork/cloud_rail.go": "249aaea2e61073a45388a47b5e3b377597e042cab39eeefbf4a2584f22e90a22",
     "internal/adapters/botnetwork/local_authority.go": "fcf9c598cfa46095ea0802b276372ed049ef30daf79dcd1f25bde270b4fb98c4",
     "internal/adapters/botnetwork/receipt_publication.go": "b3e84f8a304699fd01724822b16b1f10c2909626e8a7d632ba9100a1db5561bb",
