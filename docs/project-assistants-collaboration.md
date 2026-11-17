@@ -122,6 +122,62 @@ adapters or additional destinations.
 
 The ordinary integration gate is the next acceptance boundary. Pending
 integration work must not be described as a green gate or a main-line landing.
-Managers, team/group rooms, coordinator behavior, networking and UI remain in
-the existing Board step. Broader delete/revoke and late-result combinations
+Managers, team/group rooms, coordinator behavior and networking remain in
+their existing Board steps. Broader delete/revoke and late-result combinations
 remain additional coverage; the whole step is not complete.
+
+## Chat exchange detail construction
+
+`ChatRows` offers a separate exchange action for messages carrying structured
+exchange metadata in the captured Bot's chat. Existing browser, quote, copy,
+input and output actions are retained. `ExchangePanel` opens a native modal
+dialog with initial focus on Close, Escape handling, focus return, explicit
+retry/refresh and independently scrolling content. Phone widths use a single
+column of labels and values. Request, reply and diagnostic text is escaped by
+React and preserves line breaks and Markdown source; it cannot run HTML.
+
+`loadExchange` uses only the captured `SourceClient.export` and `status` reads.
+It validates the exported Bot and conversation, the full Project (including
+Project ID and canonical identity), both exchange participants and their
+conversations, immutable request turn identities and nondecreasing revision.
+The export supplies no source-status envelope, so an authenticated status read
+must confirm fresh, online, readable access before publication. History-only
+access remains readable. Missing, duplicate, stale, malformed, foreign and
+revoked results are explicit typed failures. Abort and captured authorization
+changes are checked after asynchronous reads; a closed or replaced panel cannot
+publish an old response. The mounted panel follows the existing output viewer's
+three-second lifetime check and discards content when its source is revoked.
+There is no request admission, model call, reply replay or read acknowledgement.
+
+The panel identifies requester and responder by their actual Bot IDs, adding
+the exported name for its own Bot. It does not fetch or invent a deleted peer's
+name. Request outcomes and reply delivery are separate labels. Unknown/future
+states remain unknown even when a reply looks final. Completed request text
+never proves delivery or observation. The panel shows the complete selected
+exchange, not an aggregated peer thread; no new retention limit is added.
+
+The read-only upstream comparison was `BotConversation.tsx` and
+`bot-exchange.ts` at `9f67eb09084db61b3cca9c84a11bc03df9de29b7`, together
+with `host/src/chat/team.rs` and `team/requests.rs`. Upstream opens peer history
+from a compact chat row and shows authored request/reply rows with status.
+Clawdline keeps its existing same-Project exchange contract and captured
+transport rather than importing cross-computer directory authority.
+
+Focused Node controls cover both participants, foreign scope, missing/duplicate
+rows, stale revisions, read-only access, abort/revocation during export and
+status, explicit retry, distinct outcomes/delivery and actual chat/loading
+markup in English and Traditional Chinese. `TestProjectAssistantExchangeCapturedReadSQLite`
+seeds a synthetic SQLite exchange, then reads it through a real authenticated
+TCP handler and the production paired `ProjectAssistantSourceClient`. It checks
+exact bytes, history-only access, GET-only transport, unchanged durable data,
+revocation refusal and zero provider calls. Disabling the fixture before
+seeding matters: disabling correctly drops pending reply delivery; that is a
+lifecycle mutation, not a read effect.
+
+This is construction evidence. Root must integrate the `botExchange` bilingual
+catalog fragments and source-catalog registration before landing. Console test
+discovery already includes `exchanges.test.ts`; no package script change is
+needed. Root also owns the ordinary integration gate, main-line receipt,
+transparency refresh and the separate visual/native/Cloud acceptance card.
+No deployment, installed-native acceptance or production browser acceptance is
+claimed here.
