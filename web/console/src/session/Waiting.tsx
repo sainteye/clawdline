@@ -101,6 +101,14 @@ export function Waiting({ row, write, onScreen, assistantFacts }: { row: Session
     if (st.answered && (!open || st.answered.key !== key || (!following && open.state !== "waiting") || Date.now() - st.answered.at > 10000)) {
       st.answered = null
     }
+    
+    // [Alignment with Codync] 若 Bot 進入 unknown 執行狀態且卡住超過 5 秒，強制重置狀態以避免僵屍 UI
+    if (open && open.state === "waiting" && (open as any).execution_effect_unknown && Date.now() - (follow.current as any).activeAt > 5000) {
+        toastFailure(new Error("執行效果不明，系統正在強制同步..."), "同步異常");
+        (follow.current as any).active = null;
+        st.drawn = null;
+    }
+
     if (st.reread && (!open || st.reread.key !== key || open.state !== "waiting" && !following)) st.reread = null
     if (st.folded && (!open || st.folded.key !== key || open.state !== "waiting")) st.folded = null
     // A press is held until the question it answered has gone — the session
