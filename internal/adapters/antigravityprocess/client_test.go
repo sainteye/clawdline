@@ -133,7 +133,11 @@ func TestACPProcess(t *testing.T) {
 			if mode == "metadata-stall" {
 				time.Sleep(time.Hour)
 			}
-			if mode == "metadata-error" {
+			if mode == "metadata-error-slow" {
+				// An acknowledged refusal may arrive after a short caller deadline.
+				time.Sleep(200 * time.Millisecond)
+			}
+			if mode == "metadata-error" || mode == "metadata-error-slow" {
 				enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32001, "message": "SECRET provider account"}})
 				continue
 			}
@@ -327,11 +331,17 @@ func TestConfigOptionUsesOneCheckedMetadataRPC(t *testing.T) {
 }
 
 func TestConfigOptionFailuresDoNotApplyOrRetry(t *testing.T) {
-	for _, mode := range []string{"metadata-error", "metadata-stall"} {
+	for _, mode := range []string{"metadata-error", "metadata-error-slow", "metadata-stall"} {
 		t.Run(mode, func(t *testing.T) {
 			c, dir := fake(t, mode, nil)
 			ready(t, c)
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			// An acknowledged refusal uses the client's existing RPC timeout.
+			// Only the stalled peer is a caller-cancellation experiment.
+			ctx := context.Background()
+			cancel := func() {}
+			if mode == "metadata-stall" {
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+			}
 			defer cancel()
 			applied := false
 			err := c.SetConfigOptionChecked(ctx, "thinking_level", "low", nil, func(json.RawMessage) error { applied = true; return nil })
