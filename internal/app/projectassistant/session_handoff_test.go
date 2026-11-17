@@ -220,3 +220,65 @@ func TestFreshSessionHandoffRejectsForeignAndStaleData(t *testing.T) {
 		t.Fatal("forgotten summary re-entered fresh context", err)
 	}
 }
+
+func TestFreshContinuationRecapAndBoundaryProtection(t *testing.T) {
+	x, turn, filtered := continuationFixture()
+	old := x.Messages[0].Fence
+	x.Messages = nil
+	x.Turns = nil
+
+	// Create 15 turns of Q&A (30 messages total)
+	for i := 1; i <= 15; i++ {
+		tid := fmt.Sprintf("turn-%d", i)
+		qid := fmt.Sprintf("q-%d", i)
+		aid := fmt.Sprintf("a-%d", i)
+		x.Messages = append(x.Messages,
+			pa.Message{ID: qid, TurnID: tid, Fence: old, Seq: int64(i*2 - 1), Kind: pa.UserMessage, Text: fmt.Sprintf("Question %d", i)},
+			pa.Message{ID: aid, TurnID: tid, Fence: old, Seq: int64(i * 2), Kind: pa.AssistantMessage, Text: fmt.Sprintf("Answer %d", i)},
+		)
+		x.Turns = append(x.Turns, pa.Turn{ID: tid, MessageID: qid, Fence: old, State: pa.TurnSucceeded, MemoryRevision: 2})
+	}
+	x.Messages = append(x.Messages, pa.Message{ID: turn.MessageID, TurnID: turn.ID, Fence: turn.Fence, Seq: 100, Kind: pa.UserMessage, Text: "Current ask"})
+
+	h, err := newSessionHandoff(x, turn, filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if h.Recap == nil {
+		t.Fatal("expected non-nil recap when earlier turns are omitted")
+	}
+	if h.Recap.OmittedTurns <= 0 || h.Recap.OmittedMessages <= 0 {
+		t.Fatalf("expected positive omitted count, got %+v", h.Recap)
+	}
+	if !strings.Contains(h.Recap.Summary, "omitted") {
+		t.Fatalf("recap summary missing expected text: %s", h.Recap.Summary)
+	}
+
+	// Boundary protection: every assistant message must have its user question present
+	for _, c := range h.Continuation {
+		if c.Kind == pa.AssistantMessage {
+			foundInput := false
+			for _, other := range h.Continuation {
+				if other.MessageID == c.InputID {
+					foundInput = true
+					break
+				}
+			}
+			if !foundInput {
+				t.Fatalf("orphan assistant message found without its question: %+v", c)
+			}
+		}
+	}
+
+	// Opening succeeds with valid recap
+	if _, err = h.Opening(turn, filtered); err != nil {
+		t.Fatalf("opening failed with valid recap: %v", err)
+	}
+
+	// Recap tamper detection
+	h.Recap.OmittedTurns += 99
+	if _, err = h.Opening(turn, filtered); pa.Code(err) != pa.ContextStale {
+		t.Fatalf("expected context stale on tampered recap, got %v", err)
+	}
+}

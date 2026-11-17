@@ -110,19 +110,11 @@ func (t RoutineTrigger) Next(after time.Time) (time.Time, error) {
 		if err != nil {
 			return time.Time{}, err
 		}
-		// robfig/cron/v3 checks up to 5 years per Next call.
-		// Iteratively step forward across 4-year horizons up to 100 years
-		// to remove the 5-year search window limit while properly handling leap centuries.
-		cursor := after
-		maxHorizon := after.AddDate(100, 0, 0)
-		for cursor.Before(maxHorizon) {
-			next := s.Next(cursor)
-			if !next.IsZero() {
-				return next, nil
-			}
-			cursor = cursor.AddDate(4, 0, 0)
+		next := s.Next(after)
+		if next.IsZero() {
+			return time.Time{}, &Failure{Code: Invalid, Field: "routine_cron_future"}
 		}
-		return time.Time{}, &Failure{Code: Invalid, Field: "routine_cron_future"}
+		return next, nil
 	}
 }
 
