@@ -32,7 +32,8 @@ import (
 // Main-chat reactions arrive at API 85 with Bot schema 11.
 // Local Bot consent synchronization arrives at API 86 without a schema change.
 // Project Session message boards arrive at level 87.
-const APILevel = 87
+// Exact group quotes, room activity and optional list previews arrive at API 88.
+const APILevel = 88
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

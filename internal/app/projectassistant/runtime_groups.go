@@ -315,7 +315,7 @@ func (d *RoomDriver) retryStale(ctx context.Context, key pa.BotKey, f func(rev i
 // Send is the person's message: written and its room turn started. check,
 // when set, re-establishes the person's authority after the room read and
 // immediately before the write (the AuthorityCheck pattern of Service.Send).
-func (d *RoomDriver) Send(ctx context.Context, who PersonAuthority, c pa.Command, text string, replyToAuthor pa.BotKey, check func(context.Context) error) (pa.RoomEntry, RoomStep, error) {
+func (d *RoomDriver) Send(ctx context.Context, who PersonAuthority, c pa.Command, text string, replyToAuthor pa.BotKey, check func(context.Context) error, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
 	if _, err := d.runtime(); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
@@ -328,7 +328,7 @@ func (d *RoomDriver) Send(ctx context.Context, who PersonAuthority, c pa.Command
 			}
 		}
 		var e error
-		entry, step, e = d.o.Rooms.Send(ctx, who, c, rev, text, replyToAuthor)
+		entry, step, e = d.o.Rooms.Send(ctx, who, c, rev, text, replyToAuthor, quoted...)
 		return e
 	})
 	if err != nil || step.Turn == nil {
@@ -656,6 +656,17 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 		out = append(out, "New messages in the room (oldest first):")
 		for _, e := range lines {
 			text := clipRunes(e.Text, d.o.Limits.PeerLineRunes)
+			if e.Quote != nil {
+				name := "the user's earlier message"
+				if e.Quote.Kind == pa.RoomMemberEntry {
+					name = names[e.Quote.Author]
+					if name == "" {
+						name = "a former participant"
+					}
+					name += "'s message"
+				}
+				text = fmt.Sprintf("[Clawdline: this replies to %s: %q] %s", name, clipRunes(e.Quote.Text, d.o.Limits.PeerLineRunes), text)
+			}
 			switch {
 			case e.Kind == pa.RoomPersonEntry:
 				out = append(out, "User: "+text)

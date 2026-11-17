@@ -35,10 +35,12 @@ type GroupRoomStore interface {
 	CheckTicket(context.Context, pa.RoomTicket) error
 	// PersonWrote writes the person's line and starts its room turn in one
 	// transaction under the room revision.
-	PersonWrote(context.Context, pa.Command, int64, string, pa.BotKey) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
+	PersonWrote(context.Context, pa.Command, int64, string, pa.BotKey, ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
 	Lines(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	LinesBefore(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	Groups(context.Context, string) ([]pa.Group, error)
+	GroupPreviews(context.Context, string, int) ([]pa.GroupPreview, error)
+	History(context.Context, pa.BotKey, int64, int) (GroupHistoryPage, error)
 }
 
 // GroupRooms coordinates group rooms: who is asked, which answers are still
@@ -137,21 +139,29 @@ func (r *GroupRooms) step(ctx context.Context, key pa.BotKey, revision int64, f 
 // Send writes the person's message into the room and starts the room turn it
 // asks for, replacing the one running. replyToAuthor is the stored author of
 // a quoted line, or zero. A replayed command starts nothing (Turn nil).
-func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
 	if err := who.check(c.Key); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
 	if err := pa.ValidateMessage(text); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
+	var quoteSeq int64
+	if len(quoted) > 1 || len(quoted) == 1 && quoted[0] < 1 {
+		return pa.RoomEntry{}, RoomStep{}, serviceFailure(pa.Invalid, "quote_seq")
+	}
+	if len(quoted) == 1 {
+		quoteSeq = quoted[0]
+	}
 	c, err := canonicalCommand(c, pa.SendOperation, who.Principal, struct {
 		Text          string    `json:"text"`
 		ReplyToAuthor pa.BotKey `json:"reply_to_author"`
-	}{text, replyToAuthor})
+		QuoteSeq      int64     `json:"quote_seq,omitempty"`
+	}{text, replyToAuthor, quoteSeq})
 	if err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, replyToAuthor)
+	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, replyToAuthor, quoted...)
 	return e, RoomStep{State: st, Turn: t}, err
 }
 

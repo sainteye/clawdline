@@ -5865,10 +5865,21 @@ export interface ProjectAssistantGroup {
   created_at: string
   deleted: boolean
   key: ProjectAssistantBotKey
+
+  /**
+   * Optional latest stored room line; omitted when unavailable within the existing
+   * read budget.
+   */
+  last_entry?: ProjectAssistantRoomEntry
   members: ProjectAssistantGroupMember[]
   membership_revision: number
   name: string
   project: ProjectAssistantProjectScope
+
+  /**
+   * Optional room state read with group metadata and the latest line.
+   */
+  room?: ProjectAssistantRoomState
   updated_at: string
   version: number
 }
@@ -5907,6 +5918,11 @@ export interface ProjectAssistantGroupHistoryRequest {
 }
 
 export interface ProjectAssistantGroupHistoryResponse {
+  /**
+   * Current room tickets under actual member execution fences, from the same read
+   * snapshot.
+   */
+  activity?: ProjectAssistantRoomActivity[]
   contract_version: string
   group: ProjectAssistantGroup
   has_more: boolean
@@ -5939,6 +5955,12 @@ export interface ProjectAssistantGroupResponse {
 
 export interface ProjectAssistantGroupSendRequest {
   command: ProjectAssistantCommand
+
+  /**
+   * Exact original line in this room; the source derives its author and text.
+   * Omission preserves legacy command digests.
+   */
+  quote?: ProjectAssistantRoomQuoteReference
   reply_to_author?: ProjectAssistantBotKey
   text: string
 }
@@ -6802,12 +6824,40 @@ export interface ProjectAssistantRenameArtifactRequest {
   title: string
 }
 
+export interface ProjectAssistantRoomActivity {
+  member: ProjectAssistantBotKey
+  state: ProjectAssistantTurnState
+  turn_id: string
+}
+
 export interface ProjectAssistantRoomEntry {
+  /**
+   * Source timestamp for new entries; old undated entries omit it.
+   */
+  at?: string
   author?: ProjectAssistantBotKey
   kind: string
+  quote?: ProjectAssistantRoomQuote
   reply_to_author?: ProjectAssistantBotKey
   seq: number
   text: string
+}
+
+export interface ProjectAssistantRoomQuote {
+  author?: ProjectAssistantBotKey
+  kind: string
+  seq: number
+  text: string
+
+  /**
+   * The source excerpt exceeded the existing message byte budget; seq still
+   * identifies the complete original line.
+   */
+  truncated?: boolean
+}
+
+export interface ProjectAssistantRoomQuoteReference {
+  seq: number
 }
 
 export interface ProjectAssistantRoomState {

@@ -33,6 +33,7 @@ export interface SourceClient {
   /** Account-scoped identity for persisting uncertain metadata commands. */
   readonly intentAccount?: string
   canGroups?(): boolean
+  canGroupContext?(): boolean
   groups?(request:W.ProjectAssistantGroupListRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupListResponse>
   groupHistory?(request:W.ProjectAssistantGroupHistoryRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupHistoryResponse>
   createGroup?(request:W.ProjectAssistantGroupCreateRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupResponse>

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -158,6 +159,66 @@ func (s *GroupStore) Room(ctx context.Context, key pa.BotKey) (pa.RoomState, err
 // Groups lists one machine's groups, deleted ones included.
 func (s *GroupStore) Groups(ctx context.Context, machine string) ([]pa.Group, error) {
 	return groupsRead(ctx, s.db, machine)
+}
+
+// GroupPreviews reads real metadata, room state and the newest stored line in
+// one SQLite snapshot. It does not ask each room for a history page.
+func (s *GroupStore) GroupPreviews(ctx context.Context, machine string, byteBudget int) ([]pa.GroupPreview, error) {
+	if byteBudget < 1 {
+		return nil, failure(pa.Invalid, "group_preview_bytes")
+	}
+	// Window only lengths/keys first. Optional data returned to Go is bounded
+	// by the caller's existing read budget, even with many large room lines.
+	rows, err := s.db.QueryContext(ctx, `WITH sizes AS MATERIALIZED (
+ SELECT g.machine,g.grp,l.seq,coalesce(length(r.data),0) room_bytes,coalesce(length(l.data),0) line_bytes
+ FROM project_assistant_groups g
+ LEFT JOIN project_assistant_group_rooms r ON r.machine=g.machine AND r.grp=g.grp
+ LEFT JOIN project_assistant_group_lines l ON l.machine=g.machine AND l.grp=g.grp
+  AND l.seq=(SELECT max(seq) FROM project_assistant_group_lines WHERE machine=g.machine AND grp=g.grp)
+ WHERE g.machine=?
+), fitting AS MATERIALIZED (
+ SELECT *,CASE WHEN room_bytes<=? THEN room_bytes ELSE 0 END room_fit,
+ CASE WHEN line_bytes<=? THEN line_bytes ELSE 0 END line_fit FROM sizes
+), budgeted AS (
+ SELECT *,sum(room_fit+line_fit) OVER(ORDER BY grp) spent FROM fitting
+)
+SELECT g.data,CASE WHEN b.room_fit>0 AND b.spent-b.line_fit<=? THEN r.data END,
+ CASE WHEN b.line_fit>0 AND b.spent<=? THEN l.data END
+FROM budgeted b JOIN project_assistant_groups g ON g.machine=b.machine AND g.grp=b.grp
+LEFT JOIN project_assistant_group_rooms r ON r.machine=b.machine AND r.grp=b.grp
+LEFT JOIN project_assistant_group_lines l ON l.machine=b.machine AND l.grp=b.grp AND l.seq=b.seq
+ORDER BY g.grp`, machine, byteBudget, byteBudget, byteBudget, byteBudget)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []pa.GroupPreview{}
+	for rows.Next() {
+		var raw, room, line []byte
+		if err = rows.Scan(&raw, &room, &line); err != nil {
+			return nil, err
+		}
+		var p pa.GroupPreview
+		if err = json.Unmarshal(raw, &p.Group); err != nil {
+			return nil, err
+		}
+		if len(room) > 0 {
+			var st pa.RoomState
+			if err = json.Unmarshal(room, &st); err != nil {
+				return nil, err
+			}
+			p.Room = &st
+		}
+		if len(line) > 0 {
+			var e pa.RoomEntry
+			if err = json.Unmarshal(line, &e); err != nil {
+				return nil, err
+			}
+			p.LastEntry = &e
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func groupsRead(ctx context.Context, r execer, machine string) ([]pa.Group, error) {
@@ -671,6 +732,8 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 		if !ok {
 			return nil
 		}
+		// The terminal mutation carries the runtime's source clock.
+		entry.At = a.Bot.UpdatedAt.UTC()
 		if err = writeLine(ctx, tx, ticket.Group, entry); err != nil {
 			return err
 		}
@@ -691,7 +754,10 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 // PersonWrote writes the person's line and starts the room turn it asks
 // for, in one transaction under the room revision, with the command's
 // receipt. A replay returns the stored line's seq and starts nothing.
-func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevision int64, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error) {
+func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevision int64, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error) {
+	if len(quoted) > 1 || len(quoted) == 1 && quoted[0] < 1 {
+		return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "quote_seq")
+	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return pa.RoomEntry{}, pa.RoomState{}, nil, err
@@ -703,13 +769,40 @@ func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevi
 	} else if r != nil {
 		seq, _ := strconv.ParseInt(r.ResourceID, 10, 64)
 		st, err := roomRead(ctx, tx, key)
-		return pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, Text: text, ReplyToAuthor: replyToAuthor}, st, nil, err
+		if err != nil {
+			return pa.RoomEntry{}, st, nil, err
+		}
+		entry, err := roomLine(ctx, tx, key, seq)
+		return entry, st, nil, err
 	}
 	g, err := groupRead(ctx, tx, key)
 	if err != nil {
 		return pa.RoomEntry{}, pa.RoomState{}, nil, err
 	}
-	if replyToAuthor != (pa.BotKey{}) {
+	var quote *pa.RoomQuote
+	if len(quoted) == 1 {
+		original, e := roomLine(ctx, tx, key, quoted[0])
+		if e != nil {
+			return pa.RoomEntry{}, pa.RoomState{}, nil, e
+		}
+		if original.Kind != pa.RoomPersonEntry && original.Kind != pa.RoomMemberEntry {
+			return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "quote_seq")
+		}
+		if replyToAuthor != (pa.BotKey{}) && replyToAuthor != original.Author {
+			return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "reply_to_author")
+		}
+		quote = &pa.RoomQuote{Seq: original.Seq, Kind: original.Kind, Author: original.Author, Text: original.Text}
+		// A retained excerpt uses the existing person-message byte budget.
+		// The immutable source line remains available at its exact sequence.
+		if len(quote.Text) > pa.MaxMessageBytes {
+			end := pa.MaxMessageBytes
+			for !utf8.RuneStart(quote.Text[end]) {
+				end--
+			}
+			quote.Text, quote.Truncated = quote.Text[:end], true
+		}
+		replyToAuthor = original.Author
+	} else if replyToAuthor != (pa.BotKey{}) {
 		if _, ok := g.Member(replyToAuthor); !ok {
 			return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "reply_to_author")
 		}
@@ -729,7 +822,7 @@ func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevi
 	if err != nil {
 		return pa.RoomEntry{}, st, nil, err
 	}
-	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, Text: text, ReplyToAuthor: replyToAuthor}
+	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, At: time.Now().UTC(), Text: text, ReplyToAuthor: replyToAuthor, Quote: quote}
 	if err = writeLine(ctx, tx, key, entry); err != nil {
 		return pa.RoomEntry{}, st, nil, err
 	}
@@ -743,6 +836,20 @@ func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevi
 		return pa.RoomEntry{}, st, nil, err
 	}
 	return entry, next, &turn, nil
+}
+
+func roomLine(ctx context.Context, r reader, key pa.BotKey, seq int64) (pa.RoomEntry, error) {
+	var raw []byte
+	err := r.QueryRowContext(ctx, `SELECT data FROM project_assistant_group_lines WHERE machine=? AND grp=? AND seq=?`, key.MachineID, key.BotID, seq).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return pa.RoomEntry{}, failure(pa.NotFound, "quote_seq")
+	}
+	if err != nil {
+		return pa.RoomEntry{}, err
+	}
+	var entry pa.RoomEntry
+	err = json.Unmarshal(raw, &entry)
+	return entry, err
 }
 
 // Lines reads a room's lines with seq > after, oldest first, at most limit;
@@ -770,10 +877,14 @@ func (s *GroupStore) LinesBefore(ctx context.Context, key pa.BotKey, before int6
 	if _, err := groupRead(ctx, s.db, key); err != nil {
 		return nil, err
 	}
+	return linesBefore(ctx, s.db, key, before, limit)
+}
+
+func linesBefore(ctx context.Context, r execer, key pa.BotKey, before int64, limit int) ([]pa.RoomEntry, error) {
 	if before < 1 {
 		before = 1 << 62
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM (SELECT seq,data FROM project_assistant_group_lines WHERE machine=? AND grp=? AND seq<? ORDER BY seq DESC LIMIT ?) ORDER BY seq`, key.MachineID, key.BotID, before, limit)
+	rows, err := r.QueryContext(ctx, `SELECT data FROM (SELECT seq,data FROM project_assistant_group_lines WHERE machine=? AND grp=? AND seq<? ORDER BY seq DESC LIMIT ?) ORDER BY seq`, key.MachineID, key.BotID, before, limit)
 	if err != nil {
 		return nil, err
 	}

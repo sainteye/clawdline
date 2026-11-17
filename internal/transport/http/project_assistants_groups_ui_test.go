@@ -96,6 +96,24 @@ func TestGroupCloudDecoderReachesRealHTTPAndSQLite(t *testing.T) {
 	if strings.Count(string(history), `"kind":"member"`) != 2 {
 		t.Fatal(string(history))
 	}
+	var page contract.ProjectAssistantGroupHistoryResponse
+	if err := json.Unmarshal(history, &page); err != nil {
+		t.Fatal(err)
+	}
+	original := page.Lines[len(page.Lines)-1]
+	var previews contract.ProjectAssistantGroupListResponse
+	if err := json.Unmarshal(call("groups", map[string]any{"machine_id": "machine"}), &previews); err != nil || len(previews.Groups) != 1 || previews.Groups[0].LastEntry == nil || previews.Groups[0].LastEntry.Seq != original.Seq || previews.Groups[0].LastEntry.At == "" || previews.Groups[0].Room == nil {
+		t.Fatalf("Cloud list did not retain its real latest line: %+v %v", previews, err)
+	}
+	quoted := map[string]any{"command": f.command(pa.SendOperation, "cloud-quote"), "text": "Explain that result", "quote": map[string]any{"seq": original.Seq}}
+	var reply contract.ProjectAssistantGroupSendResponse
+	if err := json.Unmarshal(call("group-send", quoted), &reply); err != nil || reply.Entry.Quote == nil || reply.Entry.Quote.Seq != original.Seq || reply.Entry.Quote.Text != original.Text || reply.Entry.Quote.Author == nil || *reply.Entry.Quote.Author != *original.Author {
+		t.Fatalf("exact quote was lost across Cloud decode and SQLite: %+v %v", reply, err)
+	}
+	var replay contract.ProjectAssistantGroupSendResponse
+	if err := json.Unmarshal(call("group-send", quoted), &replay); err != nil || replay.Entry.Seq != reply.Entry.Seq || replay.Entry.Quote == nil || replay.Entry.Quote.Text != original.Text {
+		t.Fatalf("a Cloud quote replay changed its line: %+v %v", replay, err)
+	}
 	call("group-edit", map[string]any{"command": f.command(pa.EditOperation, "cloud-edit"), "settings": contract.ProjectAssistantGroupEditSettings{ExpectedVersion: group.Group.Version, Name: "Cloud renamed", Members: []contract.ProjectAssistantBotKey{paWireBotKey(f.bots[0].Key)}}})
 	call("group-stop", map[string]any{"command": f.command(pa.StopOperation, "cloud-stop")})
 	call("group-delete", map[string]any{"command": f.command(pa.DeleteOperation, "cloud-delete"), "expected_version": group.Group.Version + 1})

@@ -30,6 +30,7 @@ export const PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL = 79
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
+export const PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL = 88
 export const PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL = 75
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
@@ -90,13 +91,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly grant: Readonly<AssistantGrant>
   readonly machineName?: string
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
+  canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
   groups(r:W.ProjectAssistantGroupListRequest,s:AbortSignal) { if(r.machine_id!==this.machineID)throw notSent(failure("pa_scope_denied"));return this.request<W.ProjectAssistantGroupListResponse>(base+"/rooms/groups"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   groupHistory(r:W.ProjectAssistantGroupHistoryRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantGroupHistoryResponse>(base+"/rooms/groups/"+encodeURIComponent(r.key.bot_id)+query({machine_id:this.machineID,before_seq:r.before_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   editGroup(r:W.ProjectAssistantGroupEditRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"PATCH",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   deleteGroup(r:W.ProjectAssistantGroupDeleteRequest,s:AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"DELETE",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   stopGroup(r:W.ProjectAssistantGroupStopRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupStopResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/stop",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
-  sendGroup(r:W.ProjectAssistantGroupSendRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupSendResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/messages",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  sendGroup(r:W.ProjectAssistantGroupSendRequest,s:AbortSignal) {
+    if(r.quote&&(!Number.isSafeInteger(r.quote.seq)||r.quote.seq<1))return Promise.reject(notSent(failure("pa_invalid")))
+    return this.request<W.ProjectAssistantGroupSendResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/messages",s,r,"POST",true,r.quote?PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL:PROJECT_ASSISTANTS_GROUPS_API_LEVEL)
+  }
   teamPlans(r:W.ProjectAssistantTeamPlansRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantTeamPlansResponse>(endpoint(r.key,"/team-plans")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   answerTeamPlan(r:W.ProjectAssistantTeamAnswerRequest,s:AbortSignal) { return this.request<W.ProjectAssistantTeamAnswerResponse>(endpoint(r.command.key,"/team-answer"),s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   private readonly transport: AssistantFetch

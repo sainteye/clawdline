@@ -54,6 +54,14 @@
         },
         "updated_at": {
           "type": "string"
+        },
+        "last_entry": {
+          "$ref": "#/$defs/ProjectAssistantRoomEntry",
+          "description": "Optional latest stored room line; omitted when unavailable within the existing read budget."
+        },
+        "room": {
+          "$ref": "#/$defs/ProjectAssistantRoomState",
+          "description": "Optional room state read with group metadata and the latest line."
         }
       },
       "required": [
@@ -91,6 +99,13 @@
         },
         "reply_to_author": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "at": {
+          "type": "string",
+          "description": "Source timestamp for new entries; old undated entries omit it."
+        },
+        "quote": {
+          "$ref": "#/$defs/ProjectAssistantRoomQuote"
         }
       },
       "required": [
@@ -209,6 +224,13 @@
         },
         "has_more": {
           "type": "boolean"
+        },
+        "activity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoomActivity"
+          },
+          "description": "Current room tickets under actual member execution fences, from the same read snapshot."
         }
       },
       "required": [
@@ -339,6 +361,10 @@
         },
         "reply_to_author": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "quote": {
+          "$ref": "#/$defs/ProjectAssistantRoomQuoteReference",
+          "description": "Exact original line in this room; the source derives its author and text. Omission preserves legacy command digests."
         }
       },
       "required": [
@@ -603,6 +629,69 @@
           "$ref": "#/$defs/ProjectAssistantTeamEditSettings"
         }
       }
+    },
+    "ProjectAssistantRoomQuote": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "person",
+            "member"
+          ]
+        },
+        "author": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "The source excerpt exceeded the existing message byte budget; seq still identifies the complete original line."
+        }
+      },
+      "required": [
+        "seq",
+        "kind",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantRoomActivity": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantTurnState"
+        }
+      },
+      "required": [
+        "member",
+        "turn_id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantRoomQuoteReference": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq"
+      ],
+      "additionalProperties": false
     }
   }
 }

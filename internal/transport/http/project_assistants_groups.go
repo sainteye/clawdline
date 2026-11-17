@@ -142,7 +142,7 @@ func paWireRoom(st pa.RoomState) contract.ProjectAssistantRoomState {
 	return contract.ProjectAssistantRoomState{Revision: st.Revision, Epoch: st.Epoch, Running: st.Running, Pending: st.Pending, StoppedAt: st.StoppedAt}
 }
 func paWireRoomEntry(e pa.RoomEntry) contract.ProjectAssistantRoomEntry {
-	out := contract.ProjectAssistantRoomEntry{Seq: e.Seq, Kind: string(e.Kind), Text: e.Text}
+	out := contract.ProjectAssistantRoomEntry{Seq: e.Seq, Kind: string(e.Kind), Text: e.Text, At: paRoutineTime(e.At)}
 	if e.Author != (pa.BotKey{}) {
 		k := paWireBotKey(e.Author)
 		out.Author = &k
@@ -150,6 +150,14 @@ func paWireRoomEntry(e pa.RoomEntry) contract.ProjectAssistantRoomEntry {
 	if e.ReplyToAuthor != (pa.BotKey{}) {
 		k := paWireBotKey(e.ReplyToAuthor)
 		out.ReplyToAuthor = &k
+	}
+	if e.Quote != nil {
+		q := &contract.ProjectAssistantRoomQuote{Seq: e.Quote.Seq, Kind: string(e.Quote.Kind), Text: e.Quote.Text, Truncated: e.Quote.Truncated}
+		if e.Quote.Author != (pa.BotKey{}) {
+			author := paWireBotKey(e.Quote.Author)
+			q.Author = &author
+		}
+		out.Quote = q
 	}
 	return out
 }
@@ -161,14 +169,75 @@ func paGroupOutput(value any, check func(context.Context) error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	size, err := cloudops.ProjectAssistantReadReplySize("read:"+strings.Repeat("<", 128), http.StatusOK, body)
+	size, err := paGroupReplyBytes(body)
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > cloudops.ReadPlaintextBytesLimit || size > cloudops.ReadPlaintextBytesLimit {
+	if size > cloudops.ReadPlaintextBytesLimit {
 		return nil, paHTTPFailure(pa.CapacityFull, "group_reply_bytes")
 	}
 	return paEncodedOutput{body: body, check: check}, nil
+}
+
+func paGroupReplyBytes(body []byte) (int, error) {
+	size, err := cloudops.ProjectAssistantReadReplySize("read:"+strings.Repeat("<", 128), http.StatusOK, body)
+	if len(body) > size {
+		size = len(body)
+	}
+	return size, err
+}
+
+// Optional previews must never make a previously readable metadata list fail.
+// All fields are ordinary JSON, so adding a group's encoded delta also adds
+// exactly that delta to the existing raw-body Cloud reply envelope.
+func paPackGroupPreviews(out contract.ProjectAssistantGroupListResponse, previews []pa.GroupPreview, check func(context.Context) error) (any, error) {
+	body, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	size, err := paGroupReplyBytes(body)
+	if err != nil {
+		return nil, err
+	}
+	if size > cloudops.ReadPlaintextBytesLimit {
+		return nil, paHTTPFailure(pa.CapacityFull, "group_reply_bytes")
+	}
+	remaining := cloudops.ReadPlaintextBytesLimit - size
+	for i, preview := range previews {
+		add := func(next contract.ProjectAssistantGroup) error {
+			oldBytes, err := json.Marshal(out.Groups[i])
+			if err != nil {
+				return err
+			}
+			newBytes, err := json.Marshal(next)
+			if err != nil {
+				return err
+			}
+			delta := len(newBytes) - len(oldBytes)
+			if delta <= remaining {
+				out.Groups[i] = next
+				remaining -= delta
+			}
+			return nil
+		}
+		if preview.Room != nil {
+			next := out.Groups[i]
+			room := paWireRoom(*preview.Room)
+			next.Room = &room
+			if err = add(next); err != nil {
+				return nil, err
+			}
+		}
+		if preview.LastEntry != nil {
+			next := out.Groups[i]
+			entry := paWireRoomEntry(*preview.LastEntry)
+			next.LastEntry = &entry
+			if err = add(next); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return paGroupOutput(out, check)
 }
 
 func (h *projectAssistantHTTP) readGroups(r *http.Request, route paHTTPRoute) (any, error) {
@@ -211,15 +280,15 @@ func (h *projectAssistantHTTP) readGroups(r *http.Request, route paHTTPRoute) (a
 		return nil, err
 	}
 	if route.action == "groups" {
-		groups, err := h.options.Service.Groups(r.Context(), key.MachineID)
+		groups, err := h.options.Service.GroupPreviews(r.Context(), key.MachineID, cloudops.ReadPlaintextBytesLimit)
 		if err != nil {
 			return nil, err
 		}
 		out := contract.ProjectAssistantGroupListResponse{ContractVersion: pa.ContractVersion, Source: wire, Groups: []contract.ProjectAssistantGroup{}}
-		for _, g := range groups {
-			out.Groups = append(out.Groups, paWireGroup(g))
+		for _, preview := range groups {
+			out.Groups = append(out.Groups, paWireGroup(preview.Group))
 		}
-		return paGroupOutput(out, check)
+		return paPackGroupPreviews(out, groups, check)
 	}
 	if route.action != "group-history" {
 		return nil, paHTTPFailure(pa.Invalid, "group_route")
@@ -239,6 +308,9 @@ func (h *projectAssistantHTTP) readGroups(r *http.Request, route paHTTPRoute) (a
 	out := contract.ProjectAssistantGroupHistoryResponse{ContractVersion: pa.ContractVersion, Source: wire, Group: paWireGroup(page.Group), Room: paWireRoom(page.Room), Lines: []contract.ProjectAssistantRoomEntry{}}
 	for _, e := range page.Lines {
 		out.Lines = append(out.Lines, paWireRoomEntry(e))
+	}
+	for _, activity := range page.Activity {
+		out.Activity = append(out.Activity, contract.ProjectAssistantRoomActivity{Member: paWireBotKey(activity.Member), TurnID: activity.TurnID, State: contract.ProjectAssistantTurnState(activity.State)})
 	}
 	if len(page.Lines) == int(size) {
 		out.HasMore = true
@@ -355,7 +427,11 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 		if v.ReplyToAuthor != nil {
 			reply = paDomainBotKey(*v.ReplyToAuthor)
 		}
-		e, st, err := h.options.Service.SendGroup(r.Context(), c, v.Text, reply)
+		var quoted []int64
+		if v.Quote != nil {
+			quoted = []int64{v.Quote.Seq}
+		}
+		e, st, err := h.options.Service.SendGroup(r.Context(), c, v.Text, reply, quoted...)
 		if err != nil {
 			return nil, err
 		}

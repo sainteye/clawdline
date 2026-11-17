@@ -5057,16 +5057,23 @@ type ProjectAssistantGetResponse struct {
 }
 
 type ProjectAssistantGroup struct {
-	ConversationID     string                        `json:"conversation_id"`
-	CreatedAt          string                        `json:"created_at"`
-	Deleted            bool                          `json:"deleted"`
-	Key                ProjectAssistantBotKey        `json:"key"`
+	ConversationID string                 `json:"conversation_id"`
+	CreatedAt      string                 `json:"created_at"`
+	Deleted        bool                   `json:"deleted"`
+	Key            ProjectAssistantBotKey `json:"key"`
+
+	// Optional latest stored room line; omitted when unavailable within the existing
+	// read budget.
+	LastEntry          *ProjectAssistantRoomEntry    `json:"last_entry,omitempty"`
 	Members            []ProjectAssistantGroupMember `json:"members"`
 	MembershipRevision int64                         `json:"membership_revision"`
 	Name               string                        `json:"name"`
 	Project            ProjectAssistantProjectScope  `json:"project"`
-	UpdatedAt          string                        `json:"updated_at"`
-	Version            int64                         `json:"version"`
+
+	// Optional room state read with group metadata and the latest line.
+	Room      *ProjectAssistantRoomState `json:"room,omitempty"`
+	UpdatedAt string                     `json:"updated_at"`
+	Version   int64                      `json:"version"`
 }
 
 type ProjectAssistantGroupCreateRequest struct {
@@ -5103,13 +5110,16 @@ type ProjectAssistantGroupHistoryRequest struct {
 }
 
 type ProjectAssistantGroupHistoryResponse struct {
-	ContractVersion string                       `json:"contract_version"`
-	Group           ProjectAssistantGroup        `json:"group"`
-	HasMore         bool                         `json:"has_more"`
-	Lines           []ProjectAssistantRoomEntry  `json:"lines"`
-	NextBeforeSeq   int64                        `json:"next_before_seq"`
-	Room            ProjectAssistantRoomState    `json:"room"`
-	Source          ProjectAssistantSourceStatus `json:"source"`
+	// Current room tickets under actual member execution fences, from the same read
+	// snapshot.
+	Activity        []ProjectAssistantRoomActivity `json:"activity,omitempty"`
+	ContractVersion string                         `json:"contract_version"`
+	Group           ProjectAssistantGroup          `json:"group"`
+	HasMore         bool                           `json:"has_more"`
+	Lines           []ProjectAssistantRoomEntry    `json:"lines"`
+	NextBeforeSeq   int64                          `json:"next_before_seq"`
+	Room            ProjectAssistantRoomState      `json:"room"`
+	Source          ProjectAssistantSourceStatus   `json:"source"`
 }
 
 type ProjectAssistantGroupListRequest struct {
@@ -5134,9 +5144,13 @@ type ProjectAssistantGroupResponse struct {
 }
 
 type ProjectAssistantGroupSendRequest struct {
-	Command       ProjectAssistantCommand `json:"command"`
-	ReplyToAuthor *ProjectAssistantBotKey `json:"reply_to_author,omitempty"`
-	Text          string                  `json:"text"`
+	Command ProjectAssistantCommand `json:"command"`
+
+	// Exact original line in this room; the source derives its author and text.
+	// Omission preserves legacy command digests.
+	Quote         *ProjectAssistantRoomQuoteReference `json:"quote,omitempty"`
+	ReplyToAuthor *ProjectAssistantBotKey             `json:"reply_to_author,omitempty"`
+	Text          string                              `json:"text"`
 }
 
 type ProjectAssistantGroupSendResponse struct {
@@ -5931,12 +5945,36 @@ type ProjectAssistantRenameArtifactRequest struct {
 	Title            string                  `json:"title"`
 }
 
+type ProjectAssistantRoomActivity struct {
+	Member ProjectAssistantBotKey    `json:"member"`
+	State  ProjectAssistantTurnState `json:"state"`
+	TurnID string                    `json:"turn_id"`
+}
+
 type ProjectAssistantRoomEntry struct {
-	Author        *ProjectAssistantBotKey `json:"author,omitempty"`
-	Kind          string                  `json:"kind"`
-	ReplyToAuthor *ProjectAssistantBotKey `json:"reply_to_author,omitempty"`
-	Seq           int64                   `json:"seq"`
-	Text          string                  `json:"text"`
+	// Source timestamp for new entries; old undated entries omit it.
+	At            string                     `json:"at,omitempty"`
+	Author        *ProjectAssistantBotKey    `json:"author,omitempty"`
+	Kind          string                     `json:"kind"`
+	Quote         *ProjectAssistantRoomQuote `json:"quote,omitempty"`
+	ReplyToAuthor *ProjectAssistantBotKey    `json:"reply_to_author,omitempty"`
+	Seq           int64                      `json:"seq"`
+	Text          string                     `json:"text"`
+}
+
+type ProjectAssistantRoomQuote struct {
+	Author *ProjectAssistantBotKey `json:"author,omitempty"`
+	Kind   string                  `json:"kind"`
+	Seq    int64                   `json:"seq"`
+	Text   string                  `json:"text"`
+
+	// The source excerpt exceeded the existing message byte budget; seq still
+	// identifies the complete original line.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+type ProjectAssistantRoomQuoteReference struct {
+	Seq int64 `json:"seq"`
 }
 
 type ProjectAssistantRoomState struct {

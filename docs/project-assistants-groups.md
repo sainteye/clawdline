@@ -1,12 +1,12 @@
 # Bot groups and team management
 
-Status: **API 76 transport, manager coordination and console implementation
-prepared; host integration and interactive UI acceptance remain pending.**
-The integration handoff includes the Host/SQLite wiring and its tests as a
-separate patch, because those paths belong to the integrating root. Scoped
-HTTP tests use real TCP, SQLite and a scripted provider. A task-private copy
-with the wiring patch also exercises the actual Host. Neither result proves
-that the running daemon or hosted console has been updated.
+Status: **The existing API 76 routes are wired through the Host. API 88 adds
+source-owned exact quotes, batch previews and consistent room activity;
+deployment and interactive acceptance of that extension remain pending.**
+Scoped tests cross the closed Cloud decoder, real TCP HTTP and SQLite with a
+scripted provider. These source tests do not prove that the running daemon
+or hosted console has been updated. GroupRoom layout, mention selection,
+member navigation and desktop/phone acceptance are separate work.
 
 The design follows Codync's group chat (`host/src/chat/group.rs`,
 `chat/group/rooms.rs`) and team management (`chat/manage.rs`), pinned at the
@@ -29,9 +29,8 @@ machine, in the same transaction as the write:
 - no member from another machine, no group as a member (no nesting), the
   group is not its own member, the list is not empty;
 - a hidden Bot is a valid member; a deleted Bot is not;
-- a duplicate or unknown member is refused. Codync drops them silently; here
-  the stored list is exactly what was asked for, so a replayed command cannot
-  mean something else.
+- duplicates are deduplicated in input order, as in Codync; an unknown member
+  is refused rather than silently dropped.
 
 Each member records the membership revision it joined at. Removing a member
 and adding it back gives it a new join revision, so anything asked of it
@@ -49,8 +48,8 @@ then refuses to start a room turn.
 
 The group tables (`project_assistant_group_*`, including the room's lines)
 are versioned on their own (`GroupSchemaVersion`, now 1), not by
-`pa.SchemaVersion`: folding them in would need a 3→4 feature migration and
-nothing in export or import needs a shared number. `app.InstallSchemas`
+`pa.SchemaVersion` (currently 11): the optional API 88 JSON fields need no
+physical database migration. `app.InstallSchemas`
 installs the feature schema and then the group tables; the group installer
 refuses to run before the feature schema exists.
 
@@ -157,6 +156,44 @@ can converge; the console hides them. A complete reply must fit the existing
 Cloud plaintext envelope. History keeps the newest whole lines that fit and
 continues before the oldest retained sequence; it never truncates a line. A
 single oversized line, or another oversized complete reply, is refused.
+
+### Exact replies and consistent read context (API 88)
+
+`group-send` optionally accepts `quote: {seq}`. The source resolves that
+positive sequence **inside the same room and write transaction** as the new
+message. Only a person line or member answer can be quoted. The client cannot
+supply the original author, text or another room. The resulting entry retains
+`quote: {seq, kind, author?, text, truncated?}` separately from the person's
+new text; a member quote also derives `reply_to_author`. A conflicting legacy
+author is refused. Mentions and the quoted author both count when selecting
+first-round speakers. A repeated command returns the original stored entry
+without another turn; changing its quote conflicts with the original command.
+Omitting `quote` preserves the previous canonical command digest.
+
+Quote excerpts reuse `MaxMessageBytes`, preserve valid UTF-8 and mark any
+truncation. The complete original line stays at the quoted sequence. The
+member prompt identifies this source-resolved quote independently and uses
+the existing `PeerLineRunes` budget. No new quote capacity or model call is
+introduced. Sources below API 88 retain ordinary API 76 group sends; the
+captured source client refuses exact quotes before transport on those sources.
+
+Group history obtains metadata, room epoch, lines and `activity` in one SQLite
+read transaction. Activity names actual accepted, queued, running or
+permission-waiting member turns whose current membership, room ticket and
+execution fence still hold. A group marked running alone does not identify
+which member works. Removed/rejoined members and stopped tickets cannot claim
+activity. The SQL projection reads compact turn and conversation metadata,
+not every member's full export or message history.
+
+Each list group may include `room` and `last_entry`, from one batch SQL query.
+The newest stored line supplies its author and optional `at`; newly written
+person and member lines record source time. Historical undated lines stay
+undated. Group `updated_at` remains metadata time and is not last-message
+time. SQL lengths limit optional data loaded to the caller's existing Cloud
+read budget. HTTP then fits optional encoded fields into the actual existing
+plaintext reply envelope. An oversized preview is omitted while base metadata
+and other fitting previews remain readable; no per-room history fanout or
+invented continuation is added.
 
 `GroupPublication` captures and rechecks the exact human grant after JSON
 encoding. A revoked or replaced grant cannot publish an earlier read. The

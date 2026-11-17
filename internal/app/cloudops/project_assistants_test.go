@@ -299,7 +299,7 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				missing := cloneBody(base)
 				delete(missing, key)
 				// Optional picture/reply targets may be absent; null still is not.
-				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && key == "reply_to_author" || row.Op == "project-assistants.login-profile" && key == "kind" || row.Op == "project-assistants.login-secret" && key == "kind"
+				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && (key == "reply_to_author" || key == "quote") || row.Op == "project-assistants.login-profile" && key == "kind" || row.Op == "project-assistants.login-secret" && key == "kind"
 				if !optional {
 					mutations = append(mutations, missing)
 				}
@@ -331,13 +331,20 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				changed["command"].(map[string]any)["credential"] = "forged"
 				mutations = append(mutations, changed)
 			}
-			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq"} {
+			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq"} {
 				if _, present := base.genLookup(path); !present {
 					continue
 				}
 				for _, value := range []any{json.Number("1.1"), json.Number("1e0"), json.Number("-1"), json.Number("9007199254740992"), "1", nil} {
 					changed := cloneBody(base)
 					setProjectAssistantField(changed, path, value)
+					mutations = append(mutations, changed)
+				}
+			}
+			if row.Op == "project-assistants.group-send" {
+				for _, quote := range []any{map[string]any{"seq": 0}, map[string]any{"seq": 1, "text": "forged"}, map[string]any{"seq": 1, "author": map[string]any{"machine_id": "mac-01", "bot_id": "other"}}} {
+					changed := cloneBody(base)
+					changed["quote"] = quote
 					mutations = append(mutations, changed)
 				}
 			}

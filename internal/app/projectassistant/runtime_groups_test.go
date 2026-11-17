@@ -265,6 +265,37 @@ func TestRoomTurnRunsEachMemberInItsOwnConversation(t *testing.T) {
 	}
 }
 
+func TestExactRoomQuoteReachesTheMemberWithoutChangingUserText(t *testing.T) {
+	h := newRoomHarness(t, "Alice", "Bob")
+	alice, bob := h.members[0], h.members[1]
+	g := h.group(t, "g", alice, bob)
+	h.peer.reply("a", "Synthetic original finding")
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "source"), "@Alice give one finding", pa.BotKey{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	awaitRoom(t, "source member answer", func() bool { return len(h.lines(t, g)) == 2 })
+	h.driver.Idle()
+	original := h.lines(t, g)[1]
+	h.peer.reply("a", "(pass)")
+	entry, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "quote"), "Please explain this finding", pa.BotKey{}, nil, original.Seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitRoom(t, "quoted member turn", func() bool {
+		turns := h.roomTurns(t, alice)
+		return len(turns) == 2 && terminal(turns[1].State)
+	})
+	h.driver.Idle()
+	prompts := h.peer.asked("a")
+	want := `User: [Clawdline: this replies to Alice's message: "Synthetic original finding"] Please explain this finding`
+	if len(prompts) != 2 || !strings.Contains(prompts[1], want) || entry.Text != "Please explain this finding" || entry.Quote == nil || entry.Quote.Seq != original.Seq || entry.Quote.Author != alice.Key {
+		t.Fatalf("trusted quote was lost or merged into user text: entry=%+v prompts=%q", entry, prompts)
+	}
+	if len(h.peer.asked("b")) != 0 {
+		t.Fatal("a quote without a mention asked an unrelated member")
+	}
+}
+
 // Refusals: a ticket for another member's fence, a member that was deleted,
 // and a ticket the room superseded, also after reopening the database.
 func TestRoomTicketsRefuseOtherFencesDeletedMembersAndStaleEpochs(t *testing.T) {

@@ -40,9 +40,10 @@ type GroupHistoryQuery struct {
 }
 
 type GroupHistoryPage struct {
-	Group pa.Group
-	Room  pa.RoomState
-	Lines []pa.RoomEntry
+	Group    pa.Group
+	Room     pa.RoomState
+	Lines    []pa.RoomEntry
+	Activity []pa.RoomActivity
 }
 
 func (s *Service) groups() (*GroupRooms, *RoomDriver, error) {
@@ -165,7 +166,7 @@ func (s *Service) StopGroup(ctx context.Context, key pa.BotKey) (GroupStop, erro
 
 // SendGroup is the person's message into the room. The authority is checked
 // again after the room read and immediately before the write.
-func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, replyToAuthor pa.BotKey) (pa.RoomEntry, RoomStep, error) {
+func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
 	_, driver, err := s.groups()
 	if err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
@@ -181,7 +182,7 @@ func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, repl
 		_, e := s.authorizeEffect(ctx, c.Key, true, a)
 		return e
 	}
-	return driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check)
+	return driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check, quoted...)
 }
 
 // GroupHistory reads the room with the person's read authority for the
@@ -200,16 +201,21 @@ func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupH
 	if q.BeforeSeq < 0 {
 		return GroupHistoryPage{}, serviceFailure(pa.Invalid, "before_seq")
 	}
-	g, err := rooms.store.Group(ctx, q.Key)
+	return rooms.store.History(ctx, q.Key, q.BeforeSeq, q.PageSize)
+}
+
+func (s *Service) GroupPreviews(ctx context.Context, machine string, byteBudget int) ([]pa.GroupPreview, error) {
+	rooms, _, err := s.groups()
 	if err != nil {
-		return GroupHistoryPage{}, err
+		return nil, err
 	}
-	st, err := rooms.store.Room(ctx, q.Key)
-	if err != nil {
-		return GroupHistoryPage{}, err
+	if _, err = s.authorize(ctx, pa.BotKey{MachineID: machine, BotID: "groups"}, false); err != nil {
+		return nil, err
 	}
-	lines, err := rooms.store.LinesBefore(ctx, q.Key, q.BeforeSeq, q.PageSize)
-	return GroupHistoryPage{Group: g, Room: st, Lines: lines}, err
+	if byteBudget < 1 {
+		return nil, serviceFailure(pa.Invalid, "group_preview_bytes")
+	}
+	return rooms.store.GroupPreviews(ctx, machine, byteBudget)
 }
 
 // Groups lists one machine's groups, deleted ones included (tombstones let

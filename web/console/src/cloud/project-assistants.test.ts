@@ -94,6 +94,34 @@ const make = (transport: AssistantFetch, first = grant()) => {
   const source = new ProjectAssistantSourceClient(first,transport,() => current)
   return {source,setGrant(next: AssistantGrant | null) {current = next}}
 }
+test("exact group quotes require API88 without disabling plain groups on API76",async()=>{
+  const sent: {path:string;body:unknown}[]=[]
+  const transport:AssistantFetch=async(path,init)=>{
+    if(init?.method!=="GET")sent.push({path,body:JSON.parse(String(init?.body))})
+    return Response.json(path.endsWith("/status")?sourceStatus():{})
+  }
+  const plain:W.ProjectAssistantGroupSendRequest={command:command(key,"send","stable-group-send"),text:"Synthetic reply"}
+  const quoted:W.ProjectAssistantGroupSendRequest={...plain,quote:{seq:3}}
+  const old=make(transport,{...grant(),apiLevel:87}).source
+  await old.status(signal())
+  assert.equal(old.canGroupContext(),false)
+  await assert.rejects(old.sendGroup(quoted,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.equal(sent.length,0,"unsupported quotes must be refused before transport")
+  const fresh=make(transport,{...grant(),apiLevel:88}).source
+  await fresh.status(signal());assert.equal(fresh.canGroupContext(),true)
+  await fresh.sendGroup(quoted,signal())
+  assert.deepEqual(sent[0].body,quoted)
+  const carried=assistantRelayRequest(sent[0].path,{method:"POST",body:JSON.stringify(quoted),headers:{"Idempotency-Key":quoted.command.idempotency_key}})
+  assert.equal(carried.word,"project-assistants.group-send")
+  assert.deepEqual(carried.fields,quoted)
+  for(const seq of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1]){
+    await assert.rejects(fresh.sendGroup({...quoted,quote:{seq}},signal()),e=>errorCode(e)==="pa_invalid")
+  }
+  assert.equal(sent.length,1)
+  const legacy=make(transport,{...grant(),apiLevel:76}).source
+  await legacy.status(signal());await legacy.sendGroup(plain,signal())
+  assert.deepEqual(sent[1].body,plain)
+})
 test("view rejects raw truthy Source flags before a captured writable grant can coerce them",async()=>{
   for(const writable of [true,false])for(const field of ["readable","writable","fresh"]){
     const source=sourceStatus().sources[0]

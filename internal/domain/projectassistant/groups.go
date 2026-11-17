@@ -519,11 +519,36 @@ const (
 type RoomEntry struct {
 	Seq  int64         `json:"seq"`
 	Kind RoomEntryKind `json:"kind"`
+	At   time.Time     `json:"at,omitzero"`
 	// Author is the member for a member entry; zero for the person.
 	Author BotKey `json:"author,omitzero"`
 	Text   string `json:"text"`
 	// ReplyToAuthor is the stored author of the message the person quoted.
 	ReplyToAuthor BotKey `json:"reply_to_author,omitzero"`
+	// Quote is captured from this room's stored line by the Host. It is not
+	// supplied by the client and is kept apart from the person's own text.
+	Quote *RoomQuote `json:"quote,omitempty"`
+}
+
+type RoomQuote struct {
+	Seq       int64         `json:"seq"`
+	Kind      RoomEntryKind `json:"kind"`
+	Author    BotKey        `json:"author,omitzero"`
+	Text      string        `json:"text"`
+	Truncated bool          `json:"truncated,omitempty"`
+}
+
+// GroupPreview is a read projection, never part of the group's write intent.
+type GroupPreview struct {
+	Group     Group
+	Room      *RoomState
+	LastEntry *RoomEntry
+}
+
+type RoomActivity struct {
+	Member BotKey    `json:"member"`
+	TurnID string    `json:"turn_id"`
+	State  TurnState `json:"state"`
 }
 
 // RoomSpeaker is a member as the room names it: its key and current name,
