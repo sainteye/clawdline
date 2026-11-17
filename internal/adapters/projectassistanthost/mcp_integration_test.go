@@ -104,6 +104,15 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 		case "session/prompt":
 			request("initialize", 1, map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]string{"name": "owned-go-peer", "version": "1"}})
 			request("notifications/initialized", nil, nil)
+			if os.Getenv("CLAWDLINE_REACTION_ONLY") == "1" {
+				check(call("react", map[string]any{"emoji": "👍"}), false)
+				check(call("react", map[string]any{"emoji": "🎉"}), false)
+				check(call("react", map[string]any{"emoji": "ok"}), true)
+				check(call("react", map[string]any{"emoji": "👍", "actor": "foreign"}), true)
+				check(call("react", map[string]any{"emoji": "👍", "message_id": "foreign"}), true)
+				write(f.ID, map[string]string{"stopReason": "end_turn"})
+				continue
+			}
 			message := map[string]any{"idempotency_key": "native-visible", "text": "One explicit MCP reply."}
 			check(call("send_message", message), false)
 			check(call("send_message", message), false)

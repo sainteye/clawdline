@@ -4804,10 +4804,11 @@ const (
 	ProjectAssistantEventKindSourceUpdated      ProjectAssistantEventKind = "source_updated"
 	ProjectAssistantEventKindFeatureDisabled    ProjectAssistantEventKind = "feature_disabled"
 	ProjectAssistantEventKindArtifactRenamed    ProjectAssistantEventKind = "artifact_renamed"
+	ProjectAssistantEventKindReactionsChanged   ProjectAssistantEventKind = "reactions_changed"
 )
 
 // ProjectAssistantEventKindValues is every value the contract allows, in contract order.
-var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled, ProjectAssistantEventKindArtifactRenamed}
+var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled, ProjectAssistantEventKindArtifactRenamed, ProjectAssistantEventKindReactionsChanged}
 
 // Durable source-local cursor, page size 1..256; expired cursor is
 // pa_cursor_expired and requires snapshot refresh.
@@ -5371,18 +5372,19 @@ type ProjectAssistantMemoryWriteRequest struct {
 }
 
 type ProjectAssistantMessage struct {
-	At             string                       `json:"at"`
-	Attachments    []ProjectAssistantAttachment `json:"attachments,omitempty"`
-	Exchange       *ProjectAssistantExchange    `json:"exchange,omitempty"`
-	Fence          ProjectAssistantFence        `json:"fence"`
-	Files          []ProjectAssistantInputFile  `json:"files,omitempty"`
-	ID             string                       `json:"id"`
-	Kind           ProjectAssistantMessageKind  `json:"kind"`
-	Output         *ProjectAssistantOutput      `json:"output,omitempty"`
-	QuoteMessageID string                       `json:"quote_message_id"`
-	Seq            int64                        `json:"seq"`
-	Text           string                       `json:"text"`
-	TurnID         string                       `json:"turn_id"`
+	At             string                          `json:"at"`
+	Attachments    []ProjectAssistantAttachment    `json:"attachments,omitempty"`
+	Exchange       *ProjectAssistantExchange       `json:"exchange,omitempty"`
+	Fence          ProjectAssistantFence           `json:"fence"`
+	Files          []ProjectAssistantInputFile     `json:"files,omitempty"`
+	ID             string                          `json:"id"`
+	Kind           ProjectAssistantMessageKind     `json:"kind"`
+	Output         *ProjectAssistantOutput         `json:"output,omitempty"`
+	QuoteMessageID string                          `json:"quote_message_id"`
+	Reactions      []ProjectAssistantReactionActor `json:"reactions,omitempty"`
+	Seq            int64                           `json:"seq"`
+	Text           string                          `json:"text"`
+	TurnID         string                          `json:"turn_id"`
 }
 
 type ProjectAssistantMessageKind string
@@ -5491,10 +5493,11 @@ const (
 	ProjectAssistantOperationLoginProfile        ProjectAssistantOperation = "login-profile"
 	ProjectAssistantOperationConnectorCredential ProjectAssistantOperation = "connector-credential"
 	ProjectAssistantOperationNetworkSettings     ProjectAssistantOperation = "network-settings"
+	ProjectAssistantOperationReact               ProjectAssistantOperation = "react"
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential, ProjectAssistantOperationNetworkSettings}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential, ProjectAssistantOperationNetworkSettings, ProjectAssistantOperationReact}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`
@@ -5685,6 +5688,26 @@ type ProjectAssistantProjectsResponse struct {
 	NextCursor      string                          `json:"next_cursor"`
 	Revision        string                          `json:"revision"`
 	Source          ProjectAssistantSourceStatus    `json:"source"`
+}
+
+type ProjectAssistantReactRequest struct {
+	Command          ProjectAssistantCommand `json:"command"`
+	Emoji            string                  `json:"emoji"`
+	ExpectedRevision int64                   `json:"expected_revision"`
+	Fence            ProjectAssistantFence   `json:"fence"`
+	MessageID        string                  `json:"message_id"`
+	Present          bool                    `json:"present"`
+}
+
+type ProjectAssistantReactionActor struct {
+	Appearance *ProjectAssistantAppearance `json:"appearance,omitempty"`
+	Bot        *ProjectAssistantBotKey     `json:"bot,omitempty"`
+	Emojis     []string                    `json:"emojis"`
+	ID         string                      `json:"id"`
+	Kind       string                      `json:"kind"`
+	Name       string                      `json:"name"`
+	Own        bool                        `json:"own,omitempty"`
+	Revision   int64                       `json:"revision"`
 }
 
 // reader_id is the authenticated Cloud principal, shared across its devices.

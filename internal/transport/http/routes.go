@@ -29,7 +29,7 @@ import (
 // Layered Bot memory and native configuration discovery arrive at level 79.
 // Managed task-resource inspection, planning and guarded execution arrive at level 80.
 // Per-Bot network settings management arrives at level 84.
-const APILevel = 84
+const APILevel = 85
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

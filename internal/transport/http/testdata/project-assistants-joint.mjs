@@ -16,8 +16,8 @@ lines.on("line",line=>{const message=JSON.parse(line),resolve=pending.get(messag
 const exchange=frame=>new Promise(resolve=>{const id=++sequence;pending.set(id,resolve);process.stdout.write(JSON.stringify({id,...frame})+"\n")})
 const boot=await exchange({kind:"init"}),trace=[],checks=[],mutants=[]
 const words=Object.keys(CARRIED)
-assert.equal(words.length,298)
-assert.deepEqual(words.filter(word=>word.startsWith("project-assistants.")).sort(),["network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","input","upload","send-files","output","attachment","send-pictures","status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","observed","forget","memory","view","delete","visibility","rules","send-now","rule-remove","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook"].map(word=>"project-assistants."+word).sort())
+assert.equal(words.length,299)
+assert.deepEqual(words.filter(word=>word.startsWith("project-assistants.")).sort(),["network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","input","upload","send-files","output","attachment","send-pictures","status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","react","observed","forget","memory","view","delete","visibility","rules","send-now","rule-remove","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook"].map(word=>"project-assistants."+word).sort())
 const signal=()=>new AbortController().signal
 const request=(name,mode="snapshot",extra={})=>({key:boot.fixtures[name].key,conversation_id:boot.fixtures[name].conversation_id,mode,source_epoch:"",cursor:"",after_seq:0,page_size:100,...extra})
 const scope=name=>({...boot.fixtures[name],conversation_id:boot.fixtures[name].conversation_id})
@@ -40,6 +40,14 @@ function sourceFor(name,sender="owner",changes={},advertised=words){
 }
 const actual=sourceFor("main"),q=request("main","snapshot",{page_size:3})
 await actual.source.status(signal())
+assert.equal(actual.source.canReactions(),false,"an additive advertised word must not enable reactions on API61")
+const modernReaction=sourceFor("main","owner",{apiLevel:85})
+assert.equal(modernReaction.source.canReactions(),false,"reaction authority requires a fresh source status")
+await modernReaction.source.status(signal())
+assert.equal(modernReaction.source.canReactions(),true)
+const readonlyReaction=sourceFor("main","reader",{apiLevel:85})
+await readonlyReaction.source.status(signal())
+assert.equal(readonlyReaction.source.canReactions(),false,"read-only authority cannot react")
 const snapshot=await actual.source.view(q,signal())
 readView(snapshot,q,scope("main"))
 assert.equal(snapshot.head.current_fence.generation,2)

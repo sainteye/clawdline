@@ -120,6 +120,9 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			err = output.check(r.Context())
 		}
 		if err != nil {
+			if output.outcomeUnknown {
+				err = paHTTPFailure(pa.OutcomeUnknown, "reaction_publication")
+			}
 			paWriteHTTPFailure(w, err)
 			return
 		}
@@ -231,7 +234,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -368,6 +371,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 				return nil, err
 			}
 		}
+	}
+	if route.action == "react" {
+		return h.react(w, r, route)
 	}
 	if route.action == "network-settings" {
 		return h.networkSettings(w, r, route)

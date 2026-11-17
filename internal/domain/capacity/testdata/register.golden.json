@@ -1980,6 +1980,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.human_reactions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxHumanReactions"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.input_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2537,6 +2557,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotPromptMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.reaction_emoji_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxReactionEmojiBytes"
     ]
   },
   {

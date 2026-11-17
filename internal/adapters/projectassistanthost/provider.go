@@ -60,6 +60,7 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	react         func(context.Context, string, string) (pa.Receipt, error)
 	network       func(context.Context, app.NetworkToolRequest) (network.Response, error)
 	extension     func(context.Context, pa.ExtensionRef) error
 	teamAvailable func(context.Context) error
@@ -77,6 +78,13 @@ type NativeWork struct {
 
 	browserStatus  func(context.Context) (app.BrowserStatus, error)
 	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
+}
+
+func (w NativeWork) React(ctx context.Context, emoji, to string) (pa.Receipt, error) {
+	if w.react == nil {
+		return pa.Receipt{}, failure(pa.Unsupported, "reactions")
+	}
+	return w.react(ctx, emoji, to)
 }
 
 func (w NativeWork) Routines(ctx context.Context, q app.RoutineRequest) (app.RoutineResult, error) {
@@ -421,6 +429,41 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
+	tools.react = func(ctx context.Context, emoji, to string) (pa.Receipt, error) {
+		if (turn.Origin != pa.UserOrigin && turn.Origin != "") || turn.Room != nil || turn.Network != nil || to != "" {
+			return pa.Receipt{}, failure(pa.ScopeDenied, "reaction_origin")
+		}
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		defer cancel()
+		if _, e = pa.ReactionEmoji(emoji); e != nil {
+			return pa.Receipt{}, e
+		}
+		if e = journal(ctx, "react"); e != nil {
+			return pa.Receipt{}, e
+		}
+		// Source policy and binding are checked again after the pre-effect journal.
+		_, done, e := bound(ctx)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		done()
+		id := "native-react-" + turn.ID + "-" + strconv.FormatUint(invocation.Add(1), 10)
+		hash := sha256.Sum256([]byte(emoji))
+		result, e := h.store.React(ctx, app.ReactionWrite{ReactionRequest: app.ReactionRequest{Command: pa.Command{Key: q.Bot.Key, Operation: pa.ReactOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}, Fence: q.Binding.Fence, MessageID: turn.MessageID, Emoji: emoji, Present: true}, Actor: pa.ReactionActor{ID: "bot-" + q.Bot.Key.MachineID + "-" + q.Bot.Key.BotID, Kind: "bot", Bot: &q.Bot.Key, Name: q.Bot.Name}, NativeTurnID: turn.ID, NativeBot: &q.Bot, ReceiptID: h.o.ID(), EventID: h.o.ID()})
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		_, done, e = bound(ctx)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		done()
+		return result, nil
+	}
+
 	tools.network = func(ctx context.Context, request app.NetworkToolRequest) (network.Response, error) {
 		if pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
 			return network.Response{}, failure(pa.ScopeDenied, "network_peer_tools")

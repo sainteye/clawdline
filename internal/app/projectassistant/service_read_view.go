@@ -95,5 +95,16 @@ func (s *Service) View(ctx context.Context, q pa.ReadViewRequest) (ReadViewResul
 	if err = check(ctx); err != nil {
 		return ReadViewResult{}, err
 	}
+	if view.Snapshot != nil {
+		for i := range view.Snapshot.QueuedMessages {
+			personalizeReaction(&view.Snapshot.QueuedMessages[i], a.ReaderID)
+		}
+	}
+	for i := range view.Items {
+		personalizeReaction(view.Items[i].Message, a.ReaderID)
+		if e := view.Items[i].Event; e != nil {
+			personalizeReaction(e.Message, a.ReaderID)
+		}
+	}
 	return ReadViewResult{View: view, Source: a.Source, check: check}, nil
 }

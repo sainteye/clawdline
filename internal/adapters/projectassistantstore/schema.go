@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -51,6 +51,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 	}
 	for _, statement := range []string{
 		networkSettingsSchema,
+		reactionsSchema,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_holds(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,scope TEXT NOT NULL,revision INTEGER NOT NULL,id TEXT NOT NULL,PRIMARY KEY(source,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_credentials(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,id TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(source,bot,connector))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_login_kinds (source TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(source,id))`,

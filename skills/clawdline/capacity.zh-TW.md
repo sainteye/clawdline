@@ -104,6 +104,7 @@
 | `bots.hook_poll_seconds` | 5 | `seconds` | `refuse` | `diagnostics` | — |
 | `bots.hook_response_bytes` | 131072 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.hook_revision` | 9007199254740991 | `rows` | `refuse` | `diagnostics` | — |
+| `bots.human_reactions` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -132,6 +133,7 @@
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.reaction_emoji_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13121,
-  "riskKeys": 5683,
-  "nonRiskCount": 7438,
+  "englishContentKeys": 13145,
+  "riskKeys": 5691,
+  "nonRiskCount": 7454,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 666,
+      "count": 668,
       "sources": [
         null
       ],
@@ -578,6 +578,7 @@
         "capacityRow.bots.hook_poll_seconds.what",
         "capacityRow.bots.hook_response_bytes.what",
         "capacityRow.bots.hook_revision.what",
+        "capacityRow.bots.human_reactions.what",
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",
@@ -601,6 +602,7 @@
         "capacityRow.bots.permission_action_bytes.full",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.prompt_ms.what",
+        "capacityRow.bots.reaction_emoji_bytes.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.review_hops.what",
         "capacityRow.bots.review_pending.what",
@@ -5897,11 +5899,12 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 323,
+      "count": 337,
       "sources": [
         null
       ],
       "keys": [
+        "projectAssistants.addReaction",
         "projectAssistants.agent",
         "projectAssistants.agentTooOld",
         "projectAssistants.allBots",
@@ -5917,6 +5920,7 @@
         "projectAssistants.attachPicture",
         "projectAssistants.attachedFile",
         "projectAssistants.back",
+        "projectAssistants.botInformation",
         "projectAssistants.botNotify",
         "projectAssistants.bots",
         "projectAssistants.cancel",
@@ -5925,7 +5929,9 @@
         "projectAssistants.checkSend",
         "projectAssistants.checkingSend",
         "projectAssistants.chooseProject",
+        "projectAssistants.chooseReaction",
         "projectAssistants.close",
+        "projectAssistants.closeInformation",
         "projectAssistants.collapse",
         "projectAssistants.compose",
         "projectAssistants.connectorSubmit",
@@ -5942,6 +5948,7 @@
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
+        "projectAssistants.editInformation",
         "projectAssistants.executing",
         "projectAssistants.export",
         "projectAssistants.extensionChanged",
@@ -6022,6 +6029,7 @@
         "projectAssistants.hidden",
         "projectAssistants.hiddenBots",
         "projectAssistants.hideBot",
+        "projectAssistants.infoDetails",
         "projectAssistants.inputLimits",
         "projectAssistants.instructions",
         "projectAssistants.interactive",
@@ -6083,6 +6091,7 @@
         "projectAssistants.offline",
         "projectAssistants.online",
         "projectAssistants.openingOutput",
+        "projectAssistants.otherReaction",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",
         "projectAssistants.permissionExecute",
@@ -6102,6 +6111,8 @@
         "projectAssistants.queued",
         "projectAssistants.quote",
         "projectAssistants.quoteMissing",
+        "projectAssistants.reactWith",
+        "projectAssistants.reactions",
         "projectAssistants.read",
         "projectAssistants.readMarked",
         "projectAssistants.readOnlySource",
@@ -6113,6 +6124,9 @@
         "projectAssistants.renameArtifactFailed",
         "projectAssistants.renamingArtifact",
         "projectAssistants.retry",
+        "projectAssistants.retryReaction",
+        "projectAssistants.roomEveryone",
+        "projectAssistants.roomTarget",
         "projectAssistants.rosterDropPin",
         "projectAssistants.rosterPin",
         "projectAssistants.rosterReorder",
@@ -6224,7 +6238,9 @@
         "projectAssistants.version",
         "projectAssistants.work",
         "projectAssistants.writingReply",
-        "projectAssistants.yes"
+        "projectAssistants.yes",
+        "projectAssistants.youReaction",
+        "projectAssistants.yourReaction"
       ]
     },
     {

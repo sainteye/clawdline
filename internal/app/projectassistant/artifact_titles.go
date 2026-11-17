@@ -25,6 +25,11 @@ func (x Export) DisplayMessages() []pa.Message {
 	out := make([]pa.Message, len(x.Messages))
 	for i, m := range x.Messages {
 		out[i] = DisplayArtifactMessage(m, x.ArtifactTitles)
+		for _, r := range x.Reactions {
+			if r.MessageID == m.ID {
+				out[i].Reactions = append(out[i].Reactions, r.Actor)
+			}
+		}
 	}
 	return out
 }

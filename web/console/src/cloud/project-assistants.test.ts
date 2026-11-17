@@ -322,7 +322,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -778,4 +778,12 @@ test("network settings keep API84, exact source routing and explicit false prefe
  await source.saveNetworkSettings(request,signal());const action=assistantRelayRequest(requests[1].path,requests[1].init);assert.equal(action.word,"project-assistants.network-settings-save");assert.deepEqual(action.fields,request);assert.deepEqual(JSON.parse(String(requests[1].init?.body)).patch,{offered_to_network:{enabled:false}});
  let calls=0;const old=make(async()=>{calls++;return Response.json({})},{...grant(),apiLevel:83}).source;await assert.rejects(old.networkSettings(key,"chat",signal()),e=>errorCode(e)==="pa_unsupported");assert.equal(calls,0);
  for(const suffix of ["&account_id=foreign","&conversation_id=other"]){assert.throws(()=>assistantRelayRequest(requests[0].path+suffix),e=>errorCode(e)==="pa_invalid")}
+});
+
+test("reaction requests preserve desired state, fixed identity and source API ceiling",async()=>{
+ const requests:{path:string;init?:RequestInit}[]=[];let live={...grant(),apiLevel:85};const source=new ProjectAssistantSourceClient(live,async(path,init)=>{requests.push({path,init});return Response.json(path.endsWith("/status")?sourceStatus():{})},()=>live);
+ await source.status(signal());assert.equal(source.canReactions(),true);const bot=viewWire().snapshot!.bot;
+ const q:W.ProjectAssistantReactRequest={command:command(bot.key,"react","fixed-reaction"),fence:{key:bot.key,project:bot.project,conversation_id:"chat",binding_id:"",generation:0},message_id:"message",emoji:"👍",present:true,expected_revision:0};
+ await source.react(q,signal());await source.react(q,signal());assert.equal(requests[1].path,requests[2].path);assert.equal(requests[1].init?.body,requests[2].init?.body);const routed=assistantRelayRequest(requests[1].path,requests[1].init);assert.equal(routed.word,"project-assistants.react");assert.deepEqual(routed.fields,q);
+ live={...live,apiLevel:84};assert.equal(source.canReactions(),false);await assert.rejects(source.react(q,signal()),e=>errorCode(e)==="pa_unsupported");assert.equal(requests.length,3)
 });

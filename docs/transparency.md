@@ -763,3 +763,5 @@ the English and Taiwan Traditional Chinese Bot-network explanations confirms
 that this corrects signature verification without broadening grants, scopes or
 injected instructions. Both native source orientations have focused local
 evidence; private Cloud wiring and destination acceptance remain pending.
+
+The owned Bot main-chat reaction tool and its current unsupported room boundary are documented in [Message reactions](project-assistants-reactions.md). It accepts only an emoji; Host captures the actual running actor and answered message.

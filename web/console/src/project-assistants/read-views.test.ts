@@ -210,3 +210,18 @@ test("artifact renames update earlier cards while stale rename events cannot dow
   const newer={...earlier,observed_event_seq:605,message:{...earlier.message!,output:{...earlier.message!.output!,name:"Later title",title_version:3}}}
   assert.equal(eventTimeline([newer],[{id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:604,event}]).find(r=>r.id==="earlier")?.message?.output?.name,"Later title")
 })
+
+test("reaction events preserve artifact titles, chips survive renames and unloaded targets stay unloaded",()=>{
+ const reaction:W.ProjectAssistantReactionActor={id:"human-reader",kind:"human",name:"",revision:1,emojis:["👍"],own:true}
+ const output:W.ProjectAssistantOutput={id:"publication",artifact_id:"artifact",name:"Renamed",bytes:0,sha256:"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",title_version:2}
+ const m={...message("published",1),output}
+ const wrap=(e:W.ProjectAssistantEvent):W.ProjectAssistantReadViewItem=>({id:e.id,kind:"event",anchor_message_seq:0,observed_event_seq:e.seq,event:e})
+ const react:W.ProjectAssistantEvent={id:"react",seq:603,version:"project-assistants.v1",fence:m.fence,at:m.at,kind:"reactions_changed",message:{...m,output:{...output,name:"Original",title_version:1},reactions:[reaction]}}
+ const reacted=eventTimeline([row(m)],[wrap(react)])
+ assert.equal(reacted[0].message?.output?.name,"Renamed");assert.deepEqual(reacted[0].message?.reactions,[reaction])
+ const rename:W.ProjectAssistantEvent={...react,id:"rename",seq:604,kind:"artifact_renamed",message:{...m,output:{...output,name:"Later",title_version:3}}}
+ const renamed=eventTimeline(reacted,[wrap(rename)])
+ assert.equal(renamed[0].message?.output?.name,"Later");assert.deepEqual(renamed[0].message?.reactions,[reaction])
+ assert.deepEqual(eventTimeline([], [wrap(react)]),[])
+ assert.equal(m.output.name,"Renamed")
+})

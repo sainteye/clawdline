@@ -1,0 +1,7 @@
+.pa-reactions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:12px}
+.pa-reaction,.pa-reaction-add,.pa-reaction-palette button{border:1px solid var(--border);border-radius:12px;background:var(--bg);color:inherit;padding:5px 9px;display:inline-flex;align-items:center;gap:5px}
+.pa-reaction-own{background:var(--surface);font-weight:600}
+.pa-reaction-palette{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+.pa-reaction-palette button{font-size:20px;min-width:44px;min-height:44px}
+.pa-reactions button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.pa-reactions p{flex-basis:100%;font-size:12px}

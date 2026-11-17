@@ -57,7 +57,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // Legacy exports retain their original facts and command identities. Restore
 // validates both versions identically; the next export uses the current schema.
 func restorableSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
@@ -153,6 +153,10 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 	}
 	if len(out.Groups) > 0 {
 		out.GroupSchemaVersion = GroupSchemaVersion
+	}
+	out.Reactions, err = exportReactions(ctx, tx, out.Messages)
+	if err != nil {
+		return out, err
 	}
 	return out, tx.Commit()
 }
@@ -311,6 +315,9 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	}
 	if n != 0 {
 		return failure(pa.IdempotencyConflict, "restore_bot")
+	}
+	if err = restoreReactions(ctx, tx, a, in.Reactions); err != nil {
+		return err
 	}
 	if err = persist(ctx, tx, a, 0); err != nil {
 		return err

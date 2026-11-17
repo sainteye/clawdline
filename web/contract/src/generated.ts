@@ -5600,8 +5600,9 @@ export type ProjectAssistantEventKind =
   | "source_updated"
   | "feature_disabled"
   | "artifact_renamed"
+  | "reactions_changed"
 
-export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled", "artifact_renamed"] as const
+export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled", "artifact_renamed", "reactions_changed"] as const
 
 /**
  * Durable source-local cursor, page size 1..256; expired cursor is
@@ -6194,6 +6195,7 @@ export interface ProjectAssistantMessage {
   kind: ProjectAssistantMessageKind
   output?: ProjectAssistantOutput
   quote_message_id: string
+  reactions?: ProjectAssistantReactionActor[]
   seq: number
   text: string
   turn_id: string
@@ -6297,8 +6299,9 @@ export type ProjectAssistantOperation =
   | "login-profile"
   | "connector-credential"
   | "network-settings"
+  | "react"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential", "network-settings"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential", "network-settings", "react"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string
@@ -6505,6 +6508,26 @@ export interface ProjectAssistantProjectsResponse {
   next_cursor: string
   revision: string
   source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantReactRequest {
+  command: ProjectAssistantCommand
+  emoji: string
+  expected_revision: number
+  fence: ProjectAssistantFence
+  message_id: string
+  present: boolean
+}
+
+export interface ProjectAssistantReactionActor {
+  appearance?: ProjectAssistantAppearance
+  bot?: ProjectAssistantBotKey
+  emojis: string[]
+  id: string
+  kind: string
+  name: string
+  own?: boolean
+  revision: number
 }
 
 /**
