@@ -711,6 +711,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/inventory"}, s.brokerInventory},
 		{Route{"*", "/v1/orchestrator/inflight"}, s.brokerInflight},
 		{Route{"*", "/v1/orchestrator/messages"}, s.brokerMessages},
+		{Route{"*", "/v1/orchestrator/session-boards"}, s.sessionBoardsRoute},
 		{Route{"*", "/v1/orchestrator/whoami"}, s.brokerWhoAmI},
 		{Route{"*", "/v1/orchestrator/codegraph/query"}, s.codegraphQueryRoute},
 		// What a run was: the message a person sent a session, which a relay of

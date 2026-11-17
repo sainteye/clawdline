@@ -1551,6 +1551,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-local", method: "POST", path: "/v1/cloud/direct/local-network",
 		body2: `{"enabled":true}`,
 	}, {
+		word: "session-boards.read",
+		body: map[string]any{"type": "session-boards.read", "session": machine, "request": "req-session-board-read",
+			"board": "board-one", "after": 4},
+		session: machine, name: "read:req-session-board-read", method: "GET", path: "/v1/orchestrator/session-boards",
+		query: map[string]string{"board": "board-one", "after": "4"},
+	}, {
+		word: "session-boards.change",
+		body: map[string]any{"type": "session-boards.change", "session": machine, "request": "req-session-board-post",
+			"command": map[string]any{"action": "post", "board": "board-one", "text": "Evidence"}},
+		session: machine, name: "action:req-session-board-post", method: "POST", path: "/v1/orchestrator/session-boards",
+		body2: `{"action":"post","board":"board-one","text":"Evidence"}`,
+	}, {
 		// The one word this machine could serve and deliberately does not.
 		word: "dispatch",
 		body: map[string]any{"type": "dispatch", "session": machine, "request": "req-dispatch",

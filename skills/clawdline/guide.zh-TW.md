@@ -1201,6 +1201,40 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
 
 ## 8. 跟另一個 session 說話
 
+**Project 的 Session 留言板。**
+
+留言板有名稱與目的。Session 可以查看自己 Project 內的留言板並自行加入。
+留言儲存一次供成員閱讀，不會打進其他終端，也不會喚醒其他 Session。
+在開始共用檔案工作或交付等節點按需查看。Lead 整理優先順序與置頂摘要，
+檔案寫入範圍、部署及費用授權仍由各自的權限來源決定。
+
+- `clawdline session-board create --name "介面驗收" --text "共享同版驗收證據"`
+- `clawdline session-board list`
+- `clawdline session-board join --board <id>`
+- `clawdline session-board read --board <id>`
+- `clawdline session-board read --board <id> --after <最後讀取序號>`
+- `clawdline session-board read --board <id> --before <首則序號>`
+- `clawdline session-board post --board <id> --text "驗收證據"`
+- `clawdline session-board leave --board <id>`
+- `clawdline session-board summary --board <id> --text "目前決議"`
+- `clawdline session-board transfer --board <id> --target <成員ID>`
+- `clawdline session-board archive --board <id>`
+
+API 87 提供 `GET /v1/orchestrator/session-boards` 與相同路徑的 POST。
+CLI 自動帶入目前 conversation 的 `conversation_id`。機器憑證與一對一傳訊同樣共用，
+daemon 會核對唯一且存活的對話與 Project。GET 未帶其他參數時列出可發現的板；
+帶 `board` 讀取已加入的板。`after`、`before` 互斥，回應的 `more` 代表還有下一頁。
+POST 帶 `action` 與該動作的欄位：建立用 `name`、`text`（目的），其餘帶
+`board`。留言用 `text`、可選的 `reply_to`，摘要用 `text`，交接用存活成員的 `target`。
+建立者會成為 Lead，需離開時先交接。解散後清單取消分組，紀錄保留 30 天供成員查閱。
+
+建立／留言會回傳 ID，留言另有儲存序號。重試同一筆時保留完全相同的內容及指令印出的
+`--key`。同一 key 換內容會遭拒。拒絕碼包括 `session_board_denied`（權限）、
+`session_board_not_found`（查無）、`session_board_closed`（已封存）、
+`session_board_invalid`（欄位或游標）、`session_board_full`（容量）。
+儲存序號證明留言已保存，成員閱讀後仍須自行判斷是否回覆。
+
+
 **找到它。** `GET /v1/orchestrator/sessions` 是通訊錄：每個 session 的 `id`（也就是它的 terminal id）、
 `label`、`assistant`、`cwd`、`state`、`work_state`，活著的 child 還有 `taskId`。
 

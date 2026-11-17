@@ -11,6 +11,15 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"session.message_board_boards":          func() capacity.Reading { return s.sessionBoardOccupancy("boards") },
+		"session.message_board_members":         func() capacity.Reading { return s.sessionBoardOccupancy("members") },
+		"session.message_board_posts":           func() capacity.Reading { return s.sessionBoardOccupancy("posts") },
+		"session.message_board_page":            sessionBoardPolicy,
+		"session.message_board_name_bytes":      sessionBoardPolicy,
+		"session.message_board_text_bytes":      sessionBoardPolicy,
+		"session.message_board_key_bytes":       sessionBoardPolicy,
+		"session.message_board_archive_seconds": sessionBoardPolicy,
+
 		"session.recap_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(s.recaps.Rows())}
 		},
@@ -175,4 +184,18 @@ func (s *Server) sessionCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn transcript rows read for naming; released with the turn"}
 		},
 	}
+}
+
+func sessionBoardPolicy() capacity.Reading {
+	return capacity.Reading{Known: true, Note: "Session message board request and retention policy"}
+}
+
+func (s *Server) sessionBoardOccupancy(kind string) capacity.Reading {
+	if s.store == nil {
+		return capacity.Reading{Note: "Session message board store unavailable"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	n, err := s.store.SessionBoardOccupancy(ctx, kind)
+	return countedCapacityReading(n, err, "machine total for boards, highest occupancy of one board for members and posts")
 }

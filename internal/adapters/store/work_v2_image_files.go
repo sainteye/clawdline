@@ -310,6 +310,7 @@ func (s *Store) noteSweep(now time.Time, removed int) {
 // ends, sweeps reference-image files no row names and prunes events again.
 // Both are the store letting go of what nothing reads; one clock serves both.
 func (s *Store) MaintainEvery(ctx context.Context, every time.Duration) {
+	s.maintainSessionBoards(ctx, time.Now())
 	if _, err := s.PruneEvents(ctx, time.Now()); err != nil && ctx.Err() == nil {
 		log.Printf("store: the events prune failed: %v", err)
 	}
@@ -320,6 +321,7 @@ func (s *Store) MaintainEvery(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
+			s.maintainSessionBoards(ctx, now)
 			if _, err := s.SweepReferenceImages(ctx, now); err != nil && ctx.Err() == nil {
 				log.Printf("store: the reference-image sweep failed: %v", err)
 			}
@@ -569,4 +571,10 @@ func openReferenceImages(db *sql.DB, files *imageFiles) error {
 		log.Printf("store: the database keeps the space the pictures took: VACUUM: %v", move.VacuumErr)
 	}
 	return nil
+}
+
+func (s *Store) maintainSessionBoards(ctx context.Context, now time.Time) {
+	if err := s.pruneSessionBoards(ctx, now); err != nil && ctx.Err() == nil {
+		log.Printf("store: the session board prune failed: %v", err)
+	}
 }

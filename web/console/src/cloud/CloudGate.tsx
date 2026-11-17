@@ -1,3 +1,4 @@
+import { cloudSessionBoardSource } from "../session/SessionBoards.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { cloudPluginSources } from "../view-plugins/sources.js"
 import { supportWord } from "../support/words.js"
@@ -1890,6 +1891,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // this tab chose, which is the same machine until a fleet Session repoints
   // the reader.
   const named = quickMachines.find((machine) => machine.id === reading) ?? chosen
+  const sessionBoardsFor = (id: string) => {
+    const machine = quickMachines.find(row => row.id === id)
+    const c = client.current
+    if (!c?.account || machine?.pairing !== "paired" ||
+      !c.machineDescriptor?.(id)?.machine?.commands?.includes("session-boards.read")) return undefined
+    return cloudSessionBoardSource(id, c.account, machine.operationAllowed === true, () => client.current)
+  }
+
   // Which machine this is and whether it answers, in one control: the
   // console's connection light is handed in (`App`'s `aside`) and drawn as the
   // dot before the name, so the phone's one header line keeps its room for the
@@ -2244,6 +2253,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             onFleetDetailPending={noteRowPending}
             quotaMachineName={readingRow?.name || readingRow?.label}
             fleetReaderMachine={readerMachine}
+            sessionBoardSource={fleetScope ? undefined : sessionBoardsFor(readerMachine ?? chosen.id)}
             onFleetClose={closeFleetTarget}
             fleetActionIntent={fleetActionIntent}
             onFleetActionIntentHandled={() => setFleetActionIntent(null)}
@@ -2259,6 +2269,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               seenAt: machineIdentityFacts(machine).seenAt,
             }))}
             source={liveSessionSource}
+            sessionBoardSource={sessionBoardsFor}
             titleRevision={titleRevision}
             confirmedTitles={confirmedTitles.current}
             target={fleetTarget}

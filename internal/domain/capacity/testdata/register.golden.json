@@ -14330,6 +14330,166 @@
   },
   {
     "Register": "daemon",
+    "Name": "session.message_board_archive_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 2592000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxArchiveDays"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_boards",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxBoards"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_key_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 128,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxKey"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_members",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxMembers"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_name_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxName"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_page",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 24,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxPageRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_posts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxPosts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "session.message_board_text_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/sessionboard.MaxText"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "session.no_movement_seconds",
     "Class": "cache",
     "Unit": "seconds",

@@ -31,7 +31,8 @@ import (
 // Per-Bot network settings management arrives at level 84.
 // Main-chat reactions arrive at API 85 with Bot schema 11.
 // Local Bot consent synchronization arrives at API 86 without a schema change.
-const APILevel = 86
+// Project Session message boards arrive at level 87.
+const APILevel = 87
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

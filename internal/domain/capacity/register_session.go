@@ -1,9 +1,19 @@
 package capacity
 
+import sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
+
 // sessionBounds is every registered row named session.*, naming.*, schedule.*
 // and snippets.*.
 func sessionBounds() []Entry {
 	return []Entry{
+		{Name: "session.message_board_boards", Class: Buffer, Unit: Rows, Limit: sb.MaxBoards, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxBoards"}},
+		{Name: "session.message_board_members", Class: Buffer, Unit: Rows, Limit: sb.MaxMembers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxMembers"}},
+		{Name: "session.message_board_posts", Class: Buffer, Unit: Rows, Limit: sb.MaxPosts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxPosts"}},
+		{Name: "session.message_board_page", Class: Buffer, Unit: Rows, Limit: sb.MaxPageRows, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/sessionboard.MaxPageRows"}},
+		{Name: "session.message_board_name_bytes", Class: Buffer, Unit: Bytes, Limit: sb.MaxName, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxName"}},
+		{Name: "session.message_board_text_bytes", Class: Buffer, Unit: Bytes, Limit: sb.MaxText, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxText"}},
+		{Name: "session.message_board_key_bytes", Class: Buffer, Unit: Bytes, Limit: sb.MaxKey, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxKey"}},
+		{Name: "session.message_board_archive_seconds", Class: Cache, Unit: Seconds, Limit: sb.MaxArchiveDays * 86400, AtLimit: Expire, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/sessionboard.MaxArchiveDays"}},
 		{Name: "session.rotation_bytes", Class: Narrative, Unit: Bytes, Limit: 50 << 20,
 			AtLimit: Nothing, Deviation: "Reminder only; the person chooses a milestone handoff and provider files remain untouched.",
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
