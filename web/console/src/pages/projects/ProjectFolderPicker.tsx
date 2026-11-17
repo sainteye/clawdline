@@ -170,6 +170,9 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
       <div className="project-folder-search">
         <button type="button" className="project-folder-search-toggle" aria-expanded={searchOpen}
           aria-controls="project-folder-search-fields" onClick={() => { setSearchOpen(!searchOpen); setFind("") }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" />
+          </svg>
           {nextWord("folderSearchLabel")} <span aria-hidden="true">{searchOpen ? "▴" : "▾"}</span>
         </button>
         <div id="project-folder-search-fields" hidden={!searchOpen}>
