@@ -130,10 +130,43 @@ An explicit future task is a new decision, not evidence that an old effect faile
 
 ## Remaining integration surfaces
 
-The console routine editor still exposes only interval, once and cron controls.
-It needs event source/name/filter controls, a webhook key view/rotate action,
-separate waiting-follow-up presentation/cancellation, and retry wait state.
-The API/MCP path is implemented independently of these future UI controls.
+The human console now exposes event source/name/filter and webhook triggers
+alongside interval, once and cron. Event and key operations require source API75;
+older sources retain their calendar controls and never receive the new fields.
+Changing trigger kind clears incompatible fields. The editor and command-journal
+reader both enforce the closed typed filter rows, registered UTF-8 byte limits
+and duplicate-key refusal; source/backend validation remains authoritative.
+
+Key management is an explicit action on a saved hook routine. Opening its panel
+does not retrieve a key. Retrieve and confirmed replacement require current human
+interactive write authority and the complete machine/Bot/Project/conversation
+fence. A replacement saves the exact command before transport; an uncertain
+response or reload offers only explicit replay with the original command ID,
+expected revision and fence. The existing account/reader/Bot sessionStorage
+journal remains in use, preserving older uncertain calendar commands. Journals
+contain commands, never keys. Keys remain in the current mounted key panel;
+closing, hiding, losing write authority or changing source/account/Bot/Project
+clears or hides them. Late responses cannot publish into another source panel.
+Keys are not automatically copied, logged, exported or embedded in URLs. The
+returned relative path is labelled local, never a public Cloud address.
+
+Future enabled follow-ups with a source-reported next wake appear separately.
+History shows actual run source, delivery ID, safe retry count and not-before
+time when present. Unknown effects have an explicit warning and no retry button.
+There is no human follow-up cancellation endpoint or SourceClient command in the
+current wire. Root integration must add a human, authenticated counterpart to
+the native `cancel_follow_up` operation, with edit command receipts, exact fence,
+routine identity/revision and publication revalidation before adding a console
+cancel control. No invented cancellation request is sent by this implementation.
+
+Focused construction evidence includes Node cases for closed trigger shapes,
+exact uncertain-key replay/reload, source-scope changes, late-key rejection and
+API75/read-only/hidden gates. `TestProjectAssistantRoutineControlsSourceClientTCP`
+uses the production TypeScript SourceClient against authenticated TCP, the real
+Host and SQLite: save a filtered event, retrieve/rotate/replay, admit/dedupe a
+delivery and inspect a genuinely executed scripted-provider result. Provider
+execution is scripted; native/model/paid API counts are zero. This is construction
+verification, not browser, installed-app or production Cloud acceptance.
 
 The private Cloud repository must register host hook sets `{id,key,enabled}`,
 propagate changes/removals/rotation with a monotonically changing hook revision,

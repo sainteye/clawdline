@@ -16,6 +16,14 @@ test("a held routine action retains its exact identity and historical fence",()=
   assert.deepEqual(readRoutineIntent({getItem:()=>null},"journal",scope),{state:"none"})
 })
 
+test("event saves survive reload with only closed typed filters",()=>{
+  const value={action:"save",request:{...original.request,name:"Synthetic event",instruction:"Inspect it",timeout_seconds:3600,enabled:true,triggers:[{type:"event",seconds:0,at:0,expression:"",timeZone:"",source:"github",event:"issues.opened",filters:[{key:"messageContains",value:"synthetic"}]}]}}
+  assert.deepEqual(readRoutineIntent({getItem:()=>JSON.stringify(value)},"journal",scope),{state:"held",intent:value})
+  const polluted=structuredClone(value)
+  polluted.request.triggers[0].filters.push({key:"messageContains",value:"duplicate"})
+  assert.deepEqual(readRoutineIntent({getItem:()=>JSON.stringify(polluted)},"journal",scope),{state:"blocked"})
+})
+
 test("unreadable, unsupported and foreign routine commands stay blocked without changing storage",()=>{
   const variants=["",'{"action":"test","request":',"null","[]",JSON.stringify({...original,action:"future-action"}),JSON.stringify({...original,extra:"future-fact"})]
   for(const change of [
