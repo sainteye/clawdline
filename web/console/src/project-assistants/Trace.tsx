@@ -20,7 +20,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
       const trimmedFull = full?.text?.trim() ?? ""
-      const hasBody = trimmedFull.length > 0 && trimmedFull !== (info.text ?? "").trim() && trimmedFull !== info.label
+      const hasBody = !full || (trimmedFull.length > 0 && trimmedFull !== (info.text ?? "").trim() && trimmedFull !== info.label)
       const isOpen = !!openIds[row.id]
       return <div key={row.id} data-trace-id={row.id} className="pa-trace-row">
         {hasBody ? <button type="button" className="pa-trace-toggle" onClick={() => toggle(row.id, row)}>
