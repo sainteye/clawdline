@@ -1555,7 +1555,7 @@ export class RealtimeCopilotClient {
    * arrives and says something new, the call goes on with it.
    *
    * `switched`: the person moved the call to another Session (on screen or
-   * by turning it). The same happens for that Session at once, even after the
+   * by turning it). The same happens after existing speech falls quiet, even after the
    * person has spoken; before 2026-11-16 the live model was only told its
    * name and talked about it in generalities.
    */
@@ -1579,6 +1579,13 @@ export class RealtimeCopilotClient {
     const kept = row.recap?.text || row.delivered || ''
     const written = row.recap?.text ? String(recapFields(row.recap, now).recap_written ?? '') : ''
     const opened = switched || !this.personSpoke
+    // Session-wide commentary sent during speech can be swallowed by that
+    // response. Reuse the bounded transcript quiet window from list reports;
+    // a newer switch or replacement call wins while this one waits.
+    if (opened && (this.liveHeard.peek() || this.liveSaidAt && Date.now() - this.liveSaidAt < this.liveQuietMs)) {
+      await this.untilOpeningSaid(this.liveSaidAt || Date.now(), current)
+      if (!current()) return
+    }
     const noteAt = Date.now()
     if (opened) dc.send(JSON.stringify(liveNote('commentary', liveOpeningNote(row.label, kept, written, switched))))
     this.journal('tool', 'opening_summary', { args: JSON.stringify({ session_id: row.id }), answer: kept.slice(0, 1500) })

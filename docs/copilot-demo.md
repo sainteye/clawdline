@@ -102,6 +102,13 @@ loud ones, or a sample-to-sample jump no voice makes, is a break, and the take e
 where (`--allow-glitches` keeps it; `take.json` lists them as `glitches`). The take that broke up
 had eight; the clean takes had none to two. Record again when the load is lower.
 
+The tour's first tap waits for both named Sessions in the first batch's transcript,
+a sentence ending, and 800 ms of quiet on the actual remote audio track and transcript.
+A mid-sentence pause or the end of only one summary is insufficient. Once a latest-state
+note is sent, the recorder requires speech after that note and a finished turn; it no longer
+skips an unspoken note after eight seconds. A turn timeout fails the take instead of advancing.
+These are recording heuristics; review `take.json` and listen before accepting a film.
+
 After a Session is opened, the person waits for its latest state too (`latestNoteAt`): the
 call sends it only once the kept summary has been said, and the live model takes a few seconds to
 start on it, so a phone take on 2026-11-16 played the next line over it. With nothing new the call

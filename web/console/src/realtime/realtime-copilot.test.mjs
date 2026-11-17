@@ -918,6 +918,38 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   assert.ok(c.journalLines.some(l => l.text === 'switch_summary' && l.tool.outcome === 'failed' && /not on the Session list/.test(l.tool.answer)))
 })
 
+test('a Live screen switch waits for speech and only the newest Session opens', async () => {
+  const f = fixture(false)
+  f.c.live = true
+  f.c.liveQuietMs = 1500
+  f.c.livePollMs = 1
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const fresh = { text: 'Current work.', at: Math.floor(now / 1000), current: true }
+  f.c.toolDeps = () => ({ fetch: async () => Response.json({ sessions: [
+    { ...row, recap: fresh }, { ...row, id: '%8', label: 'Other work', recap: fresh },
+  ] }) })
+  const notes = () => f.sent.filter(e => e.type === 'session.commentary.append')
+  try {
+    f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'The first report is still being spoken.' })
+    const first = f.c.openFromOrigin(true)
+    for (let i = 0; i < 10; i++) await tick()
+    assert.equal(notes().length, 0, 'an opening must not be injected into ongoing speech')
+    f.c.focus = '%8'
+    const newest = f.c.openFromOrigin(true)
+    now += 1000
+    f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'The end of the report.' })
+    now += 1499
+    await new Promise(r => setTimeout(r, 5))
+    assert.equal(notes().length, 0, 'each speech delta restarts the quiet window')
+    now++
+    await Promise.all([first, newest])
+    assert.equal(notes().length, 1)
+    assert.match(notes()[0].content, /Other work/)
+  } finally { Date.now = realNow; f.c.dc.readyState = 'closed' }
+})
+
 test('a GPT-Live call switched to another Session says its summary at once and goes on with the latest one', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
