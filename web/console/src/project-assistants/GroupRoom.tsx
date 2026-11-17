@@ -40,8 +40,10 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   useLayoutEffect(()=>{setHost(anchor.current?.closest<HTMLElement>(".pa-shell")??null)},[])
   useLayoutEffect(()=>{
     if(!active||!host)return
+    const savedFocus=lastFocus.current
     const frame=requestAnimationFrame(()=>{
-      const target=lastFocus.current?.isConnected?lastFocus.current:composer.current
+      const usable=savedFocus?.isConnected&&!savedFocus.matches(":disabled")&&!savedFocus.closest("[hidden]")&&getComputedStyle(savedFocus).visibility!=="hidden"
+      const target=usable?savedFocus:membersOpen?membersPanel.current?.querySelector<HTMLElement>("button"):composer.current
       target?.focus({preventScroll:true})
       if(scroll.current)scroll.current.scrollTop=position.current.following?scroll.current.scrollHeight:position.current.top
     })
@@ -93,13 +95,11 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     followSnapshotRoster(()=>queue(),controller.signal,EventRefreshMs,document,window,{readOnEntry:true})
     return()=>controller.abort()
   },[source,initial.key.machine_id,initial.key.bot_id,active])
-  useEffect(()=>{
-    if(!active||!membersOpen)return
-    membersPanel.current?.querySelector<HTMLElement>("button")?.focus({preventScroll:true})
-  },[membersOpen,active])
-
   const focusComposer=()=>requestAnimationFrame(()=>composer.current?.focus({preventScroll:true}))
-  const showMembers=(open:boolean)=>{restore.current=capturePosition();setMembersOpen(open)}
+  const showMembers=(open:boolean)=>{
+    restore.current=capturePosition();setMembersOpen(open)
+    if(open)requestAnimationFrame(()=>{if(activeRef.current&&membersPanel.current&&!membersPanel.current.hidden)membersPanel.current.querySelector<HTMLElement>("button")?.focus({preventScroll:true})})
+  }
   const replyTo=(line:W.ProjectAssistantRoomEntry)=>{setQuote(line);pending.current=null;focusComposer()}
   const mention=(bot:W.ProjectAssistantBot,replace=true)=>{
     const next=replace?withGroupMention(text,bot.name):text+(text&&!/\s$/u.test(text)?" ":"")+"@"+bot.name+" "
@@ -169,7 +169,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       {deleting&&<div role="alert"><p>{groupWord("groupDeleteHint")}</p><button type="button" disabled={busy||unknown} onClick={()=>setDeleting(false)}>{groupWord("groupCancel")}</button><button type="button" disabled={busy||unknown} onClick={()=>void effect(async signal=>{const result=await source.deleteGroup!({command:command(group.key,"delete"),expected_version:group.version},signal);changedRef.current({...group,deleted:true});return result})}>{groupWord("groupDeleteConfirm")}</button></div>}
       {(error||unknown)&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} {error&&`(${error})`}</p>}
     </footer>
-    </div><aside ref={membersPanel} hidden={!membersOpen} tabIndex={-1} className="pa-room-members" aria-label={groupWord("groupMembers")}><header className="pa-toolbar"><h3>{groupWord("groupMembers")}</h3><button type="button" aria-label={w.closeInformation} onClick={()=>{showMembers(false);requestAnimationFrame(()=>memberToggle.current?.focus({preventScroll:true}))}}>×</button></header><h2>{group.name}</h2>{group.members.map(member=>{const bot=botFor(member.key);return <div className="pa-room-member" key={identity(member.key)}><button type="button" disabled={!readable||busy||!bot||!onOpenMember} onClick={()=>onOpenMember?.(member.key)}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<span><strong>{author(member.key)}</strong></span></button><button type="button" aria-label={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false)}}>@</button></div>})}<button type="button" disabled={!writable||busy||unknown} onClick={()=>setEditing(true)}>{groupWord("groupEdit")}</button></aside>
+    </div><aside ref={membersPanel} hidden={!membersOpen} tabIndex={-1} className="pa-room-members" aria-label={groupWord("groupMembers")}><header className="pa-toolbar"><h3>{groupWord("groupMembers")}</h3><button type="button" aria-label={w.closeInformation} onClick={()=>{showMembers(false);requestAnimationFrame(()=>memberToggle.current?.focus({preventScroll:true}))}}>×</button></header><h2>{group.name}</h2>{group.members.map(member=>{const bot=botFor(member.key);return <div className="pa-room-member" key={identity(member.key)}><button type="button" disabled={!readable||busy||!bot||!onOpenMember} onClick={event=>{lastFocus.current=event.currentTarget;onOpenMember?.(member.key)}}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<span><strong>{author(member.key)}</strong></span></button><button type="button" aria-label={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false)}}>@</button></div>})}<button type="button" disabled={!writable||busy||unknown} onClick={()=>setEditing(true)}>{groupWord("groupEdit")}</button></aside>
     {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} onClose={()=>setEditing(false)} onSaved={(_,changed)=>{setGroup(changed);setEditing(false);changedRef.current(changed);void refresh.current()}}/>}
   </section>
   return <><span ref={anchor} hidden/>{host&&createPortal(body,host)}</>
