@@ -691,3 +691,13 @@ The app sign-in, setup completion and pairing labels changed in
 in English and Taiwan Traditional Chinese and remain accurate. No handoff
 request, injection sink or assistant launch behavior changed. The source
 receipt follows this copy update; website snapshot publication is separate.
+
+## Voice continuation and local hangup (2026-11-17)
+
+The bilingual list-briefing entry now separates per-item presentation progress
+from exact spoken-reference evidence. Live's transcript quiet window remains an
+estimate, not playback completion. The new conditional call-ending entry records
+the English and Taiwan Traditional Chinese instructions, current-question yes
+handling, local ending deadline and provider-free hangup cue. Neither mechanism
+grants terminal writes or background task approval. Both source excerpts and
+language copies were reviewed; the website must import this delivered revision.

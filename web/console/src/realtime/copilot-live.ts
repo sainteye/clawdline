@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import {callControlGuidance} from './copilot-call-control.ts'
 /**
  * The voice copilot over GPT-Live (docs/voice.md, "GPT-Live calls").
  *
@@ -70,6 +72,7 @@ Backchannel policy: Use moderate, brief and varied backchannels while the person
 Interruption policy: Stop speaking when the person interrupts, and listen. Answer what they just said; do not go back to finish the old explanation.
 Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話、調整並保存語速，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
     languageRule(options.language ?? ''),
+    callControlGuidance(options.language),
     extraSection(options.extra ?? ''),
     livePacingInstructions(options),
   ].filter(Boolean).join('\n\n')

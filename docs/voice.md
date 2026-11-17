@@ -594,3 +594,26 @@ missing usage. The official billing and lifecycle references are
 [voice costs](https://developers.openai.com/api/docs/guides/voice-latency-cost),
 [Live closure](https://developers.openai.com/api/docs/guides/live-conversations), and
 [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+
+### Report continuation and call-ending controls (2026-11-17)
+
+Report reads retain two-Session prefetching; GPT-Live narration binds one item at
+a time. Uninterrupted transcript activity followed by its existing quiet window
+advances presentation even when a name is paraphrased. It does not prove audible
+playback or create exact spoken-reference authority. Completed items survive an
+interruption; repeated resume requests cannot submit an already active item again.
+A continuation tool consumes its user transcript before waiting for narration,
+avoiding a circular dependency on assistant speech to clear that transcript.
+Partial narration is supplied as untrusted already-said context on resume.
+Preparing, speaking, paused, failed and unconfirmed-speech states are visible.
+Chinese and English presentation instructions and continuation phrases are paired.
+
+Call-ending instructions and local recognition cover English and Chinese direct
+requests and stand-alone goodbyes. A yes answers only the current explicit hangup
+question; unrelated input consumes that pending question, while a negative request
+cancels ending. Local hangup does not depend on the backend repeating an end_call
+tool. Existing goodbye and hard-stop deadlines remain unchanged. Capture and
+playback stop before a descending local two-note cue; the context closes after
+that cue without affecting a new call. Live's final-usage receiver still closes
+its separate old transport on its existing deadline. No provider request produces
+the cue. Synthetic event and browser checks do not establish real phone audio.

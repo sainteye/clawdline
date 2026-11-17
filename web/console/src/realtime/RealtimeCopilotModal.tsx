@@ -153,7 +153,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           <CopilotNotice notice={copilotState.notice} className="copilot-notice" />
         </div>
 
-        {isConnected&&copilotState.sessionReportCanContinue?<p className="copilot-processing-sounds"><span>{nextWord('copilotReportPaused')}</span><button type="button" onClick={()=>realtimeCopilot.continueSessionReport()}>{nextWord('copilotReportContinue')}</button></p>:null}
+        {isConnected&&copilotState.sessionReportPhase?<p className="copilot-processing-sounds" role="status"><span>{nextWord(({reading:'copilotReportPreparing',speaking:'copilotReportSpeaking',ready:'copilotReportReady',paused:'copilotReportPaused',unconfirmed:'copilotReportUnconfirmed',failed:'copilotReportReadFailed'} as const)[copilotState.sessionReportPhase])}</span>{copilotState.sessionReportCanContinue?<button type="button" onClick={()=>realtimeCopilot.continueSessionReport()}>{nextWord('copilotReportContinue')}</button>:null}</p>:null}
         {isConnected&&copilotState.messageProposal?<section className="copilot-message-proposal" aria-label={nextWord('copilotProposalTitle')}>
           <strong>{nextWord('copilotProposalTitle')}</strong><p>{copilotState.messageProposal.target}</p><blockquote>{copilotState.messageProposal.message}</blockquote><p>{nextWord('copilotProposalHint')}</p>
         </section>:null}

@@ -1063,7 +1063,7 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
   assert.equal(fresh.sent.length, 1)
 })
 
-test('a Live list report advances only after its named transcript and quiet window, then pauses for speech',async()=>{
+test('a Live list report advances after each bound narration and quiet window, then pauses for speech',async()=>{
  globalThis.location={hash:'#session=%251'}
  const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=3;f.c.liveStartGraceMs=8000;f.c.livePollMs=1
  const rows=Array.from({length:4},(_,i)=>({id:`%${i+1}`,label:`Work ${String.fromCharCode(65+i)}`,state:'idle',sessionId:`conversation-${i}`,recap:{text:`Current summary ${i}`,at:Math.floor(Date.now()/1000),current:true}}))
@@ -1078,18 +1078,18 @@ test('a Live list report advances only after its named transcript and quiet wind
  assert.equal(f.c.focus,'%1','initial screen focus is captured before the list report starts')
  const reports=()=>f.sent.filter(e=>e.type==='session.commentary.append')
  assert.equal(reports().length,1)
- assert.match(reports()[0].content,/Work A.*Work B/)
+ assert.match(reports()[0].content,/Work A/);assert.doesNotMatch(reports()[0].content,/Work B/)
  // Every append fits what GPT-Live accepts: the rules and evidence go as thinking pieces.
  for(const e of f.sent.filter(e=>/^session\.(commentary|thinking)\.append$/.test(e.type)))assert.ok(liveTokens(e.content)<=500,`${e.type} ${liveTokens(e.content)}`)
  assert.ok(f.sent.some(e=>e.type==='session.thinking.append'&&/Session report rules/.test(e.content)),'the report rules reach the live model')
  assert.ok(f.sent.some(e=>e.type==='session.thinking.append'&&/Machine evidence.*Current summary 0/.test(e.content)),'and the evidence')
  assert.doesNotMatch(reports()[0].content,/Work C/)
  await new Promise(r=>setTimeout(r,4));assert.equal(reports().length,1,'prepared content is not already spoken')
- f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Work A. Work B.'})
+ f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Work A is done.'})
  const deadline=Date.now()+3000
  while(reports().length<2&&Date.now()<deadline)await new Promise(r=>setTimeout(r,5))
  assert.equal(reports().length,2)
- assert.match(reports()[1].content,/Work C.*Work D/)
+ assert.match(reports()[1].content,/Work B/)
  f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:'等一下'})
  assert.equal(f.c.sessionReports.hasPending(),true)
  const before=reads.length
@@ -1226,4 +1226,53 @@ test('interrupting the opening aborts its reads and immediately releases its pro
  assert.equal(f.c.pendingTools.size,0)
  await pending
  assert.equal(f.responses().length,0)
+})
+
+test('Live report continuation clears the consumed input instead of waiting for its own speech',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.livePollMs=1
+ f.c.liveHeard.add('其他的呢');f.c.heardNow='其他的呢'
+ f.c.sessionReports.start({sessions:[{session_id:'one',label:'Detailed title'}]},async()=>assert.fail('no next read'),page=>f.c.presentSessionReport(page,()=>f.c.dc?.readyState==='open'))
+ await f.c.runLiveTool('continue-test','get_sessions_summary',JSON.stringify({continue_report:true}))
+ for(let i=0;i<20;i++)await tick()
+ assert.equal(f.c.liveHeard.peek(),'','the tool consumed this request; output must not be required to clear it')
+ assert.ok(f.sent.some(e=>e.type==='session.commentary.append'&&/Detailed title/.test(e.content)))
+})
+
+test('Live reports bind one narration item at a time and advance without verbatim titles',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=2;f.c.livePollMs=1
+ const pages=[]
+ f.c.sessionReports.start({sessions:[{session_id:'one',label:'A long exact title',recap:'First content.'},{session_id:'two',label:'Another long exact title',recap:'Second content.'}]},async()=>assert.fail('no next read'),page=>{pages.push(page);f.c.presentSessionReport(page,()=>f.c.dc?.readyState==='open')})
+ f.c.sessionReports.resume();await tick()
+ const notes=()=>f.sent.filter(e=>e.type==='session.commentary.append')
+ assert.match(notes()[0].content,/A long exact title/)
+ assert.doesNotMatch(notes()[0].content,/Another long exact title/,'two items cannot become one untrackable paraphrase')
+ f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'First content is complete.'})
+ for(let i=0;i<100&&notes().length<2;i++)await new Promise(r=>setTimeout(r,2))
+ assert.equal(notes().length,2)
+ assert.match(notes()[1].content,/Another long exact title/)
+ f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Second content is ready.'})
+ for(let i=0;i<100&&f.c.sessionReports.hasPending();i++)await new Promise(r=>setTimeout(r,2))
+ assert.equal(f.c.sessionReports.hasPending(),false)
+ assert.deepEqual(f.c.spokenSessions.heardIDs(),[],'presentation progress never fabricates exact spoken identity evidence')
+})
+
+for(const words of ['拜拜','Goodbye'])test(`a direct goodbye ends the call without a backend end_call: ${words}`,async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.endGoodbyeMaxMs=1;f.c.state.status='connected'
+ let ends=0;f.c.disconnect=()=>{ends++;f.c.state.status='disconnected';f.c.resetSessionReports()}
+ f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:words})
+ for(let i=0;i<100&&!ends;i++)await new Promise(r=>setTimeout(r,5))
+ assert.equal(ends,1);assert.equal(f.sent.some(e=>e.item?.name==='end_call'),false)
+})
+
+test('continuing a completed report does not reread or restart the directory',async()=>{
+ for(const live of [true,false]){
+  const f=fixture(false,null);f.c.live=live;f.release()
+  const row={session_id:'one',label:'Completed item'}
+  f.c.sessionReports.start({sessions:[row]},async()=>assert.fail('no next read'),()=>{})
+  f.c.sessionReports.played([{id:'one',label:row.label}])
+  assert.equal(f.c.sessionReports.hasPending(),false)
+  if(live)await f.c.runLiveTool('completed','get_sessions_summary',JSON.stringify({continue_report:true}))
+  else await f.c.handleToolCall({call_id:'completed',name:'get_sessions_summary',arguments:JSON.stringify({continue_report:true})})
+  assert.deepEqual(f.reads,[],'continuation must not start another directory query')
+ }
 })

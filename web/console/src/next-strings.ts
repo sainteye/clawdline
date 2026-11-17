@@ -55,6 +55,11 @@ const words = {
 
     copilotReportPaused: "Session introduction has more to cover.",
     copilotReportContinue: "Continue introducing Sessions",
+    copilotReportPreparing: "Preparing the next Sessions…",
+    copilotReportSpeaking: "Reporting Sessions; the next prepared item follows automatically.",
+    copilotReportReady: "The next Session report is ready.",
+    copilotReportUnconfirmed: "No report speech was observed. Paused; continue to retry the unread item.",
+    copilotReportReadFailed: "The next Session could not be read. The report has stopped.",
 
     voiceWorkBatchLimit: "Automatic tasks per batch",
     voiceWorkBatchHint: "Applies to the next batch. Default: three continuing read tasks without another question. Extra requests are organized and retained. Important actions and uncertain details still need your decision. This is separate from simultaneous execution and inbox storage.",

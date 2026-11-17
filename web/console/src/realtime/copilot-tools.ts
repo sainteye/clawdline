@@ -1,3 +1,7 @@
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import {asksToEndCall,callControlGuidance} from './copilot-call-control.ts'
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+export {asksToEndCall} from './copilot-call-control.ts'
 import type { Icon } from '@clawdline/contract'
 /**
  * What the voice copilot's tools do, without a microphone or a peer connection.
@@ -125,6 +129,7 @@ export interface ToolDeps {
   /** This call's own state: how it is carried, how long it has lasted and what it has cost so far. */
   callStatus?: () => CallStatus
   /** Ends this call once the copilot has said goodbye (`end_call`). */
+  endRequested?:()=>boolean
   endCall?: () => void
 }
 
@@ -806,7 +811,7 @@ export function languageRule(language = ''): string {
 /** The instructions for one call: the short-answer rule as the machine's setting says, in the console's language. */
 export function instructionsFor(brief = true, language = ''): string {
   const rules = brief ? COPILOT_INSTRUCTIONS : COPILOT_INSTRUCTIONS.replace(BRIEF_RULE, LONG_RULE)
-  return rules.replace(CHINESE_RULE, languageRule(language))
+  return rules.replace(CHINESE_RULE, languageRule(language))+'\n\n'+callControlGuidance(language)
 }
 
 export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
@@ -2786,22 +2791,12 @@ function callStatusOf(deps: ToolDeps, logs: ToolLog[]): unknown {
  * Whether a sentence asks to end the call itself: it names ending, closing
  * or hanging up, and is not about closing a Session.
  */
-export function asksToEndCall(text: string): boolean {
-  const t = text.trim()
-  const call = /(通話|通话|電話|电话|對話|对话|聊天|\bcall\b|\bconversation\b)/i
-  // "Close that Session" is close_session's work, not a goodbye.
-  if (/session|工作階段/i.test(t) && !call.test(t)) return false
-  if (/(掛斷|挂断|掛掉|挂掉|掛了|挂了|掛電話|挂电话|收線|收线|\bhang\s*up\b|\bend (?:the|this|our) (?:call|conversation)\b|\bclose (?:the|this) call\b)/i.test(t)) return true
-  // 「可以關閉」 closes the call; 「結束」 only with the call named beside it (「它的工作結束了嗎」 is a question).
-  if (/(關閉|关闭|關掉|关掉)/.test(t)) return true
-  return /(通話|通话|電話|电话|對話|对话|聊天).{0,12}(結束|结束)|(結束|结束).{0,4}(通話|通话|電話|电话|對話|对话|聊天)/.test(t)
-}
 
 function endCallTool(deps: ToolDeps, logs: ToolLog[], said: string): unknown {
   if (!deps.endCall) return { error: '這個畫面不能由副駕駛掛斷通話' }
   // The person's own words decide, not the copilot's paraphrase.
   const words = (deps.heard?.() ?? '').trim() || said
-  if (!asksToEndCall(words)) {
+  if (!deps.endRequested?.()&&!asksToEndCall(words)) {
     return { error: 'voice_end_not_asked', heard: words, meaning: 'The person has not asked to end this call. Do not end it; if unsure, ask whether they want to hang up.' }
   }
   deps.endCall()

@@ -4266,7 +4266,8 @@
       ],
       "original": [
         "The person called from the Session list. Begin the prepared Session report automatically, without a greeting or invitation to assign work. Current questions and unresolved Notes that need the person come first. Introduce only the supplied one or two Sessions from their summaries, in the supplied order. Never answer or approve a pending decision for the person. The application prepares later batches; do not describe unread Sessions.",
-        "Explain only the supplied Session batch, at most two Sessions in this response. Every Session in a batch belongs to the same Project, given as project. Begin by saying in one short sentence which Project these Sessions belong to (for example 「接下來是 clawdline 這個 Project 的 Session」), then report them; when project is empty, say these Sessions have no Project. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Sessions waiting for the person are supplied first. Explain their current question and unresolved Notes before ordinary progress, and never treat an old recap or delivery as fresh approval. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance."
+        "Explain only the supplied Session batch, at most two Sessions in this response. Every Session in a batch belongs to the same Project, given as project. Begin by saying in one short sentence which Project these Sessions belong to (for example 「接下來是 clawdline 這個 Project 的 Session」), then report them; when project is empty, say these Sessions have no Project. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Sessions waiting for the person are supplied first. Explain their current question and unresolved Notes before ordinary progress, and never treat an old recap or delivery as fresh approval. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance.",
+        "\nThe application prefetches at most two Sessions, presents one Live item at a time, and retains item progress across interruption. Transcript-based progress is separate from exact-name reference evidence.\n"
       ],
       "locations": [
         "Session list → Call voice copilot",
@@ -4317,6 +4318,42 @@
         "Never send a message, approve, or execute a mutation for this question.",
         "Answer the person's actual question using only the supplied recent Session messages.",
         "Quotes must be literal substrings of the referenced message."
+      ]
+    },
+    {
+      "id": "voice-call-ending",
+      "scope": "conditional",
+      "agents": [],
+      "stages": [
+        "start",
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/realtime/copilot-call-control.ts",
+          "line": 25
+        },
+        {
+          "path": "web/console/src/realtime/realtime-copilot.ts",
+          "line": 600
+        },
+        {
+          "path": "web/console/src/realtime/copilot-meter.ts",
+          "line": 150
+        }
+      ],
+      "original": [
+        "export function callControlGuidance(language='') {\n",
+        " return (!language||/^zh(?:-|$)/i.test(language))?'通話控制：使用者直接對你說「結束通話」「掛斷電話」「結束我們現在的通話」「拜拜／掰掰」表示結束這通電話，不是關閉 Session；請呼叫 end_call，不再反覆確認。若你剛明確問要不要掛斷，接著的「對／好／是」就是該次確認。程式已開始掛斷時只說一句簡短道別，不要再問問題、重複報告或只口頭確認卻不執行。引用別人的道別、傳話或明確說不要掛斷都不算。':\"Call control: direct requests such as 'end this call', 'hang up', 'end my conversation with you', 'bye' or 'goodbye' end this voice call, never a terminal Session. Call end_call without repeated confirmation. If you just explicitly asked whether to hang up, the person's next 'yes', 'correct' or 'okay' confirms that question. Once the application starts ending the call, say one short goodbye; do not ask another question, restart reports or merely acknowledge without acting. Quoted goodbyes, messages for others and explicit requests not to hang up do not count.\"\n",
+        "}\n"
+      ],
+      "locations": [
+        "Voice assistant call",
+        "Realtime and GPT-Live call instructions",
+        "Local hangup and Web Audio cue"
       ]
     }
   ],
@@ -4491,7 +4528,7 @@
     "web/console/src/cloud/project-assistants.ts": "fc2492691181eeb09b29ff5fc8b3ee1253f9974add4a45c673f0b496ea9e0f82",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "32bcd00a8c163d879d27d53ea3cf0107e7a15572c59042ace3294a3ad5b0edf9",
+    "web/console/src/next-strings.ts": "17100201bc9b50a0b8c4afb8e97c60d4d14a6e446ad1dac579831f175b845285",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "b69ca676b64595930452486840d602b2b04b1549e91562468bb502abd26ccbf3",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
@@ -4507,15 +4544,17 @@
     "web/console/src/project-assistants/routine-events.ts": "a85129e50ef6cf234e41ec9d283c5b497c25ede4b8d7c59f3fb70c2dff86b3aa",
     "web/console/src/project-assistants/routine-hook-intent.ts": "b78d3b12d992c627d89e7942fa1857773459ccb7eaedb32d0259ffd4a7735f43",
     "web/console/src/project-assistants/routine-intent.ts": "3d912787d9a1cb7a9e989c9c7e69af298eed5a5d08d95dab854a3f760a1ddd85",
+    "web/console/src/realtime/copilot-call-control.ts": "9ef8f70d0ed11c2600df1ab3aa427d9d52121d986c4e63b76f8f9ff79b53781a",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
     "web/console/src/realtime/copilot-feedback.ts": "3d70f4c6cd79f7c64705e757e790174cbd2918bdd705a01aff909eb730839235",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
-    "web/console/src/realtime/copilot-live.ts": "48999c2fe5c5ee9db7406eef65262469c871773fd0f6f06c85642fde30f34f29",
+    "web/console/src/realtime/copilot-live.ts": "c993506ca17c0360d50810dcc255fc5412eb88841bb4dbd975e029b63008ba8e",
+    "web/console/src/realtime/copilot-meter.ts": "1d4af65b0931c851fc2c9214dcc957f3c697d13c639d6f1ffd1b8cb9ddac5f6f",
     "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
-    "web/console/src/realtime/copilot-reports.ts": "89a413bed5f993d0e45e45ccf73638b7559f0d704051885b5887e77b3373aaa5",
+    "web/console/src/realtime/copilot-reports.ts": "37124725f81a87dde8ac752f7617ae618a2ab89a4e954baf8c2df2096929c5aa",
     "web/console/src/realtime/copilot-speech.ts": "29d2f8d0875ddb75c5d0294dbe593da3add3d02b393ba68571db4f99bb064089",
-    "web/console/src/realtime/copilot-tools.ts": "36fc7ffd3db93b67080704dd70ce6406bc246a3cb6fb450a10143d4df3527489",
-    "web/console/src/realtime/realtime-copilot.ts": "1547a59f6a65c357ce84e5177124a051f4b13fed6f5597189683ec54ff5c8b2a",
+    "web/console/src/realtime/copilot-tools.ts": "be7ff746ce9ac014bcb3479b0c1cdf100bddb601c49b9e77814547d715194306",
+    "web/console/src/realtime/realtime-copilot.ts": "1a895c90e91b6cf72f2890576b1d825ad8a929cd12b72c99f56f7571a1dcb125",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -4531,7 +4570,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "556b60894fe972bca3bb430932d4f4380b622290aefaa9af9dc16f670fdf0974",
-    "zh-Hant": "77a8765dc1144e11c51a1118a7162359094b8edd45bdc7dc8893a12e4503f7a3"
+    "en": "7eef1f402624e6d5c7c161e1964d1c5a7eafff98b8ecffda3822b3a9717f81ce",
+    "zh-Hant": "7a3c7e85bc7e901a0e182503337c0a4e0e2ae87d7d7846e9b500eb69b9b35681"
   }
 }
