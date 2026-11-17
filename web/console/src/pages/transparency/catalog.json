@@ -2378,7 +2378,7 @@
         },
         {
           "path": "cmd/clawdline/main.go",
-          "line": 347
+          "line": 350
         },
         {
           "path": "internal/adapters/projects/launch.go",
@@ -3314,7 +3314,7 @@
         },
         {
           "path": "web/console/src/next-strings.ts",
-          "line": 36
+          "line": 271
         },
         {
           "path": "internal/transport/http/session_rotation.go",
@@ -3594,6 +3594,10 @@
         {
           "path": "internal/transport/http/project_assistants_login_profiles.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/trace.go",
+          "line": 1
         }
       ],
       "original": [
@@ -3645,7 +3649,8 @@
         "\t}\n",
         "\treturn &promptPending{rpc: p}, nil\n",
         "}\n",
-        "Managed account selection reaches the native process environment; selected application text skills enter only captured Bot context, and configured HTTP connectors use the execution-owned MCP proxy. Unknown cleanup retains profile holds. API-key/fallback-profile and network reachability construction remain open."
+        "Managed account selection reaches the native process environment; selected application text skills enter only captured Bot context, and configured HTTP connectors use the execution-owned MCP proxy. Unknown cleanup retains profile holds. API-key/fallback-profile and network reachability construction remain open.",
+        "\"Messages: in your own chat, send_message delivers one message immediately as its own bubble. Send several for several thoughts whenever you have something worth telling the user: a result, a finding that changes the next step, or a question only they can answer. Write short and plain, one thought per message, in the user's language; lead with the result, then what needs the user. Once you send a message, your final reply stays in the trace and is not delivered, so send all user-facing results through send_message. If you send nothing, your final text is delivered as a fallback. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. For a report, plan or comparison they will read as a whole, write self-contained HTML and use publish_artifact rather than a long message. 訊息：在自己的聊天中，send_message 會立即送出一個獨立氣泡，同一回合可送出多則，各自表達一個重點。有值得告知的結果、會改變下一步的發現，或只有使用者能回答的問題時再傳送；不要只報開工、持續工作或重複內容。使用 send_message 後，最後文字只留在處理過程，所有要讓使用者讀到的結果都要用 send_message 傳送。完全沒傳訊息時才以最後文字作為回覆。較長的報告、計畫或比較請用 publish_artifact 分享完整 HTML。\","
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -4617,7 +4622,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "335fa3a518d2c759e81d704f0c1918fb6ede2cc2a14e68898989f64f6d69afeb",
+    "cmd/clawdline/main.go": "4e1df55777cec0be41e9c9b853dc20e8fa27576511b606a4f6cd63c4cbc3b10c",
     "cmd/clawdline/project_assistants.go": "10f49fb20002a803506e3688fe29b00c9ad6d3949009f13fb4c2c7b1fef49bce",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
@@ -4641,7 +4646,7 @@
     "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
     "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
     "internal/adapters/botnetwork/assistant_store.go": "77f56ac961f408428879967f9ae78a81d7aad36adb4bb4de96903b38a1d3e2c1",
-    "internal/adapters/botnetwork/cloud.go": "633dc4e9a120526b607c85b9ce47fb37b8f2988a2a7e52110db4a3a0e3034087",
+    "internal/adapters/botnetwork/cloud.go": "b180683ae344bbaa9c25f0d20fb55ecb37926ee99238218813e798eac6f41b4f",
     "internal/adapters/botnetwork/cloud_rail.go": "249aaea2e61073a45388a47b5e3b377597e042cab39eeefbf4a2584f22e90a22",
     "internal/adapters/botnetwork/local_authority.go": "fcf9c598cfa46095ea0802b276372ed049ef30daf79dcd1f25bde270b4fb98c4",
     "internal/adapters/botnetwork/receipt_publication.go": "b3e84f8a304699fd01724822b16b1f10c2909626e8a7d632ba9100a1db5561bb",
@@ -4666,20 +4671,21 @@
     "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "6a062d16b12e3082d46747c00d28c7904cc56b9fc52c0aba13754f67040e3845",
-    "internal/adapters/projectassistantacp/client.go": "0321200ad5d03f527497fb14e00912ebeac62a26197c2118fb1b82984801ec8b",
+    "internal/adapters/projectassistantacp/client.go": "cc6e621016d0d99939bf7883da070f01b748722ec96353682688c36a5466f061",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/installation.go": "a8c506a3239983e48f51be52224d3c125f56dff4b62322498415c52b8b2d8803",
     "internal/adapters/projectassistantacp/installation_codex.go": "229fd1007a373608c378f75257823846b09f03157b260773057e0657c8062551",
     "internal/adapters/projectassistantacp/installation_isolation.go": "2e3d55848a1fa2d18842539a306cd591334df3e01bfa00cdff7ef8d1c293c3cf",
     "internal/adapters/projectassistantacp/login_profiles.go": "3b612a6d02e2ad26d7be0d91d4643d83281b3ee713331c137052afa40440aa51",
-    "internal/adapters/projectassistantacp/mcp.go": "e1a7b2338403efffad2527897b9209496925fce5a0b617687c6c2abdee059b1a",
+    "internal/adapters/projectassistantacp/mcp.go": "0cf3e8296dc98812314b617cc91c44359359f8b66370b4c64c0e5e7597b1fed1",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
     "internal/adapters/projectassistantacp/model_configuration.go": "a27e154c02f76a7bbe9383b2c503998c017b58e92f7ed531ea4728056b00003b",
     "internal/adapters/projectassistantacp/native_history.go": "1234f4216751ac3b7d1845e1bdf48ec39ca07af28c0360d55aa189d6053e7079",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "16577174c1c0b9c8858f0eb5815ca06a838836a6a8d98c06eb7cff380b7b63a4",
+    "internal/adapters/projectassistantacp/session_configuration.go": "9121c15f3395769b40cebf5fb6322a8ce81ca2b6ecca542222f1baaea493c009",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
+    "internal/adapters/projectassistantacp/trace.go": "44a1caf9239cb9b02009cc47879b974dd87132d80734bebf42ab09ebcd4bb137",
     "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
     "internal/adapters/projectassistanthost/provider.go": "f7ef1a0a04939b182aba463d637de65e8dba686e798dc40b993738ddf22241dd",
@@ -4808,8 +4814,8 @@
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "c1ed8c18456b2b8cdd08749eee16a2e5cad38cf3460f94b6853893dc74da63dd",
-    "skills/clawdline/guide.zh-TW.md": "aaabfd00d2addc643faa04fd08eea1fafb671b9ddc9ef19c2bb3300eb72432e5",
+    "skills/clawdline/guide.md": "013977670c95343d40fac69c3b7a328aacc72b335ad0bdd3ea010419d1e77c8d",
+    "skills/clawdline/guide.zh-TW.md": "3ffca508ac5e42695a34e2fcae48bc89ac98e1b28f3ef7041121f8faa34bf7c9",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -4821,7 +4827,7 @@
     "web/console/src/cloud/project-assistants.ts": "81abef3779d44ac1f63ab84c74dc0b368fa42ce66359793de49a9f9c294a0b3a",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "17100201bc9b50a0b8c4afb8e97c60d4d14a6e446ad1dac579831f175b845285",
+    "web/console/src/next-strings.ts": "2229332b126219522f267ecb5703da0374f328e1d64fb0dcfaba4e54b3fdf245",
     "web/console/src/overlays/info.ts": "5ab0e78172d093c361fdebbb47b74f747dc7ababafeab654e68995f83043aaf2",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "b69ca676b64595930452486840d602b2b04b1549e91562468bb502abd26ccbf3",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
@@ -4864,7 +4870,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "1bc082ed2659ff9d0cf6297c3e5e72bf2d75d657207dfdb0b1d30f76b7e68e79",
-    "zh-Hant": "6105dadd71361f549f76324fb13ccfe01242de890fe544a719784a0cb05f3813"
+    "en": "00f51b5649a59958b96711a92a7e78511138b7b5f711e5d6e832c05717ab7653",
+    "zh-Hant": "47e537ca8ded2a89d7517c4c8ba14e913dda82d587127f560b8ce2ec6aedf5d8"
   }
 }

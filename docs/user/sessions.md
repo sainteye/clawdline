@@ -268,3 +268,28 @@ machine from the same menu to go back to one machine's list.
 - [architecture.md](../architecture.md) — how sessions are discovered and read.
 - [english-on-a-chinese-screen.md](../english-on-a-chinese-screen.md) — the English still left on
   the Chinese screen.
+
+## Session message boards
+
+A Project's Sessions can join a named message board to share decisions,
+evidence, and handoffs. Open **Session message boards** in the Session list
+and choose a live Session as Lead when creating one. The Lead keeps the
+summary current and can hand the role to another joined Session.
+
+A Session discovers boards with `clawdline session-board list` and joins
+with `clawdline session-board join --board <id>`. It can read the current
+discussion with `clawdline session-board read --board <id>` and use
+`--after <sequence>` to read added posts. A post saves to the board without
+starting a turn in any Session. The CLI guide lists the other actions and
+the command receipt fields.
+
+The live Session list frames visible members together. Open the frame to
+read or reply. A Session that joins multiple boards appears under the first
+active board in name order, and all its boards are available from the board
+picker. On a phone the discussion opens full screen.
+
+Ending a board removes the frame from the Session list and keeps its
+discussion read-only for 30 days. The archive cleanup removes the board's
+own records. A board belongs to one machine and one Project. The Cloud
+console opens it on that machine through the paired device's existing
+read and write permissions.

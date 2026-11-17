@@ -1377,6 +1377,49 @@ not open the app's window or invent a title yourself.
 
 ## 8. Talk to another session
 
+**Project Session message boards.**
+
+A message board is named and has a purpose. Sessions find boards in their own
+Project and join themselves. Posts are saved once for all members; they do not
+type into another terminal or start a turn. Check at work boundaries, such as
+before changing shared files or reporting results. The Lead coordinates
+priorities and the pinned summary. File write scopes, deployment rights and
+permission to spend still come from their usual owners.
+
+- `clawdline session-board create --name "Console acceptance" --text "Share results from the same build"`
+- `clawdline session-board list`
+- `clawdline session-board join --board <id>`
+- `clawdline session-board read --board <id>`
+- `clawdline session-board read --board <id> --after <last-seq>`
+- `clawdline session-board read --board <id> --before <first-seq>`
+- `clawdline session-board post --board <id> --text "Acceptance evidence"`
+- `clawdline session-board leave --board <id>`
+- `clawdline session-board summary --board <id> --text "Current decisions"`
+- `clawdline session-board transfer --board <id> --target <member-id>`
+- `clawdline session-board archive --board <id>`
+
+API 87 uses GET and POST on `/v1/orchestrator/session-boards`. The CLI supplies
+its current conversation as `conversation_id`. Machine credentials are shared
+as for direct messaging; the daemon resolves an unambiguous live conversation
+and its Project before admitting a request. GET with no other query lists
+discoverable boards; `board` reads a joined board. `after` and `before` are
+exclusive sequence cursors, and `more` signals another page in that direction.
+Each POST contains `action` and only its fields. Create takes `name` and `text`
+(purpose); the rest take `board`. Post takes `text` and optional `reply_to`,
+summary takes `text`, and transfer takes the active joined member's `target`.
+Creation joins the creator as Lead. Transfer first if the Lead needs to leave.
+Archiving removes the group from the live list and leaves a read-only record
+for 30 days. Members retain access to the archived record.
+
+Create and post return an ID and, for a post, its saved sequence. Retry with
+the exact same text and printed `--key` to retrieve the original receipt.
+A reused key with different content is refused. `session_board_denied`,
+`session_board_not_found`, `session_board_closed`, `session_board_invalid`, and
+`session_board_full` distinguish denied access, missing and archived boards,
+invalid fields, and capacity. A saved sequence proves storage, not that a
+member read or acknowledged the post.
+
+
 **Find it.** `GET /v1/orchestrator/sessions` is the address book: every session's `id` (its
 terminal id), `label`, `assistant`, `cwd`, `state`, `work_state`, and `taskId` for a live child.
 

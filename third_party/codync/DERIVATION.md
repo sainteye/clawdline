@@ -34,3 +34,19 @@ UI source paths are mapped in `docs/project-assistants-reuse.md`; no UI source
 is copied by PA-01. Later extracted functions and approved outline SVGs must
 add their actual source/modification record when PA-04 delivers them. The
 original upstream NOTICE must remain alongside later derived distributions.
+
+Dialogue alignment on 2026-11-18 also references upstream revision
+`9b47189739216b405416b334b9ada5b5b28176c1`:
+
+- `host/src/chat/outbox.rs`: multiple explicit user messages per turn, short
+  messages with one useful thought, and final text retained as trace after a send.
+- `host/src/agent/bot/updates.rs`, `turn.rs`, and `tool_entry.rs`: distinct text
+  and thought segments, per-tool status/output/diffs, and last-segment fallback.
+- `apps/desktop/src/renderer/views/thread/TraceView.tsx` and `trace-turns.ts`:
+  readable narration and expandable tool details, separate from chat bubbles.
+
+Clawdline retains durable idempotency keys, existing source authorization and
+paged Cloud reads. An optional trace step identity preserves new steps while
+legacy records continue to use category snapshots. Text is persisted as deltas,
+then joined by step on read; it is not stored repeatedly as a growing snapshot.
+This is a source-based adaptation, not runtime verification of Codync itself.

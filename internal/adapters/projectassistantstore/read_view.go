@@ -490,6 +490,13 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 	return rows.Err()
 }
 
+func traceStepID(t pa.Trace) string {
+	if t.ID != "" {
+		return t.ID
+	}
+	return t.Category
+}
+
 func viewTraceID(turn, category string) string {
 	// JSON pair encoding is unambiguous, including delimiters and UTF-8.
 	raw, _ := json.Marshal([2]string{turn, category})
@@ -497,12 +504,12 @@ func viewTraceID(turn, category string) string {
 }
 
 func (s *ViewStore) traces(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
-	// Event sequence is a stable position for this live latest-category view.
+	// A step stays at its first event while its detail cursor follows the latest snapshot.
 	statement := viewTraceCTE() + `, candidates AS MATERIALIZED (
- SELECT seq,json_object('turn_id',json_extract(j,'$.turn_id'),'category',json_extract(j,'$.category'),
- 'complete',json_extract(j,'$.complete')) j FROM latest WHERE ?=0 OR seq<? ORDER BY seq DESC LIMIT ?
-), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY seq DESC) spent FROM candidates)
-SELECT seq,CASE WHEN spent<=? THEN j END FROM budget ORDER BY seq DESC`
+ SELECT anchor,seq,json_object('turn_id',json_extract(j,'$.turn_id'),'category',json_extract(j,'$.category'),
+ 'complete',json_extract(j,'$.complete'),'id',coalesce(json_extract(j,'$.id'),'')) j FROM latest WHERE ?=0 OR anchor<? ORDER BY anchor DESC LIMIT ?
+), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY anchor DESC) spent FROM candidates)
+SELECT anchor,seq,CASE WHEN spent<=? THEN j END FROM budget ORDER BY anchor DESC`
 	rows, err := tx.QueryContext(ctx, statement, out.Head.Key.MachineID, out.Head.Key.BotID, out.Head.Key.MachineID, out.Head.Key.BotID,
 		p.Anchor, p.Anchor, q.Request.PageSize+1, q.ByteLimit)
 	if err != nil {
@@ -514,9 +521,9 @@ SELECT seq,CASE WHEN spent<=? THEN j END FROM budget ORDER BY seq DESC`
 			out.HasMore = true
 			break
 		}
-		var seq int64
+		var anchor, seq int64
 		var raw sql.NullString
-		if err = rows.Scan(&seq, &raw); err != nil {
+		if err = rows.Scan(&anchor, &seq, &raw); err != nil {
 			return err
 		}
 		if !raw.Valid {
@@ -526,6 +533,7 @@ SELECT seq,CASE WHEN spent<=? THEN j END FROM budget ORDER BY seq DESC`
 		}
 		// SQLite JSON extraction represents booleans as integers unless wrapped.
 		var trace struct {
+			ID       string `json:"id"`
 			TurnID   string `json:"turn_id"`
 			Category string `json:"category"`
 			Complete int    `json:"complete"`
@@ -533,11 +541,15 @@ SELECT seq,CASE WHEN spent<=? THEN j END FROM budget ORDER BY seq DESC`
 		if json.Unmarshal([]byte(raw.String), &trace) != nil || trace.TurnID == "" || trace.Category == "" {
 			return failure(pa.Invalid, "read_view_trace")
 		}
-		id := viewTraceID(trace.TurnID, trace.Category)
+		step := trace.ID
+		if step == "" {
+			step = trace.Category
+		}
+		id := viewTraceID(trace.TurnID, step)
 		detail, f := s.cursor(q, out.Head, viewPosition{Collection: "trace", Anchor: seq, ID: id})
 		item := app.ReadViewItem{ID: id, Kind: app.ReadItemTraceSummary, ObservedEventSeq: out.Head.EventFrontier, Failure: f}
 		item.TraceSummary = &app.ReadTraceSummary{ID: id, TurnID: trace.TurnID, Category: trace.Category, Complete: trace.Complete != 0, DetailCursor: detail}
-		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "traces", Anchor: seq, ID: id})
+		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "traces", Anchor: anchor, ID: id})
 		out.Items = append(out.Items, item)
 	}
 	return rows.Err()
@@ -551,8 +563,16 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
  FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND p.key=? AND ` + viewFenceSQL("p.value", true)
 		args = append(args, q.ByteLimit, p.ID)
 	} else {
-		statement = viewTraceCTE() + `SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM latest WHERE seq=?`
-		args = append(args, out.Head.Key.MachineID, out.Head.Key.BotID, q.ByteLimit, p.Anchor)
+		// A signed detail cursor pins one step revision. Later chunks cannot
+		// expire a click already in flight; only this requested step is joined.
+		statement = viewTraceCTE() + `, detail AS MATERIALIZED (
+ SELECT CASE WHEN coalesce(json_extract(t.j,'$.id'),'')!=''
+ AND json_extract(t.j,'$.category') IN ('agent_message_chunk','agent_thought_chunk')
+ THEN json_set(t.j,'$.text',(SELECT group_concat(json_extract(x.j,'$.text'),'' ORDER BY x.seq) FROM traces x
+ WHERE json_extract(x.j,'$.turn_id')=json_extract(t.j,'$.turn_id') AND json_extract(x.j,'$.id')=json_extract(t.j,'$.id') AND x.seq<=t.seq))
+ ELSE t.j END j FROM traces t WHERE t.seq=?
+) SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM detail`
+		args = append(args, out.Head.Key.MachineID, out.Head.Key.BotID, p.Anchor, q.ByteLimit)
 	}
 	var raw sql.NullString
 	err := tx.QueryRowContext(ctx, statement, args...).Scan(&raw)
@@ -579,7 +599,7 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
 		}
 	} else {
 		item.Kind, item.Trace = app.ReadItemTrace, &pa.Trace{}
-		if json.Unmarshal([]byte(raw.String), item.Trace) != nil || viewTraceID(item.Trace.TurnID, item.Trace.Category) != p.ID {
+		if json.Unmarshal([]byte(raw.String), item.Trace) != nil || viewTraceID(item.Trace.TurnID, traceStepID(*item.Trace)) != p.ID {
 			return failure(pa.Invalid, "read_view_trace")
 		}
 	}

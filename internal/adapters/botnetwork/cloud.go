@@ -110,9 +110,15 @@ func (a *CloudAuthority) SyncConsent(ctx context.Context, id string) error {
 	if a.Client.Identity.MachineID == p.TargetMachineID {
 		fp = p.SourceFingerprint
 	}
-	g := app.Grant{ID: c.ID, AccountID: c.AccountID, Epoch: c.Epoch, Source: c.Source, Target: c.Target, Pair: t, ComparedFingerprint: fp, ExpiresAt: time.Unix(c.ExpiresAt, 0), Revoked: c.RevokedAt != nil}
-	if old, e := a.Store.Grant(ctx, id); e == nil && old == g {
-		return nil
+	g := app.Grant{ID: c.ID, AccountID: c.AccountID, Epoch: c.Epoch, Source: c.Source, Target: c.Target, Pair: t, ComparedFingerprint: fp, ExpiresAt: time.Unix(c.ExpiresAt, 0).UTC(), Revoked: c.RevokedAt != nil}
+	if old, e := a.Store.Grant(ctx, id); e == nil {
+		// JSON's Z timestamp decodes as UTC, while time.Unix carries Local.
+		// A process timezone must not turn the same expiry and epoch into a
+		// different grant. Every other authority field remains exact.
+		old.ExpiresAt = old.ExpiresAt.UTC()
+		if old == g {
+			return nil
+		}
 	}
 	if e = a.Current(ctx); e != nil {
 		return e

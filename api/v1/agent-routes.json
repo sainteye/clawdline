@@ -363,6 +363,12 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/orchestrator/session-boards",
+      "guide": "send",
+      "goal": "docs/user/sessions.md"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/orchestrator/notify",
       "guide": "notify"
     },

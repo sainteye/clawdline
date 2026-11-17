@@ -1,0 +1,138 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
+)
+
+func TestSessionBoardLifecycle(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	member := sb.Actor{ID: "claude:member", Label: "Member"}
+	person := sb.Actor{Label: "Person"}
+	now := time.Now()
+	const project = "project-one"
+	change := func(actor, target sb.Actor, cmd sb.Command, key string, want error) sb.Result {
+		t.Helper()
+		got, err := st.ChangeSessionBoard(ctx, project, actor, target, cmd, key, now)
+		if !errors.Is(err, want) {
+			t.Fatalf("%s: got %v, want %v", cmd.Action, err, want)
+		}
+		return got
+	}
+	create := sb.Command{Action: "create", Name: "Acceptance", Text: "Share one build"}
+	id := change(lead, sb.Actor{}, create, "create", nil).ID
+	if got := change(lead, sb.Actor{}, create, "create", nil); got.ID != id {
+		t.Fatal("replayed create returned a different board")
+	}
+	create.Text = "A different purpose"
+	change(lead, sb.Actor{}, create, "create", sb.ErrReplay)
+	post := sb.Command{Action: "post", Board: id, Text: "Pinned build"}
+	change(member, sb.Actor{}, post, "post", sb.ErrDenied)
+	change(lead, sb.Actor{}, post, "lead-post", nil)
+	list, err := st.SessionBoards(ctx, project, member.ID)
+	if err != nil || len(list) != 1 || len(list[0].Members) != 0 || list[0].Purpose == "" || list[0].Latest != 0 {
+		t.Fatalf("discovery returned %v, %v", list, err)
+	}
+	if _, err := st.SessionBoardPage(ctx, project, member.ID, id, 0, 0); !errors.Is(err, sb.ErrDenied) {
+		t.Fatal(err)
+	}
+	if _, err := st.ChangeSessionBoard(ctx, "other", member, sb.Actor{}, sb.Command{Action: "join", Board: id}, "", now); !errors.Is(err, sb.ErrMissing) {
+		t.Fatal(err)
+	}
+	change(member, sb.Actor{}, sb.Command{Action: "join", Board: id}, "", nil)
+	change(member, sb.Actor{}, sb.Command{Action: "summary", Board: id, Text: "Summary"}, "", sb.ErrDenied)
+	change(lead, sb.Actor{}, sb.Command{Action: "summary", Board: id, Text: "Summary"}, "", nil)
+	post.ReplyTo = 1
+	post.Text = "Reply"
+	if got := change(member, sb.Actor{}, post, "post", nil); got.Seq != 2 {
+		t.Fatal(got)
+	}
+	if got := change(member, sb.Actor{}, post, "post", nil); got.Seq != 2 {
+		t.Fatal(got)
+	}
+	change(lead, member, sb.Command{Action: "transfer", Board: id, Target: member.ID}, "", nil)
+	change(lead, sb.Actor{}, sb.Command{Action: "leave", Board: id}, "", nil)
+	change(lead, sb.Actor{}, sb.Command{Action: "archive", Board: id}, "", sb.ErrDenied)
+	change(member, sb.Actor{}, sb.Command{Action: "archive", Board: id}, "", nil)
+	change(member, sb.Actor{}, post, "new-post", sb.ErrClosed)
+	if got := change(member, sb.Actor{}, post, "post", nil); got.Seq != 2 {
+		t.Fatal(got)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := st.SessionBoardPage(ctx, project, member.ID, id, 1, 0)
+	if err != nil || page.Board.ArchivedAt == 0 || page.Board.Lead != member.ID ||
+		page.Board.Summary != "Summary" || len(page.Posts) != 1 || page.Posts[0].ReplyTo != 1 || page.Posts[0].Author != member {
+		t.Fatalf("reopened board: %+v %v", page, err)
+	}
+	if err := st.pruneSessionBoards(ctx, now.AddDate(0, 0, sb.MaxArchiveDays-1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SessionBoardPage(ctx, "", person.ID, id, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.pruneSessionBoards(ctx, now.AddDate(0, 0, sb.MaxArchiveDays)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SessionBoardPage(ctx, "", person.ID, id, 0, 0); !errors.Is(err, sb.ErrMissing) {
+		t.Fatal(err)
+	}
+	if n, err := st.SessionBoardOccupancy(ctx, "members"); n != 0 || err != nil {
+		t.Fatalf("archive cleanup left %d members: %v", n, err)
+	}
+}
+
+func TestSessionBoardConcurrentPostAndArchive(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	now := time.Now()
+	b, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, sb.Command{Action: "create", Name: "Room", Text: "Purpose"}, "create", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var group sync.WaitGroup
+	errs := make(chan error, 3)
+	post := sb.Command{Action: "post", Board: b.ID, Text: "Only saved once"}
+	for _, c := range []sb.Command{post, post, {Action: "archive", Board: b.ID}} {
+		group.Go(func() {
+			_, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, c, "same-key", now)
+			errs <- err
+		})
+	}
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil && !errors.Is(err, sb.ErrClosed) {
+			t.Fatal(err)
+		}
+	}
+	page, err := st.SessionBoardPage(ctx, "project", lead.ID, b.ID, 0, 0)
+	if err != nil || page.Board.ArchivedAt == 0 || len(page.Posts) > 1 || page.Board.Latest != int64(len(page.Posts)) {
+		t.Fatalf("archive raced with post: %+v %v", page, err)
+	}
+	if _, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, post, "new-key", now); !errors.Is(err, sb.ErrClosed) {
+		t.Fatal(err)
+	}
+}

@@ -318,6 +318,8 @@ export const CARRIED = {
   // Waiting card that sends a person there to read the question.
   screen: "GET /v1/sessions/{id}/screen",
   send: "POST /v1/sessions/{id}/send",
+  "session-boards.change": "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards",
+  "session-boards.read": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards",
   "session-codegraph": "GET /v1/sessions/{id}/codegraph",
   "session-codegraph-build": "POST /v1/sessions/{id}/codegraph",
   "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",

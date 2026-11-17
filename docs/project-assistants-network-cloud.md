@@ -38,8 +38,10 @@ The source reads an already human-approved private consent, compares exact priva
 pair metadata with the independent local transcript, and copies only that record.
 It cannot create consent, install a supplied arbitrary grant or pair a machine.
 Machine/native tokens, LAN/read-only devices and Cloud forwarding are refused.
-Identical reads are harmless. Newer API epochs may skip missed syncs, while stable
-identities and retained revocation cannot move or resurrect. Source-consent
+Identical reads are harmless. Consent expiry is compared in UTC after persistence,
+so repeating the same sync does not depend on the source process timezone or advance
+the epoch. Newer API epochs may skip missed syncs, while stable identities and
+retained revocation cannot move or resurrect. Source-consent
 metadata remains insufficient authority without the live authorize decision.
 
 This local route arrives at API **86**, after API 85 main-chat reactions.

@@ -1,3 +1,4 @@
+import { SessionBoardRows, sessionBoardActor, useLocalSessionBoards, type SessionBoardSource } from "./session/SessionBoards.js"
 import { SessionStateEmpty } from "./session/SessionStateEmpty.js"
 import { matchesLocalStateFilter, type SessionStateFilter } from "./session/state-filter.js"
 import { stateFilterLabel } from "./session/SessionStateFilter.js"
@@ -76,6 +77,7 @@ export function SessionsPage({
   fleetDetailPending = false,
   fleetDetailProblem,
   readerMachine,
+  sessionBoardSource,
 }: {
   rows: SessionRow[]
   statusFilter?: SessionStateFilter
@@ -123,6 +125,7 @@ export function SessionsPage({
   fleetCoordinatorBound?: boolean
   fleetDetailPending?: boolean
   readerMachine?: string | null
+  sessionBoardSource?: SessionBoardSource
   fleetDetailProblem?: FleetDetailProblem | null
 }) {
   // The task list the chips, the indent and the detail header read: the
@@ -227,6 +230,7 @@ export function SessionsPage({
   const readingSaid = offlineAt === "line" ? nextWord("sessionsMachineOfflineLine", {
     machine: machineOffline?.machine ?? "", seen: offlineSeen })
     : sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
+  const localBoards = useLocalSessionBoards(onScreen && live && !terminalMode && !fleetList)
   const depths = visualDepths(drawn, tasks ?? [], L.taskShaping)
   const branches = visualBranches(drawn, depths)
 
@@ -353,19 +357,23 @@ export function SessionsPage({
             {offerAt === "compact" && restore.offer && <RestoreCard offer={restore.offer} onOpen={openRestore} onChanged={restore.refresh} />}
             <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
               {!skeleton && arriving && <StartingRow place={arriving} />}
-              {drawn.map((r) => (
-                <Row
+              <SessionBoardRows source={sessionBoardSource ?? localBoards}
+                candidates={rows.flatMap(r => {
+                  const actor = sessionBoardActor(r.assistant, r.sessionId, r.label || r.id)
+                  return actor ? [actor] : []
+                })}
+                rows={drawn.map(r => ({ actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id),
+                  render: grouped => <Row
                   key={L.selectionKey(r)}
                   row={r}
-                  depth={depths.get(r.id) ?? 0}
-                  branchThrough={branches.through.has(r.id)}
-                  ancestorThrough={branches.ancestorThrough.has(r.id)}
+                  depth={grouped ? 0 : depths.get(r.id) ?? 0}
+                  branchThrough={!grouped && branches.through.has(r.id)}
+                  ancestorThrough={!grouped && branches.ancestorThrough.has(r.id)}
                   selected={r.id === selected}
                   open={r.id === openId}
                   swiped={r.id === swipedId}
                   onOpen={onOpen}
-                />
-              ))}
+                /> }))} />
             </ul>
             <div className={statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? "session-state-empty-wrap" : emptyClass} id="list-empty" hidden={!skeleton && !empty}>
               {statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? (

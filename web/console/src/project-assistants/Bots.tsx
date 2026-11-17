@@ -105,7 +105,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   useEffect(()=>{
     if(selected||!sources.some(s=>!s.canRoster?.()||!s.subscribeRoster))return
     const control=new AbortController()
-    followSnapshotRoster(async()=>{await load();if(!current().some(s=>s.current?.()!==false&&!deniedSnapshots.current.has(s)&&(!s.canRoster?.()||!s.subscribeRoster)))control.abort()},control.signal,EventRefreshMs,document,window)
+    followSnapshotRoster(async()=>{await load();if(!current().some(s=>s.current?.()!==false&&!deniedSnapshots.current.has(s)&&(!s.canRoster?.()||!s.subscribeRoster)))control.abort()},control.signal,EventRefreshMs,document,window,{readOnEntry:true})
     return()=>control.abort()
   },[selected,authorization,query,load])
   useEffect(()=>{

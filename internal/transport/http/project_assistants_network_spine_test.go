@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,25 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"golang.org/x/net/websocket"
 )
+
+// Exercise JSON persistence and repeated consent synchronization in a fresh
+// UTC process even when the developer's local timezone has a nonzero offset.
+// The private API, Relay and native provider remain the existing local doubles.
+func TestBotCloudConsentReplayInUTC(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, "-test.run=^TestBotCloudNormalSourceSpineAndRevocation$", "-test.v")
+	cmd.Env = append(os.Environ(), "TZ=UTC", "CLAWDLINE_BOT_NETWORK_NATIVE_PROOF=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("UTC consent synchronization: %v\n%s", err, output)
+	}
+	t.Log(string(output))
+}
 
 // The subprocess uses the real ACP adapter and performs zero model requests.
 func TestBotCloudOwnedACP(t *testing.T) {

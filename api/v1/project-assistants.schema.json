@@ -1661,6 +1661,10 @@
       "additionalProperties": false,
       "description": "Trace is not a visible message and never advances unread. Secrets and raw provider credentials are redacted by source.",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Optional stable step identity within the turn. Absent on legacy category snapshots."
+        },
         "turn_id": {
           "type": "string"
         },

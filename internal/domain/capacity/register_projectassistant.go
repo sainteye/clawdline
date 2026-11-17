@@ -86,7 +86,7 @@ const (
 // than inventing a number; that row already covers it.
 func groupBounds() []Entry {
 	return []Entry{
-		{Name: "bots.group_preview_avatars", Class: Buffer, Unit: Rows, Limit: MaximumBotGroupPreviewAvatars, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupPreviewAvatars"}},
+		{Name: BotsGroupPreviewAvatars, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupPreviewAvatars, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupPreviewAvatars"}},
 		{Name: BotsSkillAssetFiles, Class: Buffer, Unit: Rows, Limit: pa.MaxSkillAssetFiles, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSkillAssetFiles"}},
 		{Name: BotsConnectorProcesses, Class: Buffer, Unit: Rows, Limit: pa.MaxConnectorProcesses, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxConnectorProcesses"}},
 		{Name: BotsManagerCardUnits, Class: Buffer, Unit: Characters, Limit: MaximumBotManagerCardUnits, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotManagerCardUnits"}},

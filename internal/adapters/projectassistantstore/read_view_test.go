@@ -733,3 +733,58 @@ func TestReadViewLongHistoryWithinSourceDeadline(t *testing.T) {
 	_, err := views.Read(testContext, q)
 	requireCode(t, err, pa.CursorExpired)
 }
+
+func TestReadViewKeepsDistinctTraceStepsAndLatestStepContent(t *testing.T) {
+	e, _, current := viewFixture(t, 1, 0, false)
+	for i, trace := range []pa.Trace{
+		{ID: "text-1", TurnID: "t1", Category: "agent_message_chunk", Text: "First "},
+		{ID: "tool-1", TurnID: "t1", Category: "tool_call", Text: "Read source"},
+		{ID: "text-1", TurnID: "t1", Category: "agent_message_chunk", Text: "finding."},
+		{ID: "text-2", TurnID: "t1", Category: "agent_message_chunk", Text: "Final result."},
+		{TurnID: "t1", Category: "legacy", Text: "Old snapshot"},
+		{TurnID: "t1", Category: "legacy", Text: "Updated old snapshot"},
+	} {
+		x := trace
+		e.Events = append(e.Events, pa.Event{Version: pa.ContractVersion, ID: fmt.Sprintf("step-%d", i), Seq: int64(i + 2), Fence: current, Kind: pa.TraceUpdated, At: e.Bot.CreatedAt, Trace: &x})
+	}
+	_, _, views, _ := restoreViews(t, e)
+	q := viewQuery(e.Bot)
+	snapshot := readView(t, views, q)
+	if snapshot.Head.TraceCategoryCount != 4 {
+		t.Fatalf("lost steps: got %d, want 4", snapshot.Head.TraceCategoryCount)
+	}
+	q.Request.Mode = pa.ReadViewTraces
+	q.Request.SourceEpoch = snapshot.SourceEpoch
+	page := readView(t, views, q)
+	// A later chunk cannot invalidate the signed detail link already shown.
+	oldCursor, failure := views.cursor(q, snapshot.Head, viewPosition{Collection: "trace", Anchor: 2, ID: viewTraceID("t1", "text-1")})
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	old := q
+	old.Request.Mode = pa.ReadViewDetail
+	old.Request.Cursor = oldCursor
+	old.Request.PageSize = 1
+	if got := readView(t, views, old).Items[0].Trace.Text; got != "First " {
+		t.Fatalf("pinned revision changed: %q", got)
+	}
+	wantIDs := []string{viewTraceID("t1", "legacy"), viewTraceID("t1", "text-2"), viewTraceID("t1", "tool-1"), viewTraceID("t1", "text-1")}
+	for i, row := range page.Items {
+		if row.ID != wantIDs[i] {
+			t.Fatalf("step moved after update: %+v", page.Items)
+		}
+	}
+	texts := map[string]string{}
+	for _, row := range page.Items {
+		detail := q
+		detail.Request.Mode = pa.ReadViewDetail
+		detail.Request.Cursor = row.TraceSummary.DetailCursor
+		detail.Request.PageSize = 1
+		v := readView(t, views, detail)
+		trace := v.Items[0].Trace
+		texts[trace.ID+trace.Category] = trace.Text
+	}
+	if texts["text-1agent_message_chunk"] != "First finding." || texts["text-2agent_message_chunk"] != "Final result." || texts["legacy"] != "Updated old snapshot" {
+		t.Fatalf("trace contents: %+v", texts)
+	}
+}
