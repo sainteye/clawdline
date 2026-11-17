@@ -1987,8 +1987,8 @@ test("missing voice choices have a bounded read and never become an answer", asy
   }), deps)).output)
   assert.equal(out.answered, false)
   assert.equal(out.question_error, "voice_question_unavailable")
-  assert.equal(calls.length, SCREEN_READ_ATTEMPTS)
-  assert.equal(sleeps.length, SCREEN_READ_ATTEMPTS - 1)
+  assert.equal(calls.length, 1)
+  assert.equal(sleeps.length, 0)
   assert.equal(calls.some(c => c.init?.method === "POST"), false)
   assert.ok(calls.every(c => (c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Machine"] === "machine-a"))
 })
@@ -2143,4 +2143,21 @@ test('focused explanations use the shared analyzer while summaries keep their ex
  assert.equal(m.calls.filter(c=>c.path.startsWith('/v1/transcript')).length,0,'the analyzer owns detailed reads')
  await runCopilotTool('get_session_summary',JSON.stringify({session_id:'%2'}),deps)
  assert.equal(asked.length,1,'ordinary summaries never start focused analysis')
+})
+
+
+test("a Cloud carried question is answered from its returned row without polling the display list", async () => {
+ const {deps,calls,sleeps}=fakeMachine({})
+ const row={...ROWS[2],execution_generation:'run-1'}
+ deps.fleet=async()=>[{machine:'machine-a',machineName:'Office',row:{...row,menu:undefined}}]
+ deps.fetch=async(path,init)=>{
+  calls.push({path,init})
+  if(path.includes('?look='))return Response.json({complete:true,sessions:['%7'],row:{session:row,at:1}})
+  if(path.endsWith('/key'))return Response.json({ok:true,action:'keyed'})
+  throw new Error('unexpected display-list polling')
+ }
+ const out=JSON.parse((await runCopilotTool('answer_session_question',JSON.stringify({session_id:'fleet:machine-a:%257',session_label:row.label,choice:'Yes',expected_question:menuFingerprint(row.menu as never)}),deps)).output)
+ assert.equal(out.answered,true)
+ assert.equal(calls.length,2)
+ assert.deepEqual(sleeps,[])
 })

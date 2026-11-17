@@ -30,6 +30,7 @@ func TestTheVoiceCopilotConsoleBoundsMatchTheirRegistrations(t *testing.T) {
 		{"copilot-live.ts", "LIVE_UPDATE_CHARS", "console.copilot_live_update_characters"},
 		{"copilot-live.ts", "LIVE_APPEND_TOKENS", "console.copilot_live_append_tokens"},
 		{"copilot-live.ts", "LIVE_OPENING_WAIT_MS", "console.copilot_live_opening_wait_milliseconds"},
+		{"copilot-live.ts", "LIVE_CLOSE_WAIT_MS", "console.copilot_live_close_wait_milliseconds"},
 		{"copilot-tools.ts", "IDLE_FALLBACK_SECONDS", "console.copilot_idle_fallback_seconds"},
 		{"copilot-help.ts", "HELP_SECTIONS", "console.copilot_help_sections"},
 		{"copilot-help.ts", "HELP_SECTION_CHARS", "console.copilot_help_section_characters"},

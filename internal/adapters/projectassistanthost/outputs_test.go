@@ -47,7 +47,11 @@ func TestOutputToolsUseCurrentTurnAndDurableIdempotency(t *testing.T) {
 		t.Fatal(two, err)
 	}
 	items, err := n.tools.ListArtifacts(ctx)
-	if err != nil || len(items) != 1 || items[0].Output != two || items[0].Path == "" {
+	// The library adds the initial display-title revision to the immutable
+	// publication; every other field must still match the latest output.
+	displayed := two
+	displayed.TitleVersion = 1
+	if err != nil || len(items) != 1 || items[0].Output != displayed || items[0].Path == "" {
 		t.Fatal(items, err)
 	}
 	stored, err := os.ReadFile(items[0].Path)

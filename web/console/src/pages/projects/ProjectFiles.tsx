@@ -1,3 +1,4 @@
+import { confirmAction } from "../../confirm-action.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
 import { fileAssistants } from "./project-files-api.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
@@ -122,7 +123,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
 
   const choose = async (file: ProjectFile) => {
     if (busy) return
-    if (dirty && !window.confirm(catalogWord("literal", "0651603b0c62"))) { editor.current?.focus(); return }
+    if (dirty && !await confirmAction(catalogWord("literal", "0651603b0c62"))) { editor.current?.focus(); return }
     const ticket = ++serial.current
     setSelected(file.id); setContent(null); setDraft(""); setEditing(false); setError(""); setNotice("")
     if (file.status !== "ready") return
@@ -215,7 +216,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
               <div className="project-files-actions">
                 {!editing && content.file.editable && <button type="button" onClick={() => { setEditing(true); requestAnimationFrame(() => editor.current?.focus()) }}>{catalogWord("inline", "74aed729535a")}</button>}
                 {editing && <><button type="button" disabled={!dirty || busy} aria-busy={busy} onClick={() => void save()}><ActionProgress busy={busy} label={catalogWord("literal", "d19eb852ab9d")}>{catalogWord("inline", "9c6bde88026e")}</ActionProgress></button>
-                  <button type="button" disabled={busy} onClick={() => { if (!dirty || window.confirm(catalogWord("literal", "c5a4b86fa44f"))) { setDraft(content.text); setEditing(false) } }}>{catalogWord("inline", "7a3efd8a888d")}</button>
+                  <button type="button" disabled={busy} onClick={async () => { if (!dirty || await confirmAction(catalogWord("literal", "c5a4b86fa44f"))) { setDraft(content.text); setEditing(false) } }}>{catalogWord("inline", "7a3efd8a888d")}</button>
                   <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice(catalogWord("literal", "d9489690da4d")),
                     // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
                     () => setError(catalogWord("literal", "3b77a5005a39")))}>{catalogWord("inline", "c6438a8858d3")}</button></>}

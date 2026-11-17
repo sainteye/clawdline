@@ -198,7 +198,7 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 			current = row.ID
 		}
 	}
-	answer, status, detail := decideCopilotSession(ctx, v.Key, said, current, sessions)
+	answer, status, detail := decideCopilotSession(ctx, v.Key, said, current, sessions, s.recordCopilotChatUsage)
 	if detail != "" {
 		code := "copilot_decision_failed"
 		if status == http.StatusUnauthorized {
@@ -212,8 +212,12 @@ func (s *Server) copilotDecideRoute(w http.ResponseWriter, r *http.Request) {
 
 // decideCopilotSession asks the decision model once. Only ids from sessions
 // survive its answer.
-func decideCopilotSession(ctx context.Context, key, said, current string, sessions []copilotDecisionSession) (copilotDecisionAnswer, int, string) {
-	content, status, detail := copilotChatJSON(ctx, key, copilotDecisionRequest(said, current, sessions))
+func decideCopilotSession(ctx context.Context, key, said, current string, sessions []copilotDecisionSession, observers ...func(string, copilotChatUsage)) (copilotDecisionAnswer, int, string) {
+	var usage copilotChatUsage
+	content, status, detail := copilotChatJSONRecord(ctx, key, copilotDecisionRequest(said, current, sessions), &usage)
+	for _, observe := range observers {
+		observe(copilotDecisionModel, usage)
+	}
 	if detail != "" {
 		return copilotDecisionAnswer{}, status, detail
 	}

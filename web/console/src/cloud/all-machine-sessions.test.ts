@@ -434,3 +434,17 @@ test("the voice copilot's fleet rows keep each Session's Project folder", async 
   assert.equal(projectBatchSize(grouped), 2)
   assert.ok(rows.every(row => row.execution === "g1"), "the question read must stay on the displayed execution")
 })
+
+
+test("voice fleet rows preserve each execution's Project mark", () => {
+  const marks = [
+    { accent: "#123456", cells: [["#00aaff", null]] },
+    { accent: "#654321", cells: [], svg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>' },
+    undefined,
+  ]
+  const rows = fleetRowsOf(copilotFleetRows(marks.map((icon, index) => ({
+    title: "Same title", destination: { machineID: `machine-${index}`, sessionID: "s1", executionGeneration: "g1" }, icon,
+  })), new Map()))
+  assert.deepEqual(rows.map(row => row.icon), marks)
+  assert.deepEqual(rows.map(row => row.machine), ["machine-0", "machine-1", "machine-2"])
+})

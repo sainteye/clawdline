@@ -187,7 +187,8 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
       return
     }
     assert.equal(c.state.status, 'connected')
-    const phases=c.journalLines.filter(entry=>entry.text==='connection_stage').map(entry=>entry.tool)
+    const saved=requests.filter(r=>r.path==='/v1/voice/copilot-journal').flatMap(r=>JSON.parse(r.init.body).entries)
+    const phases=[...saved,...c.journalLines].filter(entry=>entry.text==='connection_stage').map(entry=>entry.tool)
     assert.equal(phases[0].phase,'settings')
     assert.equal(phases[0].engine,undefined,'the new call cannot inherit the previous engine in diagnostics')
     assert.ok(phases.some(entry=>entry.phase==='provider'))
@@ -797,9 +798,12 @@ test('a GPT-Live call configures its backend after start, starts its report, and
   assert.match(journaled?.tool?.steps ?? '', /\/v1\/sessions \d+ms/, 'each machine request of a tool is timed in the journal')
 
   c.handleLiveEvent({ type: 'session.usage.updated', usage: { seconds: 60 } })
-  c.handleLiveEvent({ type: 'response.event', event: { type: 'response.completed', response: { usage: { input_tokens: 10000, output_tokens: 0 } } } })
+  c.handleLiveEvent({ type: 'response.event', event: { type: 'response.completed', response: { id: 'backend-response-1', usage: { input_tokens: 10000, output_tokens: 0 } } } })
   assert.ok(Math.abs(c.state.cost.usd - (0.05 + 0.001)) < 1e-9, String(c.state.cost.usd))
   assert.equal(c.state.cost.priced, true)
+  const once=c.state.cost.usd
+  c.handleLiveEvent({type:'response.event',event:{type:'response.completed',response:{id:'backend-response-1',usage:{input_tokens:10000,output_tokens:0}}}})
+  assert.equal(c.state.cost.usd,once,'a repeated completion is not billed twice in the estimate')
   assert.ok(c.state.cost.live.seconds >= 60)
   clearInterval(c.liveTicker)
 })
@@ -1173,4 +1177,21 @@ test('Live menu routing fits the append limit even for a long Chinese Session ti
  assert.match(JSON.stringify(appends),/conversation-seven/)
  assert.match(JSON.stringify(appends),/讀它最後五則回覆/)
  assert.equal(appends.filter(e=>e.type==='session.commentary.append').length,1)
+})
+
+test('interrupting the opening aborts its reads and immediately releases its progress cue',async()=>{
+ const f=fixture(false,null);globalThis.location={hash:''}
+ let signal
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path,init)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[{id:'%1',label:'Work',state:'idle'}]})
+  if(path.startsWith('/v1/transcript?'))return new Promise((resolve,reject)=>{signal=init.signal;signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true})})
+  assert.fail(path)
+ }})
+ const pending=f.c.prepareListReport();await tick()
+ assert.ok(f.c.pendingTools.size>0)
+ f.c.cancelOpening()
+ assert.equal(signal.aborted,true)
+ assert.equal(f.c.pendingTools.size,0)
+ await pending
+ assert.equal(f.responses().length,0)
 })

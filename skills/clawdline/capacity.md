@@ -372,6 +372,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.copilot_kept_recap_seconds` | 1800 | `seconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_list_transcript_reads` | 6 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_live_append_tokens` | 400 | `tokens` | `coalesce` | `sender, diagnostics` | — |
+| `console.copilot_live_close_wait_milliseconds` | 5000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.copilot_live_note_characters` | 400 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_live_opening_wait_milliseconds` | 60000 | `milliseconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_live_update_characters` | 150 | `characters` | `coalesce` | `sender, diagnostics` | — |

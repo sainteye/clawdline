@@ -67,6 +67,7 @@ export function copilotFleetRows(presentations: Iterable<MachineListPresentation
       execution_generation: p.destination.executionGeneration,
       assistant: p.assistant ?? p.status?.assistant ?? "",
       ...(p.cwd ? { cwd: p.cwd } : {}), ...(p.projectKey ? { project_key: p.projectKey } : {}),
+      ...(p.icon ? { icon: p.icon } : {}),
     },
   }))
 }

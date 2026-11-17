@@ -204,6 +204,13 @@ bytes are fetched on demand through an opaque item-image id, including through a
 machine-scoped Cloud read, so an unassigned or Planning item does not need a Session identity to
 show its references.
 
+Clicking an uploaded reference on a Session to-do or a closed Board item opens the existing
+in-app image Lightbox, with its zoom, pan, download and close controls. These actions do not open
+a browser tab. Thumbnails load with the row; originals load only when opened and remain cached
+for that mounted reference. A failed original read leaves the thumbnail and a retryable action.
+Leaving the owning reference cancels a pending preview and releases its object URLs. An open
+Board item's image still opens the red-pen editor.
+
 Reference images are person-owned input. Agents may read them with the item briefing and item
 view, but cannot add, replace, order, or delete them. Adding or deleting one is an optimistic,
 idempotent item mutation that increments the item version and appends an immutable event. A

@@ -302,6 +302,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.copilot_live_update_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-note cut on a Session's newest reports; enforced in the console"}
 		},
+		"console.copilot_live_close_wait_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-call final usage wait after hangup; enforced in the console"}
+		},
 		"console.copilot_live_opening_wait_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-call wait for the opening to be said; enforced in the console"}
 		},

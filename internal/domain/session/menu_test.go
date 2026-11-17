@@ -157,8 +157,14 @@ func TestConfirmRefusesAReturnOnceThePickerMovedOn(t *testing.T) {
 	if got := Confirm(1, nil, single); got != ConfirmMovedOn {
 		t.Fatalf("a set with nothing read before is %s", got)
 	}
-	if k, n := Walk(3, 1); k != 'k' || n != 2 {
-		t.Fatalf("walk %c %d", k, n)
+	for _, tc := range []struct {
+		here, want int
+		key        string
+		steps      int
+	}{{3, 1, "\x1b[A", 2}, {1, 3, "\x1b[B", 2}, {2, 2, "\x1b[B", 0}} {
+		if k, n := Walk(tc.here, tc.want); k != tc.key || n != tc.steps {
+			t.Fatalf("walk %q %d", k, n)
+		}
 	}
 }
 
@@ -464,5 +470,12 @@ func TestASpinnerUnderTheModelRowsIsStillATurn(t *testing.T) {
 	turn := strings.Replace(screen, control, "◐ Thinking… (3s · esc to interrupt)", 1)
 	if m, ok := ReadMenu(turn, AssistantClaude, false); ok {
 		t.Fatalf("rows over a spinner read as %+v", m.Options)
+	}
+}
+
+func TestAddingDirectoryPickerHasOnlyItsTwoChoices(t *testing.T) {
+	m, ok := ReadMenu(fixture(t, "menu-add-directory.txt"), AssistantClaude, true)
+	if !ok || labels(m) != "No, exit|Yes, add it" {
+		t.Fatalf("menu: %v %+v", ok, m)
 	}
 }

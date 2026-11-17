@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/domain/copilot"
@@ -28,6 +30,7 @@ import (
 const copilotLiveBodyLimit = copilot.MaxLiveSDPBytes + copilot.MaxLiveInstructionsBytes + 4096
 
 type copilotLiveRequest struct {
+	Call         string `json:"call,omitempty"`
 	SDP          string `json:"sdp"`
 	Instructions string `json:"instructions"`
 }
@@ -66,6 +69,10 @@ func (s *Server) copilotLiveRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusBadRequest, "copilot_live_bad_instructions", "The GPT-Live instructions are too long.")
 		return
 	}
+	if req.Call != "" && !copilotJournalCall.MatchString(req.Call) {
+		writeRefusal(w, http.StatusBadRequest, "invalid_body", "A usage call names one call journal.")
+		return
+	}
 	v, err := s.readCopilot()
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "copilot_settings_unreadable", "The voice copilot settings on this machine cannot be read.")
@@ -86,6 +93,18 @@ func (s *Server) copilotLiveRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeRawRefusal(w, http.StatusBadGateway, code, "OpenAI did not open a GPT-Live call: "+detail)
 		return
+	}
+	if req.Call != "" {
+		now := time.Now()
+		u := copilotUsageSnapshot{Seq: -1, Started: now.UnixMilli(), Engine: "live", Model: copilot.LiveModel, USD: 0.0125, Parts: map[string]float64{"voice": 0.0125}, Seconds: 15, Priced: true}
+		usage, _ := json.Marshal(u)
+		line, _ := json.Marshal(struct {
+			Call string `json:"call"`
+			copilotJournalEntry
+		}{req.Call, copilotJournalEntry{At: now.UnixMilli(), Kind: "notice", Text: "usage_snapshot", Tool: usage}})
+		if err := s.appendCopilotJournal(now, append(line, '\n')); err != nil {
+			log.Printf("voice initialization usage: %v", err)
+		}
 	}
 	writeJSON(w, copilotLiveAnswer{SessionID: id, SDP: answer, Model: copilot.LiveModel, BackendModel: copilot.LiveBackendModel, Voice: e.Voice})
 }

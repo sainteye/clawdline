@@ -1,3 +1,4 @@
+import { confirmAction } from "../../confirm-action.js"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { Overview } from "./api.js"
 import { campaignWindow, DailyChart, RouteLink, Tile, TrendTile, utcMinute, type Go } from "./AdminDashboard.js"
@@ -722,7 +723,7 @@ function OneTimeCode({ code, codeId, publicCode, say, onDone }: { code: string; 
 
   useEffect(() => {
     if (publicCode) return
-    const release = guardCodeNavigation(() => window.confirm(say("revealLeaveWarning")))
+    const release = guardCodeNavigation(() => confirmAction(say("revealLeaveWarning")))
     const beforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ""

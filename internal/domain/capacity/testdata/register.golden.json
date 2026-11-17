@@ -7297,6 +7297,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.copilot_live_close_wait_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.copilot_live_note_characters",
     "Class": "buffer",
     "Unit": "characters",

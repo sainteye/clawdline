@@ -54,12 +54,12 @@ func sameAnswered(a, b []MenuStep) bool {
 	return true
 }
 
-// Walk is the keystroke that moves a highlight from one row to another and how
-// many of them: `j` down, `k` up. Plain letters rather than `ESC [ B`, so no
-// escape sequence ever travels this path (Targets.walk).
-func Walk(here, want int) (key byte, times int) {
+// Walk returns native arrow keys and the number of steps between selections.
+// Letters can be retained as prompt text by a native picker, so menu callers
+// never receive j/k as navigation keys.
+func Walk(here, want int) (key string, times int) {
 	if want >= here {
-		return 'j', want - here
+		return "\x1b[B", want - here
 	}
-	return 'k', here - want
+	return "\x1b[A", here - want
 }

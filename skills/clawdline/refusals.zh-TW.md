@@ -120,7 +120,7 @@
 | `image_not_found` | `internal/transport/http/work_v2_reference_images.go` |
 | `internal` | `internal/transport/http/actions.go`, `internal/transport/http/auth.go`, `internal/transport/http/board.go`, `internal/transport/http/browser.go`, `internal/transport/http/orchestrator.go`, `internal/transport/http/push.go`, `internal/transport/http/terminals.go`, `internal/transport/http/tracks.go` |
 | `invalid_audience_selector` | `internal/transport/http/board.go` |
-| `invalid_body` | `internal/transport/http/copilot_decide.go`, `internal/transport/http/copilot_journal.go`, `internal/transport/http/copilot_question.go`, `internal/transport/http/copilot_recap.go`, `internal/transport/http/proposals.go` |
+| `invalid_body` | `internal/transport/http/copilot_decide.go`, `internal/transport/http/copilot_journal.go`, `internal/transport/http/copilot_live.go`, `internal/transport/http/copilot_question.go`, `internal/transport/http/copilot_recap.go`, `internal/transport/http/proposals.go` |
 | `invalid_command` | `internal/transport/http/board.go`, `internal/transport/http/work.go` |
 | `invalid_cursor` | `internal/transport/http/agents.go`, `internal/transport/http/squad_events.go`, `internal/transport/http/tracks.go`, `internal/transport/http/transcript.go` |
 | `invalid_deployment_policy` | `internal/domain/work/v2.go` |
