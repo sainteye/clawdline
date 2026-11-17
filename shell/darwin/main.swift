@@ -1059,11 +1059,15 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         inputBar.toggle()
     }
 
-    /// "Home" is the console, even when Cloud was the tab left in front.
+    /// "Home" opens the console and switches to the Settings center.
     @objc private func showHome() {
         showConsole()
         if showingCloud { showTab(cloud: false) }
-        web.evaluateJavaScript("window.location.hash = ''")
+        web.evaluateJavaScript("window.location.hash = 'page=settings'") { [weak self] _, error in
+            if error != nil {
+                self?.web.load(URLRequest(url: URL(string: "\(home.absoluteString)#page=settings")!))
+            }
+        }
     }
 
     /// Launch at login, through SMAppService and ServiceMode, off until somebody turns it on.
