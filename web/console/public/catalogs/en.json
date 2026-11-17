@@ -10102,6 +10102,7 @@
   "projectAssistants.failGeneric": "That didn't work.",
   "projectAssistants.projectsFailed": "Couldn't load the Projects.",
   "projectAssistants.sending": "Sending…",
+  "projectAssistants.sendAccepted": "Sent · updating conversation…",
   "projectAssistants.rulesTitle": "Standing rules",
   "projectAssistants.rulesHint": "Always allow and Never make Claude Code remember a rule for this Project. Revoke one and it asks you again next time.",
   "projectAssistants.rulesEmpty": "No standing rules yet.",

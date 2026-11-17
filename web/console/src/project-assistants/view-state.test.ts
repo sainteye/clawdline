@@ -105,6 +105,17 @@ test("send recovery: a held permission answer is never inspected as a message se
 })
 const memoryStore=()=>{const disk=new Map<string,string>();return {disk,store:{getItem:(k:string)=>disk.get(k)??null,setItem:(k:string,v:string)=>{disk.set(k,v)},removeItem:(k:string)=>{disk.delete(k)}}}}
 const journalSend=(id:string,text="retained draft",extra:Partial<W.ProjectAssistantSendRequest>={}):W.ProjectAssistantSendRequest=>({command:{key,operation:"send",idempotency_key:id,content_hash:""},fence,text,quote_message_id:"quote-1",...extra})
+test("send recovery journal: accepted but unobserved text survives reload with its own receipt",()=>{
+  const {store}=memoryStore(),own=draftIdentity("account",key),intent=journalSend("accepted-send")
+  const receipt={id:"accepted-receipt",command:intent.command,state:"accepted" as const,resource_id:"admitted-turn",event_seq:10}
+  createViewState(store).heldOutcomes.set(own,{intent,receipt})
+  const reloaded=createViewState(store).heldOutcomes
+  assert.equal(reloaded.problem(own),null)
+  assert.equal((reloaded.get(own)?.intent as W.ProjectAssistantSendRequest).text,"retained draft")
+  assert.equal(reloaded.get(own)?.receipt?.resource_id,"admitted-turn")
+  createViewState(store).heldOutcomes.set(own,{intent,receipt:{...receipt,command:{...receipt.command,key:{...key,bot_id:"other"}}}})
+  assert.equal(createViewState(store).heldOutcomes.problem(own),"unreadable","a foreign receipt must not be adopted")
+})
 test("send recovery journal: a held send survives a full reload with its identity, text, quote and references, without picture data",()=>{
   const {disk,store}=memoryStore(),own=draftIdentity("account",key)
   createViewState(store).heldOutcomes.set(own,{intent:journalSend("original",undefined,{images:["data:image/png;base64,AAAA"],upload_ids:["up-1"]}),receipt:null,files:["notes.txt"]})

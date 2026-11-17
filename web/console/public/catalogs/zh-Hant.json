@@ -10102,6 +10102,7 @@
   "projectAssistants.failGeneric": "沒有成功。",
   "projectAssistants.projectsFailed": "無法載入 Project 清單。",
   "projectAssistants.sending": "傳送中…",
+  "projectAssistants.sendAccepted": "已送出・正在更新對話…",
   "projectAssistants.rulesTitle": "永久規則",
   "projectAssistants.rulesHint": "「永遠允許」和「永不允許」會讓 Claude Code 在這個 Project 記下規則。撤銷後，下次會再問你。",
   "projectAssistants.rulesEmpty": "目前沒有永久規則。",

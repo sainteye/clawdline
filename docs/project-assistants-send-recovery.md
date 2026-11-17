@@ -15,6 +15,7 @@ provably sent nothing at all.
 | The source answered with a typed refusal | the response body | Releases the hold, as before |
 | The write may have crossed | network loss, a non-OK reply, an abort or grant change *after* the transport was invoked | `pa_outcome_unknown`; the hold and the locked draft stay |
 | The source returned a receipt, then a later check failed | the outer `authorized()` post-check | The source's receipt is kept as the outcome |
+| The write answer has no valid receipt for this command | response shape and command identity checks in Chat | Keeps the original intent as `pa_outcome_unknown`, including the raw answer; never resends |
 
 The "not sent" mark is a non-enumerable property set by `notSent()` and read
 by `provablyNotSent()` (`web/console/src/project-assistants/client.ts`), so a
@@ -23,6 +24,36 @@ or unpaired *after* a send crossed the transport surfaced as `pa_offline` /
 `pa_unpaired`, which the chat treated as definitive and released — a possible
 duplicate if the person sent again. Writes now report outcome unknown in that
 case and keep the transport's evidence in `AssistantTransportFailure.response`.
+
+## Admission and visible results
+
+An accepted receipt does not prove that the conversation has been observed.
+Chat retains the accepted command and text in the existing journal until a
+user message in the same Bot, Project and conversation names the receipt's
+turn. Another message with identical text cannot replace it. Until then the
+row says **Sent · updating conversation…**; a read failure keeps both that row
+and its typed error, including after reload. The composer may hold the next
+draft, but another send waits until the accepted message is observed.
+
+An explicit send starts a fresh snapshot read even if the browser reports a
+hidden document. Foreground and explicit demands coalesce behind an active
+read instead of disappearing. An older snapshot whose frontier precedes
+admission cannot end observation of the newer turn. Generation changes still
+require a validated recovery snapshot; they do not erase the accepted text.
+A permission/trace collection crossing that boundary propagates its typed
+`pa_stale_generation` before recovery locks and aborts its other reads. It
+must not abort itself first and swallow the boundary as external cancellation.
+Initial entry and subsequent refreshes share one coordinator, which permits
+one recovery snapshot after a validated snapshot's metadata changes fence.
+Another failure stays typed and visible; it does not start a recovery loop.
+
+Only that accepted turn may continue using the existing event cadence while
+hidden. A terminal event requests one final consistent snapshot before this
+observation stops, so a terminal event arriving ahead of a message does not
+strand the answer behind the event cursor. Leaving the Chat, pagehide or
+revocation stops its reads. Ordinary hidden polling remains paused. None of
+this changes execution fences, permissions, transport deadlines, retry policy
+or read acknowledgements: fetching a hidden result does not mark it read.
 
 ## The explicit check
 
@@ -37,8 +68,10 @@ acknowledgement. `inspectHeldSend` (`view-state.ts`) trusts only:
   `read`, or a source `unknown` whose turn exists), the turn named by
   `resource_id` with the same idempotency key in the same conversation.
 
-Outcomes: *delivered* reattaches — the hold clears, the restored copy leaves
-the composer, and the chat refreshes onto the existing turn; *failed* releases
+Outcomes: *delivered* reattaches — the restored copy leaves the composer and
+the chat refreshes onto the existing turn. A confirmed admitted receipt keeps
+its pending row and journal until that turn's message is observed, including
+when the following read fails; *failed* releases
 the draft for editing; *unknown*, *missing* and anything invalid keep the hold.
 A missing receipt is never read as non-delivery: a Cloud request may still
 arrive. A held permission answer is host-owned and is never inspected as a
@@ -53,9 +86,9 @@ send's fence, so its Project and conversation). `HeldOutcomes`
 (`view-state.ts`) keeps, per account/Bot, the `active` send in the box and the
 sends the person set `aside`. A record holds the original command (same
 idempotency key), text, quote id, `upload_ids`, file names, the number of
-pictures and the source's `unknown` receipt, if any. It never holds picture
+pictures and the source's `unknown` or validated admitted receipt, if any. It never holds picture
 data, tokens or grants. Unreadable originals are preserved as opaque local
-bytes when the person continues; they are never interpreted as commands. A full reload reads a valid record back: the box shows the held
+bytes when the person continues; they are never interpreted as commands. An admitted record restores its pending row until its canonical message is read. For an uncertain record, a full reload reads a valid record back: the box shows the held
 text and quote, locked, with **Check with the machine**; nothing is read or
 sent until the person clicks. Pictures cannot come back, so the held context
 says how many were attached and that they may already have been sent.
@@ -136,6 +169,21 @@ that retry: an uncertain send is never resent, only checked against its exact
 receipt, and continuing means a new, empty message.
 
 ## Evidence
+
+- `TestProjectAssistantChatObservationBrowser` injects hidden visibility into
+  the actual Bots/Chat and captured source client, then crosses the closed
+  Cloud decoder, authenticated HTTP Host and SQLite. A local protocol provider
+  holds execution preflight until the first post-admission snapshot is captured,
+  changes the binding generation before metadata reads, emits a tool trace and waits for the harness
+  before finishing. No provider CLI, model API or production Bot is used.
+  The old Chat loses its accepted row before any canonical read. The matrix
+  covers English desktop and Traditional Chinese narrow widths, a busy older
+  read and foreground demand, terminal-before-message recovery, a typed read
+  failure across reload, leaving, revocation, unknown and malformed write
+  answers without replay, and an explicit receipt check followed by a failed
+  read. The outer encrypted carrier is simulated; this is
+  not production pairing or UI acceptance. Run with
+  `CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR=/task-owned/evidence-directory go test ./internal/transport/http -run '^TestProjectAssistantChatObservationBrowser$' -count=1 -v`.
 
 - `web/console/src/cloud/project-assistants.test.ts` — the `send recovery:`
   tests: pre-transport refusals, authority changes after transport, lost

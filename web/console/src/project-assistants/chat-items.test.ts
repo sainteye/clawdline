@@ -3,7 +3,43 @@ import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages } from "./chat-items.ts"
+// @ts-expect-error Node executes source extensions.
+import {admittedReceipt,admittedMessage,sendAcknowledgement,ChatObservation} from "./chat-observation.ts"
 const message=(id:string,seq:number,kind:W.ProjectAssistantMessageKind="assistant",at="2026-11-12T00:00:00Z")=>({id,seq,kind,at,text:id}) as W.ProjectAssistantMessage
+test("an accepted send is replaced only by its own source turn and message",()=>{
+  const key={machine_id:"machine",bot_id:"bot"},project={machine_id:"machine",project_id:"project",canonical_id:"canonical",kind:"place" as const}
+  const fence={key,project,conversation_id:"conversation",binding_id:"old-binding",generation:1}
+  const intent={command:{key,operation:"send" as const,idempotency_key:"own-send",content_hash:""},fence,text:"same words",quote_message_id:""}
+  const receipt={command:intent.command,resource_id:"own-turn",state:"accepted",id:"receipt",event_seq:1} as W.ProjectAssistantReceipt
+  const canonical={...message("own-message",1,"user"),text:intent.text,turn_id:"own-turn",fence}
+  assert.equal(admittedMessage(intent,receipt,[{...canonical,turn_id:"other-turn"}]),false)
+  assert.equal(admittedMessage(intent,receipt,[{...canonical,fence:{...fence,conversation_id:"other"}}]),false)
+  assert.equal(admittedMessage(intent,{...receipt,command:{...receipt.command,idempotency_key:"other-command"}},[canonical]),false)
+  assert.equal(admittedMessage(intent,receipt,[canonical]),true)
+  const answer={contract_version:"project-assistants.v1",receipt}
+  assert.equal(sendAcknowledgement(answer,intent),true)
+  assert.equal(sendAcknowledgement({contract_version:"project-assistants.v1"},intent),false)
+  assert.equal(sendAcknowledgement({...answer,receipt:{...receipt,command:{...receipt.command,idempotency_key:"other-send"}}},intent),false)
+  assert.equal(admittedReceipt({...receipt,state:"unknown"}),false)
+  assert.equal(admittedReceipt({...receipt,state:"failed"}),false)
+})
+test("an owned turn needs a final snapshot after a terminal event, including reordered answers",()=>{
+  const receipt={resource_id:"own-turn",state:"accepted",event_seq:10,command:{operation:"send"}} as W.ProjectAssistantReceipt
+  const watch=new ChatObservation(receipt)
+  assert.equal(watch.active,true)
+  watch.apply({head:{event_frontier:9},snapshot:{pending_turns:[]},items:[]} as unknown as W.ProjectAssistantReadViewResponse)
+  assert.equal(watch.active,true,"an older busy read cannot retire a later admitted turn")
+  watch.apply({head:{event_frontier:10},snapshot:{pending_turns:[]},items:[]} as unknown as W.ProjectAssistantReadViewResponse)
+  assert.equal(watch.active,true,"an absent pending row is not the owned turn's terminal evidence")
+  watch.apply({items:[{event:{turn:{id:"other-turn",state:"succeeded"}}}]} as W.ProjectAssistantReadViewResponse)
+  assert.equal(watch.finalSnapshot,false)
+  watch.apply({items:[{event:{turn:{id:"own-turn",state:"succeeded"}}}]} as W.ProjectAssistantReadViewResponse)
+  assert.equal(watch.active,true);assert.equal(watch.finalSnapshot,true)
+  watch.apply({head:{event_frontier:20},snapshot:{pending_turns:[],last_turn:{id:"own-turn",state:"succeeded"}},items:[{message:message("final-answer",2)}]} as unknown as W.ProjectAssistantReadViewResponse)
+  assert.equal(watch.active,false);assert.equal(watch.finalSnapshot,false)
+  watch.accept(receipt);watch.stop();assert.equal(watch.active,false)
+  watch.accept({...receipt,state:"unknown"});assert.equal(watch.active,false)
+})
 test("replay and earlier history produce one bubble per message in source order",()=>{
   const a=message("a",1),b=message("b",2)
   assert.deepEqual(mergeMessages([[b],[a,b]]).map(m=>m.id),["a","b"])

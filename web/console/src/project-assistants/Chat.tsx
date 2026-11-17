@@ -5,6 +5,8 @@ import type { SourceClient } from "./client"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, sameConversation, sameFence, type HeldInspection, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
+import {admittedReceipt,admittedMessage,sendAcknowledgement,ChatObservation} from "./chat-observation"
+import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import { BotAvatar } from "./BotAvatar"
 import {BotSidePanel,type BotInfoTab} from "./BotSidePanel"
@@ -82,10 +84,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const entryDraft=useRef({text:view.draft(draftKey),quote:view.quotes.get(draftKey)??""}).current
   const entryChecked=useRef(false),entryUnknown=useRef(false)
   const legacyAtMount=useRef(view.unverifiedDrafts.active(draftKey,scope)).current
-  const lockedAtMount=inFlightAtMount?null:heldSendAtMount
+  const acceptedAtMount=admittedReceipt(heldAtMount?.receipt)?heldSendAtMount:null
+  const lockedAtMount=inFlightAtMount||acceptedAtMount?null:heldSendAtMount
+  const observation=useRef(new ChatObservation(heldAtMount?.receipt)).current
+  const uncertain=()=>{const held=view.heldOutcomes.get(draftKey);return !!held&&!(held.intent.command.operation==="send"&&admittedReceipt(held.receipt))}
   const [text,setText]=useState(()=>lockedAtMount?lockedAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedAtMount?lockedAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
-  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>(inFlightAtMount?.text??null)
-  const [unknown,setUnknown]=useState(()=>(view.heldOutcomes.has(draftKey)&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>((inFlightAtMount??acceptedAtMount)?.text??null)
+  const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [routines,setRoutines]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
@@ -98,7 +103,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
-  const refreshBusy=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
+  const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
+  const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
+  const timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
   const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
   const collectionCursors=useRef({permissions:new Set<string>(),traces:new Set<string>()})
   const lastRead=useRef(0),restored=useRef(false),followingRef=useRef(true),sendBaselineSeq=useRef(0)
@@ -143,7 +150,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
     const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
-    const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows)
+    const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows);observation.apply(page)
     epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier
     headRef.current=page.head;setHead(page.head);currentData.current=fresh;setData(fresh)
     setMore(page.next_cursor);lastRead.current=0;setError("")
@@ -158,7 +165,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     try{
       const page=await read(request(mode,cursor),control.signal)
       if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||!headRef.current||!sameFence(before.current_fence,headRef.current.current_fence)||recovery.current)return
-      if(!sameFence(page.head.current_fence,before.current_fence)){lock();throw failure("pa_stale_generation")}
+      // Let catch propagate this typed boundary before lock aborts the read.
+      // Aborting here would misclassify our own transition as external cancel.
+      if(!sameFence(page.head.current_fence,before.current_fence))throw failure("pa_stale_generation")
       if(!cursor)collectionCursors.current[mode]=new Set()
       const cursors=collectionCursors.current[mode]
       if(page.has_more&&cursors.has(page.next_cursor))throw failure("pa_invalid")
@@ -174,13 +183,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock();throw e}}
     finally{reads.current.delete(control);if(collectionBusy.current.get(mode)===control)collectionBusy.current.delete(mode)}
   },[read,request,valid,adoptHead,lock,fail])
-  const refresh=useCallback(async(manual=false)=>{
-    if(refreshBusy.current||!valid()||document.visibilityState==="hidden"||recovery.current&&!manual)return
+  refreshRun.current=async(manual)=>{
+    if(!valid()||source.current?.()===false||document.visibilityState==="hidden"&&!manual&&!observation.active||recovery.current&&!manual)return
     if(timer.current){clearTimeout(timer.current);timer.current=null}
-    refreshBusy.current=true
-    const control=new AbortController(),rebuilding=recovery.current||!currentData.current;eventControl.current=control
+    // Consume a final catch-up demand once. An older snapshot must not turn
+    // it into an immediate loop; the existing cadence still owns later reads.
+    if(manual)observation.finalSnapshot=false
+    const control=new AbortController(),rebuilding=recovery.current||!currentData.current;let snapshotValidated=false;eventControl.current=control
     try {
-      if(recovery.current||!currentData.current||manual||!!error){await recoverSnapshot(control.signal);if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")])}
+      if(recovery.current||!currentData.current||manual||!!error){await recoverSnapshot(control.signal);if(!valid()||control.signal.aborted)return;snapshotValidated=true;await Promise.all([collection("permissions"),collection("traces")])}
       else {
         const before=headRef.current!,capturedEpoch=epoch.current
         const page=await read(request("events","",256),control.signal)
@@ -190,7 +201,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           if(!valid()||control.signal.aborted)return
           await Promise.all([collection("permissions"),collection("traces")])
         }else{
-          adoptHead(page)
+          adoptHead(page);observation.apply(page)
           const rows=eventTimeline(timelineRef.current,page.items);timelineRef.current=rows;setTimeline(rows)
           for(const row of page.items){const event=row.event!
             if(!sameFence(event.fence,page.head.current_fence))continue
@@ -206,25 +217,28 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           ])
         }
       }
-      if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)
+      if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted&&(document.visibilityState!=="hidden"||observation.active)){if(observation.finalSnapshot)void refresh(true);else timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}
     }catch(e){if(!control.signal.aborted&&valid()){
       lock()
-      if((errorCode(e)==="pa_cursor_expired"||errorCode(e)==="pa_stale_generation"||errorCode(e)==="pa_invalid")&&!rebuilding){try{await recoverSnapshot(control.signal);if(valid()&&!control.signal.aborted){await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source))timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}}catch(snapshotError){fail(snapshotError)}}else fail(e)
-    }}finally{refreshBusy.current=false}
-  },[valid,read,request,recoverSnapshot,collection,adoptHead,lock,fail])
+      if((errorCode(e)==="pa_cursor_expired"||errorCode(e)==="pa_stale_generation"||errorCode(e)==="pa_invalid")&&(!rebuilding||snapshotValidated)){try{await recoverSnapshot(control.signal);if(valid()&&!control.signal.aborted){await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&(document.visibilityState!=="hidden"||observation.active))timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}}catch(snapshotError){fail(snapshotError)}}else fail(e)
+    }}
+  }
   useEffect(()=>{
     alive.current=true;const control=new AbortController()
+    refreshQueue.current=serialSnapshotRefresh(manual=>refreshRun.current(manual),control.signal)
+    const pending=view.heldOutcomes.get(draftKey)
+    if(pending?.receipt)observation.accept(pending.receipt)
     // Initial entry uses only the new consistent bounded snapshot.
     // Reopening a Bot retries only its bounded read. Keep the recovery latch
     // until that snapshot validates; unknown effects are never replayed.
-    void recoverSnapshot(control.signal).then(async()=>{if(!valid()||control.signal.aborted)return;await Promise.all([collection("permissions"),collection("traces")]);if(!recovery.current&&currentData.current&&canWrite(currentData.current.source)&&valid()&&!control.signal.aborted)timer.current=setTimeout(()=>void refresh(),EventRefreshMs)}).catch(e=>{if(!control.signal.aborted&&valid()){lock();fail(e)}})
+    void refresh(true)
     // pagehide may run while visibilityState is still visible. Leaving must
     // pause IO rather than start a refresh that the unloading page cannot read.
-    const pause=()=>{eventControl.current?.abort();if(timer.current){clearTimeout(timer.current);timer.current=null}for(const read of reads.current)read.abort();view.flush(draftKey)}
-    const visibility=()=>{if(document.visibilityState==="hidden")pause();else void refresh(true)}
+    const pause=()=>{observation.stop();eventControl.current?.abort();if(timer.current){clearTimeout(timer.current);timer.current=null}for(const read of reads.current)read.abort();view.flush(draftKey)}
+    const visibility=()=>{if(document.visibilityState==="hidden"){if(!observation.active)pause()}else void refresh(true)}
     const show=(event:PageTransitionEvent)=>{if(event.persisted)visibility()}
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show)
-    return()=>{alive.current=false;uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
+    return()=>{alive.current=false;observation.stop();uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
   // A send made by a Chat that was left lands in the host journal by its own
   // command identity; this Chat shows that outcome once and never resends.
@@ -237,8 +251,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const held=view.heldOutcomes.get(draftKey)
       // The left Chat already put an unsettled or failed message back in an empty box; a delivered one leaves the box as the person has it.
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"")
-      setReceipt(held?.receipt??answer);setUnknown(view.heldOutcomes.has(draftKey))
-      setBusy(false);setSending(null);repaintJournal()
+      setReceipt(held?.receipt??answer);setUnknown(uncertain())
+      setBusy(false);setSending(admittedReceipt(answer)?was.text:null);if(answer)observation.accept(answer);repaintJournal()
       if(valid())void refreshRef.current(true)
     }
     const stop=view.heldOutcomes.subscribe(draftKey,n=>{if(alive.current)repaintJournal();landed(n.idempotency_key,n.receipt)})
@@ -323,12 +337,18 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   }
   const canAttach=!!source.pictures?.()
   const addImages=(files:readonly File[])=>{void Promise.all(files.slice(0,MAX_PICTURES).map(file=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)}))).then(urls=>{if(valid())setImages(old=>[...old,...urls].slice(0,MAX_PICTURES))}).catch(fail)}
+  useEffect(()=>{
+    const held=view.heldOutcomes.get(draftKey)
+    if(!held||held.intent.command.operation!=="send"||!admittedMessage(held.intent as W.ProjectAssistantSendRequest,held.receipt,messages))return
+    view.heldOutcomes.settle(draftKey,held.intent.command.idempotency_key,null)
+    setSending(null);setUnknown(false);repaintJournal()
+  },[timeline,receipt,view,draftKey])
   const send=async()=>{
     if(busy||unknown||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
     const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
-    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setInspection(null)
+    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setReceipt(null);setInspection(null)
     const hold=(receipt:W.ProjectAssistantReceipt|null):HeldOutcome=>({intent,receipt,...(pictures.length?{pictures:pictures.length}:{}),...(selected.length?{files:selected.map(f=>f.file.name)}:{})})
     // This send's own answer changes only its own journal entry: never a newer
     // held send, and a send set aside stays aside. Then any Chat showing this
@@ -371,26 +391,27 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         // client itself turns a later revocation into outcome unknown.
         const effect=new AbortController(),follow=()=>{if(alive.current)effect.abort()}
         if(s.aborted)follow();else s.addEventListener("abort",follow,{once:true})
-        try{answered=await source.send(intent,effect.signal)}finally{s.removeEventListener("abort",follow)}
+        try{const answer=await source.send(intent,effect.signal);if(!sendAcknowledgement(answer,intent))throw Object.assign(failure("pa_outcome_unknown"),{response:answer});answered=answer}finally{s.removeEventListener("abort",follow)}
         return answered
       })
-      const owner=land(result.receipt.state==="unknown"?hold(result.receipt):null)
+      const owner=land(result.receipt.state==="unknown"||admittedReceipt(result.receipt)?hold(result.receipt):null)
+      observation.accept(result.receipt)
       if((result.receipt.state==="unknown"||result.receipt.state==="failed")&&owner==="active")restore()
-      if(!valid()||recovery.current)return
-      setReceipt(result.receipt);setUnknown(view.heldOutcomes.has(draftKey))
+      if(!valid())return
+      setReceipt(result.receipt);setUnknown(uncertain())
       if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){setFiles([]);rememberFiles(false);flush()}
-      await refresh()
+      await refresh(true)
     }catch(e){
       // The source's own receipt outlives a later authority or abort check.
       const kept=answered as W.ProjectAssistantReceiptResponse|null
-      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){if(land(null)==="active"){rememberFiles(false);view.flush(draftKey)}if(valid()){setReceipt(kept.receipt);setUnknown(view.heldOutcomes.has(draftKey));setFiles([]);setError("")}return}
+      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){if(land(hold(kept.receipt))==="active"){rememberFiles(false);view.flush(draftKey)}observation.accept(kept.receipt);if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());setFiles([]);setError("");await refresh(true)}return}
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||owner==="active")restore()
-      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(view.heldOutcomes.has(draftKey))}
-    }finally{if(valid()){setBusy(false);setSending(null)}}
+      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
+    }finally{if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
   }
 
   // Reads the source's durable receipts once, on the person's request. A
@@ -406,8 +427,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(view.heldOutcomes.get(draftKey)!==held)return setInspection(null)
       const result=inspectHeldSend(value,held,scope)
       if(result.state==="delivered"){
-        view.heldOutcomes.delete(draftKey)
         const intent=held.intent as W.ProjectAssistantSendRequest
+        if(admittedReceipt(result.receipt)){
+          view.heldOutcomes.settle(draftKey,intent.command.idempotency_key,{...held,receipt:result.receipt})
+          observation.accept(result.receipt);setSending(intent.text)
+        }else view.heldOutcomes.delete(draftKey)
         // The restored copy is the delivered message, not a new draft.
         if(view.draft(draftKey)===intent.text){view.stage(draftKey,"")}
         if(text===intent.text)setText("")
@@ -558,7 +582,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     }catch(e){
       const code=errorCode(e)
       if(attempted&&code!=="pa_outcome_unknown"&&code!=="execution_effect_unknown"&&code!=="unavailable"&&code!=="pa_revoked"&&(e as Error)?.name!=="AbortError")view.heldOutcomes.delete(draftKey)
-      if(valid()&&view.heldOutcomes.has(draftKey))setUnknown(true)
+      if(valid()&&uncertain())setUnknown(true)
       fail(e)
       throw e
     }
@@ -641,7 +665,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const live=!recoveryRequired&&!error&&source.current?.()!==false&&liveActivity(summary.source)&&liveActivity(data?.source??summary.source)
   const mood=live?(data?chatMood(data.source,activeTurn,head?.pending_permission_count??0):rosterMood(summary)):"idle"
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
-  const sendingAdmitted=isSendingAdmitted(sending,messages,sendBaselineSeq.current)
+  const pendingSend=view.heldOutcomes.get(draftKey)
+  const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
+  const sendingAdmitted=sendingAccepted?admittedMessage(pendingSend!.intent as W.ProjectAssistantSendRequest,pendingSend!.receipt,messages):isSendingAdmitted(sending,messages,sendBaselineSeq.current)
   return <section className={`pa-chat-layout${infoTab?" pa-info-open":""}`} aria-label={bot.name}><div className="pa-chat">
     <header className="pa-chat-header"><button className="pa-circle pa-chat-back" onClick={()=>{flush();onBack()}} aria-label={w.back}>‹</button><BotAvatar appearance={bot.appearance} size={36} mood={mood}/><div><h2 tabIndex={-1}>{bot.name}</h2><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></div><button type="button" className="pa-info-toggle" aria-label={w.botInformation} aria-expanded={!!infoTab} onClick={()=>infoTab?setInfoTab(null):openInfo("details")}>{w.infoDetails}</button><BotBrowserChip source={source} current={current} bot={bot} hidden={browser||recoveryRequired} onOpen={()=>setBrowser(true)}/><PaMenu label={w.moreActions} items={[
       {id:"browser",label:botBrowserWord("open"),onSelect:()=>setBrowser(true)},
@@ -655,7 +681,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {id:"export",label:w.export,onSelect:exportBot}]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{(markingRead||readMarked)&&<p role="status">{markingRead?w.markingRead:w.readMarked}</p>}<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}{error&&<p role="alert">{error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>} <button onClick={()=>void refresh(true)}>{w.refresh}</button></p>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={botBrowserSupported(source)?()=>setBrowser(true):undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={botBrowserSupported(source)?()=>setBrowser(true):undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
       <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore).catch(()=>{})} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} context={[machineName||source.machineName||key.machine_id,projectName||bot.project.project_id].join(" · ")} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
@@ -672,7 +698,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     </div>
     <div className="pa-chat-footer">{parts.queued.map(m=>{const queuedTurn=turns.find(t=>t.message_id===m.id&&t.state==="queued");return <div className="pa-queued" key={m.id}><span>{w.queued}: {m.text||m.files?.map(f=>f.name).join(" · ")}</span>{queuedTurn&&!m.files?.length&&!m.attachments?.length&&source.canSendNow?.()&&!!data?.conversation.active_turn_id&&<button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow} disabled={!enabled||busy} onClick={()=>void sendNow(queuedTurn.id)}>↳</button>}{queuedTurn&&source.canUnqueue?.()&&<button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued} disabled={!enabled||busy} onClick={()=>void unqueue(queuedTurn.id)}>×</button>}</div>})}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{legacyBlocked()&&<div className="pa-held-send" role="group" aria-label={w.unverifiedDraft}><p>{w.unverifiedExplanation}</p><button type="button" disabled={busy||!enabled} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.unverifiedDrafts.history(draftKey,scope).map((draft,i)=><div className="pa-held-send pa-held-aside" role="group" aria-label={w.unverifiedDraft} key={i}><p>{w.unverifiedDraft}: <span className="pa-held-text">{draft.text}</span>{draft.quote&&<> · {w.heldQuoted}: {messages.find(m=>m.id===draft.quote)?.text??w.quoteMissing}</>}</p></div>)}{view.unverifiedDrafts.problem(draftKey)&&<p role="alert">{w.unverifiedUnsaved}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {data?.conversation.active_turn_id&&<div className="pa-chat-tools"><button disabled={!enabled||busy} onClick={()=>void stop()}>{w.stop}</button></div>}
-      {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost||sendingAccepted} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     {browser&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowser(false)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
 

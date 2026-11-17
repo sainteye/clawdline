@@ -25,7 +25,7 @@ export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSumma
 
 export interface ReadingPosition { top: number; following: boolean }
 /**
- * One unresolved effect per account/Bot, owned by the existing host lifetime. Never replayed.
+ * One unobserved send or unresolved effect per account/Bot, owned by the host. Never replayed.
  * A send's open request belongs to this lifetime too, so leaving its Chat keeps its receipt.
  */
 export interface HeldOutcome {
@@ -50,6 +50,7 @@ interface Journal { active: HeldOutcome | null; aside: HeldOutcome[]; problem: H
 export const heldJournalKey = (draftKey: string) => "clawdline.bot-held." + draftKey
 const bytes = (text: string) => new TextEncoder().encode(text).length
 const str = (v: unknown): v is string => typeof v === "string"
+const admitted = new Set<W.ProjectAssistantEffectState>(["accepted", "executing", "delivered", "observed", "read"])
 function decodeOutcome(v: unknown, draftKey: string): HeldOutcome | null {
   const o = v as Record<string, any>
   const i = o?.intent, c = i?.command, f = i?.fence
@@ -64,7 +65,12 @@ function decodeOutcome(v: unknown, draftKey: string): HeldOutcome | null {
   if (o.files !== undefined && (!Array.isArray(o.files) || o.files.length > 4 || !o.files.every((x: unknown) => str(x)))) return null
   if (o.pictures !== undefined && (!Number.isInteger(o.pictures) || o.pictures < 0 || o.pictures > 4)) return null
   const r = o.receipt
-  if (r !== null && (!r || typeof r !== "object" || r.state !== "unknown" || !r.command || r.command.idempotency_key !== c.idempotency_key)) return null
+  if (r !== null) {
+    if (!r || typeof r !== "object" || !r.command || r.command.idempotency_key !== c.idempotency_key) return null
+    // Keep old uncertain records readable. New known admissions retain their
+    // own source receipt until the matching message is actually observed.
+    if (r.state !== "unknown" && (!admitted.has(r.state) || r.command.operation !== "send" || !r.command.key || !sameBot(r.command.key,c.key) || !str(r.command.content_hash) || !str(r.id) || !r.id || !str(r.resource_id) || !r.resource_id || !Number.isSafeInteger(r.event_seq) || r.event_seq < 0)) return null
+  }
   return { intent: i, receipt: r, ...(o.pictures ? { pictures: o.pictures } : {}), ...(o.files?.length ? { files: o.files } : {}), restored: true }
 }
 /** What storage keeps of a held send: its command, text, quote, upload references and receipt. No picture data, no credentials. */
@@ -209,7 +215,6 @@ export type HeldInspection =
   | { state: "delivered"; receipt: W.ProjectAssistantReceipt; turn_id: string }
   | { state: "failed" | "unknown"; receipt: W.ProjectAssistantReceipt }
   | { state: "missing" | "invalid" }
-const admitted = new Set<W.ProjectAssistantEffectState>(["accepted", "executing", "delivered", "observed", "read"])
 export function inspectHeldSend(value: W.ProjectAssistantExport, held: HeldOutcome, scope: Pick<W.ProjectAssistantFence, "key" | "project" | "conversation_id">): HeldInspection {
   const intent = held.intent, c = intent.command
   // A permission answer is host-owned and never becomes a message outcome.
