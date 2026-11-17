@@ -512,6 +512,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !send {
 			return http.StatusForbidden, "forbidden", "This device may read, and not send peer work."
 		}
+	case p == sessionBoardRoute:
+		if !machine && !send {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change Session message boards."
+		}
 	case p == "/v1/orchestrator/schedules" || strings.HasPrefix(p, "/v1/orchestrator/schedules/"):
 		// Two doors, as in the Swift app: a device that may send, or this
 		// machine's orchestrator.

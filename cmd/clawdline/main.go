@@ -193,6 +193,8 @@ func main() {
 		landingsCommand(os.Args[2:])
 	case "leases":
 		leasesCommand(os.Args[2:])
+	case "session-board":
+		sessionBoardCommand(os.Args[2:])
 	case "sessions":
 		sessionsCommand(os.Args[2:])
 	case "assistants":

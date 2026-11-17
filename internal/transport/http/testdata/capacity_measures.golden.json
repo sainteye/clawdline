@@ -3624,6 +3624,46 @@
     "Note": true
   },
   {
+    "Name": "session.message_board_archive_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_boards",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_key_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_members",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_page",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_posts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "session.message_board_text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "session.no_movement_seconds",
     "Known": true,
     "Note": true

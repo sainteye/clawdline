@@ -1,3 +1,4 @@
+import { SessionBoardRows, sessionBoardActor, type SessionBoardSource } from "../session/SessionBoards.js"
 import { SessionStateEmpty } from "../session/SessionStateEmpty.js"
 import { createPortal } from "react-dom"
 import { SessionStateFilterControl } from "../session/SessionStateFilter.js"
@@ -35,9 +36,10 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, titleRevision, confirmedTitles }: {
+  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, titleRevision, confirmedTitles, sessionBoardSource }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
+  sessionBoardSource?: (machine: string) => SessionBoardSource | undefined
   titleRevision?: number
   confirmedTitles?: ReadonlyMap<string, string>
   /** Which road this page's reads of that machine take, read as the row is drawn. */
@@ -469,13 +471,17 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             {presentationLoading || presentationFailed ? null : rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
               <p>{reading.value.rows.length === 0 ? nextWord(reading.value.complete ? "cloudAllEmptyMachine" : "cloudAllPartialEmpty") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
-                {rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
+                <SessionBoardRows source={isCollapsed ? undefined : sessionBoardSource?.(machine.id)}
+                  rows={rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   const title = fleetRowTitle(row, presentation, nextWord("cloudAllUnknown"),
                     confirmedTitles?.get(destinationKey(row.destination)))
                   const actions = sessionSwipeActions(row.freshness,
                     displayedPresentationStatus(row, presentation)?.sessionId, row.backend)
-                  return <ProjectedRow key={destinationKey(row.destination)}
+                  return {
+                    actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
+                      displayedPresentationStatus(row, presentation)?.sessionId, title),
+                    render: grouped => <ProjectedRow key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={displayedPresentationStatus(row, presentation)}
@@ -484,7 +490,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     assistant={row.assistant ?? presentation?.assistant} state={row.state} stateLabel={row.providerBlock === "model_capacity" ? nextWord("sessionModelCapacity") : stateWord(row.state)}
                     freshness={row.freshness === "unknown" ? nextWord("cloudAllUnknown") : ""}
                     lastMovementAt={row.lastMovementAt} attention={row.needsAttention === true}
-                    depth={depth} branchThrough={branchThrough} ancestorThrough={ancestorThrough}
+                    depth={grouped ? 0 : depth} branchThrough={!grouped && branchThrough} ancestorThrough={!grouped && ancestorThrough}
                     open={!!target && destinationKey(target) === destinationKey(row.destination)}
                     selectionKey={destinationKey(row.destination)}
                     swiped={swiped === destinationKey(row.destination)}
@@ -495,8 +501,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     onArchive={actions.archive
                       ? () => { swipe.closeOpen(); thawOrder(); onArchiveRequest(row.destination,
                         title) } : undefined}
-                    onOpen={() => onOpen(row.destination)} />
-                })}</ul>}
+                    onOpen={() => onOpen(row.destination)} /> }
+                })} /></ul>}
           </>}
           {reading?.phase === "settled" && !!reading.value.unknownTargets &&
             <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}

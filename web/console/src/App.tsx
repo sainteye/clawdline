@@ -1,3 +1,4 @@
+import type { SessionBoardSource } from "./session/SessionBoards.js"
 import { ViewPluginIcon } from "./view-plugins/Artwork.js"
 import { useViewPlugins } from "./view-plugins/Host.js"
 import { useLocalPluginSource } from "./view-plugins/local.js"
@@ -242,7 +243,7 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, fleetTarget = null, fleetTargetRow = null,
+export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, fleetTarget = null, fleetTargetRow = null,
   fleetTargetIdentity = null, fleetReaderMachine = null, executionReadRevision = 0,
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
   fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetActionIntent = null, onFleetActionIntentHandled,
@@ -260,6 +261,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   /** The Cloud's operator attention list, read by the gate only for an administrator. */
   cloudOperationsAttention?: Attention | null
   cloudPeerAccess?: ReactNode | ((active: boolean) => ReactNode)
+  sessionBoardSource?: SessionBoardSource
   fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
   executionReadRevision?: number
   fleetTarget?: SessionDestination | null
@@ -553,11 +555,14 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   // `move`: through the list as it is drawn, from the highlight, or from an
   // end when there is none.
   const move = (delta: number) => {
-    const list = L.orderedRows().filter((row) => matchesLocalStateFilter(row, statusFilter))
-    if (!list.length) return
-    const at = selectedRef.current ? list.findIndex((r) => r.id === selectedRef.current) : -1
-    const next = at < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, at + delta))
-    select(list[next].id)
+    const drawn = document.getElementById("rows")
+    const ids = drawn?.querySelector(".session-board-group")
+      ? [...drawn.querySelectorAll<HTMLElement>('li[role="option"][data-id]')].map(row => row.dataset.id!)
+      : L.orderedRows().filter(row => matchesLocalStateFilter(row, statusFilter)).map(row => row.id)
+    if (!ids.length) return
+    const at = selectedRef.current ? ids.indexOf(selectedRef.current) : -1
+    const next = at < 0 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, at + delta))
+    select(ids[next])
   }
 
   // While a session is being ended, and until that settles, the open session is
@@ -1340,6 +1345,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         onStarted={openStarted}
         streamTasks={fleet.tasksLive ? fleet.tasks : null}
         fleetList={fleetList?.(filter, setFilter)}
+        sessionBoardSource={sessionBoardSource}
         fleetDetailKey={fleetList && fleetTarget ? JSON.stringify([fleetTarget.machineID, fleetTarget.sessionID,
           fleetTarget.executionGeneration, executionReadRevision]) : undefined}
         fleetCoordinatorBound={!!fleetList && !!fleetTarget && fleetTargetIdentity?.machineScope === true &&
