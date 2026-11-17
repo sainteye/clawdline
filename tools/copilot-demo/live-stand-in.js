@@ -31,6 +31,7 @@
     latestNoteAt: 0, // when the call last handed the live model a Session's latest state
     reportNotes: 0, // how many Session report batches the call has handed the live model
     reportNoteAt: 0,
+    firstReport: null,
     awaiting: false, // backend work asked for (a delegation, or a continuation after a tool result) whose response has not started
     pending: new Set(), // backend function calls without a result yet
     said: [], // the copilot's words, as the transcript gave them
@@ -58,7 +59,7 @@
     }, 100)
   }
   function observe(m) {
-    if (m.type === 'session.output_transcript.delta') { watch.lastSaid = wall(); const last = watch.said[watch.said.length - 1]; if (last && wall() - last.at < 2500) last.text += m.delta; else watch.said.push({ at: wall(), text: String(m.delta) }) }
+    if (m.type === 'session.output_transcript.delta') { watch.lastSaid = wall(); if (watch.firstReport) watch.firstReport.text += String(m.delta); const last = watch.said[watch.said.length - 1]; if (last && wall() - last.at < 2500) last.text += m.delta; else watch.said.push({ at: wall(), text: String(m.delta) }) }
     else if (m.type === 'session.delegation.created') { watch.delegations++; watch.awaiting = true }
     else if (m.type === 'response.event' && m.event?.type === 'response.output_text.delta') { const last = watch.backend[watch.backend.length - 1]; if (last && last.id === m.event.item_id) last.text += m.event.delta; else watch.backend.push({ id: m.event.item_id, at: wall(), text: String(m.event.delta) }) }
     else if (m.type === 'response.event' && m.event?.type === 'response.created') { watch.responses.add(m.event.response?.id); watch.awaiting = false }
@@ -83,7 +84,10 @@
           if (m.type === 'response.item.create' && m.item?.type === 'function_call_output') watch.pending.delete(m.item.call_id)
           if (m.type === 'response.create') watch.awaiting = true
           if (m.type === 'session.commentary.append' && /latest state of Session/.test(String(m.content))) watch.latestNoteAt = wall()
-          if (m.type === 'session.commentary.append' && /Report this Session batch/.test(String(m.content))) { watch.reportNotes++; watch.reportNoteAt = wall() }
+          if (m.type === 'session.commentary.append' && /Report this Session batch/.test(String(m.content))) {
+            watch.reportNotes++; watch.reportNoteAt = wall()
+            watch.firstReport ??= { at: wall(), names: [...String(m.content).matchAll(/"([^"]+)":/g)].map(m => m[1]), text: '' }
+          }
         } catch {}
         return send(text)
       }
@@ -104,6 +108,14 @@
     },
     /** A click that should be answered (a Session opened from the list) is the person's turn. */
     mark() { watch.personEnd = wall() },
+    /** Both named summaries reach a sentence end, then the actual voice falls quiet. */
+    firstBatchFinished(quietMs) {
+      const report = watch.firstReport
+      const compact = text => text.toLocaleLowerCase().replace(/[\s\p{P}]/gu, '')
+      return !!report && report.names.length > 0 && report.names.every(name => compact(report.text).includes(compact(name))) &&
+        /[.!?。！？][\s"'”’]*$/u.test(report.text) && watch.lastVoice > report.at &&
+        wall() - Math.max(watch.lastVoice, watch.lastSaid) >= quietMs
+    },
     /**
      * Whether the copilot has answered the person's last line and finished:
      * it spoke after the line ended, has been silent for `quietMs`, and has no

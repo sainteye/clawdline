@@ -354,12 +354,17 @@ if (LIVE) {
     const end = Date.now() + max, began = Date.now()
     // Quiet twice, 0.8 s apart: the copilot often takes the floor again just after a pause.
     for (;;) {
-      if (Date.now() > end) { console.error(`copilot-demo: no finished answer to ${label} within ${max / 1000} s; going on`); return }
+      if (Date.now() > end) throw new Error(`copilot-demo: no finished answer to ${label} within ${max / 1000} s`)
       if (await run(`window.__demo.answered(${quiet})`)) { await sleep(800); if (await run(`window.__demo.answered(${quiet + 800})`)) return }
       // The copilot may rightly say nothing (a latest state with nothing new): no speech at all after `silentAfter` ms ends the turn.
       if (silentAfter && Date.now() - began > silentAfter && await run('Math.max(window.__demo.watch.lastVoice, window.__demo.watch.lastSaid) < window.__demo.watch.personEnd')) return
       await sleep(150)
     }
+  }
+  const firstBatch = async () => {
+    // Transcript punctuation runs ahead of the sound; sound alone can pause
+    // between the two Sessions. Require both before the tap.
+    await until('window.__demo.firstBatchFinished(800)', 120000)
   }
   const said = []
   const say = async (id) => {
@@ -403,14 +408,10 @@ if (LIVE) {
       // The report a call from the list opens with comes in batches with reads between them.
       if (step.report) await turn('the opening report', 180000, 6000)
       else if (step.firstBatch) {
-        // Until the first batch has been said: speech after its note, then a second of quiet.
-        const end = Date.now() + 120000
-        // The next batch follows after the call's quiet window (1.5 s): the voice's own end decides.
-        while (Date.now() < end && !(await run(`(() => { const w = window.__demo.watch, at = performance.timeOrigin + performance.now(); return w.reportNotes >= 1 && w.lastVoice > w.reportNoteAt && at - w.lastVoice > 400 })()`))) await sleep(50)
+        await firstBatch()
       } else await turn('the greeting', 30000)
     } else if (step.firstBatch) {
-      const end = Date.now() + 120000
-      while (Date.now() < end && !(await run(`(() => { const w = window.__demo.watch, at = performance.timeOrigin + performance.now(); return w.reportNotes >= 1 && w.lastVoice > w.reportNoteAt && at - w.lastVoice > 400 })()`))) await sleep(50)
+      await firstBatch()
     } else if (step.minimize) {
       await sleep(400)
       await click('.realtime-minimize-btn')
@@ -430,7 +431,7 @@ if (LIVE) {
       while (Date.now() < end && !(await run(`window.__demo.watch.latestNoteAt > ${opened}`))) await sleep(200)
       if (await run(`window.__demo.watch.latestNoteAt > ${opened}`)) {
         await run('window.__demo.watch.personEnd = window.__demo.watch.latestNoteAt')
-        await turn(`${S.words.names[step.open]} (latest)`, 60000, 3500, 8000)
+        await turn(`${S.words.names[step.open]} (latest)`, 60000, 3500)
       }
     } else if (step.say || step.sayUnsent) {
       // GPT-Live may act on an instruction at once; a yes is said only while nothing has been sent.

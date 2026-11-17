@@ -412,6 +412,12 @@ are the same `runCopilotTool` a Realtime call runs.
   quiet window. Missing named speech pauses continuation. Interruption and an
   explicit screen switch supersede old queued reports. This is separate from the
   background work planner, which remains a Realtime feature.
+- **Opening during speech.** A Session opened while GPT-Live is speaking waits
+  for the existing transcript quiet window (1.5 seconds) before its opening note
+  is sent. This reuses the bounded opening wait (60 seconds); every new speech
+  delta restarts the quiet window. A newer Session switch or replacement call
+  supersedes a waiting opening. Transcript silence is an approximation, not a
+  remote audio playback receipt.
 
 **Speaking pace.** The machine’s saved speed also applies to GPT-Live. The four existing
 settings select slow (0.8), unhurried (0.9), normal (1.0) or quick (1.1) pacing instructions;
