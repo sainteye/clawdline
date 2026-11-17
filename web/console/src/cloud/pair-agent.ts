@@ -210,14 +210,19 @@ export function elapsedSaid(seconds: number, word: typeof nextWord): string {
 }
 
 /** The native local handover never dispatches an assistant or targets another machine. */
-export async function localPairing(input: { machineID?: string; offer?: string }, host: unknown = globalThis): Promise<{ ok: boolean; machineID: string; error: string }> {
+export async function localPairing(input: { machineID?: string; offer?: string }, host: unknown = globalThis): Promise<{ ok: boolean; machineID: string; error: string; comparison?: { machineID: string; viewerFingerprint: string; machineFingerprint: string } }> {
   const handler = (host as WithWebKit | undefined)?.webkit?.messageHandlers?.clawdlinePairLocal
   if (!handler || typeof handler.postMessage !== "function") return { ok: false, machineID: "", error: "unavailable" }
   try {
     const raw = await handler.postMessage(input.offer
       ? { machine_id: input.machineID, offer: input.offer } : { kind: "status" })
-    const value = (raw ?? {}) as { ok?: unknown; machine_id?: unknown; error?: unknown }
+    const value = (raw ?? {}) as { ok?: unknown; machine_id?: unknown; error?: unknown; pairing?: { phase?: unknown; viewer_fingerprint?: unknown; machine_fingerprint?: unknown } }
+    const pairing = value.pairing
+    const comparison = !!input.offer && value.ok === true && value.machine_id === input.machineID && pairing?.phase === "paired" &&
+      typeof pairing.viewer_fingerprint === "string" && pairing.viewer_fingerprint &&
+      typeof pairing.machine_fingerprint === "string" && pairing.machine_fingerprint
+      ? { machineID: input.machineID!, viewerFingerprint: pairing.viewer_fingerprint, machineFingerprint: pairing.machine_fingerprint } : undefined
     return { ok: value.ok === true, machineID: typeof value.machine_id === "string" ? value.machine_id : "",
-      error: typeof value.error === "string" ? value.error : value.ok === true ? "" : "refused" }
+      error: typeof value.error === "string" ? value.error : value.ok === true ? "" : "refused", ...(comparison ? { comparison } : {}) }
   } catch { return { ok: false, machineID: "", error: "unreachable" } }
 }

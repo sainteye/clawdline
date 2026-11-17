@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { nextWord } from "../next-strings.js"
+import { catalogWord } from "../catalog.js"
 import { readBrowserSettings, writeBrowserSettings } from "../pages/settings/api.js"
 import {
   beginCloudPairing,
@@ -76,6 +77,7 @@ function Guide() {
   const autoOpened = useRef(false)
   const asked = useRef({ login: false, line: false, app: "", pairing: "" })
   const inApp = appBridge() !== null
+  const [goal, setGoal] = useState<"app" | "browser">(inApp ? "app" : "browser")
   // Whether this machine runs the macOS app, and so whether the app is one of
   // the items. Until the daemon says, nothing is counted: a reading without the
   // app would stamp a completion that the app's item then takes back.
@@ -231,6 +233,7 @@ function Guide() {
   // the app's own invitation, each asked for once.
   useEffect(() => {
     if (!running || !cloud) return
+    if (goal === "browser" && lineUp) { setRunning(false); show("browser"); return }
     if (done.app) { setRunning(false); return }
     // Not signed in and no sign-in waiting: nothing will move by itself, so
     // the button must be pressable again rather than read "Connecting…".
@@ -248,8 +251,9 @@ function Guide() {
       if (!pairing.link) throw new Error(pairing.error ?? "no pairing link")
       asked.current.app = pairing.invitation_id ?? "asked"
       setAppPairing(pairing)
+      appBridge()?.postMessage({ link: pairing.link })
     }).catch(fail)
-  }, [running, cloud, signedIn, lineUp, inApp, done.app, refresh, login?.phase])
+  }, [running, cloud, signedIn, lineUp, inApp, done.app, refresh, login?.phase, goal, show])
 
   // The device that answered the app's invitation is the app, whatever name
   // its Cloud tab registered under years ago (`progress.ts` deviceItem).
@@ -274,7 +278,7 @@ function Guide() {
   useEffect(() => {
     if (screen === "browser" && done.browser && opened) {
       asked.current.pairing = ""
-      show(after("browser"))
+      show("done")
     }
     if (screen === "phone" && done.phone && asked.current.pairing === "phone") {
       asked.current.pairing = ""
@@ -289,21 +293,31 @@ function Guide() {
       <HeaderButton chip={chip} onOpen={() => show(chip.kind === "progress" && (chip.count > 0 || settings?.mode === "cloud")
         ? chip.next : chip.kind === "done" ? "done" : "welcome")} />
       {screen && (
-        <Wizard onClose={close} items={items} current={items.includes(screen as SetupItem) ? screen as SetupItem : null} done={done}
+        <Wizard onClose={close} items={screen === "app" ? ["app"] : items} current={items.includes(screen as SetupItem) ? screen as SetupItem : null} done={done}
           skipped={reading.kind === "known" ? reading.skipped : { app: false, browser: false, phone: false }}>
-          {screen === "welcome" && <Welcome
+          {screen === "welcome" && <Welcome inApp={inApp}
             onLocal={keepLocal}
-            onStart={() => { void saveSettings({ setup_mode: "cloud" }); show(firstOpen) }} />}
+            onStart={() => {
+              const target = inApp ? "app" : "browser"
+              setGoal(target)
+              void saveSettings({ setup_mode: "cloud", setup_skipped: items.filter(item => item !== target).join(",") })
+              show(target === "app" ? done.app ? "done" : "app" : lineUp ? "browser" : "app")
+            }} />}
           {screen === "local" && <Ending title={nextWord("setupLocalTitle")} body={nextWord("setupLocalBody")} local
             primary={{ label: nextWord("setupLocalOk"), run: close }}
             secondary={{ label: nextWord("setupLocalCloud"), run: () => { void saveSettings({ setup_mode: "cloud" }); show(firstOpen) } }} />}
           {screen === "done" && <Finished items={items} done={done}
-            onGo={(item) => { asked.current.pairing = ""; show(item) }} onClose={close} />}
+            onGo={(item) => {
+              asked.current.pairing = ""
+              if (item !== "phone") setGoal(item)
+              void saveSettings({ setup_skipped: (settings?.skipped ?? []).filter(skipped => skipped !== item).join(",") })
+              show(item)
+            }} onClose={close} />}
           {screen === "app" && <AppStep login={login} configured={signedIn} lineUp={lineUp} paired={done.app}
             running={running} inApp={inApp} onRun={() => { setSaid(""); setRunning(true) }}
             onOpenCloud={appPairing?.link ? () => appBridge()?.postMessage({ link: appPairing.link }) : null}
             onSignIn={() => { setSaid(""); signIn(login?.phase !== "idle") }}
-            onBack={() => show("welcome")} onLocal={keepLocal} onSkip={() => skip("app")} onNext={() => show(after("app"))} />}
+            onBack={() => show("welcome")} onLocal={keepLocal} onSkip={() => skip("app")} onNext={() => show(goal === "browser" ? "browser" : "done")} />}
           {screen === "browser" && <BrowserStep pairing={cloud?.pairing} opened={opened} paired={done.browser}
             onOpen={() => setOpened(true)} onBack={() => show(before("browser"))} onLocal={keepLocal}
             onSkip={() => skip("browser")} />}
@@ -390,27 +404,14 @@ export function Wizard({ items, current, done, skipped, onClose, children }: {
   )
 }
 
-export function Welcome({ onLocal, onStart }: { onLocal: () => void; onStart: () => void }) {
-  const rows: { icon: ReactNode; title: string; hint: string }[] = [
-    { icon: <ListIcon />, title: nextWord("setupWelcomeSessions"), hint: nextWord("setupWelcomeSessionsHint") },
-    { icon: <BubbleIcon />, title: nextWord("setupWelcomeReply"), hint: nextWord("setupWelcomeReplyHint") },
-    { icon: <PhoneIcon />, title: nextWord("setupWelcomePhone"), hint: nextWord("setupWelcomePhoneHint") },
-  ]
+export function Welcome({ onLocal, onStart, inApp = true }: { onLocal: () => void; onStart: () => void; inApp?: boolean }) {
   return (
     <div className="setup-body">
-      <p className="setup-eyebrow">{nextWord("setupWelcomeEyebrow")}</p>
-      <h2>{nextWord("setupWelcomeTitle")}</h2>
-      <ul className="setup-features">
-        {rows.map((row) => (
-          <li key={row.title}>
-            <span className="setup-feature-icon">{row.icon}</span>
-            <span><b>{row.title}</b><span>{row.hint}</span></span>
-          </li>
-        ))}
-      </ul>
+      <h2>{nextWord(inApp ? "setupAppTitle" : "setupBrowserTitle")}</h2>
+      <p className="setup-lede">{nextWord(inApp ? "setupAppBody" : "setupBrowserBody")}</p>
       <div className="setup-actions">
         <button type="button" className="setup-quiet" onClick={onLocal}>{nextWord("setupStayLocal")}</button>
-        <button type="button" className="setup-primary" onClick={onStart}>{nextWord("setupStart")}</button>
+        <button type="button" className="setup-primary" onClick={onStart}>{nextWord(inApp ? "setupAppStart" : "setupBrowserStart")}</button>
       </div>
     </div>
   )
@@ -464,9 +465,9 @@ export function AppStep({ login, configured, lineUp, paired, running, inApp, onO
   const startLink = !configured && login?.phase === "waiting" && login.verification_url && !running ? login.verification_url : ""
   return (
     <div className="setup-body">
-      <h2>{nextWord("setupAppTitle")}</h2>
-      <p className="setup-lede">{nextWord("setupAppBody")}</p>
-      <Steps steps={steps} />
+      <h2>{nextWord(inApp ? "setupAppTitle" : "setupAppMachine")}</h2>
+      <p className="setup-lede">{inApp ? nextWord("setupAppBody") : catalogWord("browserPairing", "connectIntro")}</p>
+      <Steps steps={inApp ? steps : steps.slice(0, 2)} />
       {paired && <p className="setup-ok">{nextWord("setupAppDone")}</p>}
       {!paired && lineUp && !inApp && <p className="setup-note">{nextWord("setupAppElsewhere")}</p>}
       <div className="setup-actions">
@@ -476,7 +477,7 @@ export function AppStep({ login, configured, lineUp, paired, running, inApp, onO
           <button type="button" className="setup-quiet" onClick={onLocal}>{nextWord("setupStayLocal")}</button>
         </span>
         {paired || (lineUp && !inApp) ? (
-          <button type="button" className="setup-primary" onClick={onNext}>{nextWord("setupNext")}</button>
+          <button type="button" className="setup-primary" onClick={onNext}>{nextWord(paired ? "setupDoneClose" : "setupNext")}</button>
         ) : onOpenCloud ? (
           <button type="button" className="setup-primary" onClick={onOpenCloud}>{nextWord("setupAppOpenCloud")}</button>
         ) : startLink ? (

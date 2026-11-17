@@ -682,3 +682,12 @@ work. Focused-analysis usage is recorded independently by the machine to avoid
 counting it twice in daily estimates. The refreshed source receipts establish
 reviewed sources, not listening quality or deployment acceptance. The public
 website snapshot must import the delivered revision after it lands.
+
+## App sign-in and browser pairing (2026-11-17)
+
+The app sign-in, setup completion and pairing labels changed in
+`next-strings.ts`. They are interface copy, not provider instructions. The
+`session-rotation` card's condition, original excerpt and effects were reviewed
+in English and Taiwan Traditional Chinese and remain accurate. No handoff
+request, injection sink or assistant launch behavior changed. The source
+receipt follows this copy update; website snapshot publication is separate.

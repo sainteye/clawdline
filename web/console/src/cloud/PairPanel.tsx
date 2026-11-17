@@ -34,7 +34,7 @@ import {
 export type PairDevice = "app" | "phone" | "desktop"
 
 export type PairRequest =
-  | { mode: "offer"; machine: { id: string; name: string } | null }
+  | { mode: "offer"; machine: { id: string; name: string } | null; startLocal?: boolean }
   | { mode: "invitation"; ok: boolean; code: string }
 
 /**
@@ -94,6 +94,9 @@ export function PairPanel(props: {
   const [agentExpected, setAgentExpected] = useState<{ machineID: string; offerDigest: string; expiresAt: number } | null>(null)
   const attempt = useRef(0)
   const completed = useRef(false)
+  const localStarted = useRef(false)
+  const localAttempt = useRef(0)
+  const [localProof, setLocalProof] = useState<{ machineID: string; viewerFingerprint: string; machineFingerprint: string } | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const codeField = useRef<HTMLTextAreaElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -101,6 +104,10 @@ export function PairPanel(props: {
   const first = useRef<HTMLButtonElement>(null)
   const scanStart = useRef<HTMLButtonElement>(null)
   const phase = state.phase
+  const nativeApp = nativePairingAvailable()
+  const macBrowser = device === "desktop" && /Mac/i.test(navigator.platform) && !nativeApp
+  const [computer, setComputer] = useState<"this" | "other">(macBrowser ? "this" : "other")
+  const sameMac = macBrowser && computer === "this"
   const offer = request.mode === "offer"
   const asked = offer ? request.machine ?? (localMachine ? { id: localMachine, name: localName || localMachine } : null) : null
   const requestKey = offer ? asked?.id ?? "" : request.code
@@ -113,6 +120,8 @@ export function PairPanel(props: {
     if (phase === "paired") return
     attempt.current++
     completed.current = false
+    localAttempt.current++
+    setLocalProof(null)
     setAgentExpected(null)
     setMismatched(false)
     setCopied("")
@@ -121,7 +130,7 @@ export function PairPanel(props: {
     setAgent(null)
     setProgress(null)
     setStartedAt(null)
-    setManualOpen(phase === "waiting" && !helperFlow)
+    setManualOpen(phase === "waiting" && !helperFlow && !sameMac)
     setRunningHelper("")
     if (phase === "idle") setHelperFlow(false)
   }, [phase, requestKey])
@@ -214,16 +223,33 @@ export function PairPanel(props: {
     completed.current = true
     onPaired()
   }, [state, progress, agentExpected, onPaired])
-  useEffect(() => () => { attempt.current++ }, [])
+  useEffect(() => () => { attempt.current++; localAttempt.current++ }, [])
 
   const localAvailable = !!asked && asked.id === localMachine
+  useEffect(() => {
+    if (phase !== "idle" || !localAvailable || !offer || !request.startLocal || localStarted.current) return
+    localStarted.current = true
+    localRequested.current = true
+    onBegin()
+  }, [phase, localAvailable, request, onBegin])
+  useEffect(() => {
+    if (completed.current || state.phase !== "paired" || !localProof ||
+        localProof.machineID !== state.machineID || localProof.viewerFingerprint !== state.fingerprint ||
+        localProof.machineFingerprint !== state.machineFingerprint) return
+    completed.current = true
+    onPaired()
+  }, [state, localProof, onPaired])
   async function finishLocally(fragment: string) {
     if (!asked || !localAvailable) return
+    const generation = ++localAttempt.current
     setLocalBusy(true)
     setLocalError("")
+    setLocalProof(null)
     const reply = await localPairing({ machineID: asked.id, offer: fragment })
+    if (generation !== localAttempt.current) return
     setLocalBusy(false)
     if (!reply.ok) setLocalError(reply.error)
+    else if (reply.comparison) setLocalProof(reply.comparison)
   }
   useEffect(() => {
     if (state.phase === "waiting" && localRequested.current) {
@@ -231,7 +257,7 @@ export function PairPanel(props: {
       void finishLocally(state.fragment)
     }
   }, [state.phase])
-  const title = offer
+  const title = nativeApp && localAvailable ? catalogWord("browserPairing", "appAccessTitle") : offer
     ? asked
       ? nextWord(device === "app" ? "cloudPairTitleApp" : "cloudPairTitle", { machine: asked.name })
       : nextWord(device === "app" ? "cloudPairTitleAnyApp" : "cloudPairTitleAny")
@@ -296,8 +322,14 @@ export function PairPanel(props: {
           }
           return (
             <>
-              <p className="cloud-pair-intro">{nextWord(device === "app" ? "cloudPairIntroApp" : "cloudPairIntro")}</p>
-              {selectedHelper && asked && (
+              <p className="cloud-pair-intro">{sameMac ? catalogWord("browserPairing", "sameMacIntro") : nextWord(device === "app" ? "cloudPairIntroApp" : "cloudPairIntro")}</p>
+              {macBrowser && <fieldset className="cloud-pair-location">
+                <legend>{catalogWord("browserPairing", "where")}</legend>
+                <label><input type="radio" name="pair-computer" checked={computer === "this"} onChange={() => setComputer("this")} />{catalogWord("browserPairing", "thisMac")}</label>
+                <label><input type="radio" name="pair-computer" checked={computer === "other"} onChange={() => setComputer("other")} />{catalogWord("browserPairing", "otherComputer")}</label>
+              </fieldset>}
+              {sameMac && <button className="go cloud-pair-primary" type="button" id="cloud-pair-go" onClick={begin}>{catalogWord("browserPairing", "startBrowser")}</button>}
+              {!sameMac && selectedHelper && asked && (
                 <div className="cloud-pair-helper-way">
                   {(props.helpers?.length ?? 0) > 1 && <label className="cloud-pair-helper">
                     {nextWord("cloudPairHelperChoose")}
@@ -321,7 +353,7 @@ export function PairPanel(props: {
                   </button>
                 </div>
               )}
-              <details className="cloud-pair-manual" open={selectedHelper && asked ? undefined : true}>
+              <details className="cloud-pair-manual" open={sameMac || (selectedHelper && asked) ? undefined : true}>
                 <summary>{nextWord("cloudPairOtherWays")}</summary>
                 <ol className="cloud-pair-steps">
                   {steps.map((step) => <li key={step}>{nextWord(step)}</li>)}
@@ -333,6 +365,8 @@ export function PairPanel(props: {
                       onClick={() => { localRequested.current = true; onBegin() }}>{nextWord("cloudPairLocal")}</button>
                     <p className="fine">{nextWord("cloudPairLocalHint")}</p>
                   </>
+                ) : sameMac ? (
+                  <button className="chip" type="button" onClick={() => setComputer("other")}>{catalogWord("browserPairing", "otherComputer")}</button>
                 ) : device !== "desktop" ? (
                   <PairScanner onScanned={onScan} onUseCode={begin} startRef={scanStart} />
                 ) : (
@@ -422,7 +456,7 @@ export function PairPanel(props: {
           <>
             {offer && (
               <>
-                {!handOff && (
+                {!handOff && !sameMac && !localAvailable && (
                   <div className="cloud-pair-wait" role="status">
                     <span className="cloud-pair-spinner" aria-hidden="true" />
                     <div>
@@ -431,7 +465,17 @@ export function PairPanel(props: {
                     </div>
                   </div>
                 )}
-                {handOff && (
+                {localAvailable && <div className="cloud-pair-native-way">
+                  <p role="status">{catalogWord("browserPairing", localBusy ? "allowInApp" : "appAccessHint")}</p>
+                  {!localBusy && <button className="go cloud-pair-primary" type="button" id="cloud-pair-local" onClick={() => void finishLocally(state.fragment)}>{nextWord("cloudPairLocal")}</button>}
+                  {localError && <p role="alert">{nextWord("cloudPairAgentRefused", { reason: localError })}</p>}
+                </div>}
+                {sameMac && <div className="cloud-pair-native-way">
+                  <p className="cloud-pair-intro">{catalogWord("browserPairing", "openAppHint")}</p>
+                  <a className="go cloud-pair-primary" id="cloud-pair-open-app" href={pairingAppLink(state.fragment, asked?.id)}>{catalogWord("browserPairing", "openApp")}</a>
+                  <p className="fine" role="status">{catalogWord("browserPairing", "keepBrowser")}</p>
+                </div>}
+                {handOff && !sameMac && !localAvailable && (
                   <div className="cloud-pair-agent">
                     {cloudHandOff && (props.helpers?.length ?? 0) > 1 && !following && agent !== "sending" && (
                       <label className="cloud-pair-helper">
@@ -475,19 +519,9 @@ export function PairPanel(props: {
                     )}
                   </div>
                 )}
-                <details className="cloud-pair-manual" open={manualOpen || !handOff}
+                <details className="cloud-pair-manual" open={manualOpen || (!handOff && !sameMac && !localAvailable)}
                   onToggle={(event) => setManualOpen(event.currentTarget.open)}>
                   <summary>{nextWord("cloudPairOtherWays")}</summary>
-                  {localAvailable && <div>
-                    <button className="go" type="button" id="cloud-pair-local" disabled={localBusy}
-                      onClick={() => { void finishLocally(state.fragment) }}>{nextWord("cloudPairLocal")}</button>
-                    <p className="fine">{nextWord("cloudPairLocalHint")}</p>
-                    {localError && <p role="status">{nextWord("cloudPairAgentRefused", { reason: localError })}</p>}
-                  </div>}
-                  {device === "desktop" && /Mac/i.test(navigator.platform) && !localAvailable && <div className="cloud-pair-native-way">
-                    <a className="go cloud-pair-primary" href={pairingAppLink(state.fragment, asked?.id)}>{catalogWord("browserPairing", "openApp")}</a>
-                    <p className="fine">{catalogWord("browserPairing", "openAppHint")}</p>
-                  </div>}
                   <ol className="cloud-pair-steps cloud-pair-code-path">
                     <li data-done={codeCopied === "yes" ? "true" : undefined}>
                     <span id="cloud-pair-code-step">{nextWord("cloudPairCopyThis")}</span>

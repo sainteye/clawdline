@@ -148,13 +148,13 @@ Cloud is a preview. The app steps below need an app version that includes them; 
 
 ### Connect the machine
 
-On macOS, open Clawdline's **Cloud** tab and do the steps it still shows:
+On macOS, open Clawdline's **Cloud** tab:
 
-1. Choose **Continue with GitHub**, sign in in your default browser, and allow it to open Clawdline.
-2. Choose **Connect this machine**, approve the native confirmation, approve the machine in your default browser with the same GitHub account, and return to Clawdline.
-3. Choose **Pair this app**, then **Pair directly with this app's machine**. Approve, compare the fingerprints, and choose **They match — done**.
+1. Choose **Continue with GitHub**. Sign in in your browser and allow it to return to Clawdline.
+2. If this computer is not connected yet, choose **Sign in with GitHub** and approve it with the same account. Clawdline brings you back automatically.
+3. Choose **Enable this app** and approve access in Clawdline. Matching app and browser handover evidence completes this step automatically; an older app may still ask you to compare fingerprints.
 
-**Check:** this machine's Sessions appear in the Cloud tab. Signing in identifies you, connecting registers this machine, and pairing gives one app or browser its keys; every other browser pairs separately.
+**Check:** this machine's Sessions appear in the app. Your browser helped sign in to the app; pair the browser separately if you also want to use Clawdline there. The setup guide finishes this goal without requiring a phone or another browser.
 
 Without the app, run these on the target machine, in a terminal or over SSH:
 
@@ -168,12 +168,11 @@ If the shell says `command not found: clawdline`, open a new terminal, or run `~
 
 ### Pair a browser on the same computer
 
-1. In the browser profile you will keep using, open [app.clawdline.com](https://app.clawdline.com/) and sign in to the same account.
-2. Open **Pair**, choose **Show the pairing code** (no machine needs to be selected), then **Open Clawdline to pair**.
-3. In the app's confirmation, check the machine and choose **Pair with this machine**.
-4. Return to the same browser page, compare the fingerprints, and choose **They match — done**.
+1. Open [app.clawdline.com](https://app.clawdline.com/) in the browser profile you will keep using. Sign in to the same GitHub account.
+2. Choose **Pair this browser**, keep **On this Mac** selected, then choose **Open Clawdline to pair**.
+3. In Clawdline, choose **Allow this browser**. Return to the browser, compare both verification codes with the app, and choose **They match — done**.
 
-**Check:** the app says **Browser paired** and the browser shows the machine's Sessions. This shortcut only pairs the computer the browser runs on; otherwise use [a code or command](#pair-with-a-code-or-command).
+**Check:** Sessions open in this browser. Keep Clawdline running. If it runs elsewhere, select **On another computer**; codes and commands remain under **Other pairing methods**.
 
 ### Pair an iPhone, iPad, or Android phone
 

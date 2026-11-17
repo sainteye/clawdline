@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 12876,
-  "riskKeys": 5555,
-  "nonRiskCount": 7321,
+  "englishContentKeys": 12889,
+  "riskKeys": 5561,
+  "nonRiskCount": 7328,
   "groups": [
     {
       "name": "acp / other",
@@ -440,18 +440,24 @@
     },
     {
       "name": "browserPairing / other",
-      "count": 8,
+      "count": 14,
       "sources": [
         null
       ],
       "keys": [
         "browserPairing.androidCheck",
         "browserPairing.androidTitle",
+        "browserPairing.appAccessHint",
+        "browserPairing.appAccessTitle",
+        "browserPairing.appSignInHint",
+        "browserPairing.approvalPage",
         "browserPairing.approve",
-        "browserPairing.connect",
-        "browserPairing.connectIntro",
         "browserPairing.machineFingerprint",
+        "browserPairing.otherComputer",
+        "browserPairing.pairApp",
         "browserPairing.retry",
+        "browserPairing.sameMacIntro",
+        "browserPairing.thisMac",
         "browserPairing.viewerFingerprint"
       ]
     },
@@ -3738,7 +3744,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 255,
+      "count": 256,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3817,8 +3823,6 @@
         "next.cloudAllYes",
         "next.cloudChecking",
         "next.cloudConnRetry",
-        "next.cloudConnectFine",
-        "next.cloudConnectLede",
         "next.cloudConnecting",
         "next.cloudCurrentMachine",
         "next.cloudDeviceAdded",
@@ -3883,6 +3887,7 @@
         "next.cloudPairCopied",
         "next.cloudPairCopy",
         "next.cloudPairCopyDone",
+        "next.cloudPairDifferent",
         "next.cloudPairExpiredTitle",
         "next.cloudPairExpires",
         "next.cloudPairFromBrowserTitle",
@@ -3902,6 +3907,7 @@
         "next.cloudPairRecommended",
         "next.cloudPairReload",
         "next.cloudPairRun",
+        "next.cloudPairSame",
         "next.cloudPairScanBusy",
         "next.cloudPairScanCancel",
         "next.cloudPairScanOpening",
@@ -3991,6 +3997,7 @@
         "next.cloudRetry",
         "next.cloudRetryNow",
         "next.cloudRetryingBrowserOffline",
+        "next.cloudSignInLede",
         "next.cloudSingleSessions",
         "next.cloudStartOn",
         "next.cloudStartWhere",
@@ -4917,10 +4924,9 @@
         "next.setupAppDone",
         "next.setupAppMachine",
         "next.setupAppMachineHint",
-        "next.setupAppPairHint",
+        "next.setupAppOpenCloud",
+        "next.setupAppPair",
         "next.setupAppSignInHint",
-        "next.setupAppStart",
-        "next.setupAppTitle",
         "next.setupBack",
         "next.setupBrowserIdle",
         "next.setupBrowserTitle",
@@ -4930,6 +4936,7 @@
         "next.setupClose",
         "next.setupDialog",
         "next.setupDoneBody",
+        "next.setupDoneClose",
         "next.setupDoneSetUp",
         "next.setupDoneSkippedBody",
         "next.setupDoneTitle",
