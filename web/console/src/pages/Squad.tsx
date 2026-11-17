@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm-action.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { catalogFormat, catalogWordLanguage } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -318,9 +319,9 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const draft = drafts[draftKey]
   const handbookText = draft?.text ?? persona?.handbook.value ?? ""
 
-  const chooseScope = (next: string) => {
+  const chooseScope = async (next: string) => {
     if (next === scope) return
-    if (Object.values(drafts).some((draft) => draft.scopeId === scope) && !window.confirm(catalogWord("literal", "2c2913f4f722"))) return
+    if (Object.values(drafts).some((draft) => draft.scopeId === scope) && !await confirmAction(catalogWord("literal", "2c2913f4f722"))) return
     if (useTimer.current) clearTimeout(useTimer.current)
     useQueue.current = []; usePlaying.current = false; setUsing(null)
     currentScope.current = next
@@ -388,7 +389,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
 
   const restoreHandbook = async () => {
     if (!persona || !scope) return
-    if (draft && !window.confirm(catalogWord("literal", "8e61b20dddaf"))) return
+    if (draft && !await confirmAction(catalogWord("literal", "8e61b20dddaf"))) return
     const requestScope = scope
     const personaId = persona.id
     setBusy("handbook"); setNotice({ text: catalogWord("literal", "26462666ea13") })

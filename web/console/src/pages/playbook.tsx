@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm-action.js"
 import { ActionProgress } from "../ui/ActionProgress.js"
 import { catalogWord } from "../catalog.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
@@ -294,8 +295,12 @@ function PlaybookPage({ shown }: { shown: boolean }) {
 
   const remove = async () => {
     if ((!place && !draft?.global) || !draft?.id || busyRef.current) return
-    if (!window.confirm(W("confirmDelete", { name: draft.title }))) return
-    busyRef.current = true; setPendingAction("delete"); setBusy(true); setError("")
+    busyRef.current = true; setPendingAction("delete"); setBusy(true)
+    if (!await confirmAction(W("confirmDelete", { name: draft.title }))) {
+      busyRef.current = false; setBusy(false)
+      return
+    }
+    setError("")
     try { await deletePlaybook(place ? machineOf(place) : "", draft.id); if (await refresh(place)) setDraft(null) }
     catch (cause) { setError(cause instanceof SnippetFailure && cause.status !== null && cause.status < 500 ? W("deleteRefused") : W("deleteUnknown")) }
     finally { busyRef.current = false; setBusy(false) }

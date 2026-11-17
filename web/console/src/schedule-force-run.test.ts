@@ -29,3 +29,23 @@ test("declining force and unrelated refusals preserve the original answer", asyn
     assert.equal(asked, confirmations)
   }
 })
+
+test("an asynchronous force decision sends nothing until explicitly accepted", async () => {
+  for (const answer of [false, true]) {
+    const calls: boolean[] = []
+    const refusal = Object.assign(new Error("active"), { code: "schedule_active" })
+    let decide!: (value: boolean) => void
+    const decision = new Promise<boolean>(resolve => { decide = resolve })
+    const result = runScheduleWithForce(async force => {
+      calls.push(force)
+      if (!force) throw refusal
+      return "started"
+    }, () => decision)
+    await Promise.resolve()
+    assert.deepEqual(calls, [false])
+    decide(answer)
+    if (answer) assert.equal(await result, "started")
+    else await assert.rejects(result, error => error === refusal)
+    assert.deepEqual(calls, answer ? [false, true] : [false])
+  }
+})

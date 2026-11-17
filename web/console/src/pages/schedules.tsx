@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm-action.js"
 import { paintActionProgress } from "../ui/ActionProgress.js"
 import { catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, isAssistant, type AssistantFacts } from "../session/antigravity-ui.js"
@@ -2453,24 +2454,27 @@ const ScheduleHistory = (() => {
     )
   }
 
-  function runNow(): void {
+  async function runNow(): Promise<void> {
     if (loading || pressing || runningNow || !record) return
     if (!write) {
       el("schedule-history-said").textContent = scheduleRunWords().writeOff
       return
     }
-    if (!window.confirm(scheduleRunConfirmation(record.title || scheduleId || "", lang()))) return
-
     const id = scheduleId!
-    const before = new Set(((record && record.runs) || []).map((candidate) => candidate && candidate.task_id))
     runningNow = true
+    if (!await confirmAction(scheduleRunConfirmation(record.title || id, lang()))) {
+      runningNow = false
+      draw()
+      return
+    }
+    const before = new Set(((record && record.runs) || []).map((candidate) => candidate && candidate.task_id))
     started = false
     startedTask = ""
     el("schedule-history-said").textContent = ""
     draw()
     runScheduleWithForce(
       (force) => scheduleApi.runSchedule(id, scheduleOwner(id), force),
-      () => window.confirm(nextWord("scheduleForceRunConfirmation", { title: record?.title || id })),
+      () => confirmAction(nextWord("scheduleForceRunConfirmation", { title: record?.title || id })),
     )
       .then(() => {
         if (scheduleId !== id) return
