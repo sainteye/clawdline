@@ -84,3 +84,28 @@ test("a hidden entry surfaces a typed read refusal instead of waiting for visibi
     assert.equal(lists,0)
   } finally {control.abort()}
 })
+
+
+test("an accepted hidden operation observes its terminal result, then returns to idle",async()=>{
+  const document=Object.assign(new EventTarget(),{visibilityState:"hidden"}),window=new EventTarget(),control=new AbortController()
+  let reads=0,observing=false
+  let complete!:()=>void
+  const completed=new Promise<void>(resolve=>{complete=resolve})
+  const refresh=followSnapshotRoster(async()=>{reads++;if(reads===3){observing=false;complete()}},control.signal,5,document,window,{readOnEntry:true,keepReading:()=>observing})
+  try{
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,1)
+    observing=true;await refresh!();await completed
+    assert.equal(reads,3)
+    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(reads,3,"completed hidden operation kept polling")
+  }finally{control.abort()}
+})
+
+test("pagehide and cancellation stop even an accepted hidden observer",async()=>{
+  const document=Object.assign(new EventTarget(),{visibilityState:"hidden"}),window=new EventTarget(),control=new AbortController()
+  let reads=0
+  followSnapshotRoster(async()=>{reads++},control.signal,5,document,window,{readOnEntry:true,keepReading:()=>true})
+  await new Promise(resolve=>setImmediate(resolve));window.dispatchEvent(new Event("pagehide"))
+  await new Promise(resolve=>setTimeout(resolve,20));assert.equal(reads,1)
+  window.dispatchEvent(new Event("pageshow"));assert.equal(reads,2)
+  control.abort();await new Promise(resolve=>setTimeout(resolve,20));assert.equal(reads,2)
+})

@@ -34,6 +34,7 @@ const grant={accountKey:mode==="cloud"?"synthetic":"local",readerID:"person",mac
 const carried=${JSON.stringify(words)};
 const relay={machineDescriptor:()=>({machine:{commands:carried}}),_machineRequest:async(_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json(),_machineRequestAs:async(id,_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":id}})).json()};
 const source=new ProjectAssistantSourceClient(grant,mode==="cloud"?capturedAssistantRelayFetch("machine",()=>relay,carried):(input,init)=>fetch("/proxy/"+mode+input,init),()=>grant);
+const readGroup=source.groupHistory.bind(source);window.fixtureReadAttempts=0;source.groupHistory=async(...args)=>{window.fixtureReadAttempts++;if(window.fixtureReadFailure)throw {error:{code:"pa_offline"}};return readGroup(...args)};
 await source.status(new AbortController().signal);const page=await source.list({machine_id:"machine",cursor:"",query:"",page_size:100},new AbortController().signal);
 createRoot(document.getElementById("app")).render(<div className="project-assistants pa-shell"><BotRoster sources={[source]} groupsItems={page.items} items={page.items} machines={["machine"]} selected={null} query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} loading={false} errors={[]} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"],[JSON.stringify(["machine","other"]),"Other Project"]])}/><main className="pa-main"/></div>);
 `,resolveDir:root,loader:"tsx"},bundle:true,write:false,outfile:"groups.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",plugins:process.env.BOTS_ROOM_BASELINE?[{name:"recorded-room-baseline",setup(plugin){plugin.onLoad({filter:/project-assistants\/(GroupRoom\.tsx|styles\.css)$/},args=>({contents:execFileSync("git",["show",process.env.BOTS_ROOM_BASELINE+":"+path.relative(path.resolve(root,"../.."),args.path)],{cwd:path.resolve(root,"../.."),encoding:"utf8"}),loader:args.path.endsWith(".css")?"css":"tsx",resolveDir:path.dirname(args.path)}))}}]:[],define:{"process.env.NODE_ENV":'"development"'}})
@@ -48,11 +49,11 @@ const server=createServer(async(req,res)=>{
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const raw=Buffer.concat(chunks).toString(),relay=url.pathname.startsWith("/relay/")
       let answer,record={method:req.method,path:url.pathname,relay,body:raw?JSON.parse(raw):null};traffic.push(record)
       if(relay){const word=url.pathname.slice(7),fields=JSON.parse(raw||"{}"),envelope={type:word,session:"__clawdline_machine__",request:req.headers["idempotency-key"]??"read-"+crypto.randomUUID(),...fields};record.word=word
-        answer=await fetch(cloud,{method:"POST",body:JSON.stringify(envelope)});const payload=await answer.json();record.status=answer.status;res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(JSON.stringify(payload.body??{error:payload.error??{code:"pa_outcome_unknown"}}));return
+        answer=await fetch(cloud,{method:"POST",body:JSON.stringify(envelope)});const payload=await answer.json();record.status=answer.status;record.response=payload.body??{error:payload.error??{code:"pa_outcome_unknown"}};res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(JSON.stringify(record.response));return
       }
       const mode=url.pathname.split("/")[2],pathname=url.pathname.replace("/proxy/"+mode,"")+url.search;record.path=pathname
       answer=await fetch(upstream+pathname,{method:req.method,headers:{Authorization:"Bearer "+(mode==="read"?"reader":"person"),...(raw?{"Content-Type":"application/json","Idempotency-Key":req.headers["idempotency-key"]??""}:{})},...(raw?{body:raw}:{})})
-      record.status=answer.status;res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(Buffer.from(await answer.arrayBuffer()));return
+      record.status=answer.status;const bytes=Buffer.from(await answer.arrayBuffer());record.response=JSON.parse(bytes.toString());res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(bytes);return
     }
     if(url.pathname.startsWith("/catalog/")){res.setHeader("Content-Type","application/json");res.end(await readFile(path.join(root,"public/catalogs",path.basename(url.pathname))));return}
     if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
@@ -91,6 +92,48 @@ try{
   }
   const key=async(sessionId,key,code=key)=>{operations.push({action:"key",key,at:Date.now()});await send("Input.dispatchKeyEvent",{type:"keyDown",key,code},sessionId);await send("Input.dispatchKeyEvent",{type:"keyUp",key,code},sessionId)}
   const fill=async(sessionId,selector,value)=>evaluate(sessionId,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing input');e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.setSelectionRange?.(e.value.length,e.value.length);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('select',{bubbles:true}));})()`)
+  if(process.env.BOTS_GROUP_BACKGROUND==="1"){
+    for(const [mode,lang,width,height,outcome] of [["local","en",1280,800,"complete"],["cloud","zh-Hant",390,844,"complete"],["cloud","en",1280,800,"refusal"]]){
+      const start=traffic.length,{targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant"
+      await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(zh?"新增群組":"New group")})`)
+      await click(sessionId,zh?"新增群組":"New group");await until(sessionId,"!!document.querySelector('[role=dialog] input:not([type=checkbox])')")
+      await fill(sessionId,"[role=dialog] input:not([type=checkbox])","Background observation "+mode)
+      await evaluate(sessionId,"for(const e of document.querySelectorAll('[role=dialog] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
+      await click(sessionId,zh?"儲存":"Save");await until(sessionId,"!!document.querySelector('[role=dialog] textarea:not(:disabled)')")
+      const created=traffic.slice(start).find(row=>row.response?.group?.name==="Background observation "+mode).response.group
+      // Remote controls can send to a hidden document. This fixture makes
+      // that visibility boundary deterministic without another real viewer.
+      await evaluate(sessionId,"Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.fixtureVisibility??'visible'});window.fixtureVisibility='hidden';document.dispatchEvent(new Event('visibilitychange'))")
+      await fetch(origin+"/fixture/hold",{method:"POST"})
+      await fill(sessionId,"[role=dialog] textarea","One accepted background room question");await click(sessionId,zh?"傳送":"Send")
+      await until(sessionId,"document.querySelectorAll('[data-room-seq]').length===1&&document.querySelectorAll('[data-working-member]').length===1")
+      if(outcome==="refusal")await evaluate(sessionId,"window.fixtureReadFailure=true")
+      await fetch(origin+"/fixture/release",{method:"POST"})
+      let stored;const deadline=Date.now()+5000
+      do {stored=await(await fetch(upstream+"/v1/project-assistants/rooms/groups/"+created.key.bot_id+"?machine_id=machine&before_seq=0&page_size=100",{headers:{Authorization:"Bearer person"}})).json();if(stored.lines?.length===3&&!stored.room.running)break;assert.ok(Date.now()<deadline);await new Promise(resolve=>setTimeout(resolve,20))}while(true)
+      const proof={mode,lang,width,outcome,sourceLines:stored.lines,sourceRoom:stored.room,visibility:await evaluate(sessionId,"document.visibilityState"),prompts:1,externalModels:0}
+      try{
+        if(outcome==="refusal"){
+          await until(sessionId,"document.querySelector('.pa-room-layout [role=alert]')?.textContent.includes('pa_offline')")
+          const attempts=await evaluate(sessionId,"window.fixtureReadAttempts")
+          await new Promise(resolve=>setTimeout(resolve,3500));assert.equal(await evaluate(sessionId,"window.fixtureReadAttempts"),attempts,'typed hidden read refusal kept polling')
+          assert.equal(await evaluate(sessionId,"document.querySelectorAll('[data-room-seq]').length"),1,'read failure lost the accepted person message')
+          proof.typedFailure="pa_offline";proof.stoppedAfterFailure=true
+          await evaluate(sessionId,"window.fixtureReadFailure=false;window.fixtureVisibility='visible';document.dispatchEvent(new Event('visibilitychange'))")
+        }
+        await until(sessionId,"document.querySelectorAll('[data-room-seq]').length===3&&!document.querySelector('[data-working-member]')")
+        if(outcome==="refusal")await evaluate(sessionId,"window.fixtureVisibility='hidden';document.dispatchEvent(new Event('visibilitychange'))")
+      }
+      finally{proof.uiText=await evaluate(sessionId,"document.querySelector('.pa-room-layout').innerText");proof.groupReads=traffic.slice(start).filter(row=>row.word==="project-assistants.group-history"||row.method==="GET"&&row.path.includes('/rooms/groups/')).length;await writeFile(path.join(artifacts,`background-${mode}.json`),JSON.stringify(proof,null,2));const shot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`background-${mode}.png`),Buffer.from(shot.data,"base64"))}
+      assert.equal(traffic.slice(start).filter(row=>row.word==="project-assistants.group-send"||row.method==="POST"&&row.path.endsWith('/messages')).length,1)
+      const reads=proof.groupReads;await new Promise(resolve=>setTimeout(resolve,3500))
+      assert.equal(traffic.slice(start).filter(row=>row.word==="project-assistants.group-history"||row.method==="GET"&&row.path.includes('/rooms/groups/')).length,reads,'idle hidden room kept polling after its accepted turn completed')
+      results.push({...proof,observedWithoutForeground:outcome==="complete",foregroundRecovered:outcome==="refusal",noResend:true})
+      const cleanup={command:{key:created.key,operation:"delete",idempotency_key:crypto.randomUUID(),content_hash:""},expected_version:created.version}
+      const deleted=await fetch(upstream+"/v1/project-assistants/rooms/groups/"+created.key.bot_id,{method:"DELETE",headers:{Authorization:"Bearer person","Content-Type":"application/json","Idempotency-Key":cleanup.command.idempotency_key},body:JSON.stringify(cleanup)})
+      assert.equal(deleted.status,200);await send("Target.closeTarget",{targetId})
+    }
+  }else{
   for(const [mode,lang,width,height]of [["local","en",1280,800],["local","zh-Hant",390,844],["cloud","en",1280,800],["cloud","zh-Hant",390,844]]){
     const {targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant",name=`Review ${mode} ${lang}`
     const copy=zh?{create:"新增群組",save:"儲存",edit:"編輯群組",send:"傳送",stop:"停止群組",remove:"刪除群組",confirm:"確認刪除群組"}:{create:"New group",save:"Save",edit:"Edit group",send:"Send",stop:"Stop group",remove:"Delete group",confirm:"Confirm group deletion"}
@@ -157,6 +200,7 @@ try{
   for(const mode of ["read","old"]){const start=traffic.length,{targetId,sessionId}=await open(mode,"zh-Hant",390,844);await until(sessionId,"!!document.body?.innerText.includes('Alice')")
     if(mode==="read"){await until(sessionId,"[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Saved reader room'))");await evaluate(sessionId,"[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Saved reader room')).click()");await until(sessionId,"!!document.querySelector('[role=dialog] textarea')");assert.equal(await evaluate(sessionId,"document.querySelector('[role=dialog] textarea').disabled"),true);assert.equal(await evaluate(sessionId,"[...document.querySelectorAll('[role=dialog] button')].filter(b=>['傳送','編輯群組','停止群組','刪除群組'].includes(b.textContent.trim())).some(b=>!b.disabled)"),false)}else{assert.equal(await evaluate(sessionId,"document.body.innerText.includes('新增群組')"),false)}
     assert.equal(traffic.slice(start).filter(r=>r.method!=="GET").length,0);results.push({mode,lang:"zh-Hant",readOnly:mode==="read",actions:0});await send("Target.closeTarget",{targetId})
+  }
   }
   console.log("GROUP_UI_RECEIPT "+JSON.stringify({browser:executable,results,providerRequests:0,cloudBoundary:"decrypted vocabulary -> actual HTTP -> SQLite"}))
 }finally{

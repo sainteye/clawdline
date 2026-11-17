@@ -31,25 +31,26 @@ export function serialSnapshotRefresh(run:(append:boolean)=>Promise<void>,signal
   }
 }
 
-/** Periodic reads follow foreground visibility; an explicit entry can read once. */
-export function followSnapshotRoster(load:()=>Promise<void>,signal:AbortSignal,refreshMs:number,document:EventTarget&{visibilityState:string},window:EventTarget,{readOnEntry=false}:{readOnEntry?:boolean}={}) {
-  let timer:ReturnType<typeof setTimeout>|undefined,generation=0,paused=document.visibilityState==="hidden"
+/** Idle reads follow visibility. An accepted operation may retain observation. */
+export function followSnapshotRoster(load:()=>Promise<void>,signal:AbortSignal,refreshMs:number,document:EventTarget&{visibilityState:string},window:EventTarget,{readOnEntry=false,keepReading}:{readOnEntry?:boolean;keepReading?:()=>boolean}={}) {
+  let timer:ReturnType<typeof setTimeout>|undefined,generation=0,paused=document.visibilityState==="hidden",suspended=false
   const clear=()=>{if(timer)clearTimeout(timer);timer=undefined}
-  const refresh=async()=>{
+  const eligible=()=>!suspended&&(!paused||keepReading?.()===true)
+  const refresh=async(force=false)=>{
     const attempt=++generation;clear()
-    if(signal.aborted||paused)return
+    if(signal.aborted||suspended||!force&&!eligible())return
     await load()
-    if(!signal.aborted&&!paused&&attempt===generation)timer=setTimeout(()=>void refresh(),refreshMs)
+    if(!signal.aborted&&eligible()&&attempt===generation)timer=setTimeout(()=>void refresh(),refreshMs)
   }
-  const hide=()=>{paused=true;generation++;clear()}
-  const visibility=()=>{paused=document.visibilityState==="hidden";if(paused)hide();else void refresh()}
-  const show=()=>visibility()
+  const hide=()=>{suspended=true;generation++;clear()}
+  const visibility=()=>{paused=document.visibilityState==="hidden";generation++;clear();if(eligible())void refresh()}
+  const show=()=>{suspended=false;visibility()}
   const stop=()=>{hide();document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",hide);window.removeEventListener("pageshow",show)}
   if(signal.aborted)return
   document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",hide);window.addEventListener("pageshow",show)
   signal.addEventListener("abort",stop,{once:true})
-  // Explicitly opening the roster needs one result even when a remote browser
-  // tab starts hidden. Visibility still gates every subsequent periodic read.
-  if(readOnEntry&&paused)void load()
-  else void refresh()
+  // Explicit entry/action reads once even in a remote browser's hidden tab.
+  // Only an operation still awaiting observation may continue hidden reads.
+  void refresh(readOnEntry)
+  return ()=>refresh(true)
 }

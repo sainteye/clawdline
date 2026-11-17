@@ -23,6 +23,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const [caret,setCaret]=useState(0),[highlight,setHighlight]=useState(0),[dismissed,setDismissed]=useState<string|null>(null)
   const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),w=words(currentCatalogTag()),mentionID=useId()
   const pending=useRef<W.ProjectAssistantGroupSendRequest|null>(null),control=useRef(new AbortController()),refresh=useRef<(earlier?:boolean)=>Promise<void>>(async()=>{})
+  const observing=useRef(false)
   const currentRef=useRef(current),changedRef=useRef(onChanged),activeRef=useRef(active)
   currentRef.current=current;changedRef.current=onChanged;activeRef.current=active
   const scroll=useRef<HTMLDivElement>(null),[more,setMore]=useState<{before:number;hasMore:boolean}|null>(null)
@@ -72,6 +73,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     try {
       const answer=await authorized(source,currentRef.current,readSignal=>source.groupHistory!({key:initial.key,before_seq:before,page_size:100},readSignal),signal)
       if(signal.aborted||!activeRef.current)return
+      observing.current=!!answer.room.running||!!answer.activity?.length
       const previous=linesRef.current,last=previous.at(-1)?.seq??0
       const gap=!before&&previous.length>0&&answer.lines.length>0&&answer.lines[0].seq>last+1
       const next=gap?answer.lines:merge(previous,answer.lines)
@@ -82,6 +84,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       if(answer.group.deleted)changedRef.current(answer.group)
     }catch(e){
       if(!signal.aborted){
+        observing.current=false
         const code=errorCode(e);setError(code);setPage(null)
         if(["pa_revoked","pa_scope_denied","pa_unpaired"].includes(code)){control.current.abort();linesRef.current=[];setLines([])}
       }
@@ -91,9 +94,9 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     if(!active)return
     const controller=new AbortController();control.current=controller
     const queue=serialSnapshotRefresh(earlier=>load(earlier?(moreRef.current?.before??0):0,controller.signal),controller.signal)
-    refresh.current=queue
-    followSnapshotRoster(()=>queue(),controller.signal,EventRefreshMs,document,window,{readOnEntry:true})
-    return()=>controller.abort()
+    const follow=followSnapshotRoster(()=>queue(),controller.signal,EventRefreshMs,document,window,{readOnEntry:true,keepReading:()=>observing.current&&activeRef.current&&source.current?.()!==false})
+    refresh.current=earlier=>earlier?queue(true):follow?.()??Promise.resolve()
+    return()=>{observing.current=false;controller.abort()}
   },[source,initial.key.machine_id,initial.key.bot_id,active])
   const focusComposer=()=>requestAnimationFrame(()=>composer.current?.focus({preventScroll:true}))
   const showMembers=(open:boolean)=>{
@@ -118,6 +121,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     pending.current=request
     await effect(async signal=>{
       const answer=await source.sendGroup!(request,signal)
+      observing.current=true
       pending.current=null;setText("");setCaret(0);setQuote(null);setDismissed(null)
       position.current.following=true;restore.current={top:0,following:true}
       const next=merge(linesRef.current,[answer.entry]);linesRef.current=next;setLines(next)

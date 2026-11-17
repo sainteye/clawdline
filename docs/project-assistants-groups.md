@@ -334,3 +334,22 @@ uses an already installed Playwright headless shell and installs nothing.
 The child sandbox refused Chromium's macOS Mach-port registration before
 navigation; interactive UI acceptance therefore remains pending a root run
 in the normal environment. No real Claude Code or Codex model was called.
+
+## Observing an accepted room turn
+
+An accepted send keeps the active room's serialized read follower alive while
+the document is hidden. Opening a room whose consistent snapshot is still
+running does the same. The existing refresh interval and source authority
+remain in force; reads never replay the send or change its idempotency key.
+A terminal room snapshot ends hidden observation. Idle hidden rooms do not
+poll, and pagehide, leaving the room or revocation stops the follower. A typed
+read failure remains visible, ends hidden continuation and preserves the
+accepted person line unless authority requires clearing it. Foreground return
+can reconcile the same stored room without sending another question.
+
+A controlled HTTP/SQLite fixture reproduces the old boundary with a hidden
+document: the source has both member answers and is terminal while the UI
+keeps only the person line and a queued member. This does not prove the
+visibility state of a production browser whose read surface does not expose
+that property. Native completion, source publication and UI observation must
+be recorded independently.
