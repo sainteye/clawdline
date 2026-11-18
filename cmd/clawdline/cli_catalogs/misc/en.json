@@ -78,6 +78,7 @@
   "heavy.slot_acquired": "the compile slot is ours after %s; starting",
   "heavy.slot_lapsed": "the compile slot lapsed while running; the command goes on",
   "heavy.slot_queue_full": "waiting for the compile slot (its queue is full); quiet until it is ours, or %s passes and this exits %d without running",
+  "heavy.slot_refused_stop": "the compile slot was refused (%d %s: %s); the command was not run",
   "heavy.slot_refused": "the compile slot was refused (%d %s: %s); running without it",
   "heavy.slot_release_failed": "the compile slot could not be given back; it frees itself within a minute",
   "heavy.slot_timed_out": "waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)",

@@ -44,10 +44,21 @@ type OwnerState struct {
 	EvidenceDigest string
 }
 
-type Failure struct{ Code string }
+type Failure struct {
+	Code  string
+	Cause error
+}
 
 func (e Failure) Error() string { return e.Code }
-func fail(code string) error    { return Failure{code} }
+func (e Failure) Unwrap() error { return e.Cause }
+func fail(code string) error    { return Failure{Code: code} }
+
+func measurementFailure(code string, cause error) error {
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		code = "resource_measurement_interrupted"
+	}
+	return Failure{Code: code, Cause: cause}
+}
 
 type Service struct {
 	Store     *store.Store
@@ -60,10 +71,12 @@ type Service struct {
 	OtherUsage func(context.Context) (taskresource.Usage, error)
 	Clock      func() time.Time
 	// Fault is a test-only failure injection point, never configured by a caller.
-	Fault   func(string, string) error
-	mu      sync.Mutex
-	statsMu sync.Mutex
-	stats   taskresource.Usage
+	Fault      func(string, string) error
+	mu         sync.Mutex
+	admitMu    sync.Mutex
+	statsMu    sync.Mutex
+	stats      taskresource.Usage
+	admitAfter string // protected by statsMu; cleanup uses the existing resource page bound.
 }
 
 func (s *Service) now() time.Time {
@@ -580,19 +593,22 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	s.statsMu.Lock()
 	s.stats.Known = false
 	s.statsMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
+	}
 	u := taskresource.Usage{Known: true}
 	if s.OtherUsage != nil {
 		var err error
 		u, err = s.OtherUsage(ctx)
 		if err != nil || !u.Known {
-			return taskresource.Usage{}, fail("resource_legacy_measurement_unknown")
+			return taskresource.Usage{}, measurementFailure("resource_legacy_measurement_unknown", err)
 		}
 	}
 	after := ""
 	for {
 		rows, next, err := s.Store.TaskResourcePage(ctx, after, taskresource.PageRowsLimit, true)
 		if err != nil {
-			return taskresource.Usage{}, err
+			return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
 		}
 		for _, r := range rows {
 			if r.Class == taskresource.Artifact || r.Class == taskresource.Evidence {
@@ -600,7 +616,7 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 			}
 			snapshot, err := s.FS.Snapshot(ctx, r)
 			if err != nil {
-				return taskresource.Usage{}, fail("resource_measurement_unknown")
+				return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
 			}
 			size := snapshot.Logical
 			if snapshot.AllocationKnown {
@@ -622,7 +638,10 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	}
 	free, err := s.FreeSpace()
 	if err != nil {
-		return taskresource.Usage{}, fail("resource_disk_space_unknown")
+		return taskresource.Usage{}, measurementFailure("resource_disk_space_unknown", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
 	}
 	u.Available = free
 	s.statsMu.Lock()
@@ -675,6 +694,11 @@ func (s *Service) Sweep(ctx context.Context, after string) (Result, string, erro
 // Admit first tries a bounded safe sweep, then refuses new managed heavy work if
 // capacity is still unavailable. It never relaxes retention or kills a reader.
 func (s *Service) Admit(ctx context.Context) error {
+	if !s.ready() {
+		return fail("resource_service_unavailable")
+	}
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
 	u, err := s.Measure(ctx)
 	if err != nil {
 		return err
@@ -682,17 +706,16 @@ func (s *Service) Admit(ctx context.Context) error {
 	if reason := taskresource.Admission(s.policy(), u); reason == "" && !s.CacheOverTarget() {
 		return nil
 	}
-	after := ""
-	for {
-		_, next, err := s.Sweep(ctx, after)
-		if err != nil {
-			return err
-		}
-		if next == "" {
-			break
-		}
-		after = next
+	s.statsMu.Lock()
+	after := s.admitAfter
+	s.statsMu.Unlock()
+	_, next, err := s.Sweep(ctx, after)
+	if err != nil {
+		return err
 	}
+	s.statsMu.Lock()
+	s.admitAfter = next
+	s.statsMu.Unlock()
 	u, err = s.Measure(ctx)
 	if err != nil {
 		return err

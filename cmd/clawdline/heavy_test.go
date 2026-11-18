@@ -174,21 +174,31 @@ func TestAHeavyCommandRunsWhenTheDaemonDoesNotAnswer(t *testing.T) {
 	}
 }
 
-// A refusal this command does not know runs the command too, and names the
-// refusal; nothing is released that was never held.
-func TestAnUnknownRefusalRunsWithoutTheSlot(t *testing.T) {
-	s, b := newStandIn(t, func(r *http.Request) (int, string) {
-		return 400, `{"error":{"code":"bad_lease","message":"no"}}`
-	})
-	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
-		t.Fatalf("exit %d ran %v", code, h.ran)
-	}
-	if p := paths(s); len(p) != 1 {
-		t.Fatalf("asked %v", p)
-	}
-	if !strings.Contains(h.stderr.String(), "bad_lease") {
-		t.Fatalf("stderr %q", h.stderr.String())
+// A reachable daemon's refusal is authoritative, including an unknown code.
+// No rejected command runs or releases a lease it never held.
+func TestHeavyRefusalsNeverRunTheCommand(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		code   string
+	}{
+		{400, "bad_lease"}, {403, "forbidden"}, {409, "lease_lost"},
+		{507, "resource_legacy_measurement_unknown"}, {507, "resource_cache_capacity"}, {500, "unexpected_refusal"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			s, b := newStandIn(t, func(r *http.Request) (int, string) {
+				return tc.status, `{"error":{"code":"` + tc.code + `","message":"refused"}}`
+			})
+			h := &heavyHarness{}
+			if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code == 0 || len(h.ran) != 0 {
+				t.Fatalf("exit %d ran %v", code, h.ran)
+			}
+			if p := paths(s); len(p) != 1 {
+				t.Fatalf("asked %v", p)
+			}
+			if !strings.Contains(h.stderr.String(), tc.code) {
+				t.Fatalf("stderr %q", h.stderr.String())
+			}
+		})
 	}
 }
 

@@ -40,7 +40,7 @@ func settledWithin(t *testing.T, b *Broker, ctx context.Context, id string, d ti
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r.State.Terminal() {
+		if r.State.Terminal() && !b.startOpen(ctx, id) {
 			return r
 		}
 		if time.Now().After(deadline) {
@@ -364,7 +364,7 @@ func TestCallbackResourceRefusalKeepsItsDurableCause(t *testing.T) {
 			}
 			switch phase {
 			case "admission deadline":
-				wantCause = "resource_legacy_measurement_unknown"
+				wantCause = "resource_measurement_interrupted"
 				b.Resources.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
 					<-c.Done()
 					return taskresource.Usage{}, c.Err()

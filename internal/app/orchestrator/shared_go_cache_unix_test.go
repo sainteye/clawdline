@@ -140,6 +140,22 @@ func TestHeavyCallbacksShareOnlyGoCacheAndReleasePerCommand(t *testing.T) {
 	if _, err := b.StartCallback(ctx, req); err != nil {
 		t.Fatal(err)
 	}
+	// Acceptance precedes preparation. Protection starts with the durable
+	// cache-consumer link, before the process can use the shared cache.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		current, _, err := b.Record(ctx, req.TaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Callback.GoCacheID == resource.ID {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("accepted callback never attached its shared cache")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	active, err := b.Resources.Plan(ctx, ResourceOwnerScope(), []string{resource.ID})
 	if err != nil || active.Items[0].Decision.Outcome == "eligible" {
 		t.Fatal(active, err)

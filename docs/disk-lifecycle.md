@@ -186,3 +186,29 @@ accounting does not adopt an external cache or authorize a new deletion path.
 The legacy reclaimer retains its own procedure; pressure admission visits its
 advancing pages before refusing new heavy work. Protected artifacts and entire
 Root assignment directories remain outside eviction budgets.
+
+
+## Admission and callback receipts
+
+A heavy callback returns its durable acceptance before resource preparation runs.
+Acceptance does not mean the command started. The persisted start effect owns
+preparation and the existing callback limit bounds accepted work; replaying the
+same task ID never creates another launch. Caller disconnection does not cancel
+the accepted job. Cancellation during preparation still fences the eventual
+process launch. Preparation failures are recorded with a fresh receipt context,
+including when the measurement attempt exhausted its deadline.
+
+Measurements keep their underlying error for diagnostics. Cancellation and a
+measurement deadline produce `resource_measurement_interrupted`, rather than
+claiming that legacy data is corrupt. Unknown measurements publish no known total
+and do not trigger cleanup. Only measured budget or reserve pressure permits a
+cleanup attempt. Each service admission visits one advancing resource page using
+the existing page limit. The broker may inspect one publication page and one
+legacy reclaim page before its final admission recheck; background sweeps own the
+remaining work. Unknown owners, changed outputs and live readers remain protected.
+
+A reachable daemon's explicit compile refusal stops the CLI command. Recovery
+when the daemon cannot be reached remains a separately reported path; a refused
+lease is not reported as held. Regression coverage includes slow admission,
+request cancellation, replay, cancellation before launch, expired failure receipts,
+unknown measurement retention and pressure-page progress.

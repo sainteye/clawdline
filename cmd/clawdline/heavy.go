@@ -405,9 +405,8 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 			}
 		default:
 			code, message := a.refusal()
-			s.say(cliCopy("misc", "heavy.slot_refused", "the compile slot was refused (%d %s: %s); running without it"), a.Status, code, message)
-			s.b = nil
-			return 0
+			s.say(cliCopy("misc", "heavy.slot_refused_stop", "the compile slot was refused (%d %s: %s); the command was not run"), a.Status, code, message)
+			return 1
 		}
 		if !d.now().Before(deadline) {
 			s.say(cliCopy("misc", "heavy.slot_timed_out", "waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)"),

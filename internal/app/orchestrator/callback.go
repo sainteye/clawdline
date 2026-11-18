@@ -380,6 +380,12 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 			Message: "The work item this callback names could not be moved onto the board (" + err.Error() +
 				"); the board's sweep makes the same change from the same facts within a tick."})
 	}
+	if intent == CallbackIntentHeavy {
+		// Acceptance is durable; slow admission belongs to the start effect,
+		// not to the HTTP caller or its cancellation deadline.
+		go b.runRecorded(context.WithoutCancel(ctx), ids)
+		return Dispatched{Record: record, Warnings: warnings}, nil
+	}
 	b.runRecorded(ctx, ids)
 	now, _, err := b.Record(ctx, record.ID)
 	if err != nil {
