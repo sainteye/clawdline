@@ -1,4 +1,5 @@
 import { SessionBoardLead } from "./SessionBoards.js"
+import { TerminalGlyph } from "./TerminalGlyph.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithRef } from "react"
@@ -28,15 +29,17 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 /** Identity and activity are the same cells in a local or a fleet list. */
 function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false, boardAvatar }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
-  crown?: boolean; bound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"]
+  crown?: boolean; bound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null
 }) {
   const who = assistant ? L.whoHTML(assistant) : ""
-  const mark = <Mark icon={boardAvatar ?? icon} cellPx={boardAvatar && boardLead ? 2 : 4} />
+  const mark = boardAvatar === null
+    ? <span className="mark session-board-unassigned" aria-hidden="true"><TerminalGlyph /></span>
+    : <Mark icon={boardAvatar ?? icon} cellPx={4} />
   return <>
     {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true">{mark}
       <span className="clawdfather-crown" aria-hidden="true" /></span> : mark}
     {bound && <span className="coordinator-identity">Clawdfather</span>}
-    <div className="title" style={{ color: boardAvatar ? undefined : L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
+    <div className="title" style={{ color: boardAvatar === undefined ? L.accentTint(icon?.accent) : undefined }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} /></div>
   </>
 }
@@ -65,7 +68,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
   icon?: SessionRow["icon"]; cwd?: string
-  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"]
+  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   runningAgents?: number | null
@@ -413,7 +416,7 @@ export function Row({
 }: {
   row: SessionRow
   boardLead?: boolean
-  boardAvatar?: SessionRow["icon"]
+  boardAvatar?: SessionRow["icon"] | null
   depth: number
   branchThrough: boolean
   ancestorThrough: boolean

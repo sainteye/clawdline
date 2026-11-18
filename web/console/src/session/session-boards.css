@@ -50,6 +50,13 @@
 .session-board-avatar {
   position: relative; border: 1px solid var(--line); border-radius: 6px; background: var(--card-hi);
 }
+.session-board-avatar[data-lead] { width: 34px; height: 34px; }
+.session-board-avatar[data-lead] canvas { max-width: 32px; }
+.session-board-unassigned .session-terminal-icon,
+.session-board-avatar .session-terminal-icon { background: transparent; }
+.session-board-unassigned .session-terminal-icon svg,
+.session-board-avatar .session-terminal-icon svg { width: 18px; height: 18px; color: var(--dim); }
+.session-board-avatar .session-terminal-icon { width: 24px; height: 24px; }
 .session-board-avatar .clawdfather-crown {
   position: absolute; top: -4px; left: -4px; width: 13px; height: 9px;
   background: #f0c75e; pointer-events: none;

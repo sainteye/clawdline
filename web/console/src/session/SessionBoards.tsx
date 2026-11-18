@@ -26,7 +26,7 @@ type Cursor = { board?: string; before?: number; after?: number }
 export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
 type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
-type BoardRow = { lead: boolean; avatar: Icon; depth: number; branchThrough: boolean; ancestorThrough: boolean }
+type BoardRow = { lead: boolean; avatar: Icon | null; depth: number; branchThrough: boolean; ancestorThrough: boolean }
 type Entry = { id: string; parent?: string; actor?: Actor; render: (board?: BoardRow) => ReactNode }
 export type SessionBoardSource = {
   key: string
@@ -280,7 +280,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
           const actor = entry.actor
           const lead = actor?.id === b.lead
           return entry.render({ lead, depth,
-            avatar: sessionBoardAvatar(actor?.id ?? entry.id, (actor && enrolled.get(actor.id)?.persona) || actor?.persona, lead, personas),
+            avatar: sessionBoardAvatar(actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas),
             branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) })
         })}</ul>
       </li>
@@ -553,12 +553,12 @@ function BoardMessages({ source, id, candidates, onRead }: {
   }
   const lead = b?.members?.find(m => m.id === b.lead)
   const members = b?.members?.filter(member => member.id !== b.lead) ?? []
-  const roleByActor = new Map(candidates.map(actor => [actor.id, actor.persona]))
-  for (const member of b?.members ?? []) if (member.persona) roleByActor.set(member.id, member.persona)
+  const roleByActor = new Map(b?.members?.map(member => [member.id, member.persona]))
+  for (const actor of candidates) if (actor.persona) roleByActor.set(actor.id, actor.persona)
   const avatar = (actor: Actor) => {
     const isLead = actor.id === b?.lead
     return <SessionBoardMark lead={isLead}
-      icon={sessionBoardAvatar(actor.id, roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
+      icon={sessionBoardAvatar(roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
   }
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>

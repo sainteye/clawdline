@@ -178,10 +178,10 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (boardTreeFixture) return [
-    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500),
+    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500, { persona: "test-reviewer" }),
     row(SAFE, "Lead", safeCloseability(), 350, { icon: { accent: "#715546", cells: [["#715546"]] } }),
     row(BLOCKED, "Child", blockedCloseability(), 300),
-    row(UNKNOWN, "Grandchild", unknownCloseability(), 250),
+    row(UNKNOWN, "Grandchild", unknownCloseability(), 250, { persona: "missing-role" }),
     row(SPARE, "Outside", safeCloseability(), 200),
   ]
   if (readingScenario === "expired") return []
@@ -438,12 +438,12 @@ function daemon(): Server {
     if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: 87 } : {}) })
     if (path === "/v1/orchestrator/session-boards" && boardFixture) {
       const board = {
-        id: "review", project: "fixture", name: "Review board", purpose: "Review the Session console", summary: "", latest: 1,
+        id: "review", project: "fixture", name: "Review board", purpose: "Review the Session console", summary: "", latest: boardTreeFixture ? 2 : 1,
         lead: "claude:conversation-" + SAFE,
         members: [
           { id: "claude:conversation-" + SAFE, label: "Lead" },
           { id: "claude:conversation-" + NEEDS_ATTESTATION, label: boardTreeFixture ? "Reviewer" : "Member",
-            ...(boardTreeFixture ? { persona: "test-reviewer" } : {}) },
+            ...(boardTreeFixture ? { persona: "test-previous-role" } : {}) },
         ],
       }
       const thread = url.searchParams.has("board")
@@ -452,7 +452,11 @@ function daemon(): Server {
         if (res.destroyed) return
         if (thread && failBoardThread) return json(res, 503, { error: "session_board_unavailable" })
         return json(res, 200, thread ? {
-          board, posts: [{ seq: 1, author: board.members[boardTreeFixture ? 1 : 0], text: "Review complete.", at: 1 }], more: false,
+          board, posts: [
+            { seq: 1, author: board.members[boardTreeFixture ? 1 : 0], text: "Review complete.", at: 1 },
+            ...(boardTreeFixture ? [{ seq: 2, author: { id: "claude:offline", label: "Offline reviewer", persona: "test-previous-role" },
+              text: "Archived assignment.", at: 2 }] : []),
+          ], more: false,
         } : { boards: [board] })
       }
       if (hold) void hold.then(send)
@@ -462,6 +466,9 @@ function daemon(): Server {
     if (path === "/v1/personas" && boardTreeFixture) return json(res, 200, { personas: [{
       id: "test-reviewer", source: "builtin", name: { en: "Fixture reviewer" }, summary: { en: "Reviews changes" },
       icon: { accent: "#1234ab", cells: [["#1234ab"]] },
+    }, {
+      id: "test-previous-role", source: "builtin", name: { en: "Fixture earlier role" }, summary: { en: "Earlier role" },
+      icon: { accent: "#bb3300", cells: [["#bb3300"]] },
     }] })
     if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
       return json(res, 200, { ok: true, rows: [], truncated: false })
@@ -1527,10 +1534,19 @@ test("a Session board keeps child Sessions, role art and the Lead mark inside it
       const pixel = (selector: string) => `Array.from(document.querySelector(${JSON.stringify(selector)})?.getContext('2d').getImageData(0,0,1,1).data ?? []).join(',')`
       const rowArt = `${group} [data-id="${NEEDS_ATTESTATION}"] > canvas.mark`
       await shortcutUntil(tab, `${pixel(rowArt)} === "18,52,171,255"`)
+      for (const unassigned of [BLOCKED, UNKNOWN]) {
+        assert.ok(await tab.run(`Boolean(document.querySelector('${group} [data-id="${unassigned}"] > .session-board-unassigned .session-terminal-icon'))`))
+      }
+      const avatarWidth = (selector: string) => `document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect().width`
+      assert.equal(await tab.run(avatarWidth(`${group} [data-board-lead] canvas.mark`)), 32)
       assert.equal(await tab.run(pixel(`${group} .session-board-project-mark canvas`)), "113,85,70,255")
       await tab.press(`${group} > button`)
       const authorArt = ".session-board-post-meta .session-board-avatar canvas"
-      await shortcutUntil(tab, `${pixel(authorArt)} === "18,52,171,255"`)
+      await shortcutUntil(tab, `document.querySelectorAll('${authorArt}').length === 2`)
+      assert.deepEqual(await tab.run(`[...document.querySelectorAll('${authorArt}')].map(canvas =>
+        Array.from(canvas.getContext('2d').getImageData(0,0,1,1).data).join(','))`), ["187,51,0,255", "18,52,171,255"])
+      await shortcutUntil(tab, `document.querySelector('.session-board-dialog[open]').getAnimations().length === 0`)
+      assert.equal(await tab.run(avatarWidth(".session-board-lead-strip canvas")), 32)
       const memberList = ".session-board-dialog .session-board-members"
       await tab.press(`${memberList} summary`)
       assert.equal(await tab.run(`document.querySelectorAll('${memberList}[open] li').length`), 2)
