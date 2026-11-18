@@ -570,9 +570,10 @@ it is not relabelled as green by the final chains. Postflight checked the 536
 incoming files against their manifest and observed cleanup of all 29 launched
 processes and listening ports.
 
-The designated `61f3c1065807439c2968c63acf4b61b029df3c4c` reader still lacks
-an independently verified binary. The available `7654eff35` comparison is not
-its substitute. Actual updater installation, service switching and failed-update
+That matrix had no independently verified binary for the designated
+`61f3c1065807439c2968c63acf4b61b029df3c4c` reader. The available `7654eff35`
+comparison is not its substitute; the subsequent exact-reader qualification
+below addresses that separate gap. Actual updater installation, service switching and failed-update
 rollback still need a matching signed update bundle and an isolated rollback
 environment. Older binaries without an archive-input command keep that explicit
 qualification gap; it is not repaired retroactively by this reader. No original
@@ -585,3 +586,40 @@ handoff cards or managed dev servers. See [remaining runtime construction](proje
 for those separate ownership and failure boundaries. Cloud document reading,
 production UI, running dev version and public Release acceptance each need
 their own evidence.
+
+
+### Subsequent exact-reader qualification
+
+A separate independent run built the unchanged
+`61f3c1065807439c2968c63acf4b61b029df3c4c` source, tree
+`ba8efab3a7b5ef479d29633f800e85dc81bf91da`, in a clean isolated checkout.
+Its darwin/arm64 binary reports `v0.0.0-dev.61f3c1065-reader748`, an unmodified
+embedded revision, 62,423,394 bytes and SHA-256
+`1818fb3f85f7222ae89d0bc2817e23001a16432cee34f416eb622067d3d2d6a3`.
+It is a qualification artifact, not an installed dev or public Release.
+
+The actual product HTTP Get, Export and memory-view/detail routes read the
+same real core-12 synthetic database restored by the archive reader. Bot,
+conversation, memory, entries, receipts, messages, turns, bindings and context
+match the source archive; Events match after the explicitly documented existing
+nil-array/zero-cursor wire projection. Live notes remain readable, forgotten
+notes are absent from the index and return 404, and tombstone source identifiers
+remain while title/summary/body stay empty. All rows in the original 20 feature
+tables remain equal. GroupInstaller creates five empty tables and its schema
+marker table, so neither the database file nor the complete table set is claimed
+unchanged.
+
+The final batch used two isolated daemons and 10 local GETs, with 58 passing
+assertions including source preservation and cleanup. Across all three rounds,
+17 GETs and five startup attempts were retained, with no mutating HTTP, provider
+or paid content-API operation. The initial sandbox failure and two earlier false
+assertions remain in the evidence; final success does not relabel that history.
+The binary and all 13 incoming files retained their hashes, all owned processes
+were waited and their ports were observed closed.
+
+This closes only the designated binary's data-reading/visibility qualification
+for that synthetic copy. It does not add a nonexistent archive-input CLI to the
+old binary or qualify updater installation, service switching, signed bundles,
+failed-update rollback, production UI or a new-format writer. Those recovery
+and destination boundaries remain separate, and Host maintenance writers stay
+closed.

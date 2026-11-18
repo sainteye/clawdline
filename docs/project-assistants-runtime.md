@@ -381,3 +381,30 @@ complete dev-server feature. A production registry must own process slots,
 validate current exact command/directory approval, supply a source environment,
 retain bounded logs and implement the durable ledger before wiring tools,
 HTTP, Cloud or UI. There is no automatic restart and no maintenance writer.
+
+
+### Source-local attempt ledger
+
+`internal/adapters/botdevserverstore` supplies the attempt journal over a borrowed
+source SQLite writer. `New` is inspection only; trusted composition must call
+`Install` explicitly. This ledger has its own `bot_devserver_schema` marker and
+structured receipt rows, stores no executable command/environment, and never
+changes `PRAGMA user_version`, the Bot schema marker or portable Bot data.
+Unknown versions and partial authority tables are refused without repairing or
+stamping them down. Each operation checks the marker in its own transaction.
+
+An attempt's stable key excludes its command fingerprint and Project payload;
+changing either cannot turn the same attempt into a new empty row. Updates
+compare the complete identity and revision. CAS insertion has exactly one winner,
+including when identical submissions race. Terminal/unknown receipts cannot be
+changed back into a running attempt. A ledger error remains an uncertain intent
+to the owning runtime, which will not automatically repeat its command.
+
+Tests close/reopen an actual temporary database, race two CAS writers, inject a
+SQLite trigger failure and exercise missing/future markers. A real restored Bot
+archive is identical before/after ledger installation and an attempt write, and
+its feature schema remains 12. These are persisted logical-receipt checks; they
+do not establish a crash-recovered process handle. Production registry/slot
+admission, exact command approval, bounded logs, persistent process-generation
+recovery and Host/tool/API wiring remain separate. An interrupted attempt is
+unknown until those facts can be reconciled, never an instruction to restart.

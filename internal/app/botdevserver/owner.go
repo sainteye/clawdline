@@ -35,11 +35,34 @@ type Identity struct {
 	Fingerprint string
 }
 
+func (i Identity) Validate() error {
+	digest, err := hex.DecodeString(i.Fingerprint)
+	if err != nil || len(digest) != 32 || i.Key.MachineID == "" || i.Key.BotID == "" || i.Project.MachineID != i.Key.MachineID || i.Project.ProjectID == "" || i.Project.CanonicalID == "" || (i.Project.Kind != pa.RepositoryProject && i.Project.Kind != pa.PlaceProject) || i.ServerID == "" || i.AttemptID == "" {
+		return failure(pa.Invalid, "server_identity")
+	}
+	return nil
+}
+
 type Record struct {
 	Identity Identity
 	Version  int64
 	State    State
 	Failure  string
+}
+
+func (r Record) Validate() error {
+	if err := r.Identity.Validate(); err != nil {
+		return err
+	}
+	if r.Version <= 0 {
+		return failure(pa.Invalid, "server_revision")
+	}
+	switch r.State {
+	case Accepted, Running, Stopping, Stopped, Failed, Unknown:
+		return nil
+	default:
+		return failure(pa.Invalid, "server_state")
+	}
 }
 
 // Journal is a source-local CAS ledger for this exact attempt. Save is atomic;
@@ -91,8 +114,7 @@ func failure(code pa.ErrorCode, field string) error {
 // becomes an unknown observation, never a launch or a success inferred by PID.
 func Open(ctx context.Context, o Options) (*Owner, error) {
 	i := o.Identity
-	digest, err := hex.DecodeString(i.Fingerprint)
-	if err != nil || len(digest) != 32 || i.Key.MachineID == "" || i.Key.BotID == "" || i.Project.MachineID != i.Key.MachineID || i.Project.ProjectID == "" || i.Project.CanonicalID == "" || (i.Project.Kind != pa.RepositoryProject && i.Project.Kind != pa.PlaceProject) || i.ServerID == "" || i.AttemptID == "" || o.Lifetime == nil || o.Journal == nil || o.Check == nil || o.Launch == nil || o.CleanupTimeout <= 0 {
+	if i.Validate() != nil || o.Lifetime == nil || o.Journal == nil || o.Check == nil || o.Launch == nil || o.CleanupTimeout <= 0 {
 		return nil, failure(pa.Invalid, "server_owner")
 	}
 	r, err := o.Journal.Load(ctx, i)
