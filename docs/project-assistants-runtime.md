@@ -466,3 +466,31 @@ environment isolation, kernel process-generation recovery or a production
 Host/tool/API/UI entry point. The preceding registry-unit limitations describe
 that earlier unit; this catalog closes its storage port only. Host maintenance
 writer qualification remains separate and closed.
+
+### Source command launch adapter
+
+`internal/adapters/botdevserverprocess` now connects an already approved Spec
+to the existing process supervisor. It requires a current complete Project
+resolution, canonicalizes the selected starting directory within that Project
+and rechecks that it still matches the reviewed Spec. The command runs as a
+foreground, non-login shell with a snapshot of selected source environment
+values. It does not inherit a provider/profile configuration, API credentials,
+shell startup hooks or runtime-injection variables. A process handle returned
+alongside an error is retained for cleanup; a missing handle stays a nil port.
+
+The supervisor can combine stdout and stderr into the command's single output
+consumer. Its default ACP protocol/diagnostic separation remains unchanged.
+An actual Go HTTP child proves both output streams, source environment and
+working directory, survival after the launching request ends, direct exit and
+owned cleanup of the listener. Invalid, foreign or symlink-escaped starting
+directories are refused before execution. Unsupported process-supervisor
+platforms return SandboxUnavailable rather than falling back to name-based
+process termination.
+
+This adapter supplies no authorization. A starting directory is not a shell
+sandbox: an approved command retains the source user's file/network authority,
+as the pinned upstream dev-server specification states. Production composition
+must obtain the exact command/directory grant, bind native execution and Forget
+provenance, and own shutdown independently of the Agent. Host/tool/API/UI and
+kernel process-generation recovery remain pending; these tests contact no
+native provider or paid API and install no live service.

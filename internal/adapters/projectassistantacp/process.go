@@ -39,6 +39,9 @@ type ProcessOptions struct {
 	Configuration Configuration
 	Directory     string
 	Limits        Limits
+	// CombinedOutput is for owned foreground commands only. ACP keeps its
+	// protocol stdout separate from bounded diagnostic stderr by default.
+	CombinedOutput bool
 	// A package-private fault-injection barrier lets tests force child exit
 	// before the initial inventory without racing a sleep against Wait.
 	beforeInitialCapture func(*Process)
@@ -221,6 +224,9 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 	cmd.Stdin = inRead
 	cmd.Stdout = outWrite
 	cmd.Stderr = errWrite
+	if o.CombinedOutput {
+		cmd.Stderr = outWrite
+	}
 	p := &Process{cmd: cmd, stdin: inWrite, stdout: outRead, stderrReader: errRead, limits: o.Limits, write: make(chan struct{}, 1), done: make(chan struct{}), surveyDone: make(chan struct{}), owned: map[int]string{}}
 	err = cmd.Start()
 	inRead.Close()

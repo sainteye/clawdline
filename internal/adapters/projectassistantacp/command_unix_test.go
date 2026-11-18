@@ -29,6 +29,11 @@ func TestOwnedCommandPeer(t *testing.T) {
 	if mode == "fail" {
 		os.Exit(7)
 	}
+	if mode == "streams" {
+		fmt.Fprintln(os.Stdout, "synthetic stdout")
+		fmt.Fprintln(os.Stderr, "synthetic stderr")
+		os.Exit(0)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		os.Exit(8)
@@ -52,6 +57,10 @@ func TestOwnedCommandPeer(t *testing.T) {
 }
 
 func startOwnedCommand(t *testing.T, ctx context.Context, mode string) *Process {
+	return startOwnedCommandOutput(t, ctx, mode, false)
+}
+
+func startOwnedCommandOutput(t *testing.T, ctx context.Context, mode string, combined bool) *Process {
 	t.Helper()
 	if inventoryUnavailable() {
 		t.Skip("owned command startup requires process inventory")
@@ -65,7 +74,7 @@ func startOwnedCommand(t *testing.T, ctx context.Context, mode string) *Process 
 	p, err := StartProcess(ctx, ProcessOptions{Configuration: Configuration{
 		Executable: executable, Arguments: []string{"-test.run=^TestOwnedCommandPeer$"},
 		Environment: []string{"CLAWDLINE_SYNTHETIC_COMMAND=" + mode, "GORACE=atexit_sleep_ms=0"},
-	}, Directory: filepath.Clean(t.TempDir()), Limits: l})
+	}, Directory: filepath.Clean(t.TempDir()), Limits: l, CombinedOutput: combined})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +86,22 @@ func startOwnedCommand(t *testing.T, ctx context.Context, mode string) *Process 
 		}
 	})
 	return p
+}
+
+func TestOwnedCommandCanCombineBothOutputStreamsWithoutAnACPReader(t *testing.T) {
+	p := startOwnedCommandOutput(t, context.Background(), "streams", true)
+	body, err := io.ReadAll(p.Output())
+	if err != nil || string(body) != "synthetic stdout\nsynthetic stderr\n" {
+		t.Fatalf("combined output=%q %v", body, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.WaitExit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if p.Stderr() != "" {
+		t.Fatal("combined output was also retained by a second diagnostic consumer")
+	}
 }
 
 func commandAddress(t *testing.T, p *Process) string {
