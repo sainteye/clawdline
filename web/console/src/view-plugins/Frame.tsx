@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginError, plain, exact, type ViewPackage } from "./package.js"
 import { pluginBridge, pluginDocument, type ViewContext, type ViewReading, type ViewSource } from "./bridge.js"
+import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { pluginWords } from "./words.js"
 
 export async function readPluginSource(source: ViewSource, outer: AbortSignal): Promise<ViewReading> {
@@ -27,6 +28,7 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
   onClose: () => void; onNavigate: (fn: () => void) => void; onFault: (code: string) => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
+  const [ready, setReady] = useState(false)
   const live = useRef({ source, language, onClose, onNavigate, onFault })
   live.current = { source, language, onClose, onNavigate, onFault }
   const [disconnected, setDisconnected] = useState(!grant.initial.connected || !!grant.initial.partial)
@@ -69,6 +71,7 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
         accepted = true; clearTimeout(bootTimer)
         node.contentWindow!.postMessage({ type: "clawdline.plugin.connect", protocolVersion: 1,
           instanceId: grant.instanceId, context: context(), limits: { pending: B.pending, requestMilliseconds: B.requestMilliseconds } }, "*", [channel.port2])
+        setReady(true)
       } catch (e) { channel.port1.close(); channel.port2.close(); fault(e instanceof PluginError ? e.code : "host_unavailable") }
     }
     const bootTimer = setTimeout(() => fault("host_unavailable"), B.requestMilliseconds)
@@ -108,8 +111,11 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
   }, [grant.instanceId])
   useEffect(() => { contextRef.current() }, [language])
   return <section className="vp-view" aria-label={label}>
+    <div className="vp-frame-content" aria-busy={!ready}>
+    {!ready && <div className="vp-frame-loading"><LoadingSkeleton label={w.loading} id="view-plugin-frame" kind="detail" /></div>}
     <iframe ref={frame} title={label} sandbox="allow-scripts" referrerPolicy="no-referrer"
       allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" />
+    </div>
     <footer className="vp-frame-bar">
       <button type="button" onClick={onClose} aria-label={w.viewClose}><span aria-hidden="true">←</span>{w.returnToApp}</button>
       {disconnected && <span role="status">{w.offline}</span>}

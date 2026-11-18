@@ -13,6 +13,7 @@ import { pluginWords } from "./words.js"
 import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
+import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useDockMotion } from "../ui/dock-motion.js"
 import "./plugins.css"
 
@@ -25,6 +26,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const [opened, setOpened] = useState(false), openedRef = useRef(false), dock = useStatusDockAvailable()
   const [mode, setMode] = useState<"manage" | "launch">("launch")
   const [rows, setRows] = useState<Installed[]>([]), [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false), [review, setReview] = useState<PackageReview | null>(null)
   // Keep the reviewed card visible while the registry hint revokes stale grants.
   const [installing, setInstalling] = useState<PackageReview | null>(null), [completed, setCompleted] = useState<ViewPackage | null>(null)
@@ -44,7 +46,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const finish = () => {
     runtime.current?.control.abort(); runtime.current?.release?.(); runtime.current = null
     openedRef.current = false; owned.current = null; closing.current = false; operations.current++
-    setOpened(false); setGrant(null); setReview(null); setInstalling(null); setCompleted(null); setBusy(false); attention.current = null
+    setOpened(false); setGrant(null); setReview(null); setInstalling(null); setCompleted(null); setBusy(false); setLoading(false); attention.current = null
     const next = navigate.current; navigate.current = null
     requestAnimationFrame(() => { (opener.current?.isConnected ? opener.current : document.querySelector<HTMLButtonElement>(".vp-dock,#nav-view-plugins"))?.focus({ preventScroll: true });
       try { next?.() } catch { /* A source revoked during Back never receives navigation. */ }
@@ -65,7 +67,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const refresh = async () => { try { setRows(await installedPackages()) } catch (e) { setRows([]); setError(code(e)) } }
   useEffect(() => subscribePackages(() => {
     // A hint revokes the running grant immediately, before asynchronous storage verification.
-    operations.current++; setGrant(null); setReview(null); setCompleted(null); setBusy(false)
+    operations.current++; setGrant(null); setReview(null); setCompleted(null); setBusy(false); setLoading(false)
     void refresh()
   }), [])
   useEffect(() => {
@@ -130,14 +132,14 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     motion.capture(button)
     opener.current = button; owned.current = crypto.randomUUID(); openedRef.current = true
     history.pushState({ ...history.state, viewPlugin: owned.current }, "", location.href)
-    setError(""); setRows([]); setMode(nextMode); setOpened(true); setBusy(true)
+    setError(""); setRows([]); setMode(nextMode); setOpened(true); setBusy(true); setLoading(true)
     const generation = ++operations.current
     void installedPackages().then(installed => {
       if (!openedRef.current || generation !== operations.current) return
-      setRows(installed); setBusy(false)
+      setRows(installed); setBusy(false); setLoading(false)
       const enabled = installed.filter(r => r.enabled)
       if (nextMode === "launch" && enabled.length === 1) choose(enabled[0].active)
-    }, e => { if (openedRef.current && generation === operations.current) { setError(code(e)); setBusy(false) } })
+    }, e => { if (openedRef.current && generation === operations.current) { setError(code(e)); setBusy(false); setLoading(false) } })
   }
   const act = async (operation: () => Promise<void>) => {
     if (isBusy || installingRef.current) return
@@ -146,7 +148,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
       queueAttention(() => modal.current?.querySelector<HTMLElement>(".vp-error") ?? null, reviewOpener.current)
       setError(code(e))
     }
-    finally { setBusy(false) }
+    finally { setBusy(false); setLoading(false) }
   }
   const inspect = async (archive: ArrayBuffer, official = false) => {
     const generation = operations.current
@@ -193,7 +195,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     })
   }
   const choose = (pkg: ViewPackage) => {
-    setReview(null)
+    if (isBusy || installingRef.current) return
+    setLoading(true); setReview(null)
     void act(async () => {
       const current = liveSource.current, captured = current.key
       const lease = { control: new AbortController(), release: undefined as (() => void) | undefined }; runtime.current = lease
@@ -230,10 +233,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
-      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div><span className="vp-progress" role="status">{isBusy ? w.loading : ""}</span><button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
+      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
       <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
         {error && !review && !installing && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
-        {mode === "launch" ? <>
+        {loading ? <LoadingSkeleton label={w.loading} id="view-plugins" kind="cards" /> : mode === "launch" ? <>
           {!isBusy && !enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2><p>{w.launchEmptyHint}</p></div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
             <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
           </button>)}</div>}
