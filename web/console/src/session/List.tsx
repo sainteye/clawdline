@@ -1,3 +1,4 @@
+import { SessionBoardLead } from "./SessionBoards.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithRef } from "react"
@@ -25,16 +26,16 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 }
 
 /** Identity and activity are the same cells in a local or a fleet list. */
-function RowIdentity({ title, icon, assistant, crown = false, bound = false }: {
+function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
-  crown?: boolean; bound?: boolean
+  crown?: boolean; bound?: boolean; boardLead?: boolean
 }) {
   const who = assistant ? L.whoHTML(assistant) : ""
   return <>
     {crown ? <span className="coordinator-mark" aria-hidden="true"><Mark icon={icon} cellPx={4} />
       <span className="clawdfather-crown" aria-hidden="true" /></span> : <Mark icon={icon} cellPx={4} />}
     {bound && <span className="coordinator-identity">Clawdfather</span>}
-    <div className="title" style={{ color: L.accentTint(icon?.accent) }}><span className="label">{title}</span>
+    <div className="title" style={{ color: L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} /></div>
   </>
 }
@@ -58,12 +59,12 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false, runningAgents,
+  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
   icon?: SessionRow["icon"]; cwd?: string
-  machineScope?: boolean; coordinatorBound?: boolean
+  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   runningAgents?: number | null
@@ -81,18 +82,18 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   useLayoutEffect(() => { if (ref.current) paintSwipe(ref.current, swiped ? "open" : "", swiped ? width : 0) }, [swiped, selectionKey, width])
   const activate = () => { if (!consumePress?.() && ref.current) onOpen(ref.current) }
   return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
-    data-state={state} data-attention={attention ? "open" : undefined}
+    data-board-lead={boardLead || undefined} data-state={state} data-attention={attention ? "open" : undefined}
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={`${shownTitle}, ${machineName}, ${stateLabel}, ${freshness}`}
+    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
     } }}>
     <span className="kid" hidden={!depth} aria-hidden="true" />
     {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
-    <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} />
+    <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} />
     <div className="meta">{cwd && <span className="path">{L.path(cwd)}</span>}
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
@@ -407,8 +408,10 @@ export function Row({
   open,
   swiped,
   onOpen,
+  boardLead = false,
 }: {
   row: SessionRow
+  boardLead?: boolean
   depth: number
   branchThrough: boolean
   ancestorThrough: boolean
@@ -467,6 +470,7 @@ export function Row({
       tabIndex={-1}
       data-id={row.id}
       data-selection-key={L.selectionKey(row)}
+      data-board-lead={boardLead || undefined}
       data-state={row.state}
       data-attention={row.attention_count && row.attention_count > 0 ? "open" : undefined}
       data-coordination={waiting ? "waiting" : owed ? "owed" : undefined}
@@ -483,7 +487,7 @@ export function Row({
       <span className="kid" hidden={!place.depth} aria-hidden="true" />
       {ancestorThrough ? <span className="tree-ancestor" aria-hidden="true" /> : null}
       {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
-      <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} />
+      <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} />
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>

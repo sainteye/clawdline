@@ -614,12 +614,22 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const localBoards = useLocalSessionBoards(fleet.live)
   const boardSource = sessionBoardSource ?? localBoards
   const boardTargets = sessionBoardTargets ?? (boardSource ? [{
-    source: boardSource, label: quotaMachineName ?? "",
+    source: boardSource, machine: fleetReaderMachine ?? undefined, label: quotaMachineName ?? "",
     candidates: rows.flatMap(row => {
       const actor = sessionBoardActor(row.assistant, row.sessionId, row.label || row.id)
       return actor ? [actor] : []
     }),
   }] : [])
+  const copilotBoardTargets = useRef(boardTargets)
+  copilotBoardTargets.current = boardTargets
+  useEffect(() => {
+    const read = (event: Event) => {
+      const detail = (event as CustomEvent<{ targets?: readonly SessionBoardTarget[] }>).detail
+      detail.targets = copilotBoardTargets.current
+    }
+    document.addEventListener("clawdline:copilot-session-boards", read)
+    return () => document.removeEventListener("clawdline:copilot-session-boards", read)
+  }, [])
 
 
   const openStarted = (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean): boolean => {

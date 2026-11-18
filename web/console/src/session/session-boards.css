@@ -30,3 +30,64 @@
   .session-board-dialog button { min-height: 44px; }
   .session-board-dialog input, .session-board-dialog textarea, .session-board-dialog select { font-size: 16px; }
 }
+
+.session-board-dock { position: relative; border-radius: 8px; }
+.session-board-dock[data-unread] { color: var(--peer); background: var(--peer-in); }
+.session-board-dock svg, .session-board-group svg, .session-board-member-mark svg {
+  fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.session-board-dock-dot {
+  position: absolute; top: 3px; right: 3px; width: 7px; height: 7px;
+  border: 1px solid var(--bg); border-radius: 50%; background: var(--peer);
+}
+.session-board-group > button { display: flex; align-items: center; gap: 8px; }
+.session-board-group > button svg { width: 19px; height: 19px; color: var(--peer); flex: none; }
+.session-board-group > button strong { min-width: 0; overflow-wrap: anywhere; }
+.session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--peer); }
+.session-board-group > .rows { padding: 0 5px 5px; }
+.session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
+.session-board-lead {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  color: var(--ink); font-size: .8em; font-weight: 650; white-space: nowrap;
+}
+.session-board-lead .clawdfather-crown { position: static; flex: 0 0 15px; transform: none; }
+.session-board-dialog:has(.session-board-discussion) { width: min(66rem, 94vw); }
+.session-board-dialog[data-expanded="true"]:has(.session-board-discussion) { width: min(82rem, 98vw); }
+.session-board-name { margin: 0; font-size: 1.35rem; overflow-wrap: anywhere; }
+.session-board-purpose { color: var(--dim); margin: .25rem 0 .8rem; overflow-wrap: anywhere; }
+.session-board-lead-strip {
+  display: flex; align-items: center; gap: .65rem;
+  margin-block-end: .7rem; padding: .6rem .75rem; border-radius: 9px; background: var(--card-hi);
+}
+.session-board-lead-strip strong { min-width: 0; overflow-wrap: anywhere; }
+.session-board-discussion {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 24%); gap: 1rem; margin-top: .85rem;
+}
+.session-board-thread { min-width: 0; }
+.session-board-summary { background: var(--card-hi); border: 1px solid var(--line); border-radius: 9px; padding: .6rem .75rem; }
+.session-board-summary summary, .session-board-members summary { cursor: pointer; font-weight: 650; }
+.session-board-summary summary { color: var(--ink); }
+.session-board-members { align-self: start; border: 1px solid var(--line); border-radius: 9px; padding: .65rem; min-width: 0; }
+.session-board-members summary span { color: var(--dim); margin-inline-start: .25rem; font-weight: 400; }
+.session-board-members ul { list-style: none; margin: .5rem 0 0; padding: 0; }
+.session-board-members li { display: flex; align-items: center; gap: 6px; padding: 7px 0; }
+.session-board-members li strong { min-width: 0; overflow-wrap: anywhere; font-size: .85em; }
+.session-board-member-mark {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 7px;
+  background: var(--card-hi); color: var(--dim);
+}
+.session-board-member-mark svg { width: 16px; height: 16px; }
+.session-board-new { color: var(--peer); font-size: .84em; margin: .8rem 0 .4rem; }
+.session-board-posts li[data-unread] { background: var(--peer-in); border-color: var(--peer-ed); }
+.session-board-posts time { margin-inline-start: auto; }
+.session-board-index small { color: var(--peer); }
+@media (max-width: 700px) {
+  .session-board-dialog:has(.session-board-discussion), .session-board-dialog[data-expanded="true"]:has(.session-board-discussion) { width: 100%; }
+  .session-board-discussion { display: flex; flex-direction: column; }
+  .session-board-members { order: -1; width: 100%; }
+  .session-board-dock { width: 36px; height: 42px; }
+}
+
+.session-board-dialog > header {
+  position: sticky; top: 0; z-index: 2; background: var(--card);
+}

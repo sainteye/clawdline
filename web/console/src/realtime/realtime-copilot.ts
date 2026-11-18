@@ -1,3 +1,5 @@
+import { CopilotSessionBoards } from './copilot-session-boards.js'
+import type { SessionBoardTarget } from '../session/SessionBoards.js'
 import {CallEndIntent} from './copilot-call-control.js'
 import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from '../cloud/unopened-read.js'
 import { questionRequest, type CallQuestionID, type QuestionTarget } from './copilot-questions.js'
@@ -354,6 +356,30 @@ export class RealtimeCopilotClient {
       this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
     }
   }
+  private boardVoice = new CopilotSessionBoards()
+  private boardVoiceTurn = 0
+
+  private async boardTool(name: string, args: Record<string, unknown>) {
+    const attempt = this.attempt
+    const turn = this.boardVoiceTurn
+    const speech = { utterance: this.heardNow, turn }
+    const targets = () => {
+      const detail: { targets?: readonly SessionBoardTarget[] } = {}
+      document.dispatchEvent(new CustomEvent('clawdline:copilot-session-boards', { detail }))
+      return detail.targets ?? []
+    }
+    try {
+      return name === 'prepare_session_board'
+        ? await this.boardVoice.prepare(args, { rows: () => readRows(this.toolDeps()), targets,
+          current: () => attempt === this.attempt && turn === this.boardVoiceTurn }, speech)
+        : await this.boardVoice.confirm(targets(), speech)
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+        ? error.code : 'session_board_outcome_unknown'
+      return { error: code }
+    }
+  }
+
   private toolDeps(): ToolDeps {
     return {
       fetch: (input, init) => fetch(input, init),
@@ -767,6 +793,7 @@ export class RealtimeCopilotClient {
     this.focus = origin?.id
     this.questionTarget=undefined;this.questionContext=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
+    this.boardVoice = new CopilotSessionBoards(); this.boardVoiceTurn = 0
     this.directReview.clear();this.directTicket=undefined;this.directConsentText='';this.directReadback='';this.directAudioSeen=false;this.liveOutputAt=0;this.liveInputAt=0;this.executingEffects.clear();this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
     clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.endIntent.reset();this.screenLooked=false
@@ -1201,6 +1228,8 @@ export class RealtimeCopilotClient {
         if (event.transcript) {
           this.journal('heard', event.transcript)
           this.heardNow = event.transcript
+          this.boardVoiceTurn++
+          this.boardVoice.heard(this.heardNow, this.boardVoiceTurn)
           if(this.observeEndIntent(event.transcript))this.executeEndIntent()
           this.updateState({ lastTranscript: event.transcript })
           this.keep('user', event.transcript)
@@ -1492,6 +1521,8 @@ export class RealtimeCopilotClient {
     const steps:string[]=[]
     if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
       reportResumed=this.sessionReports.resume();output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
+    } else if (event.name === 'prepare_session_board' || event.name === 'confirm_session_board') {
+      output = JSON.stringify(await this.boardTool(event.name, args))
     } else if(managed && ['get_voice_work','queue_voice_work','retry_voice_work'].includes(event.name)) {
       try {output=JSON.stringify(await this.workTool(event.name,args,input))}catch(error){output=JSON.stringify({error:String(error)})}
     } else if(managed && ['send_message_to_session','answer_session_question'].includes(event.name) && this.call.options.messageActions) {
@@ -1716,6 +1747,7 @@ export class RealtimeCopilotClient {
         this.sessionReports.interrupt();this.spokenSessions.interrupted(!!this.liveSaid.peek());this.awaitingResponse=false
         const said = this.liveSaid.take()
         if (said) { this.journal('said', said); this.flushJournal() }
+        if (!this.liveHeard.peek()) this.boardVoiceTurn++
         this.liveHeard.add(event.delta)
         this.heardNow = this.liveHeard.peek()
         this.observeEndIntent(this.heardNow,false)
@@ -1729,7 +1761,7 @@ export class RealtimeCopilotClient {
       }
       case 'session.output_transcript.delta': {
         const heard = this.liveHeard.take()
-        if (heard) { this.observeEndIntent(heard); this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
+        if (heard) { this.boardVoice.heard(heard, this.boardVoiceTurn); this.observeEndIntent(heard); this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
         this.liveSaid.add(event.delta)
         if(typeof event.delta==='string'&&this.directReview.proposal){this.directReadback=shortResult(this.directReadback+event.delta);this.directReview.generated(this.directReadback);if(proposalSpoken(this.directReadback,this.directReview.proposal)){this.directConsentText='';this.directTicket=undefined}}
         this.endIntent.assistant(this.liveSaid.peek())
@@ -1788,16 +1820,22 @@ export class RealtimeCopilotClient {
     let logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
     try {
       const requested=JSON.parse(args||'{}') as Record<string,unknown>
-      if(name==='send_message_to_session'&&this.directTicket){
+      if((name==='send_message_to_session'&&this.directTicket)||name==='confirm_session_board'){
         const since=Date.now()
         while(Date.now()-this.liveInputAt<this.liveQuietMs&&Date.now()-since<WORK_REQUEST_MS){
           await new Promise(resolve=>setTimeout(resolve,this.livePollMs))
           if(this.dc!==dc||attempt!==this.attempt)throw new Error('voice_message_call_changed')
         }
-        if(Date.now()-this.liveInputAt>=this.liveQuietMs)this.directReview.consent(this.directTicket,this.directConsentText)
-        this.directTicket=undefined
+        const quiet = Date.now() - this.liveInputAt >= this.liveQuietMs
+        if (name === 'confirm_session_board') {
+          if (!quiet) throw new Error('session_board_confirmation_required')
+        } else {
+          if (quiet) this.directReview.consent(this.directTicket, this.directConsentText)
+          this.directTicket = undefined
+        }
       }
       if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
+      else if (name === 'prepare_session_board' || name === 'confirm_session_board') output = JSON.stringify(await this.boardTool(name, requested))
       else {const result = await runCopilotTool(name, args, timedDeps(this.directToolDeps(this.toolDeps()), steps));output = result.output; logs = result.logs}
     } catch (error) {
       output = JSON.stringify({ error: String(error) })

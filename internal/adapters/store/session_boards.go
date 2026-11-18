@@ -173,11 +173,11 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 	return page, tx.Commit()
 }
 
-func (s *Store) ChangeSessionBoard(ctx context.Context, project string, actor, target sb.Actor, c sb.Command, key string, now time.Time) (sb.Result, error) {
+func (s *Store) ChangeSessionBoard(ctx context.Context, project string, actor, target sb.Actor, c sb.Command, key string, now time.Time, additions ...sb.Actor) (sb.Result, error) {
 	var result sb.Result
 	err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
 		var err error
-		result, err = changeSessionBoard(ctx, tx, project, actor, target, c, key, now)
+		result, err = changeSessionBoard(ctx, tx, project, actor, target, c, key, now, additions)
 		return 1, err
 	})
 	return result, err
@@ -189,7 +189,7 @@ func boardHash(parts ...string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, target sb.Actor, c sb.Command, key string, now time.Time) (sb.Result, error) {
+func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, target sb.Actor, c sb.Command, key string, now time.Time, additions []sb.Actor) (sb.Result, error) {
 	person := actor.ID == ""
 	if c.Action == "create" {
 		lead := actor
@@ -197,7 +197,11 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 			lead = target
 		}
 		id := boardHash("session-board", project, actor.ID, key)
-		digest := boardHash(lead.ID, c.Name, c.Text)
+		digestFields := []string{lead.ID, c.Name, c.Text}
+		for _, id := range c.Members {
+			digestFields = append(digestFields, id)
+		}
+		digest := boardHash(digestFields...)
 		var saved string
 		err := tx.QueryRowContext(ctx, "SELECT create_digest FROM session_boards WHERE id=?", id).Scan(&saved)
 		if err == nil {
@@ -220,7 +224,7 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 			id, project, c.Name, c.Text, lead.ID, digest); err != nil {
 			return sb.Result{}, err
 		}
-		_, err = tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label) VALUES(?,?,?)", id, lead.ID, lead.Label)
+		err = insertSessionBoardMembers(ctx, tx, id, nil, append([]sb.Actor{lead}, additions...))
 		return sb.Result{ID: id}, err
 	}
 
@@ -264,16 +268,17 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 	}
 
 	switch c.Action {
+	case "add-members":
+		if !person || b.Project != project {
+			return result, sb.ErrDenied
+		}
+		err = insertSessionBoardMembers(ctx, tx, b.ID, members, additions)
 	case "join":
 		switch {
 		case person:
 			return result, sb.ErrDenied
-		case member:
-			return result, nil
-		case len(members) >= sb.MaxMembers:
-			return result, sb.ErrFull
 		}
-		_, err = tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label) VALUES(?,?,?)", b.ID, actor.ID, actor.Label)
+		err = insertSessionBoardMembers(ctx, tx, b.ID, members, []sb.Actor{actor})
 	case "leave":
 		if person || lead {
 			return result, sb.ErrDenied
@@ -314,6 +319,22 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		return result, sb.ErrInvalid
 	}
 	return result, err
+}
+
+func insertSessionBoardMembers(ctx context.Context, tx *sql.Tx, board string, current, additions []sb.Actor) error {
+	for _, actor := range additions {
+		if boardMember(current, actor.ID) {
+			continue
+		}
+		if len(current) >= sb.MaxMembers {
+			return sb.ErrFull
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label) VALUES(?,?,?)", board, actor.ID, actor.Label); err != nil {
+			return err
+		}
+		current = append(current, actor)
+	}
+	return nil
 }
 
 func (s *Store) pruneSessionBoards(ctx context.Context, now time.Time) error {

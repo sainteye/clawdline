@@ -1,5 +1,6 @@
 .machine-clawdfather .clawdfather-crown,
-.sheet #start-machine-action .clawdfather-crown {
+.sheet #start-machine-action .clawdfather-crown,
+.session-board-lead .clawdfather-crown {
   width: 15px;
   height: 10px;
   pointer-events: none;

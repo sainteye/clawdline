@@ -191,7 +191,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["prepare_session_board", "confirm_session_board", "get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -2186,4 +2186,43 @@ test('a streamed confirmation survives partial words but unrelated completed inp
  intent.reset();intent.assistant('Would you like me to hang up?')
  intent.user('Report',false);intent.user('Report the next Session',true)
  assert.equal(intent.user('yes'),false)
+})
+
+test('voice boards preview exact membership and wait for a fresh explicit confirmation', async () => {
+  // @ts-expect-error -- Node executes the TypeScript source in tool tests.
+  const { CopilotSessionBoards } = await import('./copilot-session-boards.ts')
+  const voice = new CopilotSessionBoards()
+  const write: unknown[] = []
+  const rows = [
+    { id: '%1', label: 'Coordinator', state: 'working', work_state: 'working', assistant: 'codex', conversation: 'c1', project: 'Project' },
+    { id: '%2', label: 'Browser checks', state: 'working', work_state: 'working', assistant: 'claude', conversation: 'c2', project: 'Project' },
+    { id: '%3', label: 'Different scope', state: 'working', work_state: 'working', assistant: 'codex', conversation: 'c3', project: 'Another project' },
+  ]
+  const targets = [{ label: 'Development machine', candidates: [], source: {
+    key: 'fixture', writable: true,
+    async read<T>() { return { boards: [{ id: 'board-1', name: 'Acceptance' }] } as T },
+    async change(command: unknown) { write.push(command); return { id: 'board-1' } },
+  } }]
+  const deps = { targets: () => targets, current: () => true, rows: async () => ({ rows }) }
+  const preparedAt = { utterance: 'Create a board and include Browser checks', turn: 1 }
+  assert.deepEqual(await voice.prepare({ action: 'create', name: 'Acceptance' }, deps, preparedAt), { missing: ['purpose', 'lead'] })
+  const create = await voice.prepare({ action: 'create', name: 'Acceptance', purpose: 'Compare replies', lead: '%1', members: ['%2'] }, deps, preparedAt)
+  assert.ok("prepared" in create && create.prepared)
+  assert.deepEqual(create.members, ['Browser checks'])
+  assert.equal(write.length, 0)
+  assert.equal((await voice.confirm(targets, { utterance: 'confirm message board', turn: 1 })).error, 'session_board_confirmation_required')
+  assert.equal((await voice.confirm(targets, { utterance: 'yes', turn: 2 })).error, 'session_board_confirmation_required')
+  const receipt = await voice.confirm(targets, { utterance: '確認留言板。', turn: 3 })
+  assert.equal(receipt.saved, true)
+  assert.deepEqual(write[0], { action: 'create', name: 'Acceptance', text: 'Compare replies', target: 'codex:c1', members: ['claude:c2'] })
+  assert.equal((await voice.confirm(targets, { utterance: '確認留言板', turn: 4 })).error, 'session_board_confirmation_required')
+  assert.equal(write.length, 1)
+
+  const add = await voice.prepare({ action: 'add-members', name: 'Acceptance', members: ['%2'] }, deps, { ...preparedAt, turn: 5 })
+  assert.ok("prepared" in add && add.prepared)
+  await voice.confirm(targets, { utterance: 'confirm message board', turn: 6 })
+  assert.deepEqual(write[1], { action: 'add-members', board: 'board-1', members: ['claude:c2'] })
+  const wrongProject = await voice.prepare({ action: 'add-members', name: 'Acceptance', members: ['%2', '%3'] }, deps, { ...preparedAt, turn: 7 })
+  assert.equal(wrongProject.error, 'session_board_scope_mismatch')
+  assert.equal(write.length, 2)
 })
