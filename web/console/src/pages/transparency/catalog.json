@@ -4965,7 +4965,7 @@
     "web/console/src/realtime/copilot-feedback.ts": "af6f7146ebe90f9502d7483873e2c5210ffd03873a8ba54c7b9aa3873a1fc54d",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
     "web/console/src/realtime/copilot-history.ts": "ac9aa94eabbf5b0418af38510429660bdd0ad9531ebad0ccecd93febc81a419e",
-    "web/console/src/realtime/copilot-live.ts": "be561ce8d68191a8bba4f232212bc728f30ac583880bcb338023ec6550e7222f",
+    "web/console/src/realtime/copilot-live.ts": "4b15a914009cb033e15193cff23b89dd4bd0f8ce6c0f8550a34a484972bce5c6",
     "web/console/src/realtime/copilot-meter.ts": "eb6284cf45419d751c6a4c62800eba454d83b43016d7fde8dc8466b1bdef8368",
     "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
     "web/console/src/realtime/copilot-reports.ts": "6d0cb73e09cca6788c2d7baab01f01a9ebcaf0870d97b52f52d83573ba35bca6",
