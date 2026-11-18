@@ -3711,6 +3711,10 @@
         {
           "path": "internal/adapters/projectassistanthost/devservers_human.go",
           "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/DevServers.tsx",
+          "line": 1
         }
       ],
       "original": [
@@ -5007,6 +5011,7 @@
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
     "web/console/src/project-assistants/ChatRows.tsx": "367d0986d466c1ed7c8cfe468a4847fc2cf611e8091699fa9bc4c452007196d1",
+    "web/console/src/project-assistants/DevServers.tsx": "3fe9e7992c4db0e4c155062d224e8bccf3feba61c110557c1d9b9dfa8fe7948b",
     "web/console/src/project-assistants/ExchangePanel.tsx": "e8517aa4deff97e6c3c28bf0897192e24f6d69836c6ea2f4a9df67f3997cf44b",
     "web/console/src/project-assistants/MemoryPanel.tsx": "ebad96ca49a2f3aaf6b44920b7402cc354d2fb2430354048a746a785bf8c9cd9",
     "web/console/src/project-assistants/NetworkSettings.tsx": "9bed4cfacee38582d10746410ea38781414a6da9409f343a1779fe1d592eda97",
@@ -5053,7 +5058,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "1c2d5bca23996681f01e34555f29f5a2930bc0380c9305670552779d7a816572",
-    "zh-Hant": "57e6abdeb7a87e8d609ca816bb60553fe6e5623d803572bfc78701dc8dcd385f"
+    "en": "f9c53605a7bc38921108d5c647af45e79c83d4629946c2fe222607a343c7159d",
+    "zh-Hant": "5d60609e47f9aa4670d65985bc50a1ec7be2d213f9ee84176a43b629146e6d22"
   }
 }

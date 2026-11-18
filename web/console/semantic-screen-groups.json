@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13294,
-  "riskKeys": 5736,
-  "nonRiskCount": 7558,
+  "englishContentKeys": 13311,
+  "riskKeys": 5744,
+  "nonRiskCount": 7567,
   "groups": [
     {
       "name": "acp / other",
@@ -5976,7 +5976,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 362,
+      "count": 371,
       "sources": [
         null
       ],
@@ -6263,6 +6263,15 @@
         "projectAssistants.send",
         "projectAssistants.sendNow",
         "projectAssistants.sending",
+        "projectAssistants.serverActions",
+        "projectAssistants.serverLogs",
+        "projectAssistants.serverRefresh",
+        "projectAssistants.serverRestart",
+        "projectAssistants.serverStart",
+        "projectAssistants.serverStarting",
+        "projectAssistants.serverStop",
+        "projectAssistants.serverStopping",
+        "projectAssistants.serversTitle",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.settingsAccess",

@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,serverState,serverActions,serverControlRequest} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -254,4 +254,24 @@ test("the entry prioritizes live input over work without treating unread as acti
   assert.equal(assistantBadge([waiting],[{...source,current:()=>false}]).mood,"idle")
   assert.equal(assistantBadge([idle],[{...source,current:()=>false}]).unread,5)
   assert.equal(assistantBadge([idle,running,waiting],[source]).unread,5)
+})
+
+
+test("server controls never carry the displayed executable text or environment",()=>{
+  const key={machine_id:"source",bot_id:"bot"},server={id:"known",name:"watch",command:"synthetic-command",folder:"/synthetic/project",attempt:"attempt-one",revision:4,fingerprint:"f".repeat(64),state:"running",environment:{SECRET:"must-not-cross"},pid:123}
+  const request=compiled.exports.serverControlRequest(key,server,"human-key")
+  assert.deepEqual(request,{key,id:"known",fingerprint:server.fingerprint,attempt:"attempt-one",revision:4,idempotency_key:"human-key"})
+  assert.doesNotMatch(JSON.stringify(request),/synthetic-command|synthetic\/project|SECRET|must-not-cross|pid/)
+})
+test("uncertain or stopping servers offer no new mutation while terminal rows can start or be removed",()=>{
+  const actions=compiled.exports.serverActions
+  for(const state of ["unknown","stopping","unrecognized"]){assert.deepEqual(actions({state}),[])}
+  assert.equal(compiled.exports.serverState({state:"unrecognized"},words("en")),"Status unconfirmed")
+  assert.deepEqual(actions({state:"accepted"}),["stop"])
+  assert.deepEqual(actions({state:"running"}),["restart","stop"])
+  for(const state of ["stopped","failed"]){assert.deepEqual(actions({state}),["start","remove"])}
+})
+test("sources without server support render no empty details section",()=>{
+  const html=render(compiled.exports.DevServers,{source:{canDevServers:()=>false},bot:{key:{machine_id:"source",bot_id:"bot"}},enabled:false,w:words("en")})
+  assert.equal(html,"")
 })

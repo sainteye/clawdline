@@ -334,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, owned-listener discovery, server UI, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, owned-listener discovery, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -414,6 +414,20 @@ outcome and requires inspection. Stale stop/remove controls refuse and require a
 read; uncertain responses are never automatically retried with a new key. These
 receipts remain source-local and add no portable Bot operations.
 
+Bot details show the server section before the ordinary editor, and only after
+a source read finds servers. Each quiet row opens the available log tail; its
+other controls live behind the existing anchored menu, visible on desktop hover
+or keyboard focus and directly available on touch. Logs use a native modal,
+show executable text as plain text, and retain the incomplete-tail warning.
+Source status/permissions still gate every operation; read-only devices retain
+logs. A write locks further controls until a fresh source read succeeds. A lost
+reply displays an inspection request and never automatically resends the write.
+The full source/principal/Bot/Project key remounts this view when its owner changes.
+Current chat event frontiers trigger reads, with demand during a slow read
+coalesced into another read rather than cancelling the first. Closing details
+removes its portalled menu and log sheet. No address is guessed from log text;
+owned-listener discovery remains separate construction.
+
 The existing rules/remove client already has Cloud relay and vocabulary entries;
 its request flag means content access, not local-only transport. The new server
 controls still need their own Cloud carriage, private bridge and UI. Source HTTP
@@ -476,5 +490,7 @@ port closes on Host disable. A controlled whole-Bot reconciliation counterexampl
 stops a fresh context's server; the per-definition fix refuses that regression.
 These are local synthetic checks with zero vendor/model requests. They do not
 qualify an installed vendor, production Cloud/UI, physical recovery after Host
-crash, machine reboot or updater rollback. New-control Cloud carriage, owned ports,
-quiet server UI and durable clean-restart intent still require construction.
+crash, machine reboot or updater rollback. The details component has isolated
+desktop/mobile browser evidence, not installed or production Cloud acceptance.
+New-control Cloud carriage, owned ports and durable clean-restart intent still
+require construction.

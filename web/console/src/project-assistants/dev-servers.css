@@ -1,0 +1,16 @@
+.project-assistants .pa-dev-servers { margin-bottom:20px;min-width:0; }
+.project-assistants .pa-dev-servers>header,.pa-server-logs>header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.project-assistants .pa-dev-servers>header>button { font-size:12px;color:var(--pa-dim);border:0;background:transparent; }
+.project-assistants .pa-dev-servers ul { list-style:none;padding:0;margin:0; }
+.project-assistants .pa-dev-server { display:flex;align-items:center;min-width:0;gap:8px; }
+.project-assistants .pa-dev-server .pa-server-name { display:flex;flex:1;min-width:0;align-items:center;gap:10px;background:transparent;border:0;text-align:start;padding:10px 0; }
+.project-assistants .pa-server-name strong { font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-server-name small { color:var(--pa-dim);flex:none;font-size:12px; }
+.project-assistants .pa-dev-server[data-failed] .pa-server-name small { color:var(--danger,#f87171); }
+.project-assistants .pa-dev-server .pa-server-menu { width:36px;min-height:36px;border:0;background:transparent;padding:0; }
+@media(hover:hover) { .project-assistants .pa-server-menu:not([aria-expanded="true"]) { opacity:0; } .project-assistants .pa-dev-server:hover .pa-server-menu,.project-assistants .pa-dev-server:focus-within .pa-server-menu { opacity:1; } }
+.project-assistants.pa-server-logs { width:min(760px,calc(100% - 24px));max-height:calc(100dvh - 24px);padding:20px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-bg);overflow:auto; }
+.pa-server-logs::backdrop { background:#0009; }
+.pa-server-logs h3 { margin:0;font-size:16px; }
+.pa-server-logs .pa-server-command { overflow-wrap:anywhere;color:var(--pa-dim);font-size:12px; }
+.pa-server-logs pre { white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,Menlo,monospace; }

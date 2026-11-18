@@ -12,6 +12,14 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The details server section reuses the existing source API and anchored menu;
+it adds no model tool or instruction. Reviewed both language explanations for
+known-ID controls, plain-text logs, incomplete tails and the inspection lock
+after an uncertain write. No log-derived address, arbitrary human command,
+automatic write replay or new provider permission is introduced. Desktop/mobile
+component checks use a synthetic HTTP source and do not qualify Cloud carriage,
+installed UI or physical process recovery.
+
 The known-ID human server API adds no model tool or instruction. Reviewed both
 language explanations against the source controls: current paired-person write
 authority, displayed baseline checks, history readable to the person, unchanged

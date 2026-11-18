@@ -1,5 +1,23 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
+  "serversTitle": "Dev servers",
+  "serverRefresh": "Refresh",
+  "serverStarting": "Starting",
+  "serverRunning": "Running",
+  "serverStopping": "Stopping",
+  "serverStopped": "Stopped",
+  "serverFailed": "Failed to start",
+  "serverUnknown": "Status unconfirmed",
+  "serverActions": "Actions for {name}",
+  "serverStart": "Start",
+  "serverRestart": "Restart",
+  "serverStop": "Stop",
+  "serverRemove": "Remove",
+  "serverLogs": "Logs",
+  "serverInspect": "The action could not be confirmed. Refresh to inspect the current server before making another change. Nothing will be sent again automatically.",
+  "serverLogTail": "Only the available end of this run’s log is shown. Earlier output may be missing.",
+  "serverLogEmpty": "No output is available for this run.",
+
   "settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}",
   "settingsInstructionsHeading": "Instructions",
   "settingsInstructionsHint": "Always applies. Put one-off task requests in the conversation.",
@@ -522,6 +540,24 @@ export const en = {
 } as const
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
+  "serversTitle": "開發伺服器",
+  "serverRefresh": "重新整理",
+  "serverStarting": "啟動中",
+  "serverRunning": "執行中",
+  "serverStopping": "停止中",
+  "serverStopped": "已停止",
+  "serverFailed": "啟動失敗",
+  "serverUnknown": "狀態未確認",
+  "serverActions": "{name} 的操作",
+  "serverStart": "啟動",
+  "serverRestart": "重新啟動",
+  "serverStop": "停止",
+  "serverRemove": "移除",
+  "serverLogs": "日誌",
+  "serverInspect": "無法確認操作結果。請重新整理、查看目前伺服器，再做其他變更。不會自動重送。",
+  "serverLogTail": "只顯示這次執行可讀取的末段日誌，較早的輸出可能未保留。",
+  "serverLogEmpty": "這次執行沒有可讀取的輸出。",
+
   "settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}",
   "settingsInstructionsHeading": "指令",
   "settingsInstructionsHint": "一直生效的規則；單次任務要求請寫在對話裡。",
