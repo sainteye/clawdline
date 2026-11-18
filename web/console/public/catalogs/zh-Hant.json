@@ -13193,6 +13193,7 @@
   "projectAssistants.youReaction": "自己",
   "projectAssistants.otherReaction": "其他人",
   "projectAssistants.reactionUnknown": "表情回應的結果不明，請用原操作確認。",
+  "projectAssistants.reactionSaving": "正在儲存表情…",
   "projectAssistants.reactionFailed": "無法加入表情回應。",
   "projectAssistants.retryReaction": "確認原表情操作",
   "capacityRow.bots.human_reactions.what": "每個人在同一則訊息保留的不同表情數。",

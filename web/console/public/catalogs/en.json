@@ -13193,6 +13193,7 @@
   "projectAssistants.youReaction": "You",
   "projectAssistants.otherReaction": "Person",
   "projectAssistants.reactionUnknown": "The reaction outcome is unknown. Check with the same request.",
+  "projectAssistants.reactionSaving": "Saving reaction…",
   "projectAssistants.reactionFailed": "The reaction was refused.",
   "projectAssistants.retryReaction": "Check original reaction",
   "capacityRow.bots.human_reactions.what": "Distinct emoji retained for each person on one message.",

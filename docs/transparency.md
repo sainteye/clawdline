@@ -859,3 +859,11 @@ and API 89. It does not include the separately isolated additive topic store
 or change metadata. Scripted tool tests are separate from installed-model
 selection, clean-conversation recall, updater qualification and production
 acceptance. The note editor remains follow-up work.
+
+
+The anchored message-action update changes transient menu placement and the display of
+pending and receipt-confirmed reactions. Review of the Bot-review explanation in English
+and Taiwan Traditional Chinese found no change to peer prompts, exchange ownership,
+memory selection, native permission or replay authority. Unknown reaction outcomes still
+retain their original request. The ChatRows source receipt follows the reviewed renderer;
+the existing bilingual instruction explanation remains applicable.
