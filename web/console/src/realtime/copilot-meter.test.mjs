@@ -9,8 +9,8 @@ const {CallMeter}=module.exports
 function context(){
  const tones=[],gains=[]
  const audio={state:'running',currentTime:1,destination:{},tones,gains,
-  createGain(){const node={disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{setValueAtTime(){},linearRampToValueAtTime(){}}};gains.push(node);return node},
-  createOscillator(){return {frequency:{value:0},onended:undefined,disconnected:false,connect(){},disconnect(){this.disconnected=true},start(at){tones.push({hz:this.frequency.value,at})},stop(){this.onended?.()}}},
+  createGain(){const events=[];const node={events,disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{setValueAtTime(value,at){events.push(['set',value,at])},linearRampToValueAtTime(value,at){events.push(['ramp',value,at])}}};gains.push(node);return node},
+  createOscillator(){return {type:'sine',frequency:{value:0},onended:undefined,disconnected:false,connect(){},disconnect(){this.disconnected=true},start(at){this.record={hz:this.frequency.value,type:this.type,at};tones.push(this.record)},stop(at){if(this.record)this.record.stoppedAt=at;this.onended?.()}}},
  }
  return audio
 }
@@ -33,4 +33,15 @@ test('ending a local call detaches capture before a descending cue and closes on
 test('entering a Session has a distinct short local melody and releases its nodes',()=>{
  const meter=new CallMeter(),audio=context();meter.context=audio
  meter.sessionChanged();assert.deepEqual(audio.tones.map(t=>t.hz),[660,880,660]);assert.equal(audio.gains.every(g=>g.disconnected),true)
+})
+
+
+test('background processing is one lower triangle note, distinct from the active tool sine note',()=>{
+ const meter=new CallMeter(),audio=context();meter.context=audio
+ meter.pending('background');assert.deepEqual(audio.tones.map(t=>({hz:t.hz,type:t.type})),[{hz:220,type:'triangle'}])
+ meter.pending('tool');assert.deepEqual(audio.tones.map(t=>({hz:t.hz,type:t.type})),[{hz:220,type:'triangle'},{hz:330,type:'sine'}])
+ assert.equal(audio.gains.every(g=>g.disconnected),true)
+ assert.equal(audio.tones[0].stoppedAt-audio.tones[0].at, audio.tones[1].stoppedAt-audio.tones[1].at)
+ assert.deepEqual(audio.gains[0].events,audio.gains[1].events,'the duration and loudness envelope remain unchanged')
+ audio.state='suspended';meter.pending('background');assert.equal(audio.tones.length,2)
 })

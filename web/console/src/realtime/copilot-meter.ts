@@ -134,13 +134,15 @@ export class CallMeter {
     }catch{/* refusal-ok: the visible state remains when local audio is unavailable. */}
   }
 
-  /** A single soft low note means processing started, never success. No loop. */
-  pending(): void {
+  /** One start note: background work is lower and warmer than an active tool. No loop. */
+  pending(source:'tool'|'background'='tool'): void {
     const context=this.context
     if(!context||context.state!=='running')return
     try {
       const gain=context.createGain(),tone=context.createOscillator(),at=context.currentTime
-      gain.connect(context.destination);tone.connect(gain);tone.frequency.value=330
+      gain.connect(context.destination);tone.connect(gain)
+      tone.frequency.value=source==='background'?220:330
+      tone.type=source==='background'?'triangle':'sine'
       gain.gain.setValueAtTime(0,at)
       gain.gain.linearRampToValueAtTime(RING_LEVEL/3,at+0.01)
       gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
