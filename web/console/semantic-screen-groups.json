@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13239,
-  "riskKeys": 5719,
-  "nonRiskCount": 7520,
+  "englishContentKeys": 13260,
+  "riskKeys": 5723,
+  "nonRiskCount": 7537,
   "groups": [
     {
       "name": "acp / other",
@@ -4134,7 +4134,7 @@
     },
     {
       "name": "next / other",
-      "count": 1231,
+      "count": 1248,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4447,6 +4447,23 @@
         "next.copilotForget",
         "next.copilotGoSettings",
         "next.copilotHangup",
+        "next.copilotHistoryBackground",
+        "next.copilotHistoryCached",
+        "next.copilotHistoryCachedCount",
+        "next.copilotHistoryCounts",
+        "next.copilotHistoryDirectory",
+        "next.copilotHistoryElapsed",
+        "next.copilotHistoryEntries",
+        "next.copilotHistoryGroup",
+        "next.copilotHistoryNotes",
+        "next.copilotHistoryPast",
+        "next.copilotHistoryProgress",
+        "next.copilotHistoryQuestion",
+        "next.copilotHistorySummary",
+        "next.copilotHistoryTimingHint",
+        "next.copilotHistoryTitle",
+        "next.copilotHistoryTool",
+        "next.copilotHistoryTranscript",
         "next.copilotInCall",
         "next.copilotKeyLabel",
         "next.copilotKeyMove",

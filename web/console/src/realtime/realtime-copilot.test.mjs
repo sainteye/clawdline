@@ -32,6 +32,7 @@ function fixture(managed, target = origin) {
   c.snapshot = Promise.resolve('')
   c.addLog = () => {}
   c.toolDeps = () => ({
+    observe:spec=>c.observeOperation(spec),
     sleep: async () => {},
     decide: () => assert.fail('a clicked Session must not use a model to select its target'),
     fetch: async (path, init) => {
@@ -179,8 +180,10 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {}, attachInput: () => null, close() {} }
   c.addLog = () => {}
   c.state.engine = 'previous-call-engine'
+  const previous=c.operations.begin({name:'previous-call-tool',source:'tool'});previous.end({outcome:'done'})
   try {
     await c.start(origin)
+    assert.ok(!c.state.tools.some(row=>row.name==='previous-call-tool'),'the public start path resets the previous call history')
     if (managed===null || managed && protocol!==3) {
       assert.equal(c.state.status,'error')
       assert.ok(!requests.some(r=>r.path==='/v1/voice/copilot-session'||String(r.path).startsWith('https://api.openai.com/')),'unsupported calls stop before minting a secret or connecting a provider')
@@ -1403,4 +1406,50 @@ test('an uncertain send consumes its approval and cannot be retried automaticall
  f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path.endsWith('/send')){posts++;throw new TypeError('connection lost')}return base().fetch(path,init)}})
  await f.send();assert.equal(posts,1)
  await f.send();assert.equal(posts,1)
+})
+
+test('the call tool history survives the next Live answer and Realtime utterance',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.state.status='connected'
+ await f.c.runLiveTool('history-list','list_sessions','{}')
+ assert.ok(f.c.state.tools.some(t=>t.name==='list_sessions'))
+ f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:'Tell me more.'})
+ f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Here is the summary.'})
+ assert.ok(f.c.state.tools.some(t=>t.name==='list_sessions'),'Live speech must preserve this call history')
+ await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'next'})
+ assert.ok(f.c.state.tools.some(t=>t.name==='list_sessions'),'new speech must preserve history')
+})
+
+test('automatic opening exposes each background Session transcript read in the tool history',async()=>{
+ const f=fixture(false,null);f.c.state.status='connected'
+ const preparing=f.c.prepareListReport();await tick();f.release();await preparing;await tick()
+ assert.ok(f.reads.some(r=>r.path.startsWith('/v1/transcript?')))
+ assert.equal(f.c.state.tools.filter(t=>t.name==='read_session_transcript').length,2)
+ assert.ok(f.c.state.tools.some(t=>t.name==='get_sessions_summary'&&t.source==='background'))
+ f.c.resetSessionReports()
+})
+
+
+test('background history journal events carry the same unique IDs, outcomes and durations as the visible call ledger',async()=>{
+ const f=fixture(false,null);f.c.journalCall='history-journal-call';f.c.state.status='connected'
+ const reading=f.c.prepareListReport();await tick();f.release();await reading;await tick()
+ const ended=f.c.state.tools.filter(row=>row.outcome!=='running')
+ const saved=f.c.journalLines.filter(row=>row.text==='call_tool_operation').map(row=>row.tool)
+ assert.equal(saved.length,ended.length)
+ assert.deepEqual(new Set(saved.map(row=>row.id)),new Set(ended.map(row=>row.id)))
+ for(const row of saved){assert.equal(row.call,'history-journal-call');assert.equal(row.source,'background');assert.ok(row.ms>=0);assert.ok(row.ended>=row.started)}
+ f.c.resetSessionReports()
+})
+
+test('cancelled background reads settle in the call history and never return as successful entries',async()=>{
+ const f=fixture(false,null);f.c.state.status='connected'
+ const original=f.c.toolDeps
+ f.c.toolDeps=()=>({...original(),fetch:async(path,init)=>{
+  if(path.startsWith('/v1/transcript?'))return await new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}))
+  return original().fetch(path,init)
+ }})
+ const reading=f.c.prepareListReport();await tick();f.c.cancelOpening();await reading
+ const transcripts=f.c.state.tools.filter(row=>row.name==='read_session_transcript')
+ assert.equal(transcripts.length,2)
+ assert.ok(transcripts.every(row=>row.outcome==='cancelled'))
+ assert.ok(!f.c.state.tools.some(row=>row.outcome==='running'))
 })

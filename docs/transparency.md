@@ -863,3 +863,16 @@ and API 89. It does not include the separately isolated additive topic store
 or change metadata. Scripted tool tests are separate from installed-model
 selection, clean-conversation recall, updater qualification and production
 acceptance. The note editor remains follow-up work.
+
+
+## Whole-call voice observations (2026-11-18)
+
+The voice-work entry now describes one call-owned operation ledger shared by the
+persistent history and expanded diagnostic tool list. Both language explanations
+cover automatic opening, read-ahead, per-Session reads, stable IDs, cancellation,
+cache reuse, unconfirmed results after hangup and the distinction between additive operation duration and elapsed
+coverage. The ledger is observational: it does not enter provider instructions,
+execute tools, replay requests or grant consent. Its private journal metadata
+uses existing flushes. Reload persistence and cross-device history are not
+claimed. The reviewed sources include the ledger and its real modal component;
+website snapshot publication remains separate from source receipt freshness.
