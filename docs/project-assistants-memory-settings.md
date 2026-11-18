@@ -235,19 +235,69 @@ not rewritten, and an original replay still returns its original revision.
 
 Forgetting tombstones the note and erases its title, summary and body from
 live memory storage. Index, detail and search cannot retrieve it or resurrect
-its ID. Existing human history and independently saved exports are separate;
+its ID. Legacy short facts retain their forgotten historical entries; those
+entries are excluded from live index, detail, search and assembled context.
+This is not an erasure claim for every historical fact. Existing human history
+and independently saved exports are separate;
 no provider conversation file is deleted. Forget still invalidates unsafe
 opaque resume and dependent routine progress. The Project shared-memory view
 remains read-only and is not added to model context. Dreams and a full note
 version-history browser remain deferred.
 
-The schema-11 migration keeps Bot JSON/history bytes unchanged. Supported
-older short-fact archives remain restorable; note-bearing archives cannot
+The migration from core schema 11 to 12 keeps existing Bot JSON/history bytes
+unchanged. Supported older short-fact archives remain restorable; note-bearing
+archives cannot
 pretend to be schema 11. Newer metadata must never be lowered for rollback.
 Focused SQLite, owned MCP and scripted Host tests cover these source rules.
-They do not establish clean installed-native recall, deployed Cloud behavior,
-actual memory forgetting across fresh model dialogs. Editor behavior has its
-own isolated browser entry point below, separate from production acceptance.
+Editor behavior has its own isolated browser entry point below, separate from
+production acceptance. The installed-native evidence below qualifies a
+controlled Codex path; it does not turn the scripted checks into native or
+production acceptance for both agents.
+
+### Controlled installed-native qualification
+
+On 2026-11-18, source `6a1de817e050f2cfc4d9b3b623a794fbec78f422`
+was exercised with the actual installed adapter, Host-bound tools and isolated
+SQLite data. A private qualification wrapper deliberately requested
+`session/new`, removed the chat handoff and omitted injected context text from
+the outgoing prompt. The standing instructions and recall question contained
+no preference answer. The actual memory tools, actor fences, revisions and
+store were unchanged. This isolates memory retrieval from conversation recall;
+it is not acceptance of a product new-conversation control.
+
+| Stage | Observed result | Boundary |
+| --- | --- | --- |
+| Codex writes | Native `edit_memory` appended a short fact and created a named note using the revisioned index | One successful native prompt |
+| Codex retrieves | A different native session read the index, explicitly fetched the note body by ID and returned both synthetic preferences correctly | One successful native prompt, without an answer hint or replayed chat |
+| Codex after Forget | Independent reads found no live index, detail, search result or assembled context; another different native session read empty memory and answered `MISSING` | One successful native prompt after a completed Forget |
+| Claude before sign-in | The first prompt returned `provider_signed_out`, with no Host tool calls | Unknown Host turn, batch stopped |
+| Claude after confirmed sign-in | The first prompt in a new isolated Bot returned `provider_usage_limit`, with no Host tool calls | Unknown Host turn, batch stopped; the three memory stages remain unqualified |
+
+The three Codex turns succeeded and their active-turn slots were empty.
+The two Claude attempts also ended with empty active-turn slots, but their
+unknown results are not success. Across these batches there were five native
+Open attempts and five prompt writes: three successful Codex prompt writes and two
+Claude refusals. Provider-internal request counts and exact billing were not
+available; these counts are not a zero-cost claim. There was no automatic
+retry, account switch, direct API-key request or production Bot mutation.
+
+The after-Forget Codex check reused a known completed synthetic export by
+restoring it into a new empty schema-12 database. It did not lower metadata,
+restore a production backup or replay either earlier prompt. The private
+fixture initially reset its `host-N` ID producer and collided with imported
+IDs before provider Open. A zero-model comparison reproduced that failure and
+passed with a distinct new ID namespace. The product UUID generator was not
+changed. An earlier overbroad assertion also incorrectly required legacy
+short-fact tombstone text to be erased; the corrected assertions retained the
+existing distinction while checking both live detail refusals. Original
+failures, source fingerprints, exports, tool records and native IDs are retained
+in task-private evidence outside the public repository.
+
+The containing source `659d85205b524273ce66e4c3a9144e9c36385031`
+passed all five jobs in CI run `44232976610`. This does not establish
+production Cloud observation, installed-binary upgrade/recovery, Claude memory
+qualification or long-body native behavior. The full body bounds and editor
+conflict/lost-acknowledgement cases remain separately covered by isolated tests.
 
 The revisioned native writer is covered by
 `TestHostTopicNoteEditsKeepRevisionAndReplayIdentity`: a fixture drops the
