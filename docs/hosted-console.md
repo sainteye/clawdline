@@ -190,6 +190,14 @@ stylesheet while the immutable deployment URL served the correct CSS. The consol
 restored before another rollout. These observations do not establish why the responses
 differed. Version, branch and text-only startup checks did not prove a styled screen;
 verify the actual rendered Session page before accepting a deployment.
+The same stylesheet URL later still returned the SPA document in the real browser
+while command-line retrieval returned the expected CSS. Captured HTML responses
+allowed four hours of caching. Re-uploading identical content did not establish
+recovery for that browser. Hosted asset filenames now include the source commit,
+so a new deployment does not reuse an earlier deployment's cached response even
+when its stylesheet bytes have not changed. Local daemon build naming is unchanged.
+This separates deployment identities; it does not establish the original cause of
+the HTML response or prove every browser cache has been cleared.
 
 After the static checks, reload the production console in the existing browser tab and verify
 that the actual Session list appears. Also verify the changed route. Preserve existing sign-in

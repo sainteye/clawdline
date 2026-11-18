@@ -1,6 +1,11 @@
 import {readFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
 
+/** Keep a previous deployment's cached SPA fallback out of a new build. */
+export function hostedAssetPattern(stamp){
+ return `assets/[name]-${stamp}-[hash][extname]`
+}
+
 /** Only the generated entry's same-origin stylesheets are deployment inputs. */
 export function stylesheetPaths(html,origin){
  const base=new URL(origin),paths=new Set()

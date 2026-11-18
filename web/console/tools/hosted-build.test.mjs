@@ -57,3 +57,26 @@ test('hosted stylesheet verification rejects HTML fallback, missing MIME and emp
  assert.throws(()=>verifyStylesheet('/assets/main.css','','.call{}'),/wrong_type/)
  assert.throws(()=>verifyStylesheet('/assets/main.css','content-type: text/css','  '),/invalid_body/)
 })
+
+
+test('identical hosted styles use a different asset URL in a new source deployment', async () => {
+ const {mkdtempSync,writeFileSync,rmSync,realpathSync}=await import('node:fs')
+ const {tmpdir}=await import('node:os')
+ const {join}=await import('node:path')
+ const {build}=await import('vite')
+ const {hostedAssetPattern}=await import('./check-hosted-assets.mjs')
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'hosted-style-deployment-')))
+ try {
+  writeFileSync(join(root,'index.html'),'<link rel="stylesheet" href="/main.css"><main>Preview</main>')
+  writeFileSync(join(root,'main.css'),'.call{display:flex}')
+  const names=[]
+  for(const stamp of ['a'.repeat(40),'b'.repeat(40)]){
+   const result=await build({root,configFile:false,logLevel:'silent',build:{write:false,rollupOptions:{output:{assetFileNames:hostedAssetPattern(stamp)}}}})
+   const outputs=Array.isArray(result)?result:[result]
+   const assets=outputs.flatMap(item=>item.output).filter(item=>item.type==='asset'&&item.fileName.endsWith('.css'))
+   assert.equal(assets.length,1)
+   names.push(assets[0].fileName)
+  }
+  assert.notEqual(names[0],names[1])
+ }finally{rmSync(root,{recursive:true,force:true})}
+})

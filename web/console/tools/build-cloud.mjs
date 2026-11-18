@@ -8,6 +8,8 @@ import { shareMetadata, metadataHTML } from "../src/community/share-metadata.ts"
 import { productionCloud, validateHostedDeclaration } from "./hosted-declaration.mjs"
 import { validateHostedBundle } from "./hosted-bundle.mjs"
 
+import { hostedAssetPattern } from "./check-hosted-assets.mjs"
+
 const declared = JSON.stringify(productionCloud)
 validateHostedDeclaration(declared)
 const root = fileURLToPath(new URL("../", import.meta.url))
@@ -16,7 +18,7 @@ if (git("status", "--porcelain")) throw new Error("Build the hosted console from
 const stamp = git("rev-parse", "HEAD")
 const committed_at = git("show", "-s", "--format=%cI", stamp)
 process.env.VITE_HOSTED_CONSOLE = declared
-await build({ root, configFile: join(root, "vite.config.ts") })
+await build({ root, configFile: join(root, "vite.config.ts"), build: { rollupOptions: { output: { assetFileNames: hostedAssetPattern(stamp) } } } })
 // Only the hosted build contains an edge worker; daemon releases stay static.
 await build({ root, configFile: false, build: { outDir: "dist", emptyOutDir: false, minify: true,
   lib: { entry: join(root, "edge/worker.mjs"), formats: ["es"], fileName: () => "_worker.js" },
