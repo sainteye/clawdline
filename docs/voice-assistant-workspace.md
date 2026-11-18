@@ -465,3 +465,46 @@ identity preservation in direct and managed calls. They do not establish actual
 prosody, listener understanding or production latency. If the latest reply is
 only implementation detail, delivery guidance asks for the bounded recap of
 original requests instead of repeating the same jargon or inventing a goal.
+
+
+## Whole-call tool history
+
+The area below speech and above usage keeps this call's tool history. New
+utterances, interrupted reports, minimized sheets and re-opened sheets do not
+clear it. Hanging up marks pending observations as result-unconfirmed rather than claiming
+the underlying action was cancelled; the last call's
+history remains available until a new call starts. Reloading the page does not
+restore the in-memory history, and cross-device historical browsing is outside
+this view's contract.
+
+One call-owned ledger supplies both this area and the expanded activity log.
+A unique operation ID is created at start and updated at completion; callbacks
+from an older call cannot enter a replacement call. Each entry carries its call,
+parent, source, target, wall-clock start, monotonic offset, duration and outcome.
+Model-invoked tools and automatic background operations are counted separately.
+Automatic opening and read-ahead use the same observation hooks, including
+per-Session transcript, recap, progress, current question, Notes, reference
+resolution and follow-up analysis reads. Existing summaries are marked reused;
+a local cache lookup is not described as a fresh provider generation. A read
+that falls back after an HTTP failure remains a failed observation even when
+the original function can answer from older evidence. Observation never runs a
+tool a second time, changes its authority or starts an execution sound.
+
+The original green-outline capsules remain below speech, with one capsule per
+invocation showing its target, outcome and duration. Counts remain visible above
+them; there is no disclosure triangle or grouped list. The existing activity log
+shows each observation with its start time and source. The processing-coverage tooltip
+counts overlapping top-level intervals once and excludes their nested read
+intervals. Summed durations can exceed that total. The scroll area keeps every
+observation rather than applying the mixed diagnostic log's fifty-line limit;
+capsules wrap within the original scroll area. Completed observations enter
+the existing private call journal as `call_tool_operation` metadata through the
+normal journal flush, without adding model requests or another write per read.
+
+The synthetic browser fixture at
+`/tools/fixtures/copilot-tool-history.html?engine=live&lang=en` (or
+`engine=realtime`) uses the actual client and modal with provider-free transport
+substitutes. Start background reads, release them, request the list, speak again,
+minimize/reopen and validate. It checks three recap reads, three transcript reads,
+cache labeling, unique IDs, journal agreement and placement. This proves the
+fixture behavior, not an actual paid call or real phone audio acceptance.

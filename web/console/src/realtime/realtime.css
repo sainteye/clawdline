@@ -768,8 +768,9 @@
 }
 .copilot-bubble-notice.warn { background: var(--card, #111); border-color: color-mix(in srgb, #f59e0b 55%, transparent); color: #f59e0b; }
 
-/* The tools the copilot used since the person last spoke (`toolTrace`): a
-   quiet line of small chips under the transcript, oldest first. */
+/* Whole-call observations retain the original capsules between speech and usage. */
+.copilot-tool-history { margin: 8px 0; min-width: 0; }
+.copilot-history-heading { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; font-size: 11px; color: var(--dim); }
 .copilot-tools-trail {
   list-style: none;
   margin: 8px 0 0;
@@ -785,7 +786,7 @@
   max-width: 100%;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, #16a34a 55%, var(--line));
   color: var(--dim);
   font-size: 11px;
   line-height: 1.6;
@@ -847,7 +848,8 @@
 }
 .realtime-transcript-box > * { flex-shrink: 0; white-space: pre-wrap; }
 .realtime-transcript-empty { color: var(--dim); }
-.in-call .copilot-tools-trail { height: 48px; margin: 0; align-content: start; overflow-y: auto; }
+.in-call > .copilot-tool-history { margin: 0; min-height: 0; flex-shrink: 1; }
+.in-call > .copilot-tool-history .copilot-tools-trail { max-height: 48px; margin: 4px 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 .in-call .realtime-secondary { height: 76px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: end; gap: 2px; position: relative; }
 .in-call .realtime-logs-container { position: relative; margin: 0; }
 .in-call .realtime-logs-toggle-btn { font-size: 11px; padding: 2px 0; }

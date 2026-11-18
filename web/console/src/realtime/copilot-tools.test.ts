@@ -2226,3 +2226,43 @@ test('voice boards preview exact membership and wait for a fresh explicit confir
   assert.equal(wrongProject.error, 'session_board_scope_mismatch')
   assert.equal(write.length, 2)
 })
+
+test('the history marks reused recaps without issuing another request and keeps failed fallback reads visible',async()=>{
+ const observations:{name:string;parent?:string;outcome?:string;target?:string}[]=[]
+ const observe=(spec:{name:string;parent?:string;target?:string})=>{
+  const row={...spec,outcome:'running'};observations.push(row)
+  return {id:String(observations.length),end:(result:{outcome:string})=>{row.outcome=result.outcome}}
+ }
+ let recapRequests=0
+ const current={id:'one',label:'Read summary',assistant:'codex',state:'idle',sessionId:'conversation-one',recap:{text:'Existing summary',at:1,current:true}}
+ const deps:ToolDeps={observe,sleep:async()=>{},recapMode:()=> 'on_demand',fetch:async(path)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[current]})
+  if(path==='/v1/voice/copilot-recap'){recapRequests++;return Response.json({error:'unavailable'},{status:503})}
+  return Response.json({entries:[]})
+ }}
+ await runCopilotTool('get_sessions_summary','{"which":"all"}',deps)
+ assert.equal(recapRequests,0)
+ assert.ok(observations.some(row=>row.name==='read_session_summary'&&row.outcome==='cached'&&row.target==='Read summary'))
+ current.recap.current=false
+ observations.length=0
+ await runCopilotTool('get_sessions_summary','{"which":"all","fresh":true}',deps)
+ assert.equal(recapRequests,1)
+ assert.ok(observations.some(row=>row.name==='read_session_summary'&&row.outcome==='failed'))
+})
+
+test('a prepared direct message is displayed as waiting for review rather than a failed send',()=>{
+ const trace=toolTrace('send_message_to_session',JSON.stringify({prepared:true,message_delivered:false,error:'voice_message_confirmation_required',proposal:{target:'Session A',message:'Exact draft'}}),10)
+ assert.equal(trace.outcome,'asked')
+ assert.equal(trace.target,'Session A')
+})
+
+test('a malformed transcript stays a failed history entry even when the group report falls back',async()=>{
+ const observations:{name:string;outcome:string}[]=[]
+ const deps:ToolDeps={sleep:async()=>{},observe:spec=>{const row={name:spec.name,outcome:'running'};observations.push(row);return {id:String(observations.length),end:result=>row.outcome=result.outcome}},fetch:async(path)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[{id:'one',label:'Session A',assistant:'codex',state:'idle'}]})
+  return new Response('not-json',{status:200})
+ }}
+ const result=await runCopilotTool('get_sessions_summary','{"which":"all"}',deps)
+ assert.ok(!JSON.parse(result.output).error,'the existing group fallback remains usable')
+ assert.ok(observations.some(row=>row.name==='read_session_transcript'&&row.outcome==='failed'))
+})

@@ -1,3 +1,4 @@
+import {CopilotToolHistory} from './CopilotToolHistory.js'
 import { CopilotQuestions } from './CopilotQuestions.js'
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { nextWord } from '../next-strings.js'
@@ -11,10 +12,6 @@ import {
   realtimeCopilot,
   type RealtimeCopilotState,
 } from './realtime-copilot.js'
-
-/** How each tool outcome is marked on its chip, and the word said beside it (`toolTrace`). */
-const TOOL_OUTCOME_MARK = { done: '✓', queued: '⋯', asked: '?', many: '⋯', failed: '✗' } as const
-const TOOL_OUTCOME_WORD = { done: 'copilotToolDone', queued:'copilotToolQueued', asked: 'copilotToolAsked', many: 'copilotToolMany', failed: 'copilotToolFailed' } as const
 
 /** One stable reader, so the orb is not woken by every render. */
 const readCallLevels = () => realtimeCopilot.readLevels()
@@ -185,19 +182,7 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           </div>
         )}
 
-        {isConnected && (
-          <ol className="copilot-tools-trail" aria-label={nextWord('copilotToolsUsed')}>
-            {(copilotState.tools ?? []).map((t, i) => (
-              <li key={i} className={t.outcome} title={`${t.name}${t.target ? ` · ${t.target}` : ''} · ${nextWord(TOOL_OUTCOME_WORD[t.outcome])} · ${(t.ms / 1000).toFixed(1)} s`}>
-                <span className="copilot-tool-mark" aria-hidden="true">{TOOL_OUTCOME_MARK[t.outcome]}</span>
-                <code>{t.name}</code>
-                {t.target ? <span className="copilot-tool-target">{t.target}</span> : null}
-                {t.outcome === 'done' ? null : <span className="copilot-tool-outcome">{nextWord(TOOL_OUTCOME_WORD[t.outcome])}</span>}
-                <span className="copilot-tool-ms">{(t.ms / 1000).toFixed(1)}s</span>
-              </li>
-            ))}
-          </ol>
-        )}
+        <CopilotToolHistory records={copilotState.tools??[]}/>
 
         <div className="realtime-secondary">
           {copilotState.cost?.live && (
@@ -236,19 +221,22 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
           )}
 
           {/* Realtime Event & Tool Call Logs */}
-          {copilotState.logs && copilotState.logs.length > 0 && (
+          {(copilotState.logs.length>0||!!copilotState.tools?.length) && (
             <div className="realtime-logs-container">
               <button
                 type="button"
                 className="realtime-logs-toggle-btn"
+                aria-expanded={showLogs}
+                aria-controls="copilot-call-activity-log"
                 onClick={() => setShowLogs(!showLogs)}
               >
                 <span>{nextWord(showLogs ? 'copilotLogsHide' : 'copilotLogsShow')}</span>
-                <span className="logs-count">({copilotState.logs.length})</span>
+                <span className="logs-count">({copilotState.logs.filter(row=>row.level!=='tool').length+(copilotState.tools?.length??0)})</span>
               </button>
               {showLogs && (
-                <div className="realtime-logs-list" role="log" aria-label={nextWord('copilotLogsLabel')}>
-                  {copilotState.logs.map((item) => (
+                <div id="copilot-call-activity-log" className="realtime-logs-list" role="log" aria-label={nextWord('copilotLogsLabel')}>
+                  <CopilotToolHistory records={copilotState.tools??[]} diagnostic/>
+                  {copilotState.logs.filter(item=>item.level!=='tool').map((item) => (
                     <div key={item.id} className={`log-item log-level-${item.level}`}>
                       <span className="log-time">[{item.timestamp}]</span>
                       <span className="log-tag">[{nextWord(item.level === 'tool' ? 'copilotLogTool' : item.level === 'error' ? 'copilotLogError' : 'copilotLogInfo')}]</span>

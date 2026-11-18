@@ -1,3 +1,4 @@
+import type {OperationObserver} from './copilot-history.js'
 // @ts-expect-error -- Node's type-stripping tests resolve the source module.
 import {asksToEndCall,callControlGuidance} from './copilot-call-control.ts'
 // @ts-expect-error -- Node's type-stripping tests resolve the source module.
@@ -58,6 +59,12 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  observe?:OperationObserver
+  readFailed?:()=>void
+  operationParent?:string
+  operationSource?:'tool'|'background'
+  operationSignal?:AbortSignal
+
   /** Direct-call draft gate, checked after target resolution and before any send effect. */
   reviewMessage?: (row:CopilotSessionRow,message:string)=>unknown
 
@@ -1031,7 +1038,8 @@ async function refusalText(res: Response): Promise<string> {
   }
 }
 
-export async function readRows(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } | { error: string }> {
+export async function readRows(deps:ToolDeps):Promise<{rows:CopilotSessionRow[]}|{error:string}>{return observedRead(deps,'read_session_directory',undefined,nested=>readRowsValue(nested))}
+async function readRowsValue(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[] } | { error: string }> {
   // A page showing every machine hands its whole list over, each row with its
   // machine: on 2026-11-12 a phone on 所有機器 heard about one Linux Session
   // only, because /v1/sessions there is the one reading machine's list.
@@ -1158,7 +1166,7 @@ export interface SessionDecision { id?: string; candidates?: string[]; many?: bo
  * from, as before (`resolveSession`). Writes never come here (`resolveForWrite`).
  */
 export async function resolveRead(
-  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen' | 'selectedReadTarget'>,
+  deps: Pick<ToolDeps, 'decide' | 'said' | 'heard' | 'spokenReference' | 'onRead' | 'focus' | 'screen' | 'selectedReadTarget' | 'observe' | 'operationParent'>,
   rows: readonly CopilotSessionRow[],
   wanted: string,
 ): Promise<ReturnType<typeof resolveSession>> {
@@ -1206,14 +1214,17 @@ export async function resolveRead(
   }
   if (!asked || !deps.decide || rows.length === 0) return finish(direct)
   let decided: SessionDecision
+  const observation=deps.observe?.({name:'resolve_session_reference',source:'background',parent:deps.operationParent})
   try {
-    decided = await deps.decide(asked, rows.map((r) => ({
+    decided = await deps.decide!(asked, rows.map((r) => ({
       id: r.id, label: r.label, state: r.state, assistant: r.assistant,
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_GOAL_CHARS) } : {}),
       ...(r.question ? { question: clip(r.question, LIST_GOAL_CHARS) } : {}),
     })), 'row' in direct ? direct.row.id : undefined)
+    observation?.end({outcome:'done'})
   } catch {
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
+    observation?.end({outcome:'failed'})
     return finish(direct)
   }
   const near = (decided.candidates ?? []).map((id) => uniqueSessionID(rows, id)).filter((r): r is CopilotSessionRow => !!r)
@@ -1332,13 +1343,15 @@ export function progressOf(entries: unknown): Progress {
   return out
 }
 
-async function latestWords(deps: ToolDeps, row: CopilotSessionRow): Promise<Progress> {
+async function latestWords(deps:ToolDeps,row:CopilotSessionRow):Promise<Progress>{return observedRead(deps,'read_session_transcript',row,nested=>latestWordsValue(nested,row))}
+async function latestWordsValue(deps: ToolDeps, row: CopilotSessionRow): Promise<Progress> {
   try {
     const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
     if (!res.ok) return { latest: '' }
     return progressOf(((await res.json()) as { entries?: unknown })?.entries)
   } catch {
     // refusal-ok: one Session's unreadable transcript leaves its row without its progress, not the list without rows.
+    deps.readFailed?.()
     return { latest: '' }
   }
 }
@@ -1867,7 +1880,7 @@ function say(en: string, zh: string): string {
 }
 
 /** A Session recap as a tool hands it on: its words and when they were written. */
-export interface SpokenRecap { text: string; detail?: string; at: number; current: boolean }
+export interface SpokenRecap { reused?:boolean; text: string; detail?: string; at: number; current: boolean }
 
 /** How long the copilot waits for a recap the machine writes now (`maxSessionRecapWait`). */
 export const FORKED_RECAP_MS = 50_000
@@ -1896,15 +1909,16 @@ export const FRESH_RECAP_SECONDS = 300
  * kept when nothing was said since. A stale recap on the row is better than
  * none when the machine cannot write a new one in time.
  */
-export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow, fresh = false): Promise<SpokenRecap | undefined> {
-  if (row.recap?.current) return row.recap
+export async function forkedRecap(deps:ToolDeps,logs:ToolLog[],row:CopilotSessionRow,fresh=false):Promise<SpokenRecap|undefined>{return observedRead(deps,'read_session_summary',row,nested=>forkedRecapValue(nested,logs,row,fresh))}
+async function forkedRecapValue(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow, fresh = false): Promise<SpokenRecap | undefined> {
+  if (row.recap?.current) return deps.observe?{...row.recap,reused:true}:row.recap
   const mode = deps.recapMode?.() ?? 'off'
-  if (mode !== 'on_demand' && mode !== 'background') return row.recap
+  if (mode !== 'on_demand' && mode !== 'background') return deps.observe&&row.recap?{...row.recap,reused:true}:row.recap
   // A recent background recap is read at once; its age goes with it (`recapFields`).
   // Asked for the latest, only one at most FRESH_RECAP_SECONDS old is.
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   const keep = fresh ? FRESH_RECAP_SECONDS : mode === 'background' ? KEPT_RECAP_SECONDS : 0
-  if (row.recap && row.recap.at > 0 && now - row.recap.at <= keep) return row.recap
+  if (row.recap && row.recap.at > 0 && now - row.recap.at <= keep) return deps.observe?{...row.recap,reused:true}:row.recap
   let res: Response
   try {
     res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
@@ -1923,11 +1937,11 @@ export async function forkedRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotS
     logs.push({ level: 'info', text: say(`"${row.label}" did not write a recap (HTTP ${res.status}${why ? `: ${why}` : ''})`, `「${row.label}」沒有寫摘要（HTTP ${res.status}${why ? `：${why}` : ''}）`) })
     return row.recap
   }
-  const body = (await res.json().catch(() => null)) as { recap?: unknown; detail?: unknown; at?: unknown; current?: unknown } | null
+  const body = (await res.json().catch(() => null)) as { recap?: unknown; detail?: unknown; at?: unknown; current?: unknown; model?:unknown } | null
   const text = str(body?.recap).trim()
-  if (!text) return row.recap
+  if (!text) {deps.readFailed?.();return row.recap}
   logs.push({ level: 'info', text: say(`Read the recap "${row.label}" wrote of itself`, `讀了「${row.label}」自己寫的摘要`) })
-  return { text, at: typeof body?.at === 'number' ? body.at : 0, current: body?.current === true, ...(str(body?.detail).trim() ? { detail: str(body?.detail).trim() } : {}) }
+  return { text, ...(deps.observe?{reused:body?.model==='kept'}:{}), at: typeof body?.at === 'number' ? body.at : 0, current: body?.current === true, ...(str(body?.detail).trim() ? { detail: str(body?.detail).trim() } : {}) }
 }
 
 /**
@@ -1942,7 +1956,8 @@ export function recapFields(recap: SpokenRecap | undefined, now: number, detail 
   return { recap: recap.text, ...(detail && recap.detail ? { recap_detail: recap.detail } : {}), ...(!recap.current && written ? { recap_written: written } : {}) }
 }
 
-async function machineRecap(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
+async function machineRecap(deps:ToolDeps,logs:ToolLog[],row:CopilotSessionRow):Promise<Record<string,unknown>|undefined>{return observedRead(deps,'read_session_history',row,nested=>machineRecapValue(nested,logs,row))}
+async function machineRecapValue(deps: ToolDeps, logs: ToolLog[], row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
   let res: Response
   try {
     res = await rowFetch(deps, row)('/v1/voice/copilot-recap', {
@@ -2001,7 +2016,8 @@ export function spokenProgress(raw: unknown): Record<string, unknown> | undefine
  * the Board counts: cancelled steps are not steps. Undefined when the read
  * fails or the Session has nothing on the Board.
  */
-async function boardProgress(deps: ToolDeps, row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
+async function boardProgress(deps:ToolDeps,row:CopilotSessionRow):Promise<Record<string,unknown>|undefined>{return observedRead(deps,'read_session_progress',row,nested=>boardProgressValue(nested,row))}
+async function boardProgressValue(deps: ToolDeps, row: CopilotSessionRow): Promise<Record<string, unknown> | undefined> {
   const target = row.conversation ? `conversation:${row.conversation}` : sid(row)
   try {
     const res = await rowFetch(deps, row)(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`, NAMED_READ)
@@ -2009,6 +2025,7 @@ async function boardProgress(deps: ToolDeps, row: CopilotSessionRow): Promise<Re
     return spokenProgress(progressOfTodos(await res.json()))
   } catch {
     // refusal-ok: a Session's summary still says what its record says without the Board's count.
+    deps.readFailed?.()
     return undefined
   }
 }
@@ -2151,7 +2168,7 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, cou
   deps.focus?.set(row.id)
   if (deps.analyzeQuestion) {
     const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
-    const analysis = await deps.analyzeQuestion(row, requested, count)
+    const analysis = await observedRead(deps,'analyze_session_question',row,()=>deps.analyzeQuestion!(row,requested,count))
     if (analysis) return { session_id: row.id, label: row.label, state: row.state, user_question: requested, ...analysis }
   }
 
@@ -2339,7 +2356,8 @@ function questionRoute(row: CopilotSessionRow): Record<string, unknown> {
 
 /** The fleet directory deliberately omits menu content. Ask only this Session's
  * machine for a current rich row; never fall back to another machine or execution. */
-export async function readQuestionRow(deps: ToolDeps, row: CopilotSessionRow): Promise<CopilotSessionRow | { error: string }> {
+export async function readQuestionRow(deps:ToolDeps,row:CopilotSessionRow):Promise<CopilotSessionRow|{error:string}>{return observedRead(deps,'read_session_question',row,nested=>readQuestionRowValue(nested,row))}
+async function readQuestionRowValue(deps: ToolDeps, row: CopilotSessionRow): Promise<CopilotSessionRow | { error: string }> {
   const fetchRow = rowFetch(deps, row)
   const response = await fetchRow(`/v1/sessions?look=${encodeURIComponent(sid(row))}`, NAMED_READ)
   if (!response.ok) return { error: `voice_question_unavailable: ${await refusalText(response)}` }
@@ -2697,7 +2715,8 @@ async function sessionNotes(deps: ToolDeps, logs: ToolLog[], wanted: string): Pr
   return notesForRows(deps, logs, rows, !!wanted.trim())
 }
 
-async function notesForRows(deps: ToolDeps, logs: ToolLog[], rows: CopilotSessionRow[], specific = false): Promise<unknown> {
+async function notesForRows(deps:ToolDeps,logs:ToolLog[],rows:CopilotSessionRow[],specific=false):Promise<unknown>{return observedRead(deps,'read_session_notes',rows.length===1?rows[0]:undefined,nested=>notesForRowsValue(nested,logs,rows,specific))}
+async function notesForRowsValue(deps: ToolDeps, logs: ToolLog[], rows: CopilotSessionRow[], specific = false): Promise<unknown> {
   const out: { session_id: string; label: string; notes: unknown[] }[] = []
   for (const row of rows) {
     if (!row.conversation) continue
@@ -3104,8 +3123,29 @@ async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown>
   return { briefing: text }
 }
 
+/** Semantic child reads share the invocation parent and never repeat work to observe it. */
+async function observedRead<T>(deps:ToolDeps,name:string,row:CopilotSessionRow|undefined,run:(nested:ToolDeps)=>Promise<T>):Promise<T>{
+ const span=deps.observe?.({name,source:'background',parent:deps.operationParent,...(row?{target:row.label}:{})})
+ try{
+  let failed=false,cancelled=false
+  const result=await run({...deps,readFailed:()=>{failed=true;deps.readFailed?.()},operationParent:span?.id??deps.operationParent,fetch:async(path,init)=>{
+   try{const response=await deps.fetch(path,init);if(!response.ok)failed=true;return response}
+   catch(error){failed=true;cancelled=init?.signal?.aborted===true;throw error}
+  }})
+  const value=result as {error?:unknown;reused?:boolean}|undefined
+  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
+  return result
+ }catch(error){span?.end({outcome:error instanceof Error&&error.name==='AbortError'?'cancelled':'failed'});throw error}
+}
+
 /** Run one tool call; never throws, every failure is an `error` the model can say. */
-export async function runCopilotTool(name: string, argsJson: string, deps: ToolDeps): Promise<ToolResult> {
+export async function runCopilotTool(name:string,argsJson:string,deps:ToolDeps):Promise<ToolResult>{
+ if(!deps.observe||deps.operationParent)return executeCopilotTool(name,argsJson,deps)
+ const span=deps.observe({name,source:deps.operationSource??'tool'})
+ try{const result=await executeCopilotTool(name,argsJson,{...deps,operationParent:span.id});const trace=toolTrace(name,result.output,0);span.end(deps.operationSignal?.aborted?{outcome:'cancelled'}:trace);return result}
+ catch(error){span.end({outcome:'failed'});throw error}
+}
+async function executeCopilotTool(name: string, argsJson: string, deps: ToolDeps): Promise<ToolResult> {
   const logs: ToolLog[] = []
   let args: Record<string, unknown> = {}
   try {
@@ -3267,10 +3307,12 @@ export function toolTrace(name: string, output: string, ms: number): ToolTrace {
   let o: Record<string, unknown> = {}
   try { o = (JSON.parse(output) ?? {}) as Record<string, unknown> } catch { /* refusal-ok: a reply that is not JSON is shown as a failed call. */ }
   const status = (o.status && typeof o.status === 'object' ? o.status : {}) as Record<string, unknown>
-  const target = str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
+  const proposal=o.proposal&&typeof o.proposal==='object'?o.proposal as Record<string,unknown>:{}
+  const target = str(proposal.target) || str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
   const ok = !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{')
   // A list of Sessions to choose from, or to read one by one, is no failure.
-  const outcome = ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
+  const preparedMessage=o.prepared===true&&o.message_delivered===false&&typeof proposal.message==='string'
+  const outcome = preparedMessage||ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
   return { name, ...(target ? { target } : {}), ok, ms: Math.max(0, Math.round(ms)), outcome }
 }
 
