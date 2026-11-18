@@ -90,8 +90,9 @@ The dispatch brief lists every required tool and proves the chosen worker surfac
 Codex CLI is not treated as if it carried the ChatGPT desktop app's built-in `@Browser`; a visual
 review uses a Browser/Computer Use surface or a named, installed Playwright/Chrome CDP equivalent.
 The reviewer exercises it at task start and uses `permission_mode: ask` when authorization may be
-needed. Codex `full` is not used for that purpose because it maps to `--ask-for-approval never`,
-leaving Auto-review no request to review. A missing tool is reported immediately and the root
+needed. Codex `full` keeps workspace confinement and routes requested exceptions through native
+Auto-review; a request can still be refused, and the installed CLI must actually support it.
+A missing tool is reported immediately and the root
 restores access or redispatches instead of accepting an unverified visual gate caused by its own
 worker selection.
 
