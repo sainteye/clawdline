@@ -13,6 +13,7 @@ import { pluginWords } from "./words.js"
 import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
+import { useDockMotion } from "../ui/dock-motion.js"
 import "./plugins.css"
 
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
@@ -34,6 +35,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const updates = useViewUpdates(!!grant || !!review || !!installing || busy)
   const runtime = useRef<{ release?: () => void; control: AbortController } | null>(null)
   const modal = useRef<HTMLDivElement>(null), opener = useRef<HTMLElement | null>(null)
+  const motion = useDockMotion(modal)
   const owned = useRef<string | null>(null), navigate = useRef<(() => void) | null>(null)
   const closing = useRef(false)
   const operations = useRef(0)
@@ -52,9 +54,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const close = () => {
     if (closing.current || !openedRef.current) return
     closing.current = true
-    setGrant(null)
-    if (owned.current && history.state?.viewPlugin === owned.current) history.back()
-    else finishRef.current()
+    motion.close(() => {
+      if (owned.current && history.state?.viewPlugin === owned.current) history.back()
+      else finishRef.current()
+    })
   }
   const closeRef = useRef(close); closeRef.current = close
   useEffect(() => { if (!grant) { runtime.current?.control.abort(); runtime.current?.release?.(); runtime.current = null } }, [grant])
@@ -93,6 +96,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   })
   useLayoutEffect(() => {
     if (!opened) return
+    motion.open()
     const node = modal.current!, siblings = [...document.body.children].filter(el => el !== node && el instanceof HTMLElement) as HTMLElement[]
     const prior = siblings.map(el => [el, el.inert] as const), overflow = document.body.style.overflow
     for (const [el] of prior) el.inert = true
@@ -100,7 +104,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     node.querySelector<HTMLButtonElement>("button")?.focus()
     const pop = (e: PopStateEvent) => {
       if (!openedRef.current) return
-      e.stopImmediatePropagation(); finishRef.current()
+      e.stopImmediatePropagation(); if (closing.current) finishRef.current(); else { closing.current = true; motion.close(() => finishRef.current()) }
     }
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -123,6 +127,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   }, [opened])
   const openRoot = (button: HTMLElement, nextMode: "manage" | "launch") => {
     if (openedRef.current) return
+    motion.capture(button)
     opener.current = button; owned.current = crypto.randomUUID(); openedRef.current = true
     history.pushState({ ...history.state, viewPlugin: owned.current }, "", location.href)
     setError(""); setRows([]); setMode(nextMode); setOpened(true); setBusy(true)
