@@ -75,7 +75,9 @@ type runtimeActor struct {
 	cancel     context.CancelFunc
 	session    ProviderSession
 	turnID     string
-	stopped    bool
+	// Includes only pending offers durably committed for this active turn.
+	pendingPermissions int
+	stopped            bool
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
 	steering map[string]bool
@@ -585,7 +587,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if !pa.IsPeerRequest(t.Origin) && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted {
+				if !pa.IsPeerRequest(t.Origin) && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
 					resumable = append(resumable, t)
 				}
 			}
@@ -683,6 +685,7 @@ func (r *Engine) work(a *runtimeActor) {
 		ctx, cancel := context.WithTimeout(a.lifetime, timeout)
 		a.cancel = cancel
 		a.turnID = turn.ID
+		a.pendingPermissions = 0
 		a.stopped = false
 		a.mu.Unlock()
 		// Waiting for a process slot remains cancellable and does not launch IO.
@@ -1400,13 +1403,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		if offer.Fence != t.Fence {
 			return runtimeFailure(pa.ScopeDenied, "terminal_permission")
 		}
-		if state == pa.TurnUnknown {
-			offer.State = pa.PermissionUnknown
-		} else if !r.o.Clock().Before(offer.ExpiresAt) {
-			offer.State = pa.PermissionExpired
-		} else {
-			offer.State = pa.PermissionCancelled
-		}
+		offer.State = terminalPermissionState(offer, state, r.o.Clock())
 		permissions = append(permissions, offer)
 		p := offer
 		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.PermissionAnswered, Permission: &p})
@@ -1557,6 +1554,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	}
 	m := Mutation{Command: cmd, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: e.ID}}
 	count := 0
+	permissionWaitStarted := false
 	if e.Message != "" {
 		count++
 		if err = pa.ValidateMessage(e.Message); err != nil {
@@ -1580,11 +1578,15 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if e.Permission != nil {
 		count++
 		p := *e.Permission
+		if a.closing {
+			return runtimeFailure(pa.StaleGeneration, "permission_session")
+		}
 		if p.Fence != e.Fence || p.TurnID != t.ID || p.NativeRequestID == "" || p.ID == "" {
 			return runtimeFailure(pa.ScopeDenied, "permission")
 		}
 		p.State = pa.PermissionPending
 		m.Permissions = []pa.PermissionOffer{p}
+		permissionWaitStarted = t.State != pa.TurnWaitingPermission
 		t.State = pa.TurnWaitingPermission
 		m.Turn = &t
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.PermissionOffered, Permission: &p})
@@ -1593,13 +1595,16 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 		return runtimeFailure(pa.Invalid, "incoming_payload")
 	}
 	tool := e.Permission != nil || e.Trace != nil && (e.Trace.Category == "tool_call" || e.Trace.Category == "tool_call_update" || e.Trace.Category == "tool_activity")
-	if observeAttempt(&t, tool) {
+	if observeAttempt(&t, tool) || permissionWaitStarted {
 		m.Turn = &t
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.TurnUpdated, Turn: &t})
 	}
 	_, err = r.mutate(ctx, bot, m)
 	if err != nil {
 		return err
+	}
+	if e.Permission != nil {
+		a.pendingPermissions++
 	}
 	// As Codync's "Approve automatically", an Approve Bot allows each request
 	// with the agent's allow-once option; AutoRead allows only read-only ones.
@@ -1773,7 +1778,7 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	if err = r.recheckRoomCard(ctx, p); err != nil {
 		return pa.Receipt{}, err
 	}
-	if q.Command.Key != q.Answer.Fence.Key || a.session == nil || a.stopped {
+	if q.Command.Key != q.Answer.Fence.Key || a.turnID != p.TurnID || a.session == nil || a.stopped || a.closing {
 		return pa.Receipt{}, runtimeFailure(pa.StaleGeneration, "permission_session")
 	}
 	// Persist unknown before the external write. A crash here is inspectable,
@@ -1784,6 +1789,7 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	a.pendingPermissions--
 	if err = a.session.Answer(ctx, p.NativeRequestID, q.Answer.OptionID); err != nil {
 		return receipt, err
 	}
@@ -1796,9 +1802,13 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	if err != nil {
 		return receipt, err
 	}
-	t.State = pa.TurnRunning
+	events := []pa.Event{{Fence: p.Fence, Kind: pa.PermissionAnswered, Permission: &p}}
+	if a.pendingPermissions == 0 {
+		t.State = pa.TurnRunning
+		events = append(events, pa.Event{Fence: p.Fence, Kind: pa.TurnUpdated, Turn: &t})
+	}
 	cmd := r.command(a.key, pa.AnswerOperation, "runtime-answer-"+p.ID, p)
-	delivered, err := r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Permissions: []pa.PermissionOffer{p}, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: p.ID}, Events: []pa.Event{{Fence: p.Fence, Kind: pa.PermissionAnswered, Permission: &p}}})
+	delivered, err := r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Permissions: []pa.PermissionOffer{p}, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: p.ID}, Events: events})
 	if err != nil {
 		return receipt, err
 	}
@@ -1956,6 +1966,9 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 	x, err := r.o.Repository.Export(ctx, key)
 	if err != nil {
 		return err
+	}
+	if interruptedPermission(t, x.Permissions) {
+		return nil
 	}
 	for _, m := range x.Messages {
 		if t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume {

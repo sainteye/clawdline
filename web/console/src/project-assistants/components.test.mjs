@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {BotRow,PaSelect,BotOrb,PermissionCard,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -138,6 +138,31 @@ test("a permission card says what the tool will do before it is answered",()=>{
   assert.match(changed,/Wants to change a file/);assert.match(changed,/old line/);assert.match(changed,/new line/);assert.match(changed,/Shortened/)
   const summaryOnly=render(PermissionCard,{summary:{id:"offer",fence,turn_id:"t",state:"pending",expires_at:"2099-01-01T00:00:00Z",detail_cursor:"d",title:"curl example.com",tool_kind:"fetch"},enabled:true,onAnswer:async()=>{},w:words("en")})
   assert.match(summaryOnly,/Wants to use the network/);assert.match(summaryOnly,/curl example.com/)
+})
+
+test("a stale cached permission detail cannot supply controls for the current turn",()=>{
+  const fence={key:{machine_id:"m",bot_id:"b"},project:{machine_id:"m",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"current",generation:2}
+  const summary={id:"offer",fence,turn_id:"t",state:"pending",expires_at:"2000-01-01T00:00:00Z",detail_cursor:"d"}
+  const offer={...summary,fence:{...fence,binding_id:"previous",generation:1},expires_at:"2099-01-01T00:00:00Z",native_request_id:"1",selected_option_id:"",options:[{id:"once",kind:"allow_once",allow:true,read_only:false,label:"Yes"}]}
+  const html=render(PermissionCard,{summary,offer,enabled:true,onAnswer:()=>assert.fail("stale permission answered"),w:words("en")})
+  assert.match(html,/data-state="expired"/)
+  assert.doesNotMatch(html,/data-option-kind/)
+})
+
+test("the waiting indicator retires known expired permissions even while the head is unchanged",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal,bot=source.bots[1]
+  const base={key:bot.key,conversation_id:bot.conversation_id,mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
+  const snapshot=await source.view(base,signal)
+  const response=await source.view({...base,mode:"permissions",source_epoch:snapshot.source_epoch},signal)
+  const summary=response.items[0].permission_summary,deadline=Date.parse(summary.expires_at)
+  const head={...response.head,conversation:{...response.head.conversation,active_turn_id:summary.turn_id}}
+  assert.deepEqual(pendingPermissionView(head,[{summary}],deadline-1),{count:1,nextDeadline:deadline})
+  assert.deepEqual(pendingPermissionView(head,[{summary}],deadline),{count:0,nextDeadline:Infinity})
+  assert.deepEqual(pendingPermissionView({...head,pending_permission_count:2},[{summary}],deadline),{count:1,nextDeadline:Infinity})
+  assert.equal(pendingPermissionView({...head,conversation:{...head.conversation,active_turn_id:"new-turn"}},[{summary}],deadline-1).count,0)
+  const detail=await source.view({...base,mode:"detail",source_epoch:snapshot.source_epoch,cursor:summary.detail_cursor,page_size:1},signal)
+  const offer={...detail.items[0].permission,expires_at:new Date(deadline-2).toISOString()}
+  assert.equal(pendingPermissionView(head,[{summary,offer}],deadline-1).count,0)
 })
 
 test("a Bot row names its Project with its mark and says nothing internal",async()=>{

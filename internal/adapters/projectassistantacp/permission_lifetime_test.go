@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,7 +54,10 @@ func permissionLifetimePeer(input io.Reader, output io.Writer, mode string) erro
 			if !cancelled || len(f.ID) != 0 || json.Unmarshal(f.Params, &params) != nil || params.SessionID != "scripted-session" {
 				return fmt.Errorf("session/cancel arrived without exact cancelled permission response")
 			}
-			if mode == "late" {
+			if mode == "deadline" {
+				// Simulate a peer that stops without replying to the prompt.
+				mode = "normal"
+			} else if mode == "late" {
 				// The same ID can be reused by a late native request. Cancellation
 				// must seal admission before that frame reaches the consumer.
 				offer()
@@ -68,6 +72,13 @@ func permissionLifetimePeer(input io.Reader, output io.Writer, mode string) erro
 			var result struct {
 				Outcome map[string]string `json:"outcome"`
 			}
+			if mode == "select" {
+				if json.Unmarshal(f.Result, &result) != nil || len(result.Outcome) != 2 || result.Outcome["outcome"] != "selected" || result.Outcome["optionId"] != "read-once" {
+					return fmt.Errorf("permission response was not exactly the selected option")
+				}
+				send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn", "text": "selected-wire-receipt"})})
+				continue
+			}
 			if json.Unmarshal(f.Result, &result) != nil || len(result.Outcome) != 1 || result.Outcome["outcome"] != "cancelled" {
 				return fmt.Errorf("permission response was not exactly cancelled")
 			}
@@ -77,6 +88,9 @@ func permissionLifetimePeer(input io.Reader, output io.Writer, mode string) erro
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "late-permission-cancelled-wire-receipt"}}})})
 			}
 		}
+	}
+	if mode == "deadline" {
+		return fmt.Errorf("prompt expired without cancelling its native permission and session")
 	}
 	return scanner.Err()
 }
@@ -135,6 +149,65 @@ func receivePermissionOffer(t *testing.T, offers <-chan pa.PermissionOffer) pa.P
 	case <-time.After(time.Second * 3):
 		t.Fatal("permission offer did not arrive")
 		return pa.PermissionOffer{}
+	}
+}
+
+func TestACPPermissionUsesPromptDeadlineAndAnswersPastControlRPC(t *testing.T) {
+	offers := make(chan pa.PermissionOffer, 1)
+	c := openPermissionLifetimeClient(t, "select", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Permission != nil {
+			offers <- *e.Permission
+		}
+		return nil
+	})
+	c.l.RPCTimeout = 10 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	pending, err := c.Send(ctx, app.PromptRequest{Turn: pa.Turn{ID: "turn", Fence: testFence()}, Text: "synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := receivePermissionOffer(t, offers)
+	deadline, _ := ctx.Deadline()
+	if !offer.ExpiresAt.Equal(deadline) {
+		t.Fatalf("permission deadline %s did not match prompt deadline %s", offer.ExpiresAt, deadline)
+	}
+	time.Sleep(2 * c.l.RPCTimeout)
+	if err := c.Answer(ctx, offer.NativeRequestID, "read-once"); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := pending.Wait(ctx); err != nil || result.FinalText != "selected-wire-receipt" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if err := c.Answer(ctx, offer.NativeRequestID, "read-once"); pa.Code(err) != pa.NotFound {
+		t.Fatal("a second selection reached the peer", err)
+	}
+}
+
+func TestACPPermissionDeadlineRejectsLateSelectionAndCancelsNativePrompt(t *testing.T) {
+	offers := make(chan pa.PermissionOffer, 1)
+	c := openPermissionLifetimeClient(t, "deadline", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Permission != nil {
+			offers <- *e.Permission
+		}
+		return nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	pending, err := c.Send(ctx, app.PromptRequest{Turn: pa.Turn{ID: "turn", Fence: testFence()}, Text: "synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := receivePermissionOffer(t, offers)
+	<-ctx.Done()
+	if err := c.Answer(context.Background(), offer.NativeRequestID, "read-once"); pa.Code(err) != pa.Expired {
+		t.Fatalf("late selection: %v", err)
+	}
+	if _, err := pending.Wait(ctx); pa.Code(err) != pa.ExecutionEffectUnknown || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline outcome: %v", err)
+	}
+	if c.Usage().PendingPermissions != 0 {
+		t.Fatal("expired permission remains in native usage")
 	}
 }
 

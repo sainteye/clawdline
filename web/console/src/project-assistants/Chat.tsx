@@ -21,7 +21,7 @@ import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
 import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer, MAX_PICTURES } from "./Composer"
-import { PermissionCard } from "./PermissionCard"
+import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { Trace } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -48,6 +48,27 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
     throw error
   }
 }
+
+type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}
+
+function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
+  return !!head&&value.turn_id===head.conversation.active_turn_id&&sameFence(value.fence,head.current_fence)
+}
+
+export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,cards:readonly PermissionViewCard[],now:number) {
+  if(!head?.conversation.active_turn_id||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
+  // The collection can be paged. Keep counting requests we have yet to read.
+  let count=Math.max(0,head.pending_permission_count-cards.length),nextDeadline=Infinity
+  for(const {summary,offer} of cards){
+    if(!currentPermission(summary,head)||permissionState(summary,now)!=="pending")continue
+    const value=offer&&samePermission(summary,offer)?offer:summary
+    if(permissionState(value,now)!=="pending")continue
+    count++
+    nextDeadline=Math.min(nextDeadline,Date.parse(value.expires_at),Date.parse(summary.expires_at))
+  }
+  return {count:Math.min(count,head.pending_permission_count),nextDeadline}
+}
+
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
@@ -84,6 +105,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
+  const [permissionTick,setPermissionTick]=useState(0)
   const permissionRows=useRef(permissions)
   const [observedBrowserTraces,setObservedBrowserTraces]=useState<Record<string,W.ProjectAssistantTrace>>({})
   const [traceSummaries,setTraceSummaries]=useState<W.ProjectAssistantReadTraceSummary[]>([])
@@ -230,7 +252,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
             if(!sameFence(event.fence,page.head.current_fence))continue
             if(event.turn&&sameFence(event.turn.fence,page.head.current_fence))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
             if(event.trace){if(browserToolTrace(event.trace)){const trace=event.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}const now=activityOf(event.trace),id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
-            if(event.permission){const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)}
+            if(event.permission&&event.permission.state!=="pending"&&detailRows.current[event.permission.id]){
+              const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)
+            }
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
           lastSeq.current=page.next_seq;setError("")
@@ -525,6 +549,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const detail=async(kind:"permission"|"trace",id:string,reference:string,quiet=false)=>{
     const captured=headRef.current,capturedEpoch=epoch.current
     if(!captured||!valid()||recovery.current||collectionBusy.current.has(reference))return
+    const permission=kind==="permission"?permissionRows.current.find(p=>p.id===id&&p.detail_cursor===reference):undefined
+    if(kind==="permission"&&!permission)return
     const control=new AbortController();reads.current.add(control);collectionBusy.current.set(reference,control)
     try{
       const page=await read(request("detail",reference,1),control.signal)
@@ -532,6 +558,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!sameFence(page.head.current_fence,captured.current_fence)){if(!quiet)lock();throw failure("pa_stale_generation")}
       const row=page.items[0]
       if(!row||row.kind!==kind||kind==="permission"&&row.permission?.id!==id)throw failure("pa_invalid")
+      if(permission){
+        const current=permissionRows.current.find(p=>p.id===id)
+        if(!current||!samePermission(permission,current))return
+        if(!row.permission||!samePermission(current,row.permission))throw failure("pa_stale_generation")
+      }
       if(kind==="trace"){
         if(!row.trace)throw failure("pa_invalid")
         if(row.trace.id&&row.id!==id)throw failure("pa_invalid")
@@ -570,12 +601,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const result=await withPermissionRecovery(()=>mutate(async(d,s)=>{
         if(view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
         const summary=permissionRows.current.find(p=>p.id===offer.id),capturedEpoch=epoch.current
-        if(!summary)throw failure("pa_stale_generation")
-        const page=await read(request("detail",summary.detail_cursor,1),s),live=page.items[0].permission
+        if(!summary||!samePermission(summary,offer)||!currentPermission(summary,headRef.current)||headRef.current?.pending_permission_count===0)throw failure("pa_stale_generation")
+        if(permissionState(offer)==="expired"||permissionState(summary)==="expired")throw failure("pa_expired")
+        const page=await read(request("detail",summary.detail_cursor,1),s),live=page.items[0]?.permission
         // The second read also has an effect fence; ignored cancellation grants no action.
         if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||view.heldOutcomes.has(draftKey)||detailRows.current[offer.id]!==offer)throw failure("pa_read_only")
         if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
-        if(!live||live.id!==offer.id||live.turn_id!==offer.turn_id||live.state!=="pending"||Date.parse(live.expires_at)<=Date.now()||!sameFence(live.fence,fence(d)))throw failure("pa_stale_generation")
+        if(!live||!samePermission(live,offer))throw failure("pa_stale_generation")
+        if(permissionState(live)==="expired")throw failure("pa_expired")
+        if(live.state!=="pending"||!currentPermission(live,page.head)||!currentPermission(live,headRef.current))throw failure("pa_stale_generation")
         // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
         if(!live.options.some(o=>o.id===option.id&&o.kind===option.kind))throw failure("pa_scope_denied")
         const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option.id}
@@ -593,7 +627,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const code=errorCode(e)
       if(attempted&&code!=="pa_outcome_unknown"&&code!=="execution_effect_unknown"&&code!=="unavailable"&&code!=="pa_revoked"&&(e as Error)?.name!=="AbortError")view.heldOutcomes.delete(draftKey)
       if(valid()&&uncertain())setUnknown(true)
-      fail(e)
+      if(code==="pa_expired")void refresh()
+      else fail(e)
       throw e
     }
   }
@@ -686,7 +721,20 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
   const activeTurn=turns.find(turn=>turn.id===data?.conversation.active_turn_id&&(turn.state==="running"||turn.state==="waiting_permission"))
   const live=!recoveryRequired&&!error&&source.current?.()!==false&&liveActivity(summary.source)&&liveActivity(data?.source??summary.source)
-  const mood=live?(data?chatMood(data.source,activeTurn,head?.pending_permission_count??0):rosterMood(summary)):"idle"
+  const permissionCards=permissions.map(summary=>{
+    const value=details[summary.id]
+    return {summary,offer:value&&"fence" in value?value:undefined}
+  })
+  const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
+  useEffect(()=>{
+    if(!Number.isFinite(nextDeadline))return
+    // setTimeout clamps at a signed 32-bit delay in the browser.
+    const delay=Math.min(Math.max(0,nextDeadline-Date.now()),2**31-1)
+    const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
+    return()=>clearTimeout(timer)
+  },[nextDeadline,permissionTick])
+  const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
+  const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
   const pendingSend=view.heldOutcomes.get(draftKey)
   const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
@@ -712,10 +760,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content"><TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}
       {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows dismissActionsKey={infoTab??""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={chatTimeline} onOpenWork={onOpenWork} onQuote={m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending&&!sendingAdmitted&&<article className="pa-message pa-mine pa-sending" aria-live="polite"><p>{sending}</p><small><span className="pa-send-spinner" aria-hidden="true"/>{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
-      {(head?.pending_permission_count??0)>0&&<section className="pa-permissions"><h3>{w.permission} · {head?.pending_permission_count}</h3>{permissions.map(row=>{const value=details[row.id],offer=value&&"fence" in value?value:undefined;return <PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} context={[machineName||source.machineName||key.machine_id,projectName||bot.project.project_id].join(" · ")} w={w}/>})}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}
+      {(pendingPermissionCount>0||permissionCards.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{permissionCards.map(({summary:row,offer})=><PermissionCard key={row.id} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>void detail("permission",row.id,row.detail_cursor)} onAnswer={answer} context={[machineName||source.machineName||key.machine_id,projectName||bot.project.project_id].join(" · ")} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
-      <WorkingTransition turn={activeTurn} activity={activeTurn?activity[activeTurn.id]??"":""} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}/>
+      <WorkingTransition turn={visibleTurn} activity={visibleTurn?activity[visibleTurn.id]??"":""} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}/>
       <Trace summaries={traceSummaries} details={details} total={head?.trace_category_count??0} more={!!traceMore} onMore={()=>void collection("traces",traceMore).catch(()=>{})} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}

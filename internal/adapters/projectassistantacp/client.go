@@ -18,6 +18,7 @@ import (
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -95,6 +96,7 @@ type Client struct {
 	permissionsSealed bool
 	cancelled         bool
 	promptID          string
+	promptDeadline    time.Time
 	answerMu          sync.Mutex
 	rpcSlots          chan struct{}
 }
@@ -364,12 +366,26 @@ func (p *pendingRPC) waitResult(ctx context.Context) (json.RawMessage, error) {
 	case x := <-p.ch:
 		return x.value, x.err
 	case <-ctx.Done():
+		select {
+		case x := <-p.ch:
+			return x.value, x.err
+		default:
+		}
 		p.c.mu.Lock()
+		waiting := p.id == p.c.promptID && len(p.c.permissions) > 0
 		p.c.removePending(p.id)
 		p.c.mu.Unlock()
+		var cancelErr error
+		if waiting {
+			// The prompt context can no longer write. Use one bounded cleanup
+			// attempt to release the agent's permission RPC before closing it.
+			cleanup, cancel := context.WithTimeout(context.Background(), p.c.l.WriteTimeout)
+			cancelErr = p.c.cancelPrompt(cleanup, p.id)
+			cancel()
+		}
 		// Keep the effect unknown while retaining the runtime's distinction
 		// between an expired turn deadline and an explicit cancellation.
-		err := errors.Join(refusal(pa.ExecutionEffectUnknown, "rpc_timeout"), ctx.Err())
+		err := errors.Join(refusal(pa.ExecutionEffectUnknown, "rpc_timeout"), ctx.Err(), cancelErr)
 		p.c.fail(err)
 		return nil, err
 	case <-p.c.done:
@@ -439,6 +455,10 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	} else if q.MemoryChanged {
 		text = memoryUpdate(q.Context.Text) + "\n" + text
 	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond)
+	}
 	c.mu.Lock()
 	if c.compaction != nil {
 		c.mu.Unlock()
@@ -453,6 +473,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 		return nil, refusal(pa.CapacityFull, "active_prompt")
 	}
 	c.turnID = q.Turn.ID
+	c.promptDeadline = deadline
 	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
 	c.traceSegment, c.traceTools = pa.Trace{}, nil
 	sid := c.sessionID
@@ -478,12 +499,17 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err != nil {
 		return nil, err
 	}
-	return &promptPending{rpc: p}, nil
+	return &promptPending{rpc: p, deadline: deadline}, nil
 }
 
-type promptPending struct{ rpc *pendingRPC }
+type promptPending struct {
+	rpc      *pendingRPC
+	deadline time.Time
+}
 
 func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
+	ctx, cancel := context.WithDeadline(ctx, p.deadline)
+	defer cancel()
 	b, err := p.rpc.waitResult(ctx)
 	if err != nil {
 		return app.PromptResult{}, err
@@ -731,6 +757,7 @@ func (c *Client) handle(f frame) error {
 		e := c.event("permission-" + id)
 		c.mu.Lock()
 		sealed := c.permissionsSealed || c.failure != nil
+		deadline := c.promptDeadline
 		c.mu.Unlock()
 		if sealed {
 			return c.write(c.ctx, frame{ID: f.ID, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "cancelled"}})})
@@ -739,7 +766,7 @@ func (c *Client) handle(f frame) error {
 			return refusal(pa.StaleGeneration, "permission_turn")
 		}
 		readOnly := c.readOnly != nil && c.readOnly(f.Params)
-		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: time.Now().Add(c.l.RPCTimeout), State: pa.PermissionPending, Action: permissionAction(f.Params)}
+		offer := pa.PermissionOffer{ID: "native-" + e.TurnID + "-" + id, Fence: c.fence, TurnID: e.TurnID, NativeRequestID: id, ExpiresAt: deadline, State: pa.PermissionPending, Action: permissionAction(f.Params)}
 		options := make(map[string]pa.PermissionOption)
 		for _, option := range p.Options {
 			o := pa.PermissionOption{ID: option.OptionID, Label: option.Name, Kind: option.Kind, Allow: option.Kind == pa.AllowOnce || option.Kind == pa.AllowAlways, ReadOnly: readOnly}
@@ -801,6 +828,11 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 		c.mu.Unlock()
 		return refusal(pa.NotFound, "native_permission")
 	}
+	deadline := c.promptDeadline
+	if !time.Now().Before(deadline) {
+		c.mu.Unlock()
+		return refusal(pa.Expired, "native_permission")
+	}
 	// As in Codync, an always option hands the agent the rule it defines.
 	if option.Kind != pa.AllowOnce && option.Kind != pa.RejectOnce && option.Kind != pa.AllowAlways && option.Kind != pa.RejectAlways {
 		c.mu.Unlock()
@@ -808,12 +840,23 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 	}
 	delete(c.permissions, nativeID)
 	c.mu.Unlock()
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	return c.write(ctx, frame{ID: p.id, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionID}})})
 }
 func (c *Client) Cancel(ctx context.Context) error {
+	return c.cancelPrompt(ctx, "")
+}
+
+func (c *Client) cancelPrompt(ctx context.Context, waitingPromptID string) error {
 	c.answerMu.Lock()
 	defer c.answerMu.Unlock()
 	c.mu.Lock()
+	if c.failure != nil || c.permissionsSealed || (waitingPromptID != "" && (c.promptID != waitingPromptID || len(c.permissions) == 0)) {
+		err := c.failure
+		c.mu.Unlock()
+		return err
+	}
 	c.permissionsSealed, c.cancelled = true, true
 	permissions := c.permissions
 	c.permissions = make(map[string]nativePermission)
