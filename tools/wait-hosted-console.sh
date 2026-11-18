@@ -34,7 +34,13 @@ case "$deadline" in
 esac
 origin=${CLAWDLINE_CONSOLE_URL:-https://app.clawdline.com}
 full=$(git rev-parse --verify --quiet "$sha^{commit}") || { echo "$sha is not a commit here" >&2; exit 2; }
-trap 'rc=$?; if [ "$rc" -eq 1 ]; then sh tools/notify-release-failure.sh cloud "$full"; fi' EXIT
+assets_tmp=
+cleanup() {
+  rc=$?
+  [ -z "$assets_tmp" ] || rm -rf "$assets_tmp"
+  if [ "$rc" -eq 1 ]; then sh tools/notify-release-failure.sh cloud "$full"; fi
+}
+trap cleanup EXIT
 
 # reached: the served stamp is <sha> or descends from it.
 reached() {
@@ -59,7 +65,9 @@ while :; do
 done
 echo "the hosted console serves $stamp, which contains $full"
 
-bundle=$(curl -fsS --max-time 20 "$origin/" | grep -o 'assets/main-[^"]*\.js' | head -n 1)
+assets_tmp=$(mktemp -d "${TMPDIR:-/tmp}/clawdline-hosted-assets.XXXXXX") || exit 1
+curl -fsS --max-time 20 "$origin/" -o "$assets_tmp/index.html" || exit 1
+bundle=$(grep -o 'assets/main-[^"]*\.js' "$assets_tmp/index.html" | head -n 1)
 if [ -z "$bundle" ]; then
   echo "FAILED: the served index names no assets/main-*.js"
   exit 1
@@ -74,6 +82,14 @@ echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
 # The same word also exists in the error page produced by a truthy, invalid
 # declaration. Validate the compiled configuration, not only the branch name.
 curl -fsS --max-time 20 "$origin/$bundle" | node web/console/tools/check-hosted-build.mjs || exit 1
+
+# A missing CSS asset can return the SPA HTML with HTTP 200. The generated
+# entry's styles must actually be CSS before this deployment is accepted.
+node web/console/tools/check-hosted-assets.mjs --list "$origin" "$assets_tmp/index.html" > "$assets_tmp/styles" || exit 1
+while IFS= read -r style; do
+  curl -fsS --max-time 20 -D "$assets_tmp/headers" "$origin$style" -o "$assets_tmp/body" || exit 1
+  node web/console/tools/check-hosted-assets.mjs --style "$style" "$assets_tmp/headers" "$assets_tmp/body" || exit 1
+done < "$assets_tmp/styles"
 
 # The source directory marks builds that advertise the new catalogs. Older
 # released builds have no such directory, so their existing CloudGate check

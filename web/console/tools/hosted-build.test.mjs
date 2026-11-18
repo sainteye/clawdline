@@ -42,3 +42,18 @@ test("the served bundle check refuses CloudGate with the incident's invalid decl
   const wrong = { ...productionCloud, api_origin: "https://example.com" }
   assert.throws(() => validateHostedBundle(`const declared=${JSON.stringify(JSON.stringify(wrong))}`), /no usable production/)
 })
+
+// Publication checks must reject a successful HTTP response containing the SPA fallback.
+import {stylesheetPaths,verifyStylesheet} from './check-hosted-assets.mjs'
+test('hosted stylesheet discovery follows generated links and rejects foreign assets',()=>{
+ assert.deepEqual(stylesheetPaths(`<!-- <link rel="stylesheet" href="/assets/unused.css"> --><link href='/assets/main.css' rel='stylesheet'><link REL="stylesheet" HREF="/assets/tokens.css">`,'https://app.clawdline.com'),['/assets/main.css','/assets/tokens.css'])
+ assert.throws(()=>stylesheetPaths('<link rel="stylesheet" href="https://elsewhere.invalid/main.css">','https://app.clawdline.com'),/unexpected_location/)
+ assert.throws(()=>stylesheetPaths('<script src="/assets/main.js"></script>','https://app.clawdline.com'),/stylesheet_missing/)
+})
+test('hosted stylesheet verification rejects HTML fallback, missing MIME and empty assets',()=>{
+ verifyStylesheet('/assets/main.css','HTTP/2 200\r\ncontent-type: text/css; charset=utf-8\r\n','.call { display: flex }')
+ assert.throws(()=>verifyStylesheet('/assets/main.css','content-type: text/html','<!-- No doctype -->'),/wrong_type/)
+ assert.throws(()=>verifyStylesheet('/assets/main.css','content-type: text/css','<!doctype html><main>Loading</main>'),/invalid_body/)
+ assert.throws(()=>verifyStylesheet('/assets/main.css','','.call{}'),/wrong_type/)
+ assert.throws(()=>verifyStylesheet('/assets/main.css','content-type: text/css','  '),/invalid_body/)
+})

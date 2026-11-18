@@ -183,6 +183,13 @@ These checks establish the source and branch, but `CloudGate` text alone does no
 usable configuration. `tools/wait-hosted-console.sh` additionally pipes the served bundle through
 `web/console/tools/check-hosted-build.mjs`, which verifies the compiled production declaration.
 A stamp can be stale, and a malformed hosted build can still contain the CloudGate import.
+The waiter also discovers every generated stylesheet link and requires a CSS MIME type
+and a non-HTML, non-empty body. An HTTP 200 response can be the SPA fallback rather than
+an uploaded style. On 2026-11-18 the production domain returned that fallback for a new
+stylesheet while the immutable deployment URL served the correct CSS. The console was
+restored before another rollout. These observations do not establish why the responses
+differed. Version, branch and text-only startup checks did not prove a styled screen;
+verify the actual rendered Session page before accepting a deployment.
 
 After the static checks, reload the production console in the existing browser tab and verify
 that the actual Session list appears. Also verify the changed route. Preserve existing sign-in
