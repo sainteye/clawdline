@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
 
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
@@ -219,6 +221,7 @@ func (b *Broker) SweepTaskResources(ctx context.Context, after string) (taskreso
 // Callback resources are allocated before a process can start. Their paths are
 // daemon-owned record fields, not environment variables accepted from a client.
 func (b *Broker) prepareCallbackResources(ctx context.Context, r Record) (Record, error) {
+	ctx = taskresources.WithCaller(ctx, "callback.start", r.ID)
 	if b.Resources == nil {
 		if b.ResourceServiceRequired && r.Callback.Intent == CallbackIntentHeavy {
 			return r, b.AdmitHeavyResources(ctx)
@@ -276,14 +279,14 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		return refuse(507, "resource_service_unavailable", "Managed resource service is unavailable.")
 	}
 	err := b.Resources.Admit(ctx)
-	if err == nil && !b.Resources.CacheOverTarget() {
+	if err == nil {
 		return nil
 	}
 	var failure taskresources.Failure
 	pressure := errors.As(err, &failure) && (failure.Code == "disk_reserve_unavailable" || failure.Code == "cache_total_over_budget" || failure.Code == "scratch_over_budget")
-	if err == nil || pressure {
-		// A measured eviction target permits one advancing, ownership-checked
-		// publication page. Unknown measurements never trigger cleanup.
+	if pressure {
+		// Only measured aggregate/reserve pressure puts cleanup on the compile
+		// path. Optional cache maintenance belongs to the periodic sweeper.
 		b.reclaim.mu.Lock()
 		after := b.reclaim.resourcesAfter
 		b.reclaim.mu.Unlock()
@@ -292,15 +295,58 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 			b.reclaim.resourcesAfter = next
 			b.reclaim.mu.Unlock()
 		}
-		if pressure {
-			_, _ = b.Reclaim(ctx, false)
-		}
+		_, _ = b.Reclaim(ctx, false)
 		err = b.Resources.Admit(ctx)
 		if err == nil {
 			return nil
 		}
 	}
-	return refuseWith(507, err.Error(), "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry.", map[string]any{"policy": taskresource.DefaultPolicy()})
+	failure = taskresources.Explain(ctx, err, "admission")
+	diagnostic := failure.Diagnostic()
+	extra := diagnostic.Fields()
+	extra["policy"] = taskresource.DefaultPolicy()
+	// Client cancellation does not erase the server's refusal. This records
+	// a decision, not proof that its response reached the caller.
+	rec, cancel := recordContext(ctx)
+	defer cancel()
+	raw, _ := json.Marshal(diagnostic)
+	subject := diagnostic.CallerID
+	if diagnostic.CallbackTaskID != "" {
+		subject = diagnostic.CallbackTaskID
+	}
+	if subject == "" {
+		subject = diagnostic.Caller
+	}
+	recordErr := b.Store.Append(rec, store.Event{Kind: "resource.admission_refused", Subject: subject, Payload: raw})
+	extra["resource_diagnostic_recorded"] = recordErr == nil
+	if recordErr != nil {
+		log.Printf("resource.admission_refused diagnostic not recorded: code=%s phase=%s", diagnostic.Code, diagnostic.Phase)
+	}
+	message := "Managed storage could not be verified. Inspect resource diagnostics before retrying."
+	switch failure.Code {
+	case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
+		message = "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
+	}
+	return refuseWith(507, failure.Code, message, extra)
+}
+
+func callbackResourceFailure(ctx context.Context, taskID string, err error) string {
+	ctx = taskresources.WithCaller(ctx, "callback.start", taskID)
+	var diagnostic taskresources.Diagnostic
+	code := "resource_preparation_failed"
+	if ref, ok := err.(Refusal); ok {
+		code = ref.Code
+		diagnostic, _ = ref.Extra["resource_diagnostic"].(taskresources.Diagnostic)
+		if diagnostic.Code == "" {
+			diagnostic = (taskresources.Failure{Code: ref.Code}).WithContext(ctx, "callback.prepare", "").Diagnostic()
+		}
+	}
+	if diagnostic.Code == "" {
+		failure := taskresources.Explain(ctx, err, "callback.prepare")
+		diagnostic, code = failure.Diagnostic(), failure.Code
+	}
+	raw, _ := json.Marshal(diagnostic)
+	return "resource_admission_refused: " + code + "; resource_diagnostic=" + string(raw)
 }
 
 // Keep these facts when callback resources still depend on process-group and
