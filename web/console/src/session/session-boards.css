@@ -203,6 +203,6 @@
 .session-board-summary > summary::-webkit-details-marker, .session-board-members > summary::-webkit-details-marker { display:none; }
 
 @media (width > 700px) {
-  .session-board-reader { height: min(30rem, 90dvh); }
+  .session-board-reader { height: 94dvh; max-height: none; }
   .session-board-reader[data-expanded="true"] { height: 97dvh; }
 }

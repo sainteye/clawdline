@@ -1585,7 +1585,13 @@ test("Session board stays the same height while its index and messages load", as
             return status && getComputedStyle(status).visibility === "visible"
           })()`)
           const loadingIndexHeight = await height()
-          assert.ok(loadingIndexHeight >= 400, `${layout} dialog leaves room for content while reading the index`)
+          const viewportHeight = await tab.run("visualViewport.height")
+          if (layout === "desktop") {
+            assert.ok(loadingIndexHeight >= viewportHeight * .9 && loadingIndexHeight < viewportHeight,
+              `desktop dialog uses most of the available height (${loadingIndexHeight}/${viewportHeight})`)
+          } else {
+            assert.equal(loadingIndexHeight, viewportHeight, "phone dialog fills the viewport")
+          }
           await skeletonVisible("SK-36")
           await tab.shotArea(`session-board-index-loading-${layout}`, dialog)
 
@@ -1610,6 +1616,12 @@ test("Session board stays the same height while its index and messages load", as
           await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-posts > li')`)
           assert.equal(await height(), loadingIndexHeight)
           assert.equal(await tab.run(`!!document.querySelector('${dialog} .loading-skeleton')`), false)
+          if (layout === "desktop") {
+            await tab.press(`${dialog} .session-board-expand`)
+            assert.ok(await height() > loadingIndexHeight, "expanded dialog is taller")
+            await tab.press(`${dialog} .session-board-expand`)
+            assert.equal(await height(), loadingIndexHeight, "restoring returns to the original height")
+          }
         } finally {
           releaseIndex()
           releaseThread()
