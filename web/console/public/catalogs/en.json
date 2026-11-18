@@ -13278,7 +13278,5 @@
   "next.copilotCallContent": "Call content",
   "next.copilotCallUsage": "{duration} · {cost}",
   "next.copilotCallUsageUnpriced": "{duration} · at least {cost}",
-  "next.sessionBoardAffiliation": "Board: {name}",
-  "next.sessionBoardUnassigned": "No message board",
   "next.copilotHistoryBoards": "Read Session message boards"
 }

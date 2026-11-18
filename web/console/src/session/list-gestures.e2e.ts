@@ -178,7 +178,7 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (boardTreeFixture) return [
-    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500, { persona: "test-reviewer" }),
+    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500, { persona: "clawdline.persona.test-reviewer" }),
     row(SAFE, "Lead", safeCloseability(), 350, { icon: { accent: "#715546", cells: [["#715546"]] } }),
     row(BLOCKED, "Child", blockedCloseability(), 300),
     row(UNKNOWN, "Grandchild", unknownCloseability(), 250, { persona: "missing-role" }),
@@ -469,6 +469,9 @@ function daemon(): Server {
     }, {
       id: "test-previous-role", source: "builtin", name: { en: "Fixture earlier role" }, summary: { en: "Earlier role" },
       icon: { accent: "#bb3300", cells: [["#bb3300"]] },
+    }, {
+      id: "personal.persona.unassigned-custom", source: "custom", name: { en: "Fixture custom role" },
+      summary: { en: "Custom role" }, icon: { accent: "#22dd22", cells: [["#22dd22"]] },
     }] })
     if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
       return json(res, 200, { ok: true, rows: [], truncated: false })
@@ -1534,9 +1537,10 @@ test("a Session board keeps child Sessions, role art and the Lead mark inside it
       const pixel = (selector: string) => `Array.from(document.querySelector(${JSON.stringify(selector)})?.getContext('2d').getImageData(0,0,1,1).data ?? []).join(',')`
       const rowArt = `${group} [data-id="${NEEDS_ATTESTATION}"] > canvas.mark`
       await shortcutUntil(tab, `${pixel(rowArt)} === "18,52,171,255"`)
-      for (const unassigned of [BLOCKED, UNKNOWN]) {
-        assert.ok(await tab.run(`Boolean(document.querySelector('${group} [data-id="${unassigned}"] > .session-board-unassigned .session-terminal-icon'))`))
-      }
+      const unassignedArt = (id: string) => `${group} [data-id="${id}"] > canvas.mark`
+      await shortcutUntil(tab, `Boolean(document.querySelector('${unassignedArt(BLOCKED)}'))`)
+      const unassigned = [await tab.run(pixel(unassignedArt(BLOCKED))), await tab.run(pixel(unassignedArt(UNKNOWN)))]
+      assert.deepEqual(unassigned.sort(), ["18,52,171,255", "187,51,0,255"].sort())
       const avatarWidth = (selector: string) => `document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect().width`
       assert.equal(await tab.run(avatarWidth(`${group} [data-board-lead] canvas.mark`)), 32)
       assert.equal(await tab.run(pixel(`${group} .session-board-project-mark canvas`)), "113,85,70,255")

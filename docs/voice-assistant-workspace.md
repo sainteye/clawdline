@@ -453,7 +453,7 @@ history remains available until a new call starts. Reloading the page does not
 restore the in-memory history, and cross-device historical browsing is outside
 this view's contract.
 
-One call-owned ledger supplies both this area and the expanded activity log.
+One call-owned ledger supplies this area and the private operation journal.
 A unique operation ID is created at start and updated at completion; callbacks
 from an older call cannot enter a replacement call. Each entry carries its call,
 parent, source, target, wall-clock start, monotonic offset, duration and outcome.
@@ -470,8 +470,7 @@ The original green-outline capsules remain below speech, with one capsule per
 invocation showing its target, outcome and duration, newest start first. Completion
 updates its capsule in place rather than moving an older invocation above a new
 one. Counts remain visible above
-them; there is no disclosure triangle or grouped list. The existing activity log
-shows each observation with its start time and source. The processing-coverage tooltip
+them; there is no disclosure triangle or grouped list. The private journal records each observation with its start time and source. The processing-coverage tooltip
 counts overlapping top-level intervals once and excludes their nested read
 intervals. Summed durations can exceed that total. The scroll area keeps every
 observation rather than applying the mixed diagnostic log's fifty-line limit;

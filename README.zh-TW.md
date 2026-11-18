@@ -48,6 +48,16 @@
 
 Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使用的 Claude Code 和 Codex Session。Cloud 是選用功能；中繼只傳送密文。[運作方式](docs/architecture.md)
 
+## 用語音掌握你的 Session
+
+打給語音助理，聽它回報哪裡需要你、查詢 Session 進度或留言板目前的 Lead，並開啟相關對話。送訊息前，它會先念出收件 Session 與完整內容，等你同意才送出。綠色膠囊保留當通工具紀錄，常用指令在同區右側，下方顯示時間與金額。
+
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-zh-tw.jpg" width="390" alt="語音助理回報示範 Session，顯示綠色工具膠囊、右側常用指令、通話時間與金額。" /></a>
+
+*目前 Cloud／dev 介面，使用合成示範資料。語音通話使用你自己的 OpenAI API key。*
+
+[語音助理使用指南與示範](https://clawdline.com/docs/voice-copilot/) · [觀看中文示範影片](https://media.clawdline.com/voice-copilot/demo-zh-Hant-9eac800f8c01.mp4)。預錄影片使用較早的通話版面，語音、Session 與費用皆為示範資料。
+
 ## 跨機器 Session 協作（Cloud）
 
 讓 Mac 上的 Codex 與 Linux 上的 Claude Code 接力工作。雙向配對後，Agent 可探索遠端 Project 與 Session、把任務派到指定專案、與既有 Session 互傳訊息，並在結果回來時接續工作；不必由你複製指示與回覆。

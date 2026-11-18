@@ -483,7 +483,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     id: row.destination.sessionID, parent,
                     actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
                       status?.sessionId, title, status?.persona, presentation?.icon),
-                    render: (board, boardName) => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} boardName={boardName} key={destinationKey(row.destination)}
+                    render: (board) => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={status}

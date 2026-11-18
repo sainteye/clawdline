@@ -13278,7 +13278,5 @@
   "next.copilotCallContent": "通話內容",
   "next.copilotCallUsage": "{duration} · {cost}",
   "next.copilotCallUsageUnpriced": "{duration} · 至少 {cost}",
-  "next.sessionBoardAffiliation": "留言板：{name}",
-  "next.sessionBoardUnassigned": "尚未加入留言板",
   "next.copilotHistoryBoards": "讀取 Session 留言板"
 }

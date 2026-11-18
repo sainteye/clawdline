@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13280,
-  "riskKeys": 5725,
-  "nonRiskCount": 7555,
+  "englishContentKeys": 13278,
+  "riskKeys": 5724,
+  "nonRiskCount": 7554,
   "groups": [
     {
       "name": "acp / other",
@@ -4132,7 +4132,7 @@
     },
     {
       "name": "next / other",
-      "count": 1259,
+      "count": 1258,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4968,7 +4968,6 @@
         "next.secretHandoffReplace",
         "next.secretHandoffSending",
         "next.secretHandoffSubmit",
-        "next.sessionBoardAffiliation",
         "next.sessionBoardArchive",
         "next.sessionBoardArchiveAsk",
         "next.sessionBoardArchived",
