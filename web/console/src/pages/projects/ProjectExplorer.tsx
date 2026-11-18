@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../../ui/ChevronIcon.js"
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
@@ -38,7 +39,7 @@ function DirectoryRows({ listing, listings, loading, errors, selected, open, cho
   return <ul className="project-explorer-entries">
     {listing.entries.map(entry => <li key={entry.path}>
       {entry.kind === "directory" ? <details className="project-explorer-folder" onToggle={event => { if (event.currentTarget.open) open(entry.path) }}>
-        <summary><span aria-hidden="true" className="project-explorer-caret">▸</span><ProjectTreeIcon kind="folder" /><span>{entry.name}</span></summary>
+        <summary><span aria-hidden="true" className="project-explorer-caret"><ChevronIcon direction="right" /></span><ProjectTreeIcon kind="folder" /><span>{entry.name}</span></summary>
         <div className="project-explorer-children">
           {loading.has(entry.path) && !listings[entry.path] && <LoadingSkeleton id="SK-15" label={catalogWord("inline", "a58b39df6cd2")} />}
           {errors[entry.path] && <p role="alert">{errors[entry.path]} <button type="button" onClick={() => retry(entry.path)}>{catalogWord("inline", "7e59d0f16293")}</button></p>}

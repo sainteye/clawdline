@@ -18,7 +18,7 @@
 }
 .session-board-dock-dot {
   position: absolute; top: 3px; right: 3px; width: 7px; height: 7px;
-  border: 1px solid var(--bg); border-radius: 50%; background: var(--session-board-accent);
+  border: 1px solid var(--bg); border-radius: 50%; background: var(--accent);
 }
 
 .session-board-group {
@@ -176,6 +176,9 @@
   .session-board-dialog input, .session-board-dialog textarea { font-size: 16px; }
   .session-board-dock { width: 36px; height: 42px; }
 }
+
+.session-board-summary > summary, .session-board-members > summary { display:flex;align-items:center;gap:6px;list-style:none; }
+.session-board-summary > summary::-webkit-details-marker, .session-board-members > summary::-webkit-details-marker { display:none; }
 
 @media (width > 700px) {
   .session-board-reader { height: min(30rem, 90dvh); }

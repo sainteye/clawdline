@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { useEffect, useId, useRef, useState } from "react"
 import { nextMenuState, type MenuEvent, type MenuState } from "./menu-state.js"
 
@@ -44,7 +45,7 @@ export function ManageMenu({ label, busy, items, packageId, remove }: {
   return <div className="vp-menu-wrap" ref={root} data-open={state !== "closed"}>
     <button ref={button} type="button" className="vp-menu-button" aria-haspopup="menu" aria-expanded={state !== "closed"} aria-controls={state !== "closed" ? id : undefined}
       onClick={() => state === "closed" ? send("toggle") : dismiss(false)}>
-      {label} <span aria-hidden="true">⌄</span>
+      {label} <span aria-hidden="true"><ChevronIcon /></span>
     </button>
     {state === "open" && <div className="vp-menu" id={id} role="menu" aria-label={label}>
       {items.map(item => <button key={item.label} type="button" role="menuitem" disabled={busy} onClick={() => choose(item.onSelect)}>{item.label}</button>)}

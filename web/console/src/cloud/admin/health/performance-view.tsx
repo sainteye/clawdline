@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+import { StatusIcon } from "../../../ui/StatusIcon.js"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ConnectionHealthProps } from "./ConnectionHealth"
 import { healthHref } from "./route"
@@ -74,7 +76,7 @@ export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefuse
         <Card label={say("pf_cpu")} glyph="◴" value={number(data.latest?.cpu_pct, "%")} note={`${number(data.latest?.cores)} · ${say("pf_cores")}`} stale={state.failed || !data.host_fresh} say={say} />
         <Card label={say("pf_memory")} glyph="▥" value={number(data.latest?.memory_pct, "%")} note={`${say("pf_available")} ${number(data.latest?.available_bytes == null ? null : data.latest.available_bytes / 1073741824, " GiB")}`} stale={state.failed || !data.host_fresh} say={say} />
         <Card label={say("pf_latency")} glyph="◷" value={ms(data.current.p95_ms)} note={`P95 · ${number(data.current.count)} ${say("pf_count")}`} stale={state.failed || !data.api_fresh || data.current.coverage_seconds < 299} say={say} />
-        <Card label={say("pf_errors")} glyph="△" value={number(data.current.error_pct, "%")} note={`${number(data.current.errors)} / ${number(data.current.count)} · 5xx`} stale={state.failed || !data.api_fresh || data.current.coverage_seconds < 299} say={say} />
+        <Card label={say("pf_errors")} glyph={<StatusIcon name="alert" />} value={number(data.current.error_pct, "%")} note={`${number(data.current.errors)} / ${number(data.current.count)} · 5xx`} stale={state.failed || !data.api_fresh || data.current.coverage_seconds < 299} say={say} />
       </div>
       <p className="adm-fine">{say("pf_elapsedNote")}</p>
       <section className="adm-panel"><h2>{say("pf_compare")}</h2><p className="adm-fine">{at(data.current.from_ms)} – {at(data.current.to_ms)}</p>
@@ -98,7 +100,7 @@ export function PerformanceScreen({ route, go, apiOrigin, get, fixture, onRefuse
   </div>
 }
 
-function Card({ label, glyph, value, note, stale, say }: { label: string; glyph: string; value: string; note: string; stale: boolean; say: HealthSay }) {
+function Card({ label, glyph, value, note, stale, say }: { label: string; glyph: ReactNode; value: string; note: string; stale: boolean; say: HealthSay }) {
   return <section className={`adm-tile pf-card ${stale ? "pf-card-stale" : ""}`}><div><span aria-hidden="true" className="pf-icon">{glyph}</span><h2>{label}</h2></div><strong>{value}</strong><p>{note}</p>{stale ? <small>{say("pf_stale")}</small> : null}</section>
 }
 

@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { createPortal } from "react-dom"
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react"
 import { nextWord as t } from "../next-strings.js"
@@ -528,9 +529,9 @@ function BoardMessages({ source, id, candidates, onRead }: {
         </div>
       </div>
       <div className="session-board-disclosures">
-        {b.summary && <details className="session-board-summary"><summary>{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
+        {b.summary && <details className="session-board-summary"><summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
         {b.members && <details className="session-board-members">
-          <summary>{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
+          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
           <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
             <span className="session-board-member-mark" aria-hidden="true"><BoardGlyph /></span>
             <strong>{member.label}</strong>

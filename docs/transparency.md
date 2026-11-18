@@ -822,8 +822,11 @@ Chinese for the new title/summary indexes and explicit `read_memory` detail
 argument. Full note bodies are absent from assembled context and index
 responses. Actor and full Project ownership, memory revisions, forget
 tombstones and opaque-resume refusal stay in force. The Project shared-memory
-view remains read-only and outside model context. Clean installed-native recall remains separately pending. The source
-receipt covers the schema-12 protection, compact index and detail paths;
+view remains read-only and outside model context. Controlled Codex note
+write/recall/Forget qualification is recorded in the memory/settings document;
+Claude memory qualification remains blocked by its observed native usage
+refusal. Production observation and installed-binary recovery remain separate.
+The source receipt covers the schema-12 protection, compact index and detail paths;
 website publication follows the delivered product revision.
 
 The single-chat presentation update changes the identity opener, draft toolbar visibility,

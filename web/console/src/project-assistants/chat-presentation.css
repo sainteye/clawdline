@@ -27,7 +27,7 @@
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure { border:0;border-radius:0; }
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary { display:flex;align-items:center;gap:8px;min-height:48px;padding:12px 0;list-style:none; }
 .project-assistants .pa-chat-surface .pa-settings-agent-card summary::-webkit-details-marker { display:none; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary::after { content:"⌄";margin-left:auto;color:var(--pa-dim); }
+.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary>.pa-settings-chevron { margin-left:auto;color:var(--pa-dim);transition:transform .15s; }
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary strong { font-size:13px;font-weight:500; }
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary span { font-size:12px;margin-left:auto; }
 .project-assistants .pa-chat-surface .pa-settings-primary { border-bottom:1px solid var(--pa-line); }
@@ -85,3 +85,6 @@
 }
 
 .project-assistants .pa-chat-surface .pa-message.pa-sending { padding:8px 10px;border-radius:18px;background:#343436; }
+
+.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
+@media(prefers-reduced-motion:reduce) { .project-assistants .pa-settings-disclosure>summary>.pa-settings-chevron { transition:none; } }

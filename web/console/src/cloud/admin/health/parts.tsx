@@ -1,3 +1,4 @@
+import { StatusIcon } from "../../../ui/StatusIcon.js"
 /* Pieces the six connection-health screens share: status words with glyphs,
  * tables that become cards at phone width, the shared timeline and its table. */
 import { useId, useState, type ReactNode } from "react"
@@ -26,7 +27,7 @@ export function stateWord(say: HealthSay, s: SpanState): string {
 export function OutcomeBadge({ outcome, say }: { outcome: Outcome; say: HealthSay }) {
   return (
     <span className={`adh-badge adh-o-${outcome}`}>
-      <span aria-hidden="true" className="adh-glyph">{GLYPH[outcome]}</span>
+      <span aria-hidden="true" className="adh-glyph">{outcome === "slow" ? <StatusIcon name="clock" /> : GLYPH[outcome]}</span>
       {say(`outcome_${outcome}` as HealthWord)}
     </span>
   )

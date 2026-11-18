@@ -1,3 +1,4 @@
+import { StatusIcon } from "../../ui/StatusIcon.js"
 import { VisitsOverview } from "./VisitsOverview.js"
 import { useId } from "react"
 import { trend, type CampaignRow, type Comparison, type DailyCount, type Overview, type UsagePeriod } from "./api.js"
@@ -352,7 +353,7 @@ export function TrendTile({ label, value, say, n }: { label: string; value: Comp
   return (
     <Tile label={label} value={n.format(value.current)}>
       <p className="adm-trend">
-        <span className={"adm-chip adm-chip-" + t.kind} aria-hidden="true">{chip}</span>
+        <span className={"adm-chip adm-chip-" + t.kind} aria-hidden="true">{t.kind !== "flat" && <StatusIcon name={t.kind} />}{chip}</span>
         <span className="adm-trend-prev" aria-hidden="true">{say("trendAgainst", { previous })}</span>
         <span className="adm-visually-hidden">{spoken}</span>
       </p>

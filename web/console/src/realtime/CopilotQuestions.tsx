@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import React, { useEffect, useRef, useState } from 'react'
 import { ProjectMark } from '../project-assistants/ProjectMark.js'
 import { nextWord } from '../next-strings.js'
@@ -57,7 +58,7 @@ export function CopilotQuestions({ ready, targets, send }: Props) {
       <div className="copilot-questions-target" ref={picker}>
         <span id="copilot-question-target-label">{nextWord('copilotQuestionTarget')}</span>
         <button ref={chooseButton} type="button" className="copilot-target-toggle" aria-labelledby="copilot-question-target-label copilot-question-target-value" aria-expanded={choosing} aria-controls="copilot-target-options" disabled={loading || sending} onClick={() => setChoosing(!choosing)}>
-          <span id="copilot-question-target-value">{picked ? <TargetName target={picked} /> : nextWord(loading ? 'copilotQuestionsLoading' : 'copilotQuestionChoose')}</span><span aria-hidden="true">⌄</span>
+          <span id="copilot-question-target-value">{picked ? <TargetName target={picked} /> : nextWord(loading ? 'copilotQuestionsLoading' : 'copilotQuestionChoose')}</span><span aria-hidden="true"><ChevronIcon /></span>
         </button>
         {choosing && <fieldset id="copilot-target-options" className="copilot-target-options"><legend>{nextWord('copilotQuestionChoose')}</legend>
           {rows.map(row => <label key={row.id} className={`copilot-target-option${selected === row.id ? ' selected' : ''}`}>
@@ -78,7 +79,7 @@ export function CopilotQuestions({ ready, targets, send }: Props) {
         <legend className="copilot-question-legend">{nextWord(GROUP_WORDS[group])}</legend>
         {CALL_QUESTIONS.filter(question => question.group === group).map(question => <div className="copilot-question" key={question.id}>
           <button type="button" className="copilot-question-send" onClick={() => void ask(question.id, nextWord(question.key))}><span><strong>{nextWord(question.title)}</strong><span className="copilot-question-phrase">{nextWord(question.key)}</span></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-5-5 5 5-5 5" /></svg></button>
-          <details><summary>{nextWord('copilotQuestionAlternative')}</summary><button type="button" onClick={() => void ask(question.id, nextWord(question.alternate))}>{nextWord(question.alternate)}<span aria-hidden="true">→</span></button></details>
+          <details className="copilot-question-alternative"><summary><ChevronIcon direction="right" className="disclosure-chevron" />{nextWord('copilotQuestionAlternative')}</summary><button type="button" onClick={() => void ask(question.id, nextWord(question.alternate))}>{nextWord(question.alternate)}<span aria-hidden="true">→</span></button></details>
         </div>)}
       </fieldset>
       {sending && <p role="status">{nextWord('copilotQuestionSending')}</p>}
