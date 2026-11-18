@@ -275,7 +275,8 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 	if b.Resources == nil {
 		return refuse(507, "resource_service_unavailable", "Managed resource service is unavailable.")
 	}
-	if err := b.Resources.Admit(ctx); err != nil {
+	err := b.Resources.Admit(ctx)
+	if err != nil || b.Resources.CacheOverTarget() {
 		// Source-owned publication may have finished since the previous sweep.
 		// Seal it here before retrying pressure reclamation. This is not Bot authority.
 		after := ""
@@ -291,11 +292,13 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		}
 		// The legacy reclaimer retains its own Git, owner and preservation
 		// procedure; the resource service never adopts those paths.
-		legacy, legacyErr := b.Reclaim(ctx, false)
-		remaining := legacy.Deferred
-		for legacyErr == nil && remaining > 0 && ctx.Err() == nil {
-			_, legacyErr = b.Reclaim(ctx, false)
-			remaining -= reclaimSweepLimit
+		if err != nil {
+			legacy, legacyErr := b.Reclaim(ctx, false)
+			remaining := legacy.Deferred
+			for legacyErr == nil && remaining > 0 && ctx.Err() == nil {
+				_, legacyErr = b.Reclaim(ctx, false)
+				remaining -= reclaimSweepLimit
+			}
 		}
 		err = b.Resources.Admit(ctx)
 		if err == nil {

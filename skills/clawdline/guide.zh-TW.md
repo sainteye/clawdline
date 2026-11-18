@@ -921,7 +921,7 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
 
 受管 callback 儲存（daemon API 80）：命令開始前，daemon 先配置獨立的私有暫存與快取目錄。`TMPDIR` 與 `CLAWDLINE_SCRATCH_DIR` 指向暫存；`XDG_CACHE_HOME`、`npm_config_cache` 指向命令各自登記的快取。重工作業 callback（`--intent heavy`）的 `GOCACHE` 使用另外登記、同一 Project 共用的 Go 編譯快取；一般等待 callback 仍使用自己的快取。`CLAWDLINE_ARTIFACT_DIR` 指向永久保留的 `artifacts/` 目錄。結束前請將成果放到該處；留在暫存或快取的檔案明確屬於可回收資料。命令若自行改寫這些路徑，產生的資料不受管理，daemon 不會自行接管或刪除。原生應用程式編譯仍須使用 `clawdline heavy`；一般測試不需要編譯租約。
 
-成功、失敗、取消等所有終止任務的暫存至少保留 24 小時；非成果的原始執行紀錄保留 7 天。可重建快取沒有最低保留時間，但必須確認完成、成果保存及所有使用者均已離開。成果與附件不因這項政策到期。callback 結束後，仍須確認程序群組已消失、鎖已釋放、沒有開啟中的讀取者，且已保存成果未改變。證據不明就保留。若安全回收後仍無法符合快取每個 4 GiB、合計 16 GiB、其他暫存合計 16 GiB、磁碟保留 2 GiB，新的重工作業 callback 或編譯租約會被拒絕；既有租約續期與一般等待 callback 仍可使用。這是啟動門檻，不是執行中的檔案系統硬性配額。
+成功、失敗、取消等所有終止任務的暫存至少保留 24 小時；非成果的原始執行紀錄保留 7 天。可重建快取沒有最低保留時間，但必須確認完成、成果保存及所有使用者均已離開。成果與附件不因這項政策到期。callback 結束後，仍須確認程序群組已消失、鎖已釋放、沒有開啟中的讀取者，且已保存成果未改變。證據不明就保留。每個快取 4 GiB 是安全回收目標：快取仍在使用或成果尚未封存時，先延後回收，不會單憑這項超額阻擋可負擔的工作。下次啟動前，daemon 會嘗試依來源事實封存成果並安全縮減快取。只有安全回收後仍無法符合快取合計 16 GiB、其他暫存合計 16 GiB、磁碟保留 2 GiB，或必要用量無法確認時，新的重工作業 callback 或編譯租約才會被拒絕；既有租約續期與一般等待 callback 仍可使用。這是啟動門檻，不是執行中的檔案系統硬性配額。
 
 `clawdline resources list [--after ID]` 只讀取一頁（最多 64 筆）。`allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log` 建立新的受管目錄，並回傳分開的成果路徑；不能接管既有路徑。明確配置 Root 資料時，先把成果保存至回傳的成果路徑，留下可持續查核的 Session 交付收據，再安全關閉該 Root 的實際執行者；缺少完成或保存證據就保留。長期執行的 Root 應使用命令範圍的 callback 快取，避免同一份快取一直存活到 Root 關閉。此介面不會刪除既有 Root 指派目錄或 Git worktree。
 

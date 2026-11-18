@@ -202,7 +202,7 @@ rejecting an unregistered bound before the final green check.
 | Successful-task disposable scratch | 24 hours after proved completion |
 | Failed/cancelled-task disposable scratch | 24 hours after proved completion |
 | Non-artifact execution logs | 7 days after completion |
-| Idle managed cache, each / aggregate | 4 GiB / 16 GiB; no retention floor |
+| Idle managed cache, each / aggregate | 4 GiB eviction target / 16 GiB aggregate admission limit; no retention floor |
 | Other managed scratch, aggregate | 16 GiB |
 | Minimum available filesystem space | 2 GiB |
 | Results, attachments and protected evidence | No automatic deletion |
@@ -224,8 +224,12 @@ whether a measurement is logical or allocated; unavailable measurements are
 unknown, not zero. Protected evidence counts towards storage visibility but
 never becomes disposable merely to meet a budget.
 
-These budgets are reclamation and new-work admission thresholds, not hard
-in-flight filesystem quotas. Check before producer admission and after release;
+The per-cache value is a best-effort eviction target, not an admission limit.
+An active or unsealed cache may temporarily exceed it without blocking an
+otherwise affordable compile. Admission retries source-backed sealing and
+safe eviction when this target is exceeded. Aggregate cache/scratch budgets
+and the filesystem reserve remain new-work admission thresholds; none is a
+hard in-flight filesystem quota. Check before producer admission and after release;
 reclaim eligible data first. If pressure remains, refuse a new relevant build or
 scratch allocation with a typed reason and recovery action. Do not kill an
 active job, delete its open files or block reading results, preserving work,
