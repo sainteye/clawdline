@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
+	"math"
 	"testing"
 )
 
@@ -131,5 +132,19 @@ func TestASplashRefusesWhatIsNotAScreen(t *testing.T) {
 	}
 	if _, ok := Splash(SplashLimit, 1); !ok {
 		t.Error("the limit itself was refused")
+	}
+}
+
+func TestRasterChannelKeepsHalfStepsStableAcrossFloatingPointIntermediates(t *testing.T) {
+	for _, midpoint := range []float64{0.5, 127.5, 254.5} {
+		want := uint8(midpoint + 0.5)
+		for _, value := range []float64{math.Nextafter(midpoint, 0), midpoint, math.Nextafter(midpoint, 255)} {
+			if got := rasterChannel(value); got != want {
+				t.Errorf("channel %.18f = %d, want %d", value, got, want)
+			}
+		}
+		if got := rasterChannel(midpoint - 1e-6); got != want-1 {
+			t.Errorf("visible half-step difference was lost: %d", got)
+		}
 	}
 }

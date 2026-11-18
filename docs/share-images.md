@@ -9,3 +9,10 @@ The repository provides English and Taiwan Traditional Chinese images for its pu
 Each PNG has an editable SVG source beside it. The image language applies to titles and explanatory labels, while product and project names retain their proper names. The marketing site owns its Security, AI-review, Clawdfather and documentation artwork in its separate repository.
 
 PNG assets are rasterized locally with `@resvg/resvg-js` 2.6.2 and system fonts (Arial and PingFang TC). No image-generation API is needed. Public previews use versioned static image URLs so crawlers can retrieve the bytes without signing in. Existing v1 community assets remain available for previously cached links.
+
+The README overview and cross-machine diagrams embed the canonical rounded orange
+mark from `internal/domain/icon/brand.svg`, including its detached hands and solid
+green underline. Regenerate the cross-machine diagrams with
+`python3 tools/render-cross-machine-diagram.py`; render each editable overview SVG
+with the pinned Resvg version above after changing its artwork. The diagrams retain
+their existing text, dimensions and workflow layout.

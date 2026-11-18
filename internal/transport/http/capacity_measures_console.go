@@ -281,9 +281,6 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleTranscriptFollowSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},
-		"console.copilot_memory_turns": func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "per-browser call memory; daemon cannot measure another device's storage"}
-		},
 		"console.copilot_list_transcript_reads": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-call list read budget; daemon cannot measure another device's reads"}
 		},

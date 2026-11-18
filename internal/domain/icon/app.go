@@ -58,7 +58,7 @@ func AppIcon(size int) ([]byte, bool) {
 			cy := math.Max(radius, math.Min(float64(py)+0.5, float64(size)-radius))
 			distance := math.Hypot(float64(px)+0.5-cx, float64(py)+0.5-cy)
 			coverage := math.Max(0, math.Min(1, radius+0.5-distance))
-			img.Pix[img.PixOffset(px, py)+3] = uint8(math.Round(coverage * 255))
+			img.Pix[img.PixOffset(px, py)+3] = rasterChannel(coverage * 255)
 		}
 	}
 	return encode(img)
@@ -94,7 +94,7 @@ func drawMark(img *image.NRGBA, originX, originY, scale float64) {
 					} else {
 						v *= 1 + shade
 					}
-					return uint8(math.Round(v))
+					return rasterChannel(v)
 				}
 				paint.R, paint.G, paint.B = light(paint.R), light(paint.G), light(paint.B)
 				blend(img, x, y, paint, coverage)
@@ -143,13 +143,20 @@ func blend(img *image.NRGBA, x, y int, paint color.NRGBA, cover float64) {
 	}
 	i := img.PixOffset(x, y)
 	over := func(src, dst uint8) uint8 {
-		return uint8(math.Round(float64(src)*cover + float64(dst)*(1-cover)))
+		return rasterChannel(float64(src)*cover + float64(dst)*(1-cover))
 	}
 	img.Pix[i+0] = over(paint.R, img.Pix[i+0])
 	img.Pix[i+1] = over(paint.G, img.Pix[i+1])
 	img.Pix[i+2] = over(paint.B, img.Pix[i+2])
 	alpha := float64(paint.A)*cover + float64(img.Pix[i+3])*(1-cover)
-	img.Pix[i+3] = uint8(math.Round(alpha))
+	img.Pix[i+3] = rasterChannel(alpha)
+}
+
+// Quantize below a visible channel step before rounding to eight bits. Floating
+// point intermediates can straddle an exact half step across Go toolchains and
+// architectures; that must not change a published pixel by one channel value.
+func rasterChannel(value float64) uint8 {
+	return uint8(math.Round(math.Round(value*1e9) / 1e9))
 }
 
 func encode(img image.Image) ([]byte, bool) {

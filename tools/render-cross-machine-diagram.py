@@ -3,6 +3,7 @@
 from pathlib import Path
 from html import escape
 import json
+import re
 root=Path(__file__).resolve().parents[1]
 def replace_colors(text, palette):
  for old,new in palette.items(): text=text.replace(old,new)
@@ -25,10 +26,9 @@ for lang in ['en','zh-Hant']:
  palette={'#10151e':'#16161a','#e9edf5':'#e8e6e3','#abb9cc':'#9a978f','#1b2534':'#1c1c22','#40516a':'#24242b','#101a29':'#131317','#596f8f':'#24242b','#b2c2d9':'#9a978f','#172f3c':'#1c1c22','#70b7c7':'#24242b','#98e3cc':'#9da4ed','#91c9ff':'#9da4ed','#33465f':'#24242b','#bac8dc':'#9a978f','#91a2ba':'#9a978f'}
  s=[replace_colors(item,palette) for item in s]
  icons=json.loads((root/'docs/assets/cross-machine-icons.json').read_text())
- extra=[]
- for row,line in enumerate(['.######.','.#o##o#.','########','.######.']):
-  for col,ch in enumerate(line):
-   if ch in '#o': extra.append(f'<rect x="{461+col*5}" y="{225+row*5}" width="5" height="5" fill="{"#d97757" if ch=="#" else "#141416"}"/>')
+ # Use the same rounded orange mark as the application, including its green line.
+ brand=(root/'internal/domain/icon/brand.svg').read_text().strip()
+ extra=[re.sub(r'^<svg\b', '<svg x="461" y="220" width="40" height="27.5"', brand, count=1)]
  for x,machine,assistant in [(48,'apple','codex'),(812,'linux','claude')]:
   for name,ix,iy,size in [(machine,x+24,173,26),(assistant,x+38,237,26)]:
    icon=icons[name]

@@ -2021,11 +2021,6 @@
     "Note": true
   },
   {
-    "Name": "console.copilot_memory_turns",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "console.copilot_orb_frames_per_second",
     "Known": true,
     "Note": true
