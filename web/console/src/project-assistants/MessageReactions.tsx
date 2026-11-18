@@ -12,8 +12,17 @@ const refused=new Set(["pa_invalid","pa_scope_denied","pa_stale_version","pa_sta
 const palette=["👍","❤️","😂","🎉","👀","✅"]
 
 /** Durable desired state, with explicit same-ID recovery after an unknown reply. */
-export function MessageReactions({message,source}:{message:W.ProjectAssistantMessage;source?:SourceClient}) {
+export function MessageReactions({message,source,dismissKey}:{dismissKey?:string;message:W.ProjectAssistantMessage;source?:SourceClient}) {
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[held,setHeld]=useState<W.ProjectAssistantReactRequest|null>(null),[error,setError]=useState(""),[blocked,setBlocked]=useState(false)
+ const trigger=useRef<HTMLButtonElement|null>(null)
+ useEffect(()=>{setOpen(false)},[dismissKey])
+ useEffect(()=>{
+  if(!open)return
+  const escape=(event:KeyboardEvent)=>{if(event.key==="Escape"&&!event.isComposing&&!event.defaultPrevented){event.preventDefault();event.stopPropagation();setOpen(false);trigger.current?.focus({preventScroll:true})}}
+  const away=(event:PointerEvent)=>{if(!trigger.current?.parentElement?.contains(event.target as Node))setOpen(false)}
+  document.addEventListener("keydown",escape);document.addEventListener("pointerdown",away)
+  return()=>{document.removeEventListener("keydown",escape);document.removeEventListener("pointerdown",away)}
+ },[open])
  const control=useRef<AbortController|null>(null),epoch=useRef(0),inflight=useRef(false)
  const scope=JSON.stringify([source?.intentAccount??"local",source?.machineID,source?.authorizationRevision,message.fence.key,message.fence.project,message.fence.conversation_id,message.id])
  const storageKey="clawdline.bot-reaction."+JSON.stringify([source?.intentAccount??"local",message.fence.key,message.fence.project,message.fence.conversation_id,message.id])
@@ -47,8 +56,8 @@ export function MessageReactions({message,source}:{message:W.ProjectAssistantMes
  if(message.kind!=="user"&&message.kind!=="assistant")return null
  return <div className="pa-reactions" aria-label={tr("reactions")}>
   {message.reactions?.flatMap(a=>a.emojis.map(emoji=>a.own?<button type="button" className="pa-reaction pa-reaction-own" key={a.id+emoji} aria-label={tr("removeReaction")+" "+emoji} title={tr("yourReaction")} disabled={!enabled||busy||!!held||blocked} onClick={()=>void send(emoji)}>{emoji}<span>{tr("youReaction")}</span></button>:<span className="pa-reaction" key={a.id+emoji} title={a.kind==="bot"?a.name:tr("otherReaction")}>{a.kind==="bot"&&a.appearance&&<BotAvatar appearance={a.appearance} size={18}/>} {emoji}<span>{a.kind==="bot"?a.name:tr("otherReaction")}</span></span>))}
-  {source?.react&&<button className="pa-reaction-add" type="button" aria-expanded={open} title={enabled?tr("addReaction"):tr("reactionsUnavailable")} disabled={!enabled||busy||!!held||blocked} onClick={()=>setOpen(v=>!v)}>{tr("addReaction")}</button>}
-  {open&&<div className="pa-reaction-palette" role="group" aria-label={tr("chooseReaction")} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();setOpen(false)}}}>{palette.map(emoji=><button type="button" key={emoji} aria-label={tr("reactWith")+" "+emoji} aria-pressed={own?.emojis.includes(emoji)??false} disabled={busy||!!held||blocked} onClick={()=>void send(emoji)}>{emoji}</button>)}</div>}
+  {source?.react&&<button ref={trigger} className="pa-reaction-add" type="button" aria-expanded={open} title={enabled?tr("addReaction"):tr("reactionsUnavailable")} disabled={!enabled||busy||!!held||blocked} onClick={()=>setOpen(v=>!v)}>{tr("addReaction")}</button>}
+  {open&&<div className="pa-reaction-palette" role="group" aria-label={tr("chooseReaction")} onKeyDown={e=>{if(e.key==="Escape"&&!e.nativeEvent.isComposing){e.preventDefault();e.stopPropagation();setOpen(false);trigger.current?.focus({preventScroll:true})}}}>{palette.map(emoji=><button type="button" key={emoji} aria-label={tr("reactWith")+" "+emoji} aria-pressed={own?.emojis.includes(emoji)??false} disabled={busy||!!held||blocked} onClick={()=>void send(emoji)}>{emoji}</button>)}</div>}
   {error&&<p role="status">{held||blocked?tr("reactionUnknown"):tr("reactionFailed")} ({error}) {held&&<button type="button" disabled={!enabled||busy} onClick={()=>void send()}>{tr("retryReaction")}</button>}</p>}
  </div>
 }
