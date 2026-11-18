@@ -27,7 +27,7 @@ export type SessionBoardCommand = { action: string; board?: string; name?: strin
 type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
 type BoardRow = { lead: boolean; avatar: Icon | null; depth: number; branchThrough: boolean; ancestorThrough: boolean }
-type Entry = { id: string; parent?: string; actor?: Actor; render: (board?: BoardRow) => ReactNode }
+type Entry = { id: string; parent?: string; actor?: Actor; render: (board?: BoardRow, boardName?: string | null) => ReactNode }
 export type SessionBoardSource = {
   key: string
   machine?: string
@@ -250,11 +250,12 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
     group.push({ entry: row, depth })
     grouped.set(board.id, group)
   }
+  const membershipKnown=list.loaded&&!list.problem&&boards.every(board=>board.archived_at||Array.isArray(board.members))
   const shown = new Set<string>()
   return <>
     {rows.map(row => {
       const b = placement.get(row.id)?.board
-      if (!b) return row.render()
+      if (!b) return row.render(undefined,row.actor&&membershipKnown?null:undefined)
       if (shown.has(b.id)) return null
       shown.add(b.id)
       const unread = unreadFor(source, b)
@@ -281,7 +282,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
           const lead = actor?.id === b.lead
           return entry.render({ lead, depth,
             avatar: sessionBoardAvatar(actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas),
-            branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) })
+            branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) }, actor&&membershipKnown?assigned.get(actor.id)?.name??null:undefined)
         })}</ul>
       </li>
     })}

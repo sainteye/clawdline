@@ -364,7 +364,7 @@ export function SessionsPage({
                 })}
                 rows={drawn.map(r => ({ id: r.id, parent: parents.get(r.id),
                   actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id, r.persona, r.icon),
-                  render: board => <Row boardLead={board?.lead} boardAvatar={board?.avatar}
+                  render: (board, boardName) => <Row boardLead={board?.lead} boardAvatar={board?.avatar} boardName={boardName}
                   key={L.selectionKey(r)}
                   row={r}
                   depth={board?.depth ?? depths.get(r.id) ?? 0}

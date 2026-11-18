@@ -146,13 +146,6 @@ func baseConsoleBounds() []Entry {
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 		},
 		{
-			// MEMORY_TURNS in realtime/copilot-memory.ts: the lines of earlier
-			// voice copilot calls this browser keeps for the next call. The
-			// oldest is dropped; none older than three days is kept.
-			Name: "console.copilot_memory_turns", Class: UserInput, Unit: Rows,
-			Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
-		},
-		{
 			// LIST_LATEST_READS in realtime/copilot-tools.ts: how many group
 			// Sessions' newest words one Session list carries, one transcript
 			// read each. Further Sessions are listed without them.

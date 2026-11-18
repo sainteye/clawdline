@@ -11974,8 +11974,6 @@
   "capacityRow.voice.copilot_live_instructions_bytes.full": "The call does not start; shorten your extra instructions.",
   "capacityRow.voice.copilot_live_body_bytes.what": "How large a GPT-Live call start may be in all, offer and instructions together.",
   "capacityRow.voice.copilot_live_body_bytes.full": "The call does not start; shorten your extra instructions.",
-  "capacityRow.console.copilot_memory_turns.what": "How many lines of earlier voice copilot calls this browser keeps, so the next call can pick up where the last one ended.",
-  "capacityRow.console.copilot_memory_turns.full": "The oldest line is forgotten. Lines older than three days are forgotten too, and Settings can forget them all.",
   "capacityRow.console.copilot_list_transcript_reads.what": "How many Sessions the voice assistant reads for one requested group summary. Listing names and states reads no transcripts.",
   "capacityRow.console.copilot_list_transcript_reads.full": "This is the default for a background group-summary task. Calls use separate batches of two or three and can prepare one next batch. Unread overflow is explicit; listing names and states never reads transcripts.",
   "capacityRow.console.copilot_recap_pages.what": "How far back the voice copilot reads a Session's conversation to tell you what it completed.",
@@ -12765,7 +12763,7 @@
   "capacityRow.bots.follow_up_seconds.full": "A deadline outside that range is refused.",
   "capacityRow.bots.follow_up_pending.full": "Cancel one waiting follow-up before adding another.",
   "transparency.card.persistent-bot-routines-events.how": "The owned MCP endpoint supplies routine management, routine_hook, rotate_routine_hook, follow_up and cancel_follow_up. Up to 20 OR triggers retain intervals, Unix-millisecond once times, five-field cron with explicit IANA zones, webhook delivery or source/event/filter matches. Hooks have no clock deadline. The local hook route authenticates original bytes before matching, treats unknown IDs and wrong keys identically, ignores authenticated ping, refuses paused/busy work, and durably returns the first run for a repeated delivery ID. Hook keys are generated locally, separately stored, rotated with edit receipts and excluded from exports. Viewing a key requires current human write authority or the owning Bot execution. Event data and earlier progress are JSON quoted as untrusted data. Ordinary routines retain main/run/main isolation. A follow-up resumes the main conversation, permits 1–43200 minutes and 500 estimated tokens, and is bounded by 10 waiting reminders and 24 consecutive continuations. Stop drops due reminders while retaining future ones; forget withdraws reminders and blocks stale events. The human routine editor also exposes API75 webhook and filtered-event controls. Key retrieval is explicit and requires current interactive write authority; confirmed replacement journals the original command, fence and expected revision before transport, and an uncertain response offers only explicit replay of that command. Keys stay in the mounted key panel and are cleared or hidden on close, authority loss or source-scope change. Read-only devices can inspect schedule metadata and history. Future enabled follow-ups appear separately; history retains actual delivery and retry-wake facts without a manual unknown-run retry. Human follow-up cancellation has no current API. The private Cloud public-hook enrollment and relay remain a separate integration; the human key response carries only a local relative address.",
-  "next.copilotQuestions": "Ways to ask",
+  "next.copilotQuestions": "Quick commands",
   "next.copilotQuestionsHint": "Choose a Session, then tap a question to send it. You can say the same words aloud next time.",
   "next.copilotQuestionTarget": "Ask about",
   "next.copilotQuestionChoose": "Choose a Session",
@@ -13277,5 +13275,10 @@
   "projectAssistants.memoryNoteHint": "The name and summary enter this Bot’s memory index. The body is read only when requested.",
   "projectAssistants.memoryShortFacts": "Remember a short fact",
   "projectAssistants.memoryRefresh": "Refresh memory",
-  "next.copilotCallContent": "Call content"
+  "next.copilotCallContent": "Call content",
+  "next.copilotCallUsage": "{duration} · {cost}",
+  "next.copilotCallUsageUnpriced": "{duration} · at least {cost}",
+  "next.sessionBoardAffiliation": "Board: {name}",
+  "next.sessionBoardUnassigned": "No message board",
+  "next.copilotHistoryBoards": "Read Session message boards"
 }

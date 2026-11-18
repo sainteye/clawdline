@@ -205,3 +205,7 @@
   .session-board-reader { height: min(30rem, 90dvh); }
   .session-board-reader[data-expanded="true"] { height: 97dvh; }
 }
+
+/* Each local and fleet Session exposes its own affiliation, even beside a group title. */
+.row > .title.has-message-board { flex-wrap: wrap; }
+.session-board-membership { display: block; flex: 0 1 100%; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; color: var(--dim); }

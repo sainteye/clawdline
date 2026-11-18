@@ -99,8 +99,8 @@ export const LIVE_BACKEND_FLOW = `# GPT-Live 的做法（優先於上面的規�
 - 使用者要某個 Session 的「最新狀況」「最新摘要」「再看一次」時，直接呼叫一次 get_session_summary 並帶 fresh: true，不要先讀 get_session_updates 再讀摘要：讀兩次會讓他多等二十秒以上，而且只有摘要會立刻講給他聽。他問的是「後來做了什麼、有什麼新進展」時才用 get_session_updates。
 - 每查完一個 Session，系統會立刻把它的摘要交給語音模型先講給使用者聽，你同時繼續查下一個。所以你的最後回覆不要把查過的 Session 再逐一重講：只補還沒講到的、要使用者決定的事，或一句整體結論；都講過了就只寫一句簡短收尾。`
 
-export function liveBackendUpdate(memory = '', snapshot = '', options: CallOptions = {}, backendModel = LIVE_BACKEND_MODEL): Record<string, unknown> {
-  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), LIVE_BACKEND_FLOW, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+export function liveBackendUpdate(snapshot = '', options: CallOptions = {}, backendModel = LIVE_BACKEND_MODEL): Record<string, unknown> {
+  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), LIVE_BACKEND_FLOW, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
     .filter(Boolean).join('\n\n')
   return {
     type: 'session.update',

@@ -25,7 +25,6 @@ import { ACTION_STATUS_GUIDANCE, callProgress, callWorkEvidence, deliveryQuestio
 import { CallMeter } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
 import { COPILOT_TOOLS, MACHINE_RECAP_MS, FRESH_RECAP_SECONDS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps, type CopilotSessionRow } from './copilot-tools.js'
-import { memorySection, parseMemory, remember, current, type MemoryTurn } from './copilot-memory.js'
 import { addUsage, emptyCost, questionAnalysisUSD, type CallCost } from './copilot-cost.js'
 import { fleetOnThisPage, machinesOnThisPage, openDevStackOnThisPage, openOnThisPage, titleSavedOnThisPage, openSnippetsOnThisPage } from './copilot-open.js'
 import { nextWord } from '../next-strings.js'
@@ -57,8 +56,9 @@ export interface RealtimeCopilotState {
   logs: CopilotLogItem[]
   /** This call's running cost, kept after it ends until the next one starts. */
   cost?: CallCost
-  /** How many earlier turns this browser remembers (`copilot-memory.ts`). */
-  remembered: number
+  /** This call's local elapsed-time endpoints; never previous-call context. */
+  startedAt?: number
+  endedAt?: number
   /** The last thing the copilot did on the machine, shown for a moment (`actionNotice`). */
   notice?: { text: string; at: number; warn?: boolean }
   /** Every operation in this call, in start order, retained until the next call. */
@@ -70,7 +70,7 @@ export interface RealtimeCopilotState {
 export type RealtimeListener = (state: RealtimeCopilotState) => void
 
 const API_KEY_STORAGE_KEY = 'clawdline.openai.apikey'
-const MEMORY_STORAGE_KEY = 'clawdline.copilot.memory'
+const LEGACY_CALL_MEMORY_KEY = 'clawdline.copilot.memory'
 /** How long a call keeps asking the machine for its briefing. */
 const BRIEFING_POLL_MS = 100000
 /** How long the call's first words wait for the opening Session snapshot. */
@@ -80,22 +80,10 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000)
 }
 
-function readMemory(): MemoryTurn[] {
-  try {
-    return current(parseMemory(localStorage.getItem(MEMORY_STORAGE_KEY)), nowSeconds())
-  } catch {
-    // refusal-ok: a browser that keeps no site data starts every call fresh.
-    return []
-  }
-}
-
-function writeMemory(turns: MemoryTurn[]): void {
-  try {
-    if (turns.length) localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(turns))
-    else localStorage.removeItem(MEMORY_STORAGE_KEY)
-  } catch {
-    // refusal-ok: memory is a convenience; the call works without it.
-  }
+/** Retire the old cross-call transcript key without reading or forwarding it. */
+function clearLegacyCallMemory(): void {
+  try { localStorage.removeItem(LEGACY_CALL_MEMORY_KEY) }
+  catch { /* refusal-ok: unavailable browser storage cannot become call context. */ }
 }
 
 export function captureCopilotKey(scope: Pick<Window, 'location' | 'history'>): void {
@@ -318,17 +306,17 @@ export class RealtimeCopilotClient {
   endQuietMs = { realtime: 800, live: 2500 }
   private liveTicker?: ReturnType<typeof setInterval>
 
+  constructor() { clearLegacyCallMemory() }
+
   private state: RealtimeCopilotState = {
     status: 'disconnected',
     speakingState: 'idle',
     logs: [],
-    remembered: readMemory().length,
   }
-  private memory: MemoryTurn[] = readMemory()
   /** This call's opening Session snapshot, read while the connection is set up. */
   private snapshot: Promise<string> = Promise.resolve('')
   /** What this call's session.update says, kept so a later update can resend it whole. */
-  private call: { memory: string; snapshot: string; options: CallOptions } = { memory: '', snapshot: '', options: {} }
+  private call: { snapshot: string; options: CallOptions } = { snapshot: '', options: {} }
   private briefing: Promise<string | null> = Promise.resolve(null)
   /** When the deciding machine writes Session recaps (docs/session-recaps.md). */
   private recapMode = 'off'
@@ -377,15 +365,16 @@ export class RealtimeCopilotClient {
   private boardVoice = new CopilotSessionBoards()
   private boardVoiceTurn = 0
 
+  private boardTargets():readonly SessionBoardTarget[] {
+    const detail:{targets?:readonly SessionBoardTarget[]}={}
+    document.dispatchEvent(new CustomEvent('clawdline:copilot-session-boards',{detail}))
+    return detail.targets??[]
+  }
   private async boardTool(name: string, args: Record<string, unknown>) {
     const attempt = this.attempt
     const turn = this.boardVoiceTurn
     const speech = { utterance: this.heardNow, turn }
-    const targets = () => {
-      const detail: { targets?: readonly SessionBoardTarget[] } = {}
-      document.dispatchEvent(new CustomEvent('clawdline:copilot-session-boards', { detail }))
-      return detail.targets ?? []
-    }
+    const targets = () => this.boardTargets()
     try {
       return name === 'prepare_session_board'
         ? await this.boardVoice.prepare(args, { rows: () => readRows(this.toolDeps()), targets,
@@ -401,6 +390,7 @@ export class RealtimeCopilotClient {
   private toolDeps(): ToolDeps {
     const call=this.journalCall
     return {
+      boardTargets:()=>this.boardTargets(),
       observe:spec=>this.callObserving&&call===this.journalCall?this.observeOperation(spec):{id:'stale-call',end:()=>{}},
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -485,7 +475,7 @@ export class RealtimeCopilotClient {
       if (change.speed !== undefined && this.dc?.readyState === 'open') this.dc.send(JSON.stringify(livePacingUpdate(this.call.options)))
     }
     else if (this.dc && this.dc.readyState === 'open') {
-      this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+      this.dc.send(JSON.stringify(adjustEvent(this.call.snapshot, this.call.options)))
     }
     try {
       const res = await fetch('/v1/settings/copilot', {
@@ -603,7 +593,6 @@ export class RealtimeCopilotClient {
       this.questionTarget = selected
       this.focus = selected.id
       this.doneSinceHeard.clear()
-      this.keep('user', request.text)
       this.journal('heard', request.text, { source: 'question_menu', question: id })
       this.updateState({ lastTranscript: request.text })
       if (this.live) {
@@ -623,7 +612,7 @@ export class RealtimeCopilotClient {
     this.call.options = { ...this.call.options, briefing: text }
     // Only the instructions and speed: the call has spoken by now, and its voice is fixed.
     if (this.live) this.sendLiveContext()
-    else this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    else this.dc.send(JSON.stringify(adjustEvent(this.call.snapshot, this.call.options)))
     this.addLog('info', nextWord('copilotLogBriefingSent'))
   }
   private model = 'gpt-realtime-mini'
@@ -804,10 +793,9 @@ export class RealtimeCopilotClient {
       : Promise.reject(new DOMException('This browser offers no microphone.', 'NotSupportedError'))
     microphone.catch(() => undefined)
 
-    this.memory = readMemory()
     // A fresh call: nothing of the last one's options, only where this one
     // was placed from, and that Session is the one under discussion.
-    this.call = { memory: '', snapshot: '', options: { origin } }
+    this.call = { snapshot: '', options: { origin } }
     this.focus = origin?.id
     this.questionTarget=undefined;this.questionContext=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
@@ -831,7 +819,7 @@ export class RealtimeCopilotClient {
     // The settings of the machine that will hold the call (a Mac when there is one), not the page's (`voice-call.ts`).
     const workspaceSettings = fetch('/v1/settings/copilot', { headers: { [VOICE_CALL_HEADER]: '1' } }).then(async res=>res.ok?await res.json():null).catch(()=>null)
     this.snapshot = sessionsSnapshot(this.toolDeps()).catch(() => '')
-    this.updateState({ status: 'connecting', connectionReady:false, connectionPhase:undefined, engine:undefined, error: undefined, toolCallLog: undefined, remembered: this.memory.length })
+    this.updateState({ status: 'connecting', connectionReady:false, connectionPhase:undefined, engine:undefined, error: undefined, toolCallLog: undefined, cost: undefined, startedAt: undefined, endedAt: undefined })
     this.connectionStage('settings')
     this.addLog('info', nextWord('copilotLogStarting'))
     if (meterRefused) this.addLog('info', nextWord('copilotLogNoMeter', { reason: meterRefused }))
@@ -884,7 +872,7 @@ export class RealtimeCopilotClient {
         grant = answered
       }
       this.recapMode = grant.session_recaps === 'background' || grant.session_recaps === 'on_demand' ? grant.session_recaps : 'off'
-      this.call = { memory: '', snapshot: '', options: { workEnabled: managed, eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
+      this.call = { snapshot: '', options: { workEnabled: managed, eagerness: grant.eagerness, voice: grant.voice, speed: grant.speed, brief: grant.brief, extra: grant.extra_instructions, origin: this.call.options.origin } }
       // The briefing takes the machine's assistant 8-15 s; the call does not wait for it.
       // The briefing is the deciding machine's own Sessions; on a page showing
       // several machines the call reads every machine's list instead.
@@ -1001,9 +989,9 @@ export class RealtimeCopilotClient {
       check()
 
       this.connectionStage('configuration')
-      this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model) })
-      this.addLog('info', nextWord('copilotLogConnected'))
       this.connectedAt = Date.now()
+      this.updateState({ status: 'connected', speakingState: 'listening', cost: emptyCost(this.model), startedAt: this.connectedAt, endedAt: undefined })
+      this.addLog('info', nextWord('copilotLogConnected'))
     } catch (err) {
       // A call that did not start keeps no microphone, even one granted late.
       void microphone.then((stream) => { if (stream !== this.mediaStream) for (const track of stream.getTracks()) track.stop() }, () => undefined)
@@ -1071,12 +1059,10 @@ export class RealtimeCopilotClient {
     clearTimeout(timer)
     if (this.dc !== dc || attempt !== this.attempt || dc.readyState !== 'open') return
     this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
-    const section = memorySection(this.memory, nowSeconds())
-    if (section) this.addLog('info', nextWord('copilotLogMemory', { count: this.memory.length }))
-    this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
+    this.call = { ...this.call, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     clearTimeout(this.configurationTimer)
     if(!this.state.connectionReady)this.configurationTimer=setTimeout(()=>{if(this.attempt===attempt&&this.dc===dc&&!this.state.connectionReady){this.disconnect();this.updateState({status:'error',error:nextWord('copilotConfigFailed')})}},WORK_REQUEST_MS)
-    this.dc.send(JSON.stringify(sessionUpdateEvent(section, snapshot, this.call.options)))
+    this.dc.send(JSON.stringify(sessionUpdateEvent(snapshot, this.call.options)))
     const origin = this.call.options.origin
     this.narrator.setReady(this.state.connectionReady===true)
     if (origin && !this.personSpoke) await this.prepareHandover(origin)
@@ -1104,7 +1090,7 @@ export class RealtimeCopilotClient {
       void this.openFromOrigin(true)
       return
     }
-    this.dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+    this.dc.send(JSON.stringify(adjustEvent(this.call.snapshot, this.call.options)))
     if (this.state.speakingState === 'speaking' || this.state.speakingState === 'thinking') this.dc.send(JSON.stringify({ type: 'response.cancel' }))
     void this.prepareHandover(origin)
   }
@@ -1131,7 +1117,7 @@ export class RealtimeCopilotClient {
       // a send does not use an id the tools refuse (2026-11-13).
       if (targetID && targetID !== origin.id && this.call.options.origin === origin) {
         this.call.options = { ...this.call.options, origin: { ...origin, id: targetID } }
-        dc.send(JSON.stringify(adjustEvent(this.call.memory, this.call.snapshot, this.call.options)))
+        dc.send(JSON.stringify(adjustEvent(this.call.snapshot, this.call.options)))
       }
       for (const log of logs) this.addLog(log.level, log.text)
       this.journal('tool', 'opening_handover', { args: JSON.stringify({ session_id: origin.id }), ms: performance.now() - started, answer: output.slice(0, 1500) })
@@ -1178,7 +1164,7 @@ export class RealtimeCopilotClient {
     this.narrator.event(event.type,String(event.item_id||''))
     switch (event.type) {
       case 'session.updated': {
-        const expected=(sessionUpdateEvent('', '',this.call.options) as {session:{tools:{name:string}[]}}).session.tools.map(tool=>tool.name).sort().join('|')
+        const expected=(sessionUpdateEvent('',this.call.options) as {session:{tools:{name:string}[]}}).session.tools.map(tool=>tool.name).sort().join('|')
         const actual=Array.isArray(event.session?.tools)?event.session.tools.map((tool:{name:string})=>tool.name).sort().join('|'):''
         if(!this.state.connectionReady&&actual===expected){
           clearTimeout(this.configurationTimer);this.configurationTimer=undefined
@@ -1242,7 +1228,6 @@ export class RealtimeCopilotClient {
           this.boardVoice.heard(this.heardNow, this.boardVoiceTurn)
           if(this.observeEndIntent(event.transcript))this.executeEndIntent()
           this.updateState({ lastTranscript: event.transcript })
-          this.keep('user', event.transcript)
           if(this.call.options.workEnabled) {
             const attempt=this.attempt,dc=this.dc,call=this.journalCall
             const id=String(event.item_id||crypto.randomUUID())
@@ -1295,7 +1280,6 @@ export class RealtimeCopilotClient {
         if(this.reportPlaybackEnded)this.sessionReports.played(this.spokenSessions.played())
         if(event.response?.status==='completed'&&this.batchProposal&&spoken&&batchSpoken(spoken,this.batchProposal))this.batchCandidate=this.batchProposal
         if(this.lastRead?.input===input && spoken)this.lastRead.spoken=spoken
-        if (spoken) this.keep('assistant', spoken)
         if (spoken) this.journal('said', spoken)
         // Said it did something the machine never confirmed: say so on screen,
         // and have the copilot correct itself before the person relies on it.
@@ -1322,20 +1306,6 @@ export class RealtimeCopilotClient {
         await this.handleToolCall(event)
         break
     }
-  }
-
-  private keep(role: MemoryTurn['role'], text: string) {
-    this.memory = remember(this.memory, role, text, nowSeconds())
-    writeMemory(this.memory)
-    this.updateState({ remembered: this.memory.length })
-  }
-
-  /** Forget every earlier call on this browser. */
-  forgetMemory() {
-    this.memory = []
-    writeMemory([])
-    this.updateState({ remembered: 0 })
-    this.addLog('info', nextWord('copilotLogForgot'))
   }
 
   private async captureFocus(id:string|readonly string[]|undefined,machine?:string) {
@@ -1563,10 +1533,10 @@ export class RealtimeCopilotClient {
     } finally {this.pendingTools.delete(event.call_id);this.narrator.toolFinished(event.call_id);this.updateState({})}
   }
 
-  /** The backend's instructions with this call's snapshot, memory, briefing and focus, sent again whenever one of them changes. */
+  /** The backend's instructions with this call's snapshot, briefing and focus, sent again whenever one of them changes. */
   private sendLiveContext() {
     if (!this.live || !this.dc || this.dc.readyState !== 'open') return
-    this.dc.send(JSON.stringify(liveBackendUpdate(this.call.memory, this.call.snapshot, this.call.options)))
+    this.dc.send(JSON.stringify(liveBackendUpdate(this.call.snapshot, this.call.options)))
   }
 
   /** After `session.started`: the backend gets its instructions and tools, then the call greets once. */
@@ -1577,7 +1547,6 @@ export class RealtimeCopilotClient {
     clearTimeout(timer)
     if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') return
     this.addLog(snapshot ? 'info' : 'error', nextWord(snapshot ? 'copilotLogSnapshot' : 'copilotLogNoSnapshot'))
-    const section = memorySection(this.memory, nowSeconds())
     // The Session the call was placed from, as the tools list it. On 所有機器
     // the page names it by its raw id ("%7") while the tools list
     // "fleet:<machine>:%257"; a Realtime call resolves it in its opening
@@ -1592,7 +1561,7 @@ export class RealtimeCopilotClient {
         this.call.options = { ...this.call.options, origin: { ...origin, id: listed.id } }
       }
     }
-    this.call = { ...this.call, memory: section, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
+    this.call = { ...this.call, snapshot, options: { ...this.call.options, language: consoleLanguage() } }
     this.sendLiveContext()
     if(!this.state.connectionReady)this.meter.connected?.()
     this.updateState({ connectionReady: true })
@@ -1701,6 +1670,7 @@ export class RealtimeCopilotClient {
       case 'session.started':
         this.addLog('info', nextWord('copilotLogConnected'))
         this.connectedAt = Date.now()
+        this.updateState({startedAt:this.connectedAt,endedAt:undefined})
         // The call's length and cost are shown from the start and move every second.
         this.liveStarted = Date.now()
         clearInterval(this.liveTicker)
@@ -1927,6 +1897,7 @@ export class RealtimeCopilotClient {
 
     this.updateState({
       status: 'disconnected',
+      endedAt: Date.now(),
       speakingState: 'idle',
       lastAssistantSpeech: undefined,
       lastTranscript: undefined,

@@ -10,6 +10,7 @@ import {realtimeCopilot} from '../../src/realtime/realtime-copilot.js'
 import {emptyCost} from '../../src/realtime/copilot-cost.js'
 
 const lang=new URLSearchParams(location.search).get('lang')==='en'?'en':'zh-Hant'
+document.documentElement.lang=lang
 const words=await(await fetch(`/catalogs/${lang}.json`)).json()
 activateCatalog(words,lang);await loadStrings(async()=>words)
 const nativeFetch=window.fetch.bind(window)
@@ -47,14 +48,32 @@ client.toolDeps=()=>({observe:spec=>client.observeOperation(spec),sleep:async()=
  if(path==='/v1/voice/copilot-recap'){if(!released)await held;const id=JSON.parse(String(init?.body)).session;return Response.json({recap:'Fixture summary',current:true,at:Date.now()/1000,model:id==='fixture-1'?'kept':'codex-fork'})}
  return Response.json({rows:[],items:[]})
 }})
-client.updateState({status:'connected',connectionReady:true,engine,speakingState:'listening',lastTranscript:'請介紹這些 Session。',lastAssistantSpeech:'這是本機假資料驗收，不會建立語音連線。',cost:{...emptyCost('fixture'),responses:1}})
+client.updateState({status:'connected',connectionReady:true,engine,speakingState:'listening',lastTranscript:'請介紹這些 Session。',lastAssistantSpeech:'這是本機假資料驗收，不會建立語音連線。',startedAt:Date.now()-123000,cost:{...emptyCost('fixture'),priced:true,usd:0.093,responses:1}})
 
-if(new URLSearchParams(location.search).has('stress'))client.updateState({remembered:3,lastAssistantSpeech:'This is the complete message read aloud for conversational confirmation. '.repeat(40),cost:{...emptyCost('fixture'),responses:1,live:{seconds:123,backendUSD:0},usd:0}})
+if(new URLSearchParams(location.search).has('stress'))client.updateState({lastAssistantSpeech:lang==='zh-Hant'?'這段是已確認的完整訊息，僅用於本機驗證通話版面。'.repeat(60):'This is the complete message read aloud for conversational confirmation. '.repeat(40),cost:{...emptyCost('fixture'),priced:true,responses:1,live:{seconds:123,billedSeconds:123,backendUSD:0},usd:0.093}})
 
 function Fixture(){
- const [open,setOpen]=useState(true),[result,setResult]=useState('Ready')
+ const [open,setOpen]=useState(true),[result,setResult]=useState('Ready'),[controls,setControls]=useState(true)
  const run=(action:()=>unknown)=>{try{void Promise.resolve(action()).catch(error=>setResult(String(error)))}catch(error){setResult(String(error))}}
- const validate=()=>{
+ const validateMenu=()=>{
+  const panel=document.querySelector('.copilot-questions-panel')
+  if(!panel)throw Error('Quick command panel did not open')
+  const rect=panel.getBoundingClientRect(),actions=document.querySelector('.realtime-actions')!.getBoundingClientRect()
+  if(rect.left<0||rect.right>innerWidth+1||rect.top<0||rect.bottom>actions.top+1)throw Error('Command panel overflows the screen or call controls')
+  setResult('PASS · quick commands open within the screen · call controls remain clear · provider calls 0')
+ }
+ const validateSimple=()=>{
+   if(document.querySelector('.realtime-desc,.realtime-memory-row,.realtime-forget-btn,.realtime-logs-container,.copilot-processing-sounds,.copilot-progress'))throw Error('Removed call information is still shown')
+   const status=document.querySelector('.realtime-status-label');if(status&&getComputedStyle(status).display!=='none')throw Error('Connected call duplicates its state text')
+   const history=document.querySelector('.copilot-tool-history')!,quick=history?.querySelector('.copilot-questions-toggle')!
+   if(!quick)throw Error('Quick commands are not beside the tool history')
+   if(history.querySelector('.copilot-questions-panel'))throw Error('The command panel should collapse after Escape')
+   if(quick.getBoundingClientRect().left<=history.querySelector('strong')!.getBoundingClientRect().left)throw Error('Quick commands must be on the right')
+   const cost=document.querySelector('.realtime-cost-row')!;if(!cost||!cost.textContent?.includes('US$')||!/[0-9]+:[0-9]{2}/.test(cost.textContent??''))throw Error('Keep call duration and amount for both engines')
+   if(cost.querySelector('summary')||cost.textContent?.includes('GPT-Live'))throw Error('Usage still has extra information')
+   setResult('PASS · compact call · quick commands on the right · duration and amount · no remembered-call UI · provider calls 0')
+  }
+  const validate=()=>{
   const body=document.querySelector('.realtime-content')!;body.scrollTop=body.scrollHeight
   client.flushJournal()
   const records=client.state.tools??[]
@@ -66,7 +85,7 @@ function Fixture(){
   const saved=journal.flatMap((batch:any)=>batch.entries).filter((entry:any)=>entry.text==='call_tool_operation')
   if(saved.length!==records.filter(row=>row.outcome!=='running').length)throw Error('Journal and visible history differ')
   const history=document.querySelector('.copilot-tool-history')!
-  if(history.querySelector('details, summary'))throw Error('Tool history must not use disclosure triangles')
+  if(history.querySelector('.copilot-tools-trail details, .copilot-tools-trail summary'))throw Error('Tool history must not use disclosure triangles')
   const chips=history.querySelectorAll('.copilot-tools-trail > li')
   if(chips.length!==records.length)throw Error('Every invocation must retain its capsule')
   if([...chips].map(chip=>chip.getAttribute('data-operation-id')).join()!==[...records].reverse().map(row=>row.id).join())throw Error('Newest invocations must appear first regardless of completion order')
@@ -85,7 +104,7 @@ function Fixture(){
   setResult(`PASS · ${records.length} records · 3 summaries · 3 transcripts · existing summary · correct placement · ${journal.length} journal batches · provider calls 0`)
  }
  return <>
-  <div style={{position:'fixed',top:0,left:0,right:0,zIndex:99999,background:'#fff',color:'#111',padding:4,fontSize:11}}>
+  {controls&&<div style={{position:'fixed',top:0,left:0,right:0,zIndex:99999,background:'#fff',color:'#111',padding:4,fontSize:11}}>
    <button onClick={()=>run(()=>client.prepareListReport())}>開始背景讀取</button>
    <button onClick={()=>release()}>完成背景讀取</button>
    <button onClick={()=>run(()=>client.runLiveTool('fixture-model-read','list_sessions','{}'))}>助理查詢清單</button>
@@ -94,9 +113,9 @@ function Fixture(){
     else{await client.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'fixture-next'});await client.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped'})}
    })}>新的一句話</button>
    <button onClick={()=>setOpen(value=>!value)}>收合／展開</button>
-   <button onClick={()=>run(validate)}>驗證畫面</button>
-   <output style={{display:'block'}}>{result}</output>
-  </div>
+   <button onClick={()=>run(validate)}>驗證畫面</button><button onClick={()=>run(validateSimple)}>驗證精簡</button><button onClick={()=>run(validateMenu)}>驗證選單</button>
+   <button onClick={()=>setControls(false)}>隱藏驗收列</button><output style={{display:'block'}}>{result}</output>
+  </div>}
   <RealtimeCopilotModal open={open} onClose={()=>setOpen(false)} onMinimize={()=>setOpen(false)}/>
  </>
 }

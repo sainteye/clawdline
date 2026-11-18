@@ -27,7 +27,7 @@ function fixture(managed, target = origin) {
   const c = new RealtimeCopilotClient()
   fixtures.add(c)
   c.dc = { readyState: 'open', send: text => {const e=JSON.parse(text);sent.push(e);if(e.type==='session.update')queueMicrotask(()=>void c.handleRealtimeEvent({type:'session.updated',session:e.session}))}, close() {} }
-  c.call = { memory: '', snapshot: '', options: { workEnabled: managed, origin: target } }
+  c.call = { snapshot: '', options: { workEnabled: managed, origin: target } }
   c.focus = target?.id
   c.snapshot = Promise.resolve('')
   c.addLog = () => {}
@@ -601,7 +601,7 @@ test('in a call the copilot reads its own length and cost, and hangs up after it
   const c = new RealtimeCopilotClient()
   t.after(() => { clearInterval(c.liveTicker); globalThis.window = oldWindow })
   Object.assign(c, { live: true, attempt: 1, journalCall: '', addLog: () => {}, model: 'gpt-live-1',
-    call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [],
+    call: { snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [],
     dc: { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} } })
   c.state = { ...c.state, status: 'connected', cost: { model: 'gpt-live-1', responses: 0, inputTokens: 0, outputTokens: 0, audioOutTokens: 0, usd: 0.0731, priced: true } }
   c.connectedAt = Date.now() - 95_000
@@ -645,9 +645,9 @@ test('a GPT-Live call configures its backend after start, starts its report, and
   c.state = { ...c.state, status: 'connected' }
   c.journalCall = 'call-live-test'
   c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
-  c.call = { memory: '', snapshot: '', options: {} }
+  c.call = { snapshot: '', options: {} }
   c.snapshot = Promise.resolve('【通話開始時的 Session 快照】 one Session')
-  c.memory = []
+
   c.addLog = () => {}
   c.toolDeps = () => ({
     sleep: async () => {},
@@ -723,10 +723,10 @@ test('a GPT-Live call placed from a Session on every machine\'s list talks about
   c.state = { ...c.state, status: 'connected' }
   c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
   // 2026-11-15: placed from %7 on 所有機器; the tools list it as fleet:<machine>:%257.
-  c.call = { memory: '', snapshot: '', options: { origin: { id: '%7', label: 'Voice realism', machine: 'mac_a' } } }
+  c.call = { snapshot: '', options: { origin: { id: '%7', label: 'Voice realism', machine: 'mac_a' } } }
   c.focus = '%7'
   c.snapshot = Promise.resolve('')
-  c.memory = []
+
   c.addLog = () => {}
   const fleetRow = { machine: 'mac_a', machineName: 'studio-mac', row: { id: '%7', label: 'Voice realism', assistant: 'claude', state: 'working', sessionId: 'conv-547' } }
   c.toolDeps = () => ({ sleep: async () => {}, fleet: async () => [fleetRow, { ...fleetRow, machine: 'linux_b', machineName: 'linux' }], fetch: async () => Response.json({}) })
@@ -745,7 +745,7 @@ test('the sheet\'s toggle places a ringing or live call again on the other voice
   c.start = (origin, engine) => { events.push(['start', origin, engine]) }
   c.disconnect = () => { events.push(['disconnect']) }
   const origin = { id: 'fleet:mac_a:%257', label: 'Voice realism' }
-  c.call = { memory: '', snapshot: '', options: { origin } }
+  c.call = { snapshot: '', options: { origin } }
   c.lastEngine = 'live'
   c.state = { ...c.state, status: 'connecting' }
   c.switchEngine('live')
@@ -776,9 +776,9 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   c.journalCall = 'call-test'
   c.state = { ...c.state, status: 'connected', speakingState: 'idle' }
   c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
-  c.call = { memory: '', snapshot: '', options: {} }
+  c.call = { snapshot: '', options: {} }
   c.snapshot = Promise.resolve('')
-  c.memory = []
+
   c.addLog = () => {}
   c.recapMode = 'background'
   const other = { ...row, id: '%8', label: 'Keyboard fix', recap: { text: 'The keyboard fix is being written.', at: now - 60, current: false } }
@@ -794,7 +794,7 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   // The Session on screen when a call starts is where it starts, not a switch.
   const first = new RealtimeCopilotClient(), firstSent = []
   t.after(() => clearInterval(first.liveTicker))
-  Object.assign(first, { live: true, attempt: 1, journalCall: 'call-first', addLog: () => {}, call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
+  Object.assign(first, { live: true, attempt: 1, journalCall: 'call-first', addLog: () => {}, call: { snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
     state: { ...first.state, status: 'connected' }, dc: { readyState: 'open', send: text => firstSent.push(JSON.parse(text)), close() {} } })
   await first.onScreenChange()
   for (let i = 0; i < 20; i++) await tick()
@@ -805,7 +805,7 @@ test('a GPT-Live call follows the Session opened on screen with its summary', as
   // (a phone call on 2026-11-16 opened Release 2.4 from the list and was told nothing of it).
   const listed = new RealtimeCopilotClient(), listedSent = []
   t.after(() => clearInterval(listed.liveTicker))
-  Object.assign(listed, { live: true, attempt: 1, journalCall: 'call-listed', addLog: () => {}, call: { memory: '', snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
+  Object.assign(listed, { live: true, attempt: 1, journalCall: 'call-listed', addLog: () => {}, call: { snapshot: '', options: {} }, snapshot: Promise.resolve(''), memory: [], toolDeps: c.toolDeps,
     state: { ...listed.state, status: 'connected' }, dc: { readyState: 'open', send: text => listedSent.push(JSON.parse(text)), close() {} } })
   globalThis.location = { hash: '' }
   await listed.onScreenChange()
@@ -868,9 +868,9 @@ test('a GPT-Live call switched to another Session says its summary at once and g
   c.personSpoke = true
   c.state = { ...c.state, status: 'connected', speakingState: 'idle' }
   c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
-  c.call = { memory: '', snapshot: '', options: {} }
+  c.call = { snapshot: '', options: {} }
   c.snapshot = Promise.resolve('')
-  c.memory = []
+
   c.addLog = () => {}
   c.recapMode = 'background'
   const other = { ...row, id: '%8', label: 'Keyboard fix', recap: { text: 'The keyboard fix is being written.', at: now - 1200, current: false } }
@@ -912,10 +912,10 @@ test('a GPT-Live call placed from a Session opens on its summary at once and goe
     c.livePollMs = 1
     c.state = { ...c.state, status: 'connected' }
     c.dc = { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} }
-    c.call = { memory: '', snapshot: '', options: { origin: { id: '%7', label: 'Prepare screenshots' } } }
+    c.call = { snapshot: '', options: { origin: { id: '%7', label: 'Prepare screenshots' } } }
     c.focus = '%7'
     c.snapshot = Promise.resolve('')
-    c.memory = []
+
     c.addLog = () => {}
     c.recapMode = 'background'
     const listed = { ...row, recap: { text: 'Four screenshots were taken.', at: now - keptAge, current: false } }
@@ -1424,4 +1424,32 @@ test('turning processing sounds off still mutes both tool sources',()=>{
   const evidence=f.c.currentWorkEvidence();f.c.currentWorkEvidence=()=>({...evidence,tasks:[{id:'background-work',version:1,status:'running'}]})
   f.c.updateState({})
  }finally{if(before===undefined)delete globalThis.localStorage;else globalThis.localStorage=before}
+})
+
+
+for(const live of [false,true])test(`each call ignores and retires legacy browser conversation memory (live=${live})`,async()=>{
+ const before=globalThis.localStorage,stored=new Map([['clawdline.copilot.memory',JSON.stringify([{role:'user',text:'Legacy call marker',at:Math.floor(Date.now()/1000)}])],['unrelated-setting','keep']]);let reads=0;const writes=[]
+ globalThis.localStorage={getItem:key=>{if(key==='clawdline.copilot.memory')reads++;return stored.get(key)??null},setItem:(key,value)=>{writes.push(key);stored.set(key,value)},removeItem:key=>stored.delete(key)}
+ try{
+  const f=fixture(false,null);f.c.live=live;f.release()
+  assert.equal(reads,0,'old call text must never be loaded')
+  assert.equal(stored.has('clawdline.copilot.memory'),false,'retire only the old voice memory key')
+  assert.equal(stored.get('unrelated-setting'),'keep')
+  if(live)await f.c.configureLive();else await f.c.sendSessionConfiguration()
+  assert.doesNotMatch(JSON.stringify(f.sent),/Legacy call marker|【之前的通話】/)
+  if(live){f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:'Current call text'});f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Current call answer'})}
+  else{await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',transcript:'Current call text'});await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.done',transcript:'Current call answer'})}
+  assert.equal(writes.includes('clawdline.copilot.memory'),false,'captions cannot persist the next call context')
+ }finally{if(before===undefined)delete globalThis.localStorage;else globalThis.localStorage=before}
+})
+
+
+for(const live of [false,true])for(const managed of [false,true])test(`Session-board Lead reads stay immediate in the call (live=${live}, managed=${managed})`,async()=>{
+ const f=fixture(managed,null);f.c.live=live
+ const board={id:'board',project:'/fixture',name:'Delivery board',purpose:'Review',lead:'codex:conversation-seven',summary:'',latest:0,members:[{id:'codex:conversation-seven',label:'Old label'}]}
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path)=>{assert.equal(path,'/v1/sessions');return Response.json({sessions:[row]})},boardTargets:()=>[{label:'Fixture machine',candidates:[],source:{key:'local',writable:false,read:async()=>({boards:[board]}),change:async()=>assert.fail('query cannot write')}}]})
+ const args=JSON.stringify({board:'Delivery board'})
+ const output=live?await f.c.runLiveTool('board-query','get_session_board',args):await f.c.handleToolCall({call_id:'board-query',name:'get_session_board',arguments:args})
+ const answer=JSON.parse(output);assert.equal(answer.board.lead.session_id,row.id);assert.equal(answer.board.lead.label,row.label)
+ assert.equal(voiceWork.state?.tasks?.some(task=>task.tool==='get_session_board')??false,false)
 })

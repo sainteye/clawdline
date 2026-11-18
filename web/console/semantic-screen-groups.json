@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13277,
-  "riskKeys": 5724,
-  "nonRiskCount": 7553,
+  "englishContentKeys": 13280,
+  "riskKeys": 5725,
+  "nonRiskCount": 7555,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 690,
+      "count": 688,
       "sources": [
         null
       ],
@@ -786,8 +786,6 @@
         "capacityRow.console.copilot_live_opening_wait_milliseconds.what",
         "capacityRow.console.copilot_live_update_characters.full",
         "capacityRow.console.copilot_live_update_characters.what",
-        "capacityRow.console.copilot_memory_turns.full",
-        "capacityRow.console.copilot_memory_turns.what",
         "capacityRow.console.copilot_orb_frames_per_second.full",
         "capacityRow.console.copilot_orb_frames_per_second.what",
         "capacityRow.console.copilot_orb_pixel_ratio.full",
@@ -4134,7 +4132,7 @@
     },
     {
       "name": "next / other",
-      "count": 1255,
+      "count": 1259,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4400,6 +4398,8 @@
         "next.copilotCallContent",
         "next.copilotCallFromSession",
         "next.copilotCallTitle",
+        "next.copilotCallUsage",
+        "next.copilotCallUsageUnpriced",
         "next.copilotChooseEngine",
         "next.copilotClose",
         "next.copilotConfiguring",
@@ -4449,6 +4449,7 @@
         "next.copilotGoSettings",
         "next.copilotHangup",
         "next.copilotHistoryBackground",
+        "next.copilotHistoryBoards",
         "next.copilotHistoryCached",
         "next.copilotHistoryCachedCount",
         "next.copilotHistoryCounts",
@@ -4967,6 +4968,7 @@
         "next.secretHandoffReplace",
         "next.secretHandoffSending",
         "next.secretHandoffSubmit",
+        "next.sessionBoardAffiliation",
         "next.sessionBoardArchive",
         "next.sessionBoardArchiveAsk",
         "next.sessionBoardArchived",

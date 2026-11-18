@@ -1,3 +1,6 @@
+// @ts-expect-error -- Node tests load this TypeScript module directly.
+import {readBoardDirectory,boardMembership,querySessionBoards} from './copilot-board-queries.ts'
+import type {SessionBoardTarget} from '../session/SessionBoards.js'
 import type {OperationObserver} from './copilot-history.js'
 // @ts-expect-error -- Node's type-stripping tests resolve the source module.
 import {asksToEndCall,callControlGuidance} from './copilot-call-control.ts'
@@ -59,6 +62,7 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  boardTargets?:()=>readonly SessionBoardTarget[]
   observe?:OperationObserver
   readFailed?:()=>void
   operationParent?:string
@@ -286,6 +290,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 查詢類工具（get_session_summary、get_session_recap、get_session_activity、explain_session_reply、get_session_screen、open_session、get_session_notes）的 session_id，填清單裡那個 Session 的完整名稱（label），一字不差照抄；名稱比 id 不容易填錯。送出、回答、關閉則填清單裡的 id，原樣照填（包含開頭的 % 符號）。還沒查過清單就先呼叫 list_sessions。
 - 使用者問有什麼要他決定時，waiting_you、work_person_needed、未解便條都算要查看的來源，不只終端 waiting。needs_you 是待查清單，不保證其他 Session 的最後回覆沒有提問；便條先讀 get_session_notes，只有摘要卻無目前問題時讀 get_session_summary／explain_session_reply，不能把過去已交付的摘要當新問題，也不能只因狀態 idle 就說不用回答。
 - 使用者問到某個 Session 的內容、進度、結果時，一定先呼叫查詢工具再回答，即使快照裡有它的名稱也一樣；快照只用來回答整體有哪些 Session。講某個 Session 的內容時，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱）時，查詢類工具的 said 照填他稱呼它的原話（session_id 填你認為的那個），工具會依他的原話判斷是哪一個；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
+- 留言板查詢是唯讀操作，不需要排入工作清單。「有哪些留言板」用 list_session_boards；問某個留言板目前的 Lead 用 get_session_board 重新讀取。以穩定身分與本次結果回答，不可從 Session 名稱猜歸屬；同名或讀取失敗時先說明限制。list_sessions 的 message_boards 是留言板歸屬，unavailable 不代表未加入。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
 - 工具回傳 error 就照實說讀不到與原因，不要編造。
 
@@ -696,7 +701,7 @@ export const COPILOT_TOOLS = [
 ] as const
 
 /** Closed immediate read path. Changes stay owned by the durable executor. */
-const IMMEDIATE_READS = new Set(['get_call_status','get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
+const IMMEDIATE_READS = new Set(['list_session_boards','get_session_board','get_call_status','get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
 export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
   return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
 }
@@ -704,7 +709,7 @@ export function immediateVoiceRead(name:string,args:Record<string,unknown>):bool
 const IMMEDIATE_ACTIONS = new Set(['open_session','open_snippets','end_call','send_message_to_session','answer_session_question'])
 export function immediateVoiceAction(name:string):boolean { return IMMEDIATE_ACTIONS.has(name) }
 export const CALL_WORK_TOOLS = [
-  ...SESSION_BOARD_TOOLS,
+  ...SESSION_BOARD_TOOLS.filter(tool=>!IMMEDIATE_READS.has(tool.name)),
   ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)||IMMEDIATE_ACTIONS.has(tool.name)),
   {type:'function',name:'get_voice_work',description:'Read the saved voice requests, pending tasks and planning errors. Use this before discussing work progress or retrying a failed request.',parameters:{type:'object',properties:{}}},
   {type:'function',name:'queue_voice_work',description:'Submit saved input IDs as continuing work when the person asks for an action, a multi-step task, or ongoing tracking. Do not queue an ordinary question that immediate read tools can answer. Use only the exact input IDs supplied by the application; never invent or rewrite the request. Mutations still require confirmation in the work list.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
@@ -822,14 +827,13 @@ export function instructionsFor(brief = true, language = ''): string {
   return rules.replace(CHINESE_RULE, languageRule(language))+'\n\n'+callControlGuidance(language)
 }
 
-export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
+export function sessionUpdateEvent(snapshot = '', options: CallOptions = {}): Record<string, unknown> {
   return {
     type: 'session.update',
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
-      // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -1467,6 +1471,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     logs.push({ level: 'error', text: read.error })
     return { error: read.error }
   }
+  const boardDirectory=await readBoardDirectory(deps)
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
   // Dispatched children are their roots' helpers: counted once, never reported
   // one by one (asked for on 2026-11-15).
@@ -1478,6 +1483,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
   const idle = rows.filter((r) => !needs.includes(r) && !working.includes(r) && !done.includes(r))
   const brief = (r: CopilotSessionRow) => ({
     id: r.id, label: r.label, assistant: r.assistant,
+    ...boardMembership(r,boardDirectory),
     ...recapFields(r.recap, now),
     ...(r.delivered ? { delivered: clip(r.delivered, LIST_LATEST_CHARS) } : {}),
     ...(r.notes ? { notes: r.notes } : {}),
@@ -1500,7 +1506,7 @@ async function listSessions(deps: ToolDeps, logs: ToolLog[]): Promise<unknown> {
     // Read live with gpt-realtime-mini on 2026-11-12: asked what an idle
     // Session was doing, the copilot once invented its work from the name
     // alone. The warning sits beside the names it is about.
-    ...(children.length ? { children: children.map((r) => ({ id: r.id, label: r.label, state: r.state, for: read.rows.find((p) => p.id === r.parent)?.label ?? '' })), children_note: CHILDREN_NOTE } : {}),
+    ...(children.length ? { children: children.map((r) => ({ id: r.id, label: r.label, state: r.state, ...boardMembership(r,boardDirectory), for: read.rows.find((p) => p.id === r.parent)?.label ?? '' })), children_note: CHILDREN_NOTE } : {}),
     content_not_read: CONTENT_NOT_READ,
   }
   // `summary` is what the model reads; the screen's English line counts the same groups.
@@ -2829,8 +2835,8 @@ function endCallTool(deps: ToolDeps, logs: ToolLog[], said: string): unknown {
  * rebuilt for the new answer length, and the playback rate. Never the voice,
  * which a call cannot change once it has spoken.
  */
-export function adjustEvent(memory: string, snapshot: string, options: CallOptions): Record<string, unknown> {
-  const full = sessionUpdateEvent(memory, snapshot, options) as { session: { instructions: string; audio: { output: { speed: number } } } }
+export function adjustEvent(snapshot: string, options: CallOptions): Record<string, unknown> {
+  const full = sessionUpdateEvent(snapshot, options) as { session: { instructions: string; audio: { output: { speed: number } } } }
   return { type: 'session.update', session: { type: 'realtime', instructions: full.session.instructions,
     audio: { output: { speed: full.session.audio.output.speed } } } }
 }
@@ -3151,6 +3157,7 @@ async function executeCopilotTool(name: string, argsJson: string, deps: ToolDeps
   let result: unknown
   try {
     if (name === 'get_status_briefing') result = await statusBriefing(deps, logs)
+    else if (name === 'list_session_boards' || name === 'get_session_board') result = await querySessionBoards(name,args,deps,()=>readRows(deps))
     else if (name === 'list_sessions') result = await listSessions(deps, logs)
     else if (name === 'clawdline_help') result = await clawdlineHelp(deps, logs, str(args.question), Array.isArray(args.sections) ? args.sections.map(str) : [])
     else if (name === 'get_devstack_links') result = await devstackLinks(deps, logs, str(args.project), args.open === true)

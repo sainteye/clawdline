@@ -11974,8 +11974,6 @@
   "capacityRow.voice.copilot_live_instructions_bytes.full": "通話不會開始；請縮短附加指示。",
   "capacityRow.voice.copilot_live_body_bytes.what": "GPT-Live 通話開始時，連線資訊加指示合起來最大多少。",
   "capacityRow.voice.copilot_live_body_bytes.full": "通話不會開始；請縮短附加指示。",
-  "capacityRow.console.copilot_memory_turns.what": "這個瀏覽器保留多少句之前語音副駕駛通話的內容，讓下一通電話能接著上次講。",
-  "capacityRow.console.copilot_memory_turns.full": "最舊的那句會被忘掉；超過三天的也會忘掉，設定頁也可以一次全部忘記。",
   "capacityRow.console.copilot_list_transcript_reads.what": "語音助理準備一次群組摘要時，最多讀取幾個 Session；列出名稱與狀態不讀逐字稿。",
   "capacityRow.console.copilot_list_transcript_reads.full": "這是背景群組摘要工作的預設範圍；通話另以每段 2 至 3 個介紹，並可準備一個下一批。超出範圍會明示未讀，列名稱與狀態不讀逐字稿。",
   "capacityRow.console.copilot_recap_pages.what": "語音副駕駛回顧一個 Session 完成了什麼時，最多往回讀多少紀錄。",
@@ -12765,7 +12763,7 @@
   "capacityRow.bots.follow_up_seconds.full": "超出可設定時間時拒絕。",
   "capacityRow.bots.follow_up_pending.full": "先取消一筆等待中的追蹤，才能新增。",
   "transparency.card.persistent-bot-routines-events.how": "專屬 MCP 入口提供排程管理、routine_hook、rotate_routine_hook、follow_up 與 cancel_follow_up。最多 20 個 OR 觸發條件可保留週期、Unix 毫秒單次時間、含明確 IANA 時區的五欄 cron、webhook 或來源／事件／篩選規則；webhook 與事件不設時鐘期限。本機接收路由先驗證原始位元組，再比對條件；未知 ID 與錯誤金鑰回覆相同，已驗證的 ping 不執行，暫停或忙碌時拒絕，同一 delivery ID 永遠回傳第一次的 run。金鑰在本機產生、獨立儲存、依編輯收據換鑰且不進匯出；只有目前可寫的人或該 Bot 自己的執行可查看。事件與先前進度以 JSON 引用並標為不可信資料。一般排程維持 main／run／main 隔離；後續追蹤續接主對話，可設定 1 至 43,200 分鐘、最多 500 個估計 token，每個 Bot 最多等待 10 筆、連續接續 24 次。停止會撤回到期提醒並保留未來提醒；忘記記憶會撤回提醒並阻擋舊事件。人工排程編輯器另提供 API75 webhook 與事件篩選控制。取得金鑰必須明確操作並具目前有效的互動寫入權限；確認換鑰後，會先儲存原始指令、圍籬與預期版本，再傳送。回覆不明時只能明確重試該筆指令。金鑰僅留在目前金鑰面板，關閉、失去權限或切換來源範圍時清除或隱藏。唯讀裝置可查看排程資料與歷史。未來啟用中的後續提醒分開顯示，歷史呈現實際傳遞與重試喚醒事實，不提供結果不明執行的人工重試。目前沒有人工取消後續提醒的 API。私有 Cloud 公開 webhook 的註冊與 relay 仍需另行整合；人工金鑰回應只含本機相對位址。",
-  "next.copilotQuestions": "常用問法",
+  "next.copilotQuestions": "常用指令",
   "next.copilotQuestionsHint": "選好 Session，點一句問法就送出。下次也可以直接照這樣說。",
   "next.copilotQuestionTarget": "這次要問",
   "next.copilotQuestionChoose": "選擇 Session",
@@ -13277,5 +13275,10 @@
   "projectAssistants.memoryNoteHint": "名稱和摘要會加入這個 Bot 的記憶索引；正文只在要求閱讀時取用。",
   "projectAssistants.memoryShortFacts": "記住簡短資訊",
   "projectAssistants.memoryRefresh": "重新讀取記憶",
-  "next.copilotCallContent": "通話內容"
+  "next.copilotCallContent": "通話內容",
+  "next.copilotCallUsage": "{duration} · {cost}",
+  "next.copilotCallUsageUnpriced": "{duration} · 至少 {cost}",
+  "next.sessionBoardAffiliation": "留言板：{name}",
+  "next.sessionBoardUnassigned": "尚未加入留言板",
+  "next.copilotHistoryBoards": "讀取 Session 留言板"
 }
