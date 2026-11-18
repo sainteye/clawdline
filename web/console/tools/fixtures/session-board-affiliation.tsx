@@ -51,7 +51,7 @@ window.fetch=async(input,init)=>{
 }
 const words=await(await native('/catalogs/'+lang+'.json')).json();activateCatalog(words,lang);await loadStrings(async()=>words)
 const accents=['#715546','#4053b8','#715546','#4053b8']
-const rows=[0,1,2,3].map(i=>({icon:{accent:accents[i],cells:[[accents[i]]]},id:'%'+(i+1),sessionId:'conversation-'+i,assistant:'codex',label:['Current lead','Member','Unassigned','Helper child'][i],title:['Current lead','Member','Unassigned','Helper child'][i],backend:'tmux',state:'idle',cwd:'/fixture/project',agents:[],shells:[]}))
+const rows=[0,1,2,3].map(i=>({icon:{accent:accents[i],cells:[[accents[i]]]},id:'%'+(i+1),sessionId:'conversation-'+i,assistant:'codex',label:['Current lead','Member','Unassigned','Helper child'][i],title:['Current lead','Member','Unassigned','Helper child'][i],backend:'tmux',state:'working',work_state:'working',isClaude:true,line:'Existing task status',activity:{known:true,at:Math.floor(Date.now()/1000)-90},cwd:'/fixture/project',agents:[],shells:[]}))
 publish(rows as never,rows[0].id,'',rows[0].id,[{id:'fixture-helper',state:'briefed',title:'Fixture helper',root:{terminalId:rows[0].id},child:{terminalId:rows[3].id}}] as never)
 let name='Delivery board',lead='codex:conversation-0',offline=false
 const source:SessionBoardSource={key:'affiliation-fixture',writable:false,read:async()=>{if(offline)throw Error('offline');return {boards:[{id:'board',project:'/fixture/project',name,purpose:'Review',lead,summary:'',latest:0,members:rows.slice(0,2).map(row=>({id:'codex:'+row.sessionId,label:row.title}))}]} as never},change:async()=>{throw Error('Fixture refused a write')}}
@@ -61,20 +61,20 @@ function Fixture(){
  const validate=()=>{try{
   const cards=[...document.querySelectorAll<HTMLElement>('.row[data-id]')];if(cards.length!==4)throw Error('Expected four real Session rows')
   for(const [index,row] of rows.entries()){
-   const card=cards.find(card=>card.dataset.id===row.id)!,badge=card.querySelector<HTMLElement>('.session-board-membership')
-   if(offline){if(badge)throw Error('Unavailable membership was shown as known');continue}
+   const card=cards.find(card=>card.dataset.id===row.id)!
+   if(card.querySelector('.session-board-membership,.has-message-board')||card.getAttribute('aria-label')?.includes(name))throw Error('Board membership changes the row')
+   if(!card.querySelector('.who')?.textContent?.includes('codex'))throw Error('The assistant disappeared')
+   if(!card.querySelector('.meta .session-activity')?.textContent?.trim())throw Error('Last activity disappeared')
+   if(!card.querySelector('.state')?.textContent?.includes('Existing task status'))throw Error('Work status disappeared')
    const color=getComputedStyle(card.querySelector('.label')!).color
    if(color!==['rgb(151, 131, 120)','rgb(118, 130, 198)'][index%2])throw Error('Project color changed for '+row.id+': '+color)
-   if(index>=2){if(badge||card.querySelector('.has-message-board'))throw Error('Unassigned Session reserves an affiliation line');continue}
-   if(!badge||!badge.textContent?.includes(name))throw Error('Wrong board affiliation for '+row.id)
-   const a=card.getBoundingClientRect(),b=badge.getBoundingClientRect();if(b.width<=0||b.height<=0||b.left<a.left-1||b.right>a.right+1||b.top<a.top-1||b.bottom>a.bottom+1)throw Error('Membership label overflows its row')
   }
   if(!offline&&cards.find(card=>card.hasAttribute('data-board-lead'))?.dataset.id!==rows[lead.endsWith('1')?1:0].id)throw Error('Lead role did not refresh')
   if(!offline&&cards.find(card=>card.dataset.id===rows[3].id)?.dataset.depth!=='1')throw Error('Helper child lost its grouped depth')
   if(document.documentElement.scrollWidth>innerWidth+1)throw Error('List overflows horizontally: '+document.documentElement.scrollWidth+'/'+innerWidth+'/'+document.documentElement.clientWidth+'; '+[...document.querySelectorAll<HTMLElement>('body *')].filter(node=>node.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(node=>node.tagName+'.'+node.className+':'+node.getBoundingClientRect().right).join(','))
-  setResult('PASS · '+(fleet?'fleet':'local')+' affiliation · '+(offline?'unavailable preserved':'current Lead and unassigned')+' · provider calls 0')
+  setResult('PASS · '+(fleet?'fleet':'local')+' Session rows · '+(offline?'unavailable preserved':'existing fields and current Lead')+' · provider calls 0')
  }catch(error){setResult(String(error))}}
  return <>{controls&&<div style={{position:'fixed',zIndex:99999,background:'#fff',color:'#111',top:0,left:0,right:0}}><button onClick={validate}>驗證留言板</button><button onClick={()=>{lead='codex:conversation-1';refresh()}}>轉移 Lead</button><button onClick={()=>{name=lang==='en'?'Long board name '.repeat(6):'長名稱留言板'.repeat(12);refresh()}}>長留言板名稱</button><button onClick={()=>{offline=true;refresh()}}>模擬離線</button><button onClick={()=>setControls(false)}>隱藏驗收列</button><output style={{display:'block'}}>{result}</output></div>}
- <main className="app" data-view="list" style={{width:'100%',height:'100dvh',display:'flex'}}><ul className="list" style={{width:'100%',maxWidth:340,margin:0,padding:0,listStyle:'none'}}><SessionBoardRows source={source} rows={rows.map(row=>({id:row.id,parent:row.id===rows[3].id?rows[0].id:undefined,actor:sessionBoardActor(row.assistant,row.sessionId,row.title),render:(board,boardName)=>fleet?<ProjectedRow key={row.id} title={row.title} sessionID={row.id} selectionKey={row.id} machineID="fixture" machineName="Fixture machine" assistant="codex" state="idle" stateLabel="Idle" icon={row.icon} freshness="" attention={false} open={false} depth={board?.depth??0} branchThrough={board?.branchThrough??false} ancestorThrough={board?.ancestorThrough??false} boardLead={board?.lead} boardAvatar={board?.avatar} boardName={boardName} onOpen={()=>{}}/>:<Row key={row.id} row={row as never} depth={board?.depth??0} branchThrough={board?.branchThrough??false} ancestorThrough={board?.ancestorThrough??false} selected={false} open={false} swiped={false} onOpen={()=>{}} boardLead={board?.lead} boardAvatar={board?.avatar} boardName={boardName}/>}))}/></ul></main></>
+ <main className="app" data-view="list" style={{width:'100%',height:'100dvh',display:'flex'}}><ul className="list" style={{width:'100%',maxWidth:340,margin:0,padding:0,listStyle:'none'}}><SessionBoardRows source={source} rows={rows.map(row=>({id:row.id,parent:row.id===rows[3].id?rows[0].id:undefined,actor:sessionBoardActor(row.assistant,row.sessionId,row.title),render:(board)=>fleet?<ProjectedRow key={row.id} title={row.title} sessionID={row.id} selectionKey={row.id} machineID="fixture" machineName="Fixture machine" assistant="codex" state="working" stateLabel="Working" lastMovementAt={row.activity.at * 1000} status={row as never} icon={row.icon} freshness="" attention={false} open={false} depth={board?.depth??0} branchThrough={board?.branchThrough??false} ancestorThrough={board?.ancestorThrough??false} boardLead={board?.lead} boardAvatar={board?.avatar} onOpen={()=>{}}/>:<Row key={row.id} row={row as never} depth={board?.depth??0} branchThrough={board?.branchThrough??false} ancestorThrough={board?.ancestorThrough??false} selected={false} open={false} swiped={false} onOpen={()=>{}} boardLead={board?.lead} boardAvatar={board?.avatar}/>}))}/></ul></main></>
 }
 createRoot(document.getElementById('root')!).render(<Fixture/>)
