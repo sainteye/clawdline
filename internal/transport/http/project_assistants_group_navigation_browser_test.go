@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +20,307 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+type scopeSteerProvider struct {
+	routineHumanProvider
+	sent    chan app.PromptRequest
+	results chan app.PromptResult
+	steers  atomic.Int64
+}
+
+func (p *scopeSteerProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	s, err := p.routineHumanProvider.Open(ctx, q, sink)
+	return &scopeSteerSession{ProviderSession: s, p: p}, err
+}
+
+type scopeSteerSession struct {
+	app.ProviderSession
+	p *scopeSteerProvider
+}
+
+func (s *scopeSteerSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if _, err := s.ProviderSession.Send(ctx, q); err != nil {
+		return nil, err
+	}
+	s.p.sent <- q
+	return s.p, nil
+}
+func (s *scopeSteerSession) Steer(context.Context, string) (app.SteerOutcome, error) {
+	s.p.steers.Add(1)
+	return app.SteerJoined, nil
+}
+func (p *scopeSteerProvider) Wait(ctx context.Context) (app.PromptResult, error) {
+	select {
+	case r := <-p.results:
+		return r, nil
+	case <-ctx.Done():
+		return app.PromptResult{}, ctx.Err()
+	}
+}
+
+func TestGroupTurnCannotTakeQueuedDirectMessageBySteering(t *testing.T) {
+	p := &scopeSteerProvider{sent: make(chan app.PromptRequest, 8), results: make(chan app.PromptResult, 8)}
+	f := newGroupHTTPFixture(t, p)
+	b := f.bots[0]
+	status, raw := f.request(t, "POST", "/v1/project-assistants/rooms/groups", "person", contract.ProjectAssistantGroupCreateRequest{Command: f.command(pa.CreateOperation, "steer-room"), Settings: contract.ProjectAssistantGroupCreateSettings{Target: contract.ProjectAssistantProjectSelection{MachineID: "machine", ProjectID: "project"}, Name: "Steer scope", Members: []contract.ProjectAssistantBotKey{paWireBotKey(b.Key)}}})
+	if status != 200 {
+		t.Fatal(status, string(raw))
+	}
+	var group contract.ProjectAssistantGroupResponse
+	_ = json.Unmarshal(raw, &group)
+	f.groupID = group.Group.Key.BotID
+	status, raw = f.request(t, "POST", "/v1/project-assistants/rooms/groups/room/messages", "person", contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, "start-room"), Text: "Group request"})
+	if status != 200 {
+		t.Fatal(status, string(raw))
+	}
+	await := func() app.PromptRequest {
+		t.Helper()
+		select {
+		case q := <-p.sent:
+			return q
+		case <-time.After(3 * time.Second):
+			t.Fatal("no provider prompt")
+			return app.PromptRequest{}
+		}
+	}
+	room := await()
+	if room.Turn.Room == nil {
+		t.Fatal("not a room turn")
+	}
+	send := func(id, text string) pa.Receipt {
+		t.Helper()
+		c, err := f.repo.Conversation(t.Context(), b.Key, b.ConversationID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.service.Send(t.Context(), pa.Command{Key: b.Key, Operation: pa.SendOperation, IdempotencyKey: id}, pa.SendMessage{Fence: pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}, Text: text})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	queued := send("queued-dm", "Private queued message")
+	steer := func(id string, target pa.Receipt) (pa.Receipt, error) {
+		c, _ := f.repo.Conversation(t.Context(), b.Key, b.ConversationID)
+		return f.service.SendNow(t.Context(), app.SendNowRequest{Command: pa.Command{Key: b.Key, Operation: pa.SendNowOperation, IdempotencyKey: id}, Fence: pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}, TurnID: target.ResourceID})
+	}
+	if _, err := steer("cross-chat", queued); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("cross-chat steer: %v", err)
+	}
+	if p.steers.Load() != 0 {
+		t.Fatal("private message reached native room steer")
+	}
+	turn, err := f.repo.Turn(t.Context(), b.Key, queued.ResourceID)
+	if err != nil || turn.State != pa.TurnQueued || turn.JoinedTurnID != "" {
+		t.Fatal("refusal altered queue", turn, err)
+	}
+	stored, err := f.repo.Receipt(t.Context(), queued.Command)
+	if err != nil || stored == nil || stored.ID != queued.ID {
+		t.Fatal("refusal lost original receipt", stored, err)
+	}
+	p.results <- app.PromptResult{FinalText: "Group answer"}
+	direct := await()
+	if direct.Turn.Room != nil || direct.Text != "Private queued message" {
+		t.Fatal("wrong next prompt", direct)
+	}
+	// The same private-to-private action retains normal immediate delivery.
+	joined := send("joined-dm", "Private immediate message")
+	if r, err := steer("same-chat", joined); err != nil || r.State != pa.EffectDelivered || p.steers.Load() != 1 {
+		t.Fatal("normal DM steer refused", r, err)
+	}
+	p.results <- app.PromptResult{FinalText: "Private answer"}
+	f.rooms.Idle()
+	deadline := time.Now().Add(3 * time.Second)
+	for f.engine.Usage().ActiveActors != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	page := scopeSnapshotHTTP(t, f, b)
+	if len(page.Items) != 3 {
+		t.Fatalf("queued DM duplicated or disappeared: %+v", page.Items)
+	}
+	select {
+	case q := <-p.sent:
+		t.Fatal("private queued turn ran twice", q)
+	default:
+	}
+	status, raw = f.request(t, "GET", "/v1/project-assistants/rooms/groups/room?machine_id=machine&before_seq=0&page_size=100", "person", nil)
+	if status != 200 || strings.Contains(string(raw), "Private") {
+		t.Fatal("private delivery entered room", status, string(raw))
+	}
+}
+
+type scopeTraceProvider struct{ routineHumanProvider }
+
+func (p *scopeTraceProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	inner, err := p.routineHumanProvider.Open(ctx, q, sink)
+	return &scopeTraceSession{ProviderSession: inner, sink: sink}, err
+}
+
+type scopeTraceSession struct {
+	app.ProviderSession
+	sink func(context.Context, app.ProtocolEvent) error
+}
+
+func (s *scopeTraceSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if _, err := s.ProviderSession.Send(ctx, q); err != nil {
+		return nil, err
+	}
+	return &scopeTracePrompt{q: q, sink: s.sink}, nil
+}
+
+type scopeTracePrompt struct {
+	q    app.PromptRequest
+	sink func(context.Context, app.ProtocolEvent) error
+}
+
+func (p *scopeTracePrompt) Wait(ctx context.Context) (app.PromptResult, error) {
+	text := "Direct answer"
+	if p.q.Turn.Room != nil {
+		text = "Room answer " + p.q.Turn.Room.Group.BotID
+	}
+	trace := pa.Trace{TurnID: p.q.Turn.ID, Category: "tool_call", Text: text + " tool", Complete: true}
+	if err := p.sink(ctx, app.ProtocolEvent{ID: p.q.Turn.ID + "-tool", TurnID: p.q.Turn.ID, Fence: p.q.Turn.Fence, Trace: &trace}); err != nil {
+		return app.PromptResult{}, err
+	}
+	return app.PromptResult{FinalText: text}, nil
+}
+
+func scopeSnapshotHTTP(t *testing.T, f *groupHTTPFixture, b pa.Bot) contract.ProjectAssistantReadViewResponse {
+	t.Helper()
+	status, raw := f.request(t, "GET", paViewURL(b.Key, b.ConversationID, pa.ReadViewSnapshot, "", "", 0, 100), "person", nil)
+	if status != 200 {
+		t.Fatalf("snapshot %d %s", status, raw)
+	}
+	var page contract.ProjectAssistantReadViewResponse
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
+// Exercise actual room admission/publication and every human projection against
+// one SQLite store. Only an in-process scripted provider runs.
+func TestGroupTranscriptScopeHTTP(t *testing.T) {
+	p := &scopeTraceProvider{}
+	f := newGroupHTTPFixture(t, p)
+	first := f.create(t)
+	sendRoom := func(id, text string, quote int64) {
+		t.Helper()
+		q := contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, id), Text: text}
+		if quote > 0 {
+			q.Quote = &contract.ProjectAssistantRoomQuoteReference{Seq: quote}
+		}
+		status, raw := f.request(t, "POST", "/v1/project-assistants/rooms/groups/room/messages", "person", q)
+		if status != 200 {
+			t.Fatalf("room send %d %s", status, raw)
+		}
+		f.rooms.Idle()
+	}
+	sendRoom("room-first", "Room A only", 0)
+	for _, b := range f.bots[:2] {
+		page := scopeSnapshotHTTP(t, f, b)
+		if len(page.Items) != 0 || page.Head.Conversation.LastMessageSeq != 0 || page.Head.TraceCategoryCount != 0 || page.Snapshot.LastTurn != nil {
+			t.Fatalf("room-only member own chat is not empty: %+v", page)
+		}
+	}
+	status, raw := f.request(t, "POST", "/v1/project-assistants/rooms/groups", "person", contract.ProjectAssistantGroupCreateRequest{Command: f.command(pa.CreateOperation, "scope-second"), Settings: contract.ProjectAssistantGroupCreateSettings{Target: contract.ProjectAssistantProjectSelection{MachineID: "machine", ProjectID: "project"}, Name: "Second room", Members: []contract.ProjectAssistantBotKey{paWireBotKey(f.bots[0].Key), paWireBotKey(f.bots[1].Key)}}})
+	if status != 200 {
+		t.Fatal(status, string(raw))
+	}
+	var second contract.ProjectAssistantGroupResponse
+	if err := json.Unmarshal(raw, &second); err != nil {
+		t.Fatal(err)
+	}
+	// A genuine DM uses the same member/native session between the two rooms.
+	b := f.bots[0]
+	page := scopeSnapshotHTTP(t, f, b)
+	cmd := contract.ProjectAssistantCommand{Key: paWireBotKey(b.Key), Operation: contract.ProjectAssistantOperation(pa.SendOperation), IdempotencyKey: "scope-dm"}
+	status, raw = f.request(t, "POST", "/v1/project-assistants/alice/messages", "person", contract.ProjectAssistantSendRequest{Command: cmd, Fence: page.Head.CurrentFence, Text: "Private direct message"})
+	if status != 200 {
+		t.Fatal(status, string(raw))
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for f.engine.Usage().ActiveActors != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	f.groupID = second.Group.Key.BotID
+	sendRoom("room-second", "Room B only", 0)
+	f.groupID = first.Key.BotID
+	sendRoom("room-quoted", "Room A quoted reply", 1)
+	page = scopeSnapshotHTTP(t, f, b)
+	if len(page.Items) != 2 || page.Head.Conversation.LastMessageSeq != page.Items[0].Message.Seq || page.Head.TraceCategoryCount != 1 {
+		t.Fatalf("DM projection: %+v", page)
+	}
+	for _, item := range page.Items {
+		if item.Message == nil || item.Message.Text != "Private direct message" && item.Message.Text != "Direct answer" {
+			t.Fatalf("foreign message in DM: %+v", item)
+		}
+	}
+	for _, room := range []contract.ProjectAssistantGroup{first, second.Group} {
+		f.groupID = room.Key.BotID
+		status, raw = f.request(t, "GET", "/v1/project-assistants/rooms/groups/room?machine_id=machine&before_seq=0&page_size=100", "person", nil)
+		var history contract.ProjectAssistantGroupHistoryResponse
+		if status != 200 || json.Unmarshal(raw, &history) != nil {
+			t.Fatal(status, string(raw))
+		}
+		for _, line := range history.Lines {
+			if strings.Contains(line.Text, "Private direct") || strings.Contains(line.Text, "Direct answer") {
+				t.Fatal("DM entered group", line)
+			}
+			if line.Kind == "member" && line.Text != "Room answer "+room.Key.BotID {
+				t.Fatal("answer crossed groups", line)
+			}
+		}
+		if room.Key == first.Key {
+			quoted := false
+			for _, line := range history.Lines {
+				if line.Text == "Room A quoted reply" && line.Quote != nil && line.Quote.Seq == 1 {
+					quoted = true
+				}
+			}
+			if !quoted {
+				t.Fatal("room quote was lost")
+			}
+		}
+	}
+	for _, b := range f.bots[:2] {
+		x, err := f.repo.Export(t.Context(), b.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, binding := range x.Bindings {
+			if binding.NativeSessionID != "" && binding.NativeSessionID != "synthetic-main-A" {
+				t.Fatal("native continuity changed", x.Bindings)
+			}
+		}
+	}
+	if dir := os.Getenv("CLAWDLINE_CHAT_SCOPE_ARTIFACTS"); dir != "" {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.MarshalIndent(page, "", "  ")
+		if err := os.WriteFile(filepath.Join(dir, "http-dm-snapshot.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			data, _ := io.ReadAll(r.Body)
+			bridge := cloudops.Bridge{MachineID: "machine", Router: groupUIRouter{origin: f.server.URL, token: "person"}, AllowCommands: func() bool { return true }}
+			answer := bridge.Handle(r.Context(), cloudops.Command{Channel: "ctl/machine", Class: cloudops.ClassCtl, Sender: "synthetic-scope-viewer", Sequence: 1, Plaintext: data})
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(answer.Status)
+			_, _ = w.Write(answer.Payload)
+		}))
+		defer cloud.Close()
+		cmd := exec.CommandContext(t.Context(), "node", "../../../web/console/src/project-assistants/chat-scope.e2e.mjs")
+		cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+f.server.URL, "BOTS_CLOUD_ORIGIN="+cloud.URL, "BOTS_ARTIFACTS="+dir)
+		out, err := cmd.CombinedOutput()
+		_ = os.WriteFile(filepath.Join(dir, "browser.log"), out, 0600)
+		if err != nil {
+			t.Fatalf("scope browser: %v\n%s", err, out)
+		}
+	}
+	t.Log("actual HTTP/SQLite: own chats, two rooms, quote, tool, native binding; model/provider API calls=0")
+}
 
 // Actual Bots/room navigation over authenticated HTTP and SQLite. The only
 // provider is the in-process scripted fixture; no native process or model runs.

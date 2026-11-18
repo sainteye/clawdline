@@ -123,7 +123,8 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 		return out, err
 	}
 	defer tx.Rollback()
-	if _, err = load(ctx, tx, q.Key); err != nil {
+	a, err := load(ctx, tx, q.Key)
+	if err != nil {
 		return out, err
 	}
 	var last int64
@@ -133,7 +134,8 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 	if q.AfterSeq > last {
 		return out, failure(pa.CursorExpired, "event_cursor")
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_events WHERE machine=? AND bot=? AND seq>? ORDER BY seq LIMIT ?`, q.Key.MachineID, q.Key.BotID, q.AfterSeq, q.PageSize+1)
+	statement := viewAggregateSQL + `SELECT e.data FROM a,project_assistant_events e WHERE e.machine=? AND e.bot=? AND e.seq>? AND ` + ownChatEventSQL("CAST(e.data AS TEXT)") + ` ORDER BY e.seq LIMIT ?`
+	rows, err := tx.QueryContext(ctx, statement, q.Key.MachineID, q.Key.BotID, q.Key.MachineID, q.Key.BotID, q.AfterSeq, q.PageSize+1)
 	if err != nil {
 		return out, err
 	}
@@ -151,6 +153,11 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 		if err = json.Unmarshal(raw, &e); err != nil {
 			rows.Close()
 			return out, err
+		}
+		if e.Bot != nil {
+			projected := summary(a, e.Bot.ReadCursor.ReaderID)
+			projected.Source = e.Bot.Source
+			e.Bot = &projected
 		}
 		out.Items = append(out.Items, e)
 		out.NextSeq = e.Seq

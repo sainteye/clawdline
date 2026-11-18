@@ -166,6 +166,9 @@ func (s *Store) Messages(ctx context.Context, q app.HistoryQuery) (app.MessagePa
 	out := app.MessagePage{Items: []pa.Message{}}
 	for i := len(a.Messages) - 1; i >= 0; i-- {
 		m := app.DisplayArtifactMessage(a.Messages[i], a.ArtifactTitles)
+		if !ownChatTurn(a, m.TurnID) {
+			continue
+		}
 		if q.BeforeSeq > 0 && m.Seq >= q.BeforeSeq {
 			continue
 		}
@@ -848,8 +851,11 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			r = x
 		}
 	}
-	out := pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, ActivityAt: a.Bot.UpdatedAt, ReadCursor: r}
+	out := pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, ActivityAt: a.Bot.CreatedAt, ReadCursor: r}
 	for _, msg := range a.Messages {
+		if !ownChatTurn(a, msg.TurnID) {
+			continue
+		}
 		out.LatestMessage = msg.Text
 		if out.LatestMessage == "" {
 			for i, file := range msg.Files {

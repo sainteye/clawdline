@@ -34,7 +34,7 @@ const viewAggregateSQL = `WITH aggregate AS MATERIALIZED (
  coalesce(json_type(j,'$.Permissions'),'null') permissions_type,
  coalesce(json_type(j,'$.WorkLinks'),'null') work_links_type
  FROM aggregate
-) `
+) ` + roomTurnsCTE
 
 // All expressions passed to these builders are adapter-owned SQL, never wire
 // identifiers or JSON paths from a token. Values remain bound parameters.
@@ -58,6 +58,22 @@ func viewFenceSQL(value string, current bool) string {
 			`json_type(`+value+`,'$.fence.binding_id')='text'`)
 	}
 	return "coalesce((" + strings.Join(conditions, " AND ") + "),0)"
+}
+
+// Historical display is not execution authority. It still requires the exact
+// persisted binding, including a turn's matching generation. Generation zero
+// is the valid pre-binding admission state.
+func viewBoundFenceSQL(value string) string {
+	return viewFenceSQL(value, false) + ` AND ((json_extract(` + value + `,'$.fence.generation')=0 AND json_extract(` + value + `,'$.fence.binding_id')='') OR EXISTS(SELECT 1 FROM json_each(a.j,'$.Bindings') historical_binding
+ WHERE historical_binding.key=json_extract(` + value + `,'$.fence.binding_id') AND ` + viewFenceSQL("historical_binding.value", false) + `
+ AND json_extract(historical_binding.value,'$.fence.binding_id')=json_extract(` + value + `,'$.fence.binding_id')
+ AND json_extract(historical_binding.value,'$.fence.generation')=json_extract(` + value + `,'$.fence.generation')))`
+}
+
+func viewOwnChatHead(ctx context.Context, tx *sql.Tx, h *app.ReadViewHead) error {
+	statement := viewAggregateSQL + `SELECT coalesce(max(json_extract(m.value,'$.seq')),0)
+ FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object' AND ` + ownChatTurnSQL("json_extract(m.value,'$.turn_id')")
+	return tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.Conversation.LastMessageSeq)
 }
 
 func viewHead(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, rawBytes *int) (app.ReadViewHead, pa.Bot, error) {
@@ -228,8 +244,8 @@ const viewTimelineCTE = `, messages AS MATERIALIZED (
 
 func viewTimelineSQL() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + viewTimelineCTE + `, candidates AS MATERIALIZED (
- SELECT anchor,kind,id,j,length(CAST(j AS BLOB)) n FROM timeline
- WHERE ?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY)
+ SELECT anchor,kind,id,timeline.j,length(CAST(timeline.j AS BLOB)) n FROM a,timeline
+ WHERE ` + ownChatTurnSQL("json_extract(timeline.j,'$.turn_id')") + ` AND (?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY))
  ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?
 ), budget AS (
  SELECT *,sum(n) OVER(ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC) spent FROM candidates
@@ -242,11 +258,13 @@ ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC`
 func viewTraceCTE() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + `, traces AS MATERIALIZED (
  SELECT e.seq,json_extract(CAST(e.data AS TEXT),'$.trace') j,
+ json_extract(CAST(e.data AS TEXT),'$.fence.binding_id') binding_id,json_extract(CAST(e.data AS TEXT),'$.fence.generation') generation,
  row_number() OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category')) ORDER BY e.seq DESC) rn,
  min(e.seq) OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category'))) first_seq
  FROM a,project_assistant_events e
  WHERE e.machine=? AND e.bot=? AND json_extract(CAST(e.data AS TEXT),'$.kind')='trace_updated'
- AND ` + viewFenceSQL("CAST(e.data AS TEXT)", true) + `
+ AND ` + ownChatEventSQL("CAST(e.data AS TEXT)") + `
+ AND ` + viewFenceSQL("CAST(e.data AS TEXT)", false) + `
 ), latest AS MATERIALIZED (
  SELECT seq,CASE WHEN coalesce(json_extract(j,'$.id'),'')!='' THEN first_seq ELSE seq END anchor,j FROM traces WHERE rn=1
 ) `
@@ -260,12 +278,13 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 		return err
 	}
 	var bad int64
-	statement = viewTraceCTE() + `SELECT count(*),coalesce(sum(CASE WHEN
+	statement = viewTraceCTE() + `SELECT (SELECT count(*) FROM latest),coalesce(sum(CASE WHEN
  json_type(l.j)='object' AND json_type(l.j,'$.turn_id')='text' AND json_extract(l.j,'$.turn_id')!=''
  AND json_type(l.j,'$.category')='text' AND json_extract(l.j,'$.category')!='' AND json_type(l.j,'$.text')='text'
  AND json_type(l.j,'$.complete') IN ('true','false')
  AND EXISTS(SELECT 1 FROM json_each(a.j,'$.Turns') t WHERE t.type='object' AND t.key=json_extract(l.j,'$.turn_id')
- AND ` + viewFenceSQL("t.value", true) + `) THEN 0 ELSE 1 END),0) FROM a,latest l`
+ AND json_extract(t.value,'$.fence.binding_id')=l.binding_id AND json_extract(t.value,'$.fence.generation')=l.generation
+ AND ` + viewBoundFenceSQL("t.value") + `) THEN 0 ELSE 1 END),0) FROM a,traces l`
 	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, h.Key.MachineID, h.Key.BotID).Scan(&h.TraceCategoryCount, &bad); err != nil {
 		return err
 	}

@@ -105,7 +105,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     for(const t of s.pending_turns){turn(t,scope);if(ids.has(t.id)||pending.has(t.message_id)||!["accepted","queued","running","waiting_permission"].includes(t.state))throw failure("pa_invalid");ids.add(t.id);pending.set(t.message_id,t);if(t.state==="accepted"||t.state==="queued")queued.add(t.message_id)}
     for(const m of s.queued_messages){message(m,scope);const t=pending.get(m.id);if(m.kind!=="user"||!t||m.turn_id!==t.id||included.has(m.id))throw failure("pa_invalid");included.add(m.id);queued.delete(m.id)}
     if(queued.size)throw failure("pa_invalid")
-    if(s.last_turn){turn(s.last_turn,scope,h.current_fence);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state))throw failure("pa_invalid")}
+    if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
   }else if(answer.snapshot!==undefined)throw failure("pa_invalid")
   const allowed=q.mode==="snapshot"||q.mode==="history"?["message","work"]:q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:["permission","trace"]
   const ids=new Set<string>(),identities=new Set<string>();let seq=q.after_seq

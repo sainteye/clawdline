@@ -81,8 +81,12 @@ func (s *Service) RenameArtifact(ctx context.Context, q RenameArtifactRequest) (
 		return *prior, nil
 	}
 	var card *pa.Message
+	roomTurns := pa.RoomTurnIDs(x.Turns)
 	for i := len(x.Messages) - 1; i >= 0; i-- {
 		m := x.Messages[i]
+		if roomTurns[m.TurnID] {
+			continue
+		}
 		if m.Output != nil && m.Output.ArtifactID == q.ArtifactID {
 			card = &m
 			break

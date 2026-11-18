@@ -59,6 +59,15 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 		// Nothing is running to take it: it goes in its turn.
 		return pa.Receipt{}, runtimeFailure(pa.Unsupported, "send_now_idle")
 	}
+	active, err := r.o.Repository.Turn(ctx, a.key, running)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	// A native session is shared across chats; steering is still a message
+	// delivery to the running transcript, so both turns must name that chat.
+	if (t.Room == nil) != (active.Room == nil) || t.Room != nil && t.Room.Group != active.Room.Group {
+		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "send_now_scope")
+	}
 	export, err := r.o.Repository.Export(ctx, a.key)
 	if err != nil {
 		return pa.Receipt{}, err
