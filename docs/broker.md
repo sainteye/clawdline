@@ -449,9 +449,10 @@ hosted console serves `<sha>` or later and then runs the CloudGate check
 `POST /v1/orchestrator/handoffs` body as `summary`, with `milestone: true`. The daemon validates
 it with the existing 6 KiB milestone rules, then publishes `handoff.md` and writes
 `obligations.md` before opening the receiver. A scheduled Codex task's `full` permission mode
-still confines filesystem writes to its workspace and task directory; it does not make the
-sibling `handoffs` directory writable. Uploading avoids that filesystem dependency without
-expanding the Session's permissions.
+keeps ordinary commands in its workspace sandbox; requested exceptions go through native
+Auto-review, rather than being suppressed before a reviewer can decide. The launch itself
+does not make the sibling `handoffs` directory writable. Uploading avoids that filesystem
+dependency without requesting an exception.
 
 Callers that omit `summary` retain the prewritten-package protocol. An identical uploaded
 summary may reuse an unpublished package after a retry; different contents are refused as
