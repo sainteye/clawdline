@@ -640,7 +640,7 @@ func (s *Service) Usage() taskresource.Usage {
 	return s.stats
 }
 
-// CacheOverTarget requests eviction without making an active or unsealed
+// CacheOverTarget reports maintenance pressure without making an active or unsealed
 // individual cache a reason to refuse otherwise affordable work.
 func (s *Service) CacheOverTarget() bool {
 	u := s.Usage()
@@ -688,7 +688,10 @@ func (s *Service) Admit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if reason := taskresource.Admission(s.policy(), u); reason == "" && !s.CacheOverTarget() {
+	// A per-cache target is maintained by the periodic sweeper. Waiting for
+	// optional owner/output inspection here can exhaust the compile lease
+	// deadline even when measured aggregate capacity is available.
+	if reason := taskresource.Admission(s.policy(), u); reason == "" {
 		return nil
 	}
 	s.statsMu.Lock()

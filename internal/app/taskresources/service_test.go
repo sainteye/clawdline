@@ -468,3 +468,29 @@ func TestPressureAdmissionVisitsOneAdvancingCleanupPage(t *testing.T) {
 	}
 	preserved(t, f)
 }
+
+func TestCacheTargetAdmissionDoesNotWaitForOptionalOwnerInspection(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	p := taskresource.DefaultPolicy()
+	p.CacheBytes = 1
+	f.s.Policy = func() taskresource.Policy { return p }
+	ownerCalls, measurements := 0, 0
+	f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+		measurements++
+		return taskresource.Usage{Known: true}, nil
+	}
+	f.s.Owner = func(c context.Context, _, _ string) (OwnerState, error) {
+		ownerCalls++
+		<-c.Done()
+		return OwnerState{}, c.Err()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := f.s.Admit(ctx)
+	t.Logf("same request: measurements=%d owner_inspections=%d elapsed=%s context=%v", measurements, ownerCalls, time.Since(start), ctx.Err())
+	if err != nil || ownerCalls != 0 || measurements != 1 {
+		t.Fatalf("optional cache maintenance consumed admission deadline: err=%v owners=%d measurements=%d", err, ownerCalls, measurements)
+	}
+	preserved(t, f)
+}

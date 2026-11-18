@@ -143,8 +143,10 @@ plan/apply trims recognized entries oldest-used first when capacity or reserve
 requires it. The 4 GiB per-cache value is an eviction target, not a launch
 refusal threshold. Active consumers or unsealed outputs postpone trimming
 without blocking work that fits the aggregate budgets and disk reserve. The
-next admission attempts source-backed sealing before reconsidering eviction;
-it does not require a person to publish completed callback outputs. Unknown
+periodic sweeper attempts source-backed sealing before reconsidering eviction;
+it does not require a person to publish completed callback outputs. A compile
+request that fits aggregate budgets and the reserve returns after measurement,
+without waiting for optional cache inspection, output hashing or eviction. Unknown
 filenames remain protected. Only unresolved aggregate cache/scratch pressure,
 low filesystem reserve or unknown measurements refuse later heavy work. Cache entries have no 24-hour delay; ordinary
 scratch still keeps 24 hours and raw logs seven days. A future Project-scoped Bot
@@ -202,8 +204,9 @@ Measurements keep their underlying error for diagnostics. Cancellation and a
 measurement deadline produce `resource_measurement_interrupted`, rather than
 claiming that legacy data is corrupt. Unknown measurements publish no known total
 and do not trigger cleanup. Only measured budget or reserve pressure permits a
-cleanup attempt. Each service admission visits one advancing resource page using
-the existing page limit. The broker may inspect one publication page and one
+cleanup attempt on the compile path. A service admission under hard capacity
+pressure visits one advancing resource page using the existing page limit. The
+broker may then inspect one publication page and one
 legacy reclaim page before its final admission recheck; background sweeps own the
 remaining work. Unknown owners, changed outputs and live readers remain protected.
 

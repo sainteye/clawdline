@@ -279,14 +279,14 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		return refuse(507, "resource_service_unavailable", "Managed resource service is unavailable.")
 	}
 	err := b.Resources.Admit(ctx)
-	if err == nil && !b.Resources.CacheOverTarget() {
+	if err == nil {
 		return nil
 	}
 	var failure taskresources.Failure
 	pressure := errors.As(err, &failure) && (failure.Code == "disk_reserve_unavailable" || failure.Code == "cache_total_over_budget" || failure.Code == "scratch_over_budget")
-	if err == nil || pressure {
-		// A measured eviction target permits one advancing, ownership-checked
-		// publication page. Unknown measurements never trigger cleanup.
+	if pressure {
+		// Only measured aggregate/reserve pressure puts cleanup on the compile
+		// path. Optional cache maintenance belongs to the periodic sweeper.
 		b.reclaim.mu.Lock()
 		after := b.reclaim.resourcesAfter
 		b.reclaim.mu.Unlock()
@@ -295,9 +295,7 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 			b.reclaim.resourcesAfter = next
 			b.reclaim.mu.Unlock()
 		}
-		if pressure {
-			_, _ = b.Reclaim(ctx, false)
-		}
+		_, _ = b.Reclaim(ctx, false)
 		err = b.Resources.Admit(ctx)
 		if err == nil {
 			return nil

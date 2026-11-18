@@ -63,9 +63,15 @@ func TestHeavyCallbackCanContinueWithAnActiveOverTargetCache(t *testing.T) {
 	if r := settledWithin(t, b, ctx, req.TaskID, 10*time.Second); r.State != StateSuccess {
 		t.Fatal(r.Verdict)
 	}
-	// Completed output publication is sealed on the next admission, without
-	// waiting for the periodic reclaimer or a person to publish it manually.
+	// Affordable admission leaves optional maintenance to the same periodic
+	// sweeper, which still seals completed outputs without a person doing it.
 	if err := b.AdmitHeavyResources(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cacheEntry); err != nil {
+		t.Fatal("affordable admission performed optional eviction", err)
+	}
+	if _, _, err := b.SweepTaskResources(ctx, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(cacheEntry); !os.IsNotExist(err) {

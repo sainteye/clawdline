@@ -160,3 +160,36 @@ func TestInnerLeaseRefusalDoesNotRewriteAnExecutedCallbackAsNeverStarted(t *test
 		t.Fatal("execution evidence lost", err)
 	}
 }
+
+func TestCompileLeaseDoesNotWaitForOptionalCacheTargetMaintenance(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	id := "e9200000-0000-4000-8000-000000000001"
+	r, _ := stranded(t, b, ctx, id, 0)
+	r.Repository, r.ProjectDir = r.Callback.Dir, r.Callback.Dir
+	if err := b.save(ctx, r, HashSecret("fixture"), "task.briefed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Resources.Allocate(ctx, ResourceOwnerScope(), "task", r.ID, taskresource.Cache); err != nil {
+		t.Fatal(err)
+	}
+	p := taskresource.DefaultPolicy()
+	measurements, ownerCalls := 0, 0
+	b.Resources.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+		measurements++
+		return taskresource.Usage{Known: true, CacheTotal: p.CacheBytes + 1, LargestCache: p.CacheBytes + 1}, nil
+	}
+	b.Resources.Owner = func(c context.Context, _, _ string) (taskresources.OwnerState, error) {
+		ownerCalls++
+		<-c.Done()
+		return taskresources.OwnerState{}, c.Err()
+	}
+	attempt, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	lease, err := b.Acquire(attempt, LeaseRequest{Resource: ResourceCompile, RequestID: uuid.NewString(), Holder: "isolated cache target request"})
+	t.Logf("same compile request: measurements=%d owner_inspections=%d elapsed=%s context=%v", measurements, ownerCalls, time.Since(start), attempt.Err())
+	if err != nil || lease.State != "granted" || measurements != 1 || ownerCalls != 0 {
+		t.Fatalf("optional cleanup blocked compile slot: lease=%+v err=%v measurements=%d owners=%d", lease, err, measurements, ownerCalls)
+	}
+}

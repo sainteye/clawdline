@@ -927,3 +927,10 @@ Traditional Chinese text confirms that an active or unsealed cache postpones
 eviction without independently blocking an affordable compile. Source-backed
 sealing, protected outputs and future Bot authority are unchanged. No new
 injection trigger, provider permission or cleanup path is introduced.
+
+The callback guide now assigns optional per-cache sealing and trimming to
+periodic maintenance. Review of both language versions confirms that measured
+aggregate budgets and the reserve still govern compile admission; no permission,
+retention period, output protection or Bot authority changes. The existing
+instruction explanations remain accurate. The reviewed source receipts follow
+the guide wording; they do not establish website deployment acceptance.
