@@ -1206,11 +1206,14 @@ class Tab {
     return tree.nodes.filter((node: any) => node.role?.value === "option").map((node: any) => node.name?.value ?? "")
   }
 
-  async mouseAt(x: number, y: number, click = false): Promise<void> {
+  async mouseAt(x: number, y: number, click = false, releaseAt = { x, y }): Promise<void> {
     await this.b.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, this.session)
     if (!click) return
     await this.b.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, this.session)
-    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, this.session)
+    if (releaseAt.x !== x || releaseAt.y !== y) {
+      await this.b.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...releaseAt, buttons: 1 }, this.session)
+    }
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...releaseAt, button: "left", clickCount: 1 }, this.session)
   }
 
   /** A picture of the phone, for the report. */
@@ -1542,6 +1545,39 @@ test("Session board stays the same height while its index and messages load", as
   } finally {
     holdBoardIndex = holdBoardThread = undefined
     failBoardThread = false
+    boardFixture = false
+  }
+})
+
+test("a click on the Session board backdrop closes the dialog and returns focus", async () => {
+  boardFixture = true
+  try {
+    await inTab(async tab => {
+      await tab.desktop()
+      await tab.go("/")
+      const dock = ".session-board-dock"
+      const dialog = ".session-board-dialog[open]"
+      await shortcutUntil(tab, `!!document.querySelector('${dock}')`)
+      for (const thread of [false, true]) {
+        await tab.press(dock)
+        await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+        if (thread) {
+          await tab.press(`${dialog} .session-board-index-card`)
+          await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-posts > li')`)
+        }
+        const inside = await tab.run(`(() => {
+          const box = document.querySelector('${dialog}').getBoundingClientRect()
+          return { x: box.left + box.width / 2, y: box.bottom - 8 }
+        })()`)
+        await tab.mouseAt(inside.x, inside.y, true)
+        assert.equal(await tab.run(`!!document.querySelector('${dialog}')`), true, "empty space inside")
+        await tab.mouseAt(inside.x, inside.y, true, { x: 5, y: 5 })
+        assert.equal(await tab.run(`!!document.querySelector('${dialog}')`), true, "dragging out")
+        await tab.mouseAt(5, 5, true)
+        await shortcutUntil(tab, `!document.querySelector('${dialog}') && document.activeElement.matches('${dock}')`)
+      }
+    })
+  } finally {
     boardFixture = false
   }
 })

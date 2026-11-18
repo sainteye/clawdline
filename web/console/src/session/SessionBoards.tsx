@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom"
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react"
 import { nextWord as t } from "../next-strings.js"
 import { client, followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
 import { richText } from "../legacy/js/view/markdown.js"
@@ -258,6 +258,29 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
 
 export type SessionBoardTarget = { machine?: string; source: SessionBoardSource; label: string; candidates: Actor[] }
 
+function isBoardBackdrop(event: MouseEvent<HTMLDialogElement>) {
+  if (event.target !== event.currentTarget) return false
+  const { left, right, top, bottom } = event.currentTarget.getBoundingClientRect()
+  return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom
+}
+
+function useBoardBackdrop() {
+  const pressedOutside = useRef(false)
+  return {
+    onPointerDown(event: PointerEvent<HTMLDialogElement>) {
+      pressedOutside.current = event.isPrimary && event.button === 0 && isBoardBackdrop(event)
+    },
+    onPointerCancel() { pressedOutside.current = false },
+    onClick(event: MouseEvent<HTMLDialogElement>) {
+      // The native dialog receives backdrop clicks too. A drag from inside
+      // can also end there, so require both ends to be outside.
+      const dismiss = pressedOutside.current && isBoardBackdrop(event)
+      pressedOutside.current = false
+      if (dismiss) event.currentTarget.close()
+    },
+  }
+}
+
 export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTarget[] }) {
   const [open, setOpen] = useState<string | null>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -299,8 +322,9 @@ function BoardMachinePicker({ targets, choose, close }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
+  const backdrop = useBoardBackdrop()
   useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close}>
+  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close} {...backdrop}>
     <header><h2 id={heading}>{t("sessionBoards")}</h2>
       <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
     </header>
@@ -331,6 +355,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
+  const backdrop = useBoardBackdrop()
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
   const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
@@ -342,7 +367,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
   useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close}>
+  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} {...backdrop}>
     <header>
       {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
         title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}

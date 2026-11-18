@@ -45,8 +45,8 @@ Person-triggered asynchronous writes and submissions have a separate [action wai
 | SK-33 | Admin campaign list | 管理後台的活動清單 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:269` |
 | SK-34 | Admin campaign detail and redemption codes | 管理後台的活動詳情與兌換碼 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:577`; `web/console/src/cloud/admin/PromoManagement.tsx:781` |
 | SK-35 | Onboarding survey statistics | 新手問卷統計 | Conditional | P3 | `web/console/src/onboarding/Statistics.tsx:64` |
-| SK-36 | Session message board list | Session 留言板清單 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:370` |
-| SK-37 | Session message board thread | Session 留言板留言 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:492` |
+| SK-36 | Session message board list | Session 留言板清單 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:395` |
+| SK-37 | Session message board thread | Session 留言板留言 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:517` |
 
 ## Existing skeletons and states to retain
 
