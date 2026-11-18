@@ -637,6 +637,13 @@ func (s *Service) Usage() taskresource.Usage {
 	return s.stats
 }
 
+// CacheOverTarget requests eviction without making an active or unsealed
+// individual cache a reason to refuse otherwise affordable work.
+func (s *Service) CacheOverTarget() bool {
+	u := s.Usage()
+	return u.Known && u.LargestCache > s.policy().CacheBytes
+}
+
 // Sweep uses the exact same plans and executor as an authorized Bot. It visits
 // one advancing page per call, so a kept owner cannot starve later resources.
 func (s *Service) Sweep(ctx context.Context, after string) (Result, string, error) {
@@ -672,7 +679,7 @@ func (s *Service) Admit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if reason := taskresource.Admission(s.policy(), u); reason == "" {
+	if reason := taskresource.Admission(s.policy(), u); reason == "" && !s.CacheOverTarget() {
 		return nil
 	}
 	after := ""

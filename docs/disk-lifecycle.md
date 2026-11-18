@@ -140,8 +140,13 @@ source adapter requires all consumers to finish, save their outputs and release
 their process groups and locks. Unknown readers keep the cache. The Root need not
 close. Shared caches stay registered while recent Go entries are reused; guarded
 plan/apply trims recognized entries oldest-used first when capacity or reserve
-requires it. It preserves unknown filenames and refuses later heavy work if safe
-trimming cannot restore the budgets. Cache entries have no 24-hour delay; ordinary
+requires it. The 4 GiB per-cache value is an eviction target, not a launch
+refusal threshold. Active consumers or unsealed outputs postpone trimming
+without blocking work that fits the aggregate budgets and disk reserve. The
+next admission attempts source-backed sealing before reconsidering eviction;
+it does not require a person to publish completed callback outputs. Unknown
+filenames remain protected. Only unresolved aggregate cache/scratch pressure,
+low filesystem reserve or unknown measurements refuse later heavy work. Cache entries have no 24-hour delay; ordinary
 scratch still keeps 24 hours and raw logs seven days. A future Project-scoped Bot
 uses the same service, without publication, unpinning or arbitrary-path authority.
 Manual legacy/default caches are never silently adopted.

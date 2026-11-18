@@ -908,3 +908,12 @@ and Taiwan Traditional Chinese found no change to peer prompts, exchange ownersh
 memory selection, native permission or replay authority. Unknown reaction outcomes still
 retain their original request. The ChatRows source receipt follows the reviewed renderer;
 the existing bilingual instruction explanation remains applicable.
+
+## Cache admission target correction (2026-11-18)
+
+The callback instructions now distinguish the individual cache eviction target
+from aggregate storage admission limits. Review of the English and Taiwan
+Traditional Chinese text confirms that an active or unsealed cache postpones
+eviction without independently blocking an affordable compile. Source-backed
+sealing, protected outputs and future Bot authority are unchanged. No new
+injection trigger, provider permission or cleanup path is introduced.

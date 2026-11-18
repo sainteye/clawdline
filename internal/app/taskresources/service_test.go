@@ -275,6 +275,34 @@ func TestPressureReclaimsOnlyEligibleDataAndKeepsActiveResources(t *testing.T) {
 	}
 }
 
+func TestIndividualCachePressureKeepsProtectedDataWithoutBlockingWork(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsealed", true: "active"}[active], func(t *testing.T) {
+			f := setup(t, taskresource.Cache)
+			p := taskresource.DefaultPolicy()
+			p.CacheBytes = 1
+			f.s.Policy = func() taskresource.Policy { return p }
+			if active {
+				f.owner.Complete = false
+				f.owner.Presence, f.owner.UsePresence = "present", "present"
+			}
+			if err := f.s.Admit(context.Background()); err != nil {
+				t.Fatal("cache eviction target blocked work before outputs could be sealed", err)
+			}
+			if raw, err := os.ReadFile(filepath.Join(f.allocation.Path, "rebuildable.tmp")); err != nil || string(raw) != "temporary computation" {
+				t.Fatal("protected cache was removed", err)
+			}
+			// The aggregate limit still refuses work without deleting active or
+			// unsealed data. Only the per-cache eviction target is nonblocking.
+			p.CacheTotal = p.CacheBytes
+			if err := f.s.Admit(context.Background()); err == nil || err.Error() != "cache_total_over_budget" {
+				t.Fatal("aggregate protection lost", err)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
 func TestPendingResourceIntentSurvivesActualStoreRestart(t *testing.T) {
 	for _, unlinked := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before unlink", true: "after unlink"}[unlinked], func(t *testing.T) {
