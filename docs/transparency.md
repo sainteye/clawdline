@@ -814,3 +814,18 @@ view remains read-only and outside model context. Native note writing, the
 editor and clean installed-native recall are separately pending. The source
 receipt covers the schema-12 protection, compact index and detail paths;
 website publication follows the delivered product revision.
+
+
+## Direct voice drafts and execution tones (2026-11-18)
+
+The voice-work explanation now covers the direct Live and unmanaged Realtime
+message admission gate as well as the existing durable path. Both languages
+separate the original request from approval of assistant-composed text, require
+full recipient/content read-back, bind fresh consent to the exact draft and
+recipient identity, and describe one-use approval and unknown-send handling.
+The excerpt quotes the application's review result. Live local media activity
+and quiet are conservative evidence; the explanation does not claim listener
+completion from transcript gaps or actual phone acceptance from synthetic tests.
+Execution tones now follow running call-owned tasks and admitted action requests;
+queries, saving, planning, queueing and draft review remain silent. Website
+snapshot publication is still separate from refreshing these source receipts.
