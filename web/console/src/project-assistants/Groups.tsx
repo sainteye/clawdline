@@ -11,6 +11,7 @@ import { BotAvatar } from "./BotAvatar"
 import { ProjectMark } from "./ProjectMark"
 import { PaSelect } from "./PaSelect"
 import "./group-editor.css"
+import {orderedGroupMembers} from "./group-editor-order"
 
 export const groupWord=(key:string)=>catalogWord("projectAssistants",key)
 export const sameGroupProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -83,8 +84,8 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const eligible=bots.filter(b=>project&&sameGroupProject(b.project,project))
   const complete=members.every(id=>eligible.some(b=>identity(b.key)===id))
   async function save(){
-    if(!source||!project||busy||unknown)return
-    const settings={name:name.trim(),members:eligible.filter(b=>members.includes(identity(b.key))).map(b=>b.key)}
+    if(!source||!project||busy||unknown||!complete)return
+    const settings={name:name.trim(),members:orderedGroupMembers(group?.members.map(member=>member.key)??[],members,eligible.map(bot=>bot.key))}
     const fingerprint=JSON.stringify([project,settings])
     let request=pending.current?.fingerprint===fingerprint?pending.current.request:null
     if(!request){const key=group?.key??{machine_id:project.machine_id,bot_id:crypto.randomUUID()};request=group?{command:command(key,"edit"),settings:{...settings,expected_version:group.version}}:{command:command(key,"create"),settings:{...settings,target:{machine_id:project.machine_id,project_id:project.project_id}}};pending.current={fingerprint,request}}

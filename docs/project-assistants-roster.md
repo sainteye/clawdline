@@ -110,3 +110,20 @@ preferences in that implementation also returned empty arrays, so its section
 markup did not establish working pinning or persistence. The corrected source
 imports the identity helper and verifies actual operations rather than treating
 compilation or a health response as UI acceptance.
+
+### Group edits preserve member order
+
+The candidate Bot list may have a different sort order from a room. Renaming
+or editing membership now keeps retained members in their stored order and
+appends newly selected members. Removing the new member leaves the original
+order intact; temporarily unchecking and rechecking a retained member does
+not request a reorder. Selected keys still resolve through currently eligible
+Bots in the exact Project.
+
+`TestGroupMemberOrderBrowser` exercises production GroupEditor, room and
+roster components over authenticated HTTP and SQLite, with an oppositely
+ordered candidate list. It checks rename, add/remove, reopening and cancellation,
+rendered avatar order and the source's real round-zero `@all` selection.
+Chromium and WebKit cover desktop and touch layouts on local and closed Cloud
+command rails. The outer encrypted carrier is simulated. No model or formal
+viewer is used. This repair does not reorder previously saved groups.
