@@ -64,10 +64,14 @@ func viewFenceSQL(value string, current bool) string {
 // persisted binding, including a turn's matching generation. Generation zero
 // is the valid pre-binding admission state.
 func viewBoundFenceSQL(value string) string {
-	return viewFenceSQL(value, false) + ` AND ((json_extract(` + value + `,'$.fence.generation')=0 AND json_extract(` + value + `,'$.fence.binding_id')='') OR EXISTS(SELECT 1 FROM json_each(a.j,'$.Bindings') historical_binding
- WHERE historical_binding.key=json_extract(` + value + `,'$.fence.binding_id') AND ` + viewFenceSQL("historical_binding.value", false) + `
- AND json_extract(historical_binding.value,'$.fence.binding_id')=json_extract(` + value + `,'$.fence.binding_id')
- AND json_extract(historical_binding.value,'$.fence.generation')=json_extract(` + value + `,'$.fence.generation')))`
+	binding := `json_extract(` + value + `,'$.fence.binding_id')`
+	generation := `json_extract(` + value + `,'$.fence.generation')`
+	// This membership list is independent of the candidate turn. Evaluate
+	// the persisted binding scope once per statement.
+	return viewFenceSQL(value, false) + ` AND ((` + generation + `=0 AND ` + binding + `='') OR (` + binding + `,` + generation + `) IN (
+ SELECT b.key,json_extract(b.value,'$.fence.generation') FROM a,json_each(a.j,'$.Bindings') b
+ WHERE CASE WHEN b.type='object' THEN b.key=json_extract(b.value,'$.fence.binding_id')
+ AND ` + viewFenceSQL("b.value", false) + ` ELSE 0 END))`
 }
 
 func viewOwnChatHead(ctx context.Context, tx *sql.Tx, h *app.ReadViewHead) error {
@@ -278,13 +282,22 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 		return err
 	}
 	var bad int64
-	statement = viewTraceCTE() + `SELECT (SELECT count(*) FROM latest),coalesce(sum(CASE WHEN
+	// Validate each referenced turn's persisted binding once. Tuple membership
+	// avoids walking the turn map and rechecking its binding for every chunk.
+	statement = viewTraceCTE() + `, trace_refs AS MATERIALIZED (
+ SELECT json_extract(j,'$.turn_id') turn_id,binding_id,generation FROM traces
+), trace_turns AS MATERIALIZED (
+ SELECT t.key id,json_extract(t.value,'$.fence.binding_id') binding_id,json_extract(t.value,'$.fence.generation') generation
+ FROM a,json_each(a.j,'$.Turns') t
+ WHERE CASE WHEN t.type!='object' THEN 0
+ WHEN (t.key,json_extract(t.value,'$.fence.binding_id'),json_extract(t.value,'$.fence.generation')) IN (SELECT turn_id,binding_id,generation FROM trace_refs)
+ THEN ` + viewBoundFenceSQL("t.value") + ` ELSE 0 END
+) SELECT (SELECT count(*) FROM latest),coalesce(sum(CASE WHEN
  json_type(l.j)='object' AND json_type(l.j,'$.turn_id')='text' AND json_extract(l.j,'$.turn_id')!=''
  AND json_type(l.j,'$.category')='text' AND json_extract(l.j,'$.category')!='' AND json_type(l.j,'$.text')='text'
  AND json_type(l.j,'$.complete') IN ('true','false')
- AND EXISTS(SELECT 1 FROM json_each(a.j,'$.Turns') t WHERE t.type='object' AND t.key=json_extract(l.j,'$.turn_id')
- AND json_extract(t.value,'$.fence.binding_id')=l.binding_id AND json_extract(t.value,'$.fence.generation')=l.generation
- AND ` + viewBoundFenceSQL("t.value") + `) THEN 0 ELSE 1 END),0) FROM a,traces l`
+ AND (json_extract(l.j,'$.turn_id'),l.binding_id,l.generation) IN (SELECT id,binding_id,generation FROM trace_turns)
+ THEN 0 ELSE 1 END),0) FROM traces l`
 	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, h.Key.MachineID, h.Key.BotID).Scan(&h.TraceCategoryCount, &bad); err != nil {
 		return err
 	}
