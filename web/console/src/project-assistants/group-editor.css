@@ -1,0 +1,12 @@
+/* A group form owns the browser's modal layer, above its member panel. */
+.project-assistants dialog.pa-group-editor {
+  box-sizing:border-box;
+  position:fixed;
+  width:min(600px,100vw);
+  height:100dvh;
+  max-height:100dvh;
+  color:inherit;
+  font:inherit;
+  box-shadow:none;
+}
+.project-assistants dialog.pa-group-editor::backdrop { background:#000a; }

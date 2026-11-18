@@ -30,6 +30,11 @@ quoted message, reading position and member control. Closing the room restores
 the original group row's focus and the list's scroll position. A room preview
 or a stored preference never grants read or execution access.
 
+Group create/edit forms use the browser's modal layer. The member panel remains
+mounted beneath an edit form, but cannot cover or intercept its controls. Cancel
+and Escape close only that form and return focus to its actual opener, including
+touch activation. Unsaved form changes are discarded without a group write.
+
 Preferences are stored in this browser's local storage under the authenticated
 account namespace, with machine/Bot, typed machine/group and machine/Project identities as keys. They
 survive closing Bots, switching Sessions and reloading this browser. Other tabs
@@ -70,6 +75,11 @@ Bot-to-room-to-member-to-room-to-list navigation, exact source identity,
 retained room state, focus, scroll position, no history fanout for previews,
 and no frontend prompt sends. The Cloud envelope is simulated; these checks
 do not establish production Cloud delivery or physical-device acceptance.
+The same matrix opens group settings from the member panel and header menu,
+checks actual coordinate hits and accessible-button activation, Tab focus,
+Enter, Escape, create-form cancellation and absence of group mutations. The
+phone reproducer taps the observed Cancel point `(32, 42)`; in the previous
+layout it hit the overlaid member heading instead of the button beneath it.
 
 With already installed Playwright browsers, run it from the repository root:
 

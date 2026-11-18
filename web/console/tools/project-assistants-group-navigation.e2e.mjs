@@ -67,6 +67,70 @@ try{
      else assert.equal(await text.isDisabled(),true)
      await room.locator('.pa-chat-scroll').evaluate(el=>{el.scrollTop=Math.floor((el.scrollHeight-el.clientHeight)/3)})
      await room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}).click()
+     if(mode!=='read'){
+      const edit=room.getByRole('button',{name:language==='en'?'Edit group':'編輯群組',exact:true})
+      await click(edit)
+      const editor=room.getByRole('dialog',{name:language==='en'?'Edit group':'編輯群組',exact:true})
+      await editor.waitFor();const cancel=editor.getByRole('button',{name:language==='en'?'Cancel':'取消',exact:true}),box=await cancel.boundingBox()
+      const point=width===390?{x:32,y:42}:{x:box.x+box.width/2,y:box.y+box.height/2}
+      const hit=await cancel.evaluate((button,point)=>{const target=document.elementFromPoint(point.x,point.y);return {cancelOwnsHit:!!target&&button.contains(target),targetTag:target?.tagName,targetClass:target?.className,stack:document.elementsFromPoint(point.x,point.y).slice(0,8).map(el=>({tag:el.tagName,class:el.className,label:el.getAttribute('aria-label')})),cancelBox:button.getBoundingClientRect().toJSON()}},point)
+      if(width===390)await page.touchscreen.tap(point.x,point.y);else await page.mouse.click(point.x,point.y)
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+      const closed=await editor.count()===0
+      let recovery
+      if(!closed&&process.env.BOTS_EDITOR_RECOVERY==='1'){
+       await page.screenshot({path:path.join(artifacts,name+'-editor-covered.png')})
+       const closePanel=room.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true})
+       const closeHit=await closePanel.evaluate(button=>button.contains(document.elementFromPoint(350,42)))
+       assert.equal(closeHit,true,'the existing panel close point is not safe')
+       await page.touchscreen.tap(350,42)
+       const exposed=await cancel.evaluate(button=>button.contains(document.elementFromPoint(32,42)))
+       assert.equal(exposed,true,'the actual Cancel is still covered after closing the panel')
+       await page.touchscreen.tap(32,42)
+       recovery={closed:await editor.count()===0,groupWrites:traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)).length}
+       assert.equal(recovery.closed,true);assert.equal(recovery.groupWrites,0)
+      }
+      await writeFile(path.join(artifacts,name+'-editor-cancel.json'),JSON.stringify({point,hit,closed,recovery},null,2)+'\n')
+      assert.equal(closed,true,'a real Cancel-coordinate tap did not close the group editor')
+      assert.equal(hit.cancelOwnsHit,true,'the visible Cancel control is covered')
+      assert.equal(await edit.evaluate(button=>document.activeElement===button),true,'Cancel did not restore the edit trigger')
+      const exits=[]
+      for(const method of ['role','keyboard','escape']){
+       await click(edit);await editor.waitFor()
+       assert.equal(await editor.getByRole('textbox').inputValue(),'Review room','Cancel saved an earlier rename')
+       assert.equal(await editor.locator('input[type="checkbox"]:checked').count(),2)
+       assert.equal(await cancel.evaluate(button=>document.activeElement===button),true,'the editor did not receive keyboard focus')
+       const dimensions=await editor.boundingBox();assert.ok(dimensions.x>=0&&dimensions.y>=0&&dimensions.x+dimensions.width<=width&&dimensions.y+dimensions.height<=height)
+       if(method==='role'){
+        // Native Tab policies differ: WebKit may return to the name field,
+        // while Chromium reports body at its browser focus boundary. Neither
+        // may focus an application control behind the active modal.
+        for(const key of ['Shift+Tab','Tab']){
+         await page.keyboard.press(key)
+         assert.equal(await editor.evaluate(el=>document.activeElement===document.body||el.contains(document.activeElement)),true,'Tab focused a control behind the group form')
+        }
+        await cancel.focus()
+        await room.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}).evaluate(button=>button.focus())
+        assert.equal(await cancel.evaluate(button=>document.activeElement===button),true,'the member panel behind the modal still accepted focus')
+        await editor.getByRole('textbox').fill('Unsaved group rename')
+        await page.screenshot({path:path.join(artifacts,name+'-editor-visible.png')})
+        await click(cancel)
+       }else await page.keyboard.press(method==='keyboard'?'Enter':'Escape')
+       await editor.waitFor({state:'detached'})
+       assert.equal(await edit.evaluate(button=>document.activeElement===button),true)
+       assert.equal(await room.locator('.pa-room-members').isVisible(),true,'Cancel closed the parent member panel')
+       exits.push(method)
+      }
+      await click(room.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}))
+      const more=room.getByRole('button',{name:language==='en'?'More actions':'更多動作',exact:true})
+      await click(more);await room.getByRole('menuitem',{name:language==='en'?'Edit group':'編輯群組',exact:true}).click()
+      await editor.waitFor();await page.keyboard.press('Escape');await editor.waitFor({state:'detached'})
+      assert.equal(await more.evaluate(button=>document.activeElement===button),true,'header edit did not return to its menu trigger')
+      await click(room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}))
+      const groupWrites=traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path))
+      assert.equal(groupWrites.length,0,'leaving the group form mutated group data')
+      await writeFile(path.join(artifacts,name+'-editor-exits.json'),JSON.stringify({coordinate:point,exits,headerEscape:true,groupWrites:0,returnsToMemberPanel:true,focusRestored:true},null,2)+'\n')
+     }else assert.equal(await room.getByRole('button',{name:language==='en'?'Edit group':'編輯群組',exact:true}).isDisabled(),true)
      const member=room.locator('.pa-room-members .pa-room-member').filter({has:page.getByText('Bob',{exact:true})}).getByRole('button',{name:'Bob',exact:true})
      await member.waitFor({state:'visible'})
      const saved=await position(room),memberElement=await member.elementHandle(),draft=await text.inputValue(),quoteText=quote?await room.locator('.pa-room-draft-quote').innerText():null
@@ -88,6 +152,14 @@ try{
      await room.waitFor({state:'detached'});await page.waitForFunction(()=>document.activeElement?.matches('[data-group-key]'))
      assert.equal(await row.evaluate(el=>document.activeElement===el),true)
      assert.equal(await page.locator('.pa-roster-scroll').evaluate(el=>el.scrollTop),originTop)
+     if(mode!=='read'){
+      const create=page.getByRole('button',{name:language==='en'?'New group':'新增群組',exact:true})
+      await click(create)
+      const form=page.getByRole('dialog',{name:language==='en'?'New group':'新增群組',exact:true})
+      await form.waitFor();await click(form.getByRole('button',{name:language==='en'?'Cancel':'取消',exact:true}));await form.waitFor({state:'detached'})
+      assert.equal(await create.evaluate(button=>document.activeElement===button),true,'new-group cancellation lost its opener')
+     }
+     assert.equal(traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)).length,0,'a cancelled form wrote group data')
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
      assert.equal(traffic.slice(start).filter(record=>record.word==='project-assistants.send'||record.word==='project-assistants.group-send'||/\/messages$/.test(record.path)).length,0,'navigation sent a prompt')
      assert.deepEqual(errors,[])

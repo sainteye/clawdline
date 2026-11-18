@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type {GroupRosterEntry} from "./roster-conversations"
 import type * as W from "@clawdline/contract"
 import { catalogWord } from "../catalog"
@@ -10,6 +10,7 @@ import { rosterMood } from "./working"
 import { BotAvatar } from "./BotAvatar"
 import { ProjectMark } from "./ProjectMark"
 import { PaSelect } from "./PaSelect"
+import "./group-editor.css"
 
 export const groupWord=(key:string)=>catalogWord("projectAssistants",key)
 export const sameGroupProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -55,7 +56,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
   const canCreate=active.some(p=>canWrite(p.status)&&items.some(b=>b.bot.key.machine_id===p.source.machineID))
   const rows=active.flatMap(p=>p.groups.filter(g=>(!machine||g.key.machine_id===machine)&&(!query||[g.name,projectNames.get(JSON.stringify([g.key.machine_id,g.project.project_id]))??""].some(text=>text.toLocaleLowerCase().includes(query.toLocaleLowerCase())))).map(group=>({source:p.source,group,status:p.status})))
   return <>
-    {canCreate&&<div className="pa-roster-group-tools"><button type="button" onClick={()=>setCreating(true)}>{groupWord("groupCreate")}</button></div>}
+    {canCreate&&<div className="pa-roster-group-tools"><button type="button" onClick={event=>{event.currentTarget.focus({preventScroll:true});setCreating(true)}}>{groupWord("groupCreate")}</button></div>}
     {children?children(rows,open,selected?identity(selected.group.key):null):rows.map(entry=><button type="button" className="pa-row" key={identity(entry.group.key)} data-group-key={identity(entry.group.key)} onClick={()=>open(entry)}><span aria-hidden="true">◎</span><span><strong>{entry.group.name}</strong><small>{entry.group.members.length} {groupWord("groupMembers")}</small></span></button>)}
     {error&&<p role="status">{groupWord("groupUnavailable")} ({error})</p>}
     {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} projectIcons={projectIcons} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);open({source,group});refresh(n=>n+1)}}/>}
@@ -69,6 +70,12 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
 }
 
 export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
+  const dialog=useRef<HTMLDialogElement>(null)
+  useLayoutEffect(()=>{
+    const node=dialog.current!,opener=document.activeElement
+    node.showModal()
+    return()=>{node.close();if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true})}
+  },[])
   const choices=bots.filter(b=>sources.some(s=>s.source.machineID===b.key.machine_id&&canWrite(s.status))).filter((b,i,all)=>all.findIndex(other=>sameGroupProject(b.project,other.project))===i)
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
   const pending=useRef<{fingerprint:string;request:W.ProjectAssistantGroupCreateRequest|W.ProjectAssistantGroupEditRequest}|null>(null)
@@ -87,14 +94,14 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
       onSaved(source,answer.group)
     }catch(e){const code=errorCode(e);setError(code);if(code==="pa_outcome_unknown")setUnknown(true)}finally{setBusy(false)}
   }
-  return <section className="pa-form-panel" role="dialog" aria-modal="true" aria-label={groupWord(group?"groupEdit":"groupCreate")}>
+  return <dialog ref={dialog} className="pa-form-panel pa-group-editor" aria-label={groupWord(group?"groupEdit":"groupCreate")} onCancel={event=>{event.preventDefault();onClose()}} onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation()}}>
     <header className="pa-toolbar"><button type="button" onClick={onClose}>{groupWord("groupCancel")}</button><h2>{groupWord(group?"groupEdit":"groupCreate")}</h2><button type="button" disabled={!source||busy||unknown||!name.trim()||!members.length||!complete} onClick={()=>void save()}>{groupWord(busy?"groupSaving":"groupSave")}</button></header>
     <div className="pa-form-body"><fieldset disabled={busy||unknown}>
       <label>{groupWord("groupName")}<input value={name} onChange={e=>setName(e.target.value)}/></label>
       <PaSelect label={groupWord("groupProject")} disabled={!!group} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]);const pName=projectNames.get(keyStr)??b.project.project_id;const icon=projectIcons?.get(keyStr);const machineSuffix=sources.length>1?` · ${sources.find(s=>s.source.machineID===b.key.machine_id)?.source.machineName??b.key.machine_id}`:"";return {value:JSON.stringify(b.project),label:`${pName}${machineSuffix}`,icon:<ProjectMark icon={icon} size={16}/>}})}/>
       <fieldset><legend>{groupWord("groupMembers")}</legend>{eligible.map(bot=>{const id=identity(bot.key);const checked=members.includes(id);return <label key={id} style={{display:"flex",flexDirection:"row",alignItems:"center",gap:12,minHeight:44,margin:"6px 0",cursor:"pointer"}}><input type="checkbox" style={{flex:"none",width:20,height:20,minHeight:20,minWidth:20,margin:0,padding:0,accentColor:"#e39567"}} checked={checked} onChange={e=>setMembers(old=>e.target.checked?[...old,id]:old.filter(k=>k!==id))}/><BotAvatar appearance={bot.appearance} size={28}/><span style={{flex:1,fontSize:15,color:"#fafafa",fontWeight:500}}>{bot.name}</span></label>})}</fieldset>
     </fieldset><p>{groupWord("groupSameProject")}</p>{!complete&&<p role="status">{groupWord("groupMembersMissing")}</p>}{error&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} ({error})</p>}</div>
-  </section>
+  </dialog>
 }
 
 /** Pending proposals remain visible on read-only devices; only a live human
