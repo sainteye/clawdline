@@ -178,14 +178,8 @@ func (s *Server) checkManagedAntigravityContext(ctx context.Context, launchID st
 	if owner == nil || bridge == nil || !evidence.Verified {
 		return managedAntigravityFailure()
 	}
-	fresh, err := bridge.VerifyAntigravityProcess(ctx, evidence.Process.PID)
-	if err != nil {
-		return err
-	}
-	if fresh != evidence.Process {
-		return managedAntigravityFailure()
-	}
-	record, err := owner.LookupProcess(ctx, fresh)
+	process := evidence.Process
+	record, err := owner.LookupProcess(ctx, process)
 	if err != nil {
 		return err
 	}
@@ -193,22 +187,24 @@ func (s *Server) checkManagedAntigravityContext(ctx context.Context, launchID st
 		return managedAntigravityFailure()
 	}
 	if record.Policy != nil {
-		if err := s.checkProductionAntigravityPolicy(ctx, record, fresh); err != nil {
+		if err := s.checkProductionAntigravityPolicy(ctx, record, process); err != nil {
 			return err
 		}
 	}
-	if err := verifyManagedAntigravityWorkspace(ctx, fresh, record.Workspace); err != nil {
+	if err := verifyManagedAntigravityWorkspace(ctx, process, record.Workspace); err != nil {
 		return err
 	}
-	birth, err := time.Parse(time.RFC3339Nano, fresh.Birth)
+	birth, err := time.Parse(time.RFC3339Nano, process.Birth)
 	if err != nil {
 		return managedAntigravityFailure()
 	}
-	native, err := bridge.AntigravityBinding(ctx, session.Session{ID: fresh.TerminalID, PID: fresh.PID, TTY: fresh.TTY, Backend: session.Backend(record.Backend), Assistant: session.AssistantAntigravity, ExpectedStart: birth, ConversationID: evidence.ConversationID})
+	// The binding read already revalidates the kernel process and exact
+	// terminal. The workspace read above independently checks full identity.
+	native, err := bridge.AntigravityBinding(ctx, session.Session{ID: process.TerminalID, PID: process.PID, TTY: process.TTY, Backend: session.Backend(record.Backend), Assistant: session.AssistantAntigravity, ExpectedStart: birth, ConversationID: evidence.ConversationID})
 	if err != nil {
 		return err
 	}
-	if !native.Verified || native.Process != fresh || native.ConversationID != evidence.ConversationID || native.TranscriptPath != evidence.TranscriptPath || native.Sequence < evidence.Sequence || s.antigravityLaunchStore.Load() != owner || s.antigravityBridge.Load() != bridge {
+	if !native.Verified || native.Process != process || native.ConversationID != evidence.ConversationID || native.TranscriptPath != evidence.TranscriptPath || native.Sequence < evidence.Sequence || s.antigravityLaunchStore.Load() != owner || s.antigravityBridge.Load() != bridge {
 		return managedAntigravityFailure()
 	}
 	return ctx.Err()
