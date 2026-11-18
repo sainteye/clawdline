@@ -59,7 +59,7 @@ import { elapsedWords } from "./working-clock.js"
 import "./pending.css"
 import "./working-line.css"
 import { conversationNotStarted } from "./readiness.js"
-import { transcriptShow } from "./transcript-trouble.js"
+import { availableTranscript, TRANSCRIPT_SLOW_MS, transcriptShow } from "./transcript-trouble.js"
 import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
 import "./lightbox-steps.css"
@@ -174,13 +174,13 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const fast = useRef(false)
   const read = useMemo(
     () => async (why: ReadReason): Promise<TranscriptPage> => {
-      if (agentId) return client.agentTranscript(id, agentId, LIMIT)
+      if (agentId) return availableTranscript(await client.agentTranscript(id, agentId, LIMIT))
       const epoch = readEpoch.current
       const was = heldPage.current
       const from = appendedReadFrom(was, why, fast.current)
       if (was && from !== null) {
         try {
-          const joined = joinAppended(was, await client.transcriptAfter(id, LIMIT, from, was.signature))
+          const joined = joinAppended(was, availableTranscript(await client.transcriptAfter(id, LIMIT, from, was.signature)))
           if (epoch !== readEpoch.current) {
             if (heldPage.current) return heldPage.current
             throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
@@ -192,7 +192,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
           if (!(err instanceof RefusalError)) throw err
         }
       }
-      const page = await client.transcript(id, LIMIT)
+      const page = availableTranscript(await client.transcript(id, LIMIT))
       if (epoch !== readEpoch.current) {
         if (heldPage.current) return heldPage.current
         throw Object.assign(new Error(nextWord("transcriptEarlierFailed")), { code: "read_aborted" })
@@ -244,6 +244,21 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   const poll = usePoll<TranscriptPage>(read, pace, agentId ? {} : { backoff: BACKOFF })
   const { error } = poll
   const data = restartedPage ?? poll.data
+  const initialReadAt = useRef(Date.now())
+  const [retrying, setRetrying] = useState(false)
+  const [, slowReadClock] = useState(0)
+  const waitingSince = poll.failingSince === null
+    ? poll.pending ? initialReadAt.current : null
+    : data ? poll.failingSince : Math.min(initialReadAt.current, poll.failingSince)
+  useEffect(() => {
+    if (waitingSince === null) return
+    const left = TRANSCRIPT_SLOW_MS - (Date.now() - waitingSince)
+    if (left <= 0) return
+    const timer = setTimeout(() => slowReadClock(n => n + 1), left)
+    return () => clearTimeout(timer)
+  }, [waitingSince])
+  useEffect(() => { if (!poll.reading) setRetrying(false) }, [poll.reading])
+  const retryRead = () => { setRetrying(true); poll.retry() }
   // The row says the record grew, or the session changed what it is doing:
   // read what was appended now, and once more a little after the last such
   // change, because the row's time is in whole seconds.
@@ -268,12 +283,19 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
   // A read nobody answered waits out its quiet stretch before it is news
   // (`transcript-trouble.ts`); until then the skeleton, or the entries already
   // read, stay as they are.
+  // Count elapsed failure time only when another read actually fails. A timer
+  // redraw or the next request starting cannot turn a still-pending recovery
+  // into an error just before that request succeeds.
+  const failingForMs = useMemo(() => poll.failingSince === null ? 0 : Date.now() - poll.failingSince,
+    [poll.failures, poll.failingSince])
   const show = transcriptShow({
     hasData: !!data,
     failureKind: poll.failureKind,
     failures: poll.failures,
-    failingForMs: poll.failingSince === null ? 0 : Date.now() - poll.failingSince,
-    noRecord: data?.evidence === "none" && !!data.note,
+    failingForMs,
+    failure: poll.failure,
+    waitingForMs: waitingSince === null ? 0 : Date.now() - waitingSince,
+    retrying,
   })
   // Each read settles the cards it confirms before it is painted, so the turn
   // and the card standing for it are never on screen together.
@@ -371,7 +393,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
             requestedCursor = before
             return client.transcript(id, LIMIT, before, revision)
           },
-          () => client.transcript(id, LIMIT),
+          async () => availableTranscript(await client.transcript(id, LIMIT)),
           (newest) => {
             if (!alive.current) return
             readEpoch.current++
@@ -642,7 +664,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
       </>
     )
   }
-  const failed = show === "failure" ? readFailed(poll.reading, poll.retry) : null
+  const recovering = show === "recovering" ? <div className="tx-note tx-recovering" role="status">{nextWord("transcriptSlowRead")}</div> : null
+  const failed = show === "failure" ? readFailed(poll.reading, retryRead) : null
   if (failed && !entries.length) {
     return (
       <>
@@ -657,14 +680,15 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
       {failed}
       {technicalDetails(technical)}
     </>
-  ) : null
+  ) : recovering
   if (!entries.length && !browserCards.length) {
     // A window that ran out before reaching a single entry is not a
     // conversation with nothing in it.
     return (
       <>
+        {notice}
         {olderControl ?? (!earlier && cutNote(data))}
-        {!olderCursor && <div className="tx-note">{agentId ? T.agentEmpty : T.noOutput}</div>}
+        {!recovering && !olderCursor && <div className="tx-note">{agentId ? T.agentEmpty : T.noOutput}</div>}
         {pending}
       </>
     )
@@ -886,8 +910,8 @@ function HeavyWorkLine({ reason, startedAt }: { reason: string; startedAt?: numb
 
 /**
  * `webTranscriptFailed`, and beside it the way to ask again now rather than at
- * the next poll. While that read is out the button says so and waits; the
- * sentence stays until an answer replaces it.
+ * the next poll. An explicit retry replaces this row with the neutral
+ * recovery status while its request is out.
  */
 function readFailed(reading: boolean, retry: () => void): ReactElement {
   return (

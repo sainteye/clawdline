@@ -1,12 +1,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
-import { TRANSCRIPT_QUIET_FAILURES, TRANSCRIPT_QUIET_MS, transcriptShow, type TranscriptRead } from "./transcript-trouble.ts"
+import { availableTranscript, TRANSCRIPT_QUIET_FAILURES, TRANSCRIPT_QUIET_MS, transcriptShow, type TranscriptRead } from "./transcript-trouble.ts"
+import type { TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see order.test.ts.
 import { Poller, type PollState, type ReadFailureKind } from "../poll.ts"
 
 function read(extra: Partial<TranscriptRead>): TranscriptRead {
-  return { hasData: false, failureKind: null, failures: 0, failingForMs: 0, noRecord: false, ...extra }
+  return { hasData: false, failureKind: null, failures: 0, failingForMs: 0, ...extra }
 }
 
 /**
@@ -14,22 +15,23 @@ function read(extra: Partial<TranscriptRead>): TranscriptRead {
  * each step settles one read with a page or a throw, `stepMs` after the last,
  * and answers what the pane would show right after it.
  */
-async function pane(steps: ("ok" | ReadFailureKind)[], stepMs = 4000): Promise<string[]> {
+async function pane(steps: ("ok" | "no-record" | ReadFailureKind)[], stepMs = 4000): Promise<string[]> {
   let t = 0
   let next: (() => void) | null = null
   const script = [...steps]
   const shown: string[] = []
-  let state: PollState<{ entries: number }> | null = null
-  const poller = new Poller<{ entries: number }>({
+  let state: PollState<TranscriptPage> | null = null
+  const poller = new Poller<TranscriptPage>({
     read: async () => {
       const step = script.shift()!
-      if (step === "ok") return { entries: 1 }
+      if (step === "ok" || step === "no-record") return availableTranscript({ id: "s", signature: "fixture", entries: [],
+        evidence: step === "ok" ? "transcript" : "none", ...(step === "no-record" ? { note: "record temporarily unavailable" } : {}) })
       const err = new Error(step)
       ;(err as { kind?: string }).kind = step
       throw err
     },
     intervalMs: stepMs,
-    classify: (err) => (err as { kind: ReadFailureKind }).kind,
+    classify: (err) => (err as { kind?: ReadFailureKind }).kind ?? "unknown",
     onChange: (s) => (state = s),
     now: () => t,
     setTimer: (fn) => (next = fn),
@@ -43,9 +45,9 @@ async function pane(steps: ("ok" | ReadFailureKind)[], stepMs = 4000): Promise<s
       transcriptShow({
         hasData: s.data !== null,
         failureKind: s.failureKind,
+        failure: s.failure,
         failures: s.failures,
         failingForMs: s.failingSince === null ? 0 : t - s.failingSince,
-        noRecord: false,
       }),
     )
     if (i < steps.length - 1) {
@@ -88,6 +90,39 @@ test("a refusal on the first read is shown at once", async () => {
   assert.deepEqual(await pane(["refused"]), ["failure"])
 })
 
+test("temporary Cloud refusals wait through the same grace as unanswered reads", () => {
+  for (const code of ["offline", "cloud_reconnecting", "cloud_read_busy", "cloud_read_timeout", "read_reply_mismatch"]) {
+    const temporary = { failureKind: "refused" as const, failure: { code }, failures: 1 }
+    assert.equal(transcriptShow(read(temporary)), "loading", code)
+    assert.equal(transcriptShow(read({ ...temporary, waitingForMs: 4000, failingForMs: 4000 })), "recovering", code)
+    assert.equal(transcriptShow(read({ ...temporary, failures: 3, failingForMs: 12000 })), "failure", code)
+  }
+})
+
+test("a slow first response gets a polite status without declaring it failed", () => {
+  assert.equal(transcriptShow(read({ waitingForMs: 3999 })), "loading")
+  assert.equal(transcriptShow(read({ waitingForMs: 4000 })), "recovering")
+  assert.equal(transcriptShow(read({ hasData: true, waitingForMs: 4000 })), "entries")
+})
+
+test("permission and execution refusals remain errors even during grace", () => {
+  for (const code of ["forbidden", "machine_pairing_required", "execution_generation_changed"]) {
+    assert.equal(transcriptShow(read({ failureKind: "refused", failure: { code, status: 403 }, failures: 1 })), "failure")
+  }
+})
+
+test("manual retry replaces an established error with a neutral reading status", () => {
+  assert.equal(transcriptShow(read({ failureKind: "unanswered", failures: 4, failingForMs: 20000, retrying: true })), "recovering")
+})
+
+test("unavailable pages use the bounded recovery and preserve the last readable page", async () => {
+  assert.deepEqual(await pane(["no-record", "ok"]), ["loading", "entries"])
+  assert.deepEqual(await pane(["ok", "no-record", "ok"]), ["entries", "entries", "entries"])
+  assert.deepEqual(await pane(["no-record", "no-record", "no-record", "no-record"]), ["loading", "loading", "loading", "failure"])
+  assert.throws(() => availableTranscript({ id: "s", signature: "", entries: [], evidence: "none", note: "record unavailable" }),
+    { code: "transcript_record_unavailable", message: "record unavailable" })
+})
+
 test("entries on screen and one missed read stay on screen with no notice", async () => {
   assert.deepEqual(await pane(["ok", "unanswered", "unknown", "ok"]), ["entries", "entries", "entries", "entries"])
 })
@@ -107,10 +142,4 @@ test("the bounds are both required, at their edges", () => {
   assert.equal(transcriptShow(read({ ...edge, failures: TRANSCRIPT_QUIET_FAILURES - 1 })), "loading")
   assert.equal(transcriptShow(read({ ...edge, failingForMs: TRANSCRIPT_QUIET_MS - 1 })), "loading")
   assert.equal(transcriptShow(read({ ...edge, failureKind: "unknown" })), "failure", "an unknown throw waits the same")
-})
-
-test("a page with no record is the machine's answer and is shown at once", () => {
-  assert.equal(transcriptShow(read({ hasData: true, noRecord: true })), "failure")
-  assert.equal(transcriptShow(read({ hasData: true, noRecord: true, failureKind: "unanswered", failures: 1 })), "failure")
-  assert.equal(transcriptShow(read({ hasData: true, failureKind: "refused", failures: 1 })), "failure")
 })

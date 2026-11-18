@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13224,
+  "englishKeys": 13231,
   "counts": {
-    "negation": 3499,
+    "negation": 3500,
     "state": 2237,
-    "permission": 808,
+    "permission": 809,
     "deletion": 311,
     "uncertainty": 542
   },
-  "unionCount": 5715,
+  "unionCount": 5717,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -505,6 +505,7 @@
       "capacityRow.console.transcript_merged_rows.what",
       "capacityRow.console.transcript_safety_seconds.full",
       "capacityRow.console.transcript_safety_seconds.what",
+      "capacityRow.console.transcript_slow_milliseconds.full",
       "capacityRow.console.video_preview_bytes.full",
       "capacityRow.console.video_preview_milliseconds.full",
       "capacityRow.console.view_plugin_catalog_bytes.what",
@@ -5874,6 +5875,7 @@
       "capacityRow.console.ops_resolving_poll_seconds.what",
       "capacityRow.console.public_analytics_readms.what",
       "capacityRow.console.support_image_upload_seconds.what",
+      "capacityRow.console.transcript_quiet_milliseconds.full",
       "capacityRow.console.view_plugin_request_milliseconds.what",
       "capacityRow.devices.list.full",
       "capacityRow.devices.list.what",
@@ -8293,8 +8295,10 @@
     "capacityRow.console.transcript_follow_seconds.what",
     "capacityRow.console.transcript_merged_rows.full",
     "capacityRow.console.transcript_merged_rows.what",
+    "capacityRow.console.transcript_quiet_milliseconds.full",
     "capacityRow.console.transcript_safety_seconds.full",
     "capacityRow.console.transcript_safety_seconds.what",
+    "capacityRow.console.transcript_slow_milliseconds.full",
     "capacityRow.console.video_preview_bytes.full",
     "capacityRow.console.video_preview_milliseconds.full",
     "capacityRow.console.view_plugin_archive_bytes.full",

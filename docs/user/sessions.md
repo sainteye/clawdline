@@ -52,6 +52,14 @@ Click a row. The detail shows the real transcript, read from what Claude Code or
 `r` to reverse its order; **Settings** → **Transcript** sets the order for every
 session.
 
+A conversation read keeps its loading state briefly. After four seconds it says that reading
+is taking longer and continues trying. Temporary connection or service failures show an error
+only after at least three consecutive failed reads and twelve seconds of failures, measured
+when a read fails. Starting the next read cannot create an error before its answer arrives.
+Previously read conversation text stays visible. **Try again** replaces an established error
+with a neutral reading status until that request settles. Permission and execution-identity
+refusals still appear immediately.
+
 The **⋯** menu (**Session actions**) holds the rest:
 
 - **Session info**: title and directory, **Edit session title**, context

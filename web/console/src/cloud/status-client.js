@@ -1075,7 +1075,10 @@ export class StatusCloudClient extends CatalogCloudClient {
         // an answer to a request this page has just sent.
         if (realign) return
         if (proof.waiters !== this.readWaiters.get(key) || !pinnedReplyMatches(payload, proof)) {
-          this._settleRead(key, null, refused("read_reply_mismatch", "the Session content reply did not match its request"))
+          // t/ is also where a delayed answer to an earlier request arrives.
+          // It owns neither this waiter's content nor its failure. Keep waiting
+          // for the exact reply inside the original read deadline; never copy
+          // the unmatched body into a snapshot or start another request here.
           return
         }
       } else if (this.readWaiters?.get(key)?.type === "peer-inbox") {

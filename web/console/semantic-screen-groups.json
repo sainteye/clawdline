@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13224,
-  "riskKeys": 5715,
-  "nonRiskCount": 7509,
+  "englishContentKeys": 13231,
+  "riskKeys": 5717,
+  "nonRiskCount": 7514,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 686,
+      "count": 690,
       "sources": [
         null
       ],
@@ -870,8 +870,12 @@
         "capacityRow.console.transcript_backoff_seconds.what",
         "capacityRow.console.transcript_fill_pages.full",
         "capacityRow.console.transcript_follow_later_seconds.what",
+        "capacityRow.console.transcript_quiet_failures.full",
+        "capacityRow.console.transcript_quiet_failures.what",
+        "capacityRow.console.transcript_quiet_milliseconds.what",
         "capacityRow.console.transcript_revision_restarts.full",
         "capacityRow.console.transcript_revision_restarts.what",
+        "capacityRow.console.transcript_slow_milliseconds.what",
         "capacityRow.console.video_preview_bytes.what",
         "capacityRow.console.video_preview_frames.full",
         "capacityRow.console.video_preview_frames.what",
@@ -4130,7 +4134,7 @@
     },
     {
       "name": "next / other",
-      "count": 1230,
+      "count": 1231,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5193,6 +5197,7 @@
         "next.transcriptRetry",
         "next.transcriptRetryEarlier",
         "next.transcriptRetrying",
+        "next.transcriptSlowRead",
         "next.transcriptTechnicalDetails",
         "next.unifyVisibleTo",
         "next.updateApplyOlder",

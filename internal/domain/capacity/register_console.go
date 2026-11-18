@@ -97,6 +97,19 @@ func baseConsoleBounds() []Entry {
 			Limit: 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 		},
 		{
+			// transcript-trouble.ts keeps a slow read neutral before repeated failures.
+			Name: "console.transcript_slow_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 4000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: "console.transcript_quiet_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 12000, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: "console.transcript_quiet_failures", Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// readOlderRecovering in session/transcript-follow.ts clears stale
 			// held history, reads newest once, and retries older once per request.
 			// A second refusal remains visible for manual recovery.

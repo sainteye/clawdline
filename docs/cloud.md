@@ -167,6 +167,14 @@ New Cloud `transcript` reads accept `expected_generation` beside the existing `s
 
 The separate encrypted `r/<machine>` request channel carries generation-pinned Session content reads under class `ctl`: info (including a list-only title, CWD and project icon), transcript pages, skills, images, Git, screen, Agent, Shell and documents. Each read names machine, Session and execution generation; the machine checks current pairing and `read_transcript` permission before and after the local route, and rechecks the execution after the read. Replies use the existing exact `t/<machine>/<session>` channel and echo the read name plus machine, Session, generation and request sequence. A viewer must match all proof fields before showing content. An absent `machine.read_content_v1` in `orch/` identifies an older content bridge without blocking an available `ss/` status list.
 
+A delayed reply that does not match the pending request is ignored without settling that
+request, caching its body or starting another read. The exact reply can still complete within
+the original deadline. Previously, an unmatched reply rejected the current waiter with
+`read_reply_mismatch`; a later correct reply could no longer rescue the waiting caller.
+Conversation presentation separately gives temporary transport and service refusals the same
+recovery window as unanswered reads, preserves the last readable page, and escalates only on
+a settled failed attempt. See [the recovery checks](transcript-read-recovery.md).
+
 An incoming request arrives on `ctl/<machine>`. The transport verifies and decrypts it, then [`Service`](../internal/transport/cloud/cloud.go) hands it to `cloudops`. The answer is sealed for `t/<machine>/<session>`, including the reserved machine reply session for machine-wide reads. `cloudops.Implemented()` is the machine's current operation list; the hosted console's [`carry.ts`](../web/console/src/cloud/carry.ts) maps routes to that vocabulary. Unsupported or machine-only routes, including terminal control, are not general Cloud capabilities.
 
 Every signed-in viewer paired with the target machine may send. The machine verifies the viewer's account identity and decrypts its request with that machine's content key before handling it. A machine-local key pin, when present, takes precedence over the account roster; a local or account revocation refuses the viewer. This also admits older browsers that hold the machine key from a pairing completed before local pins existed. `cloud_commands` is checked for each effectful request. `clawdline cloud commands on|off` changes that machine switch without restarting the daemon. A Cloud command uses the same in-process HTTP handler and authorization gate as a direct request.

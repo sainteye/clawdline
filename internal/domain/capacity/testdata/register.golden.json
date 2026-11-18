@@ -9748,6 +9748,42 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.transcript_quiet_failures",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.transcript_quiet_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 12000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.transcript_revision_restarts",
     "Class": "buffer",
     "Unit": "rows",
@@ -9774,6 +9810,24 @@
     "AtLimit": "expire",
     "Deviation": "",
     "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.transcript_slow_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
       "diagnostics"
     ],
     "EvictedBy": "daemon",

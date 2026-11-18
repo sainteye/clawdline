@@ -1070,8 +1070,7 @@ test("a retained or mismatched t/ row cannot settle a new pinned execution", () 
   assert.equal(settlements.length, 0)
   assert.equal(client.transcriptSnapshots.size, 0)
   client._applySnapshot(channel, old, { seq: 24, ts: Date.now() }, false)
-  assert.equal(settlements.length, 1)
-  assert.equal(settlements[0].error.code, "read_reply_mismatch")
+  assert.equal(settlements.length, 0, "a late reply must not cancel the current request")
   assert.equal(client.transcriptSnapshots.size, 0)
   settlements.length = 0
   const current = { ...old, expected_generation: genB, seq: 18, body: { entries: [] } }
@@ -1079,7 +1078,48 @@ test("a retained or mismatched t/ row cannot settle a new pinned execution", () 
   assert.deepEqual(settlements, [{ readKey: key, body: current.body, error: null }])
 })
 
-test("peer inbox refuses a reply from another request or execution before settling content", () => {
+test("a delayed transcript reply preserves the real waiter and its original deadline", async () => {
+  for (const answerArrives of [true, false]) {
+    const client = Object.create(StatusCloudClient.prototype)
+    const key = "m\u0000s\u0000transcript"
+    let outcome = null, cleared = 0
+    let waiter
+    const result = new Promise((resolve, reject) => { waiter = { resolve, reject } })
+      .then(body => { outcome = { body } }, error => { outcome = { code: error.code } })
+    const timer = {}
+    const waiters = { waiting: [waiter], timer, ref: null, channel: null, type: "transcript" }
+    client.readWaiters = new Map([[key, waiters]])
+    client.pinnedReadProofs = new Map([[key, { machineID: "m", sessionID: "s", generation: genA,
+      read: "transcript", seq: 18, waiters }]])
+    client.transcriptSnapshots = new Map()
+    client.clearTimeout = handle => { assert.equal(handle, timer); cleared++ }
+    client._observeMachine = () => {}
+    client._emit = () => {}
+    client.trail = { refused() {} }
+    const channel = { kind: "transcript", machine: "m", session: "s" }
+    const reply = { read: "transcript", machine_id: "m", session_id: "s", expected_generation: genA,
+      seq: 17, body: { entries: [{ text: "outdated answer" }] } }
+    client._applySnapshot(channel, reply, { seq: 24, ts: Date.now() }, false)
+    await Promise.resolve()
+    assert.equal(outcome, null, "the late reply cannot reject the caller's promise")
+    assert.equal(client.readWaiters.get(key), waiters)
+    assert.equal(cleared, 0, "the original deadline is neither cleared nor extended")
+    assert.equal(client.transcriptSnapshots.size, 0)
+    if (answerArrives) {
+      client._applySnapshot(channel, { ...reply, seq: 18, body: { entries: [] } }, { seq: 25, ts: Date.now() }, false)
+      await result
+      assert.deepEqual(outcome, { body: { entries: [] } })
+    } else {
+      client._settleRead(key, null, Object.assign(new Error("original deadline"), { code: "cloud_read_timeout" }))
+      await result
+      assert.deepEqual(outcome, { code: "cloud_read_timeout" })
+    }
+    assert.equal(client.readWaiters.size, 0)
+    assert.equal(cleared, 1)
+  }
+})
+
+test("peer inbox ignores a reply from another request while awaiting its own content", () => {
   const client = Object.create(StatusCloudClient.prototype)
   const key = "m\u0000s\u0000read:inbox-1"
   const waiters = { type: "peer-inbox", ref: { seq: 7 } }
@@ -1097,7 +1137,7 @@ test("peer inbox refuses a reply from another request or execution before settli
     { read: "read:inbox-1", machine_id: "m", session_id: "s", expected_generation: genA, seq: 6,
       body: { items: [{ body: "private" }] } }
   client._applySnapshot(channel, old, {}, false)
-  assert.deepEqual(settled, [{ name: key, body: null, code: "read_reply_mismatch" }])
+  assert.deepEqual(settled, [], "another request does not own this waiter's result")
   settled.length = 0
   const current = { ...old, seq: 7, body: { items: [] } }
   client._applySnapshot(channel, current, {}, true)
@@ -1123,7 +1163,7 @@ test("an older page reply settles only the waiter for its exact cursor and reque
   const older = { read, machine_id: "m", session_id: "s", expected_generation: genA, seq: 51,
     body: { entries: [{ role: "assistant", text: "old" }] } }
   client._applySnapshot(channel, older, { seq: 60, ts: Date.now() }, false)
-  assert.equal(settlements[0].error.code, "read_reply_mismatch")
+  assert.equal(settlements.length, 0, "a delayed older page must leave the new request waiting")
   settlements.length = 0
   client._applySnapshot(channel, { ...older, seq: 52 }, { seq: 61, ts: Date.now() }, false)
   assert.deepEqual(settlements, [{ readKey: key, body: older.body, error: null }])

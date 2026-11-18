@@ -22,6 +22,7 @@ let remoteWrites = 0
 let remoteText = ""
 let remoteImages: string[] = []
 let remoteAnswers: {key:string;expect:string}[] = []
+let transcriptRead: ((res: ServerResponse) => void) | null = null
 
 let firstAttempts = 0
 let olderAttempts = 0
@@ -73,6 +74,8 @@ function daemon(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
 
+    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+
     if (path === "/v1/places") return json(res, 200, { places: [{ id: "project", label: "Fixture project", path: "/tmp/fixture" }], assistants: [{ id: "codex", label: "Codex" }] })
     if (path === "/v1/places/project/sessions/codex") {
       const cursor = new URL(req.url ?? "/", "http://fixture").searchParams.get("cursor")
@@ -93,6 +96,7 @@ function daemon(): Server {
     if(remoteControl && req.method === "POST" && path === "/v1/sessions/"+ID+"/key"){
       let body="";req.on("data",chunk=>body+=chunk);req.on("end",()=>{remoteAnswers.push(JSON.parse(body));json(res,200,{ok:true,id:ID,action:"accepted"})});return
     }
+    if (path === "/v1/transcript" && transcriptRead) return transcriptRead(res)
     if (path === "/v1/transcript") return json(res, 200, { entries: remoteControl ? [{ role: "user", text: "Remote history fixture", timestamp: NOW }, ...(remoteText ? [{role:"user",text:remoteText,imageCount:remoteImages.length,timestamp:NOW},{role:"error",text:"Weekly quota exhausted",timestamp:NOW}] : [])] : [], evidence: "transcript", id: ID, signature: "fixture:"+remoteText })
     if (path.startsWith("/v1/")) return json(res, 404, { error: { code: "not_found", message: path } })
     if (path === "/") {
@@ -319,4 +323,78 @@ test("Remote Control sends images and exact permission answers on desktop and ph
   }
   assert.equal(remoteWrites,2,"desktop and phone each submitted one image event")
  }finally{remoteControl=false}
+})
+
+test("transcript recovery stays polite until repeated failure and softens manual retry", async () => {
+  const healthy = (res: ServerResponse) => json(res, 200, { id: ID, evidence: "transcript", signature: "ready",
+    entries: [{ role: "user", text: "Recovered conversation", timestamp: NOW }] })
+  const temporary = (res: ServerResponse) => json(res, 503, { error: { code: "cloud_reconnecting", message: "Connection is renewing" } })
+  for (const scenario of ["slow", "reconnect", "persistent"] as const) {
+    let attempts = 0
+    let retry = false
+    transcriptRead = (res) => {
+      attempts++
+      if (scenario === "slow" || retry) setTimeout(() => healthy(res), 5500)
+      else if (scenario === "reconnect" && attempts >= 4) healthy(res)
+      else temporary(res)
+    }
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: s } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, s)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    const until = async (expression: string, timeout = 9000) => {
+      const deadline = Date.now() + timeout
+      while (Date.now() < deadline) {
+        if (await run(expression)) return
+        await new Promise(r => setTimeout(r, 40))
+      }
+      throw new Error("not ready: " + expression + "; " + await run("document.body.innerText"))
+    }
+    const shot = async (name: string) => {
+      if (!shots) return
+      const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, s)
+      writeFileSync(join(shots, "transcript-" + scenario + "-" + name + ".png"), Buffer.from(data, "base64"))
+    }
+    try {
+      await browser.send("Page.enable", {}, s)
+      await browser.send("Runtime.enable", {}, s)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, s)
+      await browser.send("Page.addScriptToEvaluateOnNewDocument", { source: `
+        localStorage.setItem('ui_language', 'zh-Hant');
+        window.readErrors = [];
+        new MutationObserver(() => {
+          const error = document.querySelector('.tx-failed');
+          if (error) window.readErrors.push(error.textContent);
+        }).observe(document, {childList: true, subtree: true});
+      ` }, s)
+      const mark = browser.loadCount
+      await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
+      await browser.loaded(s, mark)
+      await until(`!!document.querySelector('.tx-recovering[role="status"]')`)
+      assert.match(await run(`document.querySelector('.tx-recovering').textContent`), /這次讀取的時間較長/)
+      assert.deepEqual(await run("window.readErrors"), [], "recovery must never flash the error")
+      assert.equal(await run(`!!document.querySelector('.tx-failed')`), false)
+      await shot("slow")
+      if (scenario === "persistent") {
+        await until(`!!document.querySelector('.tx-failed[role="alert"]')`, 16000)
+        assert.ok(attempts >= 3, "an error needs repeated failed reads")
+        await shot("failed")
+        retry = true
+        await run(`document.querySelector('.tx-failed button').click()`)
+        await until(`!!document.querySelector('.tx-recovering')`)
+        assert.equal(await run(`!!document.querySelector('.tx-failed')`), false, "manual retry replaces the old error immediately")
+        await shot("retrying")
+      }
+      await until(`document.body.innerText.includes('Recovered conversation')`, 16000)
+      assert.equal(await run(`!!document.querySelector('.tx-recovering, .tx-failed')`), false)
+      if (scenario !== "persistent") assert.deepEqual(await run("window.readErrors"), [])
+      await shot("ready")
+    } finally {
+      await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
+      transcriptRead = null
+    }
+  }
 })
