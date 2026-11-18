@@ -478,3 +478,57 @@ save, exact replay, body-free indexes, explicit body reads, an actual concurrent
 write and revision conflict, same-ID replacement, forgetting and a refused
 read of the forgotten detail. These are scripted browser checks; clean native
 recall, updater compatibility and production visual acceptance stay separate.
+
+## Offline archive recovery entry point
+
+`clawdline project-assistants archive restore` consumes the Store archive
+`{data, manifest}`, not the console's wire export. The local operator must name
+an input file, a new database file and the exact expected machine, Bot and full
+Project identity:
+
+```sh
+clawdline project-assistants archive restore --input archive.json \
+  --database /recovery/new-bot.sqlite3 --machine MACHINE --bot BOT \
+  --project PROJECT --canonical CANONICAL --kind repository
+clawdline project-assistants archive export \
+  --database /recovery/new-bot.sqlite3 --machine MACHINE --bot BOT \
+  --project PROJECT --canonical CANONICAL --kind repository > roundtrip.json
+```
+
+These commands operate offline under the local operator's filesystem authority.
+The expected identity is an explicit scope check, not proof of a paired grant,
+Project registration or a signature on the archive. They do not access the
+running daemon, start a provider, resume a turn or install the recovered database
+as live state. A recovered database contains only the feature's schema and is
+for isolated recovery inspection; replacing a live database with it is not a
+supported installation procedure.
+
+The reader admits archive generations 1 through 12 independently of the Store's
+default export generation. The input is capped at 32 MiB (`bots.archive_bytes`);
+larger files, trailing JSON, unknown fields, unsupported versions, manifest
+mismatch, integrity damage and foreign identity are refused. Existing Store
+validation preserves history, receipts, memory provenance, notes and tombstones;
+its explicit collaboration/live-group transfer refusals remain in force.
+
+Full validation and restoration take place in a private in-memory database.
+Only after success is a complete, synced SQLite file staged in the destination's
+parent and published with an exclusive hard link. An existing target, symlink
+or SQLite sidecar is refused. A competing publisher cannot overwrite a winner.
+Failure before publication leaves no target or staging residue. An uncertain
+directory sync after publication or a lost success receipt is reported as
+`pa_outcome_unknown`; the complete target is preserved and must be inspected,
+not automatically imported again. Platforms without directory fsync retain the
+file sync and exclusive-publication guarantees, without claiming Unix directory
+crash durability. Export opens SQLite in read-only mode, requires the existing
+current schema and rechecks identity; it never installs or migrates a schema.
+
+`TestBotArchiveCLIConsumesActualLegacyAndReexportsRestoredFacts` uses the real
+schema-1 producer fixture with its original manifest. The current-format CLI
+checks include live and forgotten notes, complete re-export equality, typed
+refusals, existing targets/sidecars, cancellation and concurrent publication.
+These source-level CLI checks do not qualify an installed binary, updater
+rollback, production Cloud reading or the unchanged older binaries that have no
+archive-input command. A fixed source commit and actual binary fingerprint
+still need independent qualification before any new-format writer is considered.
+No API number or archive generation is allocated by this entry point; durable
+Host maintenance writers remain closed.

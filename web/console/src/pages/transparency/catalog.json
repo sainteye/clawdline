@@ -3659,6 +3659,10 @@
         {
           "path": "internal/app/projectassistant/native_context.go",
           "line": 1
+        },
+        {
+          "path": "cmd/clawdline/project_assistants_archive.go",
+          "line": 1
         }
       ],
       "original": [
@@ -4722,7 +4726,8 @@
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
     "cmd/clawdline/main.go": "4e1df55777cec0be41e9c9b853dc20e8fa27576511b606a4f6cd63c4cbc3b10c",
-    "cmd/clawdline/project_assistants.go": "10f49fb20002a803506e3688fe29b00c9ad6d3949009f13fb4c2c7b1fef49bce",
+    "cmd/clawdline/project_assistants.go": "480e6eec037b86c34b62fbf9b26641f0061fb6f5bdfdffae73e25dda0ba443d0",
+    "cmd/clawdline/project_assistants_archive.go": "ff477dbf581043447d4fbfca63ab6af5654b49c6caa63c922979c321d21b89a7",
     "cmd/clawdline/session.go": "5df30934990b0a477bede86caa07da8611702343d4b6194eeb24a23551c07375",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",
@@ -4988,7 +4993,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "a1a761a8390a03f85c6eeabc831bf9abc4c59eed16be21802d639e1188367597",
-    "zh-Hant": "d478b8a54dd6ac4d198963f5e4e311fb04b81a45e36a36e302bba643f5d7dd65"
+    "en": "7c483f64ea1f9e99a61e18733f77e8b2902a085e14a59d219d6d6a37b1611e83",
+    "zh-Hant": "a54814d27a5e537da3c206c007262bf1a20e18662d012d528fa965c9c5514839"
   }
 }

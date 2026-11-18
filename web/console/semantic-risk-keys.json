@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13279,
+  "englishKeys": 13281,
   "counts": {
-    "negation": 3503,
-    "state": 2241,
+    "negation": 3504,
+    "state": 2243,
     "permission": 812,
     "deletion": 311,
     "uncertainty": 543
   },
-  "unionCount": 5725,
+  "unionCount": 5727,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -170,6 +170,7 @@
       "capacityRow.board.receipts.full",
       "capacityRow.board.receipts.what",
       "capacityRow.bots.agent_rest_seconds.full",
+      "capacityRow.bots.archive_bytes.full",
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.carry_messages.full",
       "capacityRow.bots.carry_quote_bytes.full",
@@ -3625,6 +3626,8 @@
       "capacityRow.board.receipts.what",
       "capacityRow.bots.actors.full",
       "capacityRow.bots.agent_rest_seconds.full",
+      "capacityRow.bots.archive_bytes.full",
+      "capacityRow.bots.archive_bytes.what",
       "capacityRow.bots.artifact_bytes.full",
       "capacityRow.bots.artifact_title_bytes.full",
       "capacityRow.bots.assistant_grants.full",
@@ -7737,6 +7740,8 @@
     "capacityRow.board.receipts.what",
     "capacityRow.bots.actors.full",
     "capacityRow.bots.agent_rest_seconds.full",
+    "capacityRow.bots.archive_bytes.full",
+    "capacityRow.bots.archive_bytes.what",
     "capacityRow.bots.artifact_bytes.full",
     "capacityRow.bots.artifact_title_bytes.full",
     "capacityRow.bots.assistant_grants.full",

@@ -1058,6 +1058,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.archive_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 33554432,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotArchiveBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.artifact_bytes",
     "Class": "buffer",
     "Unit": "bytes",

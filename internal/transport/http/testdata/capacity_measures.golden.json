@@ -251,6 +251,10 @@
     "Note": true
   },
   {
+    "Name": "bots.archive_bytes",
+    "Err": true
+  },
+  {
     "Name": "bots.artifact_bytes",
     "Known": true,
     "Note": true

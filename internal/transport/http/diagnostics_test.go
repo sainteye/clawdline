@@ -74,7 +74,7 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 			continue
 		}
 		r := m()
-		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes || e.Name == capacity.BotsRosterClientRows || e.Name == capacity.BotsGroupPreviewAvatars ||
+		if e.Name == "bots.archive_bytes" || e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes || e.Name == capacity.BotsRosterClientRows || e.Name == capacity.BotsGroupPreviewAvatars ||
 			strings.HasPrefix(e.Name, "console.view_plugin_") || strings.HasPrefix(e.Name, "console.transcript_quiet_") || e.Name == "console.transcript_slow_milliseconds" ||
 			e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
 			if r.Known || r.Err == "" {
