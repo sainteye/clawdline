@@ -150,3 +150,13 @@ one, **✗** failed.
 
 The call's cost so far is shown in the call. Each call's transcript and tool use are kept on the
 machine for 14 days, so a call that went wrong can be looked into.
+
+## Session message boards
+
+Ask the copilot to create a Session message board. It can gather the name,
+purpose, Lead and initial members over several replies. It reads back the
+proposed board and the exact Session names. Say **confirm message board**
+(**確認留言板**) to save that proposal. You can later name the board and ask it
+to add other live Sessions, then confirm that proposal the same way. Members
+must be on the board's machine and in its Project. They can also join on their
+own with the Session board CLI.

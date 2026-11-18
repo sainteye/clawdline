@@ -4,19 +4,22 @@ import { nextWord as t } from "../next-strings.js"
 import { client, followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import type { CloudClientHandle } from "../cloud/copied.js"
+import { onStatusRefresh } from "../status-refresh.js"
 import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
 
 export type SessionBoardMember = { id: string; label: string }
 type Actor = SessionBoardMember
-type Board = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
+export type SessionMessageBoard = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
+type Board = SessionMessageBoard
 type Post = { seq: number; author: Actor; text: string; reply_to?: number; at: number }
 type Page = { board: Board; posts: Post[]; more: boolean }
 type Cursor = { board?: string; before?: number; after?: number }
-type Command = { action: string; board?: string; name?: string; text?: string; target?: string; reply_to?: number }
+export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
+type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
-type Entry = { actor?: Actor; render: (grouped: boolean) => ReactNode }
+type Entry = { actor?: Actor; render: (grouped: boolean, lead?: boolean) => ReactNode }
 export type SessionBoardSource = {
   key: string
   writable: boolean
@@ -38,7 +41,9 @@ const local: SessionBoardSource = {
       "Content-Type": "application/json", "Idempotency-Key": key,
     }, body: JSON.stringify(command) })
     if (!response.ok) throw await refusal(response)
-    return response.json()
+    const receipt = await response.json()
+    invalidateSessionBoards(local.key)
+    return receipt
   },
 }
 
@@ -86,7 +91,9 @@ export function cloudSessionBoardSource(machine: string, account: string, writab
       const word = "session-boards.change"
       const c = connection(word)
       if (!writable || !c._machineRequestAs) throw new Error("offline")
-      return await c._machineRequestAs(key, machine, word, { command }, "action") as Receipt
+      const result = await c._machineRequestAs(key, machine, word, { command }, "action") as Receipt
+      invalidateSessionBoards(JSON.stringify([account, machine]))
+      return result
     },
   }
 }
@@ -120,20 +127,52 @@ export function SessionBoardRows({ source, rows, candidates }: {
 }
 
 const boardChanged = "clawdline:session-board-changed"
+const boardIndexRead = "clawdline:session-board-index-read"
 
-function useBoardList(source: SessionBoardSource) {
+function invalidateSessionBoards(key: string) {
+  window.dispatchEvent(new CustomEvent(boardChanged, { detail: key }))
+}
+
+function unreadFor(source: SessionBoardSource, board: Board) {
+  return board.archived_at ? 0 : Math.max(0, board.latest - currentCursor(source, board.id))
+}
+
+export function SessionBoardLead() {
+  return <span className="session-board-lead">
+    <span className="clawdfather-crown" aria-hidden="true" />{t("sessionBoardLead")}
+  </span>
+}
+
+function BoardGlyph() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24">
+    <path d="M9 5H5.5A1.5 1.5 0 0 0 4 6.5v12A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 18.5 5H15M9 4h6v3H9zM7.5 12h9m-9 4h6" />
+  </svg>
+}
+
+function useBoardList(source: SessionBoardSource, watchMessages = false) {
   const [boards, setBoards] = useState<Board[]>([])
   const [problem, setProblem] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const inFlight = useRef<{ signal?: AbortSignal } | undefined>(undefined)
   const current = useRef(source)
   current.current = source
   const refresh = useCallback(async (signal?: AbortSignal) => {
+    if (inFlight.current && !inFlight.current.signal?.aborted) return
+    const flight = { signal }
+    inFlight.current = flight
     try {
       const result = await current.current.read<{ boards: Board[] }>({}, signal)
-      if (!signal?.aborted) { setBoards(result.boards); setProblem(false) }
+      if (!signal?.aborted) {
+        setBoards(result.boards)
+        setProblem(false)
+        const source = current.current
+        const unread = result.boards.reduce((count, board) => count + unreadFor(source, board), 0)
+        window.dispatchEvent(new CustomEvent(boardIndexRead, { detail: { key: source.key, unread } }))
+      }
     } catch {
       if (!signal?.aborted) setProblem(true)
     } finally {
+      if (inFlight.current === flight) inFlight.current = undefined
       if (!signal?.aborted) setLoaded(true)
     }
   }, [])
@@ -144,19 +183,32 @@ function useBoardList(source: SessionBoardSource) {
       if ((e as CustomEvent<string>).detail === source.key) read()
     }
     read()
+    const stopStatusRefresh = onStatusRefresh(read)
     window.addEventListener("focus", read)
+    document.addEventListener("visibilitychange", read)
     window.addEventListener(boardChanged, changed)
     return () => {
       control.abort()
+      stopStatusRefresh()
+      document.removeEventListener("visibilitychange", read)
       window.removeEventListener("focus", read)
       window.removeEventListener(boardChanged, changed)
     }
   }, [refresh, source.key])
+  const watch = watchMessages && boards.some(board => !board.archived_at)
+  useEffect(() => {
+    if (!watch) return
+    const control = new AbortController()
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refresh(control.signal)
+    }, 30_000)
+    return () => { window.clearInterval(timer); control.abort() }
+  }, [watch, refresh, source.key])
   return { boards, problem, loaded, refresh }
 }
 
 function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; rows: Entry[]; candidates?: Actor[] }) {
-  const list = useBoardList(source)
+  const list = useBoardList(source, true)
   const { boards, refresh } = list
   const [show, setShow] = useState<string>()
   const leadOptions = candidates ?? rows.flatMap(row => row.actor ? [row.actor] : [])
@@ -180,15 +232,16 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
       if (!b) return row.render(false)
       if (shown.has(b.id)) return null
       shown.add(b.id)
-      const unread = Math.max(0, b.latest - currentCursor(source, b.id))
-      const lead = b.members?.find(m => m.id === b.lead)
+      const unread = unreadFor(source, b)
+      const members = grouped.get(b.id) ?? []
+      const lead = members.find(entry => entry.actor?.id === b.lead)
       return <li key={b.id} className="session-board-group" role="presentation">
         <button type="button" onClick={() => setShow(b.id)}>
+          <BoardGlyph />
           <strong>{b.name}</strong>
-          {lead && <span>{t("sessionBoardLead")} · {lead.label}</span>}
           {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
         </button>
-        <ul className="rows" role="group" aria-label={b.name}>{grouped.get(b.id)?.map(r => r.render(true))}</ul>
+        <ul className="rows" role="group" aria-label={b.name}>{lead?.render(true, true)}{members.filter(row => row !== lead).map(row => row.render(true))}</ul>
       </li>
     })}
     {show !== undefined && createPortal(<BoardDialog source={source} initial={show} {...list}
@@ -196,13 +249,24 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
   </>
 }
 
-export type SessionBoardTarget = { source: SessionBoardSource; label: string; candidates: Actor[] }
+export type SessionBoardTarget = { machine?: string; source: SessionBoardSource; label: string; candidates: Actor[] }
 
 export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTarget[] }) {
   const [open, setOpen] = useState<string | null>(null)
   const button = useRef<HTMLButtonElement>(null)
+  const [readings, setReadings] = useState<Record<string, number>>({})
+  useEffect(() => {
+    const read = (event: Event) => {
+      const { key, unread } = (event as CustomEvent<{ key: string; unread: number }>).detail
+      setReadings(current => current[key] === unread ? current : { ...current, [key]: unread })
+    }
+    window.addEventListener(boardIndexRead, read)
+    return () => window.removeEventListener(boardIndexRead, read)
+  }, [])
+  const unread = targets.reduce((count, item) => count + (readings[item.source.key] ?? 0), 0)
+  const label = unread ? `${t("sessionBoards")} · ${t("sessionBoardUnread", { count: unread })}` : t("sessionBoards")
   const close = () => {
-    if (open) window.dispatchEvent(new CustomEvent(boardChanged, { detail: open }))
+    if (open) invalidateSessionBoards(open)
     setOpen(null)
     button.current?.focus()
   }
@@ -213,11 +277,10 @@ export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTa
   if (!targets.length) return null
   return <>
     <button ref={button} type="button" className="session-board-dock" aria-haspopup="dialog"
-      aria-label={t("sessionBoards")} title={t("sessionBoards")}
+      aria-label={label} title={label} data-unread={unread > 0 || undefined}
       onClick={() => setOpen(targets.length === 1 ? targets[0].source.key : "")}>
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h16v12H9l-5 4zM8 8h8m-8 4h5" />
-      </svg>
+      <BoardGlyph />
+      {unread > 0 && <span className="session-board-dock-dot" aria-hidden="true" />}
     </button>
     {target && createPortal(<StatusBoardDialog key={target.source.key} target={target} close={close} />, document.body)}
     {open === "" && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} />, document.body)}
@@ -281,6 +344,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
         <button type="button" onClick={() => select(board.id)}>
           <strong>{board.name}</strong>{board.archived_at ? <span>{t("sessionBoardArchived")}</span> : null}
           <span>{board.purpose}</span>
+          {unreadFor(source, board) > 0 && <small>{t("sessionBoardUnread", { count: unreadFor(source, board) })}</small>}
         </button>
       </li>)}</ul>
     </div>}
@@ -302,7 +366,6 @@ function useBoardChange(source: SessionBoardSource) {
     try {
       const r = await source.change(command, key)
       retry.current = null
-      window.dispatchEvent(new CustomEvent(boardChanged, { detail: source.key }))
       done(r)
     } catch (e) {
       setError(boardErrorCode(e, "session_board_write_unconfirmed"))
@@ -333,6 +396,8 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
   const [reading, setReading] = useState(false)
+  const [compact] = useState(() => window.matchMedia("(max-width: 700px)").matches)
+  const [unreadSince, setUnreadSince] = useState(() => currentCursor(source, id))
   const [draft, setDraft] = useState("")
   const [reply, setReply] = useState<number>()
   const [manage, setManage] = useState(false)
@@ -351,7 +416,14 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
       if (request.signal.aborted) return
       setPage(previous => before && previous ? { ...next, posts: [...next.posts, ...previous.posts] } : next)
       if (!before && next.posts.length > 0) {
-        try { localStorage.setItem(cursorKey(sourceRef.current, id), String(next.posts.at(-1)?.seq ?? 0)) } catch {}
+        const current = sourceRef.current
+        const cursor = currentCursor(current, id)
+        const latest = next.posts.at(-1)?.seq ?? 0
+        if (latest > cursor) {
+          setUnreadSince(cursor)
+          try { localStorage.setItem(cursorKey(current, id), String(latest)) } catch {}
+          invalidateSessionBoards(current.key)
+        }
       }
       setError("")
     } catch (e) {
@@ -372,18 +444,23 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
     if (draft.trim()) action({ action: "post", text: draft, reply_to: reply }, () => { setDraft(""); setReply(undefined) })
   }
   const lead = b?.members?.find(m => m.id === b.lead)
+  const members = b?.members?.filter(member => member.id !== b.lead) ?? []
+  const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={reading || change.busy}>
-    <div className="session-board-actions"><button type="button" disabled={reading} onClick={() => void load()}>{t("sessionBoardRefresh")}</button>
-      {allowed && <button type="button" onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}</div>
     {error && <p role="alert">{t("sessionBoardReadError")} <code>{error}</code></p>}
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
-      <h3>{b.name}</h3>
-      <p className="session-board-text">{b.purpose}</p>
-      <p>{t("sessionBoardLead")} · {lead?.label}</p>
-      {b.archived_at && <p>{t("sessionBoardArchived")}</p>}
-      {b.members && <p>{t("sessionBoardMembers")} · {b.members.map(m => m.label).join(" · ")}</p>}
-      {b.summary && <aside><strong>{t("sessionBoardSummary")}</strong><p className="session-board-text">{b.summary}</p></aside>}
+      <h3 className="session-board-name">{b.name}</h3>
+      <p className="session-board-purpose">{b.purpose}</p>
+      {lead && <div className="session-board-lead-strip"><SessionBoardLead /> <strong>{lead.label}</strong></div>}
+      <div className="session-board-actions">
+        <button type="button" disabled={reading} onClick={() => void load()}>{t("sessionBoardRefresh")}</button>
+        {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
+        {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
+      </div>
+      <div className="session-board-discussion">
+      <div className="session-board-thread">
+      {b.summary && <details className="session-board-summary" open><summary>{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
       {allowed && manage && <div className="session-board-management">
         <form key={b.summary} onSubmit={e => { e.preventDefault(); action({ action: "summary", text: String(new FormData(e.currentTarget).get("summary")) }) }}>
           <label>{t("sessionBoardSummary")}<textarea name="summary" defaultValue={b.summary} rows={3} /></label>
@@ -401,11 +478,12 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
           <button type="button" onClick={() => confirmArchive(false)}>{t("sessionBoardCancel")}</button>
         </div> : <button type="button" onClick={() => confirmArchive(true)}>{t("sessionBoardArchive")}</button>}
       </div>}
-      {page.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardEarlier")}</button>}
+      {unread > 0 && <p className="session-board-new" role="status">{t("sessionBoardUnread", { count: unread })}</p>}
       {!page.posts.length && <p>{t("sessionBoardNoPosts")}</p>}
-      <ol className="session-board-posts">{page.posts.map(p => <li key={p.seq}>
+      <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p => <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>
         <div>
           <strong>{p.author.id === "person" ? t("sessionBoardPerson") : p.author.label}</strong>
+          {p.author.id === b.lead && <SessionBoardLead />}
           <time dateTime={new Date(p.at * 1000).toISOString()}>{new Date(p.at * 1000).toLocaleString(document.documentElement.lang || undefined)}</time>
           <span>#{p.seq}</span>
         </div>
@@ -413,11 +491,22 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
         <div className="session-board-text" dangerouslySetInnerHTML={{ __html: richText(p.text, { codeCopy: false }) }} />
         {allowed && <button type="button" onClick={() => setReply(p.seq)}>{t("sessionBoardReply")}</button>}
       </li>)}</ol>
+      {page.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardEarlier")}</button>}
       {allowed && <form onSubmit={post}>
         {reply && <div>{t("sessionBoardReplyTo", { seq: reply })} <button type="button" onClick={() => setReply(undefined)}>{t("sessionBoardCancel")}</button></div>}
         <label>{t("sessionBoardMessage")}<textarea value={draft} onChange={e => setDraft(e.currentTarget.value)} rows={3} required /></label>
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
+      </div>
+      {b.members && <details className="session-board-members" open={!compact}>
+        <summary>{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
+        <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
+          <span className="session-board-member-mark" aria-hidden="true"><BoardGlyph /></span>
+          <strong>{member.label}</strong>
+          {member.id === b.lead && <SessionBoardLead />}
+        </li>)}</ul>
+      </details>}
+      </div>
     </>}
   </div>
 }

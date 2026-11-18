@@ -11,18 +11,18 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
 )
 
 const sessionBoardRoute = "/v1/orchestrator/session-boards"
 
-func (s *Server) sessionBoardActor(ctx context.Context, id string, qualified bool) (sb.Actor, string, bool) {
+func (s *Server) sessionBoardActor(ctx context.Context, inv session.Inventory, id string, qualified bool) (sb.Actor, string, bool) {
 	var actor sb.Actor
 	var cwd string
 	if id == "" {
 		return actor, "", false
 	}
-	inv := s.freshReading(ctx)
 	for _, row := range inv.Sessions {
 		if !row.IsAssistant() || row.ConversationID == "" {
 			continue
@@ -73,7 +73,7 @@ func (s *Server) sessionBoardsRoute(w http.ResponseWriter, r *http.Request) {
 	project := ""
 	var ok bool
 	if machine {
-		actor, project, ok = s.sessionBoardActor(ctx, q.Get("conversation_id"), false)
+		actor, project, ok = s.sessionBoardActor(ctx, s.freshReading(ctx), q.Get("conversation_id"), false)
 		if !ok {
 			writeSessionBoardError(w, sb.ErrDenied)
 			return
@@ -101,29 +101,50 @@ func (s *Server) sessionBoardsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var target sb.Actor
+	var members []sb.Actor
 	switch cmd.Action {
 	case "create":
-		if machine && cmd.Target != "" {
+		if machine && (cmd.Target != "" || len(cmd.Members) > 0) {
 			writeSessionBoardError(w, sb.ErrDenied)
 			return
 		}
 		if !machine {
-			target, project, ok = s.sessionBoardActor(ctx, cmd.Target, true)
+			inv := s.freshReading(ctx)
+			target, project, ok = s.sessionBoardActor(ctx, inv, cmd.Target, true)
+			if !ok {
+				writeSessionBoardError(w, sb.ErrDenied)
+				return
+			}
+			members, ok = s.resolveSessionBoardMembers(ctx, inv, project, cmd.Members)
 			if !ok {
 				writeSessionBoardError(w, sb.ErrDenied)
 				return
 			}
 		}
+	case "add-members":
+		if machine {
+			writeSessionBoardError(w, sb.ErrDenied)
+			return
+		}
+		inv := s.freshReading(ctx)
+		_, project, ok = s.sessionBoardActor(ctx, inv, cmd.Members[0], true)
+		if ok {
+			members, ok = s.resolveSessionBoardMembers(ctx, inv, project, cmd.Members)
+		}
+		if !ok {
+			writeSessionBoardError(w, sb.ErrDenied)
+			return
+		}
 	case "transfer":
 		var targetProject string
-		target, targetProject, ok = s.sessionBoardActor(ctx, cmd.Target, true)
+		target, targetProject, ok = s.sessionBoardActor(ctx, s.freshReading(ctx), cmd.Target, true)
 		if !ok || (machine && targetProject != project) {
 			writeSessionBoardError(w, sb.ErrDenied)
 			return
 		}
 		project = targetProject
 	}
-	out, err := s.store.ChangeSessionBoard(ctx, project, actor, target, cmd, key, time.Now())
+	out, err := s.store.ChangeSessionBoard(ctx, project, actor, target, cmd, key, time.Now(), members...)
 	if err != nil {
 		writeSessionBoardError(w, err)
 		return
@@ -131,7 +152,22 @@ func (s *Server) sessionBoardsRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+func (s *Server) resolveSessionBoardMembers(ctx context.Context, inv session.Inventory, project string, ids []string) ([]sb.Actor, bool) {
+	members := make([]sb.Actor, 0, len(ids))
+	for _, id := range ids {
+		actor, scope, ok := s.sessionBoardActor(ctx, inv, id, true)
+		if !ok || scope != project {
+			return nil, false
+		}
+		members = append(members, actor)
+	}
+	return members, true
+}
+
 func validSessionBoardCommand(c sb.Command) bool {
+	if len(c.Members) > sb.MaxMembers || (len(c.Members) > 0 && c.Action != "create" && c.Action != "add-members") {
+		return false
+	}
 	if c.Action == "create" {
 		return c.Board == "" && c.ReplyTo == 0 && sb.ValidText(c.Name, sb.MaxName) && sb.ValidText(c.Text, sb.MaxText)
 	}
@@ -145,6 +181,8 @@ func validSessionBoardCommand(c sb.Command) bool {
 		return c.Target == "" && c.ReplyTo == 0 && (c.Text == "" || sb.ValidText(c.Text, sb.MaxText))
 	case "transfer":
 		return c.Text == "" && c.ReplyTo == 0 && c.Target != ""
+	case "add-members":
+		return c.Text == "" && c.ReplyTo == 0 && c.Target == "" && len(c.Members) > 0
 	case "archive", "join", "leave":
 		return c.Text == "" && c.ReplyTo == 0 && c.Target == ""
 	default:

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13234,
+  "englishKeys": 13239,
   "counts": {
-    "negation": 3500,
-    "state": 2238,
-    "permission": 809,
+    "negation": 3501,
+    "state": 2239,
+    "permission": 810,
     "deletion": 311,
     "uncertainty": 542
   },
-  "unionCount": 5717,
+  "unionCount": 5719,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3397,6 +3397,7 @@
       "transparency.card.voice-polish.summary",
       "transparency.card.voice-question-menu.effect",
       "transparency.card.voice-question-menu.how",
+      "transparency.card.voice-session-boards.effect",
       "transparency.card.voice-work.condition",
       "transparency.card.voice-work.effect",
       "transparency.card.voice-work.how",
@@ -5664,6 +5665,7 @@
       "transparency.card.voice-polish.effect",
       "transparency.card.voice-polish.how",
       "transparency.card.voice-question-menu.summary",
+      "transparency.card.voice-session-boards.how",
       "transparency.card.voice-work.effect",
       "transparency.card.voice-work.how",
       "transparency.card.voice-work.summary",
@@ -6535,6 +6537,7 @@
       "transparency.card.runtime.summary",
       "transparency.card.session-recap.how",
       "transparency.card.session-recap.summary",
+      "transparency.card.voice-session-boards.how",
       "verify.reasonNeeded",
       "viewPlugins.allow",
       "viewPlugins.error_permission_denied",
@@ -12926,6 +12929,8 @@
     "transparency.card.voice-question-menu.effect",
     "transparency.card.voice-question-menu.how",
     "transparency.card.voice-question-menu.summary",
+    "transparency.card.voice-session-boards.effect",
+    "transparency.card.voice-session-boards.how",
     "transparency.card.voice-work.condition",
     "transparency.card.voice-work.effect",
     "transparency.card.voice-work.how",

@@ -21,7 +21,7 @@ func TestCodexEditingChildMayWriteItsRepositoryMetadata(t *testing.T) {
 	for _, c := range []struct {
 		mode, approval string
 		network        bool
-	}{{"edits", "--ask-for-approval on-request", false}, {"full", "--ask-for-approval never", true}} {
+	}{{"edits", "--ask-for-approval on-request", false}, {"full", "--ask-for-approval on-request", true}} {
 		line := strings.Join(permissionArgs(Record{Assistant: "codex", PermissionMode: c.mode, Repository: repo}, tasks, repo, ""), " ")
 		for _, want := range []string{`default_permissions="clawdline-workspace"`,
 			`permissions.clawdline-workspace.extends=":workspace"`, metadata, `"` + tasks + `"="write"`, c.approval} {

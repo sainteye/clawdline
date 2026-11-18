@@ -6,6 +6,14 @@ The page describes a reviewed product revision, not a person's configuration. En
 
 ## Content ownership
 
+Codex full tasks retain the workspace profile but now send requested sandbox
+exceptions to native automatic review. This restores the request path needed
+for an explicitly authorized browser launch; it does not add a permission
+switch or remove the sandbox. The bilingual machine-workflow and CodeGraph
+explanations were reviewed: their frozen instruction text, selection rules and
+context-provision authority are unchanged. Only the dispatch source receipt
+changes; automatic review is an execution decision, not a new workflow prompt.
+
 The Bot dialogue alignment explains explicit multi-message delivery and the
 last-text fallback in English and Taiwan Traditional Chinese. Its fixed prompt
 now matches delivery: after any explicit message, final text remains in trace.

@@ -60,12 +60,13 @@ type Page struct {
 }
 
 type Command struct {
-	Action  string `json:"action"`
-	Board   string `json:"board,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Target  string `json:"target,omitempty"`
-	ReplyTo int64  `json:"reply_to,omitempty"`
+	Action  string   `json:"action"`
+	Board   string   `json:"board,omitempty"`
+	Name    string   `json:"name,omitempty"`
+	Text    string   `json:"text,omitempty"`
+	Target  string   `json:"target,omitempty"`
+	Members []string `json:"members,omitempty"`
+	ReplyTo int64    `json:"reply_to,omitempty"`
 }
 
 type Result struct {

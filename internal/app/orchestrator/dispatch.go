@@ -1042,14 +1042,17 @@ func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 			}
 			return []string{"--ask-for-approval", "on-request", "--sandbox", "workspace-write"}
 		case "full":
+			// Keep automatic execution and the workspace boundary, but let a
+			// sandboxed browser launch request review. Never prevents the
+			// request itself, so the reviewer cannot authorize even a launch
+			// the person explicitly asked this task to perform.
+			approval := []string{"--ask-for-approval", "on-request", "-c",
+				projects.ShellQuoted(`approvals_reviewer="auto_review"`)}
 			if profile := workspaceProfileArgs(r, taskRoot, cwd, true); profile != nil {
-				return append(profile, "--ask-for-approval", "never")
+				return append(profile, approval...)
 			}
-			// Non-interactive work cannot ask to retry outside the network
-			// sandbox. Keep filesystem confinement, but let the task reach
-			// Clawdline's receipt routes and its network dependencies.
-			return []string{"--ask-for-approval", "never", "--sandbox", "workspace-write",
-				"-c", "sandbox_workspace_write.network_access=true"}
+			return append(approval, "--sandbox", "workspace-write",
+				"-c", "sandbox_workspace_write.network_access=true")
 		}
 	}
 	return nil

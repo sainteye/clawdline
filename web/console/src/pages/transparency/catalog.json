@@ -4656,6 +4656,35 @@
         "Source-side signed encrypted Bot frames and durable correlated receipts",
         "Dedicated authenticated assistant key and consent boundary"
       ]
+    },
+    {
+      "id": "voice-session-boards",
+      "scope": "conditional",
+      "agents": [],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/realtime/copilot-session-boards.ts",
+          "line": 7
+        },
+        {
+          "path": "web/console/src/realtime/realtime-copilot.ts",
+          "line": 362
+        },
+        {
+          "path": "internal/transport/http/session_boards.go",
+          "line": 54
+        }
+      ],
+      "original": [
+        "description: 'Prepare creating a named Session message board, or adding live Sessions to a board the person named. Ask one missing detail at a time. For creation collect a name, purpose, and Lead. Include any initial members the person names. Use exact Session IDs or names from list_sessions. Read back the returned plan, including the names and purpose where present. Ask the person to say “confirm message board” or 「確認留言板」 after the read-back. This tool saves nothing.',",
+        "description: 'Apply the exact prepared plan only when the person has just said “confirm message board” or 「確認留言板」 after hearing the plan. No arguments or changed details. If the machine returns an error, report it without claiming anything was saved.',"
+      ]
     }
   ],
   "sourceChecks": {
@@ -4760,7 +4789,7 @@
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "baad265baa7f4f3c2a4a49f033e087b0f813fb0aa24aff035e13d839d7508e20",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "5b4bee253c2f532f4abea577d050465f0e2d3823a42aa273f807c65ff50237e8",
+    "internal/app/orchestrator/dispatch.go": "8850c8f3975adab5255eaf91540543343b86d975e7564479ea3dc5f3d75aed75",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "eeb99f3590d9d1dacdaf8eff263554192647c8e58e73b532f7832a31d1840887",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
@@ -4847,6 +4876,7 @@
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
+    "internal/transport/http/session_boards.go": "a41fe55768e3c5a3d4369025cc3582c083a40e304cafff6d4f089dcf17a8d9c8",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
@@ -4899,9 +4929,10 @@
     "web/console/src/realtime/copilot-meter.ts": "1d4af65b0931c851fc2c9214dcc957f3c697d13c639d6f1ffd1b8cb9ddac5f6f",
     "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
     "web/console/src/realtime/copilot-reports.ts": "37124725f81a87dde8ac752f7617ae618a2ab89a4e954baf8c2df2096929c5aa",
+    "web/console/src/realtime/copilot-session-boards.ts": "448a05030875b1c38dda983846c3d4e27d347b156bfd73fd87ea5b537510de24",
     "web/console/src/realtime/copilot-speech.ts": "29d2f8d0875ddb75c5d0294dbe593da3add3d02b393ba68571db4f99bb064089",
-    "web/console/src/realtime/copilot-tools.ts": "9519d9f09f754737954c860b25a17aba9a62edadf4cffb42b8d0e4de7695d652",
-    "web/console/src/realtime/realtime-copilot.ts": "1911a3c26ee4394453e821a4cde817ed77eb6bc1e3e03ea5c0827a925d156a28",
+    "web/console/src/realtime/copilot-tools.ts": "c689a85f9e5824f9c0ba978ea5d85cf95069d76970afc181a360800d0cd44a91",
+    "web/console/src/realtime/realtime-copilot.ts": "c96da8e5b88cc2488cd27377d82c81492c8d3d2152d0cb098da06bcb036398b3",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -4917,7 +4948,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "05bb5b5d6609da0a12634349a7bdc8efb231adda693282b48c78f91a70f76b8f",
-    "zh-Hant": "6fa8ba9aa05ab3181ee8b9426464a28066cc1c21883876244f01cb3b2f0e2b2e"
+    "en": "4a6b0b6759883780fb7451123310c79f7ef3c31cc25455622c1a27c600689f79",
+    "zh-Hant": "b02be1f19d97fc16e5d5fb6aed2d0d15b194f46eda31672d31f9630aa4045e11"
   }
 }

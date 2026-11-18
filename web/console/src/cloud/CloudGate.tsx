@@ -1906,7 +1906,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       const actor = sessionBoardActor(row.assistant ?? row.projection?.assistant, row.status?.sessionId, row.title)
       return actor ? [actor] : []
     })
-    return [{ source, label: machine.name || machine.label || machine.id, candidates }]
+    return [{ machine: machine.id, source, label: machine.name || machine.label || machine.id, candidates }]
   }) : undefined
 
 
