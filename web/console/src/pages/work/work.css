@@ -998,3 +998,6 @@ button.work-epic-parent-link { cursor: pointer; text-decoration: underline; text
     .work-brief-card > .work-card-summary { min-height: 56px; }
     .work-proposals-brief .work-proposal-actions .chip { min-height: 44px; }
 }
+
+.work-origin-disclosure > summary { display:flex;align-items:center;gap:5px;list-style:none; }
+.work-origin-disclosure > summary::-webkit-details-marker { display:none; }

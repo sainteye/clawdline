@@ -155,8 +155,8 @@ const en = {
   windowNote: "7- and 30-day figures count complete UTC days, ending yesterday, against the same number of days before them.",
   comparisonNote: "Compared with the preceding period of the same length, using complete UTC days.",
 
-  trendUp: "▲ {delta}",
-  trendDown: "▼ {delta}",
+  trendUp: "{delta}",
+  trendDown: "{delta}",
   trendFlat: "No change",
   trendPercent: "{percent}%",
   trendAgainst: "previous {previous}",
@@ -552,8 +552,8 @@ const zhTW: Record<AdminWord, string> = {
   windowNote: "近 7／30 日以完整的 UTC 日計算，算到昨天為止，並與前一段同樣天數比較。",
   comparisonNote: "與前一段同樣天數比較；只計算完整的 UTC 日。",
 
-  trendUp: "▲ {delta}",
-  trendDown: "▼ {delta}",
+  trendUp: "{delta}",
+  trendDown: "{delta}",
   trendFlat: "持平",
   trendPercent: "{percent}%",
   trendAgainst: "前期 {previous}",

@@ -176,3 +176,6 @@
   .session-board-dialog input, .session-board-dialog textarea { font-size: 16px; }
   .session-board-dock { width: 36px; height: 42px; }
 }
+
+.session-board-summary > summary, .session-board-members > summary { display:flex;align-items:center;gap:6px;list-style:none; }
+.session-board-summary > summary::-webkit-details-marker, .session-board-members > summary::-webkit-details-marker { display:none; }

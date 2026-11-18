@@ -1,5 +1,8 @@
 # Console action waiting inventory
 
+The later [control icon review](console-icon-replacements.md) records the scoped
+SVG replacements and retained conversation markers independently of waiting behavior.
+
 Source review: 2026-10-25, base `11cfbfe32a879c5ab320f76681880548b2868502`. This page preserves the bounded, single-pass inventory of major person-triggered actions under `web/console/src` and records the implementation approved on 2026-10-25. Initial data reading remains in [the skeleton inventory](console-loading.md); none of its SK/EX/NO IDs are changed.
 
 [Open the Taiwan Traditional Chinese screenshot report](reports/action-loading-audit.html). The root must deliver that document through the canonical Clawdline Cloud document locator; this relative repository link is not Cloud acceptance.

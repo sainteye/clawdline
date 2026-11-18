@@ -518,3 +518,5 @@
 .adm-visit-period select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .adm-visits .adm-table-wrap { max-height:420px; overflow:auto; }
 .adm-visits .adm-table thead { position:sticky; top:0; background:var(--card); }
+
+.adm-trend .adm-chip .control-status-icon { margin-inline-end:4px; }

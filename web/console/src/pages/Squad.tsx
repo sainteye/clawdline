@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { confirmAction } from "../confirm-action.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { catalogFormat, catalogWordLanguage } from "../catalog.js"
@@ -121,7 +122,7 @@ function PersonaCard({ persona, selected, animated, onPick }: { persona: SquadPe
 function SkillCard({ skill, open, animated, onPick }: { skill: SquadSkill; open: boolean; animated: boolean; onPick: () => void }) {
   return <button type="button" className="squad-skill-card" data-open={open || undefined} data-use={animated || undefined}
     aria-expanded={open} aria-controls="squad-skill-detail" onClick={onPick}>
-    <span className="squad-skill-title"><span>{skill.icon && <IconCanvas icon={skill.icon} size={2} />}<strong>{skill.order}. {skill.name}</strong></span><span aria-hidden="true">{open ? "⌄" : "›"}</span></span>
+    <span className="squad-skill-title"><span>{skill.icon && <IconCanvas icon={skill.icon} size={2} />}<strong>{skill.order}. {skill.name}</strong></span><span aria-hidden="true"><ChevronIcon direction={open ? "down" : "right"} /></span></span>
     <span>{skill.purpose}</span>
     <small>{skill.status === "available" ? catalogWord("literal", "46926d0c9ced") : skill.status === "unavailable" ? catalogWord("literal", "c3209054441f") : catalogWord("literal", "2ffc1c13422d")} · {skill.enabled.value ? catalogWord("literal", "fad748d33598") : catalogWord("literal", "f4cd146147ab")} · {sourceLabel(skill.enabled.source)}</small>
   </button>

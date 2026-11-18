@@ -46,6 +46,7 @@ import "./side-border-overrides.css"
 import "./shell.css"
 import "./sidebar-scroll.css"
 import "./ui/disclosure-motion.css"
+import "./ui/control-icons.css"
 import "./brand-handle.css"
 import "./font-scale.css"
 

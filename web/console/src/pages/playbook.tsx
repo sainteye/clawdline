@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { confirmAction } from "../confirm-action.js"
 import { ActionProgress } from "../ui/ActionProgress.js"
 import { catalogWord } from "../catalog.js"
@@ -329,7 +330,7 @@ function PlaybookPage({ shown }: { shown: boolean }) {
       <div className="playbook-head-tools"><div className="playbook-project" ref={projectPicker}><span>{W("scopeLabel")}</span>
         <button type="button" className="playbook-project-trigger" aria-label={`${W("scopeLabel")}: ${globalView ? W("global") : place?.label || place?.path || ""}`} aria-expanded={projectOpen}
           onClick={() => setProjectOpen(!projectOpen)}>{globalView ? <GlobalMark /> : place && <Mark icon={place.icon as SessionRow["icon"]} cellPx={3} />}
-          <span>{globalView ? W("global") : place?.label || place?.path || W("projectLabel")}</span><span aria-hidden="true">⌄</span></button>
+          <span>{globalView ? W("global") : place?.label || place?.path || W("projectLabel")}</span><span aria-hidden="true"><ChevronIcon /></span></button>
         {projectOpen && <div className="playbook-project-menu"><button type="button" aria-current={globalView ? "true" : undefined} onClick={() => {
           setDraft(null); setGlobalView(true); setProjectOpen(false)
         }}><GlobalMark /><span>{W("global")}</span>{globalView && <span aria-hidden="true">✓</span>}</button>

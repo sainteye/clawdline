@@ -1,3 +1,4 @@
+import { StatusIcon } from "../ui/StatusIcon.js"
 import { LocalAPIPerformance } from "./LocalAPIPerformance.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -348,7 +349,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather, readUsage =
 
 function LevelMark({ level, zh }: { level: Level; zh: boolean }) {
   const word = level === "bad" ? (catalogWord("literal", "0547c3976b56")) : level === "warn" ? (catalogWord("literal", "de1f4ca207b0")) : catalogWord("literal", "96e69c58bf8b")
-  const icon = level === "bad" ? "!" : level === "warn" ? "▲" : "✓"
+  const icon = level === "bad" ? "!" : level === "warn" ? <StatusIcon name="alert" /> : "✓"
   return (
     <span className="machine-level" data-level={level}>
       <b aria-hidden="true">{icon}</b>

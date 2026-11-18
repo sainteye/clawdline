@@ -1,3 +1,4 @@
+import { ChevronIcon } from "./ChevronIcon.js"
 import { useEffect, useId, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { catalogWord } from "../catalog.js"
@@ -68,7 +69,7 @@ export function ProjectPicker({ places, value, onChange, onOpen, allowAll = fals
     <button className="project-picker-trigger" ref={trigger} type="button" aria-label={name} aria-haspopup="listbox"
       aria-expanded={open} aria-controls={open ? menuID : undefined} onClick={toggle}>
       {mark(selected?.icon)}<span className="project-picker-label" title={selected?.label}>{selected?.label || (allowAll ? allLabel ?? catalogWord("literal", "b2ee45d95857") : placeholder ?? catalogWord("literal", "ef8fe1c8ac54"))}</span>
-      <span className="project-picker-chevron" aria-hidden="true">⌄</span>
+      <span className="project-picker-chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
     <div className="project-picker-menu" data-motion-id="AN-014" id={menuID} role="listbox" aria-label={name} hidden={!open} inert={!open}>
       {allowAll && option({ id: "", label: allLabel ?? catalogWord("inline", "24926b27517e") })}

@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { useEffect, useRef, useState } from "react"
 import "./choice-menu.css"
 
@@ -34,7 +35,7 @@ export function ChoiceMenu({ value, options, label, disabled, onPick, compact = 
       aria-expanded={open} disabled={disabled} onClick={() => setOpen(!open)}
       onKeyDown={(event) => { if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); const direction = event.key === "ArrowDown" ? 1 : -1; setTimeout(() => move(direction), 0) } }}>
       {selected.icon && <span className="choice-menu-icon" aria-hidden="true">{selected.icon}</span>}
-      <span className="choice-menu-text" lang={selected.lang}>{selected.label}</span><span className="choice-menu-chevron" aria-hidden="true">⌄</span>
+      <span className="choice-menu-text" lang={selected.lang}>{selected.label}</span><span className="choice-menu-chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
     {open && <div className="choice-menu-list" role="listbox" aria-label={label}>
       {options.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value}

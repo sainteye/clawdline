@@ -1,0 +1,5 @@
+.control-chevron, .control-status-icon { display: inline-block; flex: none; vertical-align: middle; }
+.control-status-icon { width: 1em; height: 1em; }
+.disclosure-chevron { transition: transform 150ms ease; }
+details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .disclosure-chevron { transition: none; } }

@@ -923,3 +923,6 @@
 .copilot-target-option input { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); }
 
 .copilot-target-icon svg.pa-project-mark { stroke: none; }
+
+.copilot-question-alternative > summary { display:flex;align-items:center;gap:5px;list-style:none; }
+.copilot-question-alternative > summary::-webkit-details-marker { display:none; }

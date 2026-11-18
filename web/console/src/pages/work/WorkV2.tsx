@@ -1,3 +1,4 @@
+import { ChevronIcon } from "../../ui/ChevronIcon.js"
 import { BoardCardDetail } from "./BoardCardDetail.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
 import { useAssistantFacts } from "../../session/assistant-facts.js"
@@ -1282,8 +1283,8 @@ function CreatedViaNote({ item }: { item: WorkV2Item }) {
   if (!line) return null
   const excerpt = item.created_via?.excerpt ?? ""
   if (!excerpt) return <p className="work-created-via">{line}</p>
-  return <details className="work-created-via">
-    <summary title={excerpt}>{line}</summary>
+  return <details className="work-created-via work-origin-disclosure">
+    <summary title={excerpt}><ChevronIcon direction="right" className="disclosure-chevron" />{line}</summary>
     <blockquote aria-label={workWord("createdViaQuote")}>{excerpt}</blockquote>
   </details>
 }
@@ -1392,7 +1393,7 @@ function SessionAssignmentPicker({ choices, onRetry, value, onChange, autoFocus 
       {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b><PersonaTag id={selected.persona} personas={personas} />
         <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkLabel(selected)}</small></span></>
         : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>{catalogWord("inline", "b7efeae38921")}</span></>}
-      <span className="work-project-chevron" aria-hidden="true">⌄</span>
+      <span className="work-project-chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
     {open && <div className="work-session-menu" role="listbox" aria-label={catalogWord("inline", "498ac2845b60")}>
       {sessions.map((session) => <SessionChoice key={session.id} session={session} reading={readings[session.id]}
