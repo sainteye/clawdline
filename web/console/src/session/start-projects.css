@@ -30,10 +30,10 @@
 }
 #start-sheet .chip.start-add-first:disabled { opacity: 0.45; }
 
-#start-sheet { max-height: calc(var(--vvh, 100dvh) - 48px); overflow-y: auto; }
+#start-sheet { padding-block-start: 0; max-height: calc(var(--vvh, 100dvh) - 48px); overflow-y: auto; }
 .start-sheet-heading {
     position: sticky; top: 0; z-index: 2;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin: -20px -22px 0; padding: 12px 22px; background: var(--card);
+    margin-inline: -22px; padding: 12px 22px; background: var(--card);
 }
 #start-sheet .start-sheet-heading h2 { margin: 0; }

@@ -34,13 +34,13 @@
   margin: auto;
   --setup-pad-top: 24px;
   --setup-pad-inline: 40px;
-  padding: var(--setup-pad-top) var(--setup-pad-inline) 32px;
+  padding: 0 var(--setup-pad-inline) 32px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-  overflow: auto;
+  overflow: hidden auto;
 }
 .setup-dialog[open] { display: flex; flex-direction: column; }
 .setup-dialog::backdrop { background: rgba(8, 8, 10, 0.7); }
@@ -48,7 +48,7 @@
 .setup-top {
   position: sticky; top: 0; z-index: 2; flex: none;
   display: flex; align-items: center; justify-content: space-between; min-height: 32px;
-  margin: calc(0px - var(--setup-pad-top)) calc(0px - var(--setup-pad-inline)) 0;
+  margin-inline: calc(0px - var(--setup-pad-inline));
   padding: var(--setup-pad-top) var(--setup-pad-inline) 8px; background: var(--card);
 }
 .setup-track { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }

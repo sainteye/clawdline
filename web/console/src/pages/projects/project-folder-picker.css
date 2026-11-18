@@ -1,4 +1,4 @@
-.project-folder-picker { box-sizing: border-box; width: min(540px, calc(100vw - 24px)); max-height: min(740px, calc(var(--vvh, 100dvh) - 24px)); bottom: max(0px, calc(100dvh - var(--vvh, 100dvh))); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); }
+.project-folder-picker { box-sizing: border-box; width: min(540px, calc(100vw - 24px)); max-height: min(740px, calc(var(--vvh, 100dvh) - 24px)); bottom: max(0px, calc(100dvh - var(--vvh, 100dvh))); padding: 0 20px 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); }
 .project-folder-picker::backdrop { background: rgba(0, 0, 0, .7); }
 .project-folder-picker h2 { margin: 0 0 8px; }
 .project-folder-picker p { color: var(--dim); }
@@ -38,6 +38,6 @@
 .project-folder-heading {
     position: sticky; top: 0; z-index: 2;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin: -20px -20px 0; padding: 12px 20px; background: var(--card);
+    margin-inline: -20px; padding: 12px 20px; background: var(--card);
 }
 .project-folder-heading h2 { margin: 0; }

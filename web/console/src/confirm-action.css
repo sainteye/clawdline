@@ -3,7 +3,7 @@
   width: min(460px, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);
   margin: auto;
-  padding: 24px;
+  padding: 0 24px 24px;
   overflow-y: auto;
   color: var(--ink, #e8e6e3);
   background: var(--card, #16161a);
@@ -17,7 +17,7 @@
 .app-confirm-heading {
   position: sticky; top: 0; z-index: 1;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: -24px -24px 0; padding: 24px 24px 14px; background: var(--card, #16161a);
+  margin-inline: -24px; padding: 24px 24px 14px; background: var(--card, #16161a);
 }
 .app-confirm h2 { margin: 0; font-size: 18px; }
 .app-confirm p { margin: 0; white-space: pre-wrap; line-height: 1.6; }
