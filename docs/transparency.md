@@ -823,6 +823,15 @@ input explanations in English and Taiwan Traditional Chinese found no new
 prompt text, memory input, execution permission or automatic replay. This
 internal read port does not execute compaction or add a policy control.
 
+The separate native maintenance port uses the adapter's literal `/compact`
+convention without ordinary chat context. It advertises and consumes typed
+compaction facts, checks the captured session fence and accepts one attempt
+per idle client lifetime. Uncertain replies never become automatic retries.
+It remains disconnected from Host commands and UI until durable intent and
+recovery compatibility exist. The English and Taiwan Traditional Chinese Bot
+explanations still add no automatic trigger, memory input or policy control;
+the source inventory now includes this explicit maintenance producer.
+
 ## Named Bot topic memory source foundation
 
 The persistent-Bot entry was reviewed in English and Taiwan Traditional

@@ -102,6 +102,13 @@ func (s *isolatedNativeSession) NativeContext() app.NativeContextState {
 	return app.NativeContextState{}
 }
 
+func (s *isolatedNativeSession) BeginCompaction(ctx context.Context, fence pa.Fence) (app.PendingNativeCompaction, error) {
+	if compactor, ok := s.ProviderSession.(app.NativeCompactor); ok {
+		return compactor.BeginCompaction(ctx, fence)
+	}
+	return nil, refusal(pa.Unsupported, "native_compaction")
+}
+
 // Steer forwards Send now to the client when it can steer.
 func (s *isolatedNativeSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {

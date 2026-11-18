@@ -200,10 +200,28 @@ Cancellation or connection failure makes the reading unusable.
 This live, in-process reading adds no HTTP operation, saved Bot field, API or
 archive generation, model prompt or maintenance command. It neither infers a
 model's window nor claims compaction support from a provider name. A dedicated
-idle-only, fenced maintenance operation with durable intent, terminal and
+idle-only, fenced Host operation with durable intent, terminal and
 unknown outcomes is still missing. No compression policy control is shown.
 Scripted ACP pipe tests establish transport behavior, not installed-engine
 compaction or production UI acceptance.
+
+An optional native compaction port now reserves one idle client lifetime
+under the complete execution fence and the adapter's actual command report.
+It sends exactly one bare `/compact` text block through the adapter's ACP
+maintenance convention, without chat instructions, memory, handoff or files.
+The client advertises typed compaction notifications and requires a matching
+start/terminal ID plus a qualified RPC reply. A lower token reading, missing
+terminal, malformed reply, disconnection or external cancellation cannot
+become success. Duplicate terminal notifications do not change the first fact.
+The same pending result can be inspected again, but the client cannot send a
+second maintenance attempt or accept a competing chat prompt. Native failed
+or cancelled states do not assert that the transcript was unchanged.
+
+This port is not wired to Host, HTTP or UI. Its caller must first own the idle
+actor, check current account/Project/memory/binding authority and persist intent;
+those durable admission, recovery and old-binary/archive boundaries remain
+unimplemented. The scripted peer tests exercise protocol and cancellation,
+not a vendor engine, real compaction effect or production acceptance.
 
 ## Named topic-note source foundation (API 89, schema 12)
 

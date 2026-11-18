@@ -74,6 +74,7 @@ type Client struct {
 	failure        error
 	sessionID      string
 	nativeContext  app.NativeContextState
+	compaction     *nativeCompaction
 	turnID         string
 	partial        string
 	traceSegment   pa.Trace
@@ -138,7 +139,7 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 			} `json:"steering"`
 		} `json:"_meta"`
 	}
-	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
+	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{"session": map[string]any{"compaction": map[string]any{}}}, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
 	if err != nil {
 		return err
 	}
@@ -439,6 +440,10 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 		text = memoryUpdate(q.Context.Text) + "\n" + text
 	}
 	c.mu.Lock()
+	if c.compaction != nil {
+		c.mu.Unlock()
+		return nil, refusal(pa.Revoked, "compaction_lifetime")
+	}
 	if c.permissionsSealed {
 		c.mu.Unlock()
 		return nil, refusal(pa.Revoked, "prompt_lifetime")
@@ -639,13 +644,14 @@ func (c *Client) handle(f frame) error {
 				Title         string `json:"title"`
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
-				Content    json.RawMessage `json:"content"`
-				ToolCallID string          `json:"toolCallId"`
-				Status     string          `json:"status"`
-				Meta       json.RawMessage `json:"_meta"`
-				Commands   json.RawMessage `json:"availableCommands"`
-				Used       json.RawMessage `json:"used"`
-				Size       json.RawMessage `json:"size"`
+				Content      json.RawMessage `json:"content"`
+				ToolCallID   string          `json:"toolCallId"`
+				Status       string          `json:"status"`
+				Meta         json.RawMessage `json:"_meta"`
+				Commands     json.RawMessage `json:"availableCommands"`
+				Used         json.RawMessage `json:"used"`
+				Size         json.RawMessage `json:"size"`
+				CompactionID string          `json:"compactionId"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
@@ -653,6 +659,9 @@ func (c *Client) handle(f frame) error {
 		}
 		if p.Update.SessionUpdate == "usage_update" || p.Update.SessionUpdate == "available_commands_update" {
 			return c.updateNativeContext(p.SessionID, p.Update.SessionUpdate, p.Update.Commands, p.Update.Used, p.Update.Size)
+		}
+		if p.Update.SessionUpdate == "compaction_update" {
+			return c.updateNativeCompaction(p.SessionID, p.Update.CompactionID, p.Update.Status)
 		}
 		if p.SessionID != c.SessionID() {
 			return refusal(pa.StaleGeneration, "native_session")

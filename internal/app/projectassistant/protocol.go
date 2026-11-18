@@ -169,6 +169,36 @@ type NativeContextReader interface {
 	NativeContext() NativeContextState
 }
 
+type NativeCompactionState string
+
+const (
+	NativeCompactionCompleted NativeCompactionState = "completed"
+	NativeCompactionFailed    NativeCompactionState = "failed"
+	NativeCompactionCancelled NativeCompactionState = "cancelled"
+	NativeCompactionUnknown   NativeCompactionState = "unknown"
+)
+
+// NativeCompactionResult reports the adapter's explicit terminal fact. Failed
+// and cancelled do not assert that the native transcript remained unchanged.
+type NativeCompactionResult struct {
+	Fence           pa.Fence
+	NativeSessionID string
+	ID              string
+	State           NativeCompactionState
+}
+
+// NativeCompactor is a raw maintenance port that never injects chat context.
+// Its caller must own the idle actor and persist intent before entering it.
+// One client lifetime permits one attempt; unknown effects are not replayed.
+// This optional port alone provides neither durable receipts nor UI controls.
+type NativeCompactor interface {
+	BeginCompaction(context.Context, pa.Fence) (PendingNativeCompaction, error)
+}
+
+type PendingNativeCompaction interface {
+	Wait(context.Context) (NativeCompactionResult, error)
+}
+
 type RuntimeUsage struct {
 	ActiveActors int
 	Processes    int
