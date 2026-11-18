@@ -7,6 +7,7 @@ import { richText } from "../legacy/js/view/markdown.js"
 import type { CloudClientHandle } from "../cloud/copied.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
+import { useDockMotion } from "../ui/dock-motion.js"
 import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
@@ -265,7 +266,7 @@ function isBoardBackdrop(event: MouseEvent<HTMLDialogElement>) {
   return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom
 }
 
-function useBoardBackdrop() {
+function useBoardBackdrop(close: () => void) {
   const pressedOutside = useRef(false)
   return {
     onPointerDown(event: PointerEvent<HTMLDialogElement>) {
@@ -277,7 +278,7 @@ function useBoardBackdrop() {
       // can also end there, so require both ends to be outside.
       const dismiss = pressedOutside.current && isBoardBackdrop(event)
       pressedOutside.current = false
-      if (dismiss) event.currentTarget.close()
+      if (dismiss) close()
     },
   }
 }
@@ -313,21 +314,23 @@ export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTa
       <BoardGlyph />
       {unread > 0 && <span className="session-board-dock-dot" aria-hidden="true" />}
     </button>
-    {target && createPortal(<StatusBoardDialog key={target.source.key} target={target} close={close} />, document.body)}
-    {open === "" && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} />, document.body)}
+    {target && createPortal(<StatusBoardDialog key={target.source.key} target={target} close={close} opener={button.current} />, document.body)}
+    {open === "" && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} opener={button.current} />, document.body)}
   </>
 }
 
-function BoardMachinePicker({ targets, choose, close }: {
-  targets: readonly SessionBoardTarget[]; choose: (key: string) => void; close: () => void
+function BoardMachinePicker({ targets, choose, close, opener }: {
+  targets: readonly SessionBoardTarget[]; choose: (key: string) => void; close: () => void; opener: HTMLElement | null
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
-  const backdrop = useBoardBackdrop()
-  useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close} {...backdrop}>
+  const motion = useDockMotion(dialog)
+  const dismiss = () => motion.close(() => dialog.current?.close())
+  const backdrop = useBoardBackdrop(dismiss)
+  useEffect(() => { dialog.current?.showModal(); motion.capture(opener); motion.open() }, [])
+  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close} onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
     <header><h2 id={heading}>{t("sessionBoards")}</h2>
-      <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
+      <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
     </header>
     <div className="session-board-body">
       <p>{t("cloudMachinesLede")}</p>
@@ -338,9 +341,9 @@ function BoardMachinePicker({ targets, choose, close }: {
   </dialog>
 }
 
-function StatusBoardDialog({ target, close }: { target: SessionBoardTarget; close: () => void }) {
+function StatusBoardDialog({ target, close, opener }: { target: SessionBoardTarget; close: () => void; opener: HTMLElement | null }) {
   const list = useBoardList(target.source)
-  return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} {...list} />
+  return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} opener={opener} {...list} />
 }
 
 function BoardRefresh({ refresh, disabled }: { refresh: () => void; disabled?: boolean }) {
@@ -350,13 +353,15 @@ function BoardRefresh({ refresh, disabled }: { refresh: () => void; disabled?: b
   </button>
 }
 
-function BoardDialog({ source, initial, boards, loaded, problem, candidates, refresh, close }: {
+function BoardDialog({ source, initial, boards, loaded, problem, candidates, refresh, close, opener }: {
   source: SessionBoardSource; initial: string; boards: Board[]; loaded: boolean; problem: boolean
-  candidates: Actor[]; refresh: () => Promise<void>; close: () => void
+  candidates: Actor[]; refresh: () => Promise<void>; close: () => void; opener?: HTMLElement | null
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
-  const backdrop = useBoardBackdrop()
+  const motion = useDockMotion(dialog)
+  const dismiss = () => motion.close(() => dialog.current?.close())
+  const backdrop = useBoardBackdrop(dismiss)
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
   const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
@@ -367,8 +372,8 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   }
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
-  useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} {...backdrop}>
+  useEffect(() => { dialog.current?.showModal(); motion.capture(opener); motion.open() }, [])
+  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
     <header>
       {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
         title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}
@@ -379,7 +384,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
         </details>}
       </div>
       <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>{t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}</button>
-      <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
+      <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
     </header>
     <div className="session-board-scroll" ref={view}>
     {selected ? <BoardMessages key={selected} source={source} id={selected} candidates={candidates} onRead={setOpened} />

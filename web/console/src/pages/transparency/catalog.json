@@ -3525,6 +3525,10 @@
           "line": 288
         },
         {
+          "path": "internal/adapters/projectassistantacp/client_context.go",
+          "line": 1
+        },
+        {
           "path": "internal/app/projectassistant/runtime.go",
           "line": 656
         },
@@ -4754,11 +4758,12 @@
     "internal/adapters/planner/recap.go": "20242775791a8bbc1eb9a2d06f95294431148aafe2ad97bb5e26ffecf38d4be1",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "6a062d16b12e3082d46747c00d28c7904cc56b9fc52c0aba13754f67040e3845",
-    "internal/adapters/projectassistantacp/client.go": "cc6e621016d0d99939bf7883da070f01b748722ec96353682688c36a5466f061",
+    "internal/adapters/projectassistantacp/client.go": "be7dc6b89fc6f67d58ca030f6699d1387ed0087e0abca2a4a18a7a2e89ecb634",
+    "internal/adapters/projectassistantacp/client_context.go": "e27df8e1523ccd395bf6275d445a20e7dd061908736021346adcabf633b017a4",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/installation.go": "a8c506a3239983e48f51be52224d3c125f56dff4b62322498415c52b8b2d8803",
     "internal/adapters/projectassistantacp/installation_codex.go": "229fd1007a373608c378f75257823846b09f03157b260773057e0657c8062551",
-    "internal/adapters/projectassistantacp/installation_isolation.go": "2e3d55848a1fa2d18842539a306cd591334df3e01bfa00cdff7ef8d1c293c3cf",
+    "internal/adapters/projectassistantacp/installation_isolation.go": "1a090b66717f3fc93cbf03a1b1117eb713960b703e4ce1d55eb65e5e9a4c20d8",
     "internal/adapters/projectassistantacp/login_profiles.go": "3b612a6d02e2ad26d7be0d91d4643d83281b3ee713331c137052afa40440aa51",
     "internal/adapters/projectassistantacp/mcp.go": "fa42a03749ef3eccdb93f87d892fd3703448f778c357b8315c97a4d09e40f2e0",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",

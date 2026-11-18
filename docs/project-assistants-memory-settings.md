@@ -186,6 +186,25 @@ cloudops write scope and records its additional API 81 mirror requirements
 in the linked document. Source construction still does not establish a
 working production Cloud deployment or private-relay mirror acceptance.
 
+## Live native context reports
+
+The ACP client exposes an optional internal `NativeContextReader` through the
+installed-session isolation wrapper. It retains only the current native
+session's advertised `compact` command and reported token usage/window.
+An unreported or malformed optional value stays unknown; a reported zero and
+an explicit empty command list remain distinct from unknown. Reports can arrive
+while idle or before the session reply, but are usable only after their native
+ID matches that reply and under the client's complete execution fence.
+Cancellation or connection failure makes the reading unusable.
+
+This live, in-process reading adds no HTTP operation, saved Bot field, API or
+archive generation, model prompt or maintenance command. It neither infers a
+model's window nor claims compaction support from a provider name. A dedicated
+idle-only, fenced maintenance operation with durable intent, terminal and
+unknown outcomes is still missing. No compression policy control is shown.
+Scripted ACP pipe tests establish transport behavior, not installed-engine
+compaction or production UI acceptance.
+
 ## Named topic-note source foundation (API 89, schema 12)
 
 A note is one Bot memory entry with `kind: note`, a title, a summary and a

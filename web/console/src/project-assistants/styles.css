@@ -614,3 +614,7 @@
   .project-assistants .pa-chat:has(.pa-permission) .pa-jump { display:none; }
   .project-assistants .pa-permissions { padding-bottom:16px; }
 }
+
+@media (max-width: 700px) {
+  .project-assistants .pa-status-bar { padding-bottom:max(var(--indicator,0px),env(safe-area-inset-bottom,0px),12px); }
+}

@@ -815,6 +815,14 @@ English and Taiwan Traditional Chinese Bot explanations were reviewed against
 those unchanged boundaries. Conversation compaction remains an unqualified
 capability gap rather than a placeholder control.
 
+The ACP client now retains optional live command and usage reports through
+installed-session isolation. These readings require the same native session
+and execution fence; unknown metadata, cancellation and connection failure
+never advertise an actionable capability. Reviewing the persistent-Bot and
+input explanations in English and Taiwan Traditional Chinese found no new
+prompt text, memory input, execution permission or automatic replay. This
+internal read port does not execute compaction or add a policy control.
+
 ## Named Bot topic memory source foundation
 
 The persistent-Bot entry was reviewed in English and Taiwan Traditional
