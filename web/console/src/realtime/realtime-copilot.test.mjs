@@ -176,7 +176,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     assert.fail(`unexpected request: ${path}`)
   }
   const c = new RealtimeCopilotClient()
-  c.meter = { open: () => null, ring: () => () => {}, attachInput: () => null, close() {} }
+  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {}, attachInput: () => null, close() {} }
   c.addLog = () => {}
   c.state.engine = 'previous-call-engine'
   try {
@@ -514,14 +514,14 @@ test('connected cue precedes the automatic report and plays once after tools are
  f.c.resetSessionReports()
 })
 
-test('a held tool has visible processing and one quiet cue, then clears its running state',async()=>{
+test('a held Session query stays visible without playing the execution cue',async()=>{
  const f=fixture(true);let cues=0
  f.c.state.status='connected';f.c.meter={pending:()=>cues++,chime(){}}
  await withLedger(f,async()=>{
   const running=f.c.handleToolCall({call_id:'held',name:'get_session_recap',arguments:'{"session_id":"%7"}'})
   await tick()
-  assert.equal(f.c.state.progress.phase,'reading');assert.equal(cues,1)
-  f.c.updateState({});assert.equal(cues,1)
+  assert.equal(f.c.state.progress.phase,'reading');assert.equal(cues,0)
+  f.c.updateState({});assert.equal(cues,0)
   f.release();await running
   await f.c.handleRealtimeEvent({type:'response.done',response:{id:'finished',status:'completed',output:[{type:'message'}]}})
   assert.notEqual(f.c.state.progress?.phase,'reading')
@@ -774,7 +774,7 @@ test('a GPT-Live call configures its backend after start, starts its report, and
   let cues = 0
   c.meter.pending = () => { cues++ }
   c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_1', event: { type: 'response.output_item.done', response_id: 'resp_1', item: { type: 'function_call', call_id: 'call_1', name: 'list_sessions', arguments: '{}' } } })
-  assert.equal(cues, 1, 'the progress cue plays the moment the backend calls a tool')
+  assert.equal(cues, 0, 'a Session lookup never plays the execution cue')
   for (let i = 0; i < 20 && !sent.some(e => e.type === 'response.create'); i++) await tick()
   assert.ok(reads.includes('/v1/sessions'), 'the tool ran in this browser')
   const result = sent.find(e => e.type === 'response.item.create')
@@ -1275,4 +1275,132 @@ test('continuing a completed report does not reread or restart the directory',as
   else await f.c.handleToolCall({call_id:'completed',name:'get_sessions_summary',arguments:JSON.stringify({continue_report:true})})
   assert.deepEqual(f.reads,[],'continuation must not start another directory query')
  }
+})
+
+for(const live of [false,true])test(`direct messages require exact read-back and fresh consent before any send (live=${live})`,async()=>{
+ const f=fixture(false);f.c.live=live;f.c.state.status='connected'
+ let posts=0
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path,init)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[row]})
+  if(path.endsWith('/send')){posts++;return Response.json({ok:true,id:row.id,action:'typed'})}
+  return Response.json({})
+ }})
+ const args=JSON.stringify({session_id:row.id,session_label:row.label,message:'Please investigate the sound.',switch_confirmed:true,confirmed:true})
+ if(live)await f.c.runLiveTool('unreviewed','send_message_to_session',args)
+ else await f.c.handleToolCall({call_id:'unreviewed',name:'send_message_to_session',arguments:args})
+ assert.equal(posts,0,'model flags and the original instruction cannot approve its drafted message')
+ const result=f.sent.find(e=>e.item?.type==='function_call_output')
+ assert.equal(JSON.parse(result.item.output).message_delivered,false)
+ assert.equal(JSON.parse(result.item.output).proposal.message,'Please investigate the sound.')
+})
+
+function messageFixture(live){
+ const f=fixture(false);f.c.live=live;f.c.state.status='connected'
+ let current={...row},posts=0,levels={input:0,output:0},cues=0
+ f.c.audioEl={paused:false,muted:false}
+ f.c.meter={read:()=>levels,pending:()=>cues++,chime(){}}
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path,init)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[current]})
+  if(path.endsWith('/send')){posts++;return Response.json({ok:true,id:row.id,action:'typed'})}
+  return Response.json({})
+ }})
+ const message='Please investigate the sound.'
+ const args=(text=message)=>JSON.stringify({session_id:row.id,session_label:row.label,message:text,switch_confirmed:true})
+ const send=async(text)=>live?f.c.runLiveTool(crypto.randomUUID(),'send_message_to_session',args(text)):f.c.handleToolCall({call_id:crypto.randomUUID(),name:'send_message_to_session',arguments:args(text)})
+ const speak=async(text,interrupted=false)=>{
+  if(live){f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:text});levels={input:0,output:0.5};f.c.readLevels();levels={input:0,output:0}}
+  else{
+   await f.c.handleRealtimeEvent({type:'response.created',response:{id:'readback'}})
+   await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:text})
+   await f.c.handleRealtimeEvent({type:'response.done',response:{id:'readback',status:'completed',output:[]}})
+   await f.c.handleRealtimeEvent({type:interrupted?'output_audio_buffer.cleared':'output_audio_buffer.stopped'})
+  }
+ }
+ const answer=async(text)=>{
+  if(live)f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:text})
+  else{
+   await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'approval'})
+   await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped'})
+   await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'approval',transcript:text})
+   await f.c.handleRealtimeEvent({type:'response.created',response:{id:'after-approval'}})
+  }
+ }
+ return {...f,message,send,speak,answer,posts:()=>posts,cues:()=>cues,replace:()=>{current={...row,sessionId:'replacement-conversation'}}}
+}
+for(const live of [false,true])for(const scenario of ['approved','different words','incomplete','changed draft','changed conversation','cancelled','interrupted','not played'])test(`message review ${scenario} (live=${live})`,async()=>{
+ const f=messageFixture(live),realNow=Date.now;let now=100000
+ Date.now=()=>now
+ try{
+  await f.send()
+  const text=`Send to ${row.label}: ${scenario==='different words'?'Another message.':scenario==='incomplete'?'Please investigate':f.message} Shall I send it?`
+  await f.speak(text,scenario==='interrupted')
+  if(scenario==='not played')f.c.audioEl.muted=true
+  if(scenario!=='interrupted')now+=2000
+  await f.answer(scenario==='cancelled'?'Okay, but do not send it.':'Okay')
+  now+=2000
+  if(scenario==='changed conversation')f.replace()
+  await f.send(scenario==='changed draft'?'Please delete the sound.':undefined)
+  assert.equal(f.posts(),scenario==='approved'?1:0)
+  if(scenario==='approved'){
+   assert.equal(f.cues(),1,'only the admitted send plays the task cue')
+   await f.send()
+   assert.equal(f.posts(),1,'the same approval never sends twice')
+  }
+ }finally{Date.now=realNow}
+})
+
+test('Live backchannels cannot shorten the consent utterance or turn a cancellation into agreement',async()=>{
+ const f=messageFixture(true),realNow=Date.now;let now=100000;Date.now=()=>now
+ try{
+  await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);now+=2000
+  await f.answer('Okay');f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Mm.'})
+  now+=100;await f.answer(', but do not send it.');now+=2000
+  await f.send();assert.equal(f.posts(),0)
+ }finally{Date.now=realNow}
+})
+
+
+test('visible saving, reading, responding, planning and queued states never trigger periodic execution sounds',async()=>{
+ const realNow=Date.now;let now=100000,cues=0;Date.now=()=>now;const f=fixture(true)
+ f.c.state.status='connected';f.c.meter={pending:()=>cues++,chime(){}}
+ try{await withLedger(f,async(state)=>{
+  state.inputs.push({id:'source',call:'test-call',text:'Read status',planned:false,deferred:false,at:1})
+  state.tasks.push({id:'task',tool:'get_session_summary',text:'Read status',args:{},sources:['source'],status:'queued',version:1})
+  for(const status of ['queued','waiting_confirmation','failed','done']){
+   state.tasks[0].status=status
+   for(const activity of ['saving','reading','responding','planning']){
+    f.c.receivingInputs.clear();f.c.pendingTools.clear();f.c.awaitingResponse=false
+    if(activity==='saving')f.c.receivingInputs.add('input')
+    if(activity==='reading')f.c.pendingTools.add('read')
+    if(activity==='responding')f.c.awaitingResponse=true
+    for(let i=0;i<4;i++){now+=4000;f.c.updateState({})}
+   }
+  }
+  assert.equal(cues,0)
+  state.tasks[0].status='running';f.c.updateState({});assert.equal(cues,1)
+  now+=4000;f.c.updateState({});assert.equal(cues,2)
+  f.c.playing=true;now+=4000;f.c.updateState({});assert.equal(cues,2)
+  f.c.playing=false;state.tasks[0].status='done';now+=4000;f.c.updateState({});assert.equal(cues,2)
+ })}finally{Date.now=realNow}
+})
+
+test('a cancellation arriving while the approved send resolves its recipient blocks the effect',async()=>{
+ const f=messageFixture(false)
+ await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);await f.answer('Okay')
+ const base=f.c.toolDeps;let release
+ const held=new Promise(resolve=>release=resolve)
+ f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path==='/v1/sessions')await held;return base().fetch(path,init)}})
+ const sending=f.send();await tick()
+ await f.answer('Do not send it.');release();await sending
+ assert.equal(f.posts(),0)
+})
+
+
+test('an uncertain send consumes its approval and cannot be retried automatically',async()=>{
+ const f=messageFixture(false)
+ await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);await f.answer('Okay')
+ const base=f.c.toolDeps;let posts=0
+ f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path.endsWith('/send')){posts++;throw new TypeError('connection lost')}return base().fetch(path,init)}})
+ await f.send();assert.equal(posts,1)
+ await f.send();assert.equal(posts,1)
 })
