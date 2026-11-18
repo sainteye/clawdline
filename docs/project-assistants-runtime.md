@@ -494,3 +494,32 @@ must obtain the exact command/directory grant, bind native execution and Forget
 provenance, and own shutdown independently of the Agent. Host/tool/API/UI and
 kernel process-generation recovery remain pending; these tests contact no
 native provider or paid API and install no live service.
+
+### Source-owned approval delivery
+
+The Engine now has a source-authenticated approval entry point for Host command
+handlers. It reuses the existing permission card, read projection, human answer
+authority and current policy. A source-owned namespace is refused on the native
+protocol input; its answer never becomes a vendor permission RPC. Source and
+native cards share the registered pending-card budget, and source receipts
+remain bounded for the captured execution. Usage includes the source cards.
+
+The source handler receives a selected option only after the answer transaction
+succeeds and the current turn, full fence, source and captured memory provenance
+are rechecked. A lost commit acknowledgement may leave an answered durable card
+but releases no option; replaying its receipt does not release an uncertain
+choice. Cancellation retires only that source card and does not clear another
+native wait. Ordinary memory saves remain valid; Forget refuses an older review.
+Source actions must fit a complete review instead of silently shortening it.
+
+Tests exercise all four option kinds, cancelled/late answers, shared admission,
+generation changes and read-only automatic policy. A repository wrapper injects
+the lost-answer acknowledgement; separate actual temporary Host/SQLite/read-view
+tests use a synthetic provider and verify delivery and Forget. A source choice
+is not a saved standing rule or an executed command. The eventual command
+handler must persist an exact, visible and revocable rule before offering or
+honoring a lasting choice. No generic approval tool is exposed to the model;
+the private Host callback is for that handler. Server Host ownership, native
+start/list/stop/log tools, persisted command provenance, ports, UI and physical
+process recovery still require integration. This unit opens no maintenance
+writer and performs no native-model qualification.

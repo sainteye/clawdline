@@ -3537,6 +3537,10 @@
           "line": 656
         },
         {
+          "path": "internal/app/projectassistant/runtime_source_permissions.go",
+          "line": 1
+        },
+        {
           "path": "internal/adapters/projectassistantacp/capabilities.go",
           "line": 1
         },
@@ -4795,7 +4799,7 @@
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",
     "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
-    "internal/adapters/projectassistanthost/provider.go": "4cbbfa1e3634549211ab98aafa96be93df350d106a0c46d8e1f08384d86efe45",
+    "internal/adapters/projectassistanthost/provider.go": "b35579cbcea3fe9d86003ac5869602438161a5b513e4bf82c1f48e7442deb4ff",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
     "internal/adapters/projectassistantstore/fallback.go": "2a4649823fe00c9a3abfcf54ec34d1baa1a379899d9ea834a39a6460436b2550",
@@ -4858,8 +4862,9 @@
     "internal/app/projectassistant/provider_failure.go": "af218c40dbd45a8a089c8a010e2a965424ab50d0756921b666d932a4b91cae81",
     "internal/app/projectassistant/routines.go": "c4c264e07f013c24a776a9f46953bc13389fb34fab81a42e3cfa6adbbd07e2bd",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "20622855f9a2429ff47bbf7ab09d2885276ae9952c4a66cc490359b1a55ebd77",
+    "internal/app/projectassistant/runtime.go": "c2584e76f61d5db96d8dfac021c1800f29db5c252cd93f8d8b8e518fc5025f9d",
     "internal/app/projectassistant/runtime_groups.go": "bfc13cd82091538162d1c6ebcb80ece99c45be28ee0ca5275161262a7fab17b9",
+    "internal/app/projectassistant/runtime_source_permissions.go": "44c9854b57a525d9e4cacb14ee371ebb5c26fef4d5c483feb7c2c3d79105ddd7",
     "internal/app/projectassistant/service_routines.go": "99c896ad0067bbb55647dc18f58886414a7e51b4087b6f6ff5b700cc8b0d82f4",
     "internal/app/projectassistant/service_team.go": "386653b8a0a0c3130973ae8f5da95cef944ab30dd06c99d86a2082198f5a2819",
     "internal/app/projectassistant/session_handoff.go": "6d9c299a773da96bafc70eea7bfce4bb22705ddd0de35439eef785fd443e070d",

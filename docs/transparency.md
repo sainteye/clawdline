@@ -12,6 +12,18 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The source-owned approval delivery unit adds no model instructions or advertised
+MCP tool. Its private Host callback uses the existing card and human answer path;
+the Engine persists a selection before returning it and never routes it through
+the vendor's permission RPC. A choice establishes neither a standing rule nor an
+executed command, and the server command handler remains unwired. The persistent
+Bot, output, input, routine, fallback, review, group-room and progress explanations
+were reviewed in English and Taiwan Traditional Chinese against these changes.
+Their loading, native rule scope, memory and replay descriptions remain accurate.
+The source receipt now includes the source approval module and the two changed
+implementation files. Website snapshot publication follows the reviewed product
+tree after integration; refreshing this receipt is not a deployment.
+
 Codex full tasks retain the workspace profile but now send requested sandbox
 exceptions to native automatic review. This restores the request path needed
 for an explicitly authorized browser launch; it does not add a permission
