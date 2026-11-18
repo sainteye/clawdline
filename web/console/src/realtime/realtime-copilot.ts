@@ -219,7 +219,7 @@ export class RealtimeCopilotClient {
   private observeOperation(spec:OperationSpec){
     if(this.historyCall!==this.journalCall){this.historyCall=this.journalCall;this.operations.reset(this.journalCall)}
     const span=this.operations.begin(spec)
-    if(!spec.parent&&this.state.status==='connected'&&getProgressSounds())this.meter.pending?.()
+    if(!spec.parent&&this.state.status==='connected'&&getProgressSounds())this.meter.pending?.(spec.source)
     return span
   }
   private toolCueTasks=new Set<string>()
@@ -664,7 +664,7 @@ export class RealtimeCopilotClient {
     if(this.state.status==='connected'&&this.call.options.workEnabled){
       for(const task of this.currentWorkEvidence().tasks){
         const key=`${voiceWork.state?.id}:${task.id}:${task.version}`
-        if(task.status==='running'&&!this.toolCueTasks.has(key)){this.toolCueTasks.add(key);if(getProgressSounds())this.meter.pending?.()}
+        if(task.status==='running'&&!this.toolCueTasks.has(key)){this.toolCueTasks.add(key);if(getProgressSounds())this.meter.pending?.('background')}
       }
     }
     if (this.state.status !== 'connecting' && (this.state.status!=='connected'||this.state.connectionReady) && this.stopRing) {

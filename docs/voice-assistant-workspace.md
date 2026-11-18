@@ -340,7 +340,10 @@ expected tools. Transport connection alone is not readiness. A configuration
 acknowledgement uses the existing workspace-control request deadline and fails
 explicitly if it never arrives. No generated greeting is required. The ringback survives call-history initialization and continues until readiness,
 failure or hangup. Each top-level tool start, including automatic background
-queries, plays one soft local note. Nested reads share their parent start. A
+queries, plays one soft local note. Active tool calls retain a 330 Hz sine note;
+automatic background queries and durable background work use a single 220 Hz
+triangle note with the same duration and loudness envelope. Nested reads share
+their parent start. A
 running durable task has one start cue per task version; ordinary state refreshes
 and long waits never create repeated audio. Entering another Session uses a
 three-note 660/880/660 Hz melody, distinct from readiness and hangup. Resuming
