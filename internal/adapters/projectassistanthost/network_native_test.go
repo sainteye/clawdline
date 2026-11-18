@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	cloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -173,15 +175,86 @@ func TestNetworkNativePeer(t *testing.T) {
 	os.Exit(0)
 }
 
+// Lifecycle diagnostics distinguish a completed reply from native cleanup.
+// The optional fault is test-owned and runs only after the real child is closed.
+type networkNativeLifecycle struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (d *networkNativeLifecycle) record(role, stage string, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.steps = append(d.steps, fmt.Sprintf("%s/%s=%v", role, stage, err))
+}
+func (d *networkNativeLifecycle) snapshot() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.steps...)
+}
+
+type networkLifecycleProvider struct {
+	app.Provider
+	role       string
+	diagnostic *networkNativeLifecycle
+	failClose  bool
+}
+
+func (p *networkLifecycleProvider) Open(ctx context.Context, q app.OpenRequest, emit func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	session, err := p.Provider.Open(ctx, q, emit)
+	p.diagnostic.record(p.role, "open", err)
+	if session == nil {
+		return nil, err
+	}
+	return &networkLifecycleSession{ProviderSession: session, provider: p}, err
+}
+
+type networkLifecycleSession struct {
+	app.ProviderSession
+	provider *networkLifecycleProvider
+}
+
+func (s *networkLifecycleSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	pending, err := s.ProviderSession.Send(ctx, q)
+	s.provider.diagnostic.record(s.provider.role, "send", err)
+	if pending == nil {
+		return nil, err
+	}
+	return &networkLifecyclePending{PendingPrompt: pending, provider: s.provider}, err
+}
+func (s *networkLifecycleSession) Close(ctx context.Context) error {
+	err := s.ProviderSession.Close(ctx)
+	if err == nil && s.provider.failClose {
+		err = context.DeadlineExceeded
+	}
+	s.provider.diagnostic.record(s.provider.role, "close", err)
+	return err
+}
+
+type networkLifecyclePending struct {
+	app.PendingPrompt
+	provider *networkLifecycleProvider
+}
+
+func (p *networkLifecyclePending) Wait(ctx context.Context) (app.PromptResult, error) {
+	result, err := p.PendingPrompt.Wait(ctx)
+	p.provider.diagnostic.record(p.provider.role, "wait", err)
+	return result, err
+}
+
 func TestNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T) {
-	testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t, false)
+	testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t, false, false)
 }
 
 func TestNetworkOwnedACPReversePairRealHTTPStoresAndCorrelatedReply(t *testing.T) {
-	testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t, true)
+	testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t, true, false)
 }
 
-func testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T, reversePair bool) {
+func TestNetworkOwnedACPReplyKeepsUnknownAfterCloseFailure(t *testing.T) {
+	testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t, false, true)
+}
+
+func testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T, reversePair, closeFault bool) {
 	if runtime.GOOS == "windows" {
 		t.Skip("native fixture requires owned process supervisor")
 	}
@@ -198,12 +271,19 @@ func testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T, reversePa
 	}
 	receiptPath := filepath.Join(t.TempDir(), "source-read.json")
 	var target wire.BotEndpoint
+	diagnostic := &networkNativeLifecycle{}
 	configure := func(f *hostFixture, role string) {
+		// Functional cleanup uses the same registered budget as the Host.
+		// The separate closeFault case exercises uncertainty without a timing race.
 		f.o.Limits.PromptTimeout = 20 * time.Second
 		f.o.Provider = func() (app.Provider, error) {
-			return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestNetworkNativePeer$"}, Environment: []string{"CLAWDLINE_NETWORK_FIXTURE=" + role, "CLAWDLINE_NETWORK_RECEIPT=" + receiptPath, "GORACE=atexit_sleep_ms=0"}}}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, bot pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+			provider, err := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestNetworkNativePeer$"}, Environment: []string{"CLAWDLINE_NETWORK_FIXTURE=" + role, "CLAWDLINE_NETWORK_RECEIPT=" + receiptPath, "GORACE=atexit_sleep_ms=0"}}}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, bot pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 				return pa.Capabilities{Key: bot.Key, Project: bot.Project, Agent: bot.Agent, CLIVersion: "synthetic", AdapterVersion: "synthetic", Evidence: "local ACP only", ReadOnlyEnforced: true, NativeMemory: pa.NativeMemoryDisabled, NativeMemoryVerified: true, SendMessage: true}, nil
 			}})
+			if err != nil {
+				return nil, err
+			}
+			return &networkLifecycleProvider{Provider: provider, role: role, diagnostic: diagnostic, failClose: closeFault && role == "a"}, nil
 		}
 	}
 	configure(a, "a")
@@ -292,10 +372,14 @@ func testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T, reversePa
 	for {
 		xa, _ := a.h.store.Export(ctx, ba.Key)
 		if len(xa.Turns) > 0 && xa.Conversation.ActiveTurnID == "" && xa.Turns[0].State != pa.TurnQueued && xa.Turns[0].State != pa.TurnAccepted {
-			if xa.Turns[0].State != pa.TurnSucceeded {
+			want := pa.TurnSucceeded
+			if closeFault {
+				want = pa.TurnUnknown
+			}
+			if xa.Turns[0].State != want {
 				raw, _ := os.ReadFile(receiptPath)
 				phase, _ := os.ReadFile(receiptPath + ".a.phase")
-				t.Fatalf("requester failed: %+v diagnostic=%s phase=%s", xa.Turns, raw, phase)
+				t.Fatalf("requester failed: %+v diagnostic=%s phase=%s lifecycle=%v prompt_budget=%s", xa.Turns, raw, phase, diagnostic.snapshot(), a.o.Limits.PromptTimeout)
 			}
 			break
 		}
@@ -326,6 +410,27 @@ func testNetworkOwnedACPRealHTTPStoresAndCorrelatedReply(t *testing.T, reversePa
 	r, e := reopened.Receipt(ctx, result.Receipt.Header, result.Receipt.Header.RequestID)
 	if e != nil || r.State != "reply_stored" || !r.Read {
 		t.Fatalf("durable reply %+v %v", r, e)
+	}
+	if closeFault {
+		requester, err := a.h.store.Export(ctx, ba.Key)
+		if err != nil || len(requester.Turns) != 1 || requester.Turns[0].Failure == nil || requester.Turns[0].Failure.Code != pa.ExecutionEffectUnknown || requester.Conversation.ActiveTurnID != "" {
+			t.Fatalf("cleanup uncertainty lost: %+v %v", requester.Turns, err)
+		}
+		phases := diagnostic.snapshot()
+		joined := strings.Join(phases, "\n")
+		if !strings.Contains(joined, "a/wait=<nil>") || !strings.Contains(joined, "a/close=context deadline exceeded") {
+			t.Fatalf("fault did not follow completed prompt: %v", phases)
+		}
+		for _, role := range []string{"a", "b"} {
+			if strings.Count(joined, role+"/open=") != 1 {
+				t.Fatalf("native retry after cleanup failure: %v", phases)
+			}
+		}
+		if xb.Turns[0].State != pa.TurnSucceeded {
+			t.Fatalf("recipient reply was not completed: %+v", xb.Turns)
+		}
+		t.Logf("reply stayed durable/read; requester unknown; recipient succeeded; native attempts=1+1; lifecycle=%v", phases)
+		return
 	}
 	client := a.h.o.Network
 	httpTransport := transport.HTTPTransport{URL: server.URL, Client: server.Client()}
