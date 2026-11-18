@@ -32,7 +32,11 @@ func (s *Service) Output(ctx context.Context, key pa.BotKey, conversation, messa
 		return OutputRead{}, serviceFailure(pa.ScopeDenied, "output_conversation")
 	}
 	var found *pa.Message
+	roomTurns := pa.RoomTurnIDs(x.Turns)
 	for i := len(x.Messages) - 1; i >= 0; i-- {
+		if roomTurns[x.Messages[i].TurnID] {
+			continue
+		}
 		projected := DisplayArtifactMessage(x.Messages[i], x.ArtifactTitles)
 		m := &projected
 		if m.Output == nil {

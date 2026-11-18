@@ -210,27 +210,29 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 // JSONB is query-local only. The pinned SQLite supports it; parsing the same
 // large text aggregate inside each correlated scalar would retain the reader
 // snapshot for seconds. Stored bytes and returned projections remain JSON.
-const rosterProjectionSQL = `WITH a AS MATERIALIZED (
+var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  SELECT jsonb(CAST(data AS TEXT)) j FROM project_assistant_bots WHERE machine=? AND bot=?
-), turns AS MATERIALIZED (
+) ` + roomTurnsCTE + `, turns AS MATERIALIZED (
  SELECT t.key,t.value FROM a,json_each(j,'$.Turns') t
+), own_messages AS MATERIALIZED (
+ SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE ` + ownChatTurnSQL("json_extract(m.value,'$.turn_id')") + `
 ), admissions AS MATERIALIZED (
- SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
+ SELECT m.key,m.value FROM own_messages m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
 ), u AS MATERIALIZED (
  SELECT m.value message,t.key turnid FROM admissions m JOIN turns t ON t.key=json_extract(m.value,'$.turn_id')
  WHERE coalesce(json_extract(t.value,'$.joined_turn_id'),'')='' AND json_extract(t.value,'$.message_id')=json_extract(m.value,'$.id') ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
 ), latest_message AS MATERIALIZED (
- SELECT m.value message FROM a,json_each(j,'$.Messages') m ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
+ SELECT m.value message FROM own_messages m ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
 ), projection AS MATERIALIZED (
  SELECT json_object('Bot',json_extract(j,'$.Bot'),'Conversation',json_object('id',json_extract(j,'$.Conversation.id'),'active_turn_id',json_extract(j,'$.Conversation.active_turn_id'),'generation',json_extract(j,'$.Conversation.generation'),'binding_id',json_extract(j,'$.Conversation.binding_id')),
- 'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
+ 'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'room',json_extract(t.value,'$.room'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
  'Messages',json((SELECT json_group_array(json(message)) FROM u)),
  'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')))) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id'))),
  'Completion',json_extract(j,'$.Completion'),'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
  coalesce((SELECT value FROM json_each(j,'$.ReadCursors') WHERE key=?),'') read_cursor,
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
- coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.updated_at')) activity_at,
- (SELECT count(*) FROM json_each(j,'$.Messages') WHERE json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)) unread,
+ coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.created_at')) activity_at,
+ (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)) unread,
  (SELECT count(*) FROM json_each(j,'$.Permissions') WHERE json_extract(value,'$.state')='pending') pending FROM a
 ), guarded AS MATERIALIZED (
  SELECT *,length(CAST(projected AS BLOB))+length(CAST(read_cursor AS BLOB))+length(CAST(latest AS BLOB))+length(CAST(activity_at AS BLOB))<=? fits FROM projection

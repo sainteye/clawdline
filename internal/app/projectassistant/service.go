@@ -369,6 +369,11 @@ func (s *Service) Get(ctx context.Context, key pa.BotKey) (pa.Bot, pa.Conversati
 		return pa.Bot{}, pa.Conversation{}, a.Source, err
 	}
 	conversation, err := s.opts.Repository.Conversation(ctx, key, bot.ConversationID)
+	if reader, ok := s.opts.Repository.(interface {
+		ConversationForChat(context.Context, pa.BotKey, string) (pa.Conversation, error)
+	}); ok && err == nil {
+		conversation, err = reader.ConversationForChat(ctx, key, bot.ConversationID)
+	}
 	return bot, conversation, a.Source, err
 }
 

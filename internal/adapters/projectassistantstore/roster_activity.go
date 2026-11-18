@@ -27,6 +27,15 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 	}
 	out.Status = "idle"
 	turn, active := a.Turns[a.Conversation.ActiveTurnID]
+	if active && turn.Room != nil {
+		// Execution/cancellation and approval authority stay Bot-wide, but room
+		// progress and failures do not become own-chat activity.
+		if turn.State == pa.TurnWaitingPermission {
+			out.Status = "needsInput"
+			return
+		}
+		active, turn = false, pa.Turn{}
+	}
 	if !active {
 		// Admission order comes from messages, never map iteration or a
 		// lexicographic turn ID. Restart continuations and routines enter with
@@ -38,7 +47,7 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 				continue
 			}
 			candidate, ok := a.Turns[m.TurnID]
-			if !ok || candidate.JoinedTurnID != "" || candidate.MessageID != m.ID {
+			if !ok || candidate.Room != nil || candidate.JoinedTurnID != "" || candidate.MessageID != m.ID {
 				continue
 			}
 			turn = candidate

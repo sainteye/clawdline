@@ -57,6 +57,10 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 		t.Fatal(err)
 	}
 	f.repo = store.New(db)
+	views, err := store.NewReadViews(db)
+	if err != nil {
+		t.Fatal(err)
+	}
 	groups, err := app.NewGroupRooms(store.NewGroupStore(db), app.DefaultGroupLimits(), time.Now)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +96,7 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 		t.Fatal(err)
 	}
 	f.rooms.Attach(f.engine)
-	f.service, err = app.NewService(app.ServiceOptions{Repository: f.repo, Memory: f.repo, Events: f.repo, Runtime: f.engine, Projects: projects, Groups: groups, Rooms: f.rooms, Authorize: authorize, Clock: time.Now, ID: id})
+	f.service, err = app.NewService(app.ServiceOptions{Repository: f.repo, Memory: f.repo, Events: f.repo, ReadViews: views, ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, Runtime: f.engine, Projects: projects, Groups: groups, Rooms: f.rooms, Authorize: authorize, Clock: time.Now, ID: id})
 	if err != nil {
 		t.Fatal(err)
 	}

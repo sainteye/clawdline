@@ -78,6 +78,9 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 			return out, err
 		}
 	}
+	if err = viewOwnChatHead(ctx, tx, &out.Head); err != nil {
+		return out, err
+	}
 	if err = viewCounts(ctx, tx, q, &out.Head); err != nil {
 		return out, err
 	}
@@ -182,6 +185,7 @@ func viewSnapshot(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h app.Re
 	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, pending AS MATERIALIZED (
  SELECT ` + viewTurnProjection("t.value") + ` j,json_extract(t.value,'$.message_id') message_id,t.key id
  FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
+ AND ` + ownChatTurnSQL("t.key") + `
  AND json_extract(t.value,'$.state') IN ('accepted','queued','running','waiting_permission')
 ), matched AS MATERIALIZED (
  SELECT p.j,p.id,m.value m,json_extract(m.value,'$.seq') anchor FROM pending p
@@ -238,10 +242,10 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
  SELECT ` + viewTurnProjection("t.value") + ` j,
  (SELECT json_extract(m.value,'$.seq') FROM json_each(a.j,'$.Messages') m WHERE m.type='object' AND json_extract(m.value,'$.id')=json_extract(t.value,'$.message_id')) anchor,t.key id
  FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
- AND json_extract(t.value,'$.state') IN ('succeeded','failed','cancelled','unknown')
- AND ` + viewFenceSQL("t.value", true) + ` ORDER BY anchor DESC,id COLLATE BINARY DESC LIMIT 1
+ AND ` + ownChatTurnSQL("t.key") + `
+ AND ` + viewBoundFenceSQL("t.value") + ` ORDER BY anchor DESC,id COLLATE BINARY DESC LIMIT 1
 )
-SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal`
+SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_extract(j,'$.state') IN ('succeeded','failed','cancelled','unknown')`
 	var last sql.NullString
 	err = tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, q.ByteLimit-*rawBytes).Scan(&last)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -318,13 +322,13 @@ func viewEvents(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.R
 	if q.Request.AfterSeq > out.Head.EventFrontier {
 		return failure(pa.CursorExpired, "event_cursor")
 	}
-	statement := `WITH candidates AS MATERIALIZED (
- SELECT seq,event_id,CAST(data AS TEXT) j,length(data)+length(CAST(event_id AS BLOB)) n FROM project_assistant_events
- WHERE machine=? AND bot=? AND seq>? ORDER BY seq LIMIT ?
+	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, candidates AS MATERIALIZED (
+ SELECT e.seq,e.event_id,CAST(e.data AS TEXT) j,length(e.data)+length(CAST(e.event_id AS BLOB)) n FROM a,project_assistant_events e
+ WHERE e.machine=? AND e.bot=? AND e.seq>? AND ` + ownChatEventSQL("CAST(e.data AS TEXT)") + ` ORDER BY e.seq LIMIT ?
 ), budget AS (SELECT *,sum(n) OVER(ORDER BY seq) spent FROM candidates)
 SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
  CASE WHEN n<=? AND spent<=? THEN j END FROM budget ORDER BY seq`
-	rows, err := tx.QueryContext(ctx, statement, out.Head.Key.MachineID, out.Head.Key.BotID, q.Request.AfterSeq, q.Request.PageSize+1,
+	rows, err := tx.QueryContext(ctx, statement, out.Head.Key.MachineID, out.Head.Key.BotID, out.Head.Key.MachineID, out.Head.Key.BotID, q.Request.AfterSeq, q.Request.PageSize+1,
 		q.ByteLimit, q.ByteLimit, q.ByteLimit, q.ByteLimit)
 	if err != nil {
 		return err
@@ -361,6 +365,14 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		}
 		if err = viewEventFacts(ctx, tx, e, out.Head); err != nil {
 			return err
+		}
+		if e.Bot != nil {
+			row, _, _, err := rosterSummary(ctx, tx, out.Head.Key, e.Bot.ReadCursor.ReaderID, q.ByteLimit)
+			if err != nil {
+				return err
+			}
+			row.Source = e.Bot.Source
+			e.Bot = &row
 		}
 		out.Items = append(out.Items, app.ReadViewItem{ID: id, Kind: app.ReadItemEvent, ObservedEventSeq: seq, Event: &e})
 		out.NextSeq = seq

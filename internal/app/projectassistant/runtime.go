@@ -1275,6 +1275,9 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 	if source == nil {
 		return nil, runtimeFailure(pa.ContextStale, "quote_provenance")
 	}
+	if source.Room != nil {
+		return nil, runtimeFailure(pa.ScopeDenied, "quote_turn")
+	}
 	if source.Fence.Key != fence.Key || source.Fence.Project != fence.Project || source.Fence.ConversationID != fence.ConversationID {
 		return nil, runtimeFailure(pa.ScopeDenied, "quote_turn")
 	}

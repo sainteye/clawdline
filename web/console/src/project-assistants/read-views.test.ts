@@ -92,6 +92,13 @@ test("the retained conversation memory revision can precede the source memory he
   assert.equal(readView(a,request(),fence).head.conversation.memory_revision,1)
   assert.equal(readView(a,request(),fence).head.memory_revision,2)
 })
+test("an own-chat terminal outcome survives a later room execution generation",()=>{
+  const a=answer(),old={...fence,binding_id:"earlier-own-chat",generation:1}
+  a.snapshot!.last_turn={id:"own-chat",message_id:"own-input",fence:old,state:"succeeded",failure_code:"",started_at:""}
+  assert.equal(readView(a,request(),fence).snapshot!.last_turn!.id,"own-chat")
+  a.snapshot!.last_turn.fence={...old,generation:3}
+  assert.throws(()=>readView(a,request(),fence),e=>errorCode(e)==="pa_invalid")
+})
 test("invalid counts, mismatched mode, foreign scope, epochs and dishonest continuation are typed refusals",()=>{
   for(const count of ["event_frontier","unknown_turn_count","pending_permission_count","trace_category_count"] as const)for(const value of [-1,NaN,1.5,Number.MAX_SAFE_INTEGER+1])rejects(a=>{a.head[count]=value})
   rejects(a=>{a.mode="history"})
