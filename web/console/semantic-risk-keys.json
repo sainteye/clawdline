@@ -3,7 +3,7 @@
   "englishKeys": 13227,
   "counts": {
     "negation": 3499,
-    "state": 2237,
+    "state": 2238,
     "permission": 808,
     "deletion": 311,
     "uncertainty": 542
@@ -5664,6 +5664,7 @@
       "transparency.card.voice-polish.how",
       "transparency.card.voice-question-menu.summary",
       "transparency.card.voice-work.effect",
+      "transparency.card.voice-work.how",
       "transparency.card.voice-work.summary",
       "ui.unsupportedAgentHint",
       "ui.unsupportedHint",

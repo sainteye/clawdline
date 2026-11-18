@@ -10,9 +10,9 @@ import { WorkObservations } from '../voice-work/observations.js'
 import { onMachineChanged } from '../cloud/machine-switch.js'
 import { VOICE_CALL_HEADER } from '../cloud/voice-call.js'
 import { voiceWork, receiveCallInput, queueVoiceInputs, answerVoiceInput, parkVoiceInput, parkVoiceCall, workDirectory, useCallWorkTools } from '../voice-work/runtime.js'
-import { shortResult,WORK_REQUEST_MS } from '../voice-work/engine.js'
+import { shortResult,WORK_REQUEST_MS,WORK_TEXT_RUNES } from '../voice-work/engine.js'
 import { WorkNarrator } from '../voice-work/narrator.js'
-import { ACTION_STATUS_GUIDANCE, activeProgress, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, PROGRESS_CUE_REPEAT_MS, answeredConversation, messageConsent, plainConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
+import { ACTION_STATUS_GUIDANCE, MessageReview, callProgress, callWorkEvidence, deliveryQuestion, ProgressCue, PROGRESS_CUE_REPEAT_MS, answeredConversation, messageConsent, plainConsent, proposalSpoken, type MessageProposal, type CallProgress } from './copilot-feedback.js'
 /**
  * Clawdline Voice Copilot - OpenAI Realtime API WebRTC Client.
  * Enables two-way voice conversation from mobile browser to control and inspect
@@ -206,6 +206,15 @@ export class RealtimeCopilotClient {
   private retriedUtterances=new Set<string>()
   private activeConversationInput = ''
   private pendingTools=new Set<string>()
+  private executingEffects=new Set<symbol>()
+  private directReview=new MessageReview()
+  private directTicket?:MessageProposal
+  private directConsentText=''
+  private directReadback=''
+  private directAudioSeen=false
+  private liveOutputAt=0
+  private liveInputAt=0
+
   private answeredReads=new Set<string>()
   private batchProposal?:BatchProposal
   private batchCandidate?:BatchProposal
@@ -378,6 +387,32 @@ export class RealtimeCopilotClient {
       endRequested:()=>this.endIntent.requested,
       endCall: () => { void this.endAfterGoodbye() },
     }
+  }
+
+  /** Model calls must review drafts; the durable executor keeps its own approved-version gate. */
+  private directToolDeps(base:ToolDeps):ToolDeps {
+    const attempt=this.attempt,dc=this.dc
+    return {...base,reviewMessage:(row,message)=>{
+      if(attempt!==this.attempt||dc!==this.dc)return {error:'voice_message_call_changed',message_delivered:false}
+      if(!row.conversation)return {error:'voice_message_target_unverified',message_delivered:false}
+      const previous=this.directReview.proposal
+      const result=this.directReview.prepare(JSON.stringify([row.id,row.session,row.machine,row.conversation,row.execution,row.label]),row.label,message)
+      if(this.directReview.proposal!==previous){this.directReadback='';this.directConsentText='';this.directAudioSeen=false;this.directTicket=undefined}
+      this.updateState({})
+      return result
+    },fetch:async(path,init)=>{
+      // Reads can use POST (recaps/analysis); only these action routes are effects.
+      const effect=init?.method==='POST'&&(/^\/v1\/sessions\/[^/]+\/(?:send|key|close|smart-title)$/.test(path)||/^\/v1\/places\/[^/]+\/start\//.test(path))
+      if(!effect)return base.fetch(path,init)
+      if(attempt!==this.attempt||dc!==this.dc)throw new Error('voice_message_call_changed')
+      const key=Symbol();this.executingEffects.add(key);this.updateState({})
+      try{return await base.fetch(path,init)}finally{this.executingEffects.delete(key);this.updateState({})}
+    }}
+  }
+
+  private observeLiveOutput(levels:OrbLevels){
+    if(this.live&&levels.output>0){this.liveOutputAt=Date.now();if(this.directReview.proposal&&this.audioEl&&!this.audioEl.paused&&!this.audioEl.muted&&this.audioEl.volume!==0)this.directAudioSeen=true}
+    return levels
   }
 
   /**
@@ -583,10 +618,16 @@ export class RealtimeCopilotClient {
     const progress=this.state.status==='connected'?callProgress({saving:this.receivingInputs.size>0,reading:this.pendingTools.size>0,responding:this.awaitingResponse,work:this.call.options.workEnabled?this.currentWorkEvidence():undefined}):undefined
     this.state.sessionReportPhase=this.sessionReports.status()
     this.state.sessionReportCanContinue=['paused','unconfirmed','ready'].includes(this.state.sessionReportPhase??'')&&!this.hearing&&!this.playing&&!this.awaitingResponse&&!this.pendingTools.size&&(!this.live||!this.liveHeard.peek()&&Date.now()-this.liveSaidAt>=this.liveQuietMs)
-    this.state.messageProposal=this.messageProposal?{target:this.messageProposal.target,message:this.messageProposal.message}:undefined
+    const draft=this.messageProposal??this.directReview.proposal
+    this.state.messageProposal=draft?{target:draft.target,message:draft.message}:undefined
     this.state.progress=progress?{phase:progress.phase,since:this.state.progress?.phase===progress.phase?this.state.progress.since:Date.now()}:undefined
-    const working=!!progress&&activeProgress(progress.phase)
-    this.progressCue.update(working,this.hearing||this.playing||!getProgressSounds(),this.pendingTools.size)
+    if(this.live){
+      const levels=this.meter.read?.()
+      if(levels){this.observeLiveOutput(levels);if(levels.input>0)this.liveInputAt=Date.now()}
+    }
+    const working=this.state.status==='connected'&&(this.executingEffects.size>0||this.call.options.workEnabled===true&&this.currentWorkEvidence().tasks.some(task=>task.status==='running'))
+    const speakers=this.hearing||this.playing||this.live&&(Date.now()-this.liveInputAt<this.liveQuietMs||Date.now()-Math.max(this.liveOutputAt,this.liveSaidAt)<this.liveQuietMs)
+    this.progressCue.update(working,speakers||!getProgressSounds(),this.executingEffects.size)
     if(working&&!this.cueTimer)this.cueTimer=setInterval(()=>this.updateState({}),PROGRESS_CUE_REPEAT_MS/2)
     if(!working&&this.cueTimer){clearInterval(this.cueTimer);this.cueTimer=undefined}
     if (this.state.status !== 'connecting' && (this.state.status!=='connected'||this.state.connectionReady) && this.stopRing) {
@@ -726,7 +767,7 @@ export class RealtimeCopilotClient {
     this.focus = origin?.id
     this.questionTarget=undefined;this.questionContext=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
-    this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
+    this.directReview.clear();this.directTicket=undefined;this.directConsentText='';this.directReadback='';this.directAudioSeen=false;this.liveOutputAt=0;this.liveInputAt=0;this.executingEffects.clear();this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.messageProposal=undefined;this.proposalCandidate=undefined;this.consentAtSpeech.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;this.progressCue.newTurn()
     this.personSpoke = false
     clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.endIntent.reset();this.screenLooked=false
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveFinalized=false;this.liveBackendUsd=0
@@ -1061,6 +1102,7 @@ export class RealtimeCopilotClient {
   // `response.output_audio*`, the beta `response.audio*`.
   private async handleRealtimeEvent(event: any) {
     if(event.type==='input_audio_buffer.speech_started'){
+      this.directTicket=!this.playing&&this.audioEl&&!this.audioEl.paused&&!this.audioEl.muted&&this.audioEl.volume!==0?this.directReview.input():undefined;this.directReview.invalidate()
       this.spokenSessions.interrupted(this.playing);this.reportInterrupted=this.playing||this.awaitingResponse;this.sessionReports.interrupt();this.narrator.discard('session-report')
       if(this.batchProposal?.announced&&!this.playing)this.batchAtSpeech.set(String(event.item_id||'current'),structuredClone(this.batchProposal))
       if(this.batchProposal)this.batchProposal.announced=false
@@ -1075,12 +1117,13 @@ export class RealtimeCopilotClient {
       this.reportPlaybackEnded=event.type==='output_audio_buffer.stopped'
       if(this.reportPlaybackEnded)this.sessionReports.played(this.spokenSessions.played());else{this.spokenSessions.interrupted(this.playing);this.sessionReports.interrupt();this.narrator.discard('session-report')}
       this.playing=false
+      if(event.type==='output_audio_buffer.stopped')this.directReview.played();else this.directReview.invalidate()
       if(event.type==='output_audio_buffer.stopped'&&this.batchProposal&&this.batchCandidate===this.batchProposal)this.batchProposal.announced=true
       this.batchCandidate=undefined
       if(event.type==='output_audio_buffer.stopped'&&this.messageProposal&&this.proposalCandidate===this.messageProposal)this.messageProposal.announced=true
       this.proposalCandidate=undefined
     }
-    if(event.type==='response.created')this.awaitingResponse=true
+    if(event.type==='response.created'){this.awaitingResponse=true;this.directReview.speaking()}
     if(event.type==='response.done')this.awaitingResponse=false
     if(event.type === 'input_audio_buffer.speech_started'){
       this.questionSerial++
@@ -1194,7 +1237,7 @@ export class RealtimeCopilotClient {
             } catch(error) {
               if(attempt===this.attempt)this.narrator.prepared('receive-error',JSON.stringify({error:String(error),meaning:'The request could not be saved. It was not queued or planned. Do not claim any work is running.'}))
             } finally {this.receivingInputs.delete(id);if(attempt===this.attempt)this.narrator.received(String(event.item_id||''));this.updateState({})}
-          } else this.narrator.received(String(event.item_id||''))
+          } else {this.directReview.consent(this.directTicket,event.transcript);this.directTicket=undefined;this.narrator.received(String(event.item_id||''))}
           this.addLog('info', nextWord('copilotLogHeard', { text: event.transcript }))
         }
         break
@@ -1215,6 +1258,7 @@ export class RealtimeCopilotClient {
         if(this.reportPlaybackEnded)this.sessionReports.played(this.spokenSessions.played())
         if(event.response?.status==='completed'&&this.batchProposal&&spoken&&batchSpoken(spoken,this.batchProposal))this.batchCandidate=this.batchProposal
         if(event.response?.status==='completed'&&this.messageProposal&&spoken&&proposalSpoken(spoken,this.messageProposal))this.proposalCandidate=this.messageProposal
+        if(event.response?.status==='completed'&&spoken)this.directReview.generated(spoken)
         if(this.lastRead?.input===input && spoken)this.lastRead.spoken=spoken
         if (spoken) this.keep('assistant', spoken)
         if (spoken) this.journal('said', spoken)
@@ -1470,7 +1514,7 @@ export class RealtimeCopilotClient {
     } else if(managed && !immediateVoiceRead(event.name,args) && !immediateVoiceAction(event.name)) {
       output=JSON.stringify({error:'voice_work_confirmation_required',meaning:'Direct mutations are unavailable. Submit the saved input with queue_voice_work; confirmation remains in the work list.'})
     } else {
-      const deps=timedDeps(this.toolDeps(),steps)
+      const deps=timedDeps(this.directToolDeps(this.toolDeps()),steps)
       const reading:ToolDeps={...deps,heard:()=>utterance,spokenReference:()=>spokenReference,onRead:ref=>{if(attempt===this.attempt&&this.dc===dc)this.spokenSessions.observe(ref)},...(event.name==='get_sessions_summary'?{summaryLimit:SESSION_REPORT_BATCH,summaryExclude:remainingReport(this.heardNow)?this.spokenSessions.heardIDs():undefined}:{}),marks:deps.marks?{get:(key:string)=>deps.marks!.get(key),set:(key:string,mark:Parameters<NonNullable<ToolDeps['marks']>['set']>[1])=>{reported.push(()=>deps.marks!.set(key,mark))}}:undefined}
       const result=await runCopilotTool(event.name,event.arguments,reading);output=result.output;logs=result.logs
       if(event.name==='get_sessions_summary'&&attempt===this.attempt&&this.dc===dc){
@@ -1653,6 +1697,17 @@ export class RealtimeCopilotClient {
         void this.configureLive()
         return
       case 'session.input_transcript.delta': {
+        if(!this.directConsentText){
+          // Transcript silence alone is not playback evidence: also require observed
+          // media-track output followed by quiet, with a playing audio element.
+          if(this.directAudioSeen&&this.audioEl&&!this.audioEl.paused&&!this.audioEl.muted&&this.audioEl.volume!==0&&Date.now()-Math.max(this.liveOutputAt,this.liveSaidAt)>=this.liveQuietMs)this.directReview.played()
+          this.directTicket=this.directReview.input();this.directReadback=''
+        }else this.directReview.invalidate()
+        if(this.directReview.proposal&&typeof event.delta==='string'){
+          const text=this.directConsentText+event.delta
+          if(Array.from(text).length>WORK_TEXT_RUNES){this.directTicket=undefined;this.directConsentText='[consent too long]'}else this.directConsentText=text
+        }
+        this.liveInputAt=Date.now()
         this.questionSerial++
         this.questionTarget = undefined
         this.personSpoke = true
@@ -1676,6 +1731,7 @@ export class RealtimeCopilotClient {
         const heard = this.liveHeard.take()
         if (heard) { this.observeEndIntent(heard); this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({ tools: [] }) }
         this.liveSaid.add(event.delta)
+        if(typeof event.delta==='string'&&this.directReview.proposal){this.directReadback=shortResult(this.directReadback+event.delta);this.directReview.generated(this.directReadback);if(proposalSpoken(this.directReadback,this.directReview.proposal)){this.directConsentText='';this.directTicket=undefined}}
         this.endIntent.assistant(this.liveSaid.peek())
         if(this.liveReportItem&&!this.liveReportItem.interrupted&&typeof event.delta==='string')this.liveReportItem.text+=event.delta
         this.liveSaidAt = Date.now()
@@ -1714,6 +1770,7 @@ export class RealtimeCopilotClient {
   }
 
   private updateLiveCost() {
+    this.observeLiveOutput(this.meter.read())
     const elapsed = this.liveStarted ? (Date.now() - this.liveStarted) / 1000 : 0
     const { seconds, usd } = liveCost(this.liveFinalized?0:elapsed, this.liveSeconds, this.liveBackendUsd + this.questionUSD)
     this.updateState({ cost: { ...emptyCost(this.model), usd, priced: this.questionCostKnown, live: { seconds, billedSeconds: this.liveSeconds, backendUSD: this.liveBackendUsd + this.questionUSD } } })
@@ -1724,10 +1781,6 @@ export class RealtimeCopilotClient {
     const dc = this.dc, attempt = this.attempt
     const steps: string[] = []
     this.livePending.add(callID)
-    // The progress cue plays the moment the backend calls a tool, and again
-    // every PROGRESS_CUE_REPEAT_MS while it runs (`ProgressCue`, the same
-    // sound and setting as a Realtime call's lookups). A Live call has no
-    // turn to wait for, so the cue is tied to the tool call itself.
     this.pendingTools.add(callID)
     this.updateState({ toolCallLog: nextWord('copilotRunningTool', { tool: name }), speakingState: 'thinking' })
     const started = performance.now()
@@ -1735,8 +1788,17 @@ export class RealtimeCopilotClient {
     let logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
     try {
       const requested=JSON.parse(args||'{}') as Record<string,unknown>
+      if(name==='send_message_to_session'&&this.directTicket){
+        const since=Date.now()
+        while(Date.now()-this.liveInputAt<this.liveQuietMs&&Date.now()-since<WORK_REQUEST_MS){
+          await new Promise(resolve=>setTimeout(resolve,this.livePollMs))
+          if(this.dc!==dc||attempt!==this.attempt)throw new Error('voice_message_call_changed')
+        }
+        if(Date.now()-this.liveInputAt>=this.liveQuietMs)this.directReview.consent(this.directTicket,this.directConsentText)
+        this.directTicket=undefined
+      }
       if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
-      else {const result = await runCopilotTool(name, args, timedDeps(this.toolDeps(), steps));output = result.output; logs = result.logs}
+      else {const result = await runCopilotTool(name, args, timedDeps(this.directToolDeps(this.toolDeps()), steps));output = result.output; logs = result.logs}
     } catch (error) {
       output = JSON.stringify({ error: String(error) })
     }
@@ -1781,7 +1843,7 @@ export class RealtimeCopilotClient {
 
   /** How loud the person and the copilot are right now, each 0..1, for the orb. */
   readLevels(): OrbLevels {
-    return this.meter.read()
+    return this.observeLiveOutput(this.meter.read())
   }
 
   disconnect(acknowledge=true) {
@@ -1789,7 +1851,7 @@ export class RealtimeCopilotClient {
     this.cancelOpening()
     clearTimeout(this.configurationTimer);this.configurationTimer=undefined
     this.updateState({connectionReady:false})
-    this.pendingTools.clear();this.receivingInputs.clear();this.awaitingResponse=false;this.hearing=false;this.playing=false;this.sendCuePending=false
+    this.directReview.clear();this.directTicket=undefined;this.executingEffects.clear();this.pendingTools.clear();this.receivingInputs.clear();this.awaitingResponse=false;this.hearing=false;this.playing=false;this.sendCuePending=false
     if(this.cueTimer){clearInterval(this.cueTimer);this.cueTimer=undefined}
     // Hanging up ends the call's open work on the machine (`EndCall`): nothing
     // is carried into the next call (2026-11-13). The action keeps its old
