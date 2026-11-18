@@ -1,11 +1,11 @@
-.project-assistants .pa-roster-entry { display:flex;align-items:center;border-radius:12px;transition:background-color .15s; }
-.project-assistants .pa-roster-entry > .pa-bot-row { flex:1;min-width:0;width:auto; }
-.project-assistants .pa-roster-entry:has(.pa-roster-read-error) { flex-wrap:wrap; }
-.project-assistants .pa-roster-read { flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--pa-dim); }
+.project-assistants .pa-roster-entry { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;border-radius:12px;transition:background-color .15s; }
+.project-assistants .pa-roster-entry > .pa-bot-row { grid-area:1 / 1;min-width:0;width:100%; }
+.project-assistants .pa-roster-entry:has(> .pa-roster-read) .pa-unread { margin-inline-end:36px; }
+.project-assistants .pa-roster-read { grid-area:1 / 1;justify-self:end;z-index:1;margin-block-start:28px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--pa-dim); }
 .project-assistants .pa-roster-read:hover:not(:disabled) { background:var(--pa-hover,#242426);color:var(--pa-text); }
-.project-assistants .pa-roster-read-error { flex-basis:100%;margin:0;padding:0 8px 8px;color:var(--warning,#f0a030);font-size:12px; }
+.project-assistants .pa-roster-read-error { grid-column:1 / -1;margin:0;padding:0 8px 8px;color:var(--warning,#f0a030);font-size:12px; }
 .project-assistants .pa-roster-read-status { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
-.project-assistants .pa-roster-actions { display:flex;flex-direction:column;align-items:center;gap:2px; }
+.project-assistants .pa-roster-actions { grid-area:1 / 2;display:flex;flex-direction:column;align-items:center;gap:2px; }
 .project-assistants .pa-roster-pin,.project-assistants .pa-roster-handle { display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:5px;border:0;border-radius:6px;background:transparent;color:var(--pa-dim); }
 .project-assistants .pa-roster-pin:hover,.project-assistants .pa-roster-handle:hover { color:var(--pa-text);background:var(--pa-hover,#242426); }
 .project-assistants .pa-roster-pin[aria-pressed="true"] { color:var(--pa-accent,#e39567); }
@@ -33,7 +33,6 @@
 .project-assistants .pa-roster-compact .pa-row-meta time { max-width:none;white-space:nowrap; }
 
 .project-assistants .pa-roster-entry { -webkit-touch-callout:none;user-select:none;-webkit-user-select:none; }
-.project-assistants .pa-roster-entry > .pa-bot-row { width:100%; }
 .project-assistants [data-roster-dragging] .pa-roster-entry[data-dragging="true"] { opacity:.16;outline:1px dashed var(--pa-line); }
 .project-assistants [data-roster-dragging] [data-drop="true"] { outline:none; }
 html.pa-roster-dragging,html.pa-roster-dragging * { cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important; }
