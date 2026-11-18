@@ -366,14 +366,8 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		if err = viewEventFacts(ctx, tx, e, out.Head); err != nil {
 			return err
 		}
-		if e.Bot != nil {
-			row, _, _, err := rosterSummary(ctx, tx, out.Head.Key, e.Bot.ReadCursor.ReaderID, q.ByteLimit)
-			if err != nil {
-				return err
-			}
-			row.Source = e.Bot.Source
-			e.Bot = &row
-		}
+		// Replay the stored metadata patch. Current own-chat activity belongs
+		// to the roster; substituting it here leaks future facts into history.
 		out.Items = append(out.Items, app.ReadViewItem{ID: id, Kind: app.ReadItemEvent, ObservedEventSeq: seq, Event: &e})
 		out.NextSeq = seq
 	}

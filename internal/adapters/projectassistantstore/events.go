@@ -123,8 +123,7 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 		return out, err
 	}
 	defer tx.Rollback()
-	a, err := load(ctx, tx, q.Key)
-	if err != nil {
+	if _, err = load(ctx, tx, q.Key); err != nil {
 		return out, err
 	}
 	var last int64
@@ -154,11 +153,8 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 			rows.Close()
 			return out, err
 		}
-		if e.Bot != nil {
-			projected := summary(a, e.Bot.ReadCursor.ReaderID)
-			projected.Source = e.Bot.Source
-			e.Bot = &projected
-		}
+		// Metadata events are historical patches, not current roster rows.
+		// Keep their Bot, observations and activity at the recorded event.
 		out.Items = append(out.Items, e)
 		out.NextSeq = e.Seq
 	}

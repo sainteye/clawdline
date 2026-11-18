@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"database/sql"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestOwnChatExcludesStoredRoomTranscripts(t *testing.T) {
 	if err != nil || len(roster.Frame.Changes) != 1 {
 		t.Fatal(roster, err)
 	}
-	if got := roster.Frame.Changes[0].Summary; got.LatestMessage != "" || got.UnreadCount != 0 || got.Status != "idle" {
+	if got := roster.Frame.Changes[0].Summary; got.LatestMessage != "" || got.UnreadCount != 0 || got.Status != "idle" || !got.ActivityAt.Equal(e.Bot.CreatedAt) {
 		t.Fatalf("live roster leaked room: %+v", got)
 	}
 	// Reopen the actual SQLite file; both the original facts and their provenance survive.
@@ -86,6 +87,7 @@ func TestOwnChatPagesAcrossInterleavedRooms(t *testing.T) {
 	e.Turns = nil
 	for i := range e.Messages {
 		m := &e.Messages[i]
+		m.At = e.Bot.CreatedAt.Add(time.Duration(i+1) * time.Minute)
 		m.Kind, m.TurnID = pa.NoticeMessage, m.ID+"-turn"
 		turn := pa.Turn{ID: m.TurnID, MessageID: m.ID, Fence: current, State: pa.TurnSucceeded, Origin: pa.HostNoticeOrigin, Instructions: e.Bot.Instructions, MemoryRevision: 1, IdempotencyKey: m.ID}
 		if i%3 != 1 {
@@ -119,8 +121,65 @@ func TestOwnChatPagesAcrossInterleavedRooms(t *testing.T) {
 	}
 	// Notices without a Room ticket remain legitimate own-chat messages.
 	rows, err := s.ListForReader(testContext, pa.ListBots{MachineID: e.Bot.Key.MachineID, PageSize: 1}, "reader")
-	if err != nil || rows.Items[0].UnreadCount != 3 {
+	if err != nil || rows.Items[0].UnreadCount != 3 || rows.Items[0].LatestMessage != e.Messages[7].Text || !rows.Items[0].ActivityAt.Equal(e.Messages[7].At) {
 		t.Fatal(rows, err)
+	}
+	roster := rosterRead(t, v, rosterQuery())
+	if got := roster.Frame.Changes[0].Summary; got.LatestMessage != e.Messages[7].Text || !got.ActivityAt.Equal(e.Messages[7].At) {
+		t.Fatalf("later room message changed direct-chat sorting: %+v", got)
+	}
+}
+
+func TestOwnChatMetadataReplayDoesNotAcquireFutureActivity(t *testing.T) {
+	e, _, current := viewFixture(t, 3, 0, false)
+	// This event predates both the room and the later direct reply. Its zero
+	// activity is a metadata patch, not an empty current roster projection.
+	metadata := pa.BotSummary{Bot: e.Bot, Version: e.Bot.Version, Source: pa.SourceStatus{MachineID: e.Bot.Key.MachineID}}
+	metadata.Bot.Name = "Name at the event"
+	metadata.Bot.Hidden = true
+	e.Events = append([]pa.Event{{Version: pa.ContractVersion, ID: "metadata-before-messages", Seq: 1, Fence: current, Kind: pa.BotUpdated, At: e.Bot.CreatedAt, Bot: &metadata}}, e.Events...)
+	room := e.Turns[0]
+	room.ID, room.MessageID, room.Origin = "room", e.Messages[1].ID, pa.HostNoticeOrigin
+	room.Room = &pa.RoomTicket{Group: pa.BotKey{MachineID: e.Bot.Key.MachineID, BotID: "room-bot"}, Member: e.Bot.Key, Epoch: 1, JoinedRevision: 1}
+	e.Turns = append(e.Turns, room)
+	e.Messages[1].TurnID, e.Messages[1].Kind = room.ID, pa.NoticeMessage
+	for i := range e.Messages {
+		e.Messages[i].At = e.Bot.CreatedAt.Add(time.Duration(i+1) * time.Minute)
+		e.Events[i+1].Seq = int64(i + 2)
+		e.Events[i+1].At = e.Messages[i].At
+		e.Events[i+1].Message = &e.Messages[i]
+	}
+	_, s, v, _ := restoreViews(t, e)
+	check := func(events []pa.Event) {
+		t.Helper()
+		if len(events) != 3 || events[0].ID != "metadata-before-messages" || !reflect.DeepEqual(events[0].Bot, &metadata) || events[1].Message.ID != e.Messages[0].ID || events[2].Message.ID != e.Messages[2].ID {
+			t.Fatalf("metadata or transcript changed during replay: %+v", events)
+		}
+	}
+	legacy, err := s.Read(testContext, pa.EventQuery{Key: e.Bot.Key, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(legacy.Items)
+	q := viewQuery(e.Bot)
+	snapshot := readView(t, v, q)
+	q.Request.Mode, q.Request.SourceEpoch = pa.ReadViewEvents, snapshot.SourceEpoch
+	page := readView(t, v, q)
+	var events []pa.Event
+	for _, row := range page.Items {
+		events = append(events, *row.Event)
+	}
+	check(events)
+	q.Request.AfterSeq = page.NextSeq
+	if next := readView(t, v, q); len(next.Items) != 0 || next.NextSeq != page.NextSeq {
+		t.Fatal("metadata replay changed the resume frontier", next)
+	}
+	rows, err := s.ListForReader(testContext, pa.ListBots{MachineID: e.Bot.Key.MachineID, PageSize: 1}, "reader")
+	if err != nil || rows.Items[0].LatestMessage != e.Messages[2].Text || !rows.Items[0].ActivityAt.Equal(e.Messages[2].At) {
+		t.Fatal("current roster lost its direct reply", rows, err)
+	}
+	if got := rosterRead(t, v, rosterQuery()).Frame.Changes[0].Summary; got.LatestMessage != e.Messages[2].Text || !got.ActivityAt.Equal(e.Messages[2].At) {
+		t.Fatal("live roster lost its direct reply", got)
 	}
 }
 
