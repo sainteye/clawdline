@@ -967,6 +967,34 @@ func TestRuntimeKnownCompletionCancelsOnlyStillPendingPermissions(t *testing.T) 
 	}
 }
 
+func TestRuntimeDeadlineClearsPermissionWaitAndRetainsUnknownTurn(t *testing.T) {
+	f := newRuntimeFixture(t)
+	f.r.o.Limits.PromptTimeout = 600 * time.Millisecond
+	rec, err := f.submit(t, "deadline", "synthetic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := receivePrompt(t, f.provider)
+	s := f.provider.session()
+	offer := pa.PermissionOffer{ID: "pending-deadline", Fence: prompt.Turn.Fence, TurnID: prompt.Turn.ID, NativeRequestID: "deadline-native",
+		ExpiresAt: prompt.Turn.StartedAt.Add(300 * time.Millisecond), Options: []pa.PermissionOption{{ID: "once", Kind: pa.AllowOnce, Allow: true}}}
+	if err := s.sink(context.Background(), ProtocolEvent{ID: offer.ID, Fence: offer.Fence, TurnID: offer.TurnID, Permission: &offer}); err != nil {
+		t.Fatal(err)
+	}
+	awaitTurn(t, f, rec.ResourceID, pa.TurnUnknown)
+	f.store.mu.Lock()
+	stored, turn, active := f.store.permissions[offer.ID], f.store.turns[offer.TurnID], f.store.c.ActiveTurnID
+	f.store.mu.Unlock()
+	if stored.State != pa.PermissionExpired || stored.SelectedOptionID != "" || active != "" || turn.Failure == nil || turn.Failure.Field != "prompt_timeout" {
+		t.Fatalf("expired permission or timed-out turn did not settle: permission=%s active=%s failure=%v", stored.State, active, turn.Failure)
+	}
+	select {
+	case <-s.answered:
+		t.Fatal("expiry selected an option")
+	default:
+	}
+}
+
 // On 2026-11-14 a Bot whose native transcript had moved (its configuration
 // changed to the person's own) failed every send with pa_unsupported. As in
 // Codync, a session that cannot be loaded is replaced by a new one that gets

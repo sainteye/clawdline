@@ -454,7 +454,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
             disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
             onClick={() => { actionMenu.current?.removeAttribute("open"); setCloseConfirm(true) }}>{nextWord("terminalTerminateHost")}</button>
         </div></details></div>
-      <dialog ref={closeDialog} className="terminal-close-confirm" onCancel={() => { setCloseConfirm(false); closeOpener.current?.focus() }}
+      <dialog data-modal-dismiss="true" ref={closeDialog} className="terminal-close-confirm" onCancel={() => { setCloseConfirm(false); closeOpener.current?.focus() }}
         aria-label={nextWord("terminalTerminateHost")}>
         <p>{nextWord("terminalTerminateAsk", { project: label, machine, id: terminalShortID(id) })}</p>
         <button className="board-button" type="button" ref={closeCancel} onClick={() => { setCloseConfirm(false); closeOpener.current?.focus() }}>{nextWord("terminalCancel")}</button>

@@ -67,6 +67,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??""})
     const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:traces.length}
     head.conversation.memory_revision=memory.revision
+    head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
     const response:W.ProjectAssistantReadViewResponse={contract_version:contractVersion,mode:r.mode,source:status(),source_epoch:readEpoch,head,items:[],has_more:false,next_cursor:"",next_seq:0}
     const work=latest(own.filter(e=>e.work),e=>e.work!.id)
     const timeline:W.ProjectAssistantReadViewItem[]=[...(messages.get(bot.key.bot_id)??[]).map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:seq,message})),...work.map(event=>({id:event.work!.id,kind:"work" as const,anchor_message_seq:messages.get(bot.key.bot_id)?.find(m=>m.turn_id===event.work!.turn_id)?.seq??0,observed_event_seq:seq,work:event.work}))].sort((a,b)=>a.anchor_message_seq-b.anchor_message_seq||(a.kind<b.kind?-1:a.kind>b.kind?1:0)||(a.id<b.id?-1:a.id>b.id?1:0))
@@ -221,7 +222,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       const bot=bots[0],f=fence(bot)
       for(let i=events.length-1;i>=0;i--)if(events[i].trace&&sameBot(events[i].fence.key,bot.key))events.splice(i,1)
       for(let i=0;i<count;i++){
-        push({id:`offer-${i}`,seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:`offer-${i}`,fence:f,turn_id:`collection-turn-${i}`,native_request_id:`request-${i}`,state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options:Array.from({length:101},(_,j)=>({id:`option-${j}`,kind:j?"reject_once":"allow_once",label:`stored ${j}`,allow:j===0,read_only:true}))}})
+        push({id:`offer-${i}`,seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:`offer-${i}`,fence:f,turn_id:"collection-turn-0",native_request_id:`request-${i}`,state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options:Array.from({length:101},(_,j)=>({id:`option-${j}`,kind:j?"reject_once":"allow_once",label:`stored ${j}`,allow:j===0,read_only:true}))}})
         push({id:`trace-${i}`,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,trace:{turn_id:`collection-turn-${i}`,category:"read",complete:true,text:`Complete trace ${i}`}})
       }
     },

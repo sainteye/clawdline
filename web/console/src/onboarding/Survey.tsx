@@ -1,3 +1,4 @@
+import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { useEffect, useRef, useState } from "react"
 import { currentCatalogTag } from "../catalog.js"
 import { LOCAL_KEY, OPEN_SURVEY, REASONS, SOURCES, TOOLS, readLocal, surveyRequest, toggleTool, validAnswers, type Answers, type LocalSurvey, type SurveyState } from "./model.js"
@@ -7,9 +8,9 @@ import "./survey.css"
 const INITIAL: SurveyState = { version: 1, revision: 0, status: "new", answers: null }
 const EMPTY: Answers = { reason: "", tools: [], source: "" }
 
-export function SurveyForm({ initial, local, busy, error, onSubmit, onClose, onReload }: {
+export function SurveyForm({ initial, local, busy, error, onSubmit, onClose, onReload, onDismiss }: {
   initial: Answers | null; local: boolean; busy: boolean; error: string | null;
-  onSubmit: (answers: Answers) => void; onClose: () => void; onReload?: () => void;
+  onSubmit: (answers: Answers) => void; onClose: () => void; onReload?: () => void; onDismiss?: () => void;
 }) {
   const [answers, setAnswers] = useState<Answers>(initial ?? EMPTY)
   const [invalid, setInvalid] = useState(false)
@@ -26,7 +27,10 @@ export function SurveyForm({ initial, local, busy, error, onSubmit, onClose, onR
     if (!validAnswers(answers)) { setInvalid(true); reason.current?.focus(); return }
     setInvalid(false); onSubmit(answers)
   }}>
-    <h1 id="survey-title">{w("title")}</h1>
+    <header className="survey-heading">
+      <h1 id="survey-title">{w("title")}</h1>
+      {onDismiss && <button type="button" className="survey-secondary" disabled={busy} onClick={onDismiss}>{w("close")}</button>}
+    </header>
     <p className="survey-intro">{w("intro")}</p>
     <fieldset disabled={busy} className="survey-fields">
       <label className="survey-field" htmlFor="survey-reason"><span>{w("reason")}</span>
@@ -74,6 +78,8 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
   const [build, setBuild] = useState(productVersion)
   const [state, setState] = useState<SurveyState>(INITIAL)
   const [open, setOpen] = useState(false)
+  const [edited, setEdited] = useState(false)
+  const hide = () => { setOpen(false); setEdited(false) }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -93,7 +99,7 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
   }, [account?.id])
   useEffect(() => {
     if (!account) return
-    if (!eligible) { setOpen(false); return }
+    if (!eligible) { hide(); return }
     const controller = new AbortController()
     void surveyRequest(origin, path, { signal: controller.signal }).then(saved => {
       if (controller.signal.aborted) return
@@ -123,7 +129,7 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
   useEffect(() => {
     const node = dialog.current
     if (!node) return
-    if (open && !node.open) node.showModal()
+    if (open && !node.open) { bindNativeModalBackdrop(node); node.showModal() }
     if (!open && node.open) node.close()
   }, [open])
   useEffect(() => {
@@ -150,7 +156,7 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
   }, [open, productVersion])
   function metadata() { return { locale: currentCatalogTag(), entry, product_version: build } }
   const dismiss = () => {
-    request.current?.abort(); setBusy(false); setOpen(false); setNotice(null)
+    request.current?.abort(); setBusy(false); hide(); setNotice(null)
     if (account && state.status !== "submitted") {
       void surveyRequest(origin, path, { body: { version: 1, revision: state.revision, action: "skip", meta: metadata() }, key: crypto.randomUUID() }).then(saved => { if (active.current) setState(saved) }).catch(() => {})
     } else if (local.current) {
@@ -172,7 +178,7 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
     try {
       const saved = await surveyRequest(origin, path, { ...attempt, local: !account, signal: controller.signal })
       if (controller.signal.aborted || !active.current) return
-      setState(saved); setOpen(false); setNotice(w("thanks")); pending.current = null
+      setState(saved); hide(); setNotice(w("thanks")); pending.current = null
       if (local.current) { local.current.state = saved; local.current.dismissed = true; local.current.submittedAt ??= new Date().toISOString(); delete local.current.pending; persist() }
     } catch (err) {
       if (!controller.signal.aborted && active.current) {
@@ -183,8 +189,10 @@ export function SurveyCoordinator({ account, eligible = false, productVersion = 
   }
   return <>
     {notice ? <div className="survey-notice" role="status"><span>{notice}</span><button type="button" onClick={() => setNotice(null)}>{w("close")}</button></div> : null}
-    <dialog ref={dialog} className="survey-dialog" aria-labelledby="survey-title" onCancel={e => { e.preventDefault(); dismiss() }}>
-      {open ? <SurveyForm initial={state.answers ?? (validAnswers(pending.current?.body.answers) ? pending.current!.body.answers as Answers : null)} local={!account} busy={busy} error={error} onSubmit={submit} onClose={dismiss} onReload={() => {
+    <dialog ref={dialog} className="survey-dialog" aria-labelledby="survey-title"
+      data-modal-dismiss={String(!busy && !edited)} onChangeCapture={() => setEdited(true)}
+      onCancel={e => { e.preventDefault(); if (!busy && !edited) hide() }}>
+      {open ? <SurveyForm initial={state.answers ?? (validAnswers(pending.current?.body.answers) ? pending.current!.body.answers as Answers : null)} local={!account} busy={busy} error={error} onSubmit={submit} onClose={dismiss} onDismiss={hide} onReload={() => {
         if (account) void readCloud()
         else if (recovery.current) {
           setState(recovery.current); setError(null); pending.current = null

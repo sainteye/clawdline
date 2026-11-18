@@ -46,10 +46,9 @@ export function SessionStateFilterControl({ value, onChange, counts, summary, in
         </span></span> : summary}
       <svg className="session-state-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
     </button>
-    {open && createPortal(<dialog ref={dialog} id="session-state-filter" className="session-state-dialog"
-      aria-labelledby="session-state-filter-title" onCancel={(event) => { event.preventDefault(); close() }}
-      onClick={(event) => { if (event.target === event.currentTarget) close() }}>
-      <div className="session-state-sheet" onClick={(event) => event.stopPropagation()}>
+    {open && createPortal(<dialog data-modal-dismiss="true" ref={dialog} id="session-state-filter" className="session-state-dialog"
+      aria-labelledby="session-state-filter-title" onCancel={(event) => { event.preventDefault(); close() }}>
+      <div className="session-state-sheet">
         <header className="session-state-head">
           <h2 id="session-state-filter-title">{nextWord("sessionStateFilterTitle")}</h2>
           <button type="button" className="session-state-close" onClick={close} aria-label={nextWord("sessionStateFilterClose")}>×</button>

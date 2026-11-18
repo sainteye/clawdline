@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react"
 import { focusModalContainer } from "../modal-focus.js"
@@ -137,6 +138,9 @@ export function Snippets({ row, steward = false, machine }: { row: SessionRow | 
   const [open, setOpen] = useState(false)
   const [request, setRequest] = useState<SnippetsRequest | null>(null)
   const openedOn = useRef<string | null>(null)
+  const listBackdrop = useModalBackdrop(() => {
+    if (!document.querySelector<HTMLButtonElement>("#snippets-close")?.disabled) setOpen(false)
+  })
 
   // A different session, or none, closes the sheet: it is that session's
   // project the list was filtered under (`clawdline:rendered`'s own check).
@@ -158,7 +162,7 @@ export function Snippets({ row, steward = false, machine }: { row: SessionRow | 
   }, [row])
 
   return createPortal(
-    <div className="overlay" id="snippets" hidden={!open} onClick={() => setOpen(false)}>
+    <div className="overlay" id="snippets" hidden={!open} {...listBackdrop}>
       {open && row ? <Sheet row={row} steward={steward} machine={machine} request={request} onClose={() => setOpen(false)} /> : null}
     </div>,
     document.body,
@@ -536,10 +540,20 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
     void write(() => updateSnippet(row.id, snippet.id, patch as Record<string, string>))
   }
 
+  const snippetOriginal = useRef<SnippetDraft | null>(null)
+  const clawdfatherOriginal = useRef<typeof clawdfatherDraft>(null)
+  const playbookOriginal = useRef<typeof playbookDraft>(null)
+  const openQuickPlaybook = (next: NonNullable<typeof playbookDraft>) => {
+    playbookOriginal.current = next
+    setPlaybookDraft(next)
+  }
+
   const openEditor = (of: Snippet | null) => {
     if (!of && !may.create) return
     setEditing(of)
-    setDraft(snippetDraft(of, { scope: "global" }))
+    const original = snippetDraft(of, { scope: "global" })
+    snippetOriginal.current = original
+    setDraft(original)
     setMenuFor(-1)
     setArmed(false)
     setEditorSaid("")
@@ -574,7 +588,9 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
   }
 
   const openClawdfatherEditor = (of: Snippet | null) => {
-    setClawdfatherDraft(of ? { id: of.id, title: of.title, body: of.body } : { id: "", title: "", body: "" })
+    const original = of ? { id: of.id, title: of.title, body: of.body } : { id: "", title: "", body: "" }
+    clawdfatherOriginal.current = original
+    setClawdfatherDraft(original)
     setClawdfatherSaid("")
     setClawdfatherArmed(false)
   }
@@ -755,6 +771,16 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
     if (target.classList.contains("snippet-row")) insert(rowAt(target, "data-snippet"))
   }
 
+  const snippetBackdrop = useModalBackdrop(() => {
+    if (!busy.current && JSON.stringify(draft) === JSON.stringify(snippetOriginal.current)) closeEditor()
+  })
+  const clawdfatherBackdrop = useModalBackdrop(() => {
+    if (!busy.current && JSON.stringify(clawdfatherDraft) === JSON.stringify(clawdfatherOriginal.current)) closeClawdfatherEditor()
+  })
+  const playbookBackdrop = useModalBackdrop(() => {
+    if (!playbookSaving && !playbookDeleting && JSON.stringify(playbookDraft) === JSON.stringify(playbookOriginal.current)) closePlaybookEditor()
+  })
+
   const listHTML = snippetsListHTML(model, {
     controls: SNIPPET_CONTROLS,
     readOnly: false,
@@ -793,10 +819,13 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
             hidden={!may.create || loading || !!error || (tab === "playbook" && !!currentPlaybook) || (tab === "clawdfather" && coordination)}
             aria-label={tab === "playbook" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
             title={tab === "playbook" ? W("new") : tab === "clawdfather" ? clawdfatherWord("new") : T.webSnippetNew}
-            onClick={() => tab === "playbook" ? (setPlaybookSaveError(""), setPlaybookDraft({ title: "", body: "", global: !projectKey || projectUnresolved }))
+            onClick={() => tab === "playbook" ? (setPlaybookSaveError(""), openQuickPlaybook({ title: "", body: "", global: !projectKey || projectUnresolved }))
               : tab === "clawdfather" ? openClawdfatherEditor(null) : openEditor(null)}
           >
             ＋
+          </button>
+          <button className="chip" id="snippets-close" type="button" disabled={!!writing} ref={closeButton} onClick={onClose}>
+            {T.webClose}
           </button>
         </div>
         {tab === "clawdfather" && coordination ? null : tab === "playbook" && currentPlaybook ? <>
@@ -804,7 +833,7 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
             <button type="button" onClick={() => { setPlaybookDeleteArmed(false); setSelectedPlaybook(null) }}>← {W("backToPlaybooks")}</button>
             <span className="playbook-detail-actions">
               <button type="button" aria-label={W("editAction")} title={W("editAction")} disabled={playbookDeleting || startingPlaybook}
-                onClick={() => { setPlaybookDeleteArmed(false); setPlaybookSaveError(""); setPlaybookEditorArmed(false); setPlaybookDraft({ id: currentPlaybook.id, title: currentPlaybook.title, body: currentPlaybook.body, global: !currentPlaybook.project, source: currentPlaybook.source }) }}><WorkIcon name="edit" /></button>
+                onClick={() => { setPlaybookDeleteArmed(false); setPlaybookSaveError(""); setPlaybookEditorArmed(false); openQuickPlaybook({ id: currentPlaybook.id, title: currentPlaybook.title, body: currentPlaybook.body, global: !currentPlaybook.project, source: currentPlaybook.source }) }}><WorkIcon name="edit" /></button>
               <button type="button" className="playbook-delete"
                 data-armed={playbookDeleteArmed ? "on" : undefined}
                 aria-label={playbookDeleting ? catalogWord("literal", "a5df1fce3ed1") : playbookDeleteArmed ? T.webSnippetDeleteAsk : W("delete")}
@@ -871,13 +900,10 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
             {startingPlaybook && <span className="playbook-start-spinner" aria-hidden="true" />}
             {startingPlaybook ? W("starting") : W("start")}
           </button>}
-          <button className="chip" id="snippets-close" type="button" disabled={!!writing} ref={closeButton} onClick={onClose}>
-            {T.webClose}
-          </button>
         </div>
       </div>
       {draft ? (
-        <div className="overlay" id="snippet-editor" onClick={() => { if (!busy.current) closeEditor() }}>
+        <div className="overlay" id="snippet-editor" {...snippetBackdrop}>
           <div
             className="sheet snippet-editor-sheet"
             ref={editorSheet}
@@ -887,7 +913,7 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
             aria-labelledby="snippet-editor-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 id="snippet-editor-title">{editing ? T.webSnippetEditing : T.webSnippetNew}</h2>
+            <header className="snippet-editor-head"><h2 id="snippet-editor-title">{editing ? T.webSnippetEditing : T.webSnippetNew}</h2><button className="chip" id="snippet-editor-cancel" type="button" disabled={!!writing} onClick={closeEditor}>{T.webCancel}</button></header>
             <div className="block">
               <span className="field-label" id="snippet-title-label">
                 {T.webSnippetTitleLabel}
@@ -1002,9 +1028,6 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
               >
                 <ActionProgress busy={writing === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{armed ? T.webSnippetDeleteAsk : T.webSnippetDelete}</ActionProgress>
               </button>
-              <button className="chip" id="snippet-editor-cancel" type="button" disabled={!!writing} onClick={closeEditor}>
-                {T.webCancel}
-              </button>
               <button className="chip confirm-go" id="snippet-editor-save" type="button" disabled={!!writing} aria-busy={writing === "save"} onClick={save}>
                 <ActionProgress busy={writing === "save"} label={catalogWord("literal", "21aa64dd7446")}>{T.webSnippetSave}</ActionProgress>
               </button>
@@ -1012,9 +1035,9 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
           </div>
         </div>
       ) : null}
-      {clawdfatherDraft && <div className="overlay" id="clawdfather-editor" onClick={() => { if (!busy.current) closeClawdfatherEditor() }}>
+      {clawdfatherDraft && <div className="overlay" id="clawdfather-editor" {...clawdfatherBackdrop}>
         <div className="sheet snippet-editor-sheet" ref={clawdfatherSheet} role="dialog" aria-modal="true" aria-labelledby="clawdfather-editor-title" onClick={(event) => event.stopPropagation()}>
-          <h2 id="clawdfather-editor-title">{clawdfatherWord(clawdfatherDraft.id ? "editing" : "new")}</h2>
+          <header className="snippet-editor-head"><h2 id="clawdfather-editor-title">{clawdfatherWord(clawdfatherDraft.id ? "editing" : "new")}</h2><button className="chip" type="button" disabled={!!writing} onClick={closeClawdfatherEditor}>{T.webCancel}</button></header>
           <div className="block"><label className="field-label" htmlFor="clawdfather-editor-title-field">{clawdfatherWord("name")}</label>
             <input className="find" id="clawdfather-editor-title-field" type="text" maxLength={200} autoComplete="off" value={clawdfatherDraft.title}
               data-1p-ignore="" data-lpignore="true" data-bwignore=""
@@ -1027,14 +1050,13 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
           <div className="buttons">
             {clawdfatherDraft.id && may.remove ? <button className="chip danger" id="clawdfather-editor-delete" type="button" disabled={!!writing} aria-busy={writing === "delete"} onClick={removeClawdfather}>
               <ActionProgress busy={writing === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{clawdfatherArmed ? T.webSnippetDeleteAsk : T.webSnippetDelete}</ActionProgress></button> : null}
-            <button className="chip" type="button" disabled={!!writing} onClick={closeClawdfatherEditor}>{T.webCancel}</button>
             <button className="chip confirm-go" id="clawdfather-editor-save" type="button" disabled={!!writing} aria-busy={writing === "save"} onClick={saveClawdfather}><ActionProgress busy={writing === "save"} label={catalogWord("literal", "21aa64dd7446")}>{T.webSnippetSave}</ActionProgress></button>
           </div>
         </div>
       </div>}
-      {playbookDraft && <div className="overlay" id="playbook-quick-editor" onClick={() => { if (!playbookSaving && !playbookDeleting) closePlaybookEditor() }}>
+      {playbookDraft && <div className="overlay" id="playbook-quick-editor" {...playbookBackdrop}>
         <div className="sheet snippet-editor-sheet" role="dialog" aria-modal="true" aria-labelledby="playbook-quick-title" onClick={(event) => event.stopPropagation()}>
-          <h2 id="playbook-quick-title">{W(playbookDraft.id ? "edit" : "new")}</h2>
+          <header className="snippet-editor-head"><h2 id="playbook-quick-title">{W(playbookDraft.id ? "edit" : "new")}</h2><button className="chip" type="button" disabled={playbookSaving || playbookDeleting} onClick={closePlaybookEditor}>{W("cancel")}</button></header>
           <div className="block"><label className="field-label" htmlFor="playbook-quick-name">{W("name")}</label>
             <input className="find" id="playbook-quick-name" type="text" maxLength={200} value={playbookDraft.title}
               onChange={(event) => { setPlaybookEditorArmed(false); setPlaybookDraft({ ...playbookDraft, title: event.target.value }) }} /></div>
@@ -1078,7 +1100,6 @@ function Sheet({ row, steward, machine: machineProp, request = null, onClose }: 
                 {playbookEditorArmed ? T.webSnippetDeleteAsk : T.webSnippetDelete}
               </ActionProgress>
             </button>}
-            <button className="chip" type="button" disabled={playbookSaving || playbookDeleting} onClick={closePlaybookEditor}>{W("cancel")}</button>
             <button className="chip confirm-go" type="button" disabled={playbookSaving || playbookDeleting} aria-busy={playbookSaving} onClick={() => void savePlaybook()}><ActionProgress busy={playbookSaving} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button>
           </div>
         </div>

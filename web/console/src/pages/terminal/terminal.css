@@ -323,7 +323,12 @@
 
 .terminal-connections-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 3rem); overflow: auto; padding: 1.25rem; color: var(--text); background: var(--panel, #161619); border: 1px solid var(--border, #303038); border-radius: 12px; }
 .terminal-connections-dialog::backdrop { background: rgb(0 0 0 / 65%); }
-.terminal-connections-heading { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.terminal-connections-heading {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; gap: 1rem; align-items: center; justify-content: space-between;
+    margin: -1.25rem -1.25rem 0; padding: 1.25rem;
+    background: var(--panel, #161619);
+}
 .terminal-connections-heading h2 { margin: 0; font-size: 1.15rem; }
 .terminal-connections-list { list-style: none; margin: 1rem 0; padding: 0; }
 .terminal-connections-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; border-bottom: 1px solid var(--border, #303038); }

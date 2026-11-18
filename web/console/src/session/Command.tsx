@@ -465,7 +465,10 @@ export function CommandSheet() {
     bound.current = true
     const overlay = el("command")
     const sheet = el("command-sheet")
-    const onOverlay = () => close()
+    const onOverlay = (event: MouseEvent) => {
+      if (event.target !== overlay || phase !== "idle" || el<HTMLTextAreaElement>("command-text").value || !el("command-voice").hidden) return
+      close()
+    }
     const onSheet = (event: Event) => event.stopPropagation()
     const onClose = () => close()
     const onGo = () => press()
@@ -507,7 +510,10 @@ export function CommandSheet() {
   return (
     <div className="overlay" id="command" hidden>
       <div className="sheet command-sheet" id="command-sheet" role="dialog" aria-modal="true" aria-labelledby="command-title">
-        <h2 id="command-title">{words.webCommand}</h2>
+        <header className="command-heading">
+          <h2 id="command-title">{words.webCommand}</h2>
+          <button className="chip" id="command-cancel" type="button">{words.webCancel}</button>
+        </header>
         <p className="say" id="command-say" role="status" aria-live="polite">{words.webCommandSay}</p>
         <div className="voice" id="command-voice" role="status" hidden></div>
         <div className="block command-input">
@@ -524,7 +530,6 @@ export function CommandSheet() {
             <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect><path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"></path></svg>
             <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect></svg>
           </button>
-          <button className="chip" id="command-cancel" type="button">{words.webCancel}</button>
           <button className="chip confirm-go" id="command-go" type="button" disabled>{words.webCommandGo}</button>
         </div>
       </div>

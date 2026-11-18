@@ -72,6 +72,7 @@
 .session-board-dialog[data-expanded="true"] { width: min(80rem, 98vw); max-height: 97dvh; }
 .session-board-dialog:has(> .session-board-scroll)[open] { display: flex; flex-direction: column; overflow: hidden; }
 .session-board-dialog > header {
+  position: sticky; top: 0; z-index: 2;
   display: flex; flex: none; align-items: center; gap: 8px; padding: 10px 14px;
   border-bottom: 1px solid var(--line); background: var(--card);
 }

@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { cloudSessionBoardSource, sessionBoardActor } from "../session/SessionBoards.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { cloudPluginSources } from "../view-plugins/sources.js"
@@ -2413,9 +2414,12 @@ function GateCard(props: {
   const question = !pairing && asking && screen.at === "machines" ? asking : null
   const nameQuestion = !pairing && !question && naming && screen.at === "machines" ? naming : null
   const open = pairing ? "pair" : question ? "forget" : nameQuestion ? "rename" : screen.at
+  const backdrop = useModalBackdrop(() => {
+    if (open === "machines" && reading && !forgotten.includes(reading)) onCloseMachinePicker()
+  })
   return (
     <div className="door" data-step="cloud" data-cloud-screen={open}
-      data-pair-console={pairing && screen.at === "console" ? "true" : undefined}>
+      data-pair-console={pairing && screen.at === "console" ? "true" : undefined} {...backdrop}>
       <div
         className="door-card"
         ref={card}

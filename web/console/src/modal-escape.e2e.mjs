@@ -22,6 +22,12 @@ test("modal Escape consumes the native default and preserves cancellation owners
 import React from 'react';import {createRoot} from 'react-dom/client';
 import {bindModalEscape} from './src/modal-escape';
 import {FleetSessionList} from './src/cloud/FleetSessionList';
+import {PasteField} from './src/pages/terminal/PasteField';
+import {CompleteWorkDialog} from './src/pages/work/CompleteWorkDialog';
+import {WorkV2Page} from './src/pages/work/WorkV2';
+import {openNewWorkItem} from './src/pages/work/new-item';
+import './src/pages/terminal/terminal.css';
+import './src/pages/work/work.css';
 import {bootCatalog} from './src/catalog';import {loadStrings} from './src/legacy/bridge';
 import './src/legacy/tokens.css';import './src/legacy/base.css';import './src/legacy/shell.css';import './src/legacy/list.css';import './src/legacy/pages.css';import './src/shell.css';
 localStorage.setItem('ui_language',new URLSearchParams(location.search).get('lang')||'en');
@@ -32,12 +38,22 @@ window.addEventListener('cancel',e=>{if(e.target.id==='native')window.cancelCoun
 window.addEventListener('close',e=>{if(e.target.id==='native')window.closeCount++},{capture:true});
 const machines=['alpha','beta'].map(id=>({id,name:id,platform:'Linux',freshness:'current'}));
 const source={subscribe:()=>()=>{},readMachine:async()=>({kind:'ready',complete:true,observedAt:Date.now(),rows:[]}),readMachinePresentations:async()=>[]};
-function Examples(){const [busy,setBusy]=React.useState(false);return <>
+function Examples(){
+const [busy,setBusy]=React.useState(false);
+const [paste,setPaste]=React.useState(false);
+const [complete,setComplete]=React.useState(false);
+return <>
 <button id="native-open" onClick={()=>document.getElementById('native').showModal()}>Native</button>
 <dialog id="native"><input id="native-input"/><button id="nested-open" onClick={()=>{document.getElementById('nested').hidden=false}}>Picker</button>
 <div id="nested" hidden onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();e.currentTarget.hidden=true;document.getElementById('nested-open').focus()}}}><button id="nested-choice">Choice</button></div></dialog>
 <button id="busy-open" onClick={()=>{setBusy(true);document.getElementById('busy').showModal()}}>Busy</button>
 <dialog id="busy" onCancel={e=>{if(busy)e.preventDefault()}}><button id="finish" onClick={()=>setBusy(false)}>Finish</button></dialog>
+<button id="paste-open" onClick={()=>setPaste(true)}>Paste</button>
+{paste&&<PasteField available send={()=>{throw Error('unexpected send')}} close={()=>setPaste(false)}/>}
+<button id="board-open" onClick={()=>openNewWorkItem()}>New work</button>
+<WorkV2Page shown={false}/>
+<button id="complete-open" onClick={()=>setComplete(true)}>Complete work</button>
+{complete&&<CompleteWorkDialog item={{id:'fixture',title:'Example'}} busy={false} failure="" onConfirm={()=>{throw Error('unexpected completion')}} onCancel={()=>setComplete(false)}/>}
 <button id="custom-open" onClick={()=>{document.getElementById('custom').hidden=false;document.getElementById('custom-input').focus()}}>Custom</button>
 <div id="custom" role="dialog" aria-modal="true" hidden onKeyDown={e=>{if(e.key==='Escape')e.currentTarget.hidden=true}}><input id="custom-input"/></div>
 <input id="outside"/>
@@ -102,6 +118,38 @@ createRoot(document.getElementById('root')).render(<Examples/>);
         assert.equal(await page.locator('#native').isVisible(), true, 'an inner picker owns the first Escape')
         await page.keyboard.press('Escape')
         await page.locator('#native').waitFor({state:'hidden'})
+
+        const paste = page.locator('.terminal-paste-field')
+        await page.locator('#paste-open').click()
+        await paste.waitFor({state:'visible'})
+        await paste.locator('textarea').fill('A draft that would be lost')
+        await page.mouse.click(4, 4)
+        assert.equal(await paste.locator('textarea').inputValue(), 'A draft that would be lost')
+        await paste.locator('textarea').fill('')
+        await page.mouse.click(4, 4)
+        await paste.waitFor({state:'detached'})
+
+        const newWork = page.locator('.work-new-modal')
+        await page.locator('#board-open').click()
+        await newWork.waitFor({state:'visible'})
+        await newWork.locator('input.work-input').fill('Keep the Board draft')
+        await page.mouse.click(4, 4)
+        assert.equal(await newWork.locator('input.work-input').inputValue(), 'Keep the Board draft')
+        await newWork.locator('input.work-input').fill('')
+        await page.mouse.click(4, 4)
+        await newWork.waitFor({state:'detached'})
+        await page.locator('#board-open').click()
+        await newWork.locator('.work-modal-close').click()
+        await newWork.waitFor({state:'detached'})
+        await page.locator('#board-open').click()
+        await newWork.locator('input.work-input').press('Escape')
+        await newWork.waitFor({state:'detached'})
+
+        const complete = page.locator('[aria-labelledby="complete-work-title-fixture"]')
+        await page.locator('#complete-open').click()
+        await complete.waitFor({state:'visible'})
+        await page.mouse.click(4, 4)
+        await complete.waitFor({state:'detached'})
 
         await page.locator('#custom-open').click()
         await page.keyboard.press('Escape')

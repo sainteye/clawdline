@@ -91,3 +91,6 @@
 }
 /* A row's role sits in the meta line's own gaps. */
 .restore-meta .persona-tag { margin-left: 0; }
+
+.restore-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.restore-head .restore-later { flex: none; }

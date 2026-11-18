@@ -101,7 +101,10 @@ export function Overlays() {
           hidden where the Board is off, as it is on this daemon. */}
       <div className="overlay" id="info" hidden>
         <div className="sheet info-sheet" role="dialog" aria-modal="true" id="info-sheet" aria-label={T.webInfoTitle}>
-          <h2 id="info-title">{T.webInfoTitle}</h2>
+          <header className="info-head">
+            <h2 id="info-title">{T.webInfoTitle}</h2>
+            <button className="chip" id="info-close" type="button">{T.webClose}</button>
+          </header>
           <p className="say" id="info-say" hidden></p>
           <aside id="session-board" className="session-board" aria-label={catalogWord("inline", "785626f3cb47")} hidden></aside>
           <div className="facts" id="info-body"></div>
@@ -109,9 +112,6 @@ export function Overlays() {
           <div className="buttons">
             <button className="chip" id="info-refresh" type="button">
               {T.webInfoRefresh}
-            </button>
-            <button className="chip" id="info-close" type="button">
-              {T.webClose}
             </button>
           </div>
         </div>

@@ -137,13 +137,15 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
   }
 
   const invalidName = !!name && !validProjectFolderName(name)
-  return <dialog ref={dialog} className="project-folder-picker"
+  return <dialog data-modal-dismiss={String(!busy && !creating)} ref={dialog} className="project-folder-picker"
     aria-labelledby="project-folder-picker-title"
     onCancel={event => { if (busy || creating) event.preventDefault(); if (creating) cancelCreate(); else if (!busy) onClose() }}
     onClose={onClose}>
     {creating ? <>
-      <button type="button" className="project-folder-back" disabled={busy} onClick={cancelCreate}>{word("folderBack")}</button>
-      <h2 id="project-folder-picker-title">{word("folderCreate")}</h2>
+      <header className="project-folder-heading">
+        <h2 id="project-folder-picker-title">{word("folderCreate")}</h2>
+        <button type="button" disabled={busy} onClick={cancelCreate}>{word("folderBack")}</button>
+      </header>
       <p className="project-folder-location">{word("folderCreateLocation")}<span>{page?.path}</span></p>
       <form onSubmit={event => { event.preventDefault(); void create() }}>
         <label htmlFor="project-folder-name">{word("folderName")}</label>
@@ -167,7 +169,10 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
         </div>
       </form>
     </> : <>
-      <h2 id="project-folder-picker-title">{nextWord("folderPickerTitle")}</h2>
+      <header className="project-folder-heading">
+        <h2 id="project-folder-picker-title">{nextWord("folderPickerTitle")}</h2>
+        <button type="button" disabled={busy} onClick={onClose}>{word("folderCancel")}</button>
+      </header>
       <p>{word("folderHint")}</p>
       <form onSubmit={event => { event.preventDefault(); if (!searchOpen) void browse(typed) }}>
         <div className="project-folder-path-heading">
@@ -223,7 +228,6 @@ export function ProjectFolderPicker({ open, machine, onClose, onAdded }: {
       </>}
       {error && <p role="alert">{error}</p>}
       <div className="project-folder-actions">
-        <button type="button" disabled={busy} onClick={onClose}>{word("folderCancel")}</button>
         <button type="button" className="project-folder-add" disabled={busy || !page || (deep && !!findText)} onClick={() => void add()}>
           {word("folderAdd")}
         </button>

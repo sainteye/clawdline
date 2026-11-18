@@ -293,7 +293,7 @@ function Guide() {
       <HeaderButton chip={chip} onOpen={() => show(chip.kind === "progress" && (chip.count > 0 || settings?.mode === "cloud")
         ? chip.next : chip.kind === "done" ? "done" : "welcome")} />
       {screen && (
-        <Wizard onClose={close} items={screen === "app" ? ["app"] : items} current={items.includes(screen as SetupItem) ? screen as SetupItem : null} done={done}
+        <Wizard onClose={close} dismissOnBackdrop={!running && (!lineUp || (screen !== "browser" && screen !== "phone"))} items={screen === "app" ? ["app"] : items} current={items.includes(screen as SetupItem) ? screen as SetupItem : null} done={done}
           skipped={reading.kind === "known" ? reading.skipped : { app: false, browser: false, phone: false }}>
           {screen === "welcome" && <Welcome inApp={inApp}
             onLocal={keepLocal}
@@ -367,20 +367,21 @@ const ITEM_WORD = { app: "setupItemApp", browser: "setupItemBrowser", phone: "se
  * The wizard (exported, with its steps, for `capture.tsx`). Its top names every item setup is made of — the app, a browser,
  * a phone — so the steps inside one item are never read as the whole of it.
  */
-export function Wizard({ items, current, done, skipped, onClose, children }: {
+export function Wizard({ items, current, done, skipped, onClose, children, dismissOnBackdrop = false }: {
   items: readonly SetupItem[]
   current: SetupItem | null
   done: Record<SetupItem, boolean>
   skipped: Record<SetupItem, boolean>
   onClose: () => void
   children: ReactNode
+  dismissOnBackdrop?: boolean
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     showModalWithoutChoice(dialog.current)
   }, [])
   return (
-    <dialog ref={dialog} className="setup-dialog" aria-label={nextWord("setupDialog")}
+    <dialog data-modal-dismiss={String(dismissOnBackdrop)} ref={dialog} className="setup-dialog" aria-label={nextWord("setupDialog")}
       onCancel={(event) => { event.preventDefault(); onClose() }}>
       <div className="setup-top">
         {current ? (

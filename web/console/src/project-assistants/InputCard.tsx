@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import {useEffect,useRef,useState} from "react"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
@@ -12,6 +13,7 @@ export function InputCard({message,file,source,w}:{message:W.ProjectAssistantMes
 
 function InputViewer({message,file,source,w,onClose}:{message:W.ProjectAssistantMessage;file:W.ProjectAssistantInputFile;source:SourceClient;w:Words;onClose:()=>void}) {
   const [blob,setBlob]=useState<Blob|null>(null),[error,setError]=useState(""),[progress,setProgress]=useState(0),[attempt,setAttempt]=useState(0)
+  const backdrop = useModalBackdrop(onClose)
   const close=useRef<HTMLButtonElement>(null)
   useEffect(()=>{close.current?.focus();const key=(e:KeyboardEvent)=>{if(e.key==="Escape")onClose()};document.addEventListener("keydown",key);return()=>document.removeEventListener("keydown",key)},[onClose])
   useEffect(()=>{
@@ -21,5 +23,5 @@ function InputViewer({message,file,source,w,onClose}:{message:W.ProjectAssistant
     return()=>{control.abort();clearInterval(timer)}
   },[source,message,file,attempt])
   const save=()=>{if(!blob||source.current?.()===false)return;const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),0)}
-  return <div className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={file.name}><header><h3>{file.name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button></header>{!blob&&!error&&<p role="status">{w.openingOutput} {progress}%</p>}{error&&<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{blob&&<button type="button" onClick={save}>{w.downloadFile}</button>}</div>
+  return <div className="pa-output-scrim" {...backdrop}><div className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={file.name}><header><h3>{file.name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button></header>{!blob&&!error&&<p role="status">{w.openingOutput} {progress}%</p>}{error&&<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{blob&&<button type="button" onClick={save}>{w.downloadFile}</button>}</div></div>
 }

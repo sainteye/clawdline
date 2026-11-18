@@ -1,3 +1,4 @@
+import { bindNativeModalBackdrop } from "../../modal-backdrop.js"
 import { useId, useLayoutEffect, useRef, useState } from "react"
 import { nextWord } from "../../next-strings.js"
 
@@ -12,13 +13,14 @@ export function PasteField({ available, send, close, failure }: {
   const field = useRef<HTMLTextAreaElement>(null)
   const label = useId()
   useLayoutEffect(() => {
-    dialog.current?.showModal()
+    const node = dialog.current
+    if (node) { bindNativeModalBackdrop(node); node.showModal() }
     field.current?.focus({ preventScroll: true })
   }, [])
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  return <dialog ref={dialog} className="terminal-paste-field" aria-labelledby={label}
+  return <dialog data-modal-dismiss={String(!busy && !text)} ref={dialog} className="terminal-paste-field" aria-labelledby={label}
     onCancel={event => { event.preventDefault(); if (!busy) close() }}>
     <label id={label}>{nextWord("terminalPasteFieldHelp")}
       <textarea ref={field} autoFocus value={text} onChange={event => setText(event.target.value)}

@@ -394,7 +394,11 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const title = useRef<HTMLHeadingElement>(null)
   const motion = useDockMotion(dialog)
   const dismiss = () => motion.close(() => dialog.current?.close())
-  const backdrop = useBoardBackdrop(dismiss)
+  const backdrop = useBoardBackdrop(() => {
+    const fields = dialog.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("form input[name=name], form textarea")
+    const changed = Array.from(fields ?? []).some(field => field.name === "summary" ? field.value !== field.defaultValue : !!field.value)
+    if (!changed && !dialog.current?.querySelector('[aria-busy="true"]')) dismiss()
+  })
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
   const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)

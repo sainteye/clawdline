@@ -18,7 +18,9 @@ func TestCopiedIconSurvivesRestartAndDifferentPaths(t *testing.T) {
 	}
 	r.path = "" // Synthetic fixtures never read the person's registry.
 	target := filepath.Join(dir, "remote-project")
-	source := creatureFromSeed(StableHash("/source/project"))
+	// Two independently generated marks can match. Keep that collision explicit
+	// so provenance, rather than visual inequality, establishes path isolation.
+	source := Generated(target + "-other")
 	before := r.For(target)
 	if err := r.Save(target, source, before); err != nil {
 		t.Fatal(err)
@@ -32,11 +34,12 @@ func TestCopiedIconSurvivesRestartAndDifferentPaths(t *testing.T) {
 	}
 	reopened.path = ""
 	for _, path := range []string{target, filepath.Join(target, "frontend")} {
-		if !reflect.DeepEqual(reopened.For(path), source) {
+		if got, origin := reopened.Resolve(path); origin != SourceOverride || !reflect.DeepEqual(got, source) {
 			t.Fatal("copied icon did not survive restart or reach child directory")
 		}
 	}
-	if reflect.DeepEqual(reopened.For(target+"-other"), source) {
+	sibling := target + "-other"
+	if got, origin := reopened.Resolve(sibling); origin != SourceGenerated || !reflect.DeepEqual(got, Generated(sibling)) {
 		t.Fatal("prefix sibling inherited icon")
 	}
 	other := creatureFromSeed(17)

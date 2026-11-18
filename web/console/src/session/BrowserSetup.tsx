@@ -99,8 +99,11 @@ export function BrowserSetup({ onClose, requestedMode }: { onClose: () => void; 
   useEffect(() => { showModalWithoutChoice(dialog.current) }, [])
   const at = step === "done" ? STEPS.length : STEPS.indexOf(step)
   return (
-    <dialog ref={dialog} className="setup-dialog browser-setup" aria-label={nextWord("browserSetupDialog")}
-      onCancel={(event) => { event.preventDefault(); onClose() }}>
+    <dialog data-modal-dismiss={String(step !== "start" || (enabled && notify))} ref={dialog} className="setup-dialog browser-setup" aria-label={nextWord("browserSetupDialog")}
+      onCancel={(event) => {
+        event.preventDefault()
+        if (!event.currentTarget.querySelector('[aria-busy="true"]')) onClose()
+      }}>
       <div className="setup-top">
         {mode !== "user_chrome" && <ol className="setup-track browser-setup-track">
           {STEPS.map((item, i) => (
@@ -209,7 +212,7 @@ function ConnectChrome() {
     catch (e) { setState("idle"); setError(nextWord("browserGuideConnectFailed", { reason: L.failureSentence(e, { fallback: (e as Error)?.message || "" }) })) }
   }
   return <>
-    <button type="button" id="browser-connect-chrome" className="setup-secondary" disabled={state !== "idle"} onClick={() => void connect()}>
+    <button type="button" id="browser-connect-chrome" className="setup-secondary" aria-busy={state === "busy"} disabled={state !== "idle"} onClick={() => void connect()}>
       {nextWord(state === "busy" ? "browserGuideConnecting" : state === "done" ? "browserGuideConnected" : "browserGuideConnectButton")}
     </button>
     {error && <p className="setup-said" role="alert">{error}</p>}
@@ -301,7 +304,7 @@ function Prepare({ onBack, onConnected }: { onBack: () => void; onConnected: () 
   const slow = waiting && now - waitingSince >= SLOW_MS
   const noChromium = missing || setup?.chromium_found === false
   return (
-    <div className="setup-body">
+    <div className="setup-body" aria-busy={launching || waiting}>
       <h2>{nextWord("browserSetupPrepareTitle")}</h2>
       <p className="setup-lede">{nextWord("browserSetupPrepareBody")}</p>
       <div className="browser-setup-state" aria-live="polite">
@@ -408,7 +411,7 @@ function Start({ enabled, notify, onEnabled, onNotify, onBack, onDone }: {
     }
   }
   return (
-    <div className="setup-body">
+    <div className="setup-body" aria-busy={saving}>
       <h2>{nextWord("browserSetupStartTitle")}</h2>
       <div className="browser-setup-switches">
         <Switch id="browser-setup-enabled" on={enabled} onChange={onEnabled} label={nextWord("browserSetupEnable")} />

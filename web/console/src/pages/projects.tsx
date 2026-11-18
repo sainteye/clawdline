@@ -431,7 +431,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       <ProjectTools shown={shown} changed={() => { void page.current?.enter() }} setupRef={setup} />
     </>, toolsHost)}
     <ProjectFolderPicker open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => { void page.current?.enter() }} />
-    <dialog className="project-remove-dialog" ref={removeDialog}
+    <dialog data-modal-dismiss="true" className="project-remove-dialog" ref={removeDialog}
       onCancel={(event) => { if (removeBusy) event.preventDefault() }}
       onClose={() => { if (!removeBusy) setRemoveTarget(null) }}>
       <h2>{nextWord("projectsRemoveTitle")}</h2>
@@ -442,7 +442,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         <button type="button" disabled={removeBusy} aria-busy={removeBusy} onClick={() => void confirmRemove()}><ActionProgress busy={removeBusy}>{removeBusy ? nextWord("projectsRemoveBusy") : nextWord("projectsRemoveConfirm")}</ActionProgress></button>
       </div>
     </dialog>
-    <dialog className="project-remove-dialog" ref={worktreeDialog}
+    <dialog data-modal-dismiss={String(!worktreeBusy)} className="project-remove-dialog" ref={worktreeDialog}
       onClose={() => setWorktreeTarget(null)}>
       <h2>{nextWord("worktreeRemoveTitle")}</h2>
       <p>{nextWord("worktreeRemoveDescription", { path: worktreeTarget?.path || "" })}</p>

@@ -714,6 +714,7 @@
     box-sizing: border-box; width: min(520px, 100%); padding: 22px; border: 1px solid var(--line);
     border-radius: 16px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 80px #000a;
 }
+.session-todo-modal > form { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .session-todo-modal h2 { margin: 0 0 8px; font-size: 18px; }
 .session-todo-modal p { color: var(--dim); font-size: 13px; }
 .session-todo-modal textarea {
@@ -760,7 +761,7 @@
 /* The create sheet is a compact decision flow: choose where, choose what kind,
    then name the work. Planning-only kinds remain visible but explain where
    they go instead of hiding that rule in a select. */
-.work-new-modal form { width: min(620px, 100%); max-height: min(780px, calc(100vh - 32px)); overflow: auto; }
+.work-new-modal form { width: min(620px, 100%); max-height: min(780px, calc(100dvh - 32px)); overflow: auto; }
 .work-new-modal .work-actions { margin-top: 16px; }
 .work-created-modal { align-items: safe center; overflow: auto; }
 .work-created-panel {
@@ -768,7 +769,7 @@
     padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); color: var(--ink);
     box-shadow: 0 24px 80px #000a;
 }
-.work-created-panel > .work-modal-head { margin-bottom: 14px; }
+
 .work-created-panel > .work-v2-card { --work-edge: var(--accent); }
 /* The dialog is the item's surface: its content sits directly on the dialog
    rather than on a second card, which cost a margin and a padding per side. */
@@ -776,7 +777,7 @@
     padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
 @media (max-width: 720px) {
-    .work-created-panel { padding: 18px 16px; border-radius: 14px; }
+    .work-created-panel { --work-modal-padding: 16px; padding: 16px; border-radius: 14px; }
 }
 .work-item-detail-modal {
     align-items: safe center; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
@@ -788,6 +789,12 @@
 .work-delete-modal form { width: min(500px, 100%); }
 .work-delete-modal strong { color: var(--ink); }
 .work-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.session-todo-modal > form, .work-created-panel { --work-modal-padding: 22px; }
+.session-todo-modal > form > .work-modal-head, .work-created-panel > .work-modal-head {
+    position: sticky; top: 0; z-index: 2; background: var(--bg);
+    margin: calc(0px - var(--work-modal-padding)) calc(0px - var(--work-modal-padding)) 0;
+    padding: var(--work-modal-padding) var(--work-modal-padding) 10px;
+}
 .work-modal-head .board-eyebrow { margin: 0 0 4px; }
 .work-modal-close {
     display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line);
@@ -830,7 +837,7 @@
     .work-card-controls button { min-height: 30px; font-size: 12px; }
     .work-convert-cta { width: 100%; }
     .work-kind-list { grid-template-columns: minmax(0, 1fr); }
-    .work-new-modal form { padding: 18px; }
+    .work-new-modal form { --work-modal-padding: 18px; padding: 18px; }
     .work-card-summary { padding: 15px 16px; }
     .work-card-open { flex-basis: 100%; margin-left: 0; }
     /* Below 16px iOS zooms the page when a text field is tapped. */

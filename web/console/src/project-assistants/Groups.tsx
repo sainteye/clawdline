@@ -1,3 +1,4 @@
+import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type {GroupRosterEntry} from "./roster-conversations"
 import type * as W from "@clawdline/contract"
@@ -74,11 +75,14 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const dialog=useRef<HTMLDialogElement>(null)
   useLayoutEffect(()=>{
     const node=dialog.current!,opener=document.activeElement
+    bindNativeModalBackdrop(node)
     node.showModal()
     return()=>{node.close();if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true})}
   },[])
   const choices=bots.filter(b=>sources.some(s=>s.source.machineID===b.key.machine_id&&canWrite(s.status))).filter((b,i,all)=>all.findIndex(other=>sameGroupProject(b.project,other.project))===i)
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
+  const draft = JSON.stringify([project, name, members])
+  const initialDraft = useRef(draft)
   const pending=useRef<{fingerprint:string;request:W.ProjectAssistantGroupCreateRequest|W.ProjectAssistantGroupEditRequest}|null>(null)
   const source=sources.find(s=>s.source.machineID===project?.machine_id&&canWrite(s.status))?.source
   const eligible=bots.filter(b=>project&&sameGroupProject(b.project,project))
@@ -95,7 +99,7 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
       onSaved(source,answer.group)
     }catch(e){const code=errorCode(e);setError(code);if(code==="pa_outcome_unknown")setUnknown(true)}finally{setBusy(false)}
   }
-  return <dialog ref={dialog} className="pa-form-panel pa-group-editor" aria-label={groupWord(group?"groupEdit":"groupCreate")} onCancel={event=>{event.preventDefault();onClose()}} onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation()}}>
+  return <dialog data-modal-dismiss={String(!busy && !unknown && draft === initialDraft.current)} ref={dialog} className="pa-form-panel pa-group-editor" aria-label={groupWord(group?"groupEdit":"groupCreate")} onCancel={event=>{event.preventDefault();onClose()}} onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation()}}>
     <header className="pa-toolbar"><button type="button" onClick={onClose}>{groupWord("groupCancel")}</button><h2>{groupWord(group?"groupEdit":"groupCreate")}</h2><button type="button" disabled={!source||busy||unknown||!name.trim()||!members.length||!complete} onClick={()=>void save()}>{groupWord(busy?"groupSaving":"groupSave")}</button></header>
     <div className="pa-form-body"><fieldset disabled={busy||unknown}>
       <label>{groupWord("groupName")}<input value={name} onChange={e=>setName(e.target.value)}/></label>

@@ -187,7 +187,11 @@
     box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
 .cloud-all-machine-dialog[open] { animation: cloud-opening-in 220ms var(--ease) both; }
 .cloud-all-machine-dialog::backdrop { background: rgba(6, 6, 8, .66); backdrop-filter: blur(3px); }
-.cloud-all-machine-dialog h2 { margin: 0 0 6px; font-size: 18px; line-height: 1.35; }
+.cloud-all-machine-heading {
+    position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin: -24px -24px 0; padding: 24px 24px 10px; background: var(--card);
+}
+.cloud-all-machine-dialog h2 { margin: 0; font-size: 18px; line-height: 1.35; }
 .cloud-all-machine-help { margin: 0 0 18px; color: var(--dim); font-size: 13px; line-height: 1.5; }
 .cloud-all-machine-options { display: grid; gap: 8px; }
 .cloud-all-machine-option { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px;
@@ -202,8 +206,6 @@
 .cloud-machine-platform-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px;
     border-radius: 10px; background: rgba(224, 139, 110, .1); color: var(--accent); }
 .cloud-machine-platform-icon svg { display: block; width: 23px; height: 23px; }
-.cloud-all-machine-actions { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 12px;
-    border-top: 1px solid var(--line); }
 .cloud-all-machine-cancel { min-height: 44px; padding: 8px 12px; color: var(--dim); }
 .cloud-all-machine-cancel:hover { color: var(--ink); }
 .cloud-all-machine-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

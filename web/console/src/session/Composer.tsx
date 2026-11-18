@@ -1056,7 +1056,7 @@ export function Composer({
         />
       ) : null}
     </form>
-    <dialog
+    <dialog data-modal-dismiss="true"
       ref={voiceInstallDialog}
       className="voice-install-dialog"
       aria-labelledby="voice-install-title"

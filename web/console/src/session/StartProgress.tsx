@@ -34,7 +34,7 @@ export function StartProgressDialog() {
   const steps = progress ? stepsOf(progress) : []
   const settled = progress?.stage === "slow" || progress?.stage === "detached"
   return (
-    <dialog
+    <dialog data-modal-dismiss="true"
       ref={dialog}
       className="start-progress"
       data-stage={progress?.stage}

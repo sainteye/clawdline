@@ -71,7 +71,7 @@ export function CodeGraphViewer() {
   finally{if(!controller.signal.aborted)setStarting(false)}
  }
  const close = () => dialog.current?.close()
- return createPortal(<dialog ref={dialog} className="codegraph-dialog" aria-labelledby="codegraph-title" tabIndex={-1}
+ return createPortal(<dialog data-modal-dismiss="true" ref={dialog} className="codegraph-dialog" aria-labelledby="codegraph-title" tabIndex={-1}
   onCancel={event => {event.preventDefault();close()}}
   onClose={() => { setTarget(null);setView(null);setError("");setStarting(false);
    const button = opener.current?.getClientRects().length ? opener.current : document.getElementById("detail-info")

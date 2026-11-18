@@ -30,7 +30,7 @@ export function TerminalConnectionsDialog({ host, machine, close, focusTarget }:
     return () => { if (opener?.isConnected && opener.getClientRects().length) opener.focus() }
   }, [host])
   useEffect(() => { if (selected) { focusModalContainer(confirmation.current); confirmation.current?.scrollIntoView({ block: "nearest" }) } }, [selected])
-  return <dialog ref={dialog} className="terminal-connections-dialog" aria-labelledby="terminal-connections-title" onCancel={(event) => { event.preventDefault(); close() }}>
+  return <dialog data-modal-dismiss={String(!busy || busy === "list")} ref={dialog} className="terminal-connections-dialog" aria-labelledby="terminal-connections-title" onCancel={(event) => { event.preventDefault(); close() }}>
     <div className="terminal-connections-heading"><h2 id="terminal-connections-title">{nextWord("terminalConnectionsTitle")}</h2>
       <button className="board-button" type="button" onClick={close}>{nextWord("terminalConnectionsDone")}</button></div>
     <p>{nextWord("terminalConnectionsHelp")}</p>

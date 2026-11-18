@@ -87,3 +87,12 @@
 .snippet-skeleton-row:nth-child(2) .snippet-skeleton-body { width: 61%; }
 @keyframes snippet-skeleton-sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .snippet-skeleton-row span { animation: none; } }
+
+.snippet-editor-head {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin: -20px -22px 0; padding: 12px 22px; background: var(--card);
+}
+.snippet-editor-head h2 { margin: 0; }
+.snippet-editor-head button { flex: none; }
+.snippets-head #snippets-close { flex: none; }
+.snippets-sheet .buttons:empty { display: none; }

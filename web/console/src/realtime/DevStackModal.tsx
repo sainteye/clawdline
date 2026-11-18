@@ -44,9 +44,8 @@ export function DevStackModal() {
     setPlace(null)
   }
 
-  return createPortal(<dialog className="project-setup-dialog devstack-modal" data-view="devstack" ref={dialog} tabIndex={-1}
-    aria-labelledby="devstack-modal-title" onCancel={(event) => { event.preventDefault(); close() }}
-    onClick={(event) => { if (event.target === dialog.current) close() }}>
+  return createPortal(<dialog data-modal-dismiss="true" className="project-setup-dialog devstack-modal" data-view="devstack" ref={dialog} tabIndex={-1}
+    aria-labelledby="devstack-modal-title" onCancel={(event) => { event.preventDefault(); close() }}>
     {place && <>
       <div className="project-setup-dialog-heading">
         <div><h2 id="devstack-modal-title">{`${place.label} · ${nextWord("devStackTab")}`}</h2></div>

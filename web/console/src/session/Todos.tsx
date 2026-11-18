@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { ActionProgress, ActionSpinner } from "../ui/ActionProgress.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { catalogFormat } from "../catalog.js"
@@ -45,6 +46,13 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
   const attention = useInterventions(row, onReplySent, () => setOpen(false), onCompose)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<DirectTodoV2 | null>(null)
+  const addBackdrop = useModalBackdrop(() => {
+    // The text lives with the Session panel. Closing here leaves it available on reopen.
+    if (busy !== "new" && images.length === 0) setAdding(false)
+  })
+  const editBackdrop = useModalBackdrop(() => {
+    if (editing && busy !== editing.id && editText === editing.text) setEditing(null)
+  })
   const addDialog = useRef<HTMLDivElement>(null)
   const editDialog = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { if (adding) focusModalContainer(addDialog.current) }, [adding])
@@ -234,7 +242,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
       </details>
       {attention.live}
       {attention.body}
-      {adding && <div className="session-todo-modal" ref={addDialog} role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
+      {adding && <div className="session-todo-modal" ref={addDialog} role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title" {...addBackdrop}>
         <form onSubmit={(ev) => {
           ev.preventDefault(); const value = text.trim(); if (!value) return
           void run("new", async () => {
@@ -256,17 +264,17 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             }
           }).then((ok) => { if (ok) { setText(""); setImages([]); setAdding(false); setOpen(true) } })
         }}>
-          <h2 id="session-todo-modal-title">{catalogWord("inline", "aab5446b4b41")}</h2>
+          <header className="work-modal-head"><h2 id="session-todo-modal-title">{catalogWord("inline", "aab5446b4b41")}</h2>
+            <button className="chip" type="button" disabled={busy === "new"} onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button></header>
           <p>{catalogWord("inline", "0ffffc3e4124")}</p>
           <VoiceTextarea value={text} maxLength={8192} aria-label={catalogWord("inline", "6c668a34f0bd")} onValue={setText} />
           <PendingPictures images={images} busy={busy === "new"} note={catalogWord("literal", "035492ae6343")} onChange={setImages} />
           <div className="work-actions">
             <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()} aria-busy={busy === "new"}><ActionProgress busy={busy === "new"} label={catalogWord("literal", "21aa64dd7446")}>{catalogWord("inline", "0006d696d8e1")}</ActionProgress></button>
-            <button className="chip" type="button" disabled={busy === "new"} onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button>
           </div>
         </form>
       </div>}
-      {editing && <div className="session-todo-modal" ref={editDialog} role="dialog" aria-modal="true" aria-labelledby="session-todo-edit-title">
+      {editing && <div className="session-todo-modal" ref={editDialog} role="dialog" aria-modal="true" aria-labelledby="session-todo-edit-title" {...editBackdrop}>
         <form onSubmit={(ev) => {
           ev.preventDefault()
           const value = editText.trim()
@@ -275,13 +283,13 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
           void run(editing.id, () => editDirectTodoV2(rowID, editing.id, value, editing.version))
             .then((ok) => { if (ok) setEditing(null) })
         }}>
-          <h2 id="session-todo-edit-title">{workWord("todoEdit")}</h2>
+          <header className="work-modal-head"><h2 id="session-todo-edit-title">{workWord("todoEdit")}</h2>
+            <button className="chip" type="button" disabled={busy === editing.id} onClick={() => setEditing(null)}>{workWord("todoCancel")}</button></header>
           <p>{workWord("todoEditHint")}</p>
           <VoiceTextarea value={editText} maxLength={8192} aria-label={workWord("todoEdit")} onValue={setEditText} />
           {failure && <p role="alert" className="work-note">{failure}</p>}
           <div className="work-actions">
             <button className="chip on" type="submit" disabled={busy === editing.id || !editText.trim()} aria-busy={busy === editing.id}><ActionProgress busy={busy === editing.id} label={catalogWord("literal", "21aa64dd7446")}>{workWord("todoSave")}</ActionProgress></button>
-            <button className="chip" type="button" disabled={busy === editing.id} onClick={() => setEditing(null)}>{workWord("todoCancel")}</button>
           </div>
         </form>
       </div>}

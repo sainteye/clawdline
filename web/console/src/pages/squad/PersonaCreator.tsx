@@ -56,7 +56,7 @@ export function PersonaCreator({ api, canWrite, catalogVersion, onSaved }: {
 
   return <>
     <button ref={opener} type="button" disabled={!canWrite} onClick={() => { setError(""); showModalWithoutChoice(dialog.current) }}>{nextWord("roleCreateOpen")}</button>
-    <dialog ref={dialog} className="squad-dialog squad-role-create" aria-labelledby="squad-role-create-title" onClose={() => opener.current?.focus()} onCancel={(event) => { if (busy) event.preventDefault() }}>
+    <dialog data-modal-dismiss={String(!busy)} ref={dialog} className="squad-dialog squad-role-create" aria-labelledby="squad-role-create-title" onClose={() => opener.current?.focus()} onCancel={(event) => { if (busy) event.preventDefault() }}>
       <div className="squad-dialog-head"><h2 id="squad-role-create-title">{nextWord("roleCreateTitle")}</h2><button type="button" aria-label={nextWord("roleCreateClose")} disabled={!!busy} onClick={close}>×</button></div>
       <p>{nextWord("roleCreateIntro")}</p>
       <section className="squad-role-ai" aria-labelledby="squad-role-ai-title">

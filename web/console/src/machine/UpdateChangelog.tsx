@@ -84,9 +84,12 @@ export function UpdateChangelog({ latest, onClose, onConfirm }: {
     onClose()
   }
 
-  return <dialog ref={dialog} className="update-changelog" aria-labelledby={title}
+  return <dialog data-modal-dismiss="true" ref={dialog} className="update-changelog" aria-labelledby={title}
     onCancel={event => { event.preventDefault(); onClose() }}>
-    <h2 id={title}>{nextWord("updateChangelogTitle", { version })}</h2>
+    <header className="update-changelog-heading">
+      <h2 id={title}>{nextWord("updateChangelogTitle", { version })}</h2>
+      <button className="chip" type="button" onClick={onClose}>{nextWord("updateChangelogLater")}</button>
+    </header>
     <div className="update-changelog-body" aria-busy={!notes && !failed}>
       {notes ? <div className="update-changelog-copy" dangerouslySetInnerHTML={{ __html: richText(notes) }} />
         : <p role="status">{failed || nextWord("updateChangelogLoading")}</p>}
@@ -95,7 +98,6 @@ export function UpdateChangelog({ latest, onClose, onConfirm }: {
     <a href={"https://github.com/sainteye/clawdline/releases/tag/" + encodeURIComponent(version)} target="_blank" rel="noopener noreferrer">{nextWord("updateChangelogOriginal")}</a>
     {notice && <p className="update-changelog-notice" role="status">{notice}</p>}
     <div className="update-changelog-buttons">
-      <button className="chip" type="button" onClick={onClose}>{nextWord("updateChangelogLater")}</button>
       <button className="chip primary" type="button" disabled={checking || (!notes && !failed)} onClick={() => void confirm()}>
         {nextWord(checking ? "updateChangelogChecking" : failed ? "updateChangelogAnyway" : "updateChangelogConfirm")}
       </button>

@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import {CopilotToolHistory} from './CopilotToolHistory.js'
 import { CopilotQuestions } from './CopilotQuestions.js'
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
@@ -79,13 +80,13 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     else stateLabel = nextWord('copilotConnectedReady')
   }
 
+  const backdrop = useModalBackdrop(() => {
+    // A tap beside a live call's sheet shrinks it; the call goes on.
+    if (isConnected || isConnecting) onMinimize?.()
+    else onClose()
+  })
   return (
-    <div className="realtime-modal-backdrop" onClick={(e) => {
-      if (e.target !== e.currentTarget) return
-      // A tap beside a live call's sheet shrinks it; the call goes on.
-      if (isConnected || isConnecting) onMinimize?.()
-      else onClose()
-    }}>
+    <div className="realtime-modal-backdrop" {...backdrop}>
       <div className={`realtime-modal-sheet${isConnected ? " in-call" : ""}`} style={{ "--copilot-orb-size": `${orbSize}px` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
         <div className="realtime-content" role={isConnected?'region':undefined} aria-label={isConnected?nextWord('copilotCallContent'):undefined} tabIndex={isConnected?0:undefined}>
         <div className="realtime-header">

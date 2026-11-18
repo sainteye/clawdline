@@ -9,7 +9,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 mkdir -p "$scratch/repo/tools" "$scratch/repo/web/console/tools" "$scratch/bin"
 cp tools/check.sh tools/check-plan.mjs tools/check-scope.mjs tools/check-profile.mjs "$scratch/repo/tools/"
-for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-staged-app-watcher.sh test-shell-language.sh test-shell-pairing-permission.sh; do
+for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-staged-app-watcher.sh test-rounded-brand-mascot.sh test-shell-language.sh test-shell-pairing-permission.sh; do
   printf '#!/bin/sh\nprintf "%%s\\n" "%s" >> "$CALLS"\n' "$name" > "$scratch/repo/tools/$name"
   chmod +x "$scratch/repo/tools/$name"
 done
@@ -121,7 +121,10 @@ mkdir -p shell/darwin
 printf 'let pairing = 1\n' > shell/darwin/Pairing.swift
 : > "$CALLS"
 bash tools/check.sh > "$scratch/shell.log"
-if [ "$(uname -s)" = Darwin ]; then grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"; fi
+if [ "$(uname -s)" = Darwin ]; then
+  grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"
+  grep -Fxq 'test-rounded-brand-mascot.sh' "$CALLS"
+fi
 rm -r shell
 rmdir internal/example internal
 : > "$CALLS"
@@ -136,6 +139,7 @@ grep -Fxq 'supply-chain' "$CALLS"
 if [ "$(uname -s)" = Darwin ]; then
   grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"
   grep -Fxq 'test-shell-language.sh' "$CALLS"
+  grep -Fxq 'test-rounded-brand-mascot.sh' "$CALLS"
   grep -Fxq 'dmg-install-harness' "$CALLS"
 elif grep -Fxq 'test-shell-pairing-permission.sh' "$CALLS"; then
   exit 1
