@@ -351,3 +351,33 @@ are absent. The archive reader's independent qualification and remaining recover
 gaps are recorded in [memory and settings](project-assistants-memory-settings.md#independent-archive-binary-qualification).
 No new API level, archive generation or maintenance writer is enabled by this
 audit.
+
+
+### Isolated dev-server attempt owner
+
+`internal/app/botdevserver` now defines one immutable server-attempt identity
+(Bot, complete Project, server, attempt and approved-command fingerprint).
+Its injected journal port must atomically compare-and-swap a source-local
+record. Acceptance is persisted before a single Host-owned launch; the request
+context ends only that request. Stop records its intent before cancelling the
+Host lifetime and retains a process handle returned late by Launch. Authority
+is checked before and after launch. Reopening an interrupted accepted/running/
+stopping record reports unknown without launching, adopting a PID or rewriting
+the stored fact. A missing acknowledgement never causes another launch.
+
+The existing ACP process supervisor exposes stdout and the direct child's
+exit receipt without creating an ACP Client/provider or a second process owner.
+Exit alone does not establish descendant cleanup: the attempt still calls the
+existing identity-checked Close, and keeps cleanup failure unknown. No new log
+buffer, process registry, count limit or API route is introduced by these ports.
+
+Fault-injection tests use an in-memory CAS journal, including a commit whose
+acknowledgement is lost, late launch/stop, source revocation and unknown cleanup.
+A real temporary HTTP child also passes through the attempt owner and existing
+process supervisor, survives request cancellation and closes its listener on
+owned shutdown. These checks establish the isolated ownership unit, not a
+persistent storage implementation, host restart cleanup, per-Bot admission or a
+complete dev-server feature. A production registry must own process slots,
+validate current exact command/directory approval, supply a source environment,
+retain bounded logs and implement the durable ledger before wiring tools,
+HTTP, Cloud or UI. There is no automatic restart and no maintenance writer.
