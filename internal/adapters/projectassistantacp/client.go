@@ -852,7 +852,9 @@ func (c *Client) cancelPrompt(ctx context.Context, waitingPromptID string) error
 	c.answerMu.Lock()
 	defer c.answerMu.Unlock()
 	c.mu.Lock()
-	if c.failure != nil || c.permissionsSealed || (waitingPromptID != "" && (c.promptID != waitingPromptID || len(c.permissions) == 0)) {
+	// A prompt reply seals permission offers. An explicit cancellation can still retire the context.
+	if c.failure != nil || c.cancelled ||
+		(waitingPromptID != "" && (c.permissionsSealed || c.promptID != waitingPromptID || len(c.permissions) == 0)) {
 		err := c.failure
 		c.mu.Unlock()
 		return err
