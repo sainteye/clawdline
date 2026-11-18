@@ -29,9 +29,10 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 /** Identity and activity are the same cells in a local or a fleet list. */
 function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false, boardAvatar, boardName }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
-  crown?: boolean; bound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null; boardName?: string | null
+  crown?: boolean; bound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null; boardName?: string
 }) {
   const who = assistant ? L.whoHTML(assistant) : ""
+  const affiliation = boardName ? nextWord("sessionBoardAffiliation", { name: boardName }) : ""
   const mark = boardAvatar === null
     ? <span className="mark session-board-unassigned" aria-hidden="true"><TerminalGlyph /></span>
     : <Mark icon={boardAvatar ?? icon} cellPx={4} />
@@ -39,9 +40,11 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false, boa
     {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true">{mark}
       <span className="clawdfather-crown" aria-hidden="true" /></span> : mark}
     {bound && <span className="coordinator-identity">Clawdfather</span>}
-    <div className={`title${boardName!==undefined ? " has-message-board" : ""}`} style={{ color: boardAvatar === undefined ? L.accentTint(icon?.accent) : undefined }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
+    <div className={`title${affiliation ? " has-message-board" : ""}`} style={{ color: L.accentTint(icon?.accent) }}>
+      <span className="label">{title}</span>{boardLead && <SessionBoardLead />}
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
-      {boardName!==undefined&&<small className="session-board-membership" title={boardName===null?nextWord("sessionBoardUnassigned"):nextWord("sessionBoardAffiliation",{name:boardName})}>{boardName===null?nextWord("sessionBoardUnassigned"):nextWord("sessionBoardAffiliation",{name:boardName})}</small>}</div>
+      {affiliation && <small className="session-board-membership" title={affiliation}>{affiliation}</small>}
+    </div>
   </>
 }
 
@@ -69,7 +72,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
   icon?: SessionRow["icon"]; cwd?: string
-  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null; boardName?: string | null
+  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null; boardName?: string
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   runningAgents?: number | null
@@ -91,7 +94,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardName===undefined?"":boardName===null?nextWord("sessionBoardUnassigned"):nextWord("sessionBoardAffiliation",{name:boardName}), boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
+    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardName ? nextWord("sessionBoardAffiliation", { name: boardName }) : "", boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
@@ -417,7 +420,7 @@ export function Row({
 }: {
   row: SessionRow
   boardLead?: boolean
-  boardAvatar?: SessionRow["icon"] | null; boardName?: string | null
+  boardAvatar?: SessionRow["icon"] | null; boardName?: string
   depth: number
   branchThrough: boolean
   ancestorThrough: boolean

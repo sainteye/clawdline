@@ -35,7 +35,6 @@
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
 .session-board-group > .rows { padding: 6px 5px 5px; }
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
-.session-board-group .row .title { color: var(--ink); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
@@ -206,6 +205,6 @@
   .session-board-reader[data-expanded="true"] { height: 97dvh; }
 }
 
-/* Each local and fleet Session exposes its own affiliation, even beside a group title. */
+/* Give the board name a line when the Session has an affiliation. */
 .row > .title.has-message-board { flex-wrap: wrap; }
 .session-board-membership { display: block; flex: 0 1 100%; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; color: var(--dim); }
