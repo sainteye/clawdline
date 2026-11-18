@@ -5463,6 +5463,45 @@ export interface ProjectAssistantDeleteRequest {
   command: ProjectAssistantCommand
 }
 
+export interface ProjectAssistantDevServer {
+  attempt: string
+  command: string
+  failure?: string
+  fingerprint: string
+  folder: string
+  id: string
+  name: string
+  revision: number
+  state: string
+}
+
+/**
+ * API90 human controls name an existing server, exact fingerprint and observed
+ * attempt/revision. No command, folder, environment or PID is accepted. Keys are
+ * scoped to the principal, server and action; unknown outcomes require explicit
+ * inspection.
+ */
+export interface ProjectAssistantDevServerControlRequest {
+  attempt: string
+  fingerprint: string
+  id: string
+  idempotency_key: string
+  key: ProjectAssistantBotKey
+  revision: number
+}
+
+export interface ProjectAssistantDevServerLog {
+  text: string
+  truncated: boolean
+}
+
+export interface ProjectAssistantDevServersResponse {
+  contract_version: string
+  log?: ProjectAssistantDevServerLog
+  server?: ProjectAssistantDevServer
+  servers: ProjectAssistantDevServer[]
+}
+
 export interface ProjectAssistantEditRequest {
   command: ProjectAssistantCommand
   settings: ProjectAssistantEditSettings
@@ -7083,7 +7122,8 @@ export interface ProjectAssistantRuleRemoveRequest {
 }
 
 /**
- * The Bot's Project standing rules; only Claude Code Bots have them (API level 66).
+ * Claude native Project rules at API66; exact source-owned server rules for either
+ * Agent at API90. Listing a rule is not approval or execution.
  */
 export interface ProjectAssistantRulesResponse {
   contract_version: string

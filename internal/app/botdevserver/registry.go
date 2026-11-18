@@ -134,6 +134,12 @@ func (r *Registry) view(e *registered) SavedServer {
 // and paired controls must retain their source-owned expected-version fence.
 // An already active command is a no-op, never a second independent process.
 func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (SavedServer, error) {
+	return r.start(ctx, spec, attemptID, nil)
+}
+func (r *Registry) StartExpected(ctx context.Context, saved SavedServer, attemptID string) (SavedServer, error) {
+	return r.start(ctx, saved.Spec, attemptID, &saved)
+}
+func (r *Registry) start(ctx context.Context, spec Spec, attemptID string, expected *SavedServer) (SavedServer, error) {
 	fingerprint, err := spec.Fingerprint()
 	if err != nil {
 		return SavedServer{}, err
@@ -149,7 +155,7 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 	// Inspect before asking for approval. Keeping an already owned process does
 	// not execute a command and must not create another approval card.
 	r.ops.Lock()
-	e, prior, done, err := r.admit(ctx, fingerprint, attemptID)
+	e, prior, done, err := r.admitExpected(ctx, fingerprint, attemptID, expected)
 	if !done && err == nil && e == nil {
 		e, err = r.define(ctx, spec, fingerprint)
 	}
@@ -174,7 +180,7 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 	if err = r.o.CheckControl(ctx, spec); err != nil {
 		return SavedServer{}, err
 	}
-	e, prior, done, err = r.admit(ctx, fingerprint, attemptID)
+	e, prior, done, err = r.admitExpected(ctx, fingerprint, attemptID, expected)
 	if done || err != nil {
 		return prior, err
 	}
@@ -304,6 +310,12 @@ func (r *Registry) release(e *registered, owner *Owner) {
 // The source-owned attempt fence prevents a delayed stop from stopping a later
 // explicit restart of the same server. Callers cannot omit this fence.
 func (r *Registry) Stop(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string) error {
+	return r.stop(ctx, key, project, id, attemptID, nil)
+}
+func (r *Registry) StopExpected(ctx context.Context, saved SavedServer) error {
+	return r.stop(ctx, saved.Spec.Key, saved.Spec.Project, saved.ID, saved.Attempt.Identity.AttemptID, &saved)
+}
+func (r *Registry) stop(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string, expected *SavedServer) error {
 	ctx, cancel := r.operation(ctx)
 	defer cancel()
 	r.ops.Lock()
@@ -318,6 +330,9 @@ func (r *Registry) Stop(ctx context.Context, key pa.BotKey, project pa.ProjectSc
 		return failure(pa.NotFound, "server")
 	}
 	saved := r.view(e)
+	if expected != nil && saved != *expected {
+		return failure(pa.StaleVersion, "server_definition")
+	}
 	if saved.Spec.Key != key || saved.Spec.Project != project {
 		return failure(pa.ScopeDenied, "server_scope")
 	}
@@ -372,8 +387,20 @@ func (r *Registry) Inspect(ctx context.Context, key pa.BotKey, project pa.Projec
 }
 
 func (r *Registry) ReadLog(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string) (Log, error) {
-	ctx, cancel := r.operation(ctx)
-	defer cancel()
+	return r.readLog(ctx, key, project, id, attemptID, true)
+}
+
+// ReadHumanLog still binds full resource identity but uses the caller's human
+// read authorization instead of a live native/source write capability.
+func (r *Registry) ReadHumanLog(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string) (Log, error) {
+	return r.readLog(ctx, key, project, id, attemptID, false)
+}
+func (r *Registry) readLog(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string, authorize bool) (Log, error) {
+	if authorize {
+		var cancel func()
+		ctx, cancel = r.operation(ctx)
+		defer cancel()
+	}
 	if err := ctx.Err(); err != nil {
 		return Log{}, err
 	}
@@ -388,8 +415,10 @@ func (r *Registry) ReadLog(ctx context.Context, key pa.BotKey, project pa.Projec
 	if spec.Key != key || spec.Project != project {
 		return Log{}, failure(pa.ScopeDenied, "server_scope")
 	}
-	if err := r.o.CheckControl(ctx, spec); err != nil {
-		return Log{}, err
+	if authorize {
+		if err := r.o.CheckControl(ctx, spec); err != nil {
+			return Log{}, err
+		}
 	}
 	if owner != nil {
 		saved = owner.Snapshot()
@@ -404,6 +433,12 @@ func (r *Registry) ReadLog(ctx context.Context, key pa.BotKey, project pa.Projec
 }
 
 func (r *Registry) Remove(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string) error {
+	return r.remove(ctx, key, project, id, attemptID, nil)
+}
+func (r *Registry) RemoveExpected(ctx context.Context, saved SavedServer) error {
+	return r.remove(ctx, saved.Spec.Key, saved.Spec.Project, saved.ID, saved.Attempt.Identity.AttemptID, &saved)
+}
+func (r *Registry) remove(ctx context.Context, key pa.BotKey, project pa.ProjectScope, id, attemptID string, expected *SavedServer) error {
 	ctx, cancel := r.operation(ctx)
 	defer cancel()
 	r.ops.Lock()
@@ -418,6 +453,9 @@ func (r *Registry) Remove(ctx context.Context, key pa.BotKey, project pa.Project
 		return failure(pa.NotFound, "server")
 	}
 	saved := r.view(e)
+	if expected != nil && saved != *expected {
+		return failure(pa.StaleVersion, "server_definition")
+	}
 	if saved.Spec.Key != key || saved.Spec.Project != project {
 		return failure(pa.ScopeDenied, "server_scope")
 	}

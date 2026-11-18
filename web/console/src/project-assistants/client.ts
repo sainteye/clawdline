@@ -93,6 +93,10 @@ export interface SourceClient {
   canRules?(): boolean
   /** Exact source-owned server rules require the complete server capability. */
   canSourceRules?(): boolean
+  canDevServers?(): boolean
+  devServers?(key:W.ProjectAssistantBotKey,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
+  devServerLogs?(key:W.ProjectAssistantBotKey,id:string,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
+  controlDevServer?(action:"start"|"restart"|"stop"|"remove",request:W.ProjectAssistantDevServerControlRequest,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
   /** Hide a Bot from the list or bring it back, and delete one (Codync's Hide from list and Delete). */
   setHidden?(request: W.ProjectAssistantVisibilityRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>

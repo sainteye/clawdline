@@ -842,3 +842,21 @@ test("source command rules stay hidden on machines with only native rule support
  }
  registry.revoke()
 })
+
+test("known server controls keep source identity and refuse old or foreign sources before transport",async()=>{
+  const sent:{path:string;body:unknown}[]=[]
+  const transport:AssistantFetch=async(path,init)=>{if(!path.endsWith("/status"))sent.push({path,body:init?.body?JSON.parse(String(init.body)):undefined});return Response.json(path.endsWith("/status")?sourceStatus():{contract_version:"project-assistants.v1",servers:[]})}
+  const local:AssistantGrant={...grant(),accountKey:"local",readerID:"local",apiLevel:90}
+  const source=make(transport,local).source
+  await source.status(signal())
+  const request:W.ProjectAssistantDevServerControlRequest={key,id:"known/id",idempotency_key:"known-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2}
+  assert.equal(source.canDevServers(),true)
+  await source.devServers(key,signal());await source.devServerLogs(key,request.id,signal());await source.controlDevServer("stop",request,signal())
+  assert.equal(sent.length,3);assert.ok(sent[0].path.includes("dev-servers?machine_id=one"));assert.ok(sent[1].path.includes("known%2Fid/logs"));assert.deepEqual(sent[2].body,request)
+  let calls=0;const blocked:AssistantFetch=async()=>{calls++;return Response.json({})}
+  const old=make(blocked,{...local,apiLevel:89}).source
+  assert.equal(old.canDevServers(),false);await assert.rejects(old.devServers(key,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.throws(()=>source.devServers({...key,machine_id:"foreign"},signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.throws(()=>assistantRelayRequest(sent[0].path),e=>errorCode(e)==="pa_invalid")
+  assert.equal(calls,0)
+})

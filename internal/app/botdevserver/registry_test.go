@@ -370,6 +370,52 @@ func TestReconcileStopsOnlyTheForgottenDefinitionAndKeepsCurrentEpoch(t *testing
 	}
 }
 
+func TestExpectedStartCannotReplayAcrossAnInterveningCompletedAttempt(t *testing.T) {
+	o, _, launches, _ := registryFixture(t)
+	r := openRegistry(t, o)
+	spec := specFixture()
+	ctx := context.Background()
+	first, err := r.Start(ctx, spec, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRegistry(t, r, first, Running)
+	if err := r.Stop(ctx, spec.Key, spec.Project, first.ID, "first"); err != nil {
+		t.Fatal(err)
+	}
+	baseline := r.Snapshot(spec.Key, spec.Project)[0]
+	entered, release := make(chan struct{}), make(chan struct{})
+	var reviews atomic.Int32
+	r.o.AuthorizeStart = func(context.Context, SavedServer) (func(context.Context) error, error) {
+		if reviews.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return func(context.Context) error { return nil }, nil
+	}
+	done := make(chan error, 1)
+	go func() { _, err := r.StartExpected(ctx, baseline, "old-human-intent"); done <- err }()
+	awaitOwner(t, entered)
+	second, err := r.Start(ctx, spec, "intervening")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRegistry(t, r, second, Running)
+	if err := r.Stop(ctx, spec.Key, spec.Project, second.ID, "intervening"); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; pa.Code(err) != pa.StaleVersion || launches.Load() != 2 {
+		t.Fatal("old human request became a new execution", err, launches.Load())
+	}
+	if err := r.StopExpected(ctx, baseline); pa.Code(err) != pa.StaleVersion {
+		t.Fatal("old stop crossed its baseline", err)
+	}
+	if err := r.RemoveExpected(ctx, baseline); pa.Code(err) != pa.StaleVersion {
+		t.Fatal("old removal crossed its baseline", err)
+	}
+}
+
 func TestOldServerCleanupCannotReleaseANewerReservation(t *testing.T) {
 	o, _, _, _ := registryFixture(t)
 	r := openRegistry(t, o)

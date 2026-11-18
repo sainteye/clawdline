@@ -18,6 +18,7 @@ import (
 )
 
 type serverReviewKey struct{}
+type serverHumanAuthorityKey struct{}
 type serverReview func(context.Context, pa.PermissionAction, []pa.PermissionOption) (pa.PermissionOption, error)
 
 func (h *Host) serverProject(ctx context.Context, spec servers.Spec) (pa.ProjectResolution, error) {
@@ -43,6 +44,11 @@ func (h *Host) serverProject(ctx context.Context, spec servers.Spec) (pa.Project
 }
 
 func (h *Host) serverControl(ctx context.Context, spec servers.Spec) error {
+	if check, ok := ctx.Value(serverHumanAuthorityKey{}).(func(context.Context) error); ok {
+		if err := check(ctx); err != nil {
+			return err
+		}
+	}
 	_, err := h.serverProject(ctx, spec)
 	return err
 }
@@ -88,7 +94,18 @@ func (h *Host) makeServers(ctx context.Context) error {
 			if !ok {
 				return nil, failure(pa.ScopeDenied, "server_review")
 			}
-			return (servers.Approval{Rules: c, Check: h.serverCheck, Guard: h.serverMemory, Review: review}).Authorize(ctx, saved)
+			base, err := (servers.Approval{Rules: c, Check: h.serverCheck, Guard: h.serverMemory, Review: review}).Authorize(ctx, saved)
+			if err != nil {
+				return nil, err
+			}
+			return func(ctx context.Context) error {
+				if check, ok := ctx.Value(serverHumanAuthorityKey{}).(func(context.Context) error); ok {
+					if err := check(ctx); err != nil {
+						return err
+					}
+				}
+				return base(ctx)
+			}, nil
 		},
 		Launch: func(ctx context.Context, spec servers.Spec) (p servers.Process, err error) {
 			err = h.serverMemory(ctx, spec, func() error {
@@ -115,7 +132,8 @@ func serverInfo(saved servers.SavedServer) app.DevServerInfo {
 	if state == "" {
 		state = string(servers.Stopped)
 	}
-	return app.DevServerInfo{ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure}
+	fingerprint, _ := saved.Spec.Fingerprint()
+	return app.DevServerInfo{Fingerprint: fingerprint, Revision: saved.Attempt.Version, ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure}
 }
 
 func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *NativeWork, bound func(context.Context) (context.Context, context.CancelFunc, error), journal func(context.Context, string) error) error {

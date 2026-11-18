@@ -2727,7 +2727,7 @@
     "ProjectAssistantRulesResponse": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The Bot's Project standing rules; only Claude Code Bots have them (API level 66).",
+      "description": "Claude native Project rules at API66; exact source-owned server rules for either Agent at API90. Listing a rule is not approval or execution.",
       "properties": {
         "contract_version": {
           "type": "string"
@@ -4559,6 +4559,125 @@
         "expected_revision"
       ],
       "additionalProperties": false
+    },
+    "ProjectAssistantDevServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "failure": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "command",
+        "folder",
+        "attempt",
+        "state",
+        "fingerprint",
+        "revision"
+      ]
+    },
+    "ProjectAssistantDevServerLog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "truncated"
+      ]
+    },
+    "ProjectAssistantDevServersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantDevServer"
+          }
+        },
+        "server": {
+          "$ref": "#/$defs/ProjectAssistantDevServer"
+        },
+        "log": {
+          "$ref": "#/$defs/ProjectAssistantDevServerLog"
+        }
+      },
+      "required": [
+        "contract_version",
+        "servers"
+      ]
+    },
+    "ProjectAssistantDevServerControlRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "key",
+        "id",
+        "idempotency_key",
+        "fingerprint",
+        "attempt",
+        "revision"
+      ],
+      "description": "API90 human controls name an existing server, exact fingerprint and observed attempt/revision. No command, folder, environment or PID is accepted. Keys are scoped to the principal, server and action; unknown outcomes require explicit inspection."
     }
   }
 }

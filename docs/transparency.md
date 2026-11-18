@@ -12,6 +12,13 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The known-ID human server API adds no model tool or instruction. Reviewed both
+language explanations against the source controls: current paired-person write
+authority, displayed baseline checks, history readable to the person, unchanged
+Forget restrictions for new execution, and no arbitrary command input. Register
+the private human control handler with the persistent-bots inventory. Source HTTP
+and client tests do not establish new-control Cloud carriage or server UI.
+
 The source-owned development-server continuation adds four native MCP tools
 through the existing endpoint, independent Host process ownership, exact local
 rules and current source/Forget checks. Reviewed the persistent-bots explanation

@@ -334,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | Known-ID human controls, owned-listener discovery, server UI, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, owned-listener discovery, server UI, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -393,6 +393,32 @@ console's Codex source-rule entry requires API 90; Claude's separate native
 Project rules retain their existing scope. Matching Cloud transport qualification
 remains separate from this source construction.
 
+The source API also exposes typed human list/log reads and start/restart/stop/remove
+controls for existing IDs under `/v1/project-assistants/{bot}/dev-servers`.
+Controls carry the displayed fingerprint, attempt and revision; they accept no
+command, directory, environment or PID. The source checks the same paired human
+principal and current write authority at admission, including when an exact
+standing rule exists. Read-only devices may read history but cannot mutate it.
+Human history remains readable after native completion or Host disable; this
+does not expose forgotten history to the model. An old Forget provenance cannot
+be silently transferred to a new execution.
+
+The registry compares the complete displayed baseline under its operation lock,
+both before review and at final start admission. A completed intervening attempt
+invalidates an old control. A start/restart key derives a stable attempt identity
+from the trusted principal, machine, Bot, server, action and idempotency key.
+Replaying that same attempt cannot launch another process. Restart first stops
+the observed attempt and may subsequently fail; it is not an atomic external
+stop-and-start transaction. A refusal after the stop reports an unknown overall
+outcome and requires inspection. Stale stop/remove controls refuse and require a fresh
+read; uncertain responses are never automatically retried with a new key. These
+receipts remain source-local and add no portable Bot operations.
+
+The existing rules/remove client already has Cloud relay and vocabulary entries;
+its request flag means content access, not local-only transport. The new server
+controls still need their own Cloud carriage, private bridge and UI. Source HTTP
+and client tests do not qualify those destinations.
+
 The command handler requests the existing source-owned permission card, with
 complete structured scope and all four choices. The human card explicitly
 states that source file/network authority is outside the Agent terminal sandbox,
@@ -450,5 +476,5 @@ port closes on Host disable. A controlled whole-Bot reconciliation counterexampl
 stops a fresh context's server; the per-definition fix refuses that regression.
 These are local synthetic checks with zero vendor/model requests. They do not
 qualify an installed vendor, production Cloud/UI, physical recovery after Host
-crash, machine reboot or updater rollback. Known-ID human controls, owned ports,
+crash, machine reboot or updater rollback. New-control Cloud carriage, owned ports,
 quiet server UI and durable clean-restart intent still require construction.

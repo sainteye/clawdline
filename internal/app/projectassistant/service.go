@@ -48,6 +48,7 @@ type ServiceOptions struct {
 	// Rules is optional; without it the rules routes answer unsupported.
 	Rules       RuleStore
 	SourceRules SourceRuleStore
+	DevServers  HumanDevServers
 	// Deleter removes a Bot's stored records; without it Delete is unsupported.
 	Deleter BotDeleter
 	// Groups and Rooms are optional; without them the group operations

@@ -4671,6 +4671,43 @@ type ProjectAssistantDeleteRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 }
 
+type ProjectAssistantDevServer struct {
+	Attempt     string `json:"attempt"`
+	Command     string `json:"command"`
+	Failure     string `json:"failure,omitempty"`
+	Fingerprint string `json:"fingerprint"`
+	Folder      string `json:"folder"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Revision    int64  `json:"revision"`
+	State       string `json:"state"`
+}
+
+// API90 human controls name an existing server, exact fingerprint and observed
+// attempt/revision. No command, folder, environment or PID is accepted. Keys
+// are scoped to the principal, server and action; unknown outcomes require
+// explicit inspection.
+type ProjectAssistantDevServerControlRequest struct {
+	Attempt        string                 `json:"attempt"`
+	Fingerprint    string                 `json:"fingerprint"`
+	ID             string                 `json:"id"`
+	IdempotencyKey string                 `json:"idempotency_key"`
+	Key            ProjectAssistantBotKey `json:"key"`
+	Revision       int64                  `json:"revision"`
+}
+
+type ProjectAssistantDevServerLog struct {
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated"`
+}
+
+type ProjectAssistantDevServersResponse struct {
+	ContractVersion string                        `json:"contract_version"`
+	Log             *ProjectAssistantDevServerLog `json:"log,omitempty"`
+	Server          *ProjectAssistantDevServer    `json:"server,omitempty"`
+	Servers         []ProjectAssistantDevServer   `json:"servers"`
+}
+
 type ProjectAssistantEditRequest struct {
 	Command  ProjectAssistantCommand      `json:"command"`
 	Settings ProjectAssistantEditSettings `json:"settings"`
@@ -6177,8 +6214,8 @@ type ProjectAssistantRuleRemoveRequest struct {
 	Rule    ProjectAssistantPermissionRule `json:"rule"`
 }
 
-// The Bot's Project standing rules; only Claude Code Bots have them (API level
-// 66).
+// Claude native Project rules at API66; exact source-owned server rules for
+// either Agent at API90. Listing a rule is not approval or execution.
 type ProjectAssistantRulesResponse struct {
 	ContractVersion string                           `json:"contract_version"`
 	Rules           []ProjectAssistantPermissionRule `json:"rules"`
