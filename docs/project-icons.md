@@ -17,6 +17,26 @@ Compact interface and browser marks retain solid colors. `internal/domain/icon`
 renders matching browser, home-screen and launch-screen assets; regenerate them
 with `go run ./internal/domain/icon/cmd/splashgen -brand`.
 
+## Rounded mobile-header candidate
+
+The mobile navigation handle has a review candidate with equal rounded-square
+tiles, soft lighting on the original orange, and two detached hands. Its static
+artwork lives in `web/console/src/brand-navigation-mobile.ts`. It uses the
+existing 24 by 16.5 CSS-pixel slot at the console's 899-pixel mobile breakpoint.
+The desktop canvas, other application marks, and the handle's drawer interaction
+retain their existing behavior. This candidate does not replace browser icons or
+the website's deployed artwork.
+
+The [large-format line-flow study](assets/brand-mark-rounded-flow.svg) holds that
+same rounded body still and moves a soft highlight along the existing green
+underline. It follows the website's F-04 direction and 1.2-second cycle: continuous
+left-to-right motion, with periodic light copies at the loop boundary. The line
+keeps its position, dimensions, and `#4CCB7F` base color. Reduced motion removes
+the moving highlight and leaves the solid green line. The mobile header itself
+uses the static version; the flow study is a separate website-artwork preview.
+
+## Existing large-format studies
+
 Large-format flow concepts retain the fine body grid and explore the underline:
 [one-way flow](assets/brand-line-concepts/f-01.svg),
 [packet pulses](assets/brand-line-concepts/f-02.svg),
@@ -50,6 +70,8 @@ second; the earlier drafts above are retained for comparison.
 |---|---|---|---|
 | F-01, fast left-to-right flow | 1 second, 25 frames | [GIF](assets/brand-line-concepts/f-01-fast-ltr.gif), 474,174 bytes | [WebP](assets/brand-line-concepts/f-01-fast-ltr.webp), 56,108 bytes |
 | F-04, soft left-to-right flow | 1.2 seconds, 30 frames | [GIF](assets/brand-line-concepts/f-04-fast-ltr.gif), 858,630 bytes | [WebP](assets/brand-line-concepts/f-04-fast-ltr.webp), 69,304 bytes |
+
+## Project icon sources
 
 `internal/domain/icon` resolves a local mark in this order:
 
