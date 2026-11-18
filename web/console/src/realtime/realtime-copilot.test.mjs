@@ -1453,3 +1453,47 @@ test('cancelled background reads settle in the call history and never return as 
  assert.ok(transcripts.every(row=>row.outcome==='cancelled'))
  assert.ok(!f.c.state.tools.some(row=>row.outcome==='running'))
 })
+
+for(const request of ['請介紹其他 Session 的狀況','請你去介紹一下其他 Session','Please introduce the other sessions'])test(`an explicit other-Session request advances past the interrupted item: ${request}`,async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.livePollMs=1
+ const first={session_id:'one',label:'First work'},next={session_id:'two',label:'Second work'}
+ f.c.sessionReports.start({sessions:[first,next]},async()=>assert.fail('prepared items must be reused'),page=>f.c.presentSessionReport(page,()=>f.c.dc?.readyState==='open'))
+ f.c.liveReportItem={ref:{id:first.session_id,label:first.label},text:'An interrupted explanation.',interrupted:true}
+ f.c.sessionReports.interrupt()
+ f.c.liveHeard.add(request);f.c.heardNow=request
+ await f.c.runLiveTool('other-items','get_sessions_summary',JSON.stringify({continue_report:true}))
+ await tick()
+ const evidence=f.sent.filter(e=>e.type==='session.thinking.append'&&e.content.startsWith('Machine evidence')).map(e=>JSON.parse(e.content.slice(e.content.indexOf('{'))))
+ assert.deepEqual(evidence.at(-1)?.sessions.map(r=>r.session_id),['two'])
+ assert.equal(f.c.liveReportItem.ref.id,'two')
+ assert.deepEqual(f.c.spokenSessions.heardIDs(),[],'skipping is not completed playback or action-target evidence')
+ assert.equal(f.reads.length,0,'moving to prepared content must not reread or execute work')
+})
+
+
+test('continuation retains an interrupted item while repeated next requests cannot skip twice in one turn',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.livePollMs=1
+ const refs=[{session_id:'one',label:'First work'},{session_id:'two',label:'Second work'},{session_id:'three',label:'Third work'}]
+ f.c.sessionReports.start({sessions:refs},async()=>assert.fail('no reads'),()=>{})
+ f.c.liveReportItem={ref:{id:'one',label:'First work'},text:'Partial explanation.',interrupted:true}
+ f.c.sessionReports.interrupt();f.c.liveHeard.add('繼續報告');f.c.heardNow='繼續報告'
+ f.c.continueSessionReport();assert.equal(f.c.sessionReports.current().id,'one')
+ f.c.questionSerial++;f.c.liveHeard.add('請介紹其他 Session 的進度');f.c.continueSessionReport()
+ assert.equal(f.c.sessionReports.current().id,'two')
+ f.c.liveReportItem={ref:{id:'two',label:'Second work'},text:'',interrupted:true}
+ f.c.sessionReports.interrupt();f.c.continueSessionReport('請介紹其他 Session 的進度')
+ assert.equal(f.c.sessionReports.current().id,'two','a second callback for the same utterance is not another skip')
+ f.c.questionSerial++;f.c.continueSessionReport('請介紹其他 Session 的進度')
+ assert.equal(f.c.sessionReports.current().id,'three','a fresh user turn may ask for another item')
+ assert.deepEqual(f.c.spokenSessions.heardIDs(),[])
+})
+
+test('Live journals the completed item before moving to the next narration item',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.livePollMs=1;f.c.liveStartGraceMs=20
+ const saved=[];f.c.journal=(kind,text)=>saved.push({kind,text});f.c.flushJournal=()=>{}
+ const rows=[{session_id:'one',label:'First work'},{session_id:'two',label:'Second work'}]
+ f.c.dc.send=text=>{const e=JSON.parse(text);f.sent.push(e);if(e.type==='session.commentary.append')queueMicrotask(()=>f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:e.content.includes('First work')?'First explanation.':'Second explanation.'}))}
+ await f.c.presentLiveReport({sessions:rows},()=>f.c.dc?.readyState==='open')
+ assert.deepEqual(saved.filter(e=>e.kind==='said').map(e=>e.text),['First explanation.'])
+ assert.equal(f.c.liveSaid.peek(),'Second explanation.','the final item remains available for the normal journal flush')
+})

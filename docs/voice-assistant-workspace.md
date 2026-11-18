@@ -491,7 +491,9 @@ the original function can answer from older evidence. Observation never runs a
 tool a second time, changes its authority or starts an execution sound.
 
 The original green-outline capsules remain below speech, with one capsule per
-invocation showing its target, outcome and duration. Counts remain visible above
+invocation showing its target, outcome and duration, newest start first. Completion
+updates its capsule in place rather than moving an older invocation above a new
+one. Counts remain visible above
 them; there is no disclosure triangle or grouped list. The existing activity log
 shows each observation with its start time and source. The processing-coverage tooltip
 counts overlapping top-level intervals once and excludes their nested read
@@ -508,3 +510,22 @@ substitutes. Start background reads, release them, request the list, speak again
 minimize/reopen and validate. It checks three recap reads, three transcript reads,
 cache labeling, unique IDs, journal agreement and placement. This proves the
 fixture behavior, not an actual paid call or real phone audio acceptance.
+
+
+### Interrupted report navigation
+
+An explicit request for other or next Sessions passes the interrupted current
+item and presents the retained following item. Continuing the report resumes the
+unfinished item instead. Complete polite requests use the same local routing as
+short next commands, in both engines. One input turn can advance only once even
+when both the local continuation timer and a model tool callback handle it.
+Skipping records `session_report_skipped`; it does not record playback completion,
+create ordinal-reference evidence, approve work or reread already prepared data.
+Live saves each completed item's transcript before clearing the buffer for the
+next item, so the private journal no longer loses the first item of a batch.
+
+A persisted call investigation exposed repeated resumption of one interrupted
+item after requests for other Sessions. Synthetic regression inputs exercise the
+same presentation transition without retaining personal call content in this
+repository. Provider speech comprehension and actual device playback still need
+live-call acceptance; these tests establish local routing and queue behavior.

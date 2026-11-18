@@ -20,14 +20,15 @@ export function CopilotToolHistory({records,diagnostic=false}:{records:readonly 
  if(!records.length)return null
  const current=records.map(row=>row.outcome==='running'?{...row,ms:Math.max(0,now-row.offset),ended:now}:row)
  const stats=historySummary(current)
- if(diagnostic)return <div className="copilot-history-diagnostics">{current.map(row=><div key={row.id} className="log-item" data-operation-id={row.id}>
+ const newest=[...current].reverse()
+ if(diagnostic)return <div className="copilot-history-diagnostics">{newest.map(row=><div key={row.id} className="log-item" data-operation-id={row.id}>
   <time className="log-time">[{new Date(row.started).toLocaleTimeString(undefined,{hour12:false})}]</time>
   <span className="log-text"><code>{row.name}</code> · {nextWord(row.source==='tool'?'copilotHistoryTool':'copilotHistoryBackground')}{row.target?` · ${row.target}`:''} · {nextWord(OUTCOMES[row.outcome])} · {seconds(row.ms)}s</span>
  </div>)}</div>
  return <section className="copilot-tool-history" aria-label={nextWord('copilotHistoryTitle')} title={`${nextWord('copilotHistoryElapsed',{seconds:seconds(stats.activeMs)})} · ${nextWord('copilotHistoryTimingHint')}`}>
   <div className="copilot-history-heading"><strong>{nextWord('copilotHistoryTitle')}</strong><span>{nextWord('copilotHistoryCounts',{tools:stats.tools,background:stats.background})}</span></div>
   <ol className="copilot-tools-trail" tabIndex={0} aria-label={nextWord('copilotHistoryEntries')}>
-   {current.map(row=><li key={row.id} data-operation-id={row.id} className={row.outcome}
+   {newest.map(row=><li key={row.id} data-operation-id={row.id} className={row.outcome}
     title={`${new Date(row.started).toLocaleTimeString(undefined,{hour12:false})} · ${row.name} · ${nextWord(row.source==='tool'?'copilotHistoryTool':'copilotHistoryBackground')}${row.target?` · ${row.target}`:''} · ${nextWord(OUTCOMES[row.outcome])} · ${seconds(row.ms)}s`}>
     <span className="copilot-tool-mark" aria-hidden="true">{row.outcome==='done'||row.outcome==='cached'?'✓':row.outcome==='failed'?'!':row.outcome==='running'?'·':'—'}</span>
     <code>{READ_NAMES[row.name]?nextWord(READ_NAMES[row.name]):row.name}</code>

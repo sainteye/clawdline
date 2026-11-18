@@ -4938,7 +4938,7 @@
     "web/console/src/project-assistants/routine-events.ts": "a85129e50ef6cf234e41ec9d283c5b497c25ede4b8d7c59f3fb70c2dff86b3aa",
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "3d912787d9a1cb7a9e989c9c7e69af298eed5a5d08d95dab854a3f760a1ddd85",
-    "web/console/src/realtime/CopilotToolHistory.tsx": "a4cdcb4aad43dd30d6443544438ed401fbde2203932accc57b225495c9e00f1d",
+    "web/console/src/realtime/CopilotToolHistory.tsx": "b2df191775f267969580c102a39f3ecd62cbabeb82bc41e2a2916e1968a9ab44",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "3324d16f1d7537d7469f155ef6545165e8b3316e3c08ab108e518db89eadf931",
     "web/console/src/realtime/copilot-call-control.ts": "9ef8f70d0ed11c2600df1ab3aa427d9d52121d986c4e63b76f8f9ff79b53781a",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
@@ -4948,11 +4948,11 @@
     "web/console/src/realtime/copilot-live.ts": "855fad5ea8046540b8cb58c2139b12536bceaaa70400fbc2bd996eb124dcb902",
     "web/console/src/realtime/copilot-meter.ts": "1d4af65b0931c851fc2c9214dcc957f3c697d13c639d6f1ffd1b8cb9ddac5f6f",
     "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
-    "web/console/src/realtime/copilot-reports.ts": "37124725f81a87dde8ac752f7617ae618a2ab89a4e954baf8c2df2096929c5aa",
+    "web/console/src/realtime/copilot-reports.ts": "6d0cb73e09cca6788c2d7baab01f01a9ebcaf0870d97b52f52d83573ba35bca6",
     "web/console/src/realtime/copilot-session-boards.ts": "448a05030875b1c38dda983846c3d4e27d347b156bfd73fd87ea5b537510de24",
     "web/console/src/realtime/copilot-speech.ts": "29d2f8d0875ddb75c5d0294dbe593da3add3d02b393ba68571db4f99bb064089",
     "web/console/src/realtime/copilot-tools.ts": "eaab0aaae68017b5de5c922565918d7f9d197dddc79d4cc93afce1adb5f1b2d0",
-    "web/console/src/realtime/realtime-copilot.ts": "8b05bae04cb226076189dec9651c0c38ece75f28f20e09ccbf7fd6e4964cd6fe",
+    "web/console/src/realtime/realtime-copilot.ts": "9b0d54a7288ebe1b3365eb2dced0de01179e44344b8d59c65eae31b37e39a936",
     "web/console/src/session/Composer.tsx": "bcf81687b4167b8b198386e4b319c66cf3258ae4669c112b6e0df04113088b75",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "b9d9ff8fbdc78af0e53a9cf47f3246f47c813066a93ea4c12e44da5e5cfc5039",
@@ -4968,7 +4968,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "623e85e97a44bc642ebb083910cb4c8c545fe037b5e6448f9b78202e8aabb545",
-    "zh-Hant": "d1cfe3221334f74dcdd090606f1993b9dff5f533f29a00b7bd69ba7df0f39820"
+    "en": "49df710f38ea7bd638d23a2a65bb98e78544475ddd9664e4eb58b2257568fd4f",
+    "zh-Hant": "07d350b4692a78eae0839afe1652a46e85e0fd10b13c1c104c4cabbf994d0134"
   }
 }

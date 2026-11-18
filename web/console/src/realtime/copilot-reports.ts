@@ -48,8 +48,8 @@ export function relativeSession(text:string):number|'last'|undefined {
 }
 export function sameReference(ref:SessionReference,row:SessionReference){return ref.id===row.id&&ref.label===row.label&&(ref.machine??'')===(row.machine??'')&&(ref.conversation??'')===(row.conversation??'')}
 export function remainingReport(text:string){return /(?:其他|其餘|其余|剩下|還沒|还没).*(?:session|station)|(?:session|station).*(?:其他|其餘|其余|剩下|還沒|还没)/i.test(text)}
-/** These short utterances continue presentation only, never background work or a write. */
-export function nextReport(text:string){return /^(?:(?:請|请|那|還有|还有)[，,、 ]*)?(?:其他(?:的)?|下一批|下一段|後面|后面|接下來|接下来)(?:的)?(?:呢|咧)?[？?。.! ]*$|^(?:(?:the )?next(?: batch| sessions?)?|what comes next|(?:what about )?(?:the )?others)[?!. ]*$/i.test(text.trim())}
+/** Complete requests and short next commands control presentation, never work or writes. */
+export function nextReport(text:string){return /^(?:我(?:是)?說[，, ]*)?(?:請|请|麻煩|麻烦)?(?:你)?(?:去)?(?:介紹|介绍|報告|报告|說明|说明|講|讲|說|说)(?:一下)?[ ]*(?:其他|其餘|其余|剩下)[ ]*(?:的[ ]*)?(?:sessions?|工作階段)(?:[ ]*(?:現在|现在)?(?:在(?:做什麼|做什么|幹嘛|干嘛)|(?:的)?(?:進度|进度|狀況|情况|狀態|状态)))?[。！!？? ]*$|^(?:please )?(?:introduce|describe|report on|tell me about) (?:the )?(?:other|remaining|next) sessions?(?: now)?[.!? ]*$/i.test(text.trim())||/^(?:(?:請|请|那|還有|还有)[，,、 ]*)?(?:其他(?:的)?|下一批|下一段|後面|后面|接下來|接下来)(?:的)?(?:呢|咧)?[？?。.! ]*$|^(?:(?:the )?next(?: batch| sessions?)?|what comes next|(?:what about )?(?:the )?others)[?!. ]*$/i.test(text.trim())}
 export function continueReport(text:string){return nextReport(text)||/^(?:(?:請|请|好|好的|那|可以)[，,、 ]*)?(?:繼續|继续)(?:報告|报告|介紹|介绍|說|说|講|讲|下一段|下一批)?[。.! ]*$|^(?:please )?continue(?: (?:the )?(?:session )?report)?[.! ]*$/i.test(text.trim())}
 
 
@@ -120,7 +120,10 @@ export class SessionReportQueue {
  hasReport(){return !!this.page}
  hasPending(){return !!this.page&&!this.page.error&&(this.waiting||this.loading||!!this.next||this.rest.length>0)}
  resume(){if(!this.page||!this.hasPending())return false;this.paused=false;this.unconfirmed=false;if(this.waiting&&!this.presenting){this.presenting=true;this.say?.(this.page)}else if(!this.waiting)this.advance();return true}
- played(refs:SessionReference[]){
+ current(){const row=this.page?.sessions?.[0];return row?{id:row.session_id,label:row.label}:undefined}
+ skip(ref:SessionReference){this.consume([ref])}
+ played(refs:SessionReference[]){this.consume(refs)}
+ private consume(refs:SessionReference[]){
   if(!this.page?.sessions?.length)return
   const remaining=this.page.sessions.filter(row=>!refs.some(ref=>ref.id===row.session_id&&ref.label===row.label))
   if(remaining.length===this.page.sessions.length)return
@@ -142,4 +145,4 @@ export class SessionReportQueue {
 }
 export const SESSION_REPORT_GUIDANCE=`Explain only the supplied Session batch, at most two Sessions in this response. Every Session in a batch belongs to the same Project, given as project. Begin by saying in one short sentence which Project these Sessions belong to (for example 「接下來是 clawdline 這個 Project 的 Session」), then report them; when project is empty, say these Sessions have no Project. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Sessions waiting for the person are supplied first. Explain their current question and unresolved Notes before ordinary progress, and never treat an old recap or delivery as fresh approval. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance.`
 
-export function sessionReportGuidance(language=''){return /^zh(?:-|$)/i.test(language)?'只介紹這次提供的 Session，依相同 Project 的順序，每個用兩到四句日常口語說明目的、進展、現在狀況及真正待決事項。先說 Project，再說提供的完整名稱一次。程式會預讀下一批，並逐項交給你；只說目前這一項，不重複前面已報告的內容，不介紹還沒讀到的項目，不在每批後面反問。插話先停；接續時只補尚未說完的部分。下一批、後面呢、其他的呢、繼續報告表示介紹接續，不是開始背景工作或核准變更。無法讀取或尚未準備好時如實說明，不假裝已完成。':SESSION_REPORT_GUIDANCE+' The application supplies one narration item at a time within each read batch. Explain only that item. Continue after the already-said text without repeating it. Next batch, what comes next, the others and continue the report resume presentation only, never background work or action approval.'}
+export function sessionReportGuidance(language=''){return /^zh(?:-|$)/i.test(language)?'只介紹這次提供的 Session，依相同 Project 的順序，每個用兩到四句日常口語說明目的、進展、現在狀況及真正待決事項。先說 Project，再說提供的完整名稱一次。程式會預讀下一批，並逐項交給你；只說目前這一項，不重複前面已報告的內容，不介紹還沒讀到的項目，不在每批後面反問。插話先停；接續時只補尚未說完的部分。明確要求介紹其他 Session、下一批或後面時，跳過被打斷的項目；說繼續報告則接續尚未說完的內容。跳過不代表已聽完，也不是開始背景工作或核准變更。無法讀取或尚未準備好時如實說明，不假裝已完成。':SESSION_REPORT_GUIDANCE+' The application supplies one narration item at a time within each read batch. Explain only that item. Continue after the already-said text without repeating it. Explicit requests for other or next Sessions move past the interrupted item without claiming it was fully heard; continue the report resumes the unfinished item. Both control presentation only, never background work or action approval.'}
