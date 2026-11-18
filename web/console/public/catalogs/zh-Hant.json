@@ -13283,5 +13283,15 @@
   "next.copilotCallUsageUnpriced": "{duration} · 至少 {cost}",
   "next.copilotHistoryBoards": "讀取 Session 留言板",
   "capacityRow.bots.archive_bytes.what": "離線還原 Bot 時，可在解析及建立目標前接受的封存檔大小上限。",
-  "capacityRow.bots.archive_bytes.full": "超過上限會拒絕讀取，不建立還原目標。"
+  "capacityRow.bots.archive_bytes.full": "超過上限會拒絕讀取，不建立還原目標。",
+  "capacityRow.bots.server_definitions.what": "這個來源保存的開發伺服器定義數量，包含已停止的伺服器。",
+  "capacityRow.bots.server_definitions.full": "達上限後拒絕新定義；可明確移除已停止的項目以騰出空間。",
+  "capacityRow.bots.server_processes.what": "這個來源仍在執行或清理結果不明的受管理開發伺服器。",
+  "capacityRow.bots.server_processes.full": "既有擁有者確認清理完成前，達上限時不啟動另一個程序。",
+  "capacityRow.bots.server_spec_bytes.what": "核閱與啟動時接受的完整命令、名稱及目錄資料大小。",
+  "capacityRow.bots.server_spec_bytes.full": "超過上限會拒絕，不截短內容，也不執行命令。",
+  "capacityRow.bots.server_log_bytes.what": "每次開發伺服器執行保留的最新輸出。",
+  "capacityRow.bots.server_log_bytes.full": "捨棄較舊輸出，並在回覆標明保留的尾端紀錄不完整。",
+  "capacityRow.bots.server_caller_receipts.what": "一個仍有效的來源自有執行所保留的變更操作收據。",
+  "capacityRow.bots.server_caller_receipts.full": "達上限後拒絕後續變更，既有與結果不明的收據繼續保留。"
 }

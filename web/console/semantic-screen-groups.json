@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13283,
-  "riskKeys": 5728,
-  "nonRiskCount": 7555,
+  "englishContentKeys": 13293,
+  "riskKeys": 5735,
+  "nonRiskCount": 7558,
   "groups": [
     {
       "name": "acp / other",
@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 688,
+      "count": 691,
       "sources": [
         null
       ],
@@ -639,6 +639,9 @@
         "capacityRow.bots.rpc_ms.what",
         "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
+        "capacityRow.bots.server_caller_receipts.what",
+        "capacityRow.bots.server_log_bytes.what",
+        "capacityRow.bots.server_processes.what",
         "capacityRow.bots.skill_asset_files.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",

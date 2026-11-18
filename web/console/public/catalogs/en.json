@@ -13283,5 +13283,15 @@
   "next.copilotCallUsageUnpriced": "{duration} · at least {cost}",
   "next.copilotHistoryBoards": "Read Session message boards",
   "capacityRow.bots.archive_bytes.what": "Largest offline Bot recovery archive accepted before parsing or creating a destination.",
-  "capacityRow.bots.archive_bytes.full": "A larger archive is refused; the destination is not created."
+  "capacityRow.bots.archive_bytes.full": "A larger archive is refused; the destination is not created.",
+  "capacityRow.bots.server_definitions.what": "Saved development-server definitions on this source, including stopped servers.",
+  "capacityRow.bots.server_definitions.full": "New definitions are refused at the limit; explicitly remove a stopped definition to make room.",
+  "capacityRow.bots.server_processes.what": "Live or unresolved managed development-server attempts on this source.",
+  "capacityRow.bots.server_processes.full": "Another process is refused until an existing owner is proven clean.",
+  "capacityRow.bots.server_spec_bytes.what": "Complete command, name and directory metadata admitted for review and launch.",
+  "capacityRow.bots.server_spec_bytes.full": "Oversized metadata is refused without truncation or execution.",
+  "capacityRow.bots.server_log_bytes.what": "Latest output retained for one development-server run.",
+  "capacityRow.bots.server_log_bytes.full": "Older output is discarded; the reply reports that the retained tail is incomplete.",
+  "capacityRow.bots.server_caller_receipts.what": "Mutation receipts retained by one live source-owned calling execution.",
+  "capacityRow.bots.server_caller_receipts.full": "Further mutations are refused; earlier and uncertain receipts are retained."
 }

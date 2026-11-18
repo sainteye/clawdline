@@ -408,3 +408,34 @@ do not establish a crash-recovered process handle. Production registry/slot
 admission, exact command approval, bounded logs, persistent process-generation
 recovery and Host/tool/API wiring remain separate. An interrupted attempt is
 unknown until those facts can be reconciled, never an instruction to restart.
+
+### Isolated server registry and calling receipts
+
+The application registry now owns a bounded set of command definitions and
+independent process slots. Admission counts unresolved owners as occupied;
+inspection after restart converts interrupted receipts to unknown observations
+without executing, adopting or erasing anything. Concurrent starts of the same
+complete command identity share one owner. Keeping an active server does not
+request a new command approval. A restart is a new explicit attempt, and stop,
+log and removal controls bind that exact attempt so an old control cannot act
+on a later run. A delayed cleanup notification can release only its own slot.
+Only a proven terminal attempt can have its definition removed.
+
+Each run retains a bounded output tail with explicit truncation and UTF-8
+projection. A reopened historical run reports lost output rather than an
+invented complete empty log. Source-authorized calling executions also retain
+bounded mutation receipts, including no-op and uncertain results. Identical
+concurrent requests share one reply; changed payloads conflict, and saturation
+refuses a new mutation without evicting an uncertain result. Current authority
+is checked before returning cached content as well as before mutation. The
+transport must still enforce its source publication/Forget fence.
+
+These are injected application ports tested with a synthetic catalog and
+processes. The SQLite attempt ledger is real, but its atomic definition/current-
+attempt catalog integration is not implemented by this registry unit. The
+production Host, exact approval UI, source environment, native tools, paired
+controls and crash-recovered process handles remain unwired. Capacity rows,
+both snapshots and bilingual explanations are registered; a fresh uninstalled
+source has no allocation, while installed Host server occupancy remains
+explicitly unavailable until composition supplies it. No outward API level,
+Bot format, maintenance writer or deployed capability changes here.

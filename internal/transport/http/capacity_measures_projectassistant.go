@@ -48,6 +48,10 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		_, installed := usage()
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
+	serverUnobserved := func() capacity.Reading {
+		_, installed := usage()
+		return capacity.Reading{Known: !installed, Note: "no source runtime allocation before installation; installed Host does not expose source-local server occupancy"}
+	}
 	reviews := func(sender bool) func() capacity.Reading {
 		return func() capacity.Reading {
 			p := &s.projectAssistants
@@ -69,6 +73,11 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.server_definitions":     serverUnobserved,
+		"bots.server_processes":       serverUnobserved,
+		"bots.server_spec_bytes":      pure,
+		"bots.server_log_bytes":       serverUnobserved,
+		"bots.server_caller_receipts": serverUnobserved,
 		"bots.archive_bytes": func() capacity.Reading {
 			return capacity.Unmeasured("offline CLI input is not retained or observed by the daemon")
 		},
