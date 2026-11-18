@@ -528,7 +528,60 @@ checks include live and forgotten notes, complete re-export equality, typed
 refusals, existing targets/sidecars, cancellation and concurrent publication.
 These source-level CLI checks do not qualify an installed binary, updater
 rollback, production Cloud reading or the unchanged older binaries that have no
-archive-input command. A fixed source commit and actual binary fingerprint
-still need independent qualification before any new-format writer is considered.
-No API number or archive generation is allocated by this entry point; durable
-Host maintenance writers remain closed.
+archive-input command. The subsequent independent binary qualification below
+adds evidence for specific reader/data chains without qualifying updater rollback
+or every historical binary. No API number or archive generation is allocated by
+this entry point; durable Host maintenance writers remain closed.
+
+### Independent archive binary qualification
+
+The fixed reader source is `a3b7b1decc08b2ec95b6406d245b615c736d1645`.
+Its actual darwin/arm64 CLI is 46,073,506 bytes with SHA-256
+`ba71240fe78eea5f94b0a42801d2a5f9ef765f3affcfb78feff455a30c47e5a7`.
+An independent runner used immutable synthetic input copies and the real
+`90c7c21fd45a8f1d2efb6aecc7f4692637d874e8` and
+`7654eff35a9a238086d7e73fb3305707748b0dda` binaries, rather than modifying an
+old binary to add an archive entry point. Its selected final chains establish:
+
+- The frozen schema-1 producer archive restores with its original manifest;
+  messages, turns, memories and receipts survive a complete re-export comparison.
+- A real HTTP write through the old core-11 binary survives the candidate opening
+  and migrating an isolated database copy, exporting/restoring it through the
+  actual CLI and reopening it with the core-12 comparison binary. The offline
+  export command itself still refuses a core-11 database; direct daemon opening
+  is a distinct migration step, not a new offline-reader capability.
+- Real core-12 live and forgotten topic notes survive archive restoration and
+  reopening with the comparison binary. Forgotten notes are absent from the live
+  index and return 404 on detail reads; title, summary and body are cleared.
+  Source identifiers, scope and revision remain as tombstone provenance. A new
+  command key cannot resurrect the forgotten ID, while a different new fact can
+  be saved and subsequently read by the candidate.
+- The old core-11 binary refuses a core-12 feature schema, with the complete Bot
+  archive unchanged. This is a feature-data comparison, not a claim that the
+  daemon left every SQLite service-schema or shared-memory byte unchanged.
+
+These conclusions use the runner's final `old-pipeline-3`, `current-pipeline-5`,
+`offline-legacy-seatbelt` and `offline-current-v3` chains. The retained matrix has
+674 rows and 380 assertions, including 21 historical false assertions from
+setup and corrected test assumptions. The runner records a failed assertion
+without necessarily raising, so process exit zero or a successful task alone
+cannot establish that every assertion passed. Failed history stays available;
+it is not relabelled as green by the final chains. Postflight checked the 536
+incoming files against their manifest and observed cleanup of all 29 launched
+processes and listening ports.
+
+The designated `61f3c1065807439c2968c63acf4b61b029df3c4c` reader still lacks
+an independently verified binary. The available `7654eff35` comparison is not
+its substitute. Actual updater installation, service switching and failed-update
+rollback still need a matching signed update bundle and an isolated rollback
+environment. Older binaries without an archive-input command keep that explicit
+qualification gap; it is not repaired retroactively by this reader. No original
+positive-control state was reopened, no production database was replaced, and
+no native model or voice request was needed for these binary/data checks.
+
+This qualification does not admit a new-format writer or complete durable Host
+maintenance, Claude native-memory qualification, continuous calls, editable
+handoff cards or managed dev servers. See [remaining runtime construction](project-assistants-runtime.md#remaining-codync-runtime-construction)
+for those separate ownership and failure boundaries. Cloud document reading,
+production UI, running dev version and public Release acceptance each need
+their own evidence.

@@ -315,3 +315,39 @@ person's next message as before.
 ## Darwin lifecycle preservation acceptance
 
 [CI run 43752755054](https://github.com/sainteye/clawdline/actions/runs/43752755054) failed `TestHostLazySendDisablePreservesUnknownAndExistingHostWork` while the real SQLite cleanup used the fixture's 100 ms deadline. The functional case now uses the registered 5,000 ms production cleanup budget. Its checks still require the interrupted turn to remain unknown, the queued turn to become cancelled, and the existing host work to survive. Dedicated short-deadline and failed-cleanup cases retain their original limits and verify that unresolved resources prevent re-enable. The focused preservation, late-open and failure-injection cases passed locally; the exact repaired main still requires CI acceptance.
+
+
+## Remaining Codync runtime construction
+
+This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
+against the pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
+It distinguishes existing components from the product behavior they do not yet
+provide. It is not a production UI or installed-binary acceptance receipt.
+
+Templates (`project-assistants-templates.md`), message reactions, pinned/Project
+roster sections and mark-all-read already have implementations. They must not
+be rewritten or described as wholly missing because their Board step also
+contains other features. Current source boundaries are:
+
+| Behavior | Existing source | Remaining construction and verification |
+| --- | --- | --- |
+| Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
+| Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
+| Bot-owned dev server | `internal/adapters/devstack` reads declarations and probes ports; the Project devstack HTTP route accepts GET only. | A separately owned command/process tree, approved command and directory, start/list/stop/log operations and durable outcomes are missing. Test turn completion, concurrent start/stop, deleted Bot, revoked source, Host restart and lost acknowledgement. Stop only a verified owned process generation; do not inherit provider credentials or expose arbitrary repository commands through the read route. |
+| Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
+
+The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
+`docs/features/voice-call.md`, `host/tests/calls_e2e.rs` and
+`docs/features/dev-servers.md`. Their data ownership and observable behavior
+are the comparison, rather than their constants, platform assumptions or exact
+UI implementation. In particular, a dev server is independent of an Agent turn
+but still runs code with the source machine's authority; a port probe does not
+establish an owned process or a safe command-start operation. The retired Swift
+DevStack commands are not current Go capabilities.
+
+Construction and destination acceptance remain separate. A completed source
+unit does not complete a grouped step while the other behaviors in that group
+are absent. The archive reader's independent qualification and remaining recovery
+gaps are recorded in [memory and settings](project-assistants-memory-settings.md#independent-archive-binary-qualification).
+No new API level, archive generation or maintenance writer is enabled by this
+audit.
