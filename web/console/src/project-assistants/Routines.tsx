@@ -9,7 +9,7 @@ import {cleanRoutineTrigger,isHookTrigger,newRoutineTrigger as blankTrigger,rout
 import {performRoutineHook,routineScopeIdentity} from "./routine-hook-intent"
 import {RoutineHook} from "./RoutineHook"
 import {routineWord as tr} from "./routine-words"
-type Props={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;w:Words;onClose:()=>void;storageKey:string}
+type Props={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;w:Words;onClose:()=>void;storageKey:string;embedded?:boolean}
 
 export function Routines(props:Props) {
   const capture=useRef({source:props.source,epoch:0})
@@ -26,7 +26,7 @@ function RoutineTriggerSummary({trigger:t,w}:{trigger:W.ProjectAssistantRoutineT
   return <p>{t.type}</p>
 }
 
-function RoutinePanel({source,bot,enabled,w,onClose,storageKey}:Props) {
+function RoutinePanel({source,bot,enabled,w,onClose,storageKey,embedded=false}:Props) {
   const [page,setPage]=useState<W.ProjectAssistantRoutineListResponse|null>(null),[editing,setEditing]=useState<W.ProjectAssistantRoutineDefinition|null|undefined>(undefined)
   const [name,setName]=useState(""),[instruction,setInstruction]=useState(""),[triggers,setTriggers]=useState<W.ProjectAssistantRoutineTrigger[]>([blankTrigger()]),[timeout,setTimeout]=useState(3600),[active,setActive]=useState(true)
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{id:string;page:W.ProjectAssistantRoutineListResponse}|null>(null),[confirm,setConfirm]=useState<string|null>(null),[held,setHeld]=useState<Intent|null>(null),[journalBlocked,setJournalBlocked]=useState(false)
@@ -103,11 +103,11 @@ function RoutinePanel({source,bot,enabled,w,onClose,storageKey}:Props) {
     void run({action:kind,request})
   }
   const refresh=async()=>{setBusy(true);try{await load();if(history)await load(history.id);setError("")}catch(e){setError(errorCode(e))}finally{setBusy(false)}}
-  return <section ref={panel} className="pa-card pa-routines" aria-label={w.routines}>
-    <header className="pa-toolbar"><h3 tabIndex={-1}>{w.routines}</h3><button type="button" onClick={onClose}>{w.close}</button></header>
-    <p>{w.routineHint}</p>
+  return <section ref={panel} className={embedded?"pa-routines pa-routines-embedded":"pa-card pa-routines"} aria-label={w.routines}>
+    {!embedded&&<header className="pa-toolbar"><h3 tabIndex={-1}>{w.routines}</h3><button type="button" onClick={onClose}>{w.close}</button></header>}
+    <p className="pa-routines-hint">{w.routineHint}</p>
     {!supported?<p role="status">{w.routinesUnsupported}</p>:<>
-      <div className="pa-toolbar"><button type="button" disabled={!writable||busy} onClick={()=>edit(null)}>{w.routineNew}</button><button type="button" disabled={busy} onClick={()=>void refresh()}>{w.routineRefresh}</button></div>
+      <div className="pa-toolbar pa-routines-actions"><button type="button" disabled={!writable||busy} onClick={()=>edit(null)}>{w.routineNew}</button><button type="button" disabled={busy} onClick={()=>void refresh()}>{w.routineRefresh}</button></div>
       {!page&&!error&&<p role="status">{w.loading}</p>}
       {page&&page.definitions.length===0&&<p>{w.routinesEmpty}</p>}
       {page?.definitions.filter(d=>!d.follow_up).map(d=><article className="pa-routine" key={d.id}>

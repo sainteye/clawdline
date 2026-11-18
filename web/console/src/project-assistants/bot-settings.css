@@ -7,7 +7,12 @@
 .project-assistants .pa-settings-instructions textarea { width:100%;min-height:96px;resize:vertical;font-weight:400; }
 .project-assistants .pa-settings-hint { color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-settings-disclosure { border:1px solid var(--pa-line);border-radius:12px;min-width:0; }
-.project-assistants .pa-settings-disclosure>summary { cursor:pointer;padding:12px;overflow-wrap:anywhere; }
+.project-assistants .pa-settings-disclosure>summary { display:grid;grid-template-columns:minmax(0,1fr) 14px;align-items:center;column-gap:12px;cursor:pointer;padding:14px 12px;min-height:48px;list-style:none;overflow-wrap:anywhere; }
+.project-assistants .pa-settings-disclosure>summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-settings-disclosure>summary::marker { content:""; }
+.project-assistants .pa-settings-disclosure>summary strong,.project-assistants .pa-settings-disclosure>summary span { grid-column:1;min-width:0; }
+.project-assistants .pa-settings-disclosure>summary>.pa-settings-chevron { grid-column:2;grid-row:1 / span 2;justify-self:end;flex:none;color:var(--pa-dim);transition:transform .15s; }
+.project-assistants .pa-settings-disclosure[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
 .project-assistants .pa-settings-disclosure>summary strong { font-size:13px;font-weight:550; }
 .project-assistants .pa-settings-disclosure>summary span { display:block;color:var(--pa-dim);font-size:12px;margin-top:3px; }
 .project-assistants .pa-settings-disclosure-body { display:flex;flex-direction:column;gap:10px;padding:0 12px 12px;min-width:0; }
@@ -27,3 +32,13 @@
 .project-assistants .pa-settings-part:not([hidden]) { display:flex;flex-direction:column;gap:12px;min-width:0; }
 .project-assistants .pa-settings-editor label,.project-assistants .pa-settings-editor .pa-settings-hint { margin:0; }
 .project-assistants .pa-settings-editor .pa-settings-hint { line-height:1.5; }
+
+.project-assistants .pa-routines-toggle { display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:12px 0;border:0;border-radius:0;background:transparent;text-align:start;font-weight:600; }
+.project-assistants .pa-routines-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
+.project-assistants .pa-routines-embedded { padding:0 0 20px; }
+.project-assistants .pa-routines-hint { line-height:1.65;color:var(--pa-dim);margin-bottom:16px; }
+.project-assistants .pa-routines .pa-routines-actions { justify-content:flex-start;align-items:stretch;gap:10px;margin-bottom:16px; }
+.project-assistants .pa-routines-actions button { min-height:44px;font-size:13px;text-align:start; }
+@media(max-width:420px) {
+  .project-assistants .pa-routines .pa-routines-actions { display:grid;grid-template-columns:minmax(0,1fr); }
+}
