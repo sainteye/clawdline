@@ -25,7 +25,12 @@ func configuredProvider(t *testing.T, agent pa.Agent, mode string) (*Provider, a
 	path := filepath.Join(t.TempDir(), "session-request.json")
 	cfg := peerConfiguration(t, mode)
 	cfg.Environment = append(cfg.Environment, "CLAWDLINE_ACP_PARAMS_FILE="+path)
-	p, err := NewProvider(ProviderOptions{Limits: testLimits(), Configurations: map[pa.Agent]Configuration{agent: cfg}, Verify: func(context.Context, pa.Bot, Configuration) (pa.Capabilities, error) {
+	limits, native := testLimits(), nativeLimits()
+	// Exercise the real supervisor at its installed census cadence and cleanup
+	// budget. Tests that inject deadline faults supply their own bounds.
+	limits.DescendantPoll = native.DescendantPoll
+	limits.CleanupTimeout = native.CleanupTimeout
+	p, err := NewProvider(ProviderOptions{Limits: limits, Configurations: map[pa.Agent]Configuration{agent: cfg}, Verify: func(context.Context, pa.Bot, Configuration) (pa.Capabilities, error) {
 		return pa.Capabilities{Key: fence.Key, Project: fence.Project, Agent: agent, CLIVersion: "scripted", AdapterVersion: "scripted", Evidence: "scripted only; no native readiness", ReadOnlyEnforced: true, NativeMemory: pa.NativeMemoryDisabled, NativeMemoryVerified: true, Resume: true, SendMessage: true}, nil
 	}})
 	if err != nil {

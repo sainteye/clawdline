@@ -3,6 +3,7 @@
 package projectassistantacp
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 
@@ -11,7 +12,9 @@ import (
 
 func absoluteExecutable(path string) bool { return filepath.IsAbs(path) }
 func configureProcess(*exec.Cmd) error    { return refusal(pa.SandboxUnavailable, "process_supervisor") }
-func (p *Process) captureOwned()          {}
-func (p *Process) signalOwned(bool) error {
+func (p *Process) captureOwned(context.Context) ([]processIdentity, error) {
+	return nil, refusal(pa.SandboxUnavailable, "process_supervisor")
+}
+func (p *Process) signalOwned(context.Context, []processIdentity, bool) error {
 	return refusal(pa.SandboxUnavailable, "process_supervisor")
 }

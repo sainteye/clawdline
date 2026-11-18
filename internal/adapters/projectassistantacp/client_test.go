@@ -39,13 +39,6 @@ func TestACPTestPeer(t *testing.T) {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
-	if mode == "descendant" {
-		cmd := exec.Command("/usr/bin/python3", "-c", "import os,time; os.setsid(); open(os.environ['CLAWDLINE_ACP_PID_FILE'],'w').write(str(os.getpid())); time.sleep(120)")
-		cmd.Env = os.Environ()
-		if err := cmd.Start(); err != nil {
-			os.Exit(2)
-		}
-	}
 	if mode == "stderr" {
 		fmt.Fprint(os.Stderr, strings.Repeat("x", 8192))
 	}
