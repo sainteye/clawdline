@@ -9698,6 +9698,8 @@
   "next.sessionBoardMemberCount": "Members · {count}",
   "next.sessionBoardShowPost": "Read full message",
   "next.sessionBoardHidePost": "Collapse message",
+  "next.sessionBoardsLoading": "Reading message boards…",
+  "next.sessionBoardMessagesLoading": "Reading messages…",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

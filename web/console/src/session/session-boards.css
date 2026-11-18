@@ -66,7 +66,7 @@
 .session-board-heading-purpose[open] span { max-height: 5lh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .session-board-heading-purpose .session-board-chevron { width: 13px; height: 13px; }
 .session-board-heading-purpose[open] .session-board-chevron { transform: rotate(-90deg); }
-.session-board-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.session-board-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .session-board-body { padding: 12px 14px 16px; }
 .session-board-dialog button {
   min-height: 36px; border: 1px solid var(--line); border-radius: 8px;
@@ -175,4 +175,9 @@
   .session-board-dialog .session-board-icon-button { width: 44px; }
   .session-board-dialog input, .session-board-dialog textarea { font-size: 16px; }
   .session-board-dock { width: 36px; height: 42px; }
+}
+
+@media (width > 700px) {
+  .session-board-reader { height: min(30rem, 90dvh); }
+  .session-board-reader[data-expanded="true"] { height: 97dvh; }
 }
