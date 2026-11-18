@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -69,7 +72,67 @@ func TestGroupComposerViewportBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_GROUP_LAYOUT_ARTIFACTS and PLAYWRIGHT_MODULE")
 	}
-	f := newGroupHTTPFixture(t)
+	runGroupComposerViewportBrowser(t, dir, "")
+}
+
+// Terminal outcomes stay different in the stored member turns even though
+// none of them produces a member answer. The room must not silently vanish
+// into an idle transcript or present a synthetic answer under a Bot's name.
+func TestGroupNoReplyVisibleBrowser(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_GROUP_NO_REPLY_ARTIFACTS")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_GROUP_NO_REPLY_ARTIFACTS and PLAYWRIGHT_MODULE")
+	}
+	for _, outcome := range []string{"pass", "failed", "offline", "denied"} {
+		t.Run(outcome, func(t *testing.T) { runGroupComposerViewportBrowser(t, filepath.Join(dir, outcome), outcome) })
+	}
+}
+
+type noReplyRoomProvider struct {
+	*routineHumanProvider
+	outcome string
+}
+
+func (p *noReplyRoomProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	if p.outcome == "offline" {
+		return nil, &pa.Failure{Code: pa.Offline, Field: "synthetic_provider"}
+	}
+	if p.outcome == "denied" {
+		return nil, &pa.Failure{Code: pa.ScopeDenied, Field: "synthetic_provider"}
+	}
+	inner, err := p.routineHumanProvider.Open(ctx, q, sink)
+	return &noReplyRoomSession{ProviderSession: inner, outcome: p.outcome}, err
+}
+
+type noReplyRoomSession struct {
+	app.ProviderSession
+	outcome string
+}
+
+func (s *noReplyRoomSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	pending, err := s.ProviderSession.Send(ctx, q)
+	return &noReplyRoomPrompt{PendingPrompt: pending, outcome: s.outcome}, err
+}
+
+type noReplyRoomPrompt struct {
+	app.PendingPrompt
+	outcome string
+}
+
+func (p *noReplyRoomPrompt) Wait(context.Context) (app.PromptResult, error) {
+	if p.outcome == "failed" {
+		return app.PromptResult{}, fmt.Errorf("synthetic connection lost after send")
+	}
+	return app.PromptResult{FinalText: pa.RoomPass}, nil
+}
+
+func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
+	t.Helper()
+	var providers []app.Provider
+	if outcome != "" {
+		providers = append(providers, &noReplyRoomProvider{routineHumanProvider: &routineHumanProvider{}, outcome: outcome})
+	}
+	f := newGroupHTTPFixture(t, providers...)
 	f.create(t)
 	for i := 0; i < 12; i++ {
 		status, body := f.request(t, http.MethodPost, "/v1/project-assistants/rooms/groups/room/messages", "person", contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, fmt.Sprintf("layout-%d", i)), Text: fmt.Sprintf("Synthetic discussion %d — retain the original text 👍", i)})
@@ -86,6 +149,9 @@ func TestGroupComposerViewportBrowser(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "node", "--input-type=module", "-e", groupComposerViewportScript)
 	cmd.Dir = "../../../web"
 	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+f.server.URL, "BOTS_ARTIFACTS="+dir)
+	if outcome != "" {
+		cmd.Env = append(cmd.Env, "BOTS_EXPECT_NO_REPLY=1")
+	}
 	out, err := cmd.CombinedOutput()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
@@ -95,6 +161,53 @@ func TestGroupComposerViewportBrowser(t *testing.T) {
 		t.Fatalf("group composer viewport: %v\n%s", err, out)
 	}
 	t.Log(string(out))
+	if outcome != "" {
+		f.rooms.Idle()
+		var diagnostics []map[string]string
+		for _, bot := range f.bots[:2] {
+			exported, err := f.repo.Export(t.Context(), bot.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(exported.Turns) == 0 {
+				t.Fatal("fixture produced no member turns")
+			}
+			foundDiagnosis := false
+			wantCode := map[string]pa.ErrorCode{"failed": pa.OutcomeUnknown, "offline": pa.Offline, "denied": pa.ScopeDenied}[outcome]
+			for _, turn := range exported.Turns {
+				var code pa.ErrorCode
+				if turn.Failure != nil {
+					code = turn.Failure.Code
+				}
+				diagnostics = append(diagnostics, map[string]string{"member": bot.Name, "state": string(turn.State), "code": string(code)})
+				// A later room request can be refused by the existing unknown-effect
+				// barrier. Preserve that refusal rather than relabeling it as pass.
+				if outcome == "pass" && (turn.State != pa.TurnSucceeded || turn.Failure != nil) || outcome != "pass" && (turn.Failure == nil || turn.State != pa.TurnUnknown && turn.State != pa.TurnFailed || code != wantCode && code != pa.ExecutionEffectUnknown) {
+					t.Fatalf("%s lost its distinct terminal diagnosis: %+v", outcome, turn)
+				}
+				foundDiagnosis = foundDiagnosis || code == wantCode
+			}
+			if outcome != "pass" && !foundDiagnosis {
+				t.Fatalf("%s lost its original failure code %s", outcome, wantCode)
+			}
+			if outcome == "pass" {
+				found := false
+				for _, message := range exported.Messages {
+					found = found || message.Kind == pa.AssistantMessage && strings.TrimSpace(message.Text) == pa.RoomPass
+				}
+				if !found {
+					t.Fatal("the real pass was lost from the member conversation")
+				}
+			}
+		}
+		data, err := json.MarshalIndent(diagnostics, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(dir, "member-diagnostics.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 const groupComposerViewportScript = `
@@ -139,10 +252,15 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
   try{
    await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await click(page.locator('[data-group-key]').first())
    const room=page.locator('.pa-room-layout'),text=room.locator('textarea'),send=room.locator('.pa-send')
-   await room.locator('[data-room-seq]').last().waitFor();await text.fill('Synthetic reply 👍')
+   await room.locator('[data-room-seq]').last().waitFor()
+   if(process.env.BOTS_EXPECT_NO_REPLY){await room.locator('.pa-room-unanswered').waitFor();assert.match(await room.locator('.pa-room-unanswered').innerText(),/目前沒有成員回覆/);assert.equal(await room.locator('.pa-room-author').count(),0);assert.equal(await room.locator('.pa-room-unanswered').getAttribute('role'),'status')}
    await page.waitForFunction(()=>document.querySelector('.pa-window').getAnimations().every(a=>a.playState==='finished'))
    const inspect=async(state)=>{await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const observation=await room.evaluate(el=>{const rect=n=>n.getBoundingClientRect().toJSON(),text=el.querySelector('textarea'),send=el.querySelector('.pa-send'),scroll=el.querySelector('.pa-chat-scroll'),last=el.querySelector('[data-room-seq]:last-child'),footer=document.querySelector('.pa-status-bar'),checks=footer.querySelector('.pa-source-checks'),hit=n=>{const r=n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};return {room:rect(el),text:rect(text),send:rect(send),scroll:rect(scroll),last:rect(last),footer:rect(footer),checks:checks?rect(checks):null,viewport:{height:visualViewport.height,top:visualViewport.offsetTop,width:visualViewport.width},textHit:hit(text),sendHit:hit(send),following:Math.abs(scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight)<=1}});results.push({tag,state,...observation});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});{assert.ok(observation.textHit&&observation.sendHit,JSON.stringify(observation));assert.ok(observation.send.bottom<=observation.viewport.height+observation.viewport.top+1);assert.ok(observation.last.bottom<=observation.scroll.bottom+1,'last message clipped while following');assert.ok(observation.following,'resize released bottom following')}}
-   await inspect('collapsed')
+   const fieldMetrics=async(state)=>{const value=await text.evaluate(el=>{const form=el.closest('form'),mirror=form.querySelector('.pa-editor-mirror'),send=form.querySelector('.pa-send'),r=el.getBoundingClientRect(),f=form.getBoundingClientRect(),m=mirror.getBoundingClientRect(),b=send.getBoundingClientRect(),s=getComputedStyle(el),mstyle=getComputedStyle(mirror);return {value:el.value,leftInset:r.left-f.left+parseFloat(s.paddingLeft),rightInset:b.left-r.right+parseFloat(s.paddingRight),lineHeight:parseFloat(s.lineHeight),padding:[s.paddingTop,s.paddingRight,s.paddingBottom,s.paddingLeft],mirrorPadding:[mstyle.paddingTop,mstyle.paddingRight,mstyle.paddingBottom,mstyle.paddingLeft],height:r.height,mirrorHeight:m.height,singleLineCenter:r.top+parseFloat(s.paddingTop)+parseFloat(s.lineHeight)/2,sendCenter:b.top+b.height/2}});results.push({tag,state,...value});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});if(!baseline){assert.ok(value.leftInset>=14,'text/caret too close to rounded left edge: '+JSON.stringify(value));assert.ok(value.rightInset>=14,'text/caret too close to send button');assert.deepEqual(value.padding,value.mirrorPadding,'measurement differs from editable content');if(!value.value.includes('\n'))assert.ok(Math.abs(value.singleLineCenter-value.sendCenter)<=2,'single line and send are not centered')}}
+   await text.fill('');await fieldMetrics('empty')
+   await text.fill('嗨，大家好 👍');await fieldMetrics('filled')
+   await text.fill('第一行：群聊問候\n第二行：保留多行與游標\n第三行：確認文字不會貼邊');await fieldMetrics('multiline');await inspect('multiline-viewport')
+   await text.fill('Synthetic reply 👍');await inspect('collapsed')
    if(width<700){
     // Start from a genuinely unfocused input, then replay the client/document
     // geometry captured from the iOS soft-keyboard pan (pageTop === scrollY,
@@ -157,10 +275,11 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    assert.equal(await room.locator('.pa-room-reply').last().innerText(),'回覆')
    await click(room.locator('.pa-room-reply').last());await room.locator('.pa-room-draft-quote').waitFor();await page.waitForFunction(()=>document.activeElement===document.querySelector('.pa-room-layout textarea'))
    if(width<700){await click(page.locator('.pa-source-summary'));await inspect('expanded');await click(page.locator('.pa-source-summary'))
-    for(const [state,height,top,scale] of [['keyboard',420,0,1],['zoom',500,26,1.5],['restored',780,0,1]]){
+    for(const [state,height,top,scale] of [['keyboard',420,0,1],['zoom',500,26,1.5],['restored',780,0,1],['keyboard-reopened',420,0,1],['restored-again',780,0,1]]){
      await page.evaluate(({height,top,scale})=>{for(const [k,v]of Object.entries({height,offsetTop:top,pageTop:scrollY+top,scale}))Object.defineProperty(visualViewport,k,{configurable:true,value:v});visualViewport.dispatchEvent(new Event('resize'));visualViewport.dispatchEvent(new Event('scroll'))},{height,top,scale});await inspect(state);if(state==='keyboard'){await click(page.locator('.pa-source-summary'));await inspect('keyboard-expanded');await click(page.locator('.pa-source-summary'))}
     }
    }
+   await text.fill('@Bo');await room.getByRole('option',{name:'Bob'}).waitFor();await click(room.getByRole('option',{name:'Bob'}));assert.equal(await text.inputValue(),'@Bob ');await fieldMetrics('mention');await text.fill('Synthetic reply 👍')
    const draft=await text.inputValue();await click(room.getByRole('button',{name:'成員 (2)',exact:true}));await page.waitForFunction(()=>document.querySelector('.pa-room-members')?.contains(document.activeElement));const motion=await room.locator('.pa-room-members').evaluate(n=>({duration:getComputedStyle(n).animationDuration,name:getComputedStyle(n).animationName}));assert.equal(motion.duration,width===320?'0s':'0.3s');results.push({tag,state:'member-motion',...motion});await page.keyboard.press('Escape');await room.locator('.pa-room-members').waitFor({state:'hidden'});assert.equal(await text.inputValue(),draft)
    await click(send);await page.waitForFunction(()=>!document.querySelector('.pa-room-layout textarea').value);const quoted=room.locator('[data-quote-seq]').last();await quoted.waitFor();assert.match(await quoted.innerText(),/👍|Synthetic|Alice|Bob/)
    assert.equal(writes.at(-1).body.text,'Synthetic reply 👍');assert.ok(writes.at(-1).body.quote.seq>0)

@@ -618,6 +618,7 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 	if err != nil {
 		return "", 0, err
 	}
+	needsResponse := pa.RoomNeedsResponse(lines)
 	var shown int64
 	if len(lines) > 0 {
 		shown = lines[len(lines)-1].Seq
@@ -681,7 +682,12 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 			}
 		}
 	}
-	out = append(out, "", fmt.Sprintf("It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.", me.Name, pa.RoomPass))
+	if needsResponse {
+		out = append(out, "", "You are responsible for acknowledging or answering the latest user message: no participant has answered it yet. A greeting, ordinary conversation or a direct question deserves a natural response; do not defer merely because another participant could answer. Work within your own permissions and capabilities. If you genuinely cannot contribute, you may still pass; never invent an answer or act beyond your authority.")
+		out = append(out, "", fmt.Sprintf("It's your turn, %s. Acknowledge or answer the user now; if you genuinely cannot contribute, reply exactly %q.", me.Name, pa.RoomPass))
+	} else {
+		out = append(out, "", fmt.Sprintf("It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.", me.Name, pa.RoomPass))
+	}
 	return strings.Join(out, "\n"), shown, nil
 }
 

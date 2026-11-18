@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13278,
+  "englishKeys": 13279,
   "counts": {
-    "negation": 3502,
-    "state": 2240,
+    "negation": 3503,
+    "state": 2241,
     "permission": 812,
     "deletion": 311,
     "uncertainty": 543
   },
-  "unionCount": 5724,
+  "unionCount": 5725,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3081,6 +3081,7 @@
       "projectAssistants.filesLost",
       "projectAssistants.foldersUnsupported",
       "projectAssistants.groupMembersMissing",
+      "projectAssistants.groupNoReply",
       "projectAssistants.heldNoText",
       "projectAssistants.heldPicturesLost",
       "projectAssistants.heldSend",
@@ -5628,6 +5629,7 @@
       "transparency.card.persistent-bot-api-key.effect",
       "transparency.card.persistent-bot-fallback.effect",
       "transparency.card.persistent-bot-fallback.how",
+      "transparency.card.persistent-bot-group-rooms.how",
       "transparency.card.persistent-bot-inputs.effect",
       "transparency.card.persistent-bot-network.effect",
       "transparency.card.persistent-bot-outputs.effect",
@@ -12391,6 +12393,7 @@
     "projectAssistants.groupDeleteHint",
     "projectAssistants.groupEmpty",
     "projectAssistants.groupMembersMissing",
+    "projectAssistants.groupNoReply",
     "projectAssistants.groupUnavailable",
     "projectAssistants.groupUnknown",
     "projectAssistants.heldEarlier",

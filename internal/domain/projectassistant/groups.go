@@ -585,6 +585,22 @@ func PublishRoomAnswer(g Group, s RoomState, t RoomTicket, seq int64, text strin
 
 const RoomPass = "(pass)"
 
+// RoomNeedsResponse assigns conversational responsibility to the next eligible
+// participant until someone has actually answered the person's latest message.
+// A missing publication is not proof of a pass: it may also be a failed,
+// unauthorized, busy or overdue turn. Those terminal facts remain on the member.
+func RoomNeedsResponse(lines []RoomEntry) bool {
+	for i := len(lines) - 1; i >= 0; i-- {
+		switch lines[i].Kind {
+		case RoomMemberEntry:
+			return false
+		case RoomPersonEntry:
+			return true
+		}
+	}
+	return false
+}
+
 // IsRoomPass: a member's final text that the room does not see.
 func IsRoomPass(text string) bool {
 	t := strings.ToLower(strings.Trim(strings.TrimSpace(text), `".*`))

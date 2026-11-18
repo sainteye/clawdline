@@ -173,6 +173,9 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   }
   const activity=page?.activity??[]
   const working=!!page?.room.running||activity.length>0
+  // The room snapshot has active tickets, not terminal member outcomes. Do
+  // not label an absent publication as a pass or manufacture a Bot message.
+  const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&lines.at(-1)?.kind==="person"
   const openEditor=(opener:HTMLElement|null)=>{opener?.focus({preventScroll:true});setEditing(true)}
   const body=<section ref={room} hidden={!active} className={`pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-modal="true" aria-label={group.name}
     onFocusCapture={event=>{if(event.target instanceof HTMLElement)lastFocus.current=event.target}}
@@ -194,6 +197,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     </div></div>
     {!following&&lines.length>0&&<button type="button" className="pa-room-jump" onClick={()=>{position.current.following=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump} ↓</button>}
     <footer className="pa-chat-footer">
+      {unanswered&&<p className="pa-room-unanswered" role="status">{groupWord("groupNoReply")}</p>}
       {working&&<div className="pa-room-working" role="status">{activity.length?activity.map(turn=>{const bot=botFor(turn.member);return <span key={turn.turn_id} data-working-member={identity(turn.member)} data-working-state={turn.state}>{bot&&<BotAvatar appearance={bot.appearance} size={20} mood={turn.state==="waiting_permission"?"needsInput":turn.state==="running"?"working":"idle"}/>}<span>{author(turn.member)} · {turn.state==="waiting_permission"?w.waiting_permission:turn.state==="running"?w.running:w.queued}</span></span>}):<span>{groupWord("groupRunning")}</span>}</div>}
       {quote&&<div className="pa-room-draft-quote"><div><strong>{groupWord("groupReplyTo")} {author(quote.author)}</strong><p>{quote.text}</p></div><button type="button" aria-label={w.clearQuote} disabled={busy||unknown} onClick={()=>{setQuote(null);pending.current=null;focusComposer()}}>×</button></div>}
       <form className="pa-composer pa-room-composer" onSubmit={event=>{event.preventDefault();if(!composing.current)void send()}}>

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,99 @@ import (
 
 var roomCtx = context.Background()
 var roomAt = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+
+// The synthetic participant follows the host's responsibility instruction;
+// absent that instruction both participants defer, reproducing the greeting.
+// This tests the host/provider boundary, not an installed model's compliance.
+type responsibleRoomPeer struct {
+	*roomPeer
+	pass, fail map[string]bool
+}
+
+func (p *responsibleRoomPeer) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	inner, err := p.roomPeer.Open(ctx, q, sink)
+	if err != nil {
+		return nil, err
+	}
+	return &responsibleRoomSession{roomSession: inner.(*roomSession), owner: p}, nil
+}
+
+type responsibleRoomSession struct {
+	*roomSession
+	owner *responsibleRoomPeer
+}
+
+func (s *responsibleRoomSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if _, err := s.roomSession.Send(ctx, q); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *responsibleRoomSession) Wait(context.Context) (app.PromptResult, error) {
+	if s.owner.fail[s.bot] {
+		return app.PromptResult{}, fmt.Errorf("synthetic provider unavailable")
+	}
+	if !s.owner.pass[s.bot] && strings.Contains(s.last.Text, "You are responsible for acknowledging or answering the latest user message") {
+		return app.PromptResult{FinalText: "嗨！我在這裡，可以一起討論。"}, nil
+	}
+	return app.PromptResult{FinalText: pa.RoomPass}, nil
+}
+
+func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, answer string
+		pass, fail         map[string]bool
+	}{
+		{name: "greeting", text: "嗨", answer: "a"},
+		{name: "question", text: "可以幫我看看嗎？", answer: "a"},
+		{name: "first explicitly passes", text: "嗨", pass: map[string]bool{"a": true}, answer: "b"},
+		{name: "first fails", text: "嗨", fail: map[string]bool{"a": true}, answer: "b"},
+		{name: "targeted", text: "@Bob 嗨", answer: "b"},
+		{name: "everyone explicitly passes", text: "嗨", pass: map[string]bool{"a": true, "b": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRoomHarness(t, "Alice", "Bob")
+			_ = h.engine.Close(roomCtx)
+			id := func() string { return fmt.Sprintf("responsible-%d", h.ids.Add(1)) }
+			authorize := func(_ context.Context, k pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+				return pa.FeatureState{Enabled: true}, roomSource(k.MachineID), nil
+			}
+			var err error
+			h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, Provider: &responsibleRoomPeer{roomPeer: h.peer, pass: tc.pass, fail: tc.fail}, ProjectResolver: roomResolver{h.scope}, Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = h.engine.Close(roomCtx) })
+			h.driver.Attach(h.engine)
+			g := h.group(t, "g", h.members...)
+			if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "greeting"), tc.text, pa.BotKey{}, nil); err != nil {
+				t.Fatal(err)
+			}
+			h.driver.Idle()
+			lines := h.lines(t, g)
+			want := 1
+			if tc.answer != "" {
+				want = 2
+			}
+			if len(lines) != want || lines[0].Text != tc.text || (want == 2 && lines[1].Author.BotID != tc.answer) {
+				t.Fatalf("responsible participant %q, room lines: %+v", tc.answer, lines)
+			}
+			for _, bot := range h.members {
+				turns := h.roomTurns(t, bot)
+				if len(turns) > 1 {
+					t.Fatalf("member was retried: %+v", turns)
+				}
+				if tc.fail[bot.Key.BotID] && (len(turns) != 1 || turns[0].State != pa.TurnUnknown || turns[0].Failure == nil || pa.Code(turns[0].Failure) != pa.OutcomeUnknown) {
+					t.Fatalf("failure lost its terminal diagnosis: %+v", turns)
+				}
+			}
+			if tc.text == "@Bob 嗨" && len(h.peer.asked("a")) != 0 {
+				t.Fatal("explicit target widened to another participant")
+			}
+		})
+	}
+}
 
 // Codync's room values; MaxMembers is this test's own bound.
 var roomLimits = pa.GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}

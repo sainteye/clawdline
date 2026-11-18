@@ -353,3 +353,5 @@ keeps only the person line and a queued member. This does not prove the
 visibility state of a production browser whose read surface does not expose
 that property. Native completion, source publication and UI observation must
 be recorded independently.
+
+When members take turns after a person speaks, the first eligible member is asked to acknowledge or answer the message, including a greeting. If that member passes, the next eligible member receives the same responsibility until someone answers. This uses the existing turn selection and retry limits. A quiet room with an unanswered person message shows a status outside the transcript.

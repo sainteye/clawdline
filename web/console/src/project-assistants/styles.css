@@ -575,6 +575,7 @@
 .project-assistants .pa-room-composer { gap:6px;position:relative; }
 .project-assistants .pa-room-composer .pa-editor { max-height:30dvh; }
 .project-assistants .pa-room-composer textarea { font-size:16px; }
+.project-assistants .pa-room-composer textarea,.project-assistants .pa-room-composer .pa-editor-mirror { padding:6px 8px; }
 .project-assistants .pa-room-layout .pa-chat-footer { padding-top:8px; }
 .project-assistants .pa-room-draft-quote { display:flex;align-items:center;gap:12px;max-width:800px;margin:0 auto 10px;padding:10px 14px;background:var(--pa-card);border-radius:14px;font-size:13px;color:var(--pa-dim); }
 .project-assistants .pa-room-draft-quote>div { flex:1;min-width:0; }

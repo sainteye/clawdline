@@ -13,6 +13,28 @@ var testGroupLimits = GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, M
 
 var groupAt = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 
+func TestRoomResponseResponsibilityFollowsActualAnswers(t *testing.T) {
+	person := RoomEntry{Kind: RoomPersonEntry, Text: "嗨"}
+	answer := RoomEntry{Kind: RoomMemberEntry, Text: "嗨！"}
+	for _, tc := range []struct {
+		name  string
+		lines []RoomEntry
+		want  bool
+	}{
+		{"empty", nil, false},
+		{"greeting", []RoomEntry{person}, true},
+		{"answered", []RoomEntry{person, answer}, false},
+		{"new message needs acknowledgement", []RoomEntry{person, answer, person}, true},
+		{"old answer alone", []RoomEntry{answer}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RoomNeedsResponse(tc.lines); got != tc.want {
+				t.Fatalf("needs response = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func groupScope() ProjectScope {
 	return ProjectScope{MachineID: "m", ProjectID: "p", CanonicalID: "repo", Kind: RepositoryProject}
 }
