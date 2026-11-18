@@ -10268,7 +10268,7 @@
   "projectAssistants.rosterPin": "釘選 Bot",
   "projectAssistants.rosterUnpin": "取消釘選 Bot",
   "projectAssistants.rosterReorder": "調整順序",
-  "projectAssistants.rosterReorderHint": "拖曳調整順序，或使用上、下方向鍵",
+  "projectAssistants.rosterReorderHint": "長按整列即可拖曳；Alt＋上／下可移動焦點列，清單選項提供釘選與鍵盤排序。",
   "projectAssistants.rosterDropPin": "拖放至此以釘選",
   "projectAssistants.rosterUnsaved": "無法儲存清單偏好，變更會保留在目前畫面。",
   "playbook.boardDriveTitle": "看板項目推進",

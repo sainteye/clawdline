@@ -4,14 +4,23 @@ The roster mixes Bots and group conversations inside their actual Projects.
 Pinned conversations stay above Projects. A group retains its source-owned group
 identity; sharing an ID with a Bot never shares its preferences or room routing.
 
-The default row shows its avatar, name, one-line preview and necessary state.
-Repeated Agent labels are omitted. Less frequent actions are in the row's menu,
-reachable by hover or keyboard focus on desktop and a visible touch target on
-phones. List options opens the explicit reorder mode; Done returns to reading.
-Only reorder mode shows pin buttons and handles. An empty pin drop target appears
-only during a row drag. A presentation drag cannot move a conversation into another
-Project or grant source access. Mouse, touch and pen use pointer capture;
-Up/Down and Home/End on a focused handle perform the same reorder.
+The default row uses its full width for the avatar, name, preview and necessary
+state. It has no per-row more button or reserved action column. Hold any Bot or
+group row to lift it, then drag among its siblings. A lifted copy follows the
+pointer while neighbours slide into the provisional order. Release inside the
+roster to save; Escape, pointer/touch cancellation, window blur or release
+outside restores the saved order. A press moving before the hold remains a normal
+vertical scroll, and a short press still opens the original conversation.
+Reduced-motion preferences disable neighbour animation.
+
+The top-level List options menu still opens explicit reorder mode, which exposes
+pin buttons and keyboard handles. Done returns to reading. Right-click or
+Shift+F10 on a row opens that mode at the row. Alt+Up/Down (and Alt+Home/End) moves
+the focused row without a mouse; focused handles retain plain Up/Down and Home/End.
+Direct dragging stays inside the same Project and pin band. Explicit controls can
+pin/unpin a row without changing its Project or granting source access. Preferences
+are written only on completed drops or explicit keyboard/pin actions. A storage
+update from another tab cancels an in-flight drag instead of overwriting it.
 
 Group rows compose actual members' avatars, count members beyond the registered
 preview bound, and show the returned last speaker and message. Missing member
@@ -58,7 +67,9 @@ Project ordering and the Project-name collision. `roster-order.e2e.mjs` bundles
 the real roster with synthetic summaries and serves only on loopback. It checks
 mouse dragging, keyboard ordering, pin/unpin, reload, Project order, account
 switches, cross-Project refusal and corrupt storage in Chromium and WebKit,
-in English at desktop size and Traditional Chinese at phone size. Chromium's
+in English at desktop size and Traditional Chinese at phone size. Delayed-frame
+injection checks that entering reorder mode cannot steal a subsequently chosen
+row focus. Chromium's
 phone case also sends actual touch input through CDP. It makes no provider calls. `roster-mixed.e2e.mjs` additionally retains identical
 records and CSS viewports for the base and candidate, counts full visible rows,
 and checks group entry/return, pin persistence, default controls and absence of
@@ -127,3 +138,26 @@ rendered avatar order and the source's real round-zero `@all` selection.
 Chromium and WebKit cover desktop and touch layouts on local and closed Cloud
 command rails. The outer encrypted carrier is simulated. No model or formal
 viewer is used. This repair does not reorder previously saved groups.
+
+### Whole-row drag comparison
+
+The interaction reference is Codync commit
+[`9b47189739216b405416b334b9ada5b5b28176c1`](https://github.com/leepokai/Codync/tree/9b47189739216b405416b334b9ada5b5b28176c1).
+Its desktop `apps/desktop/src/renderer/views/BotRoster.tsx` and
+`lib/pointer-drag.ts` keep provisional order, a pointer-following lifted copy,
+sliding neighbours, edge scrolling, cancellation and a swallowed release click.
+The iOS `apps/ios/Views/BotListView.swift` uses a native list, item providers and
+accessible move actions; Android's `ListReorder.kt` commits only completed drops.
+The browser implementation follows these observable behaviours, using a hold
+for both pointer and touch. It does not import upstream platform or store code.
+
+`roster-direct-drag.e2e.mjs` bundles the actual mixed roster with the same nine
+synthetic rows at desktop and phone sizes. It records videos, initial/lifted/reopened
+screenshots and observed orders. It checks Bot and group dragging, preview before
+save, reload persistence, neighbour animation, Escape/outside cancellation,
+keyboard/pin access, short group entry and reduced motion in Chromium and WebKit.
+Chromium additionally uses actual touch input for dragging, native vertical panning,
+touch cancellation and a following short tap. WebKit's pointer cases do not claim
+native touch or physical iPhone acceptance. `BOTS_BASELINE=<revision>` substitutes
+the previous roster and reproduces the absent default hold before checking the
+candidate. No model, live account, production Cloud or installed app is exercised.
