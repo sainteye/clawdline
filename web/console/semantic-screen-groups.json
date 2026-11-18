@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13281,
-  "riskKeys": 5727,
-  "nonRiskCount": 7554,
+  "englishContentKeys": 13283,
+  "riskKeys": 5728,
+  "nonRiskCount": 7555,
   "groups": [
     {
       "name": "acp / other",
@@ -5974,7 +5974,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 360,
+      "count": 361,
       "sources": [
         null
       ],
@@ -6006,6 +6006,7 @@
         "projectAssistants.checkingSend",
         "projectAssistants.chooseProject",
         "projectAssistants.chooseReaction",
+        "projectAssistants.clearSearch",
         "projectAssistants.close",
         "projectAssistants.closeInformation",
         "projectAssistants.collapse",
