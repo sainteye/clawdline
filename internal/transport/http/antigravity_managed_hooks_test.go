@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -312,6 +313,21 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				}
 				if err := owner.CheckContextLoaded(ctx, record.ID, home, check); err != nil {
 					t.Fatal("completion proof was not currently verifiable", err)
+				}
+				if name == "completed_post" {
+					// The same kernel process and terminal now have a different
+					// workspace. A historical receipt cannot prove current context.
+					if err := os.Rename(project, filepath.Join(root, "moved-project")); err != nil {
+						t.Fatal(err)
+					}
+					var refusal *antigravity.BridgeError
+					if err := owner.CheckContextLoaded(ctx, record.ID, home, check); !errors.As(err, &refusal) || refusal.Code != "antigravity_managed_launch_unverified" {
+						t.Fatal("completion proof survived a workspace change", err)
+					}
+					historical, found, err := owner.Receipt(ctx, record.ID)
+					if err != nil || !found || historical != nextReceipt {
+						t.Fatal("workspace change rewrote the historical receipt", err)
+					}
 				}
 				return
 			}
