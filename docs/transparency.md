@@ -12,17 +12,20 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
-The source-owned approval delivery unit adds no model instructions or advertised
-MCP tool. Its private Host callback uses the existing card and human answer path;
-the Engine persists a selection before returning it and never routes it through
-the vendor's permission RPC. A choice establishes neither a standing rule nor an
-executed command, and the server command handler remains unwired. The persistent
-Bot, output, input, routine, fallback, review, group-room and progress explanations
-were reviewed in English and Taiwan Traditional Chinese against these changes.
-Their loading, native rule scope, memory and replay descriptions remain accurate.
-The source receipt now includes the source approval module and the two changed
-implementation files. Website snapshot publication follows the reviewed product
-tree after integration; refreshing this receipt is not a deployment.
+The source-owned development-server continuation adds four native MCP tools
+through the existing endpoint, independent Host process ownership, exact local
+rules and current source/Forget checks. Reviewed the persistent-bots explanation
+and the new tool descriptions in English and Taiwan Traditional Chinese. The
+copy names source-user files/network authority outside the agent sandbox,
+complete command/directory review, no model-supplied identity or human approval,
+unknown cleanup and the remaining Cloud/UI/ports/crash-recovery gaps. Native
+rule scope and the related loading/memory/replay explanations retain their
+existing meaning. Source rule visibility follows API 90 while older sources keep
+their native rule behavior. The inventory includes the private command handler,
+its native descriptor and the per-definition reconciliation boundary. A local
+synthetic process test is not an installed vendor or Cloud acceptance receipt.
+Website snapshot publication follows the reviewed product tree after integration;
+refreshing the source/copy receipt is not a deployment.
 
 Codex full tasks retain the workspace profile but now send requested sandbox
 exceptions to native automatic review. This restores the request path needed
@@ -966,11 +969,7 @@ or live recovery policy. The new command and refreshed parent-command source
 receipts do not establish actual-binary qualification or destination acceptance.
 
 
-The source-owned dev-server rule continuation adds an exact local approval
-store and human list/revoke integration for both agents. Reviewed the related
-persistent-bots explanation in English and Taiwan Traditional Chinese; native
-rules retain their existing scope, while saved local command rules include
-complete Bot/Project/command/directory/Forget identity. The text explicitly
-does not advertise native server tools, which remain unintegrated. Register
-the source command approval and human rule adapter with that card. Refreshing
-these reviewed source/copy receipts does not publish the website snapshot.
+The generated English and Taiwan Traditional Chinese route inventories now
+report API 90. Only that generated level line changes; generated routes are not
+one of the compiled guide's 21 freshness-pinned translation parts. The current
+and fallback translation tests still verify those independent guide pins.

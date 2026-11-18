@@ -34,7 +34,8 @@ import (
 // Project Session message boards arrive at level 87.
 // Exact group quotes, room activity and optional list previews arrive at API 88.
 // Named topic memory and on-demand native memory detail arrive at API 89.
-const APILevel = 89
+// Source-owned Bot server tools and exact local rules arrive at API 90.
+const APILevel = 90
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

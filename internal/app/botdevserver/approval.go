@@ -56,7 +56,7 @@ func (a Approval) Authorize(ctx context.Context, saved SavedServer) (func(contex
 			{ID: string(pa.RejectOnce), Kind: pa.RejectOnce},
 			{ID: string(pa.RejectAlways), Kind: pa.RejectAlways},
 		}
-		choice, err := a.Review(ctx, pa.PermissionAction{Title: saved.Spec.Name, ToolKind: "execute", Detail: string(detail)}, options)
+		choice, err := a.Review(ctx, pa.PermissionAction{Title: saved.Spec.Name, ToolKind: "source_command", Detail: string(detail), Diffs: []pa.PermissionDiff{}}, options)
 		if err != nil {
 			return nil, err
 		}
@@ -95,15 +95,18 @@ func (a Approval) Authorize(ctx context.Context, saved SavedServer) (func(contex
 	}
 	// Recheck exact version even for a one-time choice: a concurrent Never or
 	// revocation must not be overwritten or ignored by an old review.
+	// Keep only Host-owned functions in the retained launch check. The review
+	// callback belongs to the native execution and must not be retained by it.
+	checkSource, guard, rules := a.Check, a.Guard, a.Rules
 	check := func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := a.Check(ctx, saved.Spec); err != nil {
+		if err := checkSource(ctx, saved.Spec); err != nil {
 			return err
 		}
-		return a.Guard(ctx, saved.Spec, func() error {
-			current, err := a.Rules.Rule(ctx, saved)
+		return guard(ctx, saved.Spec, func() error {
+			current, err := rules.Rule(ctx, saved)
 			if err != nil {
 				return err
 			}

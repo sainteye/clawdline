@@ -321,8 +321,9 @@ person's next message as before.
 
 This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
 against the pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
-It distinguishes existing components from the product behavior they do not yet
-provide. It is not a production UI or installed-binary acceptance receipt.
+The table tracks subsequent source construction as well as that original
+baseline; its API 90 server row describes the current candidate, not the older
+893 build. It is not a production UI or installed-binary acceptance receipt.
 
 Templates (`project-assistants-templates.md`), message reactions, pinned/Project
 roster sections and mark-all-read already have implementations. They must not
@@ -333,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | `internal/adapters/devstack` reads declarations and probes ports; the Project devstack HTTP route accepts GET only. | A separately owned command/process tree, approved command and directory, start/list/stop/log operations and durable outcomes are missing. Test turn completion, concurrent start/stop, deleted Bot, revoked source, Host restart and lost acknowledgement. Stop only a verified owned process generation; do not inherit provider credentials or expose arbitrary repository commands through the read route. |
+| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | Known-ID human controls, owned-listener discovery, server UI, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -353,208 +354,101 @@ No new API level, archive generation or maintenance writer is enabled by this
 audit.
 
 
-### Isolated dev-server attempt owner
+### Source-owned development servers (API 90 construction)
 
-`internal/app/botdevserver` now defines one immutable server-attempt identity
-(Bot, complete Project, server, attempt and approved-command fingerprint).
-Its injected journal port must atomically compare-and-swap a source-local
-record. Acceptance is persisted before a single Host-owned launch; the request
-context ends only that request. Stop records its intent before cancelling the
-Host lifetime and retains a process handle returned late by Launch. Authority
-is checked before and after launch. Reopening an interrupted accepted/running/
-stopping record reports unknown without launching, adopting a PID or rewriting
-the stored fact. A missing acknowledgement never causes another launch.
+One Host owns a source-local server registry independently of its Engine and
+native executions. Enabling the already opt-in Bot feature explicitly installs
+the local catalog and opens that registry; metadata inspection starts nothing.
+The source launcher snapshots only basic source environment values, excludes
+provider/profile credentials and runtime startup hooks, and resolves an existing
+canonical starting directory under the current full Project. This directory
+check is not a shell/filesystem/network sandbox. Approved commands run with the
+source user's files and network authority, as the pinned upstream specification
+describes. Windows source launch remains unavailable.
 
-The existing ACP process supervisor exposes stdout and the direct child's
-exit receipt without creating an ACP Client/provider or a second process owner.
-Exit alone does not establish descendant cleanup: the attempt still calls the
-existing identity-checked Close, and keeps cleanup failure unknown. No new log
-buffer, process registry, count limit or API route is introduced by these ports.
+The existing owned native MCP endpoint advertises `start_dev_server`,
+`list_dev_servers`, `stop_dev_server` and `dev_server_logs` only to a current
+source-bound execution with the service available. Start accepts command,
+optional name/folder and an explicit idempotency key. The other tools use known
+IDs; no tool accepts Bot/Project identity, environment, PID or approval. Host
+source/canonical Project authority is checked before effects and again before
+content is returned. The actual MCP body write and flush also cross the Host's
+current memory/publication fence, under the existing write deadline; waiting for
+human review or peer consumption never holds that lock. Source start reviews
+use the actual native execution deadline rather than the shorter ordinary RPC
+budget. A refused last publication returns only a typed code, and a failed or
+partial transport write is never followed by another response frame.
+Mutation keys cache the exact argument hash, no-op and
+uncertain results for that execution; changing a payload conflicts. A cached
+old stop cannot stop a later restarted attempt. Accepted is distinct from
+running. Valid list/log calls also record source tool activity.
 
-Fault-injection tests use an in-memory CAS journal, including a commit whose
-acknowledgement is lost, late launch/stop, source revocation and unknown cleanup.
-A real temporary HTTP child also passes through the attempt owner and existing
-process supervisor, survives request cancellation and closes its listener on
-owned shutdown. These checks establish the isolated ownership unit, not a
-persistent storage implementation, host restart cleanup, per-Bot admission or a
-complete dev-server feature. A production registry must own process slots,
-validate current exact command/directory approval, supply a source environment,
-retain bounded logs and implement the durable ledger before wiring tools,
-HTTP, Cloud or UI. There is no automatic restart and no maintenance writer.
+Each definition binds Bot, full Project, command, directory and the source
+Forget boundary. A label does not change command authority or start another
+copy. Ordinary memory saves do not invalidate resources. Model listings and
+logs exclude definitions from a different Forget epoch, and publication checks
+run under the existing memory fence. Historical definitions and exact rules
+remain visible/revocable to the person through the human rules API. The
+console's Codex source-rule entry requires API 90; Claude's separate native
+Project rules retain their existing scope. Matching Cloud transport qualification
+remains separate from this source construction.
 
+The command handler requests the existing source-owned permission card, with
+complete structured scope and all four choices. The human card explicitly
+states that source file/network authority is outside the Agent terminal sandbox,
+in English and Taiwan Traditional Chinese. A human selection is persisted
+before being delivered, never sent as a vendor permission RPC. Always allow
+and Never then persist an exact versioned local rule before returning; uncertain
+rule storage releases no launch check. Revocation retains its version so a stale
+card cannot recreate a grant. It affects future starts; stopping an existing
+server is a separate action. The retained Host launch check keeps no native
+review callback and does not expire at the end of a native turn. Source policy
+revocation and Forget stop known owned processes through Host reconciliation;
+they do not automatically restart when policy becomes available again. One old
+forgotten definition cannot stop a new current-epoch definition for the same Bot.
 
-### Source-local attempt ledger
+Definitions persist before human review, without an accepted attempt or process.
+Accepted intent, the current-attempt pointer and source-wide process budget
+commit atomically. The attempt ledger compares complete immutable identity and
+revision; the stable storage key does not contain mutable Project/approval
+payload. Lost acknowledgements remain unknown and are never automatically
+replayed. There are at most 64 live definitions, four source-owned attempts,
+8 KiB per complete spec, a 64 KiB output tail per run and 32 mutation receipts
+per native caller, all in the existing capacity register. Unknown owners retain
+occupancy. The HTTP capacity projection reports actual admitted definition and
+attempt counts; retained log/caller buffer occupancy remains explicitly unknown.
+A restored historical output tail is marked incomplete rather than complete
+and empty.
 
-`internal/adapters/botdevserverstore` supplies the attempt journal over a borrowed
-source SQLite writer. `New` is inspection only; trusted composition must call
-`Install` explicitly. This ledger has its own `bot_devserver_schema` marker and
-structured receipt rows, stores no executable command/environment, and never
-changes `PRAGMA user_version`, the Bot schema marker or portable Bot data.
-Unknown versions and partial authority tables are refused without repairing or
-stamping them down. Each operation checks the marker in its own transaction.
+The catalog borrows the Host's existing SQLite writer. Installation is explicit;
+inspection refuses an old/unknown format without writing. Known local catalog
+version 1 upgrades atomically to 2, adding one optional rule per definition;
+old definitions retain epoch zero and no approval. Malformed/partial schemas,
+dangling current pointers and unowned live receipts are refused without repair
+or downstamping. Removing a terminal definition clears command/rule text and
+retains an ID-only tombstone, so late controls cannot address a reused ID.
+These local tables change neither portable Bot core/archive 12 nor SQLite's
+host user_version. The maintenance writer stays closed.
 
-An attempt's stable key excludes its command fingerprint and Project payload;
-changing either cannot turn the same attempt into a new empty row. Updates
-compare the complete identity and revision. CAS insertion has exactly one winner,
-including when identical submissions race. Terminal/unknown receipts cannot be
-changed back into a running attempt. A ledger error remains an uncertain intent
-to the owning runtime, which will not automatically repeat its command.
+The registry owns foreground process handles through the existing ACP physical
+supervisor, without creating another native provider. It drains combined output
+into the bounded tail and retains an acquired handle even when launch returns
+late or fails. Direct-child exit is not descendant cleanup: the exact existing
+process owner still closes its verified tree. Native turn completion, cancellation
+or replacement cannot close that separate Host owner. Host disable/close stops
+known resources; Bot deletion stops them and removes their executable definitions.
+Unknown cleanup is retained and blocks Host replacement. Reopened active receipts
+are unknown observations, never proof of a live/gone process or permission to
+adopt, kill by bare PID or run a command again.
 
-Tests close/reopen an actual temporary database, race two CAS writers, inject a
-SQLite trigger failure and exercise missing/future markers. A real restored Bot
-archive is identical before/after ledger installation and an attempt write, and
-its feature schema remains 12. These are persisted logical-receipt checks; they
-do not establish a crash-recovered process handle. Production registry/slot
-admission, exact command approval, bounded logs, persistent process-generation
-recovery and Host/tool/API wiring remain separate. An interrupted attempt is
-unknown until those facts can be reconciled, never an instruction to restart.
-
-### Isolated server registry and calling receipts
-
-The application registry now owns a bounded set of command definitions and
-independent process slots. Admission counts unresolved owners as occupied;
-inspection after restart converts interrupted receipts to unknown observations
-without executing, adopting or erasing anything. Concurrent starts of the same
-complete command identity share one owner. Keeping an active server does not
-request a new command approval. A restart is a new explicit attempt, and stop,
-log and removal controls bind that exact attempt so an old control cannot act
-on a later run. A delayed cleanup notification can release only its own slot.
-Only a proven terminal attempt can have its definition removed.
-
-Each run retains a bounded output tail with explicit truncation and UTF-8
-projection. A reopened historical run reports lost output rather than an
-invented complete empty log. Source-authorized calling executions also retain
-bounded mutation receipts, including no-op and uncertain results. Identical
-concurrent requests share one reply; changed payloads conflict, and saturation
-refuses a new mutation without evicting an uncertain result. Current authority
-is checked before returning cached content as well as before mutation. The
-transport must still enforce its source publication/Forget fence.
-
-These are injected application ports tested with a synthetic catalog and
-processes. The SQLite attempt ledger is real, but its atomic definition/current-
-attempt catalog integration is not implemented by this registry unit. The
-production Host, exact approval UI, source environment, native tools, paired
-controls and crash-recovered process handles remain unwired. Capacity rows,
-both snapshots and bilingual explanations are registered; a fresh uninstalled
-source has no allocation, while installed Host server occupancy remains
-explicitly unavailable until composition supplies it. No outward API level,
-Bot format, maintenance writer or deployed capability changes here.
-
-### Atomic source-local server catalog
-
-The SQLite adapter now supplies the registry's definition catalog and a bound
-attempt journal. Definition creation alone cannot start work. Accepted intent,
-the definition's current-attempt pointer and the source-wide process budget
-are checked in one transaction. A restart compares the previous terminal
-receipt; a historical journal cannot move the current pointer back to an old
-attempt. Updates keep the original ledger's complete identity/revision CAS.
-
-Catalog installation is explicit and has a separate version-1 marker. Unknown
-or partial shapes, malformed command data, dangling pointers and unowned live
-ledger receipts are refused without reconstruction or downstamping. A removed
-clean definition frees its slot and clears executable command text, while an
-ID-only tombstone prevents identity reuse and past attempt receipts remain.
-Bot portable export data, its schema marker and SQLite user_version are not
-changed by this source-local catalog.
-
-Temporary SQLite tests cover transaction rollback, competing admissions,
-independent connections contending for the last process slot, database reopen,
-lost commit acknowledgement and an actual registry start/stop/restart cycle
-with synthetic processes. Those observations qualify the persistence boundary;
-they do not establish an installed server, real command approval, source
-environment isolation, kernel process-generation recovery or a production
-Host/tool/API/UI entry point. The preceding registry-unit limitations describe
-that earlier unit; this catalog closes its storage port only. Host maintenance
-writer qualification remains separate and closed.
-
-### Source command launch adapter
-
-`internal/adapters/botdevserverprocess` now connects an already approved Spec
-to the existing process supervisor. It requires a current complete Project
-resolution, canonicalizes the selected starting directory within that Project
-and rechecks that it still matches the reviewed Spec. The command runs as a
-foreground, non-login shell with a snapshot of selected source environment
-values. It does not inherit a provider/profile configuration, API credentials,
-shell startup hooks or runtime-injection variables. A process handle returned
-alongside an error is retained for cleanup; a missing handle stays a nil port.
-
-The supervisor can combine stdout and stderr into the command's single output
-consumer. Its default ACP protocol/diagnostic separation remains unchanged.
-An actual Go HTTP child proves both output streams, source environment and
-working directory, survival after the launching request ends, direct exit and
-owned cleanup of the listener. Invalid, foreign or symlink-escaped starting
-directories are refused before execution. Unsupported process-supervisor
-platforms return SandboxUnavailable rather than falling back to name-based
-process termination.
-
-This adapter supplies no authorization. A starting directory is not a shell
-sandbox: an approved command retains the source user's file/network authority,
-as the pinned upstream dev-server specification states. Production composition
-must obtain the exact command/directory grant, bind native execution and Forget
-provenance, and own shutdown independently of the Agent. Host/tool/API/UI and
-kernel process-generation recovery remain pending; these tests contact no
-native provider or paid API and install no live service.
-
-### Source-owned approval delivery
-
-The Engine now has a source-authenticated approval entry point for Host command
-handlers. It reuses the existing permission card, read projection, human answer
-authority and current policy. A source-owned namespace is refused on the native
-protocol input; its answer never becomes a vendor permission RPC. Source and
-native cards share the registered pending-card budget, and source receipts
-remain bounded for the captured execution. Usage includes the source cards.
-
-The source handler receives a selected option only after the answer transaction
-succeeds and the current turn, full fence, source and captured memory provenance
-are rechecked. A lost commit acknowledgement may leave an answered durable card
-but releases no option; replaying its receipt does not release an uncertain
-choice. Cancellation retires only that source card and does not clear another
-native wait. Ordinary memory saves remain valid; Forget refuses an older review.
-Source actions must fit a complete review instead of silently shortening it.
-
-Tests exercise all four option kinds, cancelled/late answers, shared admission,
-generation changes and read-only automatic policy. A repository wrapper injects
-the lost-answer acknowledgement; separate actual temporary Host/SQLite/read-view
-tests use a synthetic provider and verify delivery and Forget. A source choice
-is not a saved standing rule or an executed command. The eventual command
-handler must persist an exact, visible and revocable rule before offering or
-honoring a lasting choice. No generic approval tool is exposed to the model;
-the private Host callback is for that handler. Server Host ownership, native
-start/list/stop/log tools, persisted command provenance, ports, UI and physical
-process recovery still require integration. This unit opens no maintenance
-writer and performs no native-model qualification.
-
-
-### Exact local server rules (isolated construction)
-
-The source command approval handler now implements all four choices against a
-real saved definition. Its full structured review binds the Bot, canonical
-Project, command, directory and Forget boundary; the label does not authorize
-a different command. Always allow and Never persist a versioned local rule
-before returning, and a failed or uncertain save releases no launch check.
-An ordinary memory edit does not change a definition's Forget boundary.
-Forget changes its identity and prevents the old definition from becoming new
-model input; composing that check at the production tool/publication boundary
-remains required. Definitions are saved before review so a declined command has
-a bounded stable identity, but it has no accepted attempt or process.
-
-Known source-local catalog version 1 upgrades explicitly and atomically to 2,
-adding one optional rule per definition. Inspection alone refuses the old
-format without writing; malformed/unknown schemas are not repaired. Previous
-definitions retain epoch zero and no approval. This is not a portable Bot
-format change: core 12 and the closed maintenance writer remain unchanged.
-Revocation retains a version fence, so an old card cannot recreate a rule.
-Removing a definition clears its command text and rule while keeping its ID
-unusable. Rules are available through the existing human rules API for either
-agent, alongside Claude Code's separate native Project rules. The GUI keeps
-Codex source rules hidden below the reserved complete-server API 90 capability;
-this isolated unit does not raise source API 89 or claim those tools exist. A failed store
-is reported instead of being presented as an empty rule list.
-
-Real temporary SQLite and synthetic Host tests exercise persistence across
-reopen, exact scope, all four choices, revocation, lost-save acknowledgement,
-legacy migration rollback and the existing settings entry. A concurrent
-removal during human review must produce a stale-definition refusal, never
-a launch or a nil owner. The Host registry lifetime, actual native command
-tools, known-ID paired controls, owned ports, quiet server UI and physical
-crash recovery remain unintegrated; these local rule tests do not prove them.
+Tests use real temporary SQLite, a synthetic Go ACP subprocess following its
+actual owned HTTP MCP descriptor, stored human approval cards and controlled
+process handles. They cover all four tools, duplicate starts, payload conflicts,
+old stop after restart, Forget filtering, deletion, revocation and unknown cleanup.
+A separately launched real Go HTTP peer survives native turn completion and its
+port closes on Host disable. A controlled whole-Bot reconciliation counterexample
+stops a fresh context's server; the per-definition fix refuses that regression.
+These are local synthetic checks with zero vendor/model requests. They do not
+qualify an installed vendor, production Cloud/UI, physical recovery after Host
+crash, machine reboot or updater rollback. Known-ID human controls, owned ports,
+quiet server UI and durable clean-restart intent still require construction.

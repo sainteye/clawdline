@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13293,
+  "englishContentKeys": 13294,
   "riskKeys": 5736,
-  "nonRiskCount": 7557,
+  "nonRiskCount": 7558,
   "groups": [
     {
       "name": "acp / other",
@@ -5976,7 +5976,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 361,
+      "count": 362,
       "sources": [
         null
       ],
@@ -6187,6 +6187,7 @@
         "projectAssistants.permissionRead",
         "projectAssistants.permissionSearch",
         "projectAssistants.permissionShortened",
+        "projectAssistants.permissionSourceAuthority",
         "projectAssistants.permissionSwitchMode",
         "projectAssistants.picture",
         "projectAssistants.pictureLoading",

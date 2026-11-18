@@ -133,6 +133,13 @@ test("a permission card says what the tool will do before it is answered",()=>{
     action:{title:"rm -rf /tmp/x",tool_kind:"execute",detail:"rm -rf /tmp/x",diffs:[],shortened:false}}
   const run=render(PermissionCard,{offer,enabled:true,onAnswer:async()=>{},w:words("zh-Hant")})
   assert.match(run,/想執行指令/);assert.match(run,/rm -rf \/tmp\/x/)
+  const source={...offer,action:{...offer.action,tool_kind:"source_command"}}
+  for(const [locale,authority] of [["en",/outside the Agent&#x27;s terminal sandbox/],["zh-Hant",/在 Agent 的終端沙箱之外執行/]]){
+    const card=render(PermissionCard,{offer:source,enabled:true,onAnswer:async()=>{},w:words(locale)})
+    assert.match(card,authority);assert.match(card,/rm -rf \/tmp\/x/)
+  }
+  assert.doesNotMatch(run,/終端沙箱之外/)
+
   const edit={...offer,action:{title:"Write notes.md",tool_kind:"edit",detail:"/repo/notes.md",diffs:[{path:"/repo/notes.md",old_text:"old line",new_text:"new line"}],shortened:true}}
   const changed=render(PermissionCard,{offer:edit,enabled:true,onAnswer:async()=>{},w:words("en")})
   assert.match(changed,/Wants to change a file/);assert.match(changed,/old line/);assert.match(changed,/new line/);assert.match(changed,/Shortened/)

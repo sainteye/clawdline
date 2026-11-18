@@ -430,22 +430,7 @@ func (r *Registry) Remove(ctx context.Context, key pa.BotKey, project pa.Project
 	if activeState(saved.Attempt.State) {
 		return failure(pa.ExecutionEffectUnknown, "server_owner")
 	}
-	if err := r.o.Catalog.Remove(ctx, saved); err != nil {
-		return err // Lost deletion acknowledgement retains the local definition.
-	}
-	fingerprint, _ := saved.Spec.Fingerprint()
-	r.mu.Lock()
-	owner := e.owner
-	r.mu.Unlock()
-	if owner != nil {
-		owner.cancel() // No live/uncertain attempt passed the removal checks.
-	}
-	r.release(e, owner)
-	r.mu.Lock()
-	delete(r.rows, id)
-	delete(r.bySpec, fingerprint)
-	r.mu.Unlock()
-	return nil
+	return r.removeDefinition(ctx, e)
 }
 
 type Usage struct {
@@ -487,6 +472,9 @@ func (r *Registry) Close(ctx context.Context) error {
 		r.mu.Unlock()
 		if owner != nil {
 			result = errors.Join(result, owner.Close(ctx))
+			if state := owner.Snapshot().State; state == Stopped || state == Failed {
+				r.release(e, owner)
+			}
 		} else if activeState(r.view(e).Attempt.State) {
 			result = errors.Join(result, failure(pa.ExecutionEffectUnknown, "server_owner"))
 		}

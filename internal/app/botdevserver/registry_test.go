@@ -329,6 +329,47 @@ func TestRemovingAReviewedDefinitionCannotLaunchOrReuseItsApproval(t *testing.T)
 	}
 }
 
+func TestReconcileStopsOnlyTheForgottenDefinitionAndKeepsCurrentEpoch(t *testing.T) {
+	o, _, _, _ := registryFixture(t)
+	r := openRegistry(t, o)
+	old := specFixture()
+	first, err := r.Start(context.Background(), old, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRegistry(t, r, first, Running)
+	current := old
+	current.ForgottenThrough = 2
+	second, err := r.Start(context.Background(), current, "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRegistry(t, r, second, Running)
+	if err := r.Reconcile(context.Background(), func(_ context.Context, spec Spec) error {
+		if spec.ForgottenThrough == 0 {
+			return failure(pa.ContextStale, "synthetic_epoch")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := r.Inspect(context.Background(), old.Key, old.Project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, saved := range rows {
+		if saved.ID == first.ID && saved.Attempt.State != Stopped {
+			t.Fatal("old definition survived", saved)
+		}
+		if saved.ID == second.ID && saved.Attempt.State != Running {
+			t.Fatal("old definition stopped the new context", saved)
+		}
+	}
+	if u := r.Usage(); !u.Known || u.Processes != 1 {
+		t.Fatal(u)
+	}
+}
+
 func TestOldServerCleanupCannotReleaseANewerReservation(t *testing.T) {
 	o, _, _, _ := registryFixture(t)
 	r := openRegistry(t, o)
