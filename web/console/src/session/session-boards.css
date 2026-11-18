@@ -18,7 +18,7 @@
 }
 .session-board-dock-dot {
   position: absolute; top: 3px; right: 3px; width: 7px; height: 7px;
-  border: 1px solid var(--bg); border-radius: 50%; background: var(--session-board-accent);
+  border: 1px solid var(--bg); border-radius: 50%; background: var(--accent);
 }
 
 .session-board-group {
