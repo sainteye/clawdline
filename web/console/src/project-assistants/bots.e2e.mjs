@@ -21,14 +21,15 @@ const html=await readFile(new URL("../../tools/fixtures/project-assistants.html"
 async function catalogChecks(page,origin,language,shot,log) {
   const zh=language!=="en",w=zh?{create:"新增 Bot",submit:"建立",cancel:"取消",name:"名稱",machine:"機器",agent:"Agent",instructions:"固定指示",more:"載入更多",retry:"重試",search:"搜尋 Bot 或 Project",message:"訊息"}:{create:"Create Bot",submit:"Create",cancel:"Cancel",name:"Name",machine:"Machine",agent:"Agent",instructions:"Standing instructions",more:"Load more",retry:"Try again",search:"Search Bot or Project",message:"Message"}
   const dialog=page.getByRole("dialog"),project=()=>dialog.getByRole("combobox",{name:"Project",exact:true}),submit=()=>dialog.getByRole("button",{name:w.submit,exact:true})
+  const add=page.getByRole("button",{name:zh?"新增":"Add",exact:true})
   const allRequests=[]
   const fresh=async(options={})=>{
     if(page.url().startsWith(origin))allRequests.push(...await log())
     await page.goto(origin+"/?lang="+language)
     await page.evaluate(options=>{window.botsFixture.a.configureProjects(options);window.botsFixture.open()},options)
-    await page.getByRole("button",{name:w.create,exact:true}).waitFor()
+    await add.waitFor()
   }
-  const open=async()=>{await page.getByRole("button",{name:w.create,exact:true}).click();await dialog.waitFor()}
+  const open=async()=>{await add.click();await page.getByRole("menuitem",{name:w.create,exact:true}).click();await dialog.waitFor()}
   const loaded=async(count=101)=>{await page.waitForFunction(count=>document.querySelector('.pa-form-panel select[required]')?.options.length===count,count);assert.equal(await project().isDisabled(),false)}
   const fill=async()=>{await dialog.getByRole("textbox",{name:w.name,exact:true}).fill("Catalog Bot");await dialog.getByRole("textbox",{name:w.instructions,exact:true}).fill("Preserve these instructions")}
   const alert=async(code)=>dialog.getByRole("alert").filter({hasText:code}).waitFor()

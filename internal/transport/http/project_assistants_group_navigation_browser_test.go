@@ -322,12 +322,12 @@ func TestGroupTranscriptScopeHTTP(t *testing.T) {
 	t.Log("actual HTTP/SQLite: own chats, two rooms, quote, tool, native binding; model/provider API calls=0")
 }
 
-// Actual Bots/room navigation over authenticated HTTP and SQLite. The only
+// Actual Bots/room navigation and roster controls over authenticated HTTP and SQLite. The only
 // provider is the in-process scripted fixture; no native process or model runs.
 func TestGroupMemberNavigationBrowser(t *testing.T) {
 	dir := os.Getenv("CLAWDLINE_GROUP_NAV_ARTIFACTS")
 	if dir == "" {
-		t.Skip("set CLAWDLINE_GROUP_NAV_ARTIFACTS and PLAYWRIGHT_MODULE for room/member navigation")
+		t.Skip("set CLAWDLINE_GROUP_NAV_ARTIFACTS and PLAYWRIGHT_MODULE for roster controls and room/member navigation")
 	}
 	f := newGroupHTTPFixture(t)
 	f.create(t)
