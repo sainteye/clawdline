@@ -4,6 +4,12 @@ The public **What Clawdline changes** page lives at `https://clawdline.com/docs/
 
 The page describes a reviewed product revision, not a person's configuration. English and Taiwan Traditional Chinese share the website's language control. Original excerpts stay in their source language. Source links point to the imported product commit; the website build refuses an outdated content snapshot.
 
+The rounded brand update changes only the image shown beside a voice-assistant
+reply in `RealtimeCopilotModal.tsx`. Review of the registered diff and the
+English and Taiwan Traditional Chinese `voice-work` explanations confirms that
+model context, tools, consent and execution behavior are unchanged. Only that
+source receipt is refreshed; this review does not deploy the public website.
+
 ## Content ownership
 
 Codex full tasks retain the workspace profile but now send requested sandbox

@@ -20,8 +20,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
-import { NAVIGATION_MARK } from "./brand-mark.js"
-import mobileNavigationMark from "./brand-navigation-mobile.js"
+import { BRAND_IMAGE } from "./brand-mark.js"
 import "./session/first-run.css"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
@@ -341,7 +340,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const [, setLoaded] = useState(0)
   const brandRef = useRef<HTMLButtonElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
-  const markRef = useRef<HTMLCanvasElement>(null)
   // A page the address asks for on arrival is reached while the body is still
   // hidden for its words, and nothing hidden can take the keyboard; the landing
   // waits for the words.
@@ -400,10 +398,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
       }
       setLoaded((n) => n + 1)
     })
-  }, [])
-
-  useLayoutEffect(() => {
-    L.paintIcon(markRef.current, NAVIGATION_MARK, 3)
   }, [])
 
   // `Sidebar.close`: where the focus is is read before the drawer goes, because
@@ -1182,8 +1176,8 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
           onClick={() => (menu ? closeMenu() : setMenu(true))}
         >
           <span className="brand-handle" aria-hidden="true">
-            <canvas id="brand-mark" width={0} height={0} ref={markRef} />
-            <img className="brand-mobile-mark" src={mobileNavigationMark} width={24} height={16.5} alt="" draggable={false} />
+            <canvas id="brand-mark" width={0} height={0} />
+            <img className="brand-image" src={BRAND_IMAGE} width={24} height={16.5} alt="" draggable={false} />
             <svg className="brand-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" focusable="false">
               <path d="m10 4-4 4 4 4" />
             </svg>

@@ -1,19 +1,10 @@
 import type { Icon, SessionRow } from "@clawdline/contract"
 
-// Compact brand surfaces share the full-width terminal underline (L-01 + G-02).
-export const BRAND_MARK: Icon = {
-  accent: "#d97757",
-  cells: [
-    "..############..", "..############..",
-    "..##oo####oo##..", "..##oo####oo##..",
-    "################", "################",
-    "..############..", "..############..",
-    "................", "................",
-    "----------------",
-  ].map((row) => row.split("").map((ch) =>
-    ch === "#" ? "#d97757" : ch === "o" ? "#141416" : ch === "-" ? "#4ccb7f" : null,
-  )),
-}
+import { BRAND_SVG } from "./brand-art.js"
+export { BRAND_IMAGE } from "./brand-art.js"
+
+// Rounded tiles, warm orange lighting, floating hands and the solid green line.
+export const BRAND_MARK: Icon = { accent: "#d97757", cells: [], svg: BRAND_SVG }
 
 export const NAVIGATION_MARK = BRAND_MARK
 

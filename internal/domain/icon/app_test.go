@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
-	"math"
 	"testing"
 )
 
@@ -56,61 +55,35 @@ func TestASplashIsOnTheManifestsGround(t *testing.T) {
 	}
 }
 
-// TestTheCreatureIsCentredAndTheRightWayUp.
-//
-// Right way up is the assertion worth making: the rows are written top-down and
-// AppKit's origin is at the bottom, so a port that forgets the flip draws a
-// creature standing on its head and every pixel of it is still the right
-// colour. The connected mark has inset top and bottom edges, black eyes on
-// the third row, a connected base and a separate green line below it.
+// The selected silhouette has empty eyes, separated hands and an unbroken line.
 func TestTheCreatureIsCentredAndTheRightWayUp(t *testing.T) {
 	t.Parallel()
-	const w, h = 750, 1334
-	body, ok := Splash(w, h)
-	if !ok {
-		t.Fatal("refused")
-	}
+	const w, h = 800, 800
+	body, _ := Splash(w, h)
 	img := decode(t, body)
-
-	columns, lines := float64(len(appRows[0])), float64(len(appRows))
-	cell := math.Round(float64(min(w, h)) * 0.26 / columns)
-	originX := (float64(w) - cell*columns) / 2
-	originY := (float64(h) - cell*lines) / 2
-
-	// A point inside a cell, away from the deliberate half-cell grid lines.
-	at := func(row, column int) (int, int) {
-		x := originX + (float64(column)+0.25)*cell
-		bottom := originY + (lines-1-float64(row))*cell
-		y := float64(h) - (bottom + cell/4)
-		return int(x), int(y)
-	}
-	body16 := color.NRGBA{0xD9, 0x77, 0x57, 0xff}
-	ground := color.NRGBA{0x0E, 0x0E, 0x11, 0xff}
-	eye := color.NRGBA{0x14, 0x14, 0x16, 0xff}
-
-	for _, want := range []struct {
-		row, column int
-		colour      color.NRGBA
-		why         string
-	}{
-		{0, 0, ground, "the head has an inset left edge"},
-		{0, 4, body16, "the top of the head"},
-		{2, 4, eye, "the left eye"},
-		{2, 10, eye, "the right eye"},
-		{4, 0, body16, "the hands reach the edge"},
-		{7, 7, body16, "the base is connected at the centre"},
-		{7, 0, ground, "the base stays inset at the edge"},
-		{8, 7, ground, "the terminal line is separate from the body"},
-		{10, 0, markLine, "the terminal line starts under the left hand"},
-		{10, 15, markLine, "the terminal line reaches the right hand"},
-	} {
-		x, y := at(want.row, want.column)
-		r, g, b, a := rgba(img.At(x, y))
-		wr, wg, wb, wa := rgba(want.colour)
-		if r != wr || g != wg || b != wb || a != wa {
-			t.Errorf("%s (row %d column %d at %d,%d): #%02x%02x%02x/%d, want #%02x%02x%02x/%d",
-				want.why, want.row, want.column, x, y, r, g, b, a, wr, wg, wb, wa)
+	scale := float64(w) * 0.26 / 208
+	left, top := (w-208*scale)/2, (h-143*scale)/2
+	at := func(x, y float64) color.Color { return img.At(int(left+(x-16)*scale), int(top+(y-54)*scale)) }
+	for _, point := range [][2]float64{{60, 72}, {180, 72}, {31, 120}, {209, 120}, {108, 144}} {
+		r, g, b, a := rgba(at(point[0], point[1]))
+		if r <= g || g <= b || a != 255 {
+			t.Errorf("body or hand at %v lost its warm orange: %v", point, at(point[0], point[1]))
 		}
+	}
+	for _, point := range [][2]float64{{84, 96}, {156, 96}, {45, 120}, {195, 120}, {72, 144}, {120, 168}} {
+		if got := color.NRGBAModel.Convert(at(point[0], point[1])); got != markGround {
+			t.Errorf("eye, tile gap or floating-hand gap at %v is filled: %v", point, got)
+		}
+	}
+	for _, x := range []float64{26, 72, 120, 168, 214} {
+		if got := color.NRGBAModel.Convert(at(x, 186)); got != (color.NRGBA{0x4c, 0xcb, 0x7f, 255}) {
+			t.Errorf("green line at %v changed: %v", x, got)
+		}
+	}
+	_, topGreen, _, _ := rgba(at(60, 72))
+	_, bottomGreen, _, _ := rgba(at(180, 144))
+	if topGreen <= bottomGreen {
+		t.Error("warm lighting no longer falls from upper left to lower right")
 	}
 }
 
@@ -128,26 +101,21 @@ func TestASplashIsTheSameTwice(t *testing.T) {
 	}
 }
 
-func TestLargeGridIsConfinedToTheOrangeBody(t *testing.T) {
-	solid, _ := AppIcon(512, false)
-	gridded, _ := AppIcon(512, true)
-	a, b := decode(t, solid), decode(t, gridded)
-	changed := 0
-	for y := 0; y < 512; y++ {
-		for x := 0; x < 512; x++ {
-			ar, ag, ab, aa := rgba(a.At(x, y))
-			br, bg, bb, ba := rgba(b.At(x, y))
-			if ar == br && ag == bg && ab == bb && aa == ba {
-				continue
-			}
-			changed++
-			if ar <= ag || ar <= ab || ba != aa || br > ar || bg > ag || bb > ab {
-				t.Fatalf("grid changed background, eyes or transparency at %d,%d", x, y)
+func TestAppIconsKeepDetachedHandsAtBrowserAndDockSizes(t *testing.T) {
+	for _, size := range []int{64, 512} {
+		body, ok := AppIcon(size)
+		if !ok {
+			t.Fatal("icon refused")
+		}
+		img := decode(t, body)
+		scale := float64(size) * 0.78 / 208
+		left, top := (float64(size)-208*scale)/2, (float64(size)-143*scale)/2
+		for _, x := range []float64{45.5, 194.5} {
+			px, py := int(left+(x-16)*scale), int(top+(120-54)*scale)
+			if got := color.NRGBAModel.Convert(img.At(px, py)); got != markGround {
+				t.Errorf("%dpx hand is connected at %v: %v", size, x, got)
 			}
 		}
-	}
-	if changed == 0 {
-		t.Fatal("large icon has no grid")
 	}
 }
 

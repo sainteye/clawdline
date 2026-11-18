@@ -5,35 +5,31 @@ self-contained SVG (`svg`, with empty `cells`). The daemon resolves it for
 the console's project, Session and Board views. Application and assistant marks
 are separate assets.
 
-The compact application mark in `web/console/src/brand-mark.ts` uses L-01 + G-02:
-a connected orange body and a separate full-width terminal-green underline
-(`#4CCB7F`). Its transparent sixteen-by-eleven grid is shared by navigation,
-sign-in, support, administration and machine-workspace marks. The settings window
-uses the same geometry in its existing icon slot.
+The application mark uses D-01 + C-03 + H-04: equal rounded-square tiles,
+soft original-orange lighting and detached hands above the continuous terminal-green
+underline (`#4CCB7F`). `internal/domain/icon/brand.svg` is the canonical artwork.
+It retains the selected geometry and shading, with a cropped viewBox for compact use.
 
-Large artwork adds low-contrast pixel lines inside the orange body. The selected
-F-04 animation moves only left to right; static surfaces use a still rendering.
-Compact interface and browser marks retain solid colors. `internal/domain/icon`
-renders matching browser, home-screen and launch-screen assets; regenerate them
-with `go run ./internal/domain/icon/cmd/splashgen -brand`.
+`web/console/src/brand-mark.ts` exposes that artwork to navigation, sign-in,
+support, administration, the working indicator and machine-workspace marks.
+The console loads it as an isolated SVG image; no page CSS recolors the mascot.
+The generated `brand-art.js` module also works in synthetic host builds that
+have no SVG file loader. Compact marks use the static, solid green line.
 
-## Rounded mobile-header candidate
+`internal/domain/icon` reads the same rounded rectangles and lighting field to
+render browser, home-screen, macOS application and launch-screen assets.
+Regenerate the assets and console module with
+`go run ./internal/domain/icon/cmd/splashgen -brand`; `-brand -check` verifies
+that committed outputs still match the renderer.
 
-The mobile navigation handle has a review candidate with equal rounded-square
-tiles, soft lighting on the original orange, and two detached hands. Its static
-artwork lives in `web/console/src/brand-navigation-mobile.ts`. It uses the
-existing 24 by 16.5 CSS-pixel slot at the console's 899-pixel mobile breakpoint.
-The desktop canvas, other application marks, and the handle's drawer interaction
-retain their existing behavior. This candidate does not replace browser icons or
-the website's deployed artwork.
+## Rounded underline motion study
 
-The [large-format line-flow study](assets/brand-mark-rounded-flow.svg) holds that
-same rounded body still and moves a soft highlight along the existing green
-underline. It follows the website's F-04 direction and 1.2-second cycle: continuous
-left-to-right motion, with periodic light copies at the loop boundary. The line
-keeps its position, dimensions, and `#4CCB7F` base color. Reduced motion removes
-the moving highlight and leaves the solid green line. The mobile header itself
-uses the static version; the flow study is a separate website-artwork preview.
+The [rounded-brand light-flow SVG](assets/brand-mark-rounded-flow.svg) keeps the
+mascot still and moves a periodic light band left to right through the existing
+green line in a 1.2-second loop. The base line remains solid; reduced-motion CSS
+hides the light layer. This is a separate large-art study. The local application
+uses the static artwork, and this change does not deploy the production console
+or the marketing website.
 
 ## Existing large-format studies
 

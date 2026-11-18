@@ -16,7 +16,7 @@ import { healthRoute } from "./health/route.js"
 import type { Refusal } from "./health/cloud.js"
 import "./admin.css"
 import { BrowserLanguageControl } from "../../ui-language/BrowserLanguageControl.js"
-import { BRAND_MARK } from "../../brand-mark.js"
+import { BRAND_IMAGE } from "../../brand-mark.js"
 
 /*
  * The hosted console's `/admin`: Cloud's operations console, for the accounts
@@ -439,11 +439,7 @@ function Shell({ route, go, say, consoleHref, stampText, refreshing, onRefresh, 
         role={narrow ? "dialog" : undefined} aria-modal={drawerOpen || undefined} aria-label={narrow ? say("menuLabel") : undefined}
         aria-hidden={narrow && !open ? true : undefined}>
         <div className="adm-brand">
-          <svg className="adm-brand-mark" viewBox="0 0 16 11" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
-            {BRAND_MARK.cells.flatMap((row, y) => row.map((fill, x) => fill ? (
-              <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={fill} />
-            ) : null))}
-          </svg>
+          <img className="adm-brand-mark" src={BRAND_IMAGE} alt="" width={32} height={24} />
           <span className="adm-brand-text">
             <span className="adm-brand-name">Clawdline Cloud</span>
             <span className="adm-brand-sub">{say("title")}</span>

@@ -8,24 +8,7 @@ import (
 	"math"
 )
 
-// The application mark matches the compact console brand: a connected orange
-// face above a full-width green terminal line. Large raster assets add a subtle grid;
-// small interface marks remain solid.
-var appRows = [...]string{
-	"..############..", "..############..",
-	"..##oo####oo##..", "..##oo####oo##..",
-	"################", "################",
-	"..############..", "..############..",
-	"................", "................",
-	"----------------",
-}
-
-var (
-	markBody   = color.NRGBA{0xD9, 0x77, 0x57, 0xff} // #D97757
-	markEye    = color.NRGBA{0x14, 0x14, 0x16, 0xff} // #141416
-	markLine   = color.NRGBA{0x4C, 0xCB, 0x7F, 0xff} // #4CCB7F
-	markGround = color.NRGBA{0x0E, 0x0E, 0x11, 0xff} // #0E0E11
-)
+var markGround = color.NRGBA{0x0E, 0x0E, 0x11, 0xff} // #0E0E11
 
 // SplashLimit is the largest launch image this will draw. A device asks for the
 // geometry of its own screen, so anything past this is not a device.
@@ -51,32 +34,23 @@ func Splash(width, height int) ([]byte, bool) {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 	fillRect(img, 0, 0, float64(width), float64(height), markGround)
 
-	// A quarter of the short edge. Big enough to be the thing you see, small
-	// enough that it is still a launch screen rather than a poster.
-	columns := float64(len(appRows[0]))
-	lines := float64(len(appRows))
-	cell := math.Round(float64(min(width, height)) * 0.26 / columns)
-	// Whole-pixel edges avoid accidental antialiasing seams; the fine grid
-	// is added deliberately inside the orange cells by drawMark.
-	// On an odd-sized screen, the centre is at most half a pixel away.
-	originX := math.Round((float64(width) - cell*columns) / 2)
-	originY := math.Round((float64(height) - cell*lines) / 2)
-	drawMark(img, height, originX, originY, cell, cell, true)
+	scale := float64(min(width, height)) * 0.26 / appArtwork.width
+	drawMark(img, (float64(width)-appArtwork.width*scale)/2,
+		(float64(height)-appArtwork.height*scale)/2, scale)
 	return encode(img)
 }
 
 // AppIcon renders a rounded application tile from the same mark as Splash.
-// The caller selects the fine grid for large assets and a solid mark for tabs.
-func AppIcon(size int, grid bool) ([]byte, bool) {
+// Rounded tiles, warm lighting and the solid underline are shared at every size.
+func AppIcon(size int) ([]byte, bool) {
 	if size <= 0 || size > SplashLimit {
 		return nil, false
 	}
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	fillRect(img, 0, 0, float64(size), float64(size), markGround)
-	cell := float64(size) * 0.78 / float64(len(appRows[0]))
-	x := (float64(size) - cell*float64(len(appRows[0]))) / 2
-	y := (float64(size) - cell*float64(len(appRows))) / 2
-	drawMark(img, size, x, y, cell, cell, grid)
+	scale := float64(size) * 0.78 / appArtwork.width
+	drawMark(img, (float64(size)-appArtwork.width*scale)/2,
+		(float64(size)-appArtwork.height*scale)/2, scale)
 	radius := float64(size) * 0.20
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
@@ -90,56 +64,40 @@ func AppIcon(size int, grid bool) ([]byte, bool) {
 	return encode(img)
 }
 
-// drawMark paints the creature's cells.
-//
-// The rows are written top-down and AppKit's origin is at the bottom, so
-// `originY` counts from the other end and a row's rectangle is flipped back
-// into this image's top-left coordinates here. Getting that wrong draws the
-// creature upside down, which is a thing that has happened to somebody.
-func drawMark(img *image.NRGBA, height int, originX, originY, cell, size float64, grid bool) {
-	lines := float64(len(appRows))
-	for row, line := range appRows {
-		for column, character := range line {
-			var paint color.NRGBA
-			switch character {
-			case '#':
-				paint = markBody
-			case 'o':
-				paint = markEye
-			case '-':
-				paint = markLine
-			default:
-				continue
-			}
-			x := originX + float64(column)*cell
-			bottom := originY + (lines-1-float64(row))*cell
-			top := float64(height) - (bottom + size)
-			fillRect(img, x, top, x+size, top+size, paint)
-			if grid && character == '#' {
-				line := size * 0.018
-				for _, offset := range []float64{0, size / 2, size} {
-					at := math.Min(offset, size-line)
-					darkenRect(img, x+at, top, x+at+line, top+size)
-					darkenRect(img, x, top+at, x+size, top+at+line)
-				}
-			}
+// drawMark fits the canonical SVG's rectangles into the existing tile or splash.
+// The rounded edge uses pixel coverage; eye apertures and hand gaps stay empty.
+func drawMark(img *image.NRGBA, originX, originY, scale float64) {
+	for _, rect := range appArtwork.rects {
+		x0 := originX + (rect.x-appArtwork.x)*scale
+		y0 := originY + (rect.y-appArtwork.y)*scale
+		x1, y1 := x0+rect.width*scale, y0+rect.height*scale
+		if rect.radius == 0 {
+			fillRect(img, x0, y0, x1, y1, rect.paint)
+			continue
 		}
-	}
-}
-
-// darkenRect shades the already rendered body rather than compositing an
-// opaque line over antialiased edges. Eyes and the tile keep their own colors.
-func darkenRect(img *image.NRGBA, x0, y0, x1, y1 float64) {
-	bounds := img.Bounds()
-	for y := max(int(math.Floor(y0)), bounds.Min.Y); y < min(int(math.Ceil(y1)), bounds.Max.Y); y++ {
-		for x := max(int(math.Floor(x0)), bounds.Min.X); x < min(int(math.Ceil(x1)), bounds.Max.X); x++ {
-			at := img.PixOffset(x, y)
-			if img.Pix[at] <= img.Pix[at+1] || img.Pix[at] <= img.Pix[at+2] {
-				continue
-			}
-			cover := overlap(float64(x), float64(x+1), x0, x1) * overlap(float64(y), float64(y+1), y0, y1)
-			for c := 0; c < 3; c++ {
-				img.Pix[at+c] = uint8(math.Round(float64(img.Pix[at+c]) * (1 - 0.22*cover)))
+		radius := rect.radius * scale
+		for y := max(int(math.Floor(y0)), 0); y < min(int(math.Ceil(y1)), img.Bounds().Dy()); y++ {
+			for x := max(int(math.Floor(x0)), 0); x < min(int(math.Ceil(x1)), img.Bounds().Dx()); x++ {
+				px, py := float64(x)+0.5, float64(y)+0.5
+				cx := math.Max(x0+radius, math.Min(px, x1-radius))
+				cy := math.Max(y0+radius, math.Min(py, y1-radius))
+				coverage := math.Max(0, math.Min(1, radius+0.5-math.Hypot(px-cx, py-cy)))
+				paint := rect.paint
+				t := ((appArtwork.x+(px-originX)/scale-appArtwork.lightX)*appArtwork.lightDX +
+					(appArtwork.y+(py-originY)/scale-appArtwork.lightY)*appArtwork.lightDY) /
+					(appArtwork.lightDX*appArtwork.lightDX + appArtwork.lightDY*appArtwork.lightDY)
+				shade := appArtwork.shade(t)
+				light := func(channel uint8) uint8 {
+					v := float64(channel)
+					if shade > 0 {
+						v += (255 - v) * shade
+					} else {
+						v *= 1 + shade
+					}
+					return uint8(math.Round(v))
+				}
+				paint.R, paint.G, paint.B = light(paint.R), light(paint.G), light(paint.B)
+				blend(img, x, y, paint, coverage)
 			}
 		}
 	}
@@ -148,7 +106,7 @@ func darkenRect(img *image.NRGBA, x0, y0, x1, y1 float64) {
 // fillRect paints an axis-aligned rectangle with exact coverage.
 //
 // An axis-aligned rectangle's coverage of a pixel is the product of its two
-// overlaps. Splash aligns the grid to whole pixels to avoid compositing seams.
+// overlaps, keeping the continuous green underline free of tile seams.
 func fillRect(img *image.NRGBA, x0, y0, x1, y1 float64, paint color.NRGBA) {
 	bounds := img.Bounds()
 	left := max(int(math.Floor(x0)), bounds.Min.X)
