@@ -1,11 +1,12 @@
 import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { createPortal } from "react-dom"
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react"
 import { nextWord as t } from "../next-strings.js"
 import { client, followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import type { CloudClientHandle } from "../cloud/copied.js"
 import { onStatusRefresh } from "../status-refresh.js"
+import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
@@ -258,6 +259,29 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
 
 export type SessionBoardTarget = { machine?: string; source: SessionBoardSource; label: string; candidates: Actor[] }
 
+function isBoardBackdrop(event: MouseEvent<HTMLDialogElement>) {
+  if (event.target !== event.currentTarget) return false
+  const { left, right, top, bottom } = event.currentTarget.getBoundingClientRect()
+  return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom
+}
+
+function useBoardBackdrop() {
+  const pressedOutside = useRef(false)
+  return {
+    onPointerDown(event: PointerEvent<HTMLDialogElement>) {
+      pressedOutside.current = event.isPrimary && event.button === 0 && isBoardBackdrop(event)
+    },
+    onPointerCancel() { pressedOutside.current = false },
+    onClick(event: MouseEvent<HTMLDialogElement>) {
+      // The native dialog receives backdrop clicks too. A drag from inside
+      // can also end there, so require both ends to be outside.
+      const dismiss = pressedOutside.current && isBoardBackdrop(event)
+      pressedOutside.current = false
+      if (dismiss) event.currentTarget.close()
+    },
+  }
+}
+
 export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTarget[] }) {
   const [open, setOpen] = useState<string | null>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -299,8 +323,9 @@ function BoardMachinePicker({ targets, choose, close }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
+  const backdrop = useBoardBackdrop()
   useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close}>
+  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close} {...backdrop}>
     <header><h2 id={heading}>{t("sessionBoards")}</h2>
       <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
     </header>
@@ -318,12 +343,20 @@ function StatusBoardDialog({ target, close }: { target: SessionBoardTarget; clos
   return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} {...list} />
 }
 
+function BoardRefresh({ refresh, disabled }: { refresh: () => void; disabled?: boolean }) {
+  return <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardRefresh")}
+    title={t("sessionBoardRefresh")} onClick={refresh} disabled={disabled}>
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 7a8 8 0 1 0 1 10M19 3v4h-4" /></svg>
+  </button>
+}
+
 function BoardDialog({ source, initial, boards, loaded, problem, candidates, refresh, close }: {
   source: SessionBoardSource; initial: string; boards: Board[]; loaded: boolean; problem: boolean
   candidates: Actor[]; refresh: () => Promise<void>; close: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
+  const backdrop = useBoardBackdrop()
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
   const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
@@ -335,7 +368,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
   useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close}>
+  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} {...backdrop}>
     <header>
       {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
         title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}
@@ -350,19 +383,17 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
     </header>
     <div className="session-board-scroll" ref={view}>
     {selected ? <BoardMessages key={selected} source={source} id={selected} candidates={candidates} onRead={setOpened} />
-    : <div className="session-board-body" aria-busy={!loaded}>
+    : <div className="session-board-body">
       <div className="session-board-actions session-board-index-actions">
         {source.writable && candidates.length > 0 && <button type="button" className="session-board-primary"
           aria-expanded={creating} onClick={() => create(!creating)}>{t("sessionBoardCreate")}</button>}
-        <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardRefresh")}
-          title={t("sessionBoardRefresh")} onClick={() => void refresh()}>
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 7a8 8 0 1 0 1 10M19 3v4h-4" /></svg>
-        </button>
+        <BoardRefresh refresh={() => void refresh()} />
       </div>
       {creating && source.writable && <BoardCreate source={source} candidates={candidates} onCreated={id => {
         create(false); switchBoard(id)
       }} />}
       {problem && <p role="alert">{t("sessionBoardReadError")}</p>}
+      {!loaded && <LoadingSkeleton id="SK-36" label={t("sessionBoardsLoading")} />}
       {loaded && boards.length === 0 && !problem && <p>{t("sessionBoardsEmpty")}</p>}
       <ul className="session-board-index">{boards.map(board => {
         const unread = unreadFor(source, board)
@@ -447,6 +478,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
     const request = new AbortController()
     controller.current = request
     setReading(true)
+    setError("")
     try {
       const next = await sourceRef.current.read<Page>(before ? { board: id, before } : { board: id }, request.signal)
       if (request.signal.aborted) return
@@ -462,7 +494,6 @@ function BoardMessages({ source, id, candidates, onRead }: {
           invalidateSessionBoards(current.key)
         }
       }
-      setError("")
     } catch (e) {
       if (!request.signal.aborted) setError(boardErrorCode(e, "session_board_read_unavailable"))
     }
@@ -483,17 +514,16 @@ function BoardMessages({ source, id, candidates, onRead }: {
   const lead = b?.members?.find(m => m.id === b.lead)
   const members = b?.members?.filter(member => member.id !== b.lead) ?? []
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
-  return <div className="session-board-body" aria-busy={reading || change.busy}>
+  return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
+    {!page && !error && <LoadingSkeleton id="SK-37" kind="cards" label={t("sessionBoardMessagesLoading")} />}
     {error && <p role="alert">{t("sessionBoardReadError")} <code>{error}</code></p>}
+    {!page && error && <BoardRefresh refresh={() => void load()} />}
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
       <div className="session-board-overview">
         {lead && <div className="session-board-lead-strip"><SessionBoardLead /> <strong>{lead.label}</strong></div>}
         <div className="session-board-actions">
-          <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardRefresh")}
-            title={t("sessionBoardRefresh")} disabled={reading} onClick={() => void load()}>
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 7a8 8 0 1 0 1 10M19 3v4h-4" /></svg>
-          </button>
+          <BoardRefresh refresh={() => void load()} disabled={reading} />
           {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
           {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
         </div>

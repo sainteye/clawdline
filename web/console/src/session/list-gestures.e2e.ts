@@ -70,7 +70,10 @@ type ReadingScenario =
   | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
-let boardKeyboardFixture = false
+let boardFixture = false
+let holdBoardIndex: Promise<void> | undefined
+let holdBoardThread: Promise<void> | undefined
+let failBoardThread = false
 let fixtureLanguage = "zh-Hant"
 const callbackReason = "Go tests for a long command whose complete name cannot fit on a phone"
 let inlineDecisionFixture = false
@@ -424,16 +427,28 @@ function daemon(): Server {
       if (url.searchParams.has("look")) openedLooks.push(url.searchParams.get("look") ?? "")
       return json(res, 200, snapshot())
     }
-    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardKeyboardFixture ? { api_level: 87 } : {}) })
-    if (path === "/v1/orchestrator/session-boards" && boardKeyboardFixture) {
-      return json(res, 200, { boards: [{
-        id: "review", project: "fixture", name: "Keyboard board", purpose: "Check group focus", summary: "", latest: 0,
+    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: 87 } : {}) })
+    if (path === "/v1/orchestrator/session-boards" && boardFixture) {
+      const board = {
+        id: "review", project: "fixture", name: "Review board", purpose: "Review the Session console", summary: "", latest: 1,
         lead: "claude:conversation-" + SAFE,
         members: [
           { id: "claude:conversation-" + SAFE, label: "Lead" },
           { id: "claude:conversation-" + NEEDS_ATTESTATION, label: "Member" },
         ],
-      }] })
+      }
+      const thread = url.searchParams.has("board")
+      const hold = thread ? holdBoardThread : holdBoardIndex
+      const send = () => {
+        if (res.destroyed) return
+        if (thread && failBoardThread) return json(res, 503, { error: "session_board_unavailable" })
+        return json(res, 200, thread ? {
+          board, posts: [{ seq: 1, author: board.members[0], text: "Review complete.", at: 1 }], more: false,
+        } : { boards: [board] })
+      }
+      if (hold) void hold.then(send)
+      else send()
+      return
     }
     if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
       return json(res, 200, { ok: true, rows: [], truncated: false })
@@ -1191,11 +1206,14 @@ class Tab {
     return tree.nodes.filter((node: any) => node.role?.value === "option").map((node: any) => node.name?.value ?? "")
   }
 
-  async mouseAt(x: number, y: number, click = false): Promise<void> {
+  async mouseAt(x: number, y: number, click = false, releaseAt = { x, y }): Promise<void> {
     await this.b.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, this.session)
     if (!click) return
     await this.b.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, this.session)
-    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, this.session)
+    if (releaseAt.x !== x || releaseAt.y !== y) {
+      await this.b.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...releaseAt, buttons: 1 }, this.session)
+    }
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...releaseAt, button: "left", clickCount: 1 }, this.session)
   }
 
   /** A picture of the phone, for the report. */
@@ -1447,7 +1465,7 @@ test("keyboard moves through focused options and Enter opens the highlighted Ses
   }))
 
 test("Session navigation keeps focus on grouped rows in their visible order", async () => {
-  boardKeyboardFixture = true
+  boardFixture = true
   try {
     await inTab(async (tab) => {
       await tab.go("/")
@@ -1467,7 +1485,100 @@ test("Session navigation keeps focus on grouped rows in their visible order", as
       }
     })
   } finally {
-    boardKeyboardFixture = false
+    boardFixture = false
+  }
+})
+
+test("Session board stays the same height while its index and messages load", async () => {
+  boardFixture = true
+  try {
+    await inTab(async (tab) => {
+      for (const layout of ["phone", "desktop"]) {
+        if (layout === "desktop") await tab.desktop()
+        let releaseIndex!: () => void
+        let releaseThread!: () => void
+        holdBoardIndex = new Promise<void>(resolve => { releaseIndex = resolve })
+        holdBoardThread = new Promise<void>(resolve => { releaseThread = resolve })
+        try {
+          await tab.go("/")
+          await shortcutUntil(tab, '!!document.querySelector(".session-board-dock")')
+          await tab.press(".session-board-dock")
+          const dialog = '.session-board-dialog[open]'
+          await shortcutUntil(tab, `!!document.querySelector('${dialog}')`)
+          const height = () => tab.run(`document.querySelector('${dialog}').getBoundingClientRect().height`)
+          const skeletonVisible = (id: string) => shortcutUntil(tab, `(() => {
+            const status = document.querySelector('${dialog} [data-loading-id="${id}"][role="status"]')
+            return status && getComputedStyle(status).visibility === "visible"
+          })()`)
+          const loadingIndexHeight = await height()
+          assert.ok(loadingIndexHeight >= 400, `${layout} dialog leaves room for content while reading the index`)
+          await skeletonVisible("SK-36")
+          await tab.shotArea(`session-board-index-loading-${layout}`, dialog)
+
+          releaseIndex()
+          await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+          assert.equal(await height(), loadingIndexHeight)
+          await tab.press(`${dialog} .session-board-index-card`)
+          await shortcutUntil(tab, `!!document.querySelector('${dialog}[data-board]')`)
+          assert.equal(await height(), loadingIndexHeight, `${layout} opening a board keeps the dialog height`)
+          await skeletonVisible("SK-37")
+          await tab.shotArea(`session-board-thread-loading-${layout}`, dialog)
+
+          if (layout === "desktop") failBoardThread = true
+          releaseThread()
+          if (layout === "desktop") {
+            await shortcutUntil(tab, `!!document.querySelector('${dialog} [role="alert"]')`)
+            assert.equal(await height(), loadingIndexHeight)
+            assert.equal(await tab.run(`!!document.querySelector('${dialog} .loading-skeleton')`), false)
+            failBoardThread = false
+            await tab.press(`${dialog} .session-board-body button`)
+          }
+          await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-posts > li')`)
+          assert.equal(await height(), loadingIndexHeight)
+          assert.equal(await tab.run(`!!document.querySelector('${dialog} .loading-skeleton')`), false)
+        } finally {
+          releaseIndex()
+          releaseThread()
+        }
+      }
+    })
+  } finally {
+    holdBoardIndex = holdBoardThread = undefined
+    failBoardThread = false
+    boardFixture = false
+  }
+})
+
+test("a click on the Session board backdrop closes the dialog and returns focus", async () => {
+  boardFixture = true
+  try {
+    await inTab(async tab => {
+      await tab.desktop()
+      await tab.go("/")
+      const dock = ".session-board-dock"
+      const dialog = ".session-board-dialog[open]"
+      await shortcutUntil(tab, `!!document.querySelector('${dock}')`)
+      for (const thread of [false, true]) {
+        await tab.press(dock)
+        await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+        if (thread) {
+          await tab.press(`${dialog} .session-board-index-card`)
+          await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-posts > li')`)
+        }
+        const inside = await tab.run(`(() => {
+          const box = document.querySelector('${dialog}').getBoundingClientRect()
+          return { x: box.left + box.width / 2, y: box.bottom - 8 }
+        })()`)
+        await tab.mouseAt(inside.x, inside.y, true)
+        assert.equal(await tab.run(`!!document.querySelector('${dialog}')`), true, "empty space inside")
+        await tab.mouseAt(inside.x, inside.y, true, { x: 5, y: 5 })
+        assert.equal(await tab.run(`!!document.querySelector('${dialog}')`), true, "dragging out")
+        await tab.mouseAt(5, 5, true)
+        await shortcutUntil(tab, `!document.querySelector('${dialog}') && document.activeElement.matches('${dock}')`)
+      }
+    })
+  } finally {
+    boardFixture = false
   }
 })
 

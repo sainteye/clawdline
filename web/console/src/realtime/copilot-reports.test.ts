@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error -- Node runs the TypeScript source.
-import {SpokenSessions,SessionReportQueue,relativeSession,groupByProject,projectBatchSize,projectName,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
+import {nextReport,continueReport,SpokenSessions,SessionReportQueue,relativeSession,groupByProject,projectBatchSize,projectName,sessionBatchSize,sessionNamePosition,type SessionReportPage} from './copilot-reports.ts'
 const a={id:'one',label:'Browser keyboard',machine:'machine-a',conversation:'conversation-a'}
 const b={id:'two',label:'Voice workflow',machine:'machine-b',conversation:'conversation-b'}
 const c={id:'three',label:'Board planning',machine:'machine-a',conversation:'conversation-c'}
@@ -118,4 +118,11 @@ test('resuming an active report is idempotent and confirmed items survive interr
  queue.played([a]);queue.interrupt();queue.resume()
  assert.deepEqual(spoken.at(-1)?.sessions?.map(r=>r.session_id),[b.id],'a completed item cannot be replayed with its interrupted batch')
  queue.played([b]);assert.equal(queue.hasPending(),false)
+})
+
+
+test('complete requests for other Sessions advance presentation; continuation and unrelated speech do not',()=>{
+ for(const words of ['請介紹其他 Session 的進度','請你去介紹一下其他 Session','請說明剩下的 Sessions 現在在做什麼','Please describe the remaining sessions']){assert.equal(nextReport(words),true,words);assert.equal(continueReport(words),true,words)}
+ for(const words of ['繼續報告','請講快一點','不要介紹其他 Session','其他 Session 要不要刪除','Do not describe the other sessions','What did the other session say?'])assert.equal(nextReport(words),false,words)
+ assert.equal(continueReport('繼續報告'),true)
 })

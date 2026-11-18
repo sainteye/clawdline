@@ -66,6 +66,7 @@ function Fixture(){
   if(history.querySelector('details, summary'))throw Error('Tool history must not use disclosure triangles')
   const chips=history.querySelectorAll('.copilot-tools-trail > li')
   if(chips.length!==records.length)throw Error('Every invocation must retain its capsule')
+  if([...chips].map(chip=>chip.getAttribute('data-operation-id')).join()!==[...records].reverse().map(row=>row.id).join())throw Error('Newest invocations must appear first regardless of completion order')
   const chipStyle=getComputedStyle(chips[0])
   if(parseFloat(chipStyle.borderRadius)<100)throw Error('Tool entries must retain their capsule shape')
   const trail=history.getBoundingClientRect()

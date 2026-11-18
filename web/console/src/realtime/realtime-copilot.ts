@@ -203,6 +203,7 @@ export class RealtimeCopilotClient {
   private reportSerial=0
   private reportAbort?:AbortController
   private reportListOpening=false
+  private reportAdvanceTurn=-1
   private reportPlaybackEnded=false
   private reportInterrupted=false
   private lastRead?:{focus:{id:string;conversation?:string;machine?:string};output:string;at:number;input:string;spoken?:string}
@@ -697,13 +698,18 @@ export class RealtimeCopilotClient {
     if(heard){this.observeEndIntent(heard);this.journal('heard',heard);this.doneSinceHeard.clear();this.updateState({})}
     return heard||this.heardNow
   }
-  continueSessionReport(){
+  continueSessionReport(request?:string){
     if(this.endIntent.requested){this.executeEndIntent();return false}
-    if(this.live){
-      const heard=this.consumeLiveInput(),item=this.liveReportItem
-      // An explicit next request can pass an interrupted item. This is not a
-      // claim of completed playback and creates no spoken-reference authority.
-      if(item?.interrupted&&item.text&&nextReport(heard)){this.liveReportItem=undefined;this.sessionReports.played([item.ref])}
+    const heard=this.live?this.consumeLiveInput():request??''
+    const words=request??heard
+    const item=this.liveReportItem
+    const ref=this.live?item?.interrupted?item.ref:undefined:this.sessionReports.current()
+    // Passing an item is presentation control, never proof of heard words.
+    if(ref&&nextReport(words)&&this.reportAdvanceTurn!==this.questionSerial){
+      this.reportAdvanceTurn=this.questionSerial
+      if(this.live){this.liveReportRevision++;this.liveReportItem=undefined}
+      this.sessionReports.skip(ref)
+      this.journal('notice','session_report_skipped',{session_id:ref.id,basis:'explicit_next_request'})
     }
     const resumed=this.sessionReports.resume();this.updateState({});return resumed
   }
@@ -1273,7 +1279,7 @@ export class RealtimeCopilotClient {
               if(continuationConsent(event.transcript)&&batchConfirmation){
                 await this.confirmBatch(id,batchConfirmation,attempt,dc)
               } else if(continueReport(event.transcript)&&this.sessionReports.hasPending()){
-                this.answeredReads.add(id);this.activeConversationInput=id;this.sessionReports.resume()
+                this.answeredReads.add(id);this.activeConversationInput=id;this.continueSessionReport(event.transcript)
               } else if(continuationConsent(event.transcript)){
                 await this.confirmBatch(id,batchConfirmation,attempt,dc)
               } else if(messageConsent(event.transcript)||confirmation&&plainConsent(event.transcript)) {
@@ -1414,7 +1420,8 @@ export class RealtimeCopilotClient {
     if(page.error||!rows.length){this.sessionReports.interrupt(true);this.awaitingResponse=false;this.updateState({});return}
     for(const row of rows){
       if(!valid())return
-      this.liveSaid.take()
+      const said=this.liveSaid.take()
+      if(said){this.journal('said',said);this.flushJournal()}
       const prior=this.liveReportItem
       const already=prior?.ref.id===row.session_id&&prior.ref.label===row.label?prior.text:''
       const ref={id:row.session_id,label:row.label}
@@ -1438,7 +1445,7 @@ export class RealtimeCopilotClient {
     }
   }
 
-  private resetSessionReports(){clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined;this.liveReportRevision++;this.liveReportItem=undefined;if(this.live)this.awaitingResponse=false;this.reportListOpening=false;this.reportSerial++;this.reportAbort?.abort();this.reportAbort=undefined;this.sessionReports.reset();this.spokenSessions.reset();this.narrator.discard('session-report')}
+  private resetSessionReports(){this.reportAdvanceTurn=-1;clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined;this.liveReportRevision++;this.liveReportItem=undefined;if(this.live)this.awaitingResponse=false;this.reportListOpening=false;this.reportSerial++;this.reportAbort?.abort();this.reportAbort=undefined;this.sessionReports.reset();this.spokenSessions.reset();this.narrator.discard('session-report')}
   private reportOutput(page:SessionReportPage){const {remaining,...shown}=page;return JSON.stringify({...shown,reporting_rule:sessionReportGuidance(this.call.options.language??document.documentElement.lang)})}
   private startSessionReport(page:SessionReportPage,args:Record<string,unknown>,deps:ToolDeps,attempt:number,dc:RTCDataChannel|null,listOpening=false){
     this.reportListOpening=listOpening
@@ -1544,7 +1551,7 @@ export class RealtimeCopilotClient {
     let output:string,logs:{level:'info'|'tool'|'error';text:string}[]=[],reportResumed=false
     const steps:string[]=[]
     if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
-      reportResumed=this.sessionReports.resume();output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
+      reportResumed=this.continueSessionReport(utterance);output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
     } else if (event.name === 'prepare_session_board' || event.name === 'confirm_session_board') {
       output = JSON.stringify(await this.boardTool(event.name, args))
     } else if(managed && ['get_voice_work','queue_voice_work','retry_voice_work'].includes(event.name)) {

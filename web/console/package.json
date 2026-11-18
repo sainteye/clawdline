@@ -11,7 +11,9 @@
     "prebuild:cloud": "node ../../tools/ensure-web-deps.mjs",
     "build:cloud": "node tools/build-cloud.mjs",
     "prepreview": "node ../../tools/ensure-web-deps.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prebuild:demo": "node ../../tools/ensure-web-deps.mjs",
+    "build:demo": "tsc --noEmit -p tsconfig.demo.json && vite build --config vite.demo.config.ts"
   },
   "dependencies": {
     "@clawdline/contract": "*",
