@@ -2488,6 +2488,14 @@
     "Note": true
   },
   {
+    "Name": "console.transcript_quiet_failures",
+    "Err": true
+  },
+  {
+    "Name": "console.transcript_quiet_milliseconds",
+    "Err": true
+  },
+  {
     "Name": "console.transcript_revision_restarts",
     "Known": true,
     "Note": true
@@ -2496,6 +2504,10 @@
     "Name": "console.transcript_safety_seconds",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "console.transcript_slow_milliseconds",
+    "Err": true
   },
   {
     "Name": "console.video_preview_bytes",
