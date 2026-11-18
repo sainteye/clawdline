@@ -542,7 +542,8 @@
 
 /* Conversation inspectors share the existing scoped editors and BR-06 identity. */
 .project-assistants .pa-chat-layout,.project-assistants .pa-room-layout { display:grid;grid-template-columns:minmax(0,1fr);height:100%;min-height:0;position:relative;overflow:hidden; }
-.project-assistants.pa-shell>.pa-room-layout { position:absolute;inset:0;z-index:8;background:var(--pa-bg);border:0; }
+.project-assistants.pa-shell>.pa-room-layout { grid-area:1 / 2;min-width:0;background:var(--pa-bg); }
+.project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-main { display:none; }
 .project-assistants .pa-chat-layout.pa-info-open,.project-assistants .pa-room-layout.pa-members-open { grid-template-columns:minmax(0,1fr) minmax(280px,38%); }
 .project-assistants .pa-chat-layout>.pa-chat,.project-assistants .pa-room-layout>.pa-chat { min-height:0;overflow:hidden; }
 .project-assistants .pa-info-panel,.project-assistants .pa-room-members { min-width:0;min-height:0;overflow:auto;background:var(--pa-bg);border-left:1px solid var(--pa-line);padding:20px; }
@@ -637,8 +638,10 @@
   .project-assistants .pa-status-bar { padding-bottom:max(var(--indicator,0px),env(safe-area-inset-bottom,0px),12px); }
   /* The portal and connection details divide the same visible space. Neither
      the keyboard nor an expanded footer may cover the room's composer. */
+  .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-roster>:not(.pa-status-bar,.pa-roster-scroll),
+  .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-roster>.pa-roster-scroll>:not(dialog) { visibility:hidden; }
   .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-roster>.pa-status-bar { position:absolute;left:0;right:0;bottom:var(--pa-room-visible-bottom,0px);margin:0; }
-  .project-assistants.pa-shell>.pa-room-layout { top:var(--pa-room-visible-top,0px);bottom:calc(var(--pa-room-visible-bottom,0px) + var(--pa-room-status-height,0px));height:auto; }
+  .project-assistants.pa-shell>.pa-room-layout { position:absolute;inset:var(--pa-room-visible-top,0px) 0 calc(var(--pa-room-visible-bottom,0px) + var(--pa-room-status-height,0px));height:auto;z-index:8; }
   .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden])) .pa-source-checks { max-height:min(380px,var(--pa-room-details-height,100dvh)); }
   .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden])) .pa-source-backdrop { display:none; }
   .project-assistants .pa-room-layout .pa-chat-header,.project-assistants .pa-room-layout .pa-chat-footer { flex-shrink:0; }
