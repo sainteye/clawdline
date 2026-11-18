@@ -69,6 +69,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.archive_bytes": func() capacity.Reading {
+			return capacity.Unmeasured("offline CLI input is not retained or observed by the daemon")
+		},
 		"bots.cloud_receipts":             s.botCloudMeasure("receipts"),
 		"bots.cloud_pending":              s.botCloudMeasure("pending"),
 		"bots.cloud_frames":               s.botCloudMeasure("frames"),

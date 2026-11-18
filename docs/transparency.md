@@ -940,3 +940,15 @@ aggregate budgets and the reserve still govern compile admission; no permission,
 retention period, output protection or Bot authority changes. The existing
 instruction explanations remain accurate. The reviewed source receipts follow
 the guide wording; they do not establish website deployment acceptance.
+
+## Offline Bot archive recovery
+
+The persistent-Bot explanation in English and Taiwan Traditional Chinese now
+includes the local `archive restore` and read-only `archive export` commands.
+The operator explicitly names the expected machine, Bot and complete Project;
+the archive hash is integrity evidence, not a signature or a paired grant.
+The restore validates and reconstructs the archive before publishing a new
+isolated database. Neither command starts a native provider, resumes imported
+turns or replaces the running daemon's data. This introduces no model prompt
+or live recovery policy. The new command and refreshed parent-command source
+receipts do not establish actual-binary qualification or destination acceptance.

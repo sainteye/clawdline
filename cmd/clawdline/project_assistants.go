@@ -17,6 +17,9 @@ import (
 // send also sets up on demand. It finds the person's Claude Code and Node and
 // installs the adapter Clawdline supplies into local state.
 func projectAssistantsCommand(ctx context.Context, args []string, state string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "archive" {
+		return projectAssistantsArchive(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) == 2 && args[0] == "network-consent-sync" {
 		req, e := daemonRequest(http.MethodPost, "/v1/bot-network/consents/"+url.PathEscape(args[1])+"/sync", nil)
 		if e != nil {
@@ -45,7 +48,7 @@ func projectAssistantsCommand(ctx context.Context, args []string, state string, 
 		return projectAssistantsSwitch(args[0], stdout, stderr, daemonProjectAssistants)
 	}
 	if len(args) != 1 || args[0] != "setup-claude" && args[0] != "setup-codex" {
-		fmt.Fprint(stderr, cliCopy("misc", "project_assistants.setup_usage", "Usage: clawdline project-assistants enable | disable | status | setup-claude | setup-codex\n"))
+		fmt.Fprint(stderr, cliCopy("misc", "project_assistants.setup_usage", "Usage: clawdline project-assistants enable | disable | status | setup-claude | setup-codex | archive restore | archive export\n"))
 		return 2
 	}
 	codex := args[0] == "setup-codex"

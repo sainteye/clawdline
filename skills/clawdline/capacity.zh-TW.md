@@ -57,6 +57,7 @@
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.agent_rest_seconds` | 21600 | `seconds` | `expire` | `diagnostics` | — |
+| `bots.archive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_bytes` | 5242880 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.assistant_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
