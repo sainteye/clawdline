@@ -245,7 +245,7 @@ export function ProjectUnify({ place, openRequest = 0 }: { place: ProjectPlace; 
     <p className={`project-unify-status is-${tone}`} role="status" ref={statusLine} tabIndex={-1}>
       <span className="project-unify-dot" aria-hidden="true" />{status}
     </p>
-    <dialog className="project-unify-dialog" ref={dialog} aria-labelledby="project-unify-dialog-title"
+    <dialog data-modal-dismiss={String(!applying)} className="project-unify-dialog" ref={dialog} aria-labelledby="project-unify-dialog-title"
       // React hands this dialog's cancel (Escape) to the Project settings
       // dialog around it too, which then closes itself: measured in the e2e,
       // Escape here closed both until it stopped here.

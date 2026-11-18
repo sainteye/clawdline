@@ -126,7 +126,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
     <dt>{w("License")}</dt><dd>{p.license || w("Unknown")}</dd><dt>{w("Icon")}</dt><dd>{w(p.icon.kind === "project" ? "IconProject" : p.icon.asset ? "IconOwner" : "IconInitials")}</dd>
     <dt>{w("Source")}</dt><dd><a href={p.repo_url} target="_blank" rel="noreferrer">{p.owner}/{p.repo} ↗</a></dd>
   </dl>
-  return createPortal(<dialog ref={dialog} className="tl-dialog" aria-labelledby="tl-title" onCancel={e => { e.preventDefault(); onClose() }}>
+  return createPortal(<dialog data-modal-dismiss={String(!busy && !preparing && (!adding || !(url || title || summary || customPath)))} ref={dialog} className="tl-dialog" aria-labelledby="tl-title" onCancel={e => { e.preventDefault(); onClose() }}>
     <header className="tl-head"><div><h2 id="tl-title">{w("Title")}</h2><p>{w("Description")}</p></div><button type="button" disabled={busy} onClick={() => {
       back(); setURL(""); setTitle(""); setSummary(""); setCustomPath(""); setCustomCategory("development"); setAdding(true)
     }}>+ {w("Add")}</button><button type="button" aria-label={w("Close")} onClick={onClose}>×</button></header>

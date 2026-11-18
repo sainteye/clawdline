@@ -38,3 +38,10 @@
   .survey-tool-options { position: static; margin-top: 6px; box-shadow: none; }
   .survey-field select { font-size: 16px; }
 }
+
+.survey-heading {
+    position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 14px 0; background: var(--card);
+}
+.survey-heading h1 { margin: 0; }
+.survey-heading button { flex: none; }

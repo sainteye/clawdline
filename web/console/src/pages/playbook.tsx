@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { confirmAction } from "../confirm-action.js"
 import { ActionProgress } from "../ui/ActionProgress.js"
@@ -79,7 +80,12 @@ function PlaybookPage({ shown }: { shown: boolean }) {
   const opsDialog = useRef<HTMLDivElement>(null)
   const opsReturnFocus = useRef<HTMLElement | null>(null)
   opsOpenRef.current = opsOpen
+  const originalDraft = useRef<Draft | null>(null)
+  const editorBackdrop = useModalBackdrop(() => {
+    if (!busy && JSON.stringify(draft) === JSON.stringify(originalDraft.current)) setDraft(null)
+  })
   const openDraft = (next: Draft) => {
+    originalDraft.current = next
     if (!draft) returnFocus.current = document.activeElement as HTMLElement | null
     setError("")
     setDraft(next)
@@ -362,9 +368,12 @@ function PlaybookPage({ shown }: { shown: boolean }) {
       </div>)}</div>}
     </>}
     {draft && <div ref={editor} className="playbook-editor" role="dialog" aria-modal="true" aria-label={draft.id ? W("edit") : W("new")}
-      onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) setDraft(null) }}>
+      {...editorBackdrop}>
       <form tabIndex={-1} onSubmit={(event) => { event.preventDefault(); void save() }}>
-        <h2>{draft.id ? W("edit") : W("new")}</h2>
+        <header className="playbook-editor-head">
+          <h2>{draft.id ? W("edit") : W("new")}</h2>
+          <button type="button" disabled={busy} onClick={() => setDraft(null)}>{W("cancel")}</button>
+        </header>
         <div className="playbook-source-row"><span>{W("sourceLabel")}</span>{draft.source ? <div className="playbook-source-card">
           <button className="playbook-source-link" type="button" onClick={() => void showSource(draft.source!)}><span aria-hidden="true">↗</span><span><small>{draft.source.kind === "command" ? W("claudeCommand") : "Skill"}</small><strong>{draft.source.name}</strong></span></button>
           <button className="playbook-source-unlink" type="button" aria-label={W("unlinkSource")} title={W("unlinkSource")}
@@ -396,7 +405,6 @@ function PlaybookPage({ shown }: { shown: boolean }) {
         </div>
         {error && <p role="alert" className="playbook-error">{error}</p>}
         <div className="playbook-actions"><button className="playbook-primary" type="submit" aria-busy={busy && pendingAction === "save"} disabled={busy || !!draft.source && (sourceCheck !== "matched" || draft.global && draft.source.scope === "project")}><ActionProgress busy={busy && pendingAction === "save"} label={catalogWord("literal", "21aa64dd7446")}>{W("save")}</ActionProgress></button>
-          <button type="button" disabled={busy} onClick={() => setDraft(null)}>{W("cancel")}</button>
           {draft.id && <button className="playbook-delete" type="button" disabled={busy} aria-busy={busy && pendingAction === "delete"} onClick={() => void remove()}><ActionProgress busy={busy && pendingAction === "delete"} label={catalogWord("literal", "a5df1fce3ed1")}>{W("delete")}</ActionProgress></button>}</div>
       </form>
     </div>}

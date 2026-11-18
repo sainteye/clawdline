@@ -393,8 +393,13 @@
 .pa-output-card>button{display:flex;flex-direction:column;align-items:flex-start;gap:.35rem;width:100%;padding:1rem;text-align:left;border:1px solid var(--pa-line);background:var(--pa-card);color:inherit}
 .pa-output-card strong{overflow-wrap:anywhere}
 .pa-output-card small{opacity:.7}
-.pa-output-overlay{position:fixed;inset:12px;z-index:1500;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:auto}
-.pa-output-overlay>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pa-output-scrim { position: fixed; inset: 0; z-index: 1500; background: #0009; }
+.pa-output-overlay{position:absolute;inset:12px;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:auto}
+.pa-output-overlay > header {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: -16px -16px 0; padding: 16px; background: var(--pa-bg,#080808);
+}
 .pa-output-overlay h3{margin:0;overflow-wrap:anywhere}
 .pa-output-overlay>button{align-self:flex-start}
 .pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
@@ -639,4 +644,12 @@
   .project-assistants .pa-room-layout .pa-chat-header,.project-assistants .pa-room-layout .pa-chat-footer { flex-shrink:0; }
   .project-assistants .pa-room-layout .pa-chat-footer { padding-bottom:16px; }
   .project-assistants .pa-room-reply { min-height:44px; }
+}
+
+.project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 5; background: #000a; }
+.project-assistants .pa-form-scrim > .pa-form-panel { box-shadow: none; }
+.project-assistants .pa-form-panel > .pa-toolbar {
+    position: sticky; top: 0; z-index: 3;
+    margin: -20px -18px 0; padding: 20px 18px 8px;
+    background: var(--pa-bg);
 }

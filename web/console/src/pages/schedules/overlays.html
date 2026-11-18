@@ -51,7 +51,10 @@
 <div class="overlay" id="schedule-form" hidden>
     <div class="sheet schedule-sheet" id="schedule-sheet" role="dialog" aria-modal="true"
          aria-labelledby="schedule-form-title">
-        <h2 id="schedule-form-title">New schedule</h2>
+        <header class="schedule-form-heading">
+            <h2 id="schedule-form-title">New schedule</h2>
+            <button class="chip" id="schedule-cancel" type="button"></button>
+        </header>
         <p class="say" id="schedule-form-say"></p>
 
         <div class="block">
@@ -161,7 +164,6 @@
                  sheets.css, the same way a destructive action sits apart from the other two in
                  every list of them this page draws. -->
             <button class="chip danger" id="schedule-delete" type="button" hidden></button>
-            <button class="chip" id="schedule-cancel" type="button"></button>
             <button class="chip confirm-go" id="schedule-go" type="button">Create</button>
         </div>
     </div>

@@ -1449,7 +1449,10 @@ export function StartSheet() {
     <>
     <div className="overlay" id="start" hidden>
       <div className="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-labelledby="start-title">
-        <h2 id="start-title" tabIndex={-1}>{T.webStart}</h2>
+        <header className="start-sheet-heading">
+          <h2 id="start-title" tabIndex={-1}>{T.webStart}</h2>
+          <button className="chip" id="start-close" type="button">{T.webClose}</button>
+        </header>
         <div className="block" id="start-mode-panel" role="group" aria-labelledby="start-title">
           <p className="say" id="start-say" role="status" aria-live="polite"></p>
           <div className="row" id="start-machine" hidden></div>
@@ -1501,13 +1504,10 @@ export function StartSheet() {
           <p className="said" id="start-said" role="status" aria-live="polite"></p>
         </div>
 
-        <button className="chip wide" id="start-close" type="button">
-          {T.webClose}
-        </button>
       </div>
     </div>
     <ProjectFolderPicker open={folderOpen} machine={onMachine?.id} onClose={() => setFolderOpen(false)} onAdded={() => load(true)} />
-      <dialog ref={removeDialog} className="project-remove-dialog"
+      <dialog data-modal-dismiss="true" ref={removeDialog} className="project-remove-dialog"
         onCancel={event => { if (removeBusy) event.preventDefault(); else setRemoveTarget(null) }}
         onClose={() => { if (!removeBusy) setRemoveTarget(null) }}>
         <h2>{nextWord("projectsRemoveTitle")}</h2>

@@ -141,3 +141,7 @@
 
 /* Credits in use: the plan is spent and each turn is charged to credits. */
 .credits-in-use b { color: var(--bad); }
+
+.info-sheet .info-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; }
+.info-sheet .info-head h2 { margin: 0; padding: 0; }
+.info-sheet .info-head .chip { flex: none; }

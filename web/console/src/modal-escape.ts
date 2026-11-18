@@ -1,3 +1,5 @@
+import { requestDialogCancel } from "./modal-backdrop.js"
+
 /** Keep a handled modal Escape from reaching the system's default key action. */
 export function bindModalEscape(win: Window): () => void {
   const doc = win.document
@@ -15,8 +17,7 @@ export function bindModalEscape(win: Window): () => void {
     // Cancelling keydown avoids the native invalid-key sound. Preserve the
     // dialog's normal, vetoable cancel lifecycle instead of bypassing busy
     // guards or React's onCancel. Inner controls get their key first.
-    const cancel = new Event("cancel", { cancelable: true })
-    if (dialog.dispatchEvent(cancel) && dialog.open) dialog.close()
+    requestDialogCancel(dialog)
   }
   // Bubble after React and the sheet's own handlers. Capture would take Escape
   // away from nested pickers and could close a parent on the same key.

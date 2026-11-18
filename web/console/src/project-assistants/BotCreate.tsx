@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
@@ -84,7 +85,10 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   }
   const close=()=>{lifetime.current?.abort();read.current?.abort();sequence.current++;onClose()}
   // A manually retried unknown create uses its held settings, never a new command.
-  return <section className="pa-form-panel" role="dialog" aria-modal="true" aria-label={w.create}>
+  const backdrop = useModalBackdrop(() => {
+    if (!busy && !pending.current && !name && !instructions) close()
+  })
+  return <div className="pa-form-scrim" {...backdrop}><section className="pa-form-panel" role="dialog" aria-modal="true" aria-label={w.create}>
     <header className="pa-toolbar"><button onClick={close}>{w.cancel}</button><h2>{w.create}</h2><button disabled={busy||(!ready&&!canRetryCreate)||!name.trim()||!project||!own?.agents.includes(agent)} onClick={()=>void submit()}>{pending.current?w.retry:w.createSubmit}</button></header>
     <div className="pa-form-body"><div className="pa-form-avatar"><BotAvatar appearance={appearance} size={70}/></div><fieldset disabled={busy||!!pending.current}>
       <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
@@ -99,5 +103,5 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     </fieldset><p>{w.createHint}</p>{error&&<p role="alert" className="pa-form-error">{w.projectsFailed} <small>({error})</small></p>}
       {createError&&<p role="alert" className="pa-form-error">{botFailureText(createError,w as unknown as Record<string,string>)} <small>({createError})</small></p>}
       <button type="button" className="pa-create-bottom" disabled={busy||(!ready&&!canRetryCreate)||!name.trim()||!project||!own?.agents.includes(agent)} onClick={()=>void submit()}>{pending.current?w.retry:w.createSubmit}</button></div>
-  </section>
+  </section></div>
 }

@@ -48,7 +48,7 @@
 .playbook-edit-label { flex: none; color: var(--accent); font-size: .9rem; }
 .playbook-error { color: var(--danger, #d84a4a); }
 .playbook-editor { position: fixed; inset: 0; z-index: 120; background: #000a; display: grid; place-items: center; padding: 1rem; }
-.playbook-editor form { margin: 0; width: min(100%, 42rem); max-height: 90dvh; overflow: auto; display: grid; gap: 1.2rem; padding: clamp(1.3rem, 3vw, 2rem); background: var(--card); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 1rem 3rem #0005; }
+.playbook-editor form { margin: 0; width: min(100%, 42rem); max-height: 90dvh; overflow: auto; display: grid; gap: 1.2rem; background: var(--card); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 1rem 3rem #0005; }
 .playbook-editor h2 { margin: 0 0 .25rem; }
 .playbook-source-row { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; color: var(--dim); font-size: .88rem; }
 .playbook-source-row > span:first-child { width: 100%; font-weight: 600; }
@@ -120,3 +120,10 @@
 .playbook-page .playbook-ops-options input { width: 1.15rem; height: 1.15rem; flex: none; padding: 0; }
 .playbook-ops-options span { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; }
 .playbook-ops-options small { color: var(--dim); }
+
+.playbook-editor form { --editor-pad: clamp(1.3rem, 3vw, 2rem); padding: var(--editor-pad); }
+.playbook-editor-head {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: calc(0px - var(--editor-pad)) calc(0px - var(--editor-pad)) 0;
+  padding: var(--editor-pad) var(--editor-pad) .5rem; background: var(--card);
+}

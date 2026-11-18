@@ -1236,7 +1236,10 @@ const Schedule = (() => {
     chosenAssistant = preferred || (assistants.length ? assistants[0].id : null)
   }
 
+  let edited = false
+
   function reset(): void {
+    edited = false
     creating = false
     editingId = null
     loadingEdit = false
@@ -1322,7 +1325,8 @@ const Schedule = (() => {
     daysGuessed = !(Number(draft.confidence) >= 0.5) && !heard.length
     days = heard.length ? heard : "daily"
     chosenPlace = draft.place_id || null
-    el<HTMLTextAreaElement>("schedule-instructions").value = instructions || ""
+    el<HTMLTextAreaElement>("schedule-instructions").value = instructions
+    edited = true || ""
     drawDays()
     drawPlaces()
     said(draft.question || hint())
@@ -1845,6 +1849,8 @@ const Schedule = (() => {
     openFrom,
     openEdit,
     close,
+    closeFromBackdrop: () => { if (!edited) close() },
+    markEdited: () => { edited = true },
     create,
     pick: pickPlace,
     toggle: togglePlaces,
@@ -2554,7 +2560,7 @@ const ScheduleHistory = (() => {
       })
   }
 
-  return { open, close, edit, pick, runNow, webhookAction }
+  return { open, close, closeFromBackdrop: () => { if (!ephemeralURL) close() }, edit, pick, runNow, webhookAction }
 })()
 
 /* ---- view/static.js: the form's words that never change while it is open ---- */
@@ -2637,7 +2643,11 @@ function ensureOverlays(): void {
   overlaysBound = true
 
   // input/schedule.js's wiring.
-  el("schedule-form").addEventListener("click", () => Schedule.close())
+  el("schedule-form").addEventListener("click", () => Schedule.closeFromBackdrop())
+  el("schedule-sheet").addEventListener("input", () => Schedule.markEdited())
+  el("schedule-sheet").addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("button[aria-pressed], #schedule-places button")) Schedule.markEdited()
+  }, true)
   el("schedule-sheet").addEventListener("click", (ev) => ev.stopPropagation())
   el("schedule-cancel").addEventListener("click", () => Schedule.close())
   el("schedule-go").addEventListener("click", () => Schedule.create())
@@ -2687,7 +2697,7 @@ function ensureOverlays(): void {
   )
 
   // input/schedule-history.js's wiring, the sheet half.
-  el("schedule-history").addEventListener("click", () => ScheduleHistory.close())
+  el("schedule-history").addEventListener("click", () => ScheduleHistory.closeFromBackdrop())
   el("schedule-history-sheet").addEventListener("click", (ev) => ev.stopPropagation())
   el("schedule-history-close").addEventListener("click", () => ScheduleHistory.close())
   el("schedule-history-edit").addEventListener("click", () => ScheduleHistory.edit())

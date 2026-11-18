@@ -300,7 +300,12 @@ export function RestoreSheet({
         aria-labelledby="restore-title"
         onClick={(ev) => ev.stopPropagation()}
       >
-        <h2 id="restore-title">{nextWord("restoreSheetTitle")}</h2>
+        <header className="restore-head">
+          <h2 id="restore-title">{nextWord("restoreSheetTitle")}</h2>
+          <button className="chip restore-quiet restore-later" type="button" disabled={busy} onClick={onClose}>
+            {acted ? nextWord("restoreDone") : nextWord("restoreCancel")}
+          </button>
+        </header>
         <div className="block">
           <p className="say">{nextWord("restoreSheetSay")}</p>
           <ul className="restore-list">
@@ -348,9 +353,6 @@ export function RestoreSheet({
           </button>
           <button className="chip restore-quiet restore-dismiss" type="button" disabled={busy} onClick={dismissAll}>
             {phase === "dismissing" ? nextWord("restoreDismissing") : nextWord("restoreDismissAll")}
-          </button>
-          <button className="chip restore-quiet restore-later" type="button" disabled={busy} onClick={onClose}>
-            {acted ? nextWord("restoreDone") : nextWord("restoreCancel")}
           </button>
         </div>
       </div>

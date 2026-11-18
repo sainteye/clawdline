@@ -66,7 +66,11 @@
 
 .browser-audit-dialog { box-sizing: border-box; width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); overflow-y: auto; overscroll-behavior: contain; }
 .browser-audit-dialog::backdrop { background: #0009; }
-.browser-audit-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.browser-audit-dialog > header {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin: -20px -20px 0; padding: 20px; background: var(--bg);
+}
 .browser-audit-dialog h2 { margin: 0; font-size: 20px; }
 .browser-audit-dialog .chip, .browser-audit-dialog select { min-height: 44px; }
 @media (max-width: 600px) { .browser-audit-dialog { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); } }

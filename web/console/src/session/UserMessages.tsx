@@ -190,7 +190,12 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
       }}
     >
       <div className="user-messages-head">
-        <h2 id="user-messages-title">{words.title}</h2>
+        <div className="user-messages-title-row">
+          <h2 id="user-messages-title">{words.title}</h2>
+          <button className="chip" id="user-messages-close" type="button" ref={closeButton} onClick={onClose}>
+            {T.webClose}
+          </button>
+        </div>
         <input
           className="user-messages-search"
           id="user-messages-search"
@@ -228,11 +233,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
           <p className="user-messages-empty">{all.length ? words.noMatches : words.empty}</p>
         )}
       </div>
-      <div className="buttons">
-        <button className="chip" id="user-messages-close" type="button" ref={closeButton} onClick={onClose}>
-          {T.webClose}
-        </button>
-      </div>
+
     </div>
   )
 }

@@ -521,16 +521,12 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         where to start and leaves this list where it is; the others move the
         console onto the machine, which is what their sheets read. */}
     <dialog ref={machineDialog} className="cloud-all-machine-dialog"
-      aria-label={nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}
-      onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return
-        const { left, right, top, bottom } = event.currentTarget.getBoundingClientRect()
-        if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) {
-          setMachineAction(null)
-        }
-      }}>
-      <h2>{nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}</h2>
+      data-modal-dismiss="true" aria-label={nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}
+      onCancel={(event) => { event.preventDefault(); setMachineAction(null) }}>
+      <header className="cloud-all-machine-heading">
+        <h2>{nextWord(machineAction === "start" ? "cloudStartWhere" : "cloudSwitch")}</h2>
+        <button className="cloud-all-machine-cancel" type="button" onClick={() => setMachineAction(null)}>{nextWord("cloudActionCancel")}</button>
+      </header>
       <p className="cloud-all-machine-help">{nextWord(machineAction === "start" ? "cloudStartWhereHelp" : "cloudSwitchWhereHelp")}</p>
       <div className="cloud-all-machine-options">{machines.map((machine) => <button className="cloud-all-machine-option" key={machine.id} type="button" onClick={() => {
         const action = machineAction
@@ -544,9 +540,6 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           <path d="m9 5 7 7-7 7" />
         </svg>
       </button>)}</div>
-      <div className="cloud-all-machine-actions">
-        <button className="cloud-all-machine-cancel" type="button" onClick={() => setMachineAction(null)}>{nextWord("cloudActionCancel")}</button>
-      </div>
     </dialog>
   </>
 }

@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../modal-backdrop.js"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import type { PageModule } from "./types.js"
@@ -121,13 +122,14 @@ function TypeIcon({ icon }: { icon: OpsIcon }) {
   </svg>
 }
 
-function Modal({ open, title, onClose, children, returnTo, wide = false }: {
-  open: boolean; title: string; onClose: () => void; children: ReactNode; returnTo?: RefObject<HTMLElement | null>; wide?: boolean
+function Modal({ open, title, onClose, children, returnTo, wide = false, retainDraft = false }: {
+  open: boolean; title: string; onClose: () => void; children: ReactNode; returnTo?: RefObject<HTMLElement | null>; wide?: boolean; retainDraft?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useDialog(open, ref, onClose, returnTo)
+  const backdrop = useModalBackdrop(() => { if (!retainDraft) onClose() })
   if (!open) return null
-  return <div className="ops-overlay" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+  return <div className="ops-overlay" {...backdrop}>
     <div ref={ref} className={`ops-dialog${wide ? " ops-dialog-wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
       <header><h2>{title}</h2><button type="button" className="ops-icon-button" onClick={onClose} aria-label={W("close")}>×</button></header>
       {children}
@@ -666,7 +668,7 @@ function MarkdownDialog({ open, place, onClose, onCreated, returnTo }: DialogPro
   }
 
   const gitChoice = setup && needsGitChoice(setup)
-  return <Modal open={open} title={W("markdownDialog")} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
+  return <Modal open={open} title={W("markdownDialog")} retainDraft={!!(name || content || include)} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
     <form className="ops-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <label className="ops-field">{W("markdownName")}<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
         <small>{W("markdownNameHint", { name: markdownName(name) || "…" })}</small></label>
@@ -731,7 +733,7 @@ function FileDialog({ open, place, onClose, onCreated, returnTo }: DialogProps) 
   const sorted = [...listing].filter((row) => row.kind === "directory" || row.kind === "file")
     .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "directory" ? -1 : 1))
 
-  return <Modal open={open} title={W("fileDialog")} onClose={() => { if (!busy) onClose() }} returnTo={returnTo} wide>
+  return <Modal open={open} title={W("fileDialog")} retainDraft={!!title} onClose={() => { if (!busy) onClose() }} returnTo={returnTo} wide>
     <div className="ops-form">
       <div className="ops-browse-head">
         <button type="button" disabled={!directory || loading} onClick={() => void browse(parent)}><span aria-hidden="true">↑</span> {W("fileUp")}</button>
@@ -787,7 +789,7 @@ function LinkDialog({ open, place, sessions, sessionsFailed, onClose, onCreated,
     onCreated(created, problem ?? undefined)
   }
 
-  return <Modal open={open} title={W("linkDialog")} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
+  return <Modal open={open} title={W("linkDialog")} retainDraft={!!(url || title || terminal)} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
     <form className="ops-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <label className="ops-field">{W("linkUrl")}<input type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://" autoComplete="off" />
         <small>{W("linkUrlHint")}</small></label>
@@ -821,7 +823,7 @@ function CollectionDialog({ open, place, onClose, onCreated, returnTo }: DialogP
     try { await createOps(place.id, { kind: "collection", name: name.trim() }, keys.key(signature)); keys.settle(signature); onCreated(undefined) }
     catch (cause) { if (!(cause instanceof OpsError && cause.uncertain)) keys.settle(signature); setError(refusalText(cause)); setBusy(false) }
   }
-  return <Modal open={open} title={W("collectionDialog")} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
+  return <Modal open={open} title={W("collectionDialog")} retainDraft={!!name} onClose={() => { if (!busy) onClose() }} returnTo={returnTo}>
     <form className="ops-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <label className="ops-field">{W("collectionName")}<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label>
       {error && <p role="alert" className="ops-error">{error}</p>}

@@ -20,9 +20,8 @@ export function CopilotDemoFilm({ open, onClose }: { open: boolean; onClose: () 
   if (!open) return null
   const narrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 720px)').matches === true
   const film = demoFilmFor(currentCatalogTag() || 'en', narrow)
-  return createPortal(<dialog ref={dialog} className="copilot-demo-film" aria-labelledby="copilot-demo-title" tabIndex={-1}
-    onCancel={(event) => { event.preventDefault(); onClose() }}
-    onClick={(event) => { if (event.target === dialog.current) onClose() }}>
+  return createPortal(<dialog data-modal-dismiss="true" ref={dialog} className="copilot-demo-film" aria-labelledby="copilot-demo-title" tabIndex={-1}
+    onCancel={(event) => { event.preventDefault(); onClose() }}>
     <div className="copilot-demo-head">
       <h2 id="copilot-demo-title">{nextWord('copilotDemoTitle')}</h2>
       <button type="button" className="copilot-demo-close" aria-label={nextWord('copilotDemoClose')} onClick={onClose}>✕</button>

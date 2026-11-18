@@ -42,7 +42,7 @@ export function MenuHandoffNotice({ onSwitch, onStay }: { onSwitch: () => void; 
   }, [left])
 
   return (
-    <dialog ref={dialog} className="menu-handoff" aria-labelledby={title}
+    <dialog data-modal-dismiss="true" ref={dialog} className="menu-handoff" aria-labelledby={title}
       onCancel={(event) => { event.preventDefault(); decide(false) }}>
       <h2 id={title}>{catalogWord("nativeTerminal", "handoffTitle")}</h2>
       <p>{catalogWord("nativeTerminal", "handoffBody")}</p>

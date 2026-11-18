@@ -1,8 +1,11 @@
+import { bindNativeModalBackdrop } from "./modal-backdrop.js"
+
 /** Keep the modal in the keyboard focus chain without choosing an action for the person. */
 const keyboardRoots = new WeakSet<HTMLElement>()
 
 export function showModalWithoutChoice(dialog: HTMLDialogElement | null | undefined): void {
   if (!dialog || dialog.open) return
+  if (dialog.hasAttribute("data-modal-dismiss")) bindNativeModalBackdrop(dialog)
   dialog.tabIndex = -1
   dialog.showModal()
   focusModalContainer(dialog)

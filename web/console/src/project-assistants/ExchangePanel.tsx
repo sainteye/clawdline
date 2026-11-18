@@ -1,3 +1,4 @@
+import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import {useEffect,useRef,useState} from "react"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
@@ -14,7 +15,8 @@ export function ExchangePanel({source,scope,reference,language,onClose}:{source:
   const identity=JSON.stringify([scope.key,scope.project,scope.conversation_id,reference.id,reference.revision,reference.source,reference.target,reference.source_turn_id,reference.request_turn_id]),revision=source.authorizationRevision
   useEffect(()=>{
     const previous=document.activeElement,el=dialog.current
-    el?.showModal();close.current?.focus()
+    if (el) { bindNativeModalBackdrop(el); el.showModal() }
+    close.current?.focus()
     return()=>{el?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()}
   },[])
   useEffect(()=>{
@@ -30,7 +32,7 @@ export function ExchangePanel({source,scope,reference,language,onClose}:{source:
   const valid=source.current?.()!==false&&source.authorizationRevision===revision
   const value=valid?current?.value:undefined,error=valid?current?.error:"pa_revoked",x=value?.exchange
   const who=(p:W.ProjectAssistantExchangeEndpoint)=>`${p.key.bot_id===scope.key.bot_id&&value?.botName?value.botName+" · ":""}${p.key.bot_id}`
-  return <dialog ref={dialog} className="pa-exchange-panel" aria-label={w.title} onCancel={event=>{event.preventDefault();onClose()}}>
+  return <dialog data-modal-dismiss="true" ref={dialog} className="pa-exchange-panel" aria-label={w.title} onCancel={event=>{event.preventDefault();onClose()}}>
     <header><h3>{w.title}</h3><button ref={close} type="button" onClick={onClose}>{w.close}</button></header>
     <div className="pa-exchange-scroll" aria-busy={!x&&!error}>
       {!x&&!error&&<p role="status">{w.loading}</p>}

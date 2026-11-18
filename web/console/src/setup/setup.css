@@ -32,7 +32,9 @@
   max-height: calc(100vh - 32px);
   box-sizing: border-box;
   margin: auto;
-  padding: 24px 40px 32px;
+  --setup-pad-top: 24px;
+  --setup-pad-inline: 40px;
+  padding: var(--setup-pad-top) var(--setup-pad-inline) 32px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--card);
@@ -43,7 +45,12 @@
 .setup-dialog[open] { display: flex; flex-direction: column; }
 .setup-dialog::backdrop { background: rgba(8, 8, 10, 0.7); }
 
-.setup-top { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
+.setup-top {
+  position: sticky; top: 0; z-index: 2; flex: none;
+  display: flex; align-items: center; justify-content: space-between; min-height: 32px;
+  margin: calc(0px - var(--setup-pad-top)) calc(0px - var(--setup-pad-inline)) 0;
+  padding: var(--setup-pad-top) var(--setup-pad-inline) 8px; background: var(--card);
+}
 .setup-track { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
 .setup-track li { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); }
 .setup-track li + li::before { content: ""; width: 16px; height: 1px; margin-right: 10px; background: var(--line); }
@@ -157,6 +164,6 @@
 .setup-ending-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 28px; }
 
 @media (max-width: 520px) {
-  .setup-dialog { padding: 20px 20px 24px; }
+  .setup-dialog { --setup-pad-top: 20px; --setup-pad-inline: 20px; padding-bottom: 24px; }
   .setup-actions { flex-wrap: wrap; }
 }

@@ -1,3 +1,4 @@
+import { useModalBackdrop } from "../../modal-backdrop.js"
 import { ChevronIcon } from "../../ui/ChevronIcon.js"
 import { BoardCardDetail } from "./BoardCardDetail.js"
 import { ActionProgress } from "../../ui/ActionProgress.js"
@@ -1484,12 +1485,13 @@ function CreatedWorkModal({ item, created = true, back, sessions, sessionList, r
 }) {
   const modal = useRef<HTMLDivElement>(null)
   useModalDismiss(false, onClose)
+  const backdrop = useModalBackdrop(() => { if (!busy) onClose() })
   useModalFocus(modal, back)
   // Opened from a Session too, so it lives beside the app root, never inside
   // the fixed Session pane: a phone then keeps one scroll surface.
   return createPortal(<div ref={modal} tabIndex={-1} className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
     role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
-    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    {...backdrop}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
       <div className="work-modal-head"><div>{created && <p className="board-eyebrow">{catalogWord("ui", "workItemCreated")}</p>}
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
@@ -1531,9 +1533,10 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   useLayoutEffect(() => focusModalContainer(dialog.current), [])
   const [description, setDescription] = useState(item.description)
   const ready = !!title.trim() && !!description.trim()
+  const backdrop = useModalBackdrop(() => { if (!busy && title === item.title && description === item.description) onClose() })
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-edit-modal" ref={dialog} role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
-    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    {...backdrop}>
     <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">{catalogWord("inline", "308278979452")}</p><h2 id={`work-edit-title-${item.id}`}>{catalogWord("inline", "9293ae04361c")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
@@ -1554,8 +1557,9 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
   onDelete: () => void
 }) {
   useModalDismiss(busy, onClose)
+  const backdrop = useModalBackdrop(() => { if (!busy) onClose() })
   return <div className="session-todo-modal work-delete-modal" role="dialog" aria-modal="true" aria-labelledby={`work-delete-title-${item.id}`}
-    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    {...backdrop}>
     <form onSubmit={(event) => { event.preventDefault(); onDelete() }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">{catalogWord("inline", "2f1f9c448f96")}</p><h2 id={`work-delete-title-${item.id}`}>{catalogWord("inline", "4d05a8ee3b50")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
@@ -1698,9 +1702,12 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     : places
   const ready = !!projectID && !!title.trim() && !!description.trim()
   const reviewingDraft = !!(initialDraft.projectID || initialDraft.title || initialDraft.description)
+  const dirty = projectID !== (initialDraft.projectID || initialProject) || kind !== (initialDraft.kind || "feature")
+    || title !== (initialDraft.title || "") || description !== (initialDraft.description || "") || reviewRequired || !!issueSync || images.length > 0
+  const backdrop = useModalBackdrop(() => { if (!busy && !dirty && !sync.authorizing) onClose() })
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
-    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
+    {...backdrop}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready || sync.authorizing) return
     void (async () => {
       // Sending a sync this machine is not authorized for authorizes first;

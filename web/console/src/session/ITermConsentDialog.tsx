@@ -19,7 +19,7 @@ export function ITermConsentDialog() {
   }, [open])
   const saving = state.phase === "saving"
   const saved = state.phase === "saved"
-  return <dialog ref={dialog} className="iterm-consent-dialog"
+  return <dialog data-modal-dismiss="true" ref={dialog} className="iterm-consent-dialog"
     aria-labelledby="iterm-consent-title" aria-describedby="iterm-consent-description"
     onCancel={event => { event.preventDefault(); if (!saving) itermConsent.close() }}>
     <h2 id="iterm-consent-title">{word(saved ? "savedTitle" : "title")}</h2>

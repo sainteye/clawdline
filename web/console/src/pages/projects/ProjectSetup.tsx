@@ -231,13 +231,13 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       }}
     >{catalogWord("inline", "4ad26221870f")}</button>
   </section>
-    {createPortal(<dialog
+    {createPortal(<dialog data-modal-dismiss="true"
       className="project-setup-dialog"
       data-view={view}
       ref={dialog}
       tabIndex={-1}
       aria-labelledby="project-setup-title"
-      onCancel={event => { event.preventDefault(); requestClose() }}
+      onCancel={event => { if (event.target === event.currentTarget) { event.preventDefault(); requestClose() } }}
       onClose={() => {
         const place = pendingSelection.current
         pendingSelection.current = null

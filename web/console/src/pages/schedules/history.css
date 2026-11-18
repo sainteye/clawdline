@@ -117,3 +117,9 @@
 /* With no runs the list is an empty bordered box; the sentence under it says so instead. */
 .schedule-run-rows:empty { display: none; }
 .schedule-history-sheet .schedule-history-empty { margin-top: 2px; font-size: 13px; }
+
+.schedule-form-heading {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin: -20px -22px 6px; padding: 12px 22px; background: var(--card);
+}
+.schedule-form-heading h2 { margin: 0; }

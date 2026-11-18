@@ -1121,7 +1121,7 @@ export function bindInfo(): () => void {
   const refresh = node("info-refresh")
   const body = node("info-body")
   if (!overlay || !sheet || !close || !refresh || !body) return () => {}
-  const onOverlay = () => Info.close()
+  const onOverlay = () => { if (!editingTitle && !busy) Info.close() }
   const onSheet = (ev: Event) => ev.stopPropagation()
   const onClose = () => Info.close()
   const onRefresh = () => Info.refresh()

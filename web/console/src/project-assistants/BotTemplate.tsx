@@ -1,3 +1,4 @@
+import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { useEffect, useRef, useState } from "react"
 import type { SourceClient } from "./client"
 import { authorized } from "./client"
@@ -25,6 +26,7 @@ export function BotTemplate({opener,source,current,scope,available,w,onClose}: {
     queueMicrotask(()=>{if(!controller.signal.aborted)history.pushState({...before,paTemplate:marker},"")})
     const back=()=>closeRef.current()
     window.addEventListener("popstate",back)
+    bindNativeModalBackdrop(node)
     node.showModal()
     void authorized(source,current,s=>source.get(scope.key,s),controller.signal).then(answer=>{
       if(controller.signal.aborted)return
@@ -58,7 +60,7 @@ export function BotTemplate({opener,source,current,scope,available,w,onClose}: {
       if(!controller.signal.aborted){setPreview(null);setState("unavailable")}
     } finally {busy.current=false}
   }
-  return <dialog ref={dialog} className="pa-bot-template" aria-label={w.templateCreate} onCancel={event=>{event.preventDefault();close()}} onKeyDown={event=>{
+  return <dialog data-modal-dismiss={String(state !== "copying")} ref={dialog} className="pa-bot-template" aria-label={w.templateCreate} onCancel={event=>{event.preventDefault();close()}} onKeyDown={event=>{
     // Enter is never a window-wide shortcut; composition cannot activate a button.
     if(event.key==="Enter"&&event.nativeEvent.isComposing)event.preventDefault()
     event.stopPropagation()

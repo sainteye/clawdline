@@ -353,7 +353,10 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     </div>
     </div>
     <button className="human-interventions-backdrop" type="button" tabIndex={-1} aria-label={catalogWord("inline", "de6c2fb83e07")}
-      onClick={closeWithFocus} />
+      onClick={() => {
+        const fields = panel.current?.querySelectorAll<HTMLTextAreaElement>(".secret-handoff-form textarea")
+        if (!busy && !Array.from(fields ?? []).some(field => field.value.length > 0)) closeWithFocus()
+      }} />
   </section>
   return { head, live, body, close: () => setExpanded(false) }
 }

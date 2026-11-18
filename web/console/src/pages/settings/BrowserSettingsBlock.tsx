@@ -339,7 +339,7 @@ function AuditDialog({ onClose, children }: { onClose: () => void; children: Rea
     showModalWithoutChoice(dialog.current)
     return () => { if (opener instanceof HTMLElement && opener.isConnected) opener.focus() }
   }, [])
-  return <dialog ref={dialog} className="browser-audit-dialog" aria-labelledby="browser-audit-title"
+  return <dialog data-modal-dismiss="true" ref={dialog} className="browser-audit-dialog" aria-labelledby="browser-audit-title"
     onCancel={event => { event.preventDefault(); onClose() }}>
     <header><h2 id="browser-audit-title">{nextWord("browserAuditTitle")}</h2>
       <button type="button" className="chip" id="browser-audit-close" onClick={onClose}>{L.strings.webClose}</button></header>

@@ -801,7 +801,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
           <p className="squad-privacy">{catalogWord("inline", "79071ba84527")}</p>
         </> : <div className="squad-empty"><h2 id="squad-detail-title">{catalogWord("inline", "50d3c28324cf")}</h2><p>{catalogWord("inline", "7abc9233fed1")}</p></div>}</div>
       </div>}
-      <dialog ref={packDialog} className="squad-dialog" aria-labelledby="squad-dialog-title" onClose={() => { setPack(null); setPackPreview(null); setPackFile(null); packOpener.current?.focus() }}>
+      <dialog data-modal-dismiss={String(!busy)} ref={packDialog} className="squad-dialog" aria-labelledby="squad-dialog-title" onClose={() => { setPack(null); setPackPreview(null); setPackFile(null); packOpener.current?.focus() }}>
         {pack && <><div className="squad-dialog-head"><h2 id="squad-dialog-title">{pack === "import" ? catalogWord("literal", "d6b8206d3925") : catalogWord("literal", "e42975cbadd3")}</h2><button type="button" aria-label={catalogWord("inline", "32639fb00553")} onClick={closePack}>×</button></div>
           {pack === "import" ? <><p>{catalogLabel("inline", "29868b5f3c58")}{scopeLabel}{fullStop()}</p>
             <label className="squad-file">{catalogWord("inline", "de4290b91ba9")}<input type="file" accept=".zip,application/zip" onChange={(event) => { setPackFile(event.target.files?.[0] ?? null); setPackPreview(null); setImportPrivateScopes([]); setImportPrivateConfirm(false) }} /></label>
@@ -825,7 +825,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
               <button type="button" disabled={!!busy || !!data?.catalogSkills.some((skill) => skill.folder) || !canWrite && (includeGlobal || includeProjects.length > 0)} onClick={() => void exportPack()}>{busy === "export" ? catalogWord("literal", "dc0649ef049d") : catalogWord("literal", "ce5716358490")}</button></>}
           {packError && <p className="squad-dialog-error" role="alert">{packError}</p>}</>}
       </dialog>
-      <dialog ref={skillDialog} className="squad-dialog squad-skill-dialog" aria-labelledby="squad-skill-dialog-title" aria-describedby="squad-skill-disclosure" onCancel={(event) => { event.preventDefault(); if (skillCloseConfirm) setSkillCloseConfirm(false); else closeSkillDialog() }} onClose={() => { recoverSavedSkill(); skillOpener.current?.focus() }}>
+      <dialog data-modal-dismiss={String(!skillBusy && !skillCloseConfirm)} ref={skillDialog} className="squad-dialog squad-skill-dialog" aria-labelledby="squad-skill-dialog-title" aria-describedby="squad-skill-disclosure" onCancel={(event) => { event.preventDefault(); if (skillCloseConfirm) setSkillCloseConfirm(false); else closeSkillDialog() }} onClose={() => { recoverSavedSkill(); skillOpener.current?.focus() }}>
         <div className="squad-dialog-head"><h2 id="squad-skill-dialog-title">{catalogWord("inline", "45b244c624a8")}</h2><button type="button" aria-label={catalogWord("inline", "1aef1dbef95c")} disabled={skillBusy || skillCloseConfirm} onClick={closeSkillDialog}>×</button></div>
         <p>{catalogLabel("inline", "c0506b0b753a")}{persona?.name ?? ""}{catalogLabel("inline", "83249fdc0b14")}{scopeLabel}{catalogWord("inline", "5f8e73fff7dd")}</p>
         <p className="squad-skill-disclosure" id="squad-skill-disclosure">{catalogWord("inline", "9737be2133ca")}</p>

@@ -22,6 +22,7 @@ export function confirmAction(message: string, options: ConfirmationOptions = {}
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const dialog = document.createElement("dialog")
     dialog.className = "app-confirm"
+    dialog.dataset.modalDismiss = "true"
     dialog.setAttribute("role", "alertdialog")
     dialog.setAttribute("aria-labelledby", "app-confirm-title")
     dialog.setAttribute("aria-describedby", "app-confirm-message")
@@ -41,8 +42,11 @@ export function confirmAction(message: string, options: ConfirmationOptions = {}
     accept.type = "button"
     accept.dataset.choice = "confirm"
     accept.textContent = options.confirmLabel ?? catalogWord("legacy", "webConfirm")
-    actions.append(cancel, accept)
-    dialog.append(heading, body, actions)
+    const header = document.createElement("header")
+    header.className = "app-confirm-heading"
+    header.append(heading, cancel)
+    actions.append(accept)
+    dialog.append(header, body, actions)
     let settled = false
     const finish = (answer: boolean) => {
       if (settled) return

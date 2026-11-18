@@ -236,7 +236,7 @@ function OutputPreview({ file, session, onClose }: { file: OutputFile; session: 
     // The keyed preview holds one exact file and Session through the transfer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  return <dialog className="output-preview" ref={dialog} aria-labelledby="output-preview-title" onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss() }}>
+  return <dialog data-modal-dismiss="true" className="output-preview" ref={dialog} aria-labelledby="output-preview-title" onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss() }}>
     <header><h2 id="output-preview-title">{file.name}</h2><button type="button" className="chip" onClick={dismiss} aria-label={w("outputsClose")}>×</button></header>
     <div className="output-preview-body">
       {error ? <p role="alert">{error}</p> : !previewable ? <p>{w("outputsNoPreview")}</p> : text !== null ? file.media_type === "text/html" ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={htmlPreviewSource(text, window)} /> : <pre>{text}</pre> : <p role="status">{w("outputsReading", { percent })}</p>}

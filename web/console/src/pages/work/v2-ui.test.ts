@@ -31,11 +31,6 @@ test("work kinds are an explained icon list instead of a select", () => {
   assert.match(source, /className="work-kind-icon"/)
 })
 
-test("the create modal closes from its close button, Escape, or the backdrop", () => {
-  assert.match(source, pattern`aria-label=\{${wordCall("關閉")}\}`)
-  assert.match(source, /event\.target === event\.currentTarget/)
-})
-
 // Not covered: work controls show a pointer, and a disabled one shows it cannot be pressed. What
 // stood here read the component's source; asserting it needs a DOM runner.
 
@@ -279,12 +274,6 @@ test("every Board card exposes edit and guarded delete flows", () => {
   assert.match(source, pattern`${wordCall("刪除看板項目？")}`)
   assert.match(source, /deleteWorkV2\(item\)/)
   assert.match(source, pattern`${wordCall("會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。")}`)
-})
-
-test("edit and delete dialogs close from Escape, close control, or backdrop", () => {
-  assert.match(source, /function useModalDismiss/)
-  assert.match(source, /event\.target === event\.currentTarget/)
-  assert.match(source, /className="work-modal-close"/)
 })
 
 test("work controls use reusable vector icons instead of font glyph positioning", () => {

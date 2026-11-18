@@ -8,3 +8,9 @@
 .pa-bot-template button{font:inherit;color:inherit;background:transparent;border:1px solid var(--border,#555);border-radius:6px;padding:8px 12px;cursor:pointer}
 .pa-bot-template button:disabled{opacity:.5;cursor:default}
 .pa-bot-template :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+.pa-bot-template > header {
+    position: sticky; top: 0; z-index: 1;
+    margin: -20px -20px 0; padding: 20px 20px 8px;
+    background: var(--bg,#181818);
+}

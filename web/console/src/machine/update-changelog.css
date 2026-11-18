@@ -13,7 +13,13 @@
   white-space: normal;
 }
 .update-changelog::backdrop { background: #0009; }
-.update-changelog h2 { margin: 0 0 16px; font-size: 20px; overflow-wrap: anywhere; }
+.update-changelog-heading {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: -24px -24px 0; padding: 24px 24px 16px; background: var(--card);
+}
+.update-changelog-heading button { flex: none; }
+.update-changelog h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
 .update-changelog-body { max-height: 55dvh; overflow: auto; margin-bottom: 16px; overflow-wrap: anywhere; }
 .update-changelog-copy > :first-child { margin-top: 0; }
 .update-changelog-copy pre { overflow: auto; white-space: pre-wrap; }
