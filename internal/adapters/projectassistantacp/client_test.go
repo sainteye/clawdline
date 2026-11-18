@@ -57,6 +57,9 @@ func TestACPTestPeer(t *testing.T) {
 		writer.WriteByte('\n')
 		writer.Flush()
 	}
+	sendCompaction := func(id, status string) {
+		send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]string{"sessionUpdate": "compaction_update", "compactionId": id, "status": status}})})
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024), 2<<20)
 	var promptID json.RawMessage
@@ -67,6 +70,18 @@ func TestACPTestPeer(t *testing.T) {
 		}
 		switch f.Method {
 		case "initialize":
+			if strings.HasPrefix(mode, "compact-") {
+				var init struct {
+					ClientCapabilities struct {
+						Session struct {
+							Compaction json.RawMessage `json:"compaction"`
+						} `json:"session"`
+					} `json:"clientCapabilities"`
+				}
+				if json.Unmarshal(f.Params, &init) != nil || string(init.ClientCapabilities.Session.Compaction) != "{}" {
+					os.Exit(9)
+				}
+			}
 			if strings.HasPrefix(mode, "configure-") || strings.HasPrefix(mode, "provider-") || mode == "exit" {
 				name := adapterPackage(pa.Codex)
 				if strings.Contains(mode, "claude") {
@@ -88,7 +103,7 @@ func TestACPTestPeer(t *testing.T) {
 					os.Exit(5)
 				}
 			}
-			if mode == "native-context" {
+			if mode == "native-context" || strings.HasPrefix(mode, "compact-") {
 				// Adapters may publish metadata before answering session/new.
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{map[string]string{"name": "compact"}}}})})
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 0, "size": 100000}})})
@@ -121,6 +136,60 @@ func TestACPTestPeer(t *testing.T) {
 			if mode == "native-context" {
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100000}})})
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Synthetic answer"}}})})
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
+			if strings.HasPrefix(mode, "compact-") {
+				var prompt struct {
+					SessionID string `json:"sessionId"`
+					Prompt    []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"prompt"`
+				}
+				var fields map[string]json.RawMessage
+				if json.Unmarshal(f.Params, &prompt) != nil || json.Unmarshal(f.Params, &fields) != nil || len(fields) != 2 || prompt.SessionID != "scripted-session" || len(prompt.Prompt) != 1 || prompt.Prompt[0].Type != "text" {
+					os.Exit(9)
+				}
+				if mode == "compact-race" && prompt.Prompt[0].Text == "hello" {
+					send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn", "text": "Normal answer"})})
+					continue
+				}
+				if prompt.Prompt[0].Text != "/compact" {
+					os.Exit(9)
+				}
+				if mode != "compact-missing-start" {
+					sendCompaction("own-compaction", "in_progress")
+				}
+				switch mode {
+				case "compact-wait":
+					continue
+				case "compact-eof":
+					os.Exit(0)
+				case "compact-rpc-error":
+					send(frame{ID: f.ID, Error: &rpcError{Code: -32603, Message: "Synthetic compact failure"}})
+					continue
+				case "compact-wrong-id":
+					sendCompaction("foreign-compaction", "completed")
+				case "compact-failed":
+					sendCompaction("own-compaction", "failed")
+				case "compact-cancelled":
+					sendCompaction("own-compaction", "cancelled")
+				case "compact-unknown-status":
+					sendCompaction("own-compaction", "not-a-terminal")
+				case "compact-malformed-result":
+					sendCompaction("own-compaction", "completed")
+					send(frame{ID: f.ID, Result: raw(map[string]string{"text": "not a qualified terminal reply"})})
+					continue
+				case "compact-no-terminal":
+					// A smaller reported token count cannot substitute for a terminal.
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 0, "size": 100000}})})
+				default:
+					sendCompaction("own-compaction", "completed")
+					if mode == "compact-duplicate-terminal" {
+						sendCompaction("own-compaction", "failed")
+					}
+				}
 				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
 				continue
 			}
@@ -253,6 +322,12 @@ func TestACPTestPeer(t *testing.T) {
 			send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "both done"}}})})
 			send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn"})})
 		case "session/cancel":
+			if mode == "compact-wait" {
+				// A late native terminal must not erase an external cancellation.
+				sendCompaction("own-compaction", "completed")
+				send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
 			send(frame{ID: promptID, Result: raw(map[string]string{"stopReason": "cancelled"})})
 		case "":
 			if string(f.ID) == `"permission-rpc"` {
