@@ -144,10 +144,10 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   const oldFetch = globalThis.fetch
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   const oldDocument = globalThis.document, oldWindow = globalThis.window, oldPeer = globalThis.RTCPeerConnection
-  const sent = [], requests = [];let ringStops=0,ringStoppedBeforeSettings=false
+  const sent = [], requests = [], playback = [];let ringStops=0,ringStoppedBeforeSettings=false,remoteStops=0
   const stream = { getAudioTracks: () => [{ stop() {} }], getTracks: () => [{ stop() {} }] }
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'synthetic-client', mediaDevices: { getUserMedia: async () => stream } } })
-  globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({}) }
+  globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({pause(){playback.push('pause')},removeAttribute(name){playback.push('remove:'+name)},load(){playback.push('load')}}) }
   const listening = new Set()
   globalThis.window = { addEventListener(type) { listening.add(type) }, removeEventListener(type) { listening.delete(type) } }
   globalThis.RTCPeerConnection = class {
@@ -178,7 +178,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     assert.fail(`unexpected request: ${path}`)
   }
   const c = new RealtimeCopilotClient()
-  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {ringStops++}, attachInput: () => null, close() {} }
+  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {ringStops++}, attachInput: () => null, attachOutput: () => null, close() {} }
   c.addLog = () => {}
   c.state.engine = 'previous-call-engine'
   const previous=c.operations.begin({name:'previous-call-tool',source:'tool'});previous.end({outcome:'done'})
@@ -217,12 +217,20 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     assert.equal(requests.filter(r => r.path === '/v1/voice/copilot-work' && r.init?.method === 'POST').length, 0)
     assert.equal(requests.filter(r => String(r.path).includes('copilot-decide')).length, 0)
   } finally {
+    const audio=c.audioEl,peer=c.pc,ontrack=peer?.ontrack,remote={getTracks:()=>[{stop(){remoteStops++}}]}
+    if(audio)ontrack({streams:[remote]})
     c.disconnect()
     await tick()
     globalThis.fetch = oldFetch
     if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator)
     else delete globalThis.navigator
     globalThis.document = oldDocument; globalThis.window = oldWindow; globalThis.RTCPeerConnection = oldPeer
+    if(audio){
+      assert.deepEqual(playback,['pause','remove:src','load'],'hangup explicitly ends browser media playback')
+      assert.equal(audio.srcObject,null);assert.equal(audio.autoplay,false);assert.equal(remoteStops,1)
+      assert.equal(peer.ontrack,null,'the billing close handshake cannot attach more audio')
+      c.audioEl={srcObject:null};ontrack({streams:[remote]});assert.equal(c.audioEl.srcObject,null,'a late track cannot enter the next call');c.audioEl=null
+    }
   }
 })
 

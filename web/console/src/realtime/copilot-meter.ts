@@ -12,6 +12,23 @@ const RING_LEVEL = 0.08
 const RING_ON_S = 1
 const RING_PERIOD_MS = 3000
 
+/** A call owns this media element and its remote tracks, even while final usage closes. */
+export function releaseCallPlayback(audio: HTMLMediaElement): void {
+  const stream = audio.srcObject as MediaStream | null
+  for (const release of [
+    () => audio.pause(),
+    () => { audio.autoplay = false },
+    () => { audio.srcObject = null },
+    () => audio.removeAttribute('src'),
+    () => audio.load(),
+  ]) {
+    try { release() } catch { /* refusal-ok: each remaining release still runs. */ }
+  }
+  for (const track of stream?.getTracks?.() ?? []) {
+    try { track.stop() } catch { /* refusal-ok: an ended remote track is already released. */ }
+  }
+}
+
 export class CallMeter {
   private context: AudioContext | null = null
   private input: Side | null = null
@@ -167,8 +184,17 @@ export class CallMeter {
     const context = this.context
     this.context = null
     if (!context)return
-    const close=()=>{void context.close().catch(()=>undefined)}
+    let closed=false
+    const interrupted=()=>{if(context.state!=='running')close()}
+    const close=()=>{
+      if(closed)return
+      closed=true
+      context.removeEventListener('statechange',interrupted)
+      void context.close().catch(()=>undefined)
+    }
     if(!ended||context.state!=='running'){close();return}
+    // iOS can interrupt the cue when the person switches apps before onended.
+    context.addEventListener('statechange',interrupted)
     // Local capture/playback are already detached. A descending pair confirms
     // this call ended; an older call never closes the next call's context.
     try{
@@ -180,6 +206,7 @@ export class CallMeter {
         tone.onended=()=>{tone.disconnect();if(index===1){gain.disconnect();close()}}
         tone.start(at);tone.stop(at+CHIME_NOTE_S)
       }
+      interrupted()
     }catch{close()}
   }
 

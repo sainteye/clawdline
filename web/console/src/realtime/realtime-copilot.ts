@@ -22,7 +22,7 @@ import { ACTION_STATUS_GUIDANCE, callProgress, callWorkEvidence, deliveryQuestio
  * Clawdline sessions on the Mac.
  */
 
-import { CallMeter } from './copilot-meter.js'
+import { CallMeter, releaseCallPlayback } from './copilot-meter.js'
 import type { OrbLevels } from './copilot-orb.js'
 import { COPILOT_TOOLS, MACHINE_RECAP_MS, FRESH_RECAP_SECONDS, forkedRecap, recapFields, immediateVoiceAction, immediateVoiceRead, readRows, screenFocusEvent, actionNotice, microphoneProblem, toolTrace, NOTICE_KIND, unbackedClaims, unbackedClaimEvents, type ActionKind, adjustEvent, COPILOT_MACHINE_LACKS, copilotRefusal, DEFAULT_SPEED, readCallHandover, runCopilotTool, sessionsSnapshot, sessionUpdateEvent, toolReplyEvents, type CallOptions, type CallOrigin, type ToolDeps, type CopilotSessionRow } from './copilot-tools.js'
 import { addUsage, emptyCost, questionAnalysisUSD, type CallCost } from './copilot-cost.js'
@@ -911,11 +911,12 @@ export class RealtimeCopilotClient {
       this.pc = own.pc
 
       // 3. Audio output for assistant voice
-      this.audioEl = document.createElement('audio')
-      this.audioEl.autoplay = true
+      const audio = document.createElement('audio')
+      this.audioEl = audio
+      audio.autoplay = true
       this.pc.ontrack = (event) => {
-        if (this.audioEl && event.streams[0]) {
-          this.audioEl.srcObject = event.streams[0]
+        if (this.pc === own.pc && this.audioEl === audio && event.streams[0]) {
+          audio.srcObject = event.streams[0]
           const outputRefused = meterRefused ? null : this.meter.attachOutput(event.streams[0])
           if (outputRefused) this.addLog('info', nextWord('copilotLogNoOutputMeter', { reason: outputRefused }))
         }
@@ -1852,6 +1853,7 @@ export class RealtimeCopilotClient {
     clearInterval(this.liveTicker);this.liveTicker=undefined
     const dc=this.dc,pc=this.pc
     this.dc=null;this.pc=null
+    if(pc)pc.ontrack=null
     if(this.live && !this.liveFinalized && dc?.readyState==='open' && typeof dc.addEventListener==='function') {
       const seq=this.usageSequence+1,call=closingCall,machine=this.journalMachine,priced=this.state.cost?.priced??false,started=this.usageStarted,parts={...this.backendParts},tokens={...this.backendTokens},seen=new Set(this.usageResponses)
       let seconds=this.liveSeconds,finalUsage=false
@@ -1888,7 +1890,7 @@ export class RealtimeCopilotClient {
     }
 
     if (this.audioEl) {
-      this.audioEl.srcObject = null
+      releaseCallPlayback(this.audioEl)
       this.audioEl = null
     }
     this.meter.close(ended)
@@ -1993,9 +1995,10 @@ export async function previewVoice(voice: string, line: string): Promise<{ usd: 
     await done
     return { usd }
   } finally {
+    pc.ontrack = null
     try { dc.close() } catch { /* refusal-ok: closing a preview's channel twice is harmless. */ }
     try { pc.close() } catch { /* refusal-ok: closing a preview's connection twice is harmless. */ }
-    audio.srcObject = null
+    releaseCallPlayback(audio)
   }
 }
 

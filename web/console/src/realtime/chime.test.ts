@@ -4,14 +4,15 @@ import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { playChime, primeChime } from "./chime.ts"
 
-class FakeContext {
+class FakeContext extends EventTarget {
   static made: FakeContext[] = []
   currentTime = 0
   tones: number[] = []
   closed = 0
   resumed = 0
+  state = "running"
   destination = {}
-  constructor() { FakeContext.made.push(this) }
+  constructor() { super(); FakeContext.made.push(this) }
   resume() { this.resumed++; return Promise.resolve() }
   close() { this.closed++; return Promise.resolve() }
   createGain() {
@@ -70,6 +71,41 @@ test("a dropped chime closes silently", (t) => {
     chime.drop()
     chime.play()
     assert.deepEqual(contexts[0].tones, [])
+    assert.equal(contexts[0].closed, 1)
+  }, t)
+})
+
+test("overlapping chimes release playback only after the last sound and restore the original category", t => {
+  withAudio((contexts, session) => {
+    const first = primeChime(), second = primeChime()
+    first.play()
+    t.mock.timers.tick(200)
+    second.play()
+    t.mock.timers.tick(800)
+    assert.equal(session.type, "playback", "the second chime still owns playback")
+    t.mock.timers.tick(200)
+    assert.equal(session.type, "auto", "a later page visit must not inherit playback")
+    assert.deepEqual(contexts.map(context => context.closed), [1, 1])
+  }, t)
+})
+
+test("a finishing chime does not overwrite another audio owner's explicit category", t => {
+  withAudio((_contexts, session) => {
+    primeChime().play()
+    session.type = "play-and-record"
+    t.mock.timers.tick(1000)
+    assert.equal(session.type, "play-and-record")
+  }, t)
+})
+
+test("an interrupted chime releases playback and closes without waiting for its timeout", t => {
+  withAudio((contexts, session) => {
+    primeChime().play()
+    contexts[0].state = "suspended"
+    contexts[0].dispatchEvent(new Event("statechange"))
+    assert.equal(session.type, "auto")
+    assert.equal(contexts[0].closed, 1)
+    t.mock.timers.tick(1000)
     assert.equal(contexts[0].closed, 1)
   }, t)
 })

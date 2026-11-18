@@ -575,3 +575,28 @@ and managed call paths. The browser fixture at
 `mode=fleet` and `lang=en`. It checks actual Session rows at phone and desktop sizes,
 Lead refresh, long names, preserved helper-child grouping and unavailable-state rendering. It establishes these local
 surfaces without claiming real voice-model comprehension or device audio acceptance.
+
+## Releasing browser audio after a call
+
+A disconnected visual state alone does not release browser audio focus. Both call
+engines and voice previews now pause their owned media element, disable autoplay,
+clear its stream and source, reset media loading and stop the remote tracks. The
+old peer's track callback is detached immediately, even while Live retains its
+data channel briefly for final usage. A queued old track cannot attach to the next
+call's player. Microphone tracks still stop at hangup.
+
+The descending hangup cue retains its sound and closes its own AudioContext when
+it ends. If the browser suspends or interrupts it first, a state-change handler
+closes that context without relying on a missing ended event. It cannot close a
+new call's context. Message chimes likewise close and restore their borrowed audio
+category on interruption. Overlapping chimes share one category lease and the last
+one restores the original category, without replacing another owner's explicit
+category. This fixes a reproducible sequence that previously left `playback` set.
+
+The Audio Session API has a read-only state: the browser derives active/inactive
+from its audio sources and sinks. Resetting a Media Session lock-screen label alone
+would not prove that audio focus was released. The cleanup is tested with synthetic
+transports and local browser media; it does not establish physical iOS behavior,
+resume another app's music, or prove the reported interruption's sole cause. No paid
+voice call is required for these local lifecycle checks. The unrelated Bots
+completion-sound unlock behavior remains outside this change.
