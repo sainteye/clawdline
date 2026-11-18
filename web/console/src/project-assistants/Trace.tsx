@@ -24,7 +24,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
     }
   },[summaries,openIds,onDetail])
 
-  if (summaries.length || !items.length && total > 0 && summaries.length > 0) {
+  if (summaries.length || !items.length && total > 0) {
     return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{[...summaries].reverse().map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
