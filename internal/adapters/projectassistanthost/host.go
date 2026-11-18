@@ -77,6 +77,7 @@ type Host struct {
 	transition         sync.Mutex
 	enabled, closed    bool
 	cleanupPending     bool
+	permissionRecovery bool
 	store              *featurestore.Store
 	service            *app.Service
 	engine             *app.Engine
@@ -110,6 +111,7 @@ func New(ctx context.Context, o Options) (*Host, error) {
 		if err = h.makeService(); err != nil {
 			return nil, err
 		}
+		h.permissionRecovery = true
 	}
 	return h, nil
 }
@@ -371,6 +373,7 @@ func (h *Host) Enable(ctx context.Context) error {
 	}
 	r := h.engine
 	pending := h.cleanupPending
+	recoverPermissions := h.permissionRecovery
 	tickDone := h.routineDone
 	h.mu.Unlock()
 	if tickDone != nil {
@@ -390,18 +393,21 @@ func (h *Host) Enable(ctx context.Context) error {
 			return failure(pa.ExecutionEffectUnknown, "owned_cleanup")
 		}
 	}
-	if pending {
-		// A turn still active in the store now was cut off by the previous
-		// daemon process (a disable quiesces its own turns first), so it is
-		// recorded as one a restart cut off and may be resumed.
+	if pending || recoverPermissions {
 		cleanup, cancel := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
-		err := h.quiesceFor(cleanup, app.RestartField)
+		var err error
+		if pending {
+			err = h.quiesceFor(cleanup, app.RestartField)
+		} else {
+			err = h.recoverPermissionWaits(cleanup)
+		}
 		cancel()
 		if err != nil {
 			return errors.Join(failure(pa.ExecutionEffectUnknown, "durable_cleanup"), err)
 		}
 		h.mu.Lock()
 		h.cleanupPending = false
+		h.permissionRecovery = false
 		h.mu.Unlock()
 	}
 	if err := app.InstallSchemas(ctx, h.o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
@@ -541,6 +547,7 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 		h.engine = nil
 	}
 	h.cleanupPending = false
+	h.permissionRecovery = false
 	h.mu.Unlock()
 	return nil
 }
@@ -550,6 +557,21 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 func (h *Host) quiesce(ctx context.Context) error { return h.quiesceFor(ctx, "execution") }
 
 func (h *Host) quiesceFor(ctx context.Context, field string) error {
+	return h.visitBotHistory(ctx, func(st *featurestore.Store, bot pa.BotSummary) error {
+		return app.QuiesceHistoryFor(ctx, st, h.o.Clock, h.o.ID, bot.Bot.Key, field)
+	})
+}
+
+func (h *Host) recoverPermissionWaits(ctx context.Context) error {
+	return h.visitBotHistory(ctx, func(st *featurestore.Store, bot pa.BotSummary) error {
+		if bot.PendingPermissions == 0 && bot.Status != "needsInput" {
+			return nil
+		}
+		return app.RecoverPermissionWaits(ctx, st, h.o.Clock, h.o.ID, bot.Bot.Key)
+	})
+}
+
+func (h *Host) visitBotHistory(ctx context.Context, visit func(*featurestore.Store, pa.BotSummary) error) error {
 	h.mu.Lock()
 	st := h.store
 	h.mu.Unlock()
@@ -563,7 +585,7 @@ func (h *Host) quiesceFor(ctx context.Context, field string) error {
 			return err
 		}
 		for _, bot := range page.Items {
-			if err = app.QuiesceHistoryFor(ctx, st, h.o.Clock, h.o.ID, bot.Bot.Key, field); err != nil {
+			if err = visit(st, bot); err != nil {
 				return err
 			}
 		}

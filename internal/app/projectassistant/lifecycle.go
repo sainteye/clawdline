@@ -97,6 +97,16 @@ const RestartField = "restart"
 
 // QuiesceHistoryFor is QuiesceHistory recording why an active turn stopped.
 func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey, field string) error {
+	return quiesceHistory(ctx, repo, clock, id, key, field, false)
+}
+
+// RecoverPermissionWaits retires prompts whose permission request belonged to
+// a previous process. Their original reply channel cannot be restored.
+func RecoverPermissionWaits(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey) error {
+	return quiesceHistory(ctx, repo, clock, id, key, "execution", true)
+}
+
+func quiesceHistory(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey, field string, permissionWaitsOnly bool) error {
 	if repo == nil || clock == nil || id == nil {
 		return runtimeFailure(pa.Invalid, "history_cleanup")
 	}
@@ -106,6 +116,9 @@ func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.T
 	}
 pendingTurns:
 	for _, t := range pending {
+		if permissionWaitsOnly && t.State != pa.TurnWaitingPermission && t.State != pa.TurnRunning {
+			continue
+		}
 		x, e := repo.Export(ctx, key)
 		if e != nil {
 			return e
@@ -122,6 +135,9 @@ pendingTurns:
 			return runtimeFailure(pa.NotFound, "cleanup_turn")
 		}
 		if t.State == pa.TurnUnknown {
+			continue
+		}
+		if permissionWaitsOnly && !interruptedPermission(t, x.Permissions) {
 			continue
 		}
 		// A planned restart retains only the original queue identity whose
@@ -156,13 +172,7 @@ pendingTurns:
 			if offer.Fence != t.Fence {
 				return runtimeFailure(pa.ScopeDenied, "cleanup_permission")
 			}
-			if state == pa.TurnUnknown {
-				offer.State = pa.PermissionUnknown
-			} else if !clock().Before(offer.ExpiresAt) {
-				offer.State = pa.PermissionExpired
-			} else {
-				offer.State = pa.PermissionCancelled
-			}
+			offer.State = terminalPermissionState(offer, state, clock())
 			permissions = append(permissions, offer)
 			copy := offer
 			events = append(events, pa.Event{Fence: t.Fence, Kind: pa.PermissionAnswered, Permission: &copy})
@@ -210,10 +220,32 @@ pendingTurns:
 			return err
 		}
 	}
-	if p, ok := repo.(CollaborationRepository); ok {
+	if p, ok := repo.(CollaborationRepository); ok && !permissionWaitsOnly {
 		return p.DropExchangeReplies(ctx, key, clock())
 	}
 	return nil
+}
+
+func interruptedPermission(turn pa.Turn, offers []pa.PermissionOffer) bool {
+	if turn.State == pa.TurnWaitingPermission {
+		return true
+	}
+	for _, offer := range offers {
+		if offer.TurnID == turn.ID && offer.Fence == turn.Fence && offer.State != pa.PermissionResolved {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalPermissionState(offer pa.PermissionOffer, turnState pa.TurnState, now time.Time) pa.PermissionState {
+	if !now.Before(offer.ExpiresAt) {
+		return pa.PermissionExpired
+	}
+	if turnState == pa.TurnUnknown {
+		return pa.PermissionUnknown
+	}
+	return pa.PermissionCancelled
 }
 
 // Close seals admission before cancellation. It is bounded by the existing

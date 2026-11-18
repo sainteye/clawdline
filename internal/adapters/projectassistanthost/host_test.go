@@ -58,6 +58,7 @@ type fixtureProvider struct {
 	openStarted, openRelease chan struct{}
 	sent                     chan app.PromptRequest
 	sessions                 chan *fixtureSession
+	answers                  chan [2]string
 	steerOutcome             app.SteerOutcome
 	steered                  chan string
 }
@@ -100,7 +101,12 @@ func (s *fixtureSession) Wait(ctx context.Context) (app.PromptResult, error) {
 		return app.PromptResult{}, ctx.Err()
 	}
 }
-func (s *fixtureSession) Answer(context.Context, string, string) error { return nil }
+func (s *fixtureSession) Answer(_ context.Context, request, option string) error {
+	if s.p.answers != nil {
+		s.p.answers <- [2]string{request, option}
+	}
+	return nil
+}
 func (s *fixtureSession) Steer(_ context.Context, text string) (app.SteerOutcome, error) {
 	if s.p.steered == nil {
 		return "", failure(pa.Unsupported, "steering")
@@ -814,6 +820,142 @@ func TestHostReopenedDisableQuiescesMoreThanOneHistoryPage(t *testing.T) {
 	if f.h.engine != nil || f.factories.Load() != 0 || !f.h.Usage().Known {
 		t.Fatal("history scan constructed execution or lost completion")
 	}
+}
+
+func TestHostColdStartRetiresExpiredLegacyPermissionWithoutResending(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: b.ConversationID, BindingID: "legacy-binding", Generation: 1}
+	started := time.Now().Add(-3 * time.Minute)
+	turn := pa.Turn{ID: "legacy-turn", Fence: fence, MessageID: "legacy-input", State: pa.TurnWaitingPermission, IdempotencyKey: "legacy-input", Origin: pa.UserOrigin, StartedAt: &started, MemoryRevision: 1, Instructions: b.Instructions}
+	c := pa.Conversation{Key: b.Key, ID: b.ConversationID, BindingID: fence.BindingID, Generation: fence.Generation, ActiveTurnID: turn.ID, MemoryRevision: 1, Version: 1, LastMessageSeq: 1}
+	binding := pa.ExecutionBinding{Fence: fence, Agent: pa.Codex, NativeSessionID: "legacy-native", MemoryRevision: 1, InstructionRevision: 1}
+	msg := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Seq: 1, Kind: pa.UserMessage, Text: "Synthetic restart", At: started}
+	offer := pa.PermissionOffer{ID: "legacy-offer", Fence: fence, TurnID: turn.ID, NativeRequestID: "legacy-request", State: pa.PermissionPending, ExpiresAt: msg.At.Add(2 * time.Minute), Options: []pa.PermissionOption{{ID: "reject", Kind: pa.RejectOnce}}}
+	if _, err := f.h.store.Commit(ctx, app.Mutation{Command: projectionCommand(b.Key, "legacy-permission"), ExpectedVersion: b.Version, Conversation: &c, Binding: &binding, Turn: &turn, Messages: []pa.Message{msg}, Permissions: []pa.PermissionOffer{offer}, Receipt: pa.Receipt{ID: "legacy-permission", State: pa.EffectExecuting}}); err != nil {
+		t.Fatal(err)
+	}
+	// The old process did not get to run its shutdown handler.
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	s, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.View(ctx, pa.ReadViewRequest{Key: b.Key, ConversationID: b.ConversationID, Mode: pa.ReadViewSnapshot, PageSize: 100})
+	if err != nil || page.View.Head.PendingPermissionCount != 0 || page.View.Head.Conversation.ActiveTurnID != "" {
+		t.Fatalf("cold start still advertises a permission wait: %+v, %v", page.View.Head, err)
+	}
+	x, err := s.Export(ctx, b.Key)
+	if err != nil || len(x.Permissions) != 1 || x.Permissions[0].State != pa.PermissionExpired || len(x.Turns) != 1 || x.Turns[0].State != pa.TurnUnknown {
+		t.Fatalf("expired offer or unknown turn was lost: permissions=%+v turns=%+v err=%v", x.Permissions, x.Turns, err)
+	}
+	answer := pa.PermissionAnswer{Fence: fence, OfferID: offer.ID, TurnID: turn.ID, OptionID: "reject"}
+	if _, err = s.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "late"}, answer); err == nil {
+		t.Fatal("retired permission could be answered")
+	}
+	if f.factories.Load() != 0 || f.p.opens.Load() != 0 {
+		t.Fatal("recovery or late answer started native execution")
+	}
+}
+
+func TestHostLivePermissionsCanBeReviewedButOnlyCurrentInteractiveAnswersWrite(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.p.answers = make(chan [2]string, 4)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+	source := f.o.Source
+	f.o.Source = func(ctx context.Context, key pa.BotKey, write bool) (pa.SourceStatus, error) {
+		status, err := source(ctx, key, write)
+		if ctx.Value(readerContextKey{}) == "read-only" {
+			status.Access, status.Writable = pa.HistoryOnly, false
+		}
+		return status, err
+	}
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	if _, err := f.send(t, b, "synthetic"); err != nil {
+		t.Fatal(err)
+	}
+	prompt := fixtureReceive(t, f.p.sent)
+	native := fixtureReceive(t, f.p.sessions)
+	turn := prompt.Turn
+	for _, id := range []string{"first", "second"} {
+		offer := pa.PermissionOffer{ID: id, Fence: turn.Fence, TurnID: turn.ID, NativeRequestID: "native-" + id, ExpiresAt: time.Now().Add(time.Minute),
+			Action:  &pa.PermissionAction{ToolKind: "read", Title: "Read the synthetic file", Detail: "synthetic.txt"},
+			Options: []pa.PermissionOption{{ID: "once", Kind: pa.AllowOnce, Allow: true}, {ID: "reject", Kind: pa.RejectOnce}}}
+		if err := native.sink(ctx, app.ProtocolEvent{ID: id, Fence: turn.Fence, TurnID: turn.ID, Permission: &offer}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := context.WithValue(ctx, readerContextKey{}, "read-only")
+	request := pa.ReadViewRequest{Key: b.Key, ConversationID: b.ConversationID, Mode: pa.ReadViewSnapshot, PageSize: 100}
+	view, err := s.View(reader, request)
+	if err != nil || view.View.Head.PendingPermissionCount != 2 || view.Source.Writable {
+		t.Fatalf("read-only snapshot: %+v, %v", view.View.Head, err)
+	}
+	request.Mode, request.SourceEpoch = pa.ReadViewPermissions, view.View.SourceEpoch
+	view, err = s.View(reader, request)
+	if err != nil || len(view.View.Items) != 2 || view.View.Items[0].PermissionSummary == nil {
+		t.Fatalf("read-only summaries: %+v, %v", view.View.Items, err)
+	}
+	request.Mode, request.Cursor, request.PageSize = pa.ReadViewDetail, view.View.Items[0].PermissionSummary.DetailCursor, 1
+	view, err = s.View(reader, request)
+	if err != nil || len(view.View.Items) != 1 {
+		t.Fatalf("read-only detail: %+v, %v", view.View.Items, err)
+	}
+	detail := view.View.Items[0].Permission
+	if detail == nil || detail.Fence != turn.Fence || detail.Action == nil || detail.Action.Detail != "synthetic.txt" || len(detail.Options) != 2 {
+		t.Fatalf("permission was not reviewable: %+v", detail)
+	}
+
+	answer := pa.PermissionAnswer{Fence: turn.Fence, TurnID: turn.ID, OfferID: "first", OptionID: "once"}
+	command := pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "first-answer"}
+	if _, err := s.Answer(reader, command, answer); pa.Code(err) != pa.ReadOnly {
+		t.Fatalf("read-only answer: %v", err)
+	}
+	wrong := answer
+	wrong.Fence.Generation++
+	if _, err := s.Answer(ctx, command, wrong); pa.Code(err) != pa.StaleGeneration {
+		t.Fatalf("foreign generation answer: %v", err)
+	}
+	if receipt, err := s.Answer(ctx, command, answer); err != nil || receipt.State != pa.EffectDelivered {
+		t.Fatalf("current interactive answer: %+v, %v", receipt, err)
+	}
+	if got := fixtureReceive(t, f.p.answers); got != [2]string{"native-first", "once"} {
+		t.Fatal(got)
+	}
+	if current, err := f.h.store.Turn(ctx, b.Key, turn.ID); err != nil || current.State != pa.TurnWaitingPermission {
+		t.Fatalf("the second offer no longer owns the wait: %+v, %v", current, err)
+	}
+	command.IdempotencyKey = "duplicate"
+	if _, err := s.Answer(ctx, command, answer); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("second selection: %v", err)
+	}
+	command.IdempotencyKey, answer.OfferID, answer.OptionID = "second-answer", "second", "reject"
+	if receipt, err := s.Answer(ctx, command, answer); err != nil || receipt.State != pa.EffectDelivered {
+		t.Fatalf("second offer: %+v, %v", receipt, err)
+	}
+	if got := fixtureReceive(t, f.p.answers); got != [2]string{"native-second", "reject"} || len(f.p.answers) != 0 {
+		t.Fatalf("an unintended selection reached the provider: %v", got)
+	}
+	if current, err := f.h.store.Turn(ctx, b.Key, turn.ID); err != nil || current.State != pa.TurnRunning {
+		t.Fatalf("the last answer did not clear the wait: %+v, %v", current, err)
+	}
+	native.reply <- app.PromptResult{FinalText: "Synthetic turn finished"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 }
 
 func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
