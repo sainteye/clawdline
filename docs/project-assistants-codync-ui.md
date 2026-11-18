@@ -53,6 +53,25 @@ documented in `third_party/codync`.
 
 ## Verification
 
+### Roster search and partial source failures
+
+The roster searches Bot names and the displayed Project label. Snapshot APIs filter Bot names;
+when a Project label matches, the viewer reads that source's ordinary unfiltered pages and
+filters by the Project label locally. Load more retains the matching request's cursor and page
+coverage. Name searches continue to use the source's name filter, including results beyond the
+initial page. Project labels remain scoped to their source machine.
+
+An empty search on a readable machine is an empty result, even when another machine refuses
+access. The failed machine and its typed refusal remain in the expandable connection details.
+Selecting only the failed machine still shows its source failure. The search-clear control has
+its own localized name rather than the reply-cancellation label.
+
+`roster-search.e2e.mjs` runs the real Bots components against paginated, synthetic snapshot
+sources with an unpaired peer. It checks Project and Bot names, pagination, empty results,
+selected-machine failures and all-source failures in English desktop and Traditional Chinese
+mobile viewports. Set `BOTS_ARTIFACTS` to an owned directory and run it with Node; it uses an
+existing headless Chromium and installs nothing. It makes no live API or model requests.
+
 `TestProjectAssistantUIAlignmentBrowser` runs the production components and the production
 SourceClient against authenticated, task-owned loopback HTTP services and SQLite stores. Its
 native provider is synthetic and makes no model or vendor API calls. Set

@@ -10298,6 +10298,8 @@
   "projectAssistants.rosterReorderHint": "Hold a row to drag. Alt+Up/Down moves the focused row; List options provides pinning and keyboard controls.",
   "projectAssistants.rosterDropPin": "Drop here to pin",
   "projectAssistants.rosterUnsaved": "Roster preferences could not be saved. Changes are kept for this view.",
+  "projectAssistants.clearSearch": "Clear search",
+  "projectAssistants.searchEmpty": "No Bots or groups match this search.",
   "playbook.boardDriveTitle": "Drive Board Items to Done",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
