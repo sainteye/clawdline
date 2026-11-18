@@ -465,7 +465,8 @@ function daemon(): Server {
     }
     if (path === "/v1/personas" && boardTreeFixture) return json(res, 200, { personas: [{
       id: "test-reviewer", source: "builtin", name: { en: "Fixture reviewer" }, summary: { en: "Reviews changes" },
-      icon: { accent: "#1234ab", cells: [["#1234ab"]] },
+      icon: { accent: "#1234ab", cells: Array.from({ length: 7 }, (_, y) =>
+        Array.from({ length: 8 }, (_, x) => x === 0 && y === 0 ? "#1234ab" : null)) },
     }, {
       id: "test-previous-role", source: "builtin", name: { en: "Fixture earlier role" }, summary: { en: "Earlier role" },
       icon: { accent: "#bb3300", cells: [["#bb3300"]] },
@@ -1542,6 +1543,7 @@ test("a Session board keeps child Sessions, role art and the Lead mark inside it
       const unassigned = [await tab.run(pixel(unassignedArt(BLOCKED))), await tab.run(pixel(unassignedArt(UNKNOWN)))]
       assert.deepEqual(unassigned.sort(), ["18,52,171,255", "187,51,0,255"].sort())
       const avatarWidth = (selector: string) => `document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect().width`
+      assert.equal(await tab.run(avatarWidth(rowArt)), 24)
       assert.equal(await tab.run(avatarWidth(`${group} [data-board-lead] canvas.mark`)), 32)
       assert.equal(await tab.run(pixel(`${group} .session-board-project-mark canvas`)), "113,85,70,255")
       await tab.press(`${group} > button`)

@@ -34,7 +34,7 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false, boa
   const who = assistant ? L.whoHTML(assistant) : ""
   const mark = boardAvatar === null
     ? <span className="mark session-board-unassigned" aria-hidden="true"><TerminalGlyph /></span>
-    : <Mark icon={boardAvatar ?? icon} cellPx={4} />
+    : <Mark icon={boardAvatar ?? icon} cellPx={boardAvatar && !boardLead ? 3 : 4} />
   return <>
     {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true">{mark}
       <span className="clawdfather-crown" aria-hidden="true" /></span> : mark}
