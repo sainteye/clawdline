@@ -815,3 +815,18 @@ test("reaction requests preserve desired state, fixed identity and source API ce
  await source.react(q,signal());await source.react(q,signal());assert.equal(requests[1].path,requests[2].path);assert.equal(requests[1].init?.body,requests[2].init?.body);const routed=assistantRelayRequest(requests[1].path,requests[1].init);assert.equal(routed.word,"project-assistants.react");assert.deepEqual(routed.fields,q);
  live={...live,apiLevel:84};assert.equal(source.canReactions(),false);await assert.rejects(source.react(q,signal()),e=>errorCode(e)==="pa_unsupported");assert.equal(requests.length,3)
 });
+
+
+test("topic memory writes require API89 before transport while short facts retain their tier",async()=>{
+ let writes=0
+ const request={command:command(key,"memory_save"),expected_revision:1,entry:{id:"topic",key,project:{machine_id:"one",project_id:"project",canonical_id:"canonical",kind:"repository"},text:"On-demand body",sources:[],revision:1,forgotten:false,kind:"note",title:"Checklist",summary:"Readiness"}} as W.ProjectAssistantMemoryWriteRequest
+ const old=make(async(path,init)=>{if(init?.method!=="GET")writes++;return Response.json(path.endsWith("/status")?sourceStatus():{})},{...grant(),apiLevel:88}).source
+ await old.status(signal());assert.equal(old.canTopicMemory(),false)
+ await assert.rejects(old.saveMemory(request,signal()),error=>errorCode(error)==="pa_unsupported");assert.equal(writes,0)
+ const current=make(async(path,init)=>{if(init?.method!=="GET")writes++;return Response.json(path.endsWith("/status")?sourceStatus():{})},{...grant(),apiLevel:89}).source
+ await current.status(signal());assert.equal(current.canTopicMemory(),true)
+ await current.saveMemory(request,signal());assert.equal(writes,1)
+ await assert.rejects(old.saveMemory({...request,entry:{...request.entry,kind:"",title:undefined,summary:undefined}},signal()),error=>errorCode(error)==="pa_unsupported");assert.equal(writes,1,"empty new metadata was sent to an old closed decoder")
+ const plain={...request,entry:{...request.entry,kind:undefined,title:undefined,summary:undefined}}
+ await old.saveMemory(plain,signal());assert.equal(writes,2)
+})

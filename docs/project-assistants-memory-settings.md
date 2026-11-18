@@ -131,11 +131,12 @@ Read-only reference: CodyNC `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 
 ## Compatibility, capacity and verification
 
-Feature schema 6 protects these settings against older writers. The repeatable
-migration accepts schemas 1–5 and changes feature metadata transactionally;
+Feature schema 12 protects named topic-note metadata against older writers;
+schema 6 originally introduced the runtime settings protection. The repeatable
+migration accepts schemas 1–11 and changes feature metadata transactionally;
 old Bot JSON is not rewritten. New optional zero fields are omitted, preserving
-old archive hashes. Exports identify schema 6; restore still accepts supported
-older archives. Older binaries refuse schema 6 before rewriting it. Rollback
+old archive hashes. Exports identify schema 12; restore still accepts supported
+older archives. Older binaries refuse schema 12 before rewriting it. Rollback
 therefore requires a compatible binary or an intentional backup procedure;
 deleting data or lowering metadata is not a rollback step.
 
@@ -184,3 +185,44 @@ were completed. The following login/capability construction uses the complete
 cloudops write scope and records its additional API 81 mirror requirements
 in the linked document. Source construction still does not establish a
 working production Cloud deployment or private-relay mirror acceptance.
+
+## Named topic-note source foundation (API 89, schema 12)
+
+A note is one Bot memory entry with `kind: note`, a title, a summary and a
+body in `text`. Names reuse the existing name limit. Title, summary and body
+share the existing message-byte budget; notes and short facts share the live
+entry cap. The registered memory-preview budget coalesces summary indexes
+without truncating the saved summary or body. No new capacity number is copied
+from Codync. Named notes are excluded from automatic short-fact compaction.
+
+Only name, ID and bounded summary enter assembled model context. The compact
+native index query does not decode chat history or return note bodies.
+`read_memory` accepts optional `entry_id` to read one complete stored entry
+under the captured actor, full Project and current memory revision.
+`search_memory` matches facts and note names/summaries, without searching
+other Projects. Short-fact `edit_memory` does not treat a note summary as an
+editable body. Native note writing and the dedicated note editor are follow-up
+construction, not claims made by this source foundation.
+
+Human writes retain the existing authenticated memory route and revision CAS.
+A new client refuses note metadata before transport to a source below API 89;
+plain short-fact writes keep their earlier API tier. Memory command receipts
+already use `(machine, Bot, operation, key)`; newly written memory event IDs
+now use that same complete identity so two Bots can use equal intent keys
+without a machine-wide event collision. Original receipts and event IDs are
+not rewritten, and an original replay still returns its original revision.
+
+Forgetting tombstones the note and erases its title, summary and body from
+live memory storage. Index, detail and search cannot retrieve it or resurrect
+its ID. Existing human history and independently saved exports are separate;
+no provider conversation file is deleted. Forget still invalidates unsafe
+opaque resume and dependent routine progress. The Project shared-memory view
+remains read-only and is not added to model context. Dreams and a full note
+version-history browser remain deferred.
+
+The schema-11 migration keeps Bot JSON/history bytes unchanged. Supported
+older short-fact archives remain restorable; note-bearing archives cannot
+pretend to be schema 11. Newer metadata must never be lowered for rollback.
+Focused SQLite, owned MCP and scripted Host tests cover these source rules.
+They do not establish clean installed-native recall, deployed Cloud behavior,
+editor interactions or actual memory forgetting across fresh model dialogs.

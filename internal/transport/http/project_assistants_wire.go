@@ -290,6 +290,7 @@ func paWireMemoryEntry(value pa.MemoryEntry) contract.ProjectAssistantMemoryEntr
 	out.ID = value.ID
 	out.Key = paWireBotKey(value.Key)
 	out.Project = paWireProjectScope(value.Project)
+	out.Kind, out.Title, out.Summary = value.Kind, value.Title, value.Summary
 	out.Text = value.Text
 	out.Sources = make([]contract.ProjectAssistantMemorySource, len(value.Sources))
 	for i := range value.Sources {
@@ -573,6 +574,7 @@ func paDomainMemoryEntry(value contract.ProjectAssistantMemoryEntry) pa.MemoryEn
 	out.ID = value.ID
 	out.Key = paDomainBotKey(value.Key)
 	out.Project = paDomainProjectScope(value.Project)
+	out.Kind, out.Title, out.Summary = value.Kind, value.Title, value.Summary
 	out.Text = value.Text
 	out.Sources = make([]pa.MemorySource, len(value.Sources))
 	for i := range value.Sources {

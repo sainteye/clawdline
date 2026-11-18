@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 11
+	SchemaVersion       = 12
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -404,6 +404,9 @@ type MemoryRevision struct {
 }
 
 type MemoryEntry struct {
+	Kind      string         `json:"kind,omitempty"`
+	Title     string         `json:"title,omitempty"`
+	Summary   string         `json:"summary,omitempty"`
 	UpdatedAt time.Time      `json:"updated_at,omitempty,omitzero"`
 	ID        string         `json:"id"`
 	Key       BotKey         `json:"key"`

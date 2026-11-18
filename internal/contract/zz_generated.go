@@ -5296,21 +5296,39 @@ type ProjectAssistantLoginSelection struct {
 }
 
 type ProjectAssistantMemoryDetail struct {
-	ID        string `json:"id"`
-	Layer     string `json:"layer"`
-	Revision  string `json:"revision"`
-	Text      string `json:"text"`
+	ID string `json:"id"`
+
+	// Absent for legacy short facts; note identifies a named topic note.
+	Kind     string `json:"kind,omitempty"`
+	Layer    string `json:"layer"`
+	Revision string `json:"revision"`
+
+	// A note summary; previews use the existing memory-preview budget.
+	Summary string `json:"summary,omitempty"`
+	Text    string `json:"text"`
+
+	// The note name. The full body is read only by entry ID.
+	Title     string `json:"title,omitempty"`
 	Truncated bool   `json:"truncated"`
 }
 
 type ProjectAssistantMemoryEntry struct {
-	Forgotten bool                           `json:"forgotten"`
-	ID        string                         `json:"id"`
-	Key       ProjectAssistantBotKey         `json:"key"`
-	Project   ProjectAssistantProjectScope   `json:"project"`
-	Revision  int64                          `json:"revision"`
-	Sources   []ProjectAssistantMemorySource `json:"sources"`
-	Text      string                         `json:"text"`
+	Forgotten bool                   `json:"forgotten"`
+	ID        string                 `json:"id"`
+	Key       ProjectAssistantBotKey `json:"key"`
+
+	// Absent for legacy short facts; note identifies a named topic note.
+	Kind     string                         `json:"kind,omitempty"`
+	Project  ProjectAssistantProjectScope   `json:"project"`
+	Revision int64                          `json:"revision"`
+	Sources  []ProjectAssistantMemorySource `json:"sources"`
+
+	// A note summary; previews use the existing memory-preview budget.
+	Summary string `json:"summary,omitempty"`
+	Text    string `json:"text"`
+
+	// The note name. The full body is read only by entry ID.
+	Title string `json:"title,omitempty"`
 
 	// Source-owned last write time. Absent for legacy entries whose time was never
 	// recorded.
@@ -5343,11 +5361,17 @@ type ProjectAssistantMemoryRevision struct {
 }
 
 type ProjectAssistantMemoryRow struct {
-	Author    string                         `json:"author"`
-	ID        string                         `json:"id"`
-	Sources   []ProjectAssistantMemorySource `json:"sources"`
-	Text      string                         `json:"text"`
-	UpdatedAt string                         `json:"updated_at"`
+	Author string `json:"author"`
+	ID     string `json:"id"`
+
+	// Absent for legacy short facts; note identifies a named topic note.
+	Kind    string                         `json:"kind,omitempty"`
+	Sources []ProjectAssistantMemorySource `json:"sources"`
+	Text    string                         `json:"text"`
+
+	// The note name. The full body is read only by entry ID.
+	Title     string `json:"title,omitempty"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type ProjectAssistantMemorySource struct {

@@ -643,6 +643,9 @@ func ValidateMemoryWrite(entry MemoryEntry, current MemoryRevision, expected int
 	if entry.ID == "" || strings.TrimSpace(entry.Text) == "" || entry.Forgotten || len(entry.Sources) == 0 {
 		return fail(Invalid, "memory_entry")
 	}
+	if err := ValidateMemoryContent(entry); err != nil {
+		return err
+	}
 	if slices.Contains(current.ForgottenSourceIDs, entry.ID) {
 		return fail(ContextStale, "forgotten_entry")
 	}

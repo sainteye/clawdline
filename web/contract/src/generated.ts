@@ -6115,9 +6115,24 @@ export interface ProjectAssistantLoginSelection {
 
 export interface ProjectAssistantMemoryDetail {
   id: string
+
+  /**
+   * Absent for legacy short facts; note identifies a named topic note.
+   */
+  kind?: string
   layer: string
   revision: string
+
+  /**
+   * A note summary; previews use the existing memory-preview budget.
+   */
+  summary?: string
   text: string
+
+  /**
+   * The note name. The full body is read only by entry ID.
+   */
+  title?: string
   truncated: boolean
 }
 
@@ -6125,10 +6140,25 @@ export interface ProjectAssistantMemoryEntry {
   forgotten: boolean
   id: string
   key: ProjectAssistantBotKey
+
+  /**
+   * Absent for legacy short facts; note identifies a named topic note.
+   */
+  kind?: string
   project: ProjectAssistantProjectScope
   revision: number
   sources: ProjectAssistantMemorySource[]
+
+  /**
+   * A note summary; previews use the existing memory-preview budget.
+   */
+  summary?: string
   text: string
+
+  /**
+   * The note name. The full body is read only by entry ID.
+   */
+  title?: string
 
   /**
    * Source-owned last write time. Absent for legacy entries whose time was never
@@ -6167,8 +6197,18 @@ export interface ProjectAssistantMemoryRevision {
 export interface ProjectAssistantMemoryRow {
   author: string
   id: string
+
+  /**
+   * Absent for legacy short facts; note identifies a named topic note.
+   */
+  kind?: string
   sources: ProjectAssistantMemorySource[]
   text: string
+
+  /**
+   * The note name. The full body is read only by entry ID.
+   */
+  title?: string
   updated_at: string
 }
 

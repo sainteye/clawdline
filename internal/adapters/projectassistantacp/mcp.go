@@ -616,8 +616,22 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		}
 		return s.tools.Status(ctx, q.TaskID)
 	case "read_memory":
-		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
+		var q struct {
+			EntryID string `json:"entry_id"`
+		}
+		if mcpDecode(mcpEmpty(arguments), &q) != nil {
 			return nil, refusal(pa.Invalid, "mcp_memory")
+		}
+		if q.EntryID != "" {
+			details, ok := s.tools.(app.MemoryDetailTools)
+			if !ok {
+				return nil, refusal(pa.Unsupported, "mcp_memory_detail")
+			}
+			detail, err := details.MemoryDetail(ctx, q.EntryID)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"entry": detail}, nil
 		}
 		entries, err := s.tools.Memory(ctx)
 		if err != nil {
@@ -707,9 +721,9 @@ func mcpTools() []any {
 		tool("send_message", "Send the user one Markdown chat message immediately as its own bubble. Send several for several thoughts in the same turn; use a different idempotency key for each distinct message. After sending any message, final reply text stays in the trace: send all user-facing results here. Reuse the same key and text after an uncertain response; do not invent a replacement key. 立即傳送一則獨立的 Markdown 訊息；同一回合可傳多則，不同訊息各用自己的冪等鍵。傳送後最後文字只留在處理過程，所有要讓使用者看到的結果都要在此傳送。結果不確定時沿用相同鍵與文字。", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
 		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{"idempotency_key": text(), "brief": text(), "claims": map[string]any{"type": "array", "items": text()}}, "idempotency_key", "brief", "claims"),
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
-		tool("read_memory", "Read your memory: every entry, one short fact per entry, oldest first.", map[string]any{}),
+		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),
-		tool("edit_memory", "Change your memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in your memory; or old with delete to forget the entry holding it. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
+		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. This tool does not edit named topic notes. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
 			map[string]any{"idempotency_key": text(), "append": text(), "old": text(), "new": map[string]any{"type": "string"}, "delete": map[string]any{"type": "boolean"}}, "idempotency_key"),
 	}
 }
@@ -725,7 +739,11 @@ func mcpEmpty(arguments json.RawMessage) json.RawMessage {
 func mcpMemoryLines(entries []pa.MemoryEntry) []map[string]string {
 	out := make([]map[string]string, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, map[string]string{"id": e.ID, "text": e.Text})
+		line := map[string]string{"id": e.ID, "text": e.Text}
+		if e.Kind == pa.TopicMemory {
+			line["kind"], line["title"] = e.Kind, e.Title
+		}
+		out = append(out, line)
 	}
 	return out
 }

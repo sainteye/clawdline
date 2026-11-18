@@ -25,6 +25,11 @@ type MemoryEdit struct {
 // MemoryEntries returns a Bot's live entries in a stable order, oldest
 // revision first, for its read_memory and search_memory tools.
 func (r *Engine) MemoryEntries(ctx context.Context, key pa.BotKey) ([]pa.MemoryEntry, error) {
+	if reader, ok := r.o.Repository.(interface {
+		MemoryEntries(context.Context, pa.BotKey) ([]pa.MemoryEntry, error)
+	}); ok {
+		return reader.MemoryEntries(ctx, key)
+	}
 	x, err := r.o.Repository.Export(ctx, key)
 	if err != nil {
 		return nil, err
@@ -32,7 +37,7 @@ func (r *Engine) MemoryEntries(ctx context.Context, key pa.BotKey) ([]pa.MemoryE
 	out := make([]pa.MemoryEntry, 0, len(x.MemoryEntries))
 	for _, e := range x.MemoryEntries {
 		if !e.Forgotten {
-			out = append(out, e)
+			out = append(out, pa.MemoryIndexEntry(e))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -51,7 +56,7 @@ func SearchMemory(entries []pa.MemoryEntry, query string) (out []pa.MemoryEntry,
 	words := strings.Fields(strings.ToLower(query))
 	out = []pa.MemoryEntry{}
 	for _, e := range entries {
-		text := strings.ToLower(e.Text)
+		text := strings.ToLower(e.Title + " " + e.Text)
 		all := len(words) > 0
 		for _, w := range words {
 			all = all && strings.Contains(text, w)
@@ -101,6 +106,9 @@ func (r *Engine) EditMemory(ctx context.Context, key pa.BotKey, turnID, callID s
 	var target *pa.MemoryEntry
 	count := 0
 	for i := range entries {
+		if entries[i].Kind == pa.TopicMemory {
+			continue // Short-fact replacement never rewrites a note's index as its body.
+		}
 		if n := strings.Count(entries[i].Text, edit.Old); n > 0 {
 			count += n
 			target = &entries[i]
@@ -123,6 +131,43 @@ func (r *Engine) EditMemory(ctx context.Context, key pa.BotKey, turnID, callID s
 	entry := *target
 	entry.Text = text
 	return r.saveBotMemory(ctx, id, entry, target.Sources, current)
+}
+
+// MemoryDetail reads one stored body under the current Bot and full Project.
+// The index does not carry bodies or file paths; an ID is scoped by the actor.
+func (r *Engine) MemoryDetail(ctx context.Context, key pa.BotKey, id string) (pa.MemoryDetail, error) {
+	reader, ok := r.o.Repository.(MemoryReader)
+	if !ok || id == "" {
+		return pa.MemoryDetail{}, runtimeFailure(pa.Unsupported, "memory_detail")
+	}
+	var bot pa.Bot
+	var err error
+	if owner, ok := r.o.Repository.(interface {
+		MemoryBot(context.Context, pa.BotKey) (pa.Bot, error)
+	}); ok {
+		bot, err = owner.MemoryBot(ctx, key)
+	} else {
+		bot, err = r.o.Repository.Bot(ctx, key)
+	}
+	if err != nil {
+		return pa.MemoryDetail{}, err
+	}
+	state, layer, body, err := reader.ReadMemory(ctx, key, id)
+	if err != nil {
+		return pa.MemoryDetail{}, err
+	}
+	if state.Key != key || state.Project != bot.Project || len(layer.Entries) != 1 {
+		return pa.MemoryDetail{}, runtimeFailure(pa.ScopeDenied, "memory_detail")
+	}
+	current, _, _, err := reader.ReadMemory(ctx, key, "")
+	if err != nil {
+		return pa.MemoryDetail{}, err
+	}
+	if current.Revision != state.Revision {
+		return pa.MemoryDetail{}, runtimeFailure(pa.ContextStale, "memory_detail")
+	}
+	row := layer.Entries[0]
+	return pa.MemoryDetail{Layer: "bot", ID: id, Revision: layer.Revision, Kind: row.Kind, Title: row.Title, Summary: row.Text, Text: body}, ctx.Err()
 }
 
 func (r *Engine) saveBotMemory(ctx context.Context, id string, entry pa.MemoryEntry, sources []pa.MemorySource, current pa.MemoryRevision) (pa.MemoryRevision, error) {

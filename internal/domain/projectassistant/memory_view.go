@@ -2,6 +2,8 @@ package projectassistant
 
 // MemoryRow is a bounded preview; ID is a source-owned entry identifier, never a path.
 type MemoryRow struct {
+	Kind      string         `json:"kind,omitempty"`
+	Title     string         `json:"title,omitempty"`
 	ID        string         `json:"id"`
 	Text      string         `json:"text"`
 	Author    string         `json:"author"`
@@ -32,6 +34,9 @@ type MemoryView struct {
 	Layers         []MemoryLayer   `json:"layers"`
 }
 type MemoryDetail struct {
+	Kind      string `json:"kind,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Summary   string `json:"summary,omitempty"`
 	Layer     string `json:"layer"`
 	ID        string `json:"id"`
 	Revision  string `json:"revision"`
