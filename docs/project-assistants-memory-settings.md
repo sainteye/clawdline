@@ -1,8 +1,9 @@
 # Bot memory layers and native runtime settings
 
 Construction starts from `2282c91d0a88b66e25434abcefff2b75f122cb6c`.
-This document describes source construction and scripted local verification,
-not installed-native, production Cloud, phone or public Release acceptance.
+This document separates source construction, scripted local checks and the
+explicitly labelled installed-native qualifications below. None establishes
+production Cloud, phone or public Release acceptance.
 
 ## Data ownership and reads
 
@@ -222,6 +223,49 @@ actor, check current account/Project/memory/binding authority and persist intent
 those durable admission, recovery and old-binary/archive boundaries remain
 unimplemented. The scripted peer tests exercise protocol and cancellation,
 not a vendor engine, real compaction effect or production acceptance.
+
+### Controlled installed-native compaction qualification
+
+On 2026-11-18, source `e66e63bc5b35d8b751de718fc340790790610599`
+was exercised with installed Codex CLI `0.166.0` and ACP adapter `2.6.0`,
+using an isolated Host/SQLite fixture and the existing signed-in native CLI.
+Admission confirmed native automatic memory was disabled. The batch made
+three provider Opens against one native conversation: a seed prompt, one
+explicit bare `/compact`, and a recall prompt after compaction. The first
+callback never started before its daemon stopped; independent absence of its
+launch marker and private state confirmed zero native operations before the
+batch was deliberately registered again.
+
+The seed used the actual Host `send_message` tool once to return a random
+synthetic marker. Maintenance resumed the same native ID under the complete
+original fence, qualified the adapter's current command report, and made
+exactly one compaction write. It returned a nonempty compaction ID and a
+matched typed `completed` result with a successful RPC. The recall resumed
+the same native ID, without an answer hint, chat handoff or injected memory
+context, and used `send_message` once to return the correct marker. The
+wrapper capped Opens and writes and withheld memory/dispatch authority.
+Observed calls stayed within the cap, with no automatic retry or fresh-session
+fallback.
+
+Independent final-source checks found two succeeded Host chat turns, four
+persisted messages, no active turn and zero Bot memory entries. Every native
+close and Host cleanup succeeded. The Go test ran in 70.953 seconds; the
+whole bounded batch took 72.603 seconds. These are one qualification's elapsed
+times, not a comparison or an interaction-latency benchmark. Token readings
+were not used to decide success or infer a compression ratio.
+
+Actual native writes were two chat prompts and one compaction command;
+provider-internal request counts and exact billing remain unknown. No direct
+API key, account switch, production Bot/group write, deployment or daemon
+restart was part of this batch. Task-private evidence preserves the full
+opt-in source, fingerprints, native identity, qualified readings, actual tool
+calls, source exports and result. Its fsynced private maintenance intent is
+explicitly a test record, not a product Host admission/recovery receipt.
+
+The source passed all five jobs in exact CI `44245454182`. This qualification
+does not complete durable idle-actor admission, concurrent Forget/revocation,
+maintenance recovery, old-binary/archive compatibility or a product control.
+Those boundaries remain required before wiring Host, HTTP or UI.
 
 ## Named topic-note source foundation (API 89, schema 12)
 
