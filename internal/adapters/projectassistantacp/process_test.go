@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,6 +58,8 @@ func TestProcessCleansObservedSetsidDescendant(t *testing.T) {
 	t.Run("slow census", func(t *testing.T) { testProcessCleansObservedSetsidDescendant(t, 300*time.Millisecond) })
 }
 
+type closeCensusKey struct{}
+
 func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Duration) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix setsid")
@@ -64,11 +67,9 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 	if inventoryUnavailable() {
 		t.Skip("sandbox cannot inventory owned descendants; native cleanup acceptance remains pending")
 	}
-	if _, err := os.Stat("/usr/bin/python3"); err != nil {
-		t.Skip("python fixture unavailable")
-	}
 	file := t.TempDir() + "/owned-pid"
 	config := peerConfiguration(t, "descendant")
+	config.Arguments = []string{"-test.run=^TestACPDescendantPeer$"}
 	config.Environment = append(config.Environment, "CLAWDLINE_ACP_PID_FILE="+file)
 	// This real-OS cleanup checks ownership, not the shortened unit-test budget.
 	// Use the installed supervisor's budget and survey cadence; the controlled
@@ -79,8 +80,6 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 	}
 	defer p.Close(context.Background())
 	var pid int
-	// /usr/bin/python3 is an Xcode shim; its first start on a cold CI runner
-	// has exceeded three seconds. Readiness is not what this test measures.
 	deadline := time.Now().Add(time.Second * 30)
 	for time.Now().Before(deadline) {
 		b, _ := os.ReadFile(file)
@@ -93,7 +92,10 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 	if pid == 0 {
 		t.Fatal("setsid child not ready")
 	}
-	p.captureOwned()
+	rows, err := p.captureOwned(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.mu.Lock()
 	birth, owned := p.owned[pid]
 	p.mu.Unlock()
@@ -101,9 +103,28 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 		t.Fatal("escaped child not owned")
 	}
 	defer cleanupFixtureIdentity(t, p, pid, birth)
+	for _, row := range rows {
+		if row.pid == pid && (row.pgid != pid || row.ppid != p.cmd.Process.Pid) {
+			t.Fatalf("fixture did not escape into its own session: %+v", row)
+		}
+	}
 	if censusDelay > 0 {
+		surveyStarted := make(chan struct{})
+		var started sync.Once
+		var closeCensuses int
 		p.mu.Lock()
 		p.censusOverride = func(ctx context.Context) ([]processIdentity, error) {
+			if ctx.Value(closeCensusKey{}) == nil {
+				started.Do(func() { close(surveyStarted) })
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			closeCensuses++
+			// Two ownership observations and the force-signal refresh fit.
+			// A redundant TERM scan would exhaust the remaining budget.
+			if closeCensuses > 3 {
+				return nil, context.DeadlineExceeded
+			}
 			timer := time.NewTimer(censusDelay)
 			defer timer.Stop()
 			select {
@@ -114,8 +135,13 @@ func testProcessCleansObservedSetsidDescendant(t *testing.T, censusDelay time.Du
 			return fixtureCensusDuring(p, ctx)
 		}
 		p.mu.Unlock()
+		select {
+		case <-surveyStarted:
+		case <-time.After(p.limits.CleanupTimeout):
+			t.Fatal("survey did not reach the controlled census")
+		}
 	}
-	if err = p.Close(context.Background()); err != nil {
+	if err = p.Close(context.WithValue(context.Background(), closeCensusKey{}, true)); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(time.Second)
@@ -136,11 +162,11 @@ func fixtureCensus(p *Process) ([]processIdentity, error) {
 }
 
 func fixtureCensusDuring(p *Process, ctx context.Context) ([]processIdentity, error) {
-	reader := &Process{limits: p.limits, inventoryCtx: ctx}
+	reader := &Process{limits: p.limits}
 	if census, ok := any(reader).(interface {
-		identities() ([]processIdentity, error)
+		identities(context.Context) ([]processIdentity, error)
 	}); ok {
-		return census.identities()
+		return census.identities(ctx)
 	}
 	return nil, errors.New("platform process census unavailable")
 }
@@ -367,8 +393,11 @@ func TestProcessOwnedUnreapedZombieGroupIsAlreadyStopped(t *testing.T) {
 	if !zombie {
 		t.Fatal("owned root did not become an unreaped zombie")
 	}
-	p.captureOwned()
-	if err := p.signalOwned(true); err != nil {
+	ctx := context.Background()
+	if _, err := p.captureOwned(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.signalOwned(ctx, nil, true); err != nil {
 		t.Fatalf("already stopped owned group: %v", err)
 	}
 }
