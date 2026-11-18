@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/taskresources"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
 // A callback is a command the daemon runs for a root and reports on when it
@@ -37,7 +40,7 @@ func settledWithin(t *testing.T, b *Broker, ctx context.Context, id string, d ti
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r.State.Terminal() {
+		if r.State.Terminal() && !b.startOpen(ctx, id) {
 			return r
 		}
 		if time.Now().After(deadline) {
@@ -313,8 +316,169 @@ func TestAnAttemptedCallbackWithNoExitIsNeverRunAgain(t *testing.T) {
 		t.Fatalf("the command was started again: %s", got.outcome)
 	}
 	r, _, _ = b.Record(ctx, id)
-	if r.State != StateFailure || !strings.HasPrefix(r.Verdict, "outcome unknown") {
+	if r.State != StateFailure || !strings.HasPrefix(r.Verdict, "outcome unknown") || r.Callback.NotStarted {
 		t.Fatalf("%s: %q", r.State, r.Verdict)
+	}
+}
+
+// Exercise the handler with an expiring attempt context, then persist its
+// outcome through the same independent record context used by runEffect.
+// No production timeout needs to elapse to reproduce a lost admission verdict.
+func TestCallbackResourceRefusalKeepsItsDurableCause(t *testing.T) {
+	for _, phase := range []string{"admission deadline", "allocation deadline", "shared cache refusal", "recovered refusal"} {
+		t.Run(phase, func(t *testing.T) {
+			b, ctx := newTestBroker(t)
+			enableTestResources(t, b)
+			id := "c0000000-0000-4000-8000-000000000021"
+			req := callbackRequest(t, id, "sh", "-c", "touch should-not-run")
+			req.Intent = CallbackIntentHeavy
+			r := Record{Protocol: Protocol, ID: id, Assistant: "claude", Kind: TaskKindCallback,
+				Title: req.Title, State: StateBriefed, CreatedAt: time.Now(), TimeoutMinutes: 5,
+				Dir: b.Tasks.Path(id), ProjectDir: req.Dir, Claims: []string{}, Root: &req.Root,
+				Callback: &Callback{Intent: req.Intent, Argv: req.Argv, Dir: req.Dir}}
+			if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			ids, err := b.create(ctx, r, "", store.Effect{Kind: EffectCallbackStart, Subject: id})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if phase == "recovered refusal" {
+				if _, err := b.Store.StartEffect(ctx, ids[0]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e, err := b.Store.StartEffect(ctx, ids[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempt := ctx
+			wantCause := "resource_measurement_unknown"
+			if strings.HasSuffix(phase, "deadline") {
+				var cancel context.CancelFunc
+				attempt, cancel = context.WithTimeout(ctx, 20*time.Millisecond)
+				defer cancel()
+			}
+			b.Resources.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+				return taskresource.Usage{Known: true}, nil
+			}
+			switch phase {
+			case "admission deadline":
+				wantCause = "resource_measurement_interrupted"
+				b.Resources.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
+					<-c.Done()
+					return taskresource.Usage{}, c.Err()
+				}
+			case "shared cache refusal":
+				wantCause = "resource_identity_changed"
+				// A registered row with a conflicting owner reaches a late preparation
+				// error whose returned Record is empty; retain the original task ID.
+				project, err := filepath.EvalSymlinks(req.Dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				owner := taskresource.Owner{Kind: "shared_go", ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte(project)).String(), Project: t.TempDir()}
+				originalOwner := b.Resources.Owner
+				seeded := false
+				b.Resources.Owner = func(c context.Context, kind, id string) (taskresources.OwnerState, error) {
+					if !seeded {
+						seeded = true // admission has passed; inject before cache attachment
+						resourceID := uuid.NewString()
+						if err := b.Store.RegisterTaskResource(ctx, taskresource.Resource{
+							ID: resourceID, RelativePath: resourceID, Generation: uuid.NewString(), Owner: owner,
+							Identity: "injected-conflict", Class: taskresource.Cache, CreatedAt: time.Now().Unix(),
+						}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return originalOwner(c, kind, id)
+				}
+			default:
+				b.Resources.Owner = func(c context.Context, _, _ string) (taskresources.OwnerState, error) {
+					if phase == "allocation deadline" {
+						<-c.Done()
+					}
+					return taskresources.OwnerState{}, errors.New(wantCause)
+				}
+			}
+			res := runCallbackStart(attempt, b, e)
+			if strings.HasSuffix(phase, "deadline") && !errors.Is(attempt.Err(), context.DeadlineExceeded) {
+				t.Fatalf("attempt did not expire: %v", attempt.Err())
+			}
+			if err := b.finishEffect(attempt, e, res); err != nil {
+				t.Fatal(err)
+			}
+			// Read a fresh SQLite handle, rather than trusting the handler's
+			// return value or an in-memory copy of the task.
+			reopened, err := store.Open(b.Dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			restarted := &Broker{Store: reopened, Tasks: b.Tasks, Dir: b.Dir}
+			got, _, err := restarted.Record(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.State != StateFailure || !strings.HasPrefix(got.Verdict, "resource_admission_refused: ") || !strings.Contains(got.Verdict, wantCause) {
+				t.Fatalf("durable task lost source cause %q: %s: %q", wantCause, got.State, got.Verdict)
+			}
+			if got.Callback.NotStarted != (phase != "recovered refusal") || got.Callback.PID != 0 || !got.Callback.StartedAt.IsZero() {
+				t.Fatalf("incorrect launch evidence: %+v", got.Callback)
+			}
+			effects, err := reopened.Effects(ctx, EffectCallbackStart, id)
+			if err != nil || len(effects) != 1 || effects[0].State != store.EffectDone || !strings.Contains(effects[0].Outcome, wantCause) {
+				t.Fatalf("durable effect lost source cause: %+v, %v", effects, err)
+			}
+			if replay, err := restarted.StartCallback(ctx, req); err != nil || !replay.Replayed {
+				t.Fatalf("same ID was not replayed: %+v, %v", replay, err)
+			}
+			if replay := runCallbackStart(ctx, restarted, e); replay.state != store.EffectDone {
+				t.Fatalf("settled start was retried: %+v", replay)
+			}
+			restarted.RecoverEffects(ctx)
+			b.tendCallback(ctx, r) // even an old beat snapshot cannot replace the verdict
+			again, _, err := restarted.Record(ctx, id)
+			if err != nil || again.State != got.State || again.Verdict != got.Verdict || !again.FinishedAt.Equal(got.FinishedAt) || again.Notice.ID != got.Notice.ID {
+				t.Fatalf("terminal receipt changed: %+v, %v", again, err)
+			}
+			afterEffects, err := reopened.Effects(ctx, EffectCallbackStart, id)
+			if err != nil || len(afterEffects) != 1 || afterEffects[0].Attempts != effects[0].Attempts || afterEffects[0].Outcome != effects[0].Outcome {
+				t.Fatalf("start effect was repeated or replaced: %+v, %v", afterEffects, err)
+			}
+			for _, path := range []string{filepath.Join(req.Dir, "should-not-run"), (callbackFiles{r.Dir}).attempt(), (callbackFiles{r.Dir}).pid()} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("command launch evidence exists at %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCallbackResourceRefusalPreservesConcurrentCancellation(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	id := "c0000000-0000-4000-8000-000000000022"
+	b.Resources.Owner = func(context.Context, string, string) (taskresources.OwnerState, error) {
+		if _, err := b.Settle(ctx, id, StateCancelled, "cancelled during resource preparation", nil); err != nil {
+			t.Fatal(err)
+		}
+		return taskresources.OwnerState{}, errors.New("resource_measurement_unknown")
+	}
+	req := callbackRequest(t, id, "sh", "-c", "touch should-not-run")
+	out, err := b.StartCallback(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Record.State != StateCancelled || out.Record.Verdict != "cancelled during resource preparation" || out.Record.Callback.NotStarted {
+		t.Fatalf("cancellation was replaced by resource failure: %+v", out.Record)
+	}
+	effects, err := b.Store.Effects(ctx, EffectCallbackStart, id)
+	if err != nil || len(effects) != 1 || effects[0].State != store.EffectDone {
+		t.Fatalf("settled cancellation left a failed start effect: %+v, %v", effects, err)
+	}
+	if _, err := os.Stat(filepath.Join(req.Dir, "should-not-run")); !os.IsNotExist(err) {
+		t.Fatalf("cancelled command ran: %v", err)
 	}
 }
 

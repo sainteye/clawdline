@@ -275,6 +275,34 @@ func TestPressureReclaimsOnlyEligibleDataAndKeepsActiveResources(t *testing.T) {
 	}
 }
 
+func TestIndividualCachePressureKeepsProtectedDataWithoutBlockingWork(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsealed", true: "active"}[active], func(t *testing.T) {
+			f := setup(t, taskresource.Cache)
+			p := taskresource.DefaultPolicy()
+			p.CacheBytes = 1
+			f.s.Policy = func() taskresource.Policy { return p }
+			if active {
+				f.owner.Complete = false
+				f.owner.Presence, f.owner.UsePresence = "present", "present"
+			}
+			if err := f.s.Admit(context.Background()); err != nil {
+				t.Fatal("cache eviction target blocked work before outputs could be sealed", err)
+			}
+			if raw, err := os.ReadFile(filepath.Join(f.allocation.Path, "rebuildable.tmp")); err != nil || string(raw) != "temporary computation" {
+				t.Fatal("protected cache was removed", err)
+			}
+			// The aggregate limit still refuses work without deleting active or
+			// unsealed data. Only the per-cache eviction target is nonblocking.
+			p.CacheTotal = p.CacheBytes
+			if err := f.s.Admit(context.Background()); err == nil || err.Error() != "cache_total_over_budget" {
+				t.Fatal("aggregate protection lost", err)
+			}
+			preserved(t, f)
+		})
+	}
+}
+
 func TestPendingResourceIntentSurvivesActualStoreRestart(t *testing.T) {
 	for _, unlinked := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before unlink", true: "after unlink"}[unlinked], func(t *testing.T) {
@@ -366,4 +394,77 @@ func TestScopedInspectionDoesNotExposeCrossProjectRecoveryTargets(t *testing.T) 
 	if err == nil || r.ID != "" {
 		t.Fatal("denied lookup returned a foreign resource", r, err)
 	}
+}
+
+func TestInterruptedMeasurementKeepsItsCause(t *testing.T) {
+	for _, phase := range []string{"legacy", "after legacy", "free space"} {
+		t.Run(phase, func(t *testing.T) {
+			f := setup(t, taskresource.Scratch)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			cause := context.Canceled
+			switch phase {
+			case "legacy":
+				cause = context.DeadlineExceeded
+				f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+					return taskresource.Usage{}, context.DeadlineExceeded
+				}
+			case "after legacy":
+				f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+					cancel()
+					return taskresource.Usage{Known: true}, nil
+				}
+			case "free space":
+				f.s.FreeSpace = func() (int64, error) { cancel(); return 1 << 40, nil }
+			}
+			_, err := f.s.Measure(ctx)
+			var failure Failure
+			if !errors.As(err, &failure) || failure.Code != "resource_measurement_interrupted" || !errors.Is(err, cause) {
+				t.Fatalf("interrupted measurement lost its classification or cause: %v", err)
+			}
+			if f.s.Usage().Known {
+				t.Fatal("interrupted measurement published a known total")
+			}
+			preserved(t, f)
+		})
+	}
+}
+
+func TestPressureAdmissionVisitsOneAdvancingCleanupPage(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	f.owner.Complete = false
+	for i := 0; i < taskresource.PageRowsLimit; i++ {
+		if _, err := f.s.Allocate(ctx, Scope{Actor: "daemon", AllProjects: true, Inspect: true, Publish: true}, "task", f.owner.Owner.ID, taskresource.Scratch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.owner.Complete = true
+	seen := map[string]bool{}
+	f.s.Uses = func(_ context.Context, r taskresource.Resource) string { seen[r.ID] = true; return "present" }
+	p := taskresource.DefaultPolicy()
+	f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+		return taskresource.Usage{Known: true, ScratchTotal: p.ScratchTotal + 1}, nil
+	}
+	if err := f.s.Admit(ctx); err == nil {
+		t.Fatal("active over-budget resources were admitted")
+	}
+	if len(seen) > taskresource.PageRowsLimit {
+		t.Fatalf("one admission inspected %d resources, page limit %d", len(seen), taskresource.PageRowsLimit)
+	}
+	prior := seen
+	seen = map[string]bool{}
+	if err := f.s.Admit(ctx); err == nil {
+		t.Fatal("next over-budget admission passed")
+	}
+	advanced := false
+	for id := range seen {
+		if !prior[id] {
+			advanced = true
+		}
+	}
+	if !advanced {
+		t.Fatal("later resources were starved by the admission cleanup cursor")
+	}
+	preserved(t, f)
 }

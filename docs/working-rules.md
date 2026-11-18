@@ -113,7 +113,8 @@ The previous broad build/test policy came from this incident:
 runs the command at a lower priority, and gives the slot back. On 2026-09-26 several sessions built
 at once on a 2-core, 1.9 GB machine; load reached 34, console reads took 8-74 seconds, and Claude
 Code killed a landing's checks twice for low memory. The wrapper still runs when the daemon is
-missing and says so. If `--max-wait` (default 30m) passes before it gets the slot and memory, it
+missing and says so. A reachable daemon's refusal stops the command with a nonzero exit;
+resource uncertainty is not permission to compile without a lease. If `--max-wait` (default 30m) passes before it gets the slot and memory, it
 does not run the command and exits 75; run it again later. It prints one line when waiting starts
 and one when waiting ends, so use one long wait rather than repeated short polls. Wrap the whole
 native build script once; a nested `heavy` runs directly.

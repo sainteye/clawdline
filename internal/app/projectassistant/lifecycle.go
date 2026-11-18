@@ -32,6 +32,9 @@ func (r *Engine) retain(a *runtimeActor, err error) {
 // The execution owner alone closes its session. A failed close keeps both the
 // handle and process slot, including after its prompt caller has timed out.
 func (r *Engine) closeSession(a *runtimeActor, session ProviderSession) error {
+	a.mu.Lock()
+	a.closing = true
+	a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
 	defer cancel()
 	err := session.Close(ctx)

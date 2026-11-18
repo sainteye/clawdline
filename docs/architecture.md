@@ -338,6 +338,13 @@ The macOS shell starts the daemon bundled inside the app, never one found on `PA
 never talks to a daemon from a different build. [shell-bridge.md](shell-bridge.md) lists every
 message, screen by screen, and ends with the minimum a Linux or Windows shell has to implement.
 
+The macOS console window extends its content into a transparent, hidden title bar. Native
+close, minimize and fullscreen controls share one compact row with the local/Cloud switch;
+navigation stays on the right and blank header space drags the window. There is no permanent
+address field or separate window-title row. The local and Cloud webviews retain their separate
+cookie stores, page history and zoom settings. This is native shell chrome, so it does not add
+window controls to the hosted console or the phone.
+
 The web side is three npm workspaces:
 
 | | Holds | Imports |

@@ -198,6 +198,19 @@ while idle or before the session reply, but are usable only after their native
 ID matches that reply and under the client's complete execution fence.
 Cancellation or connection failure makes the reading unusable.
 
+The Host can now read that optional state through the owned-session wrapper
+and an existing runtime actor. This read never calls the runtime factory,
+allocates an actor or process slot, or opens/resumes a provider. The current
+human reader, background source, canonical Project, complete execution fence,
+active turn, native ID, binding and memory/instruction revisions are checked;
+authority and binding are rechecked after the native cached read. An absent,
+opening, busy, stopping, closing or cleanup-unknown owner remains unknown.
+The owned wrapper also seals readings before native cleanup. Ordinary turns
+still close their session when they finish, so this is not a persisted last
+reading or an idle maintenance session. The internal Host/SQLite tests exercise
+this composition, including a real Forget during the read; they do not establish
+a production HTTP/UI feature or installed-binary recovery.
+
 This live, in-process reading adds no HTTP operation, saved Bot field, API or
 archive generation, model prompt or maintenance command. It neither infers a
 model's window nor claims compaction support from a provider name. A dedicated

@@ -511,9 +511,16 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
         window = ConsoleWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "Clawdline"
+        // Keep native window controls without a separate title row. The
+        // content header reserves their space and supplies the drag region.
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = Ink.bg
+        window.isMovableByWindowBackground = true
         // Kept, not rebuilt: the page stays loaded behind a closed window, and
         // the size somebody gave it is still the size when it comes back.
         window.isReleasedWhenClosed = false
@@ -522,7 +529,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // The console and Cloud share this window, each in its own view with
         // its own cookie store. The bar and that boundary are in Browser.swift.
         window.contentView = buildBrowser()
-        // The address is a reading, so the keyboard starts in the page.
+        // The keyboard starts in the page, not in the window controls.
         window.initialFirstResponder = active
         window.makeFirstResponder(active)
         window.delegate = self

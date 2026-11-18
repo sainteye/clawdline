@@ -20,9 +20,8 @@
 // manager on the GitHub sign-in page; the bar's "open in browser" button still
 // hands the Cloud page in front to the person's browser for that.
 //
-// The address is a reading, not a destination field. It is selectable so the
-// value can be copied, but it has no border, focus ring, action or editable
-// state that could promise navigation this shell does not offer.
+// The compact header shares its row with the native window controls. The
+// current address is available through Open in Browser, not a permanent bar.
 import AppKit
 import CryptoKit
 import UniformTypeIdentifiers
@@ -239,8 +238,9 @@ final class PillButton: NSButton {
                 .foregroundColor: colour,
             ])
         }
-        layer?.backgroundColor = (selected ? Ink.accentIn : Ink.card).cgColor
-        layer?.borderColor = (selected ? Ink.accentEd : Ink.line).cgColor
+        let front = isFront == true
+        layer?.backgroundColor = (selected ? Ink.accentIn : (front ? Ink.card : .clear)).cgColor
+        layer?.borderColor = (selected ? Ink.accentEd : (front ? Ink.line : .clear)).cgColor
     }
 
     /// Seven points of dot and, after it, `.conn`'s 6px gap to the word:
@@ -256,24 +256,21 @@ final class PillButton: NSButton {
     }
 }
 
-/// The bar: where the window can go, and where it is.
-///
-/// `.top`'s measurements — 14 points in from each edge, 12 between groups —
-/// with the current address presented as a quiet, read-only value.
+/// One content row, including room for the native traffic lights. Empty
+/// space drags the window; controls keep their normal click behavior.
 final class BrowserBar: NSView {
     let back: PillButton
     let forward: PillButton
     let refresh: PillButton
     let consoleTab: PillButton
     let cloudTab: PillButton
-    let field = NSTextField(labelWithString: "")
     /// How big the page in front is drawn, shown only when it is not 100%;
     /// pressing it is ⌘0.
     let zoom: PillButton
     /// The page in front, in the person's own browser.
     let outside: PillButton
 
-    private let box = NSView()
+    private let row = NSStackView()
     private var watch: [NSKeyValueObservation] = []
 
     func updateLanguage() {
@@ -320,67 +317,56 @@ final class BrowserBar: NSView {
         zoom.isHidden = true
 
         wantsLayer = true
-        layer?.backgroundColor = Ink.card.cgColor
+        layer?.backgroundColor = Ink.bg.cgColor
 
-        field.isEditable = false
-        field.isSelectable = true
-        field.font = NSFont.systemFont(ofSize: 12)
-        field.textColor = Ink.dim
-        field.usesSingleLineMode = true
-        field.lineBreakMode = .byTruncatingTail
-        field.cell?.isScrollable = true
-        field.translatesAutoresizingMaskIntoConstraints = false
-        // The address gives way before anything else does. A label resists
-        // being squeezed below its whole text's width, so a long address — a
-        // sign-in page's return URL runs to thousands of points — made that
-        // the bar's minimum width, and the window grew past the screen with
-        // the buttons on the right pushed off it. Truncating needs room to be
-        // taken away, from the field and from the box that holds it.
-        field.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.addSubview(field)
-        box.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-        box.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-
-        let row = NSStackView(views: [back, forward, refresh, consoleTab, cloudTab, box, zoom, outside])
+        let space = NSView()
+        space.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
+        for view in [consoleTab, cloudTab, space, back, forward, refresh, zoom, outside] {
+            row.addArrangedSubview(view)
+        }
         row.orientation = .horizontal
         row.alignment = .centerY
         row.distribution = .fill
         row.spacing = 6
-        row.setCustomSpacing(12, after: refresh)
-        row.setCustomSpacing(12, after: cloudTab)
-        row.setCustomSpacing(8, after: box)
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 86, bottom: 0, right: 14)
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
-
-        // The hairline the console draws under `.top`.
-        let hair = NSView()
-        hair.wantsLayer = true
-        hair.layer?.backgroundColor = Ink.line.cgColor
-        hair.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(hair)
 
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: leadingAnchor),
             row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor),
             row.bottomAnchor.constraint(equalTo: bottomAnchor),
-            box.heightAnchor.constraint(equalToConstant: 26),
-            field.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10),
-            field.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10),
-            field.centerYAnchor.constraint(equalTo: box.centerYAnchor),
-            hair.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hair.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hair.bottomAnchor.constraint(equalTo: bottomAnchor),
-            hair.heightAnchor.constraint(equalToConstant: 1),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("this shell builds its views in code") }
 
-    /// Follow both views, so the arrows and address are what is true rather
+    override func layout() {
+        super.layout()
+        // The system owns these buttons, including fullscreen visibility.
+        // Align them with our controls without replacing their native actions.
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(kind), let parent = button.superview else { continue }
+            let centre = convert(NSPoint(x: 0, y: bounds.midY), to: parent)
+            button.setFrameOrigin(NSPoint(x: button.frame.minX, y: centre.y - button.frame.height / 2))
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        var view: NSView? = hit
+        while let current = view, current !== self {
+            if current is NSControl { return hit }
+            view = current.superview
+        }
+        return self
+    }
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    /// Follow both views, so the arrows are what is true rather
     /// than what was true when something was last pressed.
     func follow(_ views: [WKWebView], onChange: @escaping () -> Void) {
         watch = views.flatMap { view in
@@ -917,7 +903,7 @@ extension Shell {
         refreshBrowserBar()
     }
 
-    /// The arrows and address, from what the console actually says.
+    /// The arrows and active tab, from what the console actually says.
     func refreshBrowserBar() {
         guard bar != nil, cloud != nil else { return }
         let view = active
@@ -933,8 +919,6 @@ extension Shell {
         bar.zoom.isSelected = PageZoom.larger(than: zoom) == nil || PageZoom.smaller(than: zoom) == nil
         bar.zoom.isHidden = PageZoom.percent(zoom) == 100
         bar.outside.isEnabled = outsideURL != nil
-        bar.field.stringValue = view.url?.absoluteString ?? ""
-        bar.field.toolTip = view.url?.absoluteString
     }
 
     // MARK: The bar's buttons

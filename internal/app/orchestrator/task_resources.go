@@ -275,35 +275,32 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 	if b.Resources == nil {
 		return refuse(507, "resource_service_unavailable", "Managed resource service is unavailable.")
 	}
-	if err := b.Resources.Admit(ctx); err != nil {
-		// Source-owned publication may have finished since the previous sweep.
-		// Seal it here before retrying pressure reclamation. This is not Bot authority.
-		after := ""
-		for {
-			_, next, e := b.SweepTaskResources(ctx, after)
-			if e != nil {
-				break
-			}
-			if next == "" {
-				break
-			}
-			after = next
+	err := b.Resources.Admit(ctx)
+	if err == nil && !b.Resources.CacheOverTarget() {
+		return nil
+	}
+	var failure taskresources.Failure
+	pressure := errors.As(err, &failure) && (failure.Code == "disk_reserve_unavailable" || failure.Code == "cache_total_over_budget" || failure.Code == "scratch_over_budget")
+	if err == nil || pressure {
+		// A measured eviction target permits one advancing, ownership-checked
+		// publication page. Unknown measurements never trigger cleanup.
+		b.reclaim.mu.Lock()
+		after := b.reclaim.resourcesAfter
+		b.reclaim.mu.Unlock()
+		if _, next, e := b.SweepTaskResources(ctx, after); e == nil {
+			b.reclaim.mu.Lock()
+			b.reclaim.resourcesAfter = next
+			b.reclaim.mu.Unlock()
 		}
-		// The legacy reclaimer retains its own Git, owner and preservation
-		// procedure; the resource service never adopts those paths.
-		legacy, legacyErr := b.Reclaim(ctx, false)
-		remaining := legacy.Deferred
-		for legacyErr == nil && remaining > 0 && ctx.Err() == nil {
-			_, legacyErr = b.Reclaim(ctx, false)
-			remaining -= reclaimSweepLimit
+		if pressure {
+			_, _ = b.Reclaim(ctx, false)
 		}
 		err = b.Resources.Admit(ctx)
 		if err == nil {
 			return nil
 		}
-		return refuseWith(507, err.Error(), "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry.", map[string]any{"policy": taskresource.DefaultPolicy()})
 	}
-	return nil
+	return refuseWith(507, err.Error(), "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry.", map[string]any{"policy": taskresource.DefaultPolicy()})
 }
 
 // Keep these facts when callback resources still depend on process-group and

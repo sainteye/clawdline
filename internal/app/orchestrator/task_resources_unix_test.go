@@ -101,8 +101,11 @@ func TestManagedCallbackRefusesBeforeStartingOnDiskPressure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Record.State != StateFailure {
+	if out.Record.State != StateBriefed {
 		t.Fatal(out.Record.State)
+	}
+	if got := settledWithin(t, b, ctx, req.TaskID, 10*time.Second); got.State != StateFailure {
+		t.Fatal(got.State)
 	}
 	if _, err := os.Stat(filepath.Join(req.Dir, "should-not-run")); !os.IsNotExist(err) {
 		t.Fatal("command ran", err)

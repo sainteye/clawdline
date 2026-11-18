@@ -1396,3 +1396,32 @@ test('Realtime Session name anchors cue each next item without repeating earlier
   await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta});assert.equal(switches,count)
  }
 })
+
+
+for(const live of [false,true])test(`background starts use their own cue without replay on children or waiting (live=${live})`,()=>{
+ const f=fixture(true);f.c.live=live;f.c.state.status='connected';f.c.state.connectionReady=true
+ const sounds=[];f.c.meter={read:()=>({input:0,output:0}),pending:source=>sounds.push(source)}
+ const active=f.c.observeOperation({name:'list_sessions',source:'tool'})
+ const background=f.c.observeOperation({name:'get_sessions_summary',source:'background'})
+ f.c.observeOperation({name:'read_session_transcript',source:'background',parent:background.id})
+ assert.deepEqual(sounds,['tool','background'])
+ const evidence=f.c.currentWorkEvidence();f.c.currentWorkEvidence=()=>({...evidence,tasks:[{id:'background-work',version:1,status:'running'}]})
+ for(let i=0;i<8;i++)f.c.updateState({})
+ assert.deepEqual(sounds,['tool','background','background'],'durable work sounds once per version, never per refresh')
+ active.end({outcome:'done'});background.end({outcome:'done'});assert.equal(sounds.length,3)
+ f.c.state.status='disconnected';f.c.observeOperation({name:'read_session_summary',source:'background'});assert.equal(sounds.length,3)
+})
+
+
+test('turning processing sounds off still mutes both tool sources',()=>{
+ const before=globalThis.localStorage
+ try{
+  globalThis.localStorage={getItem:()=> 'off'}
+  const f=fixture(true);f.c.state.status='connected';f.c.state.connectionReady=true
+  f.c.meter={pending:()=>assert.fail('processing sounds are disabled')}
+  f.c.observeOperation({name:'list_sessions',source:'tool'})
+  f.c.observeOperation({name:'get_sessions_summary',source:'background'})
+  const evidence=f.c.currentWorkEvidence();f.c.currentWorkEvidence=()=>({...evidence,tasks:[{id:'background-work',version:1,status:'running'}]})
+  f.c.updateState({})
+ }finally{if(before===undefined)delete globalThis.localStorage;else globalThis.localStorage=before}
+})

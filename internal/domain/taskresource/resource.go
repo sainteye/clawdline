@@ -188,17 +188,16 @@ type Usage struct {
 	Available    int64 `json:"available_bytes"`
 }
 
-// Admission is a between-command threshold, not an in-flight filesystem quota.
-// Refusal never authorizes killing a producer or removing protected data.
+// Admission protects aggregate capacity and free space between commands. An
+// individual cache target triggers safe eviction, not refusal while its owner
+// is still running or publishing outputs. Refusal never authorizes killing a
+// producer or removing protected data.
 func Admission(p Policy, u Usage) string {
 	if !p.Valid() || !u.Known || u.LargestCache < 0 || u.CacheTotal < 0 || u.ScratchTotal < 0 || u.Available < 0 {
 		return "storage_unknown"
 	}
 	if u.Available < p.DiskReserve {
 		return "disk_reserve_unavailable"
-	}
-	if u.LargestCache > p.CacheBytes {
-		return "cache_over_budget"
 	}
 	if u.CacheTotal > p.CacheTotal {
 		return "cache_total_over_budget"

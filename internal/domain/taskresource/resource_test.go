@@ -80,7 +80,6 @@ func TestStoragePressureRefusesNewWorkWithoutRelaxingProtection(t *testing.T) {
 	}{
 		{"storage_unknown", func(u *Usage) { u.Known = false }},
 		{"disk_reserve_unavailable", func(u *Usage) { u.Available-- }},
-		{"cache_over_budget", func(u *Usage) { u.LargestCache++ }},
 		{"cache_total_over_budget", func(u *Usage) { u.CacheTotal++ }},
 		{"scratch_over_budget", func(u *Usage) { u.ScratchTotal++ }},
 	} {
@@ -91,5 +90,13 @@ func TestStoragePressureRefusesNewWorkWithoutRelaxingProtection(t *testing.T) {
 				t.Fatal(got)
 			}
 		})
+	}
+}
+
+func TestIndividualCacheTargetDoesNotRefuseWorkWithinTotalBudget(t *testing.T) {
+	p := DefaultPolicy()
+	u := Usage{Known: true, LargestCache: p.CacheBytes + 1, CacheTotal: p.CacheBytes + 1, Available: p.DiskReserve}
+	if reason := Admission(p, u); reason != "" {
+		t.Fatalf("an individual eviction target blocked useful work: %s", reason)
 	}
 }

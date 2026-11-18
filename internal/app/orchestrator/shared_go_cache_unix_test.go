@@ -3,6 +3,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,68 @@ import (
 	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
+
+func TestHeavyCallbackCanContinueWithAnActiveOverTargetCache(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	project := t.TempDir()
+	gitIn(t, project, "init", "-q")
+	commitFile(t, project, "source.go", "package fixture\n")
+	entry := filepath.Join("ab", fmt.Sprintf("%064x-d", 1))
+	req := callbackRequest(t, uuid.NewString(), "sh", "-c", `mkdir -p "$GOCACHE/ab"; printf compiled > "$GOCACHE/`+filepath.ToSlash(entry)+`"; printf retained > "$CLAWDLINE_ARTIFACT_DIR/result.txt"; while ! test -e release; do sleep 0.05; done`)
+	req.Dir, req.Intent = project, CallbackIntentHeavy
+	if _, err := b.StartCallback(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	release := func() { _ = os.WriteFile(filepath.Join(project, "release"), nil, 0o600) }
+	t.Cleanup(release)
+	var r Record
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var err error
+		r, _, err = b.Record(ctx, req.TaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(r.Dir, "artifacts", "result.txt")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("callback did not publish its ready artifact", r.Verdict)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p := taskresource.DefaultPolicy()
+	p.CacheBytes = 1
+	b.Resources.Policy = func() taskresource.Policy { return p }
+	if err := b.AdmitHeavyResources(ctx); err != nil {
+		t.Fatal("active callback could not acquire its next compile", err)
+	}
+	cacheEntry := filepath.Join(r.Callback.GoCachePath, entry)
+	if _, err := os.Stat(cacheEntry); err != nil {
+		t.Fatal("active cache entry was removed", err)
+	}
+	p.CacheTotal = p.CacheBytes
+	if err := b.AdmitHeavyResources(ctx); err == nil {
+		t.Fatal("aggregate cache pressure allowed another compile")
+	}
+	p.CacheTotal = taskresource.DefaultPolicy().CacheTotal
+	release()
+	if r := settledWithin(t, b, ctx, req.TaskID, 10*time.Second); r.State != StateSuccess {
+		t.Fatal(r.Verdict)
+	}
+	// Completed output publication is sealed on the next admission, without
+	// waiting for the periodic reclaimer or a person to publish it manually.
+	if err := b.AdmitHeavyResources(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cacheEntry); !os.IsNotExist(err) {
+		t.Fatal("released cache was not trimmed", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(r.Dir, "artifacts", "result.txt")); err != nil || string(raw) != "retained" {
+		t.Fatal("saved result changed", err)
+	}
+}
 
 func TestHeavyCallbacksShareOnlyGoCacheAndReleasePerCommand(t *testing.T) {
 	b, ctx := newTestBroker(t)
@@ -76,6 +139,22 @@ func TestHeavyCallbacksShareOnlyGoCacheAndReleasePerCommand(t *testing.T) {
 	req.Dir, req.Intent = project, CallbackIntentHeavy
 	if _, err := b.StartCallback(ctx, req); err != nil {
 		t.Fatal(err)
+	}
+	// Acceptance precedes preparation. Protection starts with the durable
+	// cache-consumer link, before the process can use the shared cache.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		current, _, err := b.Record(ctx, req.TaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Callback.GoCacheID == resource.ID {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("accepted callback never attached its shared cache")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	active, err := b.Resources.Plan(ctx, ResourceOwnerScope(), []string{resource.ID})
 	if err != nil || active.Items[0].Decision.Outcome == "eligible" {

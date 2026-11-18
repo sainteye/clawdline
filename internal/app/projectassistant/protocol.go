@@ -165,6 +165,8 @@ type NativeContextState struct {
 
 // NativeContextReader is optional so providers without native context reports
 // remain explicitly unqualified. It does not change persisted Bot formats.
+// Implementations read cached state only; they must not perform external IO or
+// wait for a model, command, or pending prompt.
 type NativeContextReader interface {
 	NativeContext() NativeContextState
 }
