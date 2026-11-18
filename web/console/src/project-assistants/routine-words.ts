@@ -1,6 +1,15 @@
 import {catalogWord} from "../catalog"
 
 export const en={
+  repeat:"Repeat",hourly:"Hourly",daily:"Daily",weekdays:"Weekdays",weekly:"Weekly",custom:"Custom",
+  weekday:"Day of the week",minute:"Minute of the hour",scheduleTime:"Time",timeZone:"Time zone",
+  cronFields:"Minute · hour · day of month · month · day of week",
+  hourlyPreview:"Every hour at :{minute} · {zone}",
+  dailyPreview:"Every day at {time} · {zone}",
+  weekdaysPreview:"Monday to Friday at {time} · {zone}",
+  weeklyPreview:"Every {day} at {time} · {zone}",
+  unsupportedTrigger:"This version can keep this trigger visible, but cannot save it. To save changes, explicitly replace or remove the trigger.",
+  originalTrigger:"Original trigger data",
   event:"Filtered event",webhook:"Webhook",source:"Event source",eventName:"Event name",filters:"All filters must match",filterKey:"Field name",filterValue:"Field value",addFilter:"Add filter",removeFilter:"Remove filter",
   eventHint:"Source and event names match exactly; * matches every event from that source. Filters compare top-level strings. messageContains checks text for a substring. A source label does not prove the sender’s identity.",
   eventUnsupported:"Update this source to API75 to create event schedules or manage webhook keys.",
@@ -18,6 +27,15 @@ export const en={
   delivery:"Delivery ID",retryCount:"Safe retry count",retryAt:"Retry no earlier than",eventRun:"Webhook delivery",scheduledRun:"Scheduled run",testRun:"Test run",otherRun:"Source reported by the host",unknownRun:"The effects of this run are unknown. It cannot be retried from this history.",
 } as const
 export const zhHant:Record<keyof typeof en,string>={
+  repeat:"頻率",hourly:"每小時",daily:"每日",weekdays:"平日",weekly:"每週",custom:"自訂",
+  weekday:"星期",minute:"每小時的第幾分鐘",scheduleTime:"時間",timeZone:"時區",
+  cronFields:"分鐘 · 小時 · 日期 · 月份 · 星期",
+  hourlyPreview:"每小時第 {minute} 分鐘 · {zone}",
+  dailyPreview:"每日 {time} · {zone}",
+  weekdaysPreview:"星期一至星期五 {time} · {zone}",
+  weeklyPreview:"每{day} {time} · {zone}",
+  unsupportedTrigger:"此版本可顯示這項觸發條件的原始資料。若要儲存變更，請先更換或移除該條件。",
+  originalTrigger:"原始觸發條件資料",
   event:"篩選事件",webhook:"Webhook",source:"事件來源",eventName:"事件名稱",filters:"所有篩選條件都必須符合",filterKey:"欄位名稱",filterValue:"欄位值",addFilter:"新增篩選條件",removeFilter:"移除篩選條件",
   eventHint:"來源與事件名稱採完全相符；* 會接受該來源的所有事件。篩選條件比對最上層字串，messageContains 檢查 text 是否包含指定文字。來源標籤不代表寄件者身分已驗證。",
   eventUnsupported:"請將此來源更新至 API75，才能建立事件排程或管理 Webhook 金鑰。",

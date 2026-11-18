@@ -1,0 +1,89 @@
+.project-assistants .pa-routine-editor {
+  min-width: 0;
+  margin-block: 12px 24px;
+  padding: 14px;
+  border: 1px solid var(--pa-line);
+  border-radius: 14px;
+  background: var(--pa-card);
+}
+
+.project-assistants .pa-routine-editor h4 { margin: 0 0 12px; }
+.project-assistants .pa-routine-editor fieldset { border: 0; margin: 0; padding: 0; }
+.project-assistants .pa-routine-editor label { gap: 0; margin: 0; }
+.project-assistants .pa-routine-editor fieldset > label + label { margin-top: 12px; }
+.project-assistants .pa-routine-editor :is(label input:not([type="checkbox"]), label select, label textarea) {
+  background-color: var(--pa-bg);
+}
+
+.pa-routine-trigger { margin-top: 14px; }
+.pa-routine-trigger + .pa-routine-trigger { border-top: 1px solid var(--pa-line); padding-top: 14px; }
+.pa-routine-trigger h5 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.pa-routine-trigger > label + label,
+.pa-routine-calendar,
+.pa-routine-fields,
+.pa-routine-options,
+.pa-routine-filters { margin-top: 12px; }
+.pa-routine-field-label,
+.pa-routine-calendar > small,
+.pa-routine-editor .pa-routine-or { color: var(--pa-dim); font-size: 12px; }
+
+.pa-routine-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.project-assistants .pa-routine-choices button {
+  min-height: 44px;
+  padding: 6px 7px;
+  font-size: 13px;
+}
+
+.project-assistants .pa-routine-choices button[aria-pressed="true"] {
+  border-color: #e39567;
+  background: #e3956722;
+  color: #f2ba98;
+}
+
+.pa-routine-fields,
+.pa-routine-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.pa-routine-calendar > small { display: block; margin-top: 6px; }
+.pa-routine-preview {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--pa-bg);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.pa-routine-preview:empty { display: none; }
+.pa-routine-preview code { white-space: pre-wrap; }
+
+.pa-routine-add,
+.pa-routine-remove,
+.pa-routine-filters button { margin-top: 8px; }
+.pa-routine-filters p { font-size: 13px; margin: 0; }
+.pa-routine-original pre { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.pa-routine-options { border-top: 1px solid var(--pa-line); padding-top: 12px; }
+.project-assistants .pa-routine-editor .pa-routine-enabled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.pa-routine-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.pa-routine-footer button { min-height: 44px; }
+.project-assistants .pa-routine-footer button[type="submit"]:not(:disabled) {
+  background: #e39567;
+  border-color: #e39567;
+  color: #17100b;
+}
