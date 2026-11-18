@@ -1,4 +1,7 @@
-import { BRAND_MARK } from "../src/brand-mark.js"
+import designURL from "./session-design.png"
+import story from "./story.json" with { type: "json" }
+import type { TranscriptEntry } from "@clawdline/contract"
+import { carryPictures } from "../src/legacy/images-bridge.js"
 import english from "../public/catalogs/en.json" with { type: "json" }
 import chinese from "../public/catalogs/zh-Hant.json" with { type: "json" }
 
@@ -29,43 +32,73 @@ storage.setItem("ui_language", zh ? "zh-Hant" : "en")
 const words = zh ? chinese : english
 const pick = (en: string, tw: string) => zh ? tw : en
 const now = Math.floor(Date.now() / 1000)
-const cwd = "~/code/shop"
+const cases = zh ? story.rows["zh-Hant"] : story.rows.en
 const conversation = (id: string) => `demo-conversation-${id}`
 let answered = false
 let revision = 1
-const labels = {
-  checkout: pick("One-page checkout", "單頁式結帳"),
-  signin: pick("Google sign-in", "Google 登入"),
-  search: pick("Product search", "商品搜尋"),
+const icon = (project: string) => {
+  const mark = story.marks[project as keyof typeof story.marks]
+  const palette = mark.palette as Record<string, string>
+  return { accent: mark.accent, cells: mark.grid.map(line => [...line].map(cell => palette[cell] ?? null)) }
 }
-const entries: Record<string, { role: string; text: string; at: number; kind: string }[]> = {
-  checkout: [
-    { role: "user", text: pick("Make checkout fit on one page, including shipping, payment and review.", "把結帳改成單頁，包含寄送、付款與訂單確認。"), at: now - 1800, kind: "message" },
-    { role: "assistant", text: pick("The one-page checkout is ready. Shipping, payment and review stay together, and all 42 tests pass.\n\nShould I put it on staging first, or go live?", "單頁式結帳做好了。寄送、付款與訂單確認都在同一頁，42 個測試全部通過。\n\n要先放測試站給你看，還是直接上線？"), at: now - 90, kind: "message" },
-  ],
-  signin: [
-    { role: "user", text: pick("Let returning customers sign in with Google.", "讓老顧客可以使用 Google 登入。"), at: now - 2400, kind: "message" },
-    { role: "assistant", text: pick("The sign-in flow is connected. I am checking cancellation, expired sessions and the return to checkout.", "登入流程已接好，正在檢查取消登入、登入過期，以及返回結帳頁的情況。"), at: now - 180, kind: "message" },
-  ],
-  search: [
-    { role: "user", text: pick("Make product search forgive common typos.", "讓商品搜尋容許常見的錯字。"), at: now - 3600, kind: "message" },
-    { role: "assistant", text: pick("Done. Searching for “sneekers” now finds sneakers. The search tests pass.", "完成了，打「布鞋子」也找得到布鞋，搜尋測試已通過。"), at: now - 600, kind: "message" },
-  ],
-}
-const row = (id: keyof typeof labels) => ({
-  id, label: labels[id], backend: "tmux", cwd, sessionId: conversation(id), icon: BRAND_MARK,
-  assistant: id === "signin" ? "codex" : "claude", isClaude: id !== "signin",
-  state: id === "checkout" && !answered ? "waiting" : id === "search" ? "idle" : "working",
-  work_state: id === "checkout" && !answered ? "waiting_you" : id === "search" ? "ready" : "working",
-  attention_count: 0,
-  menu: id === "checkout" && !answered ? { type: "request", question: pick("Where should I put the new checkout?", "新結帳頁要先放哪裡？"),
-    options: [{ n: 1, label: pick("Staging first", "先上測試站"), can: true, selected: false }, { n: 2, label: pick("Go live", "直接上線"), can: true, selected: false }] } : null,
-  evidence: "process", activity: { known: true, at: now - 60 },
+const artifact = { id: "10000000-0000-4000-8000-000000000012", media_type: "image/png", byte_count: story.attachmentBytes,
+  width: 780, height: 1320, expires_at: now + 86400 }
+carryPictures(async image => {
+  if (image.id !== artifact.id) throw new Error("demo_unavailable")
+  return { url: designURL, release() {} }
 })
+const entries: Record<string, TranscriptEntry[]> = Object.fromEntries(cases.map(item => [item.id, [
+  { role: "user", text: item.terminalRequest, at: now - 1800 },
+  { role: "assistant", text: item.terminalAction, at: now - 180 },
+  { role: "tool", tool: item.terminalTool, text: item.terminalFile, at: now - 150 },
+  { role: "assistant", text: item.terminalResult, at: now - 90,
+    ...(item.id === "b" ? { artifacts: [artifact] } : {}) },
+]]))
+const row = (id: string) => {
+  const item = cases.find(item => item.id === id)!
+  const state = item.id === "e" && answered ? "ready" : item.state
+  return {
+    id, label: item.title, backend: "tmux", cwd: item.cwd, tty: item.tty, sessionId: conversation(id), icon: icon(item.project),
+    assistant: item.who, isClaude: item.who === "claude",
+    state: state === "waiting_you" ? "waiting" : state === "working" || state === "unknown" ? state : "idle",
+    work_state: state, work_provenance: "self", work_note: item.status, work_moved_by: item.title, work_person_needed: state === "waiting_you",
+    attention_count: 0, ...(item.coordinator ? { coordinator: { label: "Clawdfather", status: "online", commands: [] } } : {}),
+    ...(item.depth ? { parent_session_id: "a", taskId: `homepage-task-${id}` } : {}),
+    ...(state === "milestone_complete" ? { disposition: { scope: "task", taskId: `homepage-task-${id}`, evidence: "authenticated_task_delivery", title: item.terminalResult } } : {}),
+    ...(state === "waiting_session" ? { coordination: { waitingOn: [{ id: "homepage-review-wait", ownerSessionId: "b", ownerLabel: cases[1].title, releaseCondition: item.status, paths: ["website/session-list"] }], waitedOnBy: [] } } : {}),
+    menu: state === "waiting_you" ? { type: "request", question: pick("Deploy the approved build now?", "現在要部署已核准的版本嗎？"),
+      options: [{ n: 1, label: pick("Approve deployment", "核准部署"), can: true, selected: false }, { n: 2, label: pick("Choose another window", "改個發佈時段"), can: true, selected: false }] } : null,
+    evidence: "process", source: { freshness: "current", observed_at: now, provenance: "demo" }, activity: { known: true, at: now - 60 },
+  }
+}
+const tasks = () => cases.filter(item => item.depth).map(item => ({
+  id: `homepage-task-${item.id}`, kind: "custom", title: item.title,
+  state: item.state === "milestone_complete" ? "success" : "briefed", created: now - 900,
+  ...(item.state === "milestone_complete" ? { finishedAt: now - 60, landing: { state: "pending" } } : {}),
+  root: { terminalId: "a", sessionId: conversation("a") }, child: { terminalId: item.id }, claims: item.id === "b" ? ["website/session-list"] : [],
+}))
 const snapshot = () => ({
-  at: Date.now(), sessions: Object.keys(labels).map(id => row(id as keyof typeof labels)),
+  at: Date.now(), sessions: cases.map(item => row(item.id)),
   scan: { complete: true, completed: { complete: true, sequence: revision }, emptyAuthoritative: true, epoch: 1, generation: revision, provenance: "demo" },
 })
+
+// Both website views address these stable IDs. The normal App still owns navigation.
+if (typeof history !== "undefined" && !location.hash) history.replaceState(null, "", location.pathname + location.search + "#session=a")
+if (typeof window.addEventListener === "function") {
+  const announce = () => {
+    if (window.parent !== window) window.parent.postMessage({ type: "clawdline-demo-selection", id: new URLSearchParams(location.hash.slice(1)).get("session") }, location.origin)
+  }
+  window.addEventListener("hashchange", announce)
+  window.addEventListener("clawdline:session-address", announce)
+  window.addEventListener("message", event => {
+    if (event.source !== window.parent || event.origin !== location.origin || event.data?.type !== "clawdline-demo-select") return
+    const id = event.data.id
+    if (!cases.some(item => item.id === id)) return
+    const target = document.querySelector<HTMLElement>(`.row[data-id="${id}"]`)
+    if (target) target.click()
+    else if (location.hash !== `#session=${id}`) location.hash = `session=${id}`
+  })
+}
 const listeners = new Set<DemoEventSource>()
 function publish() {
   revision++
@@ -90,9 +123,9 @@ globalThis.fetch = async (input, init) => {
     const id = url.searchParams.get("session") ?? ""
     return json({ entries: entries[id] ?? [], evidence: "process", id, signature: `demo-${revision}` })
   }
-  if (path === "/v1/places") return json({ places: [{ id: "demo-shop", label: pick("Shop", "網路商店"), path: cwd, available: true, icon: null }], assistants: [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }] })
+  if (path === "/v1/places") return json({ places: [...new Map(cases.map(item => [item.project, { id: item.project, label: item.project, path: item.cwd, available: true, icon: icon(item.project) }])).values()], assistants: [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }] })
   if (path === "/v1/personas") return json({ license: "MIT", personas: [] })
-  if (path === "/v1/orchestrator/tasks") return json({ at: Date.now(), tasks: [] })
+  if (path === "/v1/orchestrator/tasks") return json({ at: Date.now(), tasks: tasks() })
   if (path === "/v1/orchestrator/schedules") return json({ at: Date.now(), schedules: [] })
   if (path === "/v1/provider-quotas") return json({ providers: [], at: Date.now() })
   if (path.startsWith("/v1/work/v2/human-interventions/")) return json({ ok: true, rows: [], pruned_resolved: 0 })
@@ -103,11 +136,11 @@ globalThis.fetch = async (input, init) => {
   const key = /^\/v1\/sessions\/([^/]+)\/key$/.exec(path)
   if (key && method === "POST") {
     const body = JSON.parse(String(init?.body ?? "{}"))
-    if (decodeURIComponent(key[1]) !== "checkout" || answered || !["1", "2"].includes(String(body.key))) return unavailable()
-    const selected = String(body.key) === "2" ? pick("Go live.", "直接上線。") : pick("Staging first.", "先上測試站。")
+    if (decodeURIComponent(key[1]) !== "e" || answered || !["1", "2"].includes(String(body.key))) return unavailable()
+    const selected = String(body.key) === "2" ? pick("Choose another release window.", "改個發佈時段。") : pick("Approve deployment.", "核准部署。")
     answered = true
-    entries.checkout.push({ role: "user", text: selected, at: Math.floor(Date.now() / 1000), kind: "message" })
-    entries.checkout.push({ role: "assistant", text: pick("Got it. This demonstration keeps the result here; no real deployment was started.", "收到。示範結果會留在這裡，沒有執行真正的部署。"), at: Math.floor(Date.now() / 1000) + 1, kind: "message" })
+    entries.e.push({ role: "user", text: selected, at: Math.floor(Date.now() / 1000) })
+    entries.e.push({ role: "assistant", text: pick("Got it. This demonstration keeps the result here; no real deployment was started.", "收到。示範結果會留在這裡，沒有執行真正的部署。"), at: Math.floor(Date.now() / 1000) + 1 })
     publish()
     return json({ ok: true })
   }
@@ -116,16 +149,16 @@ globalThis.fetch = async (input, init) => {
     const id = decodeURIComponent(send[1])
     if (!entries[id]) return unavailable()
     const body = JSON.parse(String(init?.body ?? "{}"))
-    entries[id].push({ role: "user", text: String(body.text ?? ""), at: Math.floor(Date.now() / 1000), kind: "message" })
-    entries[id].push({ role: "assistant", text: pick("Got it. This is a demonstration reply; no deployment or real work was started.", "收到。這是示範回覆，沒有執行真正的部署或工作。"), at: Math.floor(Date.now() / 1000) + 1, kind: "message" })
+    entries[id].push({ role: "user", text: String(body.text ?? ""), at: Math.floor(Date.now() / 1000) })
+    entries[id].push({ role: "assistant", text: pick("Got it. This is a demonstration reply; no deployment or real work was started.", "收到。這是示範回覆，沒有執行真正的部署或工作。"), at: Math.floor(Date.now() / 1000) + 1 })
     publish()
     return json({ ok: true })
   }
   if (/^\/v1\/sessions\/[^/]+\/info$/.test(path)) {
-    const id = decodeURIComponent(path.split("/")[3]) as keyof typeof labels
-    return json({ info: { session: { ...row(id), title: labels[id], model: "demo" }, models: [], context: { usedPercent: 18 }, deploy: [], links: [] } })
+    const id = decodeURIComponent(path.split("/")[3])
+    return json({ info: { session: { ...row(id), title: row(id).label, model: "demo" }, models: [], context: { usedPercent: 18 }, deploy: [], links: [] } })
   }
-  if (/^\/v1\/sessions\/[^/]+\/git$/.test(path)) return json({ git: { ahead: 0, behind: 0, branch: "checkout-redesign", clean: true, head: "0123456789abcdef", files: [] } })
+  if (/^\/v1\/sessions\/[^/]+\/git$/.test(path)) return json({ git: { ahead: 0, behind: 0, branch: "homepage-sessions", clean: true, head: "0123456789abcdef", files: [] } })
   return unavailable()
 }
 
@@ -135,7 +168,7 @@ class DemoEventSource extends EventTarget {
   constructor(_url: string | URL) {
     super()
     listeners.add(this)
-    queueMicrotask(() => { if (listeners.has(this)) { this.onopen?.(new Event("open")); this.emit("sessions", snapshot()) } })
+    queueMicrotask(() => { if (listeners.has(this)) { this.onopen?.(new Event("open")); this.emit("sessions", snapshot()); this.emit("orchestrator", { at: Date.now(), tasks: tasks() }) } })
   }
   emit(type: string, value: unknown) { this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(value) })) }
   close() { listeners.delete(this) }
