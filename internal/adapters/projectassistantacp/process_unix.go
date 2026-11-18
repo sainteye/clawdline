@@ -19,10 +19,15 @@ func configureProcess(cmd *exec.Cmd) error {
 	return nil
 }
 
-func (p *Process) identities() ([]processIdentity, error) {
-	base, override := p.censusBudget()
-	ctx, cancel := context.WithTimeout(base, p.limits.CleanupTimeout)
+func (p *Process) identities(ctx context.Context) ([]processIdentity, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	override := p.censusOverride
+	p.mu.Unlock()
 	if override != nil {
 		return override(ctx)
 	}
@@ -64,25 +69,18 @@ func (p *Process) identities() ([]processIdentity, error) {
 	}
 	return result, nil
 }
-func (p *Process) captureOwned() {
-	rows, err := p.identities()
+func (p *Process) captureOwned(ctx context.Context) ([]processIdentity, error) {
+	rows, err := p.identities(ctx)
 	if err != nil {
-		p.mu.Lock()
-		stopping := p.closing
-		p.mu.Unlock()
-		// Closing intentionally cancels an in-flight survey before replacing
-		// it with the one remaining cleanup budget. Signal/cleanup operations
-		// still preserve failures of their fresh census.
-		if stopping && errors.Is(err, context.Canceled) {
-			return
-		}
-		p.setCleanupError(signalFailure("descendant_inventory", err))
-		return
+		return nil, signalFailure("descendant_inventory", err)
 	}
-	_ = p.captureRows(rows)
+	return rows, p.captureRows(rows)
 }
-func (p *Process) signalOwned(force bool) error {
-	rows, err := p.identities()
+func (p *Process) signalOwned(ctx context.Context, rows []processIdentity, force bool) error {
+	err := ctx.Err()
+	if err == nil && rows == nil {
+		rows, err = p.identities(ctx)
+	}
 	if err != nil {
 		// The os.Process handle still safely identifies our direct child when
 		// process inventory is denied. This does not prove descendant cleanup.
@@ -122,7 +120,7 @@ func (p *Process) signalOwned(force bool) error {
 			continue
 		}
 		if signalErr := syscall.Kill(row.pid, sig); signalErr != nil && signalErr != syscall.ESRCH {
-			fresh, censusErr := p.identities()
+			fresh, censusErr := p.identities(ctx)
 			if censusErr != nil {
 				result = errors.Join(result, signalFailure("signal_pid_inventory", errors.Join(signalErr, censusErr)))
 				continue
@@ -139,7 +137,7 @@ func (p *Process) signalOwned(force bool) error {
 	// from a denied signal against a live owned group. Never blanket-ignore EPERM.
 	if ownedGroup && liveGroup(rows, group) {
 		if signalErr := syscall.Kill(-group, sig); signalErr != nil && signalErr != syscall.ESRCH {
-			fresh, censusErr := p.identities()
+			fresh, censusErr := p.identities(ctx)
 			if censusErr != nil {
 				result = errors.Join(result, signalFailure("signal_group_inventory", errors.Join(signalErr, censusErr)))
 			} else {

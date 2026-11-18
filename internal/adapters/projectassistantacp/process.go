@@ -3,6 +3,7 @@ package projectassistantacp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -43,37 +44,24 @@ type ProcessOptions struct {
 	beforeInitialCapture func(*Process)
 }
 type Process struct {
-	cmd             *exec.Cmd
-	stdin           *os.File
-	stdout          io.ReadCloser
-	stderrReader    io.ReadCloser
-	limits          Limits
-	write           chan struct{}
-	done            chan struct{}
-	stopSurvey      chan struct{}
-	surveyDone      chan struct{}
-	closeOnce       sync.Once
-	mu              sync.Mutex
-	stderr          []byte
-	waitErr         error
-	cleanupErr      error
-	owned           map[int]string
-	rootObserved    bool
-	rootStamp       string
-	closing         bool
-	inventoryCtx    context.Context
-	inventoryCancel context.CancelFunc
-	censusOverride  func(context.Context) ([]processIdentity, error)
-}
-
-func (p *Process) censusBudget() (context.Context, func(context.Context) ([]processIdentity, error)) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	ctx := p.inventoryCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return ctx, p.censusOverride
+	cmd            *exec.Cmd
+	stdin          *os.File
+	stdout         io.ReadCloser
+	stderrReader   io.ReadCloser
+	limits         Limits
+	write          chan struct{}
+	done           chan struct{}
+	stopSurvey     context.CancelFunc
+	surveyDone     chan struct{}
+	closeOnce      sync.Once
+	mu             sync.Mutex
+	stderr         []byte
+	waitErr        error
+	cleanupErr     error
+	owned          map[int]string
+	rootObserved   bool
+	rootStamp      string
+	censusOverride func(context.Context) ([]processIdentity, error)
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -233,14 +221,12 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 	cmd.Stdin = inRead
 	cmd.Stdout = outWrite
 	cmd.Stderr = errWrite
-	p := &Process{cmd: cmd, stdin: inWrite, stdout: outRead, stderrReader: errRead, limits: o.Limits, write: make(chan struct{}, 1), done: make(chan struct{}), stopSurvey: make(chan struct{}), surveyDone: make(chan struct{}), owned: map[int]string{}}
-	p.inventoryCtx, p.inventoryCancel = context.WithCancel(context.Background())
+	p := &Process{cmd: cmd, stdin: inWrite, stdout: outRead, stderrReader: errRead, limits: o.Limits, write: make(chan struct{}, 1), done: make(chan struct{}), surveyDone: make(chan struct{}), owned: map[int]string{}}
 	err = cmd.Start()
 	inRead.Close()
 	outWrite.Close()
 	errWrite.Close()
 	if err != nil {
-		p.inventoryCancel()
 		inWrite.Close()
 		outRead.Close()
 		errRead.Close()
@@ -271,12 +257,14 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 	// Capture synchronously before Wait may reap a fast-exiting child. Until
 	// then the PID cannot be reused, even when the child is already a zombie.
 	// Returning from StartProcess is the initial ownership receipt.
-	p.captureOwned()
-	p.mu.Lock()
-	startupErr := p.cleanupErr
-	p.mu.Unlock()
+	_, startupErr := p.captureOwned(context.Background())
+	if startupErr != nil {
+		p.setCleanupError(startupErr)
+	}
+	survey, stopSurvey := context.WithCancel(context.Background())
+	p.stopSurvey = stopSurvey
 	go func() { err := cmd.Wait(); p.mu.Lock(); p.waitErr = err; p.mu.Unlock(); close(p.done) }()
-	go p.survey()
+	go p.survey(survey)
 	if startupErr != nil {
 		_ = p.cmd.Process.Kill()
 		cleanup, cancel := context.WithTimeout(context.Background(), o.Limits.CleanupTimeout)
@@ -318,27 +306,23 @@ func (p *Process) Close(ctx context.Context) error {
 		defer p.stderrReader.Close()
 		cleanup, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)
 		defer cancel()
-		p.mu.Lock()
-		p.closing = true
-		oldCancel := p.inventoryCancel
-		p.inventoryCtx = cleanup
-		p.inventoryCancel = cancel
-		p.mu.Unlock()
-		close(p.stopSurvey)
-		if oldCancel != nil {
-			oldCancel()
-		}
+		p.stopSurvey()
 		p.stdin.Close()
+		grace, graceCancel := context.WithTimeout(cleanup, p.limits.CleanupTimeout/2)
 		if !waitOwnedDone(cleanup, p.surveyDone) {
 			p.setCleanupError(signalFailure("cleanup_survey", cleanup.Err()))
 		}
 		// Survey before graceful exit, then retain exact PID/start identities for
 		// escaped setsid descendants even if the ACP parent is already gone.
-		p.captureOwned()
-		grace, graceCancel := context.WithTimeout(cleanup, p.limits.CleanupTimeout/2)
+		if _, err := p.captureOwned(cleanup); err != nil {
+			p.setCleanupError(err)
+		}
 		_ = waitOwnedDone(grace, p.done)
 		graceCancel()
-		p.captureOwned()
+		rows, err := p.captureOwned(cleanup)
+		if err != nil {
+			p.setCleanupError(err)
+		}
 		// The fresh post-grace census has already removed every absent or
 		// replaced identity. With no known owned process, another census for
 		// each signal cannot authorize any action and can only exhaust the
@@ -348,10 +332,12 @@ func (p *Process) Close(ctx context.Context) error {
 		hasOwned := len(p.owned) > 0
 		p.mu.Unlock()
 		if hasOwned {
-			if err := p.signalOwned(false); err != nil {
+			// The post-grace census supplies TERM's fresh identities. KILL
+			// still needs a fresh census because TERM affected that snapshot.
+			if err := p.signalOwned(cleanup, rows, false); err != nil {
 				p.setCleanupError(err)
 			}
-			if err := p.signalOwned(true); err != nil {
+			if err := p.signalOwned(cleanup, nil, true); err != nil {
 				p.setCleanupError(err)
 			}
 		}
@@ -375,23 +361,26 @@ func (p *Process) setCleanupError(err error) {
 	p.mu.Unlock()
 }
 
-func (p *Process) survey() {
+func (p *Process) survey(ctx context.Context) {
 	defer close(p.surveyDone)
 	ticker := time.NewTicker(p.limits.DescendantPoll)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			p.captureOwned()
-			p.mu.Lock()
-			overflow := pa.Code(p.cleanupErr) == pa.CapacityFull
-			p.mu.Unlock()
-			if overflow {
-				p.stdin.Close()
-				_ = p.signalOwned(true)
+			_, err := p.captureOwned(ctx)
+			if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 				return
 			}
-		case <-p.stopSurvey:
+			if err != nil {
+				p.setCleanupError(err)
+			}
+			if pa.Code(err) == pa.CapacityFull {
+				p.stdin.Close()
+				_ = p.signalOwned(ctx, nil, true)
+				return
+			}
+		case <-ctx.Done():
 			return
 		}
 	}
