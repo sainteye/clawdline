@@ -14,6 +14,7 @@ import { readSnapshotRoster, serialSnapshotRefresh, followSnapshotRoster } from 
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
 import { retryableSourceError, shownSourceError } from "./source-errors"
+import { matchesRosterQuery, snapshotRosterQuery } from "./roster-search"
 import "./styles.css"
 
 export interface BotsProps {
@@ -31,7 +32,7 @@ export interface BotsProps {
   manageHistory?:boolean
   onSelectionChange?:(key:W.ProjectAssistantBotKey|null)=>void
 }
-interface SourcePage {revision:string;query:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;retryable?:boolean;loadedPages?:number}
+interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;retryable?:boolean;loadedPages?:number}
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
@@ -57,7 +58,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     const loaded=Object.entries(pages).filter(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id])=>id)
     if(loaded.length)onRosterObserved?.(allItems,loaded)
   },[pages,authorization,onRosterObserved])
-  const matching=allItems.filter(i=>i.bot.name.toLowerCase().includes(query.toLowerCase()))
+  const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
   const rosterLoading=loading||sources.some(s=>livePending[s.machineID])
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
@@ -65,6 +66,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
   const errors=Object.entries(pages).filter(([id,p])=>shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id,p])=>[id,p.error,p.retryable??retryableSourceError(p.error)] as [string,string,boolean])
+  const rosterErrors=rosterLoading||statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))?[]:errors.filter(([id])=>!machine||id===machine)
   const machineNames=new Map(sources.map(s=>[s.machineID,s.machineName??""] as [string,string]))
   const withoutBots=Object.entries(pages).filter(([id,p])=>p.error&&!shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id])=>id)
   const health=sourceHealth(statuses,machineNames,withoutBots,w as unknown as Record<string,string>)
@@ -88,32 +90,33 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     await Promise.all(current().map(async source=>{
       if(source.canRoster?.()&&source.subscribeRoster)return
       if(deniedSnapshots.current.has(source))return
-      const previous=pagesRef.current[source.machineID],cursor=append&&previous?.revision===source.authorizationRevision&&previous.query===query?previous.cursor:""
+      const requestQuery=snapshotRosterQuery(source.machineID,query,projectNames)
+      const previous=pagesRef.current[source.machineID],sameQuery=previous?.query===query&&previous.requestQuery===requestQuery,cursor=append&&previous?.revision===source.authorizationRevision&&sameQuery?previous.cursor:""
       if(append&&!cursor)return
       setSnapshotPending(old=>({...old,[source.machineID]:true}))
       try {
-        const coverage=previous?.revision===source.authorizationRevision&&previous.query===query?previous.loadedPages??1:1
-        const response=append?await authorized(source,current,async s=>{const status=await source.status(s);const page=await source.list({machine_id:source.machineID,cursor,query,page_size:100},s);return {status,items:page.items,cursor:page.next_cursor,loadedPages:coverage+1}},control.signal):await readSnapshotRoster(source,current,query,coverage,control.signal)
+        const coverage=previous?.revision===source.authorizationRevision&&sameQuery?previous.loadedPages??1:1
+        const response=append?await authorized(source,current,async s=>{const status=await source.status(s);const page=await source.list({machine_id:source.machineID,cursor,query:requestQuery,page_size:100},s);return {status,items:page.items,cursor:page.next_cursor,loadedPages:coverage+1}},control.signal):await readSnapshotRoster(source,current,requestQuery,coverage,control.signal)
         const {status}=response
         if(control.signal.aborted)return
         const own=status.sources.find(s=>s.machine_id===source.machineID)
         const rows=response.items.filter(i=>i.bot.key.machine_id===source.machineID&&canRead(i.source)).map(i=>own?{...i,source:own}:i)
-        setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:response.loadedPages,statuses:status.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
-      }catch(e){if(!control.signal.aborted){const code=errorCode(e),denied=["pa_revoked","pa_scope_denied","pa_unpaired"].includes(code);if(!retryableSourceError(code))deniedSnapshots.current.add(source);setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,items:!denied&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query?old[source.machineID].items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):[],cursor:!denied&&old[source.machineID]?.query===query?old[source.machineID]?.cursor??"":"",loadedPages:old[source.machineID]?.loadedPages,statuses:old[source.machineID]?.statuses.map(s=>({...s,fresh:false,writable:false}))??[],error:code}}))}}
+        setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:response.loadedPages,statuses:status.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
+      }catch(e){if(!control.signal.aborted){const code=errorCode(e),denied=["pa_revoked","pa_scope_denied","pa_unpaired"].includes(code);if(!retryableSourceError(code))deniedSnapshots.current.add(source);setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:!denied&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?old[source.machineID].items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):[],cursor:!denied&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?old[source.machineID]?.cursor??"":"",loadedPages:old[source.machineID]?.loadedPages,statuses:old[source.machineID]?.statuses.map(s=>({...s,fresh:false,writable:false}))??[],error:code}}))}}
       finally{if(!control.signal.aborted)setSnapshotPending(old=>({...old,[source.machineID]:false}))}
     }))
     if(!control.signal.aborted)setLoading(false)
     },control.signal)
     if(selected||current().every(s=>s.canRoster?.()&&s.subscribeRoster))void load()
     return()=>control.abort()
-  },[authorization,query,current])
+  },[authorization,query,current,projectNames])
   useEffect(()=>{setSelected(null);setPages({});setSnapshotPending({});setMachine("")},[authorization])
   useEffect(()=>{
     if(selected||!sources.some(s=>!s.canRoster?.()||!s.subscribeRoster))return
     const control=new AbortController()
     followSnapshotRoster(async()=>{await load();if(!current().some(s=>s.current?.()!==false&&!deniedSnapshots.current.has(s)&&(!s.canRoster?.()||!s.subscribeRoster)))control.abort()},control.signal,EventRefreshMs,document,window,{readOnEntry:true})
     return()=>control.abort()
-  },[selected,authorization,query,load])
+  },[selected,authorization,query,projectNames,load])
   useEffect(()=>{
     const control=new AbortController()
     setLivePending({})
@@ -127,7 +130,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
         setPages(old=>{
           const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
           const items=value.items??(value.error?previous?.items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):previous?.items)??[]
-          return {...old,[source.machineID]:{revision:source.authorizationRevision,query:"",items,cursor:"",statuses:value.statuses??previous?.statuses??[],error:value.error,retryable:value.retryable??previous?.retryable}}
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,query:"",requestQuery:"",items,cursor:"",statuses:value.statuses??previous?.statuses??[],error:value.error,retryable:value.retryable??previous?.retryable}}
         })
       },reconnect.wait)
     }
@@ -198,7 +201,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&!groupOpen&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected,groupOpen])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={errors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <BotRoster key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen} backLabel={groupOpen?w.backToGroup:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>{const gone=selected;back();setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==gone)}])))}} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/></FallbackSourceScope>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>

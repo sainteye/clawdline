@@ -86,8 +86,15 @@ try{
   await connect()
   for(const [language,readonly] of [["en",false],["zh-Hant",true]]){
     const zh=language!=="en",label=await openRoster(language,readonly);assert.ok(label.startsWith(action(zh)))
+    const rowSize=()=>evaluate(`(() => {
+      const entry=document.querySelector(".pa-roster-entry:has(.pa-bot-row)")
+      return [entry,entry.querySelector(".pa-bot-row")].map(el=>el.getBoundingClientRect().width)
+    })()`)
+    const [entryWidth,unreadWidth]=await rowSize()
+    assert.ok(Math.abs(entryWidth-unreadWidth)<1,`Unread row width ${unreadWidth} of ${entryWidth}`)
     const before=readPosts().length
     await browser("click",label);await waitFor('!document.querySelector(".pa-roster-read")')
+    assert.ok(Math.abs((await rowSize())[1]-unreadWidth)<1,"Marking read keeps the row width")
     assert.equal(readPosts().length,before+1)
     const record=readPosts().at(-1);assert.equal(record.status,200);assert.equal(record.body.cursor.message_seq,record.response.cursor.message_seq);assert.ok(record.body.cursor.message_seq>0)
     assert.equal(record.body.cursor.conversation_id,record.response.cursor.conversation_id)
