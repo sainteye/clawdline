@@ -42,14 +42,12 @@ export function callProgress({saving,reading,responding,work}:{saving:boolean;re
 export function deliveryQuestion(text:string) {
  return /(?:送出|寄出|傳出|发出|發送|发送).*(?:嗎|吗|沒有|没有|了没)|(?:沒|没|尚未|還沒|还没).*(?:收到|送到)|\b(?:did you send|have you sent|has it been (?:sent|delivered)|was it (?:sent|delivered))\b/i.test(text)
 }
-/** One quiet cue per utterance, not a loop or a signal that a request succeeded. */
-/** How long a silent wait lasts before the processing note sounds again. */
+/** How long an executing task stays silent before its next local note. */
 export const PROGRESS_CUE_REPEAT_MS=4000
 /**
- * The processing note: once when the call starts working on what was said,
- * again whenever a new lookup starts, and every PROGRESS_CUE_REPEAT_MS while
- * the wait stays silent. Never over either speaker. On 2026-11-13 a single
- * very quiet note per utterance was not heard at all on a phone.
+ * The execution note is driven only by admitted effects or running durable
+ * tasks. Query, saving, planning and response states remain visible without
+ * sounding like task execution. Never over either speaker.
  */
 export class ProgressCue {
  private last=0
@@ -82,3 +80,29 @@ export function proposalSpoken(text:string,proposal:MessageProposal){const spoke
  */
 export function plainConsent(text:string){return /^(?:(?:嗯|恩|對|是|好|好的|好啊|好喔|可以|可以啊|沒問題|没问题|確認|确认|我確認|我确认|確定|确定|送出|送吧|傳吧|传吧|發吧|发吧|請送出|请送出|送出去|就這樣|就这样|ok|okay|yes|yeah|yep|sure|sendit|goahead)(?:吧|喔|哦|啊|呀|的)?)+$/i.test(spokenText(text))}
 export function answeredConversation(text:string,read:boolean){return read&&(deliveryQuestion(text)||messageConsent(text)||read&&/^(?:可以[，, ]*繼續|yes[, ]+continue)[。.! ]*$/i.test(text.trim()))||/^(?:hello|hi|bye|bye bye|thanks|thank you|你好|哈囉|謝謝)[.!。！ ]*$/i.test(text.trim())||read&&!/(?:送|傳|传|發送|发送|回覆|回复|改名|重新命名|關閉|关闭|啟動|启动|取消|暫停|暂停|\b(?:send|forward|tell|reply|rename|close|start|cancel|pause)\b)/i.test(text)}
+
+/** A call-local review for direct tools; model arguments never grant consent. */
+export class MessageReview {
+ proposal?:MessageProposal & {identity:string}
+ private candidate?:MessageProposal
+ private approved?:MessageProposal
+ prepare(identity:string,target:string,message:string){
+  if(this.proposal?.identity===identity&&this.proposal.message===message){
+   if(this.approved===this.proposal){this.clear();return undefined}
+  }else{
+   this.clear()
+   this.proposal={id:crypto.randomUUID(),version:1,workspace:'direct-call',identity,target,message,announced:false}
+  }
+  return {prepared:true,message_delivered:false,error:'voice_message_confirmation_required',proposal:this.proposal,
+   meaning:'NOT SENT. Read the full recipient and message verbatim, without summarizing or shortening. Ask whether to send, then stop and wait for a fresh answer. Only the application can confirm this exact draft; confirmed and switch_confirmed flags are not consent.'}
+ }
+ generated(text:string){this.candidate=this.proposal&&proposalSpoken(text,this.proposal)?this.proposal:undefined}
+ played(){if(this.proposal&&this.candidate===this.proposal)this.proposal.announced=true;this.candidate=undefined}
+ speaking(){this.candidate=undefined;if(this.proposal)this.proposal.announced=false}
+ input(){const ticket=this.proposal?.announced?this.proposal:undefined;this.invalidate();return ticket}
+ consent(ticket:MessageProposal|undefined,text:string){
+  this.approved=ticket&&ticket===this.proposal&&(messageConsent(text)||plainConsent(text))?ticket:undefined
+ }
+ invalidate(){this.approved=undefined;this.candidate=undefined;if(this.proposal)this.proposal.announced=false}
+ clear(){this.proposal=undefined;this.approved=undefined;this.candidate=undefined}
+}

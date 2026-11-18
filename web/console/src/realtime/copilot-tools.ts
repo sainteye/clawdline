@@ -56,6 +56,9 @@ export interface ToolLog {
 }
 
 export interface ToolDeps {
+  /** Direct-call draft gate, checked after target resolution and before any send effect. */
+  reviewMessage?: (row:CopilotSessionRow,message:string)=>unknown
+
   /**
    * The machine's dispatch records, read to tell dispatched children from
    * main Sessions (`dispatchedChildren`). Absent, every row is a Session.
@@ -241,7 +244,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - smart_rename_sessions：用 Clawdline 的「智慧命名」替一個或幾個 Session 重新取名（機器上的助理依它的對話內容取名）。見下面【智慧命名】。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
-- send_message_to_session：替使用者把文字送進某個 Session。
+- send_message_to_session：先準備要送進 Session 的完整文字，不代表送出。凡是你整理、改寫或推測的內容，必須逐字念出完整收件對象與訊息，問是否送出並等下一次明確同意。不得先送出再確認；switch_confirmed 只確認對象，不確認內容。
 - clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
 - get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
 【上次之後的新進展（get_session_updates）】
@@ -669,7 +672,7 @@ export const COPILOT_TOOLS = [
   {
     type: 'function',
     name: 'send_message_to_session',
-    description: '將使用者確認過的文字指令或訊息直接鍵入指定 Session 的終端機輸入框。',
+    description: 'Prepare the exact recipient and full message for read-back before sending. Read every word, ask whether to send and wait for fresh consent; never summarize the draft or claim it was sent while prepared. The application alone authorizes the reviewed text. 先完整念出收件對象與訊息，等使用者同意後才能送出；不可先送出再確認。',
     parameters: {
       type: 'object',
       properties: {
@@ -2383,6 +2386,8 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: error })
     return { error }
   }
+  const review=deps.reviewMessage?.(row,message)
+  if(review)return review
   const request=(deps.newRequestID??(()=>crypto.randomUUID()))()
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/send`, {
     method: 'POST',

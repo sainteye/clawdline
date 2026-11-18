@@ -310,6 +310,29 @@ before. This replaces parking an interrupted conversation for a later call.
 
 ## Confirmed messages, connection cues and visible waiting
 
+Direct Live and unmanaged Realtime message tools now stop at a call-local draft
+review as well. The shared send function invokes this application gate after
+resolving and checking the recipient, immediately before the send effect. The
+original request to contact a Session, `switch_confirmed`, and model-supplied
+confirmation flags cannot approve the assistant's wording. The full recipient
+and message must be read back without shortening, followed by fresh agreement.
+Approval is consumed once and binds the exact text, machine, conversation,
+execution and current label. An edited draft, changed recipient, interruption,
+new caller speech or replacement call invalidates it. An uncertain send is not
+retried under the same approval.
+
+Realtime uses its completed response and output-buffer stop to admit a read-back;
+a cleared buffer cannot do so. Live has no transcript-done or listener playback
+completion event. Its direct gate requires the complete matching read-back,
+observed local media output followed by the existing quiet window, and an
+unmuted, playing audio element before caller speech starts. Transcript quiet
+alone cannot approve a draft. It accumulates consent independently of caption
+bubbles, so a backchannel cannot turn "okay, but do not send" into "okay". This
+is conservative local playback evidence, not proof of what a person heard on
+an actual phone. Official [Live session documentation](https://developers.openai.com/api/docs/guides/live-conversations)
+keeps transcript timing separate from audio playback. Real device listening
+acceptance remains separate from synthetic event and audio-level checks.
+
 A plain message has a deterministic preparation path: its original saved input,
 exact recipient identity and text become a durable task with no planning-model
 turn. Preparation never sends. The managed call advertises this path only when
@@ -346,10 +369,14 @@ Connection is acknowledged by local audio after the voice service confirms the
 expected tools. Transport connection alone is not readiness. A configuration
 acknowledgement uses the existing workspace-control request deadline and fails
 explicitly if it never arrives. No generated greeting is required. A distinct
-soft processing note plays when work on an utterance starts, again when a new
-lookup starts, and every four seconds while the wait stays silent, never over
-either speaker. On 2026-11-13 the earlier single, quieter note was not heard on a
-phone. It is switched in Voice assistant → Settings, per browser, not in the call sheet. Active saving, tool waiting,
+soft execution note plays only while a task from this call is running or an
+admitted action request is in flight, repeating every four seconds while quiet.
+Session queries, input saving, planning, queued work, draft review and response
+preparation never start it. Direct tools observe action requests rather than
+treating every pending tool as task execution; read-only POST requests such as
+recaps do not qualify. Live also consults observed media output and recent
+speaker activity. It is switched in Voice assistant → Settings, per browser,
+not in the call sheet. Active saving, tool waiting,
 planning, execution and response preparation have visible state and elapsed time.
 Confirmation and failure are stopped states, not an animation claiming progress.
 The sheet and minimized bubble both expose state. Local tones use no model call;
