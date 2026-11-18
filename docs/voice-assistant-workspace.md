@@ -516,5 +516,20 @@ controls cannot overlay its content. The obsolete application-gated
 waiting-proposal card is removed; draft review
 now happens in conversation. The call body scrolls when a small screen needs
 more room; the capsule trail retains its own
-compact scroll area. A provider-free fixture with long transcript text, usage, memory and
+compact scroll area. A provider-free fixture with long transcript text, usage and
 both engines checks child containment as well as sibling geometry.
+
+## Compact call sheet and fresh calls
+
+The call sheet shows the engine selector, orb, current exchange, persistent green tool
+capsules, duration, amount and call controls. Quick commands sit at the right of the
+history heading, including before the first tool starts. A paused report can still be
+continued from that picker. The subtitle, connected-state/progress copy, automatic-report
+explanation and diagnostic-log entry are removed; connection failures and action notices
+remain available. Unpriced totals retain their lower-bound wording.
+
+The browser no longer saves conversation turns for a later call. Realtime configuration
+and Live backend updates contain the current Session snapshot, settings and briefing,
+with no prior-call section. Initialization removes only the retired voice-memory storage
+key without reading it. Current-call provider context, captions and operation journals
+are separate from this removed feature.

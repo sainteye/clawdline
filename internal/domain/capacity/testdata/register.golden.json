@@ -8121,24 +8121,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "console.copilot_memory_turns",
-    "Class": "user_input",
-    "Unit": "rows",
-    "Limit": 24,
-    "WarnAt": 0,
-    "AtLimit": "evict_oldest",
-    "Deviation": "",
-    "Told": [
-      "sender",
-      "diagnostics"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": null
-  },
-  {
-    "Register": "daemon",
     "Name": "console.copilot_orb_frames_per_second",
     "Class": "buffer",
     "Unit": "rows",

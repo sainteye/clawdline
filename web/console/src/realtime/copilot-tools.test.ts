@@ -436,22 +436,23 @@ test("the call opens with the Sessions already in its instructions", async () =>
   assert.match(snapshot, /^【通話開始時的 Session 快照】/)
   assert.match(snapshot, /Fix the flaky test/)
   assert.match(snapshot, /Push to main\?/)
-  const ev = sessionUpdateEvent("【之前的通話】x", snapshot) as { session: { instructions: string } }
+  const ev = sessionUpdateEvent(snapshot) as { session: { instructions: string } }
   assert.ok(ev.session.instructions.startsWith(COPILOT_INSTRUCTIONS))
-  assert.ok(ev.session.instructions.indexOf(snapshot) < ev.session.instructions.indexOf("【之前的通話】"))
+  assert.ok(ev.session.instructions.includes(snapshot))
+  assert.doesNotMatch(ev.session.instructions, /【之前的通話】/)
   const refused: ToolDeps = { async fetch() { return new Response("", { status: 503 }) }, async sleep() {} }
   assert.equal(await sessionsSnapshot(refused), "", "a machine that cannot answer leaves the call to its tools")
 })
 
 test("the machine's settings and briefing shape the call's configuration", () => {
-  const ev = sessionUpdateEvent("【之前的通話】x", "【通話開始時的 Session 快照】y", { eagerness: "high", extra: "叫我 Sean", briefing: "一件事要你處理。" }) as
+  const ev = sessionUpdateEvent("【通話開始時的 Session 快照】y", { eagerness: "high", extra: "叫我 Sean", briefing: "一件事要你處理。" }) as
     { session: { instructions: string; audio: { input: { turn_detection: { eagerness: string } } } } }
   const text = ev.session.instructions
   assert.equal(ev.session.audio.input.turn_detection.eagerness, "high")
-  const order = ["【使用者的附加指示】", "【整理好的現況匯報】", "【通話開始時的 Session 快照】", "【之前的通話】"].map((h) => text.lastIndexOf(h))
+  const order = ["【使用者的附加指示】", "【整理好的現況匯報】", "【通話開始時的 Session 快照】"].map((h) => text.lastIndexOf(h))
   assert.ok(order.every((i) => i > 0), JSON.stringify(order))
-  assert.deepEqual([...order].sort((a, b) => a - b), order, "extra, briefing, snapshot, then memory")
-  const odd = sessionUpdateEvent("", "", { eagerness: "medium" }) as { session: { audio: { input: { turn_detection: { eagerness: string } } } } }
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "extra, briefing, then snapshot")
+  const odd = sessionUpdateEvent("", { eagerness: "medium" }) as { session: { audio: { input: { turn_detection: { eagerness: string } } } } }
   assert.equal(odd.session.audio.input.turn_detection.eagerness, "low", "an eagerness the API does not take falls back to patient")
 })
 
@@ -467,7 +468,7 @@ test("asked for a briefing, the tool waits for the machine's and says when there
 })
 
 test("a call speaks in the machine's chosen voice, and an unknown one falls back to marin", () => {
-  const voiceOf = (voice?: string) => (sessionUpdateEvent("", "", { voice }) as { session: { audio: { output: { voice: string } } } }).session.audio.output.voice
+  const voiceOf = (voice?: string) => (sessionUpdateEvent("", { voice }) as { session: { audio: { output: { voice: string } } } }).session.audio.output.voice
   assert.equal(voiceOf("cedar"), "cedar")
   assert.equal(voiceOf(undefined), "marin")
   assert.equal(voiceOf("fable"), "marin")
@@ -630,21 +631,21 @@ test("a busy Session's row says its goal, its last two deliveries and its newest
 })
 
 test("a call speaks at the machine's speed, a little slower than OpenAI's unless set", () => {
-  const speedOf = (speed?: string) => (sessionUpdateEvent("", "", { speed }) as { session: { audio: { output: { speed: number } } } }).session.audio.output.speed
+  const speedOf = (speed?: string) => (sessionUpdateEvent("", { speed }) as { session: { audio: { output: { speed: number } } } }).session.audio.output.speed
   assert.equal(speedOf(undefined), 0.9)
   assert.equal(speedOf("0.8"), 0.8)
   assert.equal(speedOf("3"), 0.9)
 })
 
 test("short answers are the machine's switch, on unless it says off", () => {
-  const text = (brief?: boolean) => (sessionUpdateEvent("", "", { brief }) as { session: { instructions: string } }).session.instructions
+  const text = (brief?: boolean) => (sessionUpdateEvent("", { brief }) as { session: { instructions: string } }).session.instructions
   assert.ok(text(undefined).includes(BRIEF_RULE) && !text(undefined).includes(LONG_RULE))
   assert.ok(text(false).includes(LONG_RULE) && !text(false).includes(BRIEF_RULE))
   assert.match(text(false), /不受三句限制/, "the report exception stays either way")
 })
 
 test("the copilot speaks the language the console is shown in", () => {
-  const english = (sessionUpdateEvent("", "", { language: "en" }) as { session: { instructions: string } }).session.instructions
+  const english = (sessionUpdateEvent("", { language: "en" }) as { session: { instructions: string } }).session.instructions
   assert.match(english, /全程用英文（en）說話/)
   assert.doesNotMatch(english, /全程台灣繁體中文/)
   // Chinese, and a console whose language is not known, keep the words as they were.
@@ -677,7 +678,7 @@ test("asked in the call, the copilot changes its speed and length and keeps them
 })
 
 test("an in-call change sends the instructions and speed, never the voice", () => {
-  const ev = adjustEvent("", "", { speed: "0.8", brief: false, voice: "cedar" }) as { session: Record<string, any> }
+  const ev = adjustEvent("", { speed: "0.8", brief: false, voice: "cedar" }) as { session: Record<string, any> }
   assert.equal(ev.session.type, "realtime")
   assert.equal(ev.session.audio.output.speed, 0.8)
   assert.equal("voice" in ev.session.audio.output, false)
@@ -1109,13 +1110,13 @@ test("a group summary reads the working, the idle, or all Sessions, newest activ
 
 test("a call placed from a Session keeps its exact target without directing the model to improvise an opening", () => {
   const origin = { id: "%7", label: "Landing page" }
-  const placed = (sessionUpdateEvent("", "", { origin }) as { session: { instructions: string; tools: { name: string }[] } }).session
+  const placed = (sessionUpdateEvent("", { origin }) as { session: { instructions: string; tools: { name: string }[] } }).session
   assert.match(placed.instructions, /Session「Landing page」/)
   assert.match(placed.instructions, /session_id 是 %7/)
   assert.match(placed.instructions, /不要自行打招呼/)
   assert.match(placed.instructions, /依實際工具結果回答/)
   // A call from the Session list says nothing of a Session.
-  assert.doesNotMatch((sessionUpdateEvent("", "", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
+  assert.doesNotMatch((sessionUpdateEvent("", {}) as { session: { instructions: string } }).session.instructions, /打來的/)
 })
 
 test("a Session's goal is told as the person's request to it, not as words about the person", () => {
@@ -1594,7 +1595,7 @@ test('reading an opening only advances the report mark when narration is submitt
 })
 
 test('managed calls expose conversational message sends while other mutations remain in the work list',()=>{
- const session=(sessionUpdateEvent('','',{workEnabled:true}) as {session:{tools:{name:string}[];tool_choice:string}}).session
+ const session=(sessionUpdateEvent('',{workEnabled:true}) as {session:{tools:{name:string}[];tool_choice:string}}).session
  const names=session.tools.map(t=>t.name)
  assert.ok(names.includes('get_session_recap'))
  assert.ok(names.includes('get_session_updates'))

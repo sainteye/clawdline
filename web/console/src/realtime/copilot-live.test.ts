@@ -45,7 +45,7 @@ test("each saved speed gives the speaking model one localized pace, independentl
 })
 
 test("the backend receives the call's tool rules, snapshot and every tool, one call at a time", () => {
-  const event = liveBackendUpdate("earlier turns", "【通話開始時的 Session 快照】 two Sessions", { origin: { id: "%2", label: "Fix the build" } }) as {
+  const event = liveBackendUpdate("【通話開始時的 Session 快照】 two Sessions", { origin: { id: "%2", label: "Fix the build" } }) as {
     type: string; session: { delegation: { type: string; responses: { model: string; instructions: string; tools: unknown[]; tool_choice: string; parallel_tool_calls: boolean } } }
   }
   const backend = event.session.delegation.responses
@@ -58,7 +58,7 @@ test("the backend receives the call's tool rules, snapshot and every tool, one c
   assert.match(backend.instructions, /另一個語音模型會把你寫的結果用口語轉述給他/)
   assert.match(backend.instructions, /smart_rename_sessions/)
   assert.match(backend.instructions, /two Sessions/)
-  assert.match(backend.instructions, /earlier turns/)
+  assert.doesNotMatch(backend.instructions, /earlier turns/)
   assert.match(backend.instructions, /Fix the build/)
 })
 
@@ -136,7 +136,7 @@ test("each Session a read returns becomes one note the live model says at once",
 })
 
 test("the backend answers an overview from the snapshot's recaps and does not repeat what was already spoken", () => {
-  const event = liveBackendUpdate("", "【通話開始時的 Session 快照】 {}", {}) as { session: { delegation: { responses: { instructions: string } } } }
+  const event = liveBackendUpdate("【通話開始時的 Session 快照】 {}", {}) as { session: { delegation: { responses: { instructions: string } } } }
   const text = event.session.delegation.responses.instructions
   assert.match(text, /直接用快照的 recap 回答/)
   assert.match(text, /不要把查過的 Session 再逐一重講/)

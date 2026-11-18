@@ -414,7 +414,6 @@
 | `console.copilot_live_note_characters` | 400 | `characters` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_live_opening_wait_milliseconds` | 60000 | `milliseconds` | `coalesce` | `sender, diagnostics` | — |
 | `console.copilot_live_update_characters` | 150 | `characters` | `coalesce` | `sender, diagnostics` | — |
-| `console.copilot_memory_turns` | 24 | `rows` | `evict_oldest` | `sender, diagnostics` | — |
 | `console.copilot_orb_frames_per_second` | 30 | `rows` | `coalesce` | `diagnostics` | — |
 | `console.copilot_orb_pixel_ratio` | 2 | `multipliers` | `coalesce` | `diagnostics` | — |
 | `console.copilot_recap_pages` | 5 | `rows` | `refuse` | `sender, diagnostics` | — |

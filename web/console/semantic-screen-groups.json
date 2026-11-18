@@ -489,7 +489,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 690,
+      "count": 688,
       "sources": [
         null
       ],
@@ -786,8 +786,6 @@
         "capacityRow.console.copilot_live_opening_wait_milliseconds.what",
         "capacityRow.console.copilot_live_update_characters.full",
         "capacityRow.console.copilot_live_update_characters.what",
-        "capacityRow.console.copilot_memory_turns.full",
-        "capacityRow.console.copilot_memory_turns.what",
         "capacityRow.console.copilot_orb_frames_per_second.full",
         "capacityRow.console.copilot_orb_frames_per_second.what",
         "capacityRow.console.copilot_orb_pixel_ratio.full",
@@ -4134,7 +4132,7 @@
     },
     {
       "name": "next / other",
-      "count": 1255,
+      "count": 1257,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4400,6 +4398,8 @@
         "next.copilotCallContent",
         "next.copilotCallFromSession",
         "next.copilotCallTitle",
+        "next.copilotCallUsage",
+        "next.copilotCallUsageUnpriced",
         "next.copilotChooseEngine",
         "next.copilotClose",
         "next.copilotConfiguring",

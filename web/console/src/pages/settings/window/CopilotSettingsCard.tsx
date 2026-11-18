@@ -195,7 +195,7 @@ export function CopilotSettingsCard({ shown }: { shown: boolean }) {
         <h4>{nextWord("copilotSourceInstructions")}</h4>
         <pre className="sw-copilot-pre">{snapshot.engine === "live"
           ? liveInstructions({ speed: snapshot.speed, brief: snapshot.brief, extra: snapshot.extra_instructions, language: document.documentElement.lang })
-          : String((sessionUpdateEvent("","",{brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
+          : String((sessionUpdateEvent("",{brief:snapshot.brief,language:document.documentElement.lang}) as {session:{instructions:string}}).session.instructions)}</pre>
         <h4>{nextWord("copilotSourceTools")}</h4>
         <div className="sw-copilot-tools-nav-box">
           <p className="sw-hint">{nextWord("voiceToolsCardJumpHint")}</p>

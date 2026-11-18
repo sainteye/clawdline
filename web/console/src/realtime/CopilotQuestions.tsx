@@ -5,13 +5,15 @@ import { nextWord } from '../next-strings.js'
 import { CALL_QUESTIONS, type CallQuestionID, type QuestionTarget } from './copilot-questions.js'
 
 interface Props {
+  compact?: boolean
+  continueReport?: () => void
   ready: boolean
   targets: () => Promise<{ targets: QuestionTarget[]; current?: string }>
   send: (id: CallQuestionID, text: string, target: QuestionTarget) => Promise<void>
 }
 
 /** Complete questions teach the spoken vocabulary while remaining one-tap inputs. */
-export function CopilotQuestions({ ready, targets, send }: Props) {
+export function CopilotQuestions({ ready, targets, send, compact=false, continueReport }: Props) {
   const [open, setOpen] = useState(false)
   const [group, setGroup] = useState<'overview' | 'updates' | 'understand' | 'decisions'>('overview')
   const [rows, setRows] = useState<QuestionTarget[]>([])
@@ -51,10 +53,11 @@ export function CopilotQuestions({ ready, targets, send }: Props) {
     catch (error) { setError(String(error instanceof Error ? error.message : error)) }
     finally { busy.current = false; setSending(false) }
   }
-  return <section className="copilot-questions" onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); if (choosing) { setChoosing(false); chooseButton.current?.focus(); return }; setOpen(false); (event.currentTarget.querySelector('.copilot-questions-toggle') as HTMLButtonElement | null)?.focus() } }}>
-    <button type="button" className="copilot-questions-toggle" aria-expanded={open} aria-controls="copilot-questions-panel" onClick={() => setOpen(!open)}><span><QuestionIcon group="understand" />{nextWord('copilotQuestions')}</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d={open ? 'm5 12 5-5 5 5' : 'm5 8 5 5 5-5'} /></svg></button>
+  return <section className={`copilot-questions${compact ? " compact" : ""}`} onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); if (choosing) { setChoosing(false); chooseButton.current?.focus(); return }; setOpen(false); (event.currentTarget.querySelector('.copilot-questions-toggle') as HTMLButtonElement | null)?.focus() } }}>
+    <button type="button" className="copilot-questions-toggle" aria-expanded={open} aria-controls="copilot-questions-panel" onClick={() => setOpen(!open)}><span><QuestionIcon group="understand" />{nextWord('copilotQuestions')}</span>{!compact && <svg viewBox="0 0 20 20" aria-hidden="true"><path d={open ? 'm5 12 5-5 5 5' : 'm5 8 5 5 5-5'} /></svg>}</button>
     {open && <div id="copilot-questions-panel" className="copilot-questions-panel">
       <div className="copilot-questions-heading"><div><strong>{nextWord('copilotQuestions')}</strong><p>{nextWord('copilotQuestionsHint')}</p></div><button type="button" className="copilot-questions-close" aria-label={nextWord('copilotQuestionsClose')} onClick={() => setOpen(false)}>×</button></div>
+      {continueReport && <button type="button" className="copilot-question-continue" onClick={() => {continueReport();setOpen(false)}}>{nextWord('copilotReportContinue')}</button>}
       <div className="copilot-questions-target" ref={picker}>
         <span id="copilot-question-target-label">{nextWord('copilotQuestionTarget')}</span>
         <button ref={chooseButton} type="button" className="copilot-target-toggle" aria-labelledby="copilot-question-target-label copilot-question-target-value" aria-expanded={choosing} aria-controls="copilot-target-options" disabled={loading || sending} onClick={() => setChoosing(!choosing)}>

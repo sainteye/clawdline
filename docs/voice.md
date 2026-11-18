@@ -88,9 +88,9 @@ every page; its red mark ends it.
 Incoming captions, tool chips, notices and cost updates do not resize or move it. New captions
 follow the bottom while the person is there; scrolling back pauses following. The smaller orb
 can be dragged vertically to resize it (or adjusted with arrow keys), giving space back to the
-conversation. Cost and remembered-call information sit below as unboxed secondary text; the
-pricing explanation opens from the cost line. Tool chips keep their own scrollable space, and
-opening the execution log does not displace the conversation.
+conversation. Only elapsed time and amount remain below. Quick commands sit at the right
+of the tool-history heading; tool capsules keep their scrollable space. Repeated status
+copy, the subtitle, automatic-report explanation and execution-log entry are removed.
 
 **Assistant workspace.** The sidebar Voice assistant page owns the persistent inbox, work list and copilot settings. Background planning is opt-in; its execution and verification boundaries are documented in [voice-assistant-workspace.md](voice-assistant-workspace.md). Dictation settings remain in Settings.
 
@@ -362,16 +362,18 @@ Session's page, which pins Session content to that Session; its reads carry
 execution instead (`cloud/unopened-read.ts`). Settings › Voice copilot shows the instructions and
 every tool's description exactly as a call sends them.
 
-**What the browser keeps.** The lines both sides spoke in earlier calls (at most 24, three days),
-for the next call's instructions, and this call's cost, priced from each `response.done` usage at
-OpenAI's listed rates; Whisper captions are billed per minute and are not included.
+**Calls start fresh.** Earlier calls are not stored in browser conversation memory or injected
+into the next call. On client initialization, the retired local storage key is removed without
+reading its text. Current-call captions, current Session snapshots and operation journals keep
+their existing purposes. This call's cost is priced from each response's usage; Whisper captions
+are billed separately and are not included.
 
 The bounds are registered as `voice.copilot_key_bytes`,
 `voice.copilot_extra_instructions_characters`, `voice.copilot_briefing_timeout_milliseconds`,
 `voice.copilot_briefing_input_characters`, `voice.copilot_briefing_characters`,
 `voice.copilot_briefing_reply_characters`, `console.copilot_reply_characters`,
 `console.copilot_smart_rename_sessions`,
-`console.copilot_memory_turns`, `console.copilot_list_transcript_reads`,
+`console.copilot_list_transcript_reads`,
 `console.copilot_recap_pages` and `console.copilot_screen_reads`.
 
 A demo film of a call, recorded from the built console in English and Traditional Chinese, is
@@ -399,7 +401,7 @@ are the same `runCopilotTool` a Realtime call runs.
 - **Two models.** `gpt-live-1` speaks and listens at once with a persona, backchannel,
   interruption and delegation policy (`liveInstructions`). It hands every Session question and
   action to a Responses backend, `gpt-6-luna`, whose instructions are the Realtime call's whole
-  tool rules plus the snapshot, memory, briefing and focus, and whose tools are `COPILOT_TOOLS`
+  tool rules plus the snapshot, briefing and focus, and whose tools are `COPILOT_TOOLS`
   (`liveBackendUpdate`, sent by `session.update` after `session.started` and again when the
   focus, briefing or answer length changes). Tools run one at a time (`parallel_tool_calls: false`).
 - **Tool results.** A finished backend `function_call` arrives inside a `response.event`

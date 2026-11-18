@@ -822,14 +822,13 @@ export function instructionsFor(brief = true, language = ''): string {
   return rules.replace(CHINESE_RULE, languageRule(language))+'\n\n'+callControlGuidance(language)
 }
 
-export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOptions = {}): Record<string, unknown> {
+export function sessionUpdateEvent(snapshot = '', options: CallOptions = {}): Record<string, unknown> {
   return {
     type: 'session.update',
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
-      // What was said in earlier calls on this browser (`copilot-memory.ts`).
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot, memory]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -2829,8 +2828,8 @@ function endCallTool(deps: ToolDeps, logs: ToolLog[], said: string): unknown {
  * rebuilt for the new answer length, and the playback rate. Never the voice,
  * which a call cannot change once it has spoken.
  */
-export function adjustEvent(memory: string, snapshot: string, options: CallOptions): Record<string, unknown> {
-  const full = sessionUpdateEvent(memory, snapshot, options) as { session: { instructions: string; audio: { output: { speed: number } } } }
+export function adjustEvent(snapshot: string, options: CallOptions): Record<string, unknown> {
+  const full = sessionUpdateEvent(snapshot, options) as { session: { instructions: string; audio: { output: { speed: number } } } }
   return { type: 'session.update', session: { type: 'realtime', instructions: full.session.instructions,
     audio: { output: { speed: full.session.audio.output.speed } } } }
 }

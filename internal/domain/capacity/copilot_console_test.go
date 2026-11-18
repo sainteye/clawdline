@@ -20,7 +20,6 @@ func TestTheVoiceCopilotConsoleBoundsMatchTheirRegistrations(t *testing.T) {
 		{"copilot-reports.ts", "SESSION_REPORT_BATCH", "console.copilot_session_report_batch"},
 		{"copilot-reports.ts", "SESSION_REPORT_REFS", "console.copilot_session_report_refs"},
 		{"copilot-reports.ts", "SESSION_REPORT_SESSIONS", "console.copilot_session_report_sessions"},
-		{"copilot-memory.ts", "MEMORY_TURNS", "console.copilot_memory_turns"},
 		{"copilot-tools.ts", "LIST_LATEST_READS", "console.copilot_list_transcript_reads"},
 		{"copilot-tools.ts", "RECAP_PAGES", "console.copilot_recap_pages"},
 		{"copilot-tools.ts", "RECENT_IDLE_SECONDS", "console.copilot_recent_idle_seconds"},
