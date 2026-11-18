@@ -4,7 +4,8 @@
 .pa-reaction[data-pending]{opacity:.65}
 .pa-reactions button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .pa-reaction-progress,.pa-reaction-error{font-size:11px;color:var(--pa-dim);line-height:1.4}
-.project-assistants.pa-message-menu-root .pa-message-menu{display:flex;flex-direction:column;gap:4px;width:min(320px,calc(100vw - 16px));padding:8px;border:1px solid var(--pa-line);border-radius:16px;background:var(--pa-card);color:inherit;box-shadow:0 8px 30px #0009;z-index:60;overflow:auto;white-space:normal}
+/* Above the production pa-window at 1000, below the output overlay at 1500. */
+.project-assistants.pa-message-menu-root .pa-message-menu{display:flex;flex-direction:column;gap:4px;width:min(320px,calc(100vw - 16px));padding:8px;border:1px solid var(--pa-line);border-radius:16px;background:var(--pa-card);color:inherit;box-shadow:0 8px 30px #0009;z-index:1001;overflow:auto;white-space:normal}
 .project-assistants.pa-message-menu-root .pa-message-menu>button{min-height:44px;border:0;border-radius:8px;background:transparent;text-align:left;padding:8px 12px;font-size:14px}
 .project-assistants.pa-message-menu-root .pa-message-menu>button:hover{background:#ffffff12}
 .project-assistants.pa-message-menu-root .pa-reaction-palette{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:2px;padding:2px 0 6px;border-bottom:1px solid var(--pa-line)}

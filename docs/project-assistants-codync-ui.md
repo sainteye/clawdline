@@ -103,3 +103,22 @@ It records original WebM video and checks keyboard focus, touch input and a know
 The existing reaction browser test separately covers persistence, same-ID unknown recovery
 and revoked late replies. These isolated checks do not replace formal Cloud or physical
 phone acceptance, installed-native qualification or human visual review.
+
+### The message menu must cross the actual window layer
+
+The standalone Chat geometry fixture did not cover the production window's
+stacking context. In the real `useProjectAssistantsHost`, `.pa-window` is fixed
+at layer 1000. A body-mounted menu at layer 60 existed in the accessibility tree
+but was painted behind that window. The exact production CSS reproduced eight
+occluded controls and zero reaction writes in an isolated HTTP/Host/SQLite run.
+The popup now sits above the window and below the existing output overlay.
+
+`TestProjectAssistantMessageMenuHostBrowser` mounts the real host, registry,
+Bots and Chat against a synthetic authenticated source. It checks the actual
+`elementFromPoint` result at all six emoji and both text actions, not just DOM
+presence or layout visibility. Its Chromium/WebKit desktop and narrow-phone
+matrix also exercises one reaction add/remove, unchanged chat geometry, Escape
+focus, outside-pointer passage and dismissal when entering details. The host's
+position and layer are not replaced by fixture CSS. Source and synthetic browser
+evidence remain separate from production Cloud visual acceptance; no external
+model request is made by this regression.
