@@ -814,3 +814,11 @@ view remains read-only and outside model context. Native note writing, the
 editor and clean installed-native recall are separately pending. The source
 receipt covers the schema-12 protection, compact index and detail paths;
 website publication follows the delivered product revision.
+
+The single-chat presentation update changes the identity opener, draft toolbar visibility,
+text bubbles and transient message controls. Review of the English and Taiwan Traditional
+Chinese Bot-review card found no change to its recipient prompt, source reply prompt,
+exchange ownership, source authority or replay rules. The existing bilingual explanation
+remains accurate; the ChatRows implementation receipt follows the reviewed presentation.
+Opening Details dismisses a palette without discarding an unresolved reaction request.
+The website snapshot must follow this reviewed source when it is next published.

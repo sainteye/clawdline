@@ -1,14 +1,17 @@
 # Bot conversation inspectors and group identities
 
-The conversation now has a directly accessible information inspector with Details, Library,
+The conversation header has one Bot identity button that opens its information inspector
+with Details, Library,
 Memory and Settings tabs. Visited editors stay mounted across tab changes, so a draft name or
 memory note is not lost when checking another tab. Closing the inspector returns focus to its
 opener. The tab list supports Left, Right, Home and End; Escape closes the inspector, including
 after a save has removed focus from a temporarily disabled control. On narrow screens the
 inspector occupies the conversation area and the underlying conversation is hidden from focus.
 
-Details reads the selected Bot's standing instructions, Agent, Project and source computer.
-Its edit and routine controls lead to the existing scoped implementations. Settings keeps the
+Details starts with the selected Bot's standing instruction editor. The Agent/model summary,
+login selection and fallback summary share one card. Clean drafts omit the duplicate edit
+toolbar; changed drafts expose explicit Save and Cancel. Project and source information remain
+bound to the selected Bot. Its routine controls lead to the existing scoped implementation. Settings keeps the
 existing login profiles, native runtime options, extensions, fallbacks, permission modes,
 notifications, rules, management and network controls. A successful save resets that editor to
 the returned version; a stale or unknown save keeps the form and its existing protection.
@@ -63,3 +66,20 @@ injection at the fixture proxy supplies expired/stale detail and unknown answers
 settings, memory, room sends and native answers cross the actual HTTP/Host/SQLite boundary.
 Local browser evidence does not establish Cloud deployment, installed-native behavior, public
 release acceptance or human visual approval.
+
+## Conversation presentation and message actions
+
+Single-chat text uses compact, separate user and assistant bubbles, with controls outside the
+text surface. Desktop hover and keyboard focus reveal reply/copy and reaction controls; their
+reserved space prevents the next message from moving on hover. Touch layouts keep action
+entries visible and give them a 44px target. User-message actions also open from a dedicated
+button or Enter/Space on the message. Escape dismisses the reaction palette and returns
+focus to its trigger. Opening or switching inspector tabs dismisses transient message menus
+and palettes without discarding an unresolved reaction intent. No reaction is sent by opening,
+dismissing or moving focus between these controls.
+
+The comparison uses the pinned 2.47 source and existing native screenshots. Screenshot pixels
+do not establish the native window's CSS viewport, and untested Codync touch or keyboard
+gestures are not claimed. Equal-size Clawdline captures use synthetic four-message history at
+1672×976 and 390×720; reconstructed local baseline captures are distinct from actual Cloud
+screenshots. These checks do not establish cross-product response speed or visual approval.

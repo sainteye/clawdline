@@ -1,6 +1,9 @@
 /** PA-05 registers these keys as projectAssistants.<key> in both shipped catalogs. */
 export const en = {
   "settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}",
+  "settingsInstructionsHeading": "Instructions",
+  "settingsInstructionsHint": "Always applies. Put one-off task requests in the conversation.",
+  "settingsAgentHeading": "Agent",
   "settingsDraftHint": "Save applies this draft. Cancel discards it.",
   "settingsNoFallbacks": "No fallbacks",
   "settingsFrequent": "Edit conversation setup",
@@ -508,6 +511,9 @@ export const en = {
 export type WordKey = keyof typeof en
 export const zhHant: Record<WordKey, string> = {
   "settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}",
+  "settingsInstructionsHeading": "指令",
+  "settingsInstructionsHint": "一直生效的規則；單次任務要求請寫在對話裡。",
+  "settingsAgentHeading": "智慧體",
   "settingsDraftHint": "儲存後套用草稿；取消會捨棄變更。",
   "settingsNoFallbacks": "尚無備援",
   "settingsFrequent": "編輯對話設定",

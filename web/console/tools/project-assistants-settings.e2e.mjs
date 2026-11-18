@@ -13,7 +13,7 @@ await mkdir(artifacts,{recursive:true})
 const root=fileURLToPath(new URL("..",import.meta.url)),requests=[],operations=[],results=[]
 const bundle=await build({entryPoints:[path.join(root,"tools/fixtures/project-assistants-settings.tsx")],bundle:true,write:false,outfile:"alignment.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"',READ_MACHINE:JSON.stringify(machine),READ_BOT:JSON.stringify(bot)}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents]))
-let tab,saveFault=""
+let tab,saveFault="",touch=false
 const server=createServer(async(req,res)=>{try{
   const url=new URL(req.url,"http://fixture")
   if(url.pathname.startsWith("/v1/")){
@@ -69,18 +69,18 @@ async function waitFor(expression){for(let n=0;n<100;n++){if(await evaluate(expr
 async function hit(selector){
   const point=await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});if(!el)throw Error("Missing control: "+${JSON.stringify(selector)});el.scrollIntoView({block:"center"});const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,disabled:el.disabled}})()`)
   assert.equal(!!point.disabled,false,selector)
-  await send("Input.dispatchMouseEvent",{type:"mousePressed",x:point.x,y:point.y,button:"left",clickCount:1},session)
-  await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:point.x,y:point.y,button:"left",clickCount:1},session)
+  if(touch){await send("Emulation.setTouchEmulationEnabled",{enabled:true},session);await send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:point.x,y:point.y}]},session);await send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},session)}
+  else{await send("Input.dispatchMouseEvent",{type:"mousePressed",x:point.x,y:point.y,button:"left",clickCount:1},session);await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:point.x,y:point.y,button:"left",clickCount:1},session)}
   operations.push({op:"hit",selector})
 }
 async function fill(selector,value){await evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});if(!el||el.disabled)throw Error("Missing enabled field");el.focus();Object.getOwnPropertyDescriptor(el.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))})()`);operations.push({op:"fill",selector,value})}
-async function key(key,code=key){await send("Input.dispatchKeyEvent",{type:"keyDown",key,code},session);await send("Input.dispatchKeyEvent",{type:"keyUp",key,code},session);operations.push({op:"key",key})}
+async function key(key,code=key){const windowsVirtualKeyCode=({Enter:13,Escape:27,Tab:9," ":32})[key]??0;const event={key,code,windowsVirtualKeyCode};await send("Input.dispatchKeyEvent",{type:"keyDown",...event,...(key==="Enter"?{text:"\r",unmodifiedText:"\r"}:{})},session);await send("Input.dispatchKeyEvent",{type:"keyUp",...event},session);operations.push({op:"key",...event})}
 async function capture(name){await browser("screenshot","--out",path.join(artifacts,name+".jpg"));await writeFile(path.join(artifacts,name+".html"),await evaluate("document.documentElement.outerHTML"))}
-async function open(query="",mobile=false){await browser("open",origin+"/?"+query);await browser("viewport",mobile?"mobile":"desktop");await waitFor(query.includes("read")?'!!document.querySelector(".pa-composer textarea")':'!!document.querySelector(".pa-composer textarea:not(:disabled)")')}
+async function open(query="",mobile=false){touch=mobile;await browser("open",origin+"/?"+query);await browser("viewport",mobile?"mobile":"desktop");await waitFor(query.includes("read")?'!!document.querySelector(".pa-composer textarea")':'!!document.querySelector(".pa-composer textarea:not(:disabled)")')}
 async function close(){await browser("close");tab=undefined}
 const posts=()=>requests.filter(r=>r.method!=="GET")
 const field=".pa-settings-instructions textarea"
-async function openDetails(){await hit(".pa-info-toggle");await waitFor('!!document.querySelector(".pa-settings-instructions textarea")')}
+async function openDetails(){await hit(".pa-chat-identity");await waitFor('!!document.querySelector(".pa-settings-instructions textarea")')}
 async function tabAt(n){await hit('.pa-info-tabs [role="tab"]:nth-child('+n+')')}
 async function save(){await hit('.pa-settings-editor>.pa-toolbar button:last-child')}
 try{
@@ -88,10 +88,12 @@ try{
  for(const [lang,mobile] of [["en",false],["zh-Hant",true]]){
   const zh=lang!=="en",initial="Synthetic saved instructions "+lang
   await open("lang="+lang,mobile);await openDetails()
+  assert.equal(await evaluate('document.querySelector(".pa-settings-savebar").hidden && document.querySelector(".pa-settings-savebar").getClientRects().length===0'),true,"clean Details starts at Instructions without a duplicate toolbar")
   assert.equal(await evaluate('document.querySelectorAll(".pa-settings-instructions textarea").length'),1)
   assert.equal(await evaluate('document.querySelectorAll(".pa-settings-disclosure[open]").length'),0)
   await capture(lang+"-details")
   await fill(field,initial)
+  assert.equal(await evaluate('document.querySelector(".pa-settings-savebar").hidden'),false,"dirty drafts expose explicit save and cancel")
   await tabAt(4);await waitFor('!!document.querySelector(".pa-settings-often-link")')
   assert.equal(await evaluate('[...document.querySelectorAll(".pa-settings-instructions textarea")].filter(el=>el.getClientRects().length).length'),0)
   assert.equal(await evaluate('document.querySelectorAll(".pa-settings-disclosure[open]").length'),0)
@@ -103,7 +105,7 @@ try{
   await save();await waitFor('document.querySelector(".pa-info-panel").hidden')
   const edit=posts().filter(r=>r.method==="PATCH").at(-1);assert.equal(edit.status,200);assert.equal(edit.body.settings.instructions,initial)
   await close();await open("lang="+lang,mobile);await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
-  await fill(field,"Synthetic discarded draft");await hit('.pa-settings-editor>.pa-toolbar button:first-child');await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
+  const writesBeforeCancel=posts().length;await fill(field,"Synthetic discarded draft");await hit('.pa-settings-editor>.pa-toolbar button:first-child');await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial);assert.equal(posts().length,writesBeforeCancel,"cancel does not write settings")
   // Source conflict and unknown outcomes keep the exact draft without replay.
   for(const fault of ["stale","unknown"]){
    await fill(field,"Synthetic protected "+fault);saveFault=fault;const before=posts().length;await save();await waitFor('!!document.querySelector(".pa-settings-editor [role=alert]")');assert.equal(posts().length,before+1)
@@ -124,7 +126,31 @@ try{
  await save();await waitFor('document.querySelector(".pa-info-panel").hidden')
  await fill('.pa-composer textarea','Synthetic settings next-turn check');await hit('.pa-send');await waitText('Synthetic runtime selected synthetic-large / high / true')
  await capture('next-turn-selected-runtime');await close()
+ // Real pointer/key actions on the same persisted scripted reply. No model request is made here.
+ for(const mobile of [false,true]){
+  await open("lang=en",mobile);await waitFor('!!document.querySelector(".pa-message:not(.pa-mine) .pa-reaction-add")')
+  const trigger='.pa-message:not(.pa-mine) .pa-reaction-add'
+  await hit(trigger);await waitFor('!!document.querySelector(".pa-reaction-palette")')
+  await key("Escape");await waitFor('!document.querySelector(".pa-reaction-palette")')
+  assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(trigger)})`),true,"Escape restores the reaction trigger")
+  await hit(trigger);await waitFor('!!document.querySelector(".pa-reaction-palette")');await openDetails()
+  await waitFor('!document.querySelector(".pa-reaction-palette")');await hit('.pa-info-close')
+  await evaluate('document.querySelector(".pa-chat-identity").focus()');await key("Enter");await waitFor('!document.querySelector(".pa-info-panel").hidden');await key("Escape");await waitFor('document.querySelector(".pa-info-panel").hidden');assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-chat-identity")'),true)
+  assert.equal(await evaluate('!!document.querySelector(".pa-reaction-palette")'),false,"Details does not retain a stale palette")
+  await evaluate('document.querySelector(".pa-mine").focus()');await key("Enter");await waitFor('!!document.querySelector(".pa-message-actions")')
+  await key("Escape");await waitFor('!document.querySelector(".pa-message-actions")')
+  assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-mine")'),true)
+  const reply='.pa-message:not(.pa-mine)'
+  const point=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(reply)}).getBoundingClientRect();return {x:r.x+5,y:r.y+5}})()`)
+  await send("Input.dispatchMouseEvent",{type:"mouseMoved",...point},session)
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-foot")})).opacity`),"1","pointer reveals reply actions")
+  await evaluate(`document.querySelector(${JSON.stringify(reply+" .pa-copy")}).focus()`);assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-foot")})).opacity`),"1","keyboard focus reveals reply actions")
+  await hit(reply+' .pa-quote');await waitFor('!!document.querySelector(".pa-reply")')
+  await capture(mobile?'mobile-actions':'desktop-actions');await close()
+ }
+
  await open("lang=en&read=1",true);await openDetails();assert.equal(await evaluate('document.querySelector(".pa-settings-editor>.pa-toolbar button:last-child").disabled'),true);await capture('readonly');await close()
+ assert.equal(posts().filter(r=>r.path.endsWith("/react")).length,0,"opening and dismissing actions does not write reactions")
  results.push({settingsPersisted:true,tabDraftPreserved:true,closeDraftPreserved:true,cancelDiscards:true,staleKept:true,unknownLockedNoReplay:true,desktop:[1280,900],mobile:[390,720],externalModelRequests:0})
  console.log("PASS: production Chat settings crossed authenticated HTTP/Host/SQLite; unique editor, drafts, reopen, conflict/unknown fences and next scripted ACP turn; external model requests=0")
 }catch(error){if(tab)await capture("failure").catch(()=>{});throw error}

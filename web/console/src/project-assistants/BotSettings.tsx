@@ -53,23 +53,25 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
     setAgent(next);setLoginProfile("");setExtensions({skills:extensions.skills,connectors:[]})
     setRuntime({model:"",options:{}});setFallbacks([]);setFallbackSteps([]);setApproval({permission_policy:approval.permission_policy})
   }
+  const dirty=name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||JSON.stringify(runtime)!==JSON.stringify(bot.runtime_settings??{model:"",options:{}})||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
   const chain=selectedFallbacks?fallbackSteps.map(step=>step.agent):fallbacks
   return <section className={`${embedded?"pa-embedded-form":"pa-form-panel"} pa-settings-editor`} role={embedded?undefined:"dialog"} aria-modal={embedded?undefined:true} aria-label={w.settings}>
-    <header className="pa-toolbar"><button type="button" onClick={onClose}>{w.cancel}</button><h2>{part==="often"?w.infoDetails:w.settings}</h2><button type="button" disabled={!enabled||busy||unknown||!name.trim()} onClick={()=>void save()}>{w.save}</button></header>
+    <header className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}><button type="button" onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" disabled={!enabled||busy||unknown||!name.trim()} onClick={()=>void save()}>{w.save}</button></header>
     <div className="pa-form-body">
       {part==="rarely"&&<button type="button" className="pa-settings-often-link" onClick={editFrequent}>{w.settingsFrequent}</button>}
       <fieldset disabled={!enabled||busy||unknown}>
         <div className="pa-settings-part" hidden={!frequent}>
-          <label className="pa-settings-instructions">{w.instructions}<textarea ref={instructionsField} value={instructions} onChange={e=>setInstructions(e.target.value)} rows={3}/></label>
-          <p className="pa-settings-hint">{w.settingsDraftHint}</p>
+          <section className="pa-settings-instruction-section"><h3>{w.settingsInstructionsHeading}</h3><div className="pa-settings-instruction-card"><label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea ref={instructionsField} value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label></div></section>
+          {dirty&&<p className="pa-settings-hint">{w.settingsDraftHint}</p>}
+          <section className="pa-settings-agent-section"><h3>{w.settingsAgentHeading}</h3><div className="pa-settings-agent-card"><div className="pa-settings-primary">
           <SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`}>
             <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
             <RuntimeSettings source={source} bot={bot} agent={agent} loginProfile={loginProfile} loginState={loginState} value={runtime} onChange={setRuntime} w={w}/>
           </SettingsDisclosure>
-          <LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={id=>{setLoginProfile(id);setFallbackSteps(steps=>steps.filter(step=>step.agent!==agent||(step.login_profile??"")!==id))}} onStatusChange={setLoginState} w={w}/>
+          </div><LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={id=>{setLoginProfile(id);setFallbackSteps(steps=>steps.filter(step=>step.agent!==agent||(step.login_profile??"")!==id))}} onStatusChange={setLoginState} w={w}/>
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
             {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={fallbackSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={fallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}
-          </SettingsDisclosure>
+          </SettingsDisclosure></div></section>
         </div>
         <div className="pa-settings-part" hidden={!rare}>
           <SettingsDisclosure title={w.settingsIdentity} summary={name}>
