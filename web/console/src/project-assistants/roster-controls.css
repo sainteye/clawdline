@@ -16,8 +16,6 @@
 .project-assistants [data-drop="true"] { outline:1px dashed var(--pa-accent,#e39567);outline-offset:-1px; }
 .project-assistants .pa-roster-save-error { padding:8px;color:var(--warning,#f0a030);font-size:13px; }
 @media (prefers-reduced-motion:reduce) { .project-assistants .pa-roster-entry { transition:none; } }
-.project-assistants .pa-roster-group-tools { display:flex;justify-content:flex-end;padding:0 6px 4px; }
-.project-assistants .pa-roster-group-tools button { padding:4px 8px;font-size:12px; }
 .project-assistants .pa-group-avatars { position:relative;display:grid;grid-template-columns:repeat(2,22px);width:44px;min-width:44px;height:44px;align-content:center; }
 .project-assistants .pa-group-avatars > span { display:flex;align-items:center;justify-content:center;width:22px;height:22px; }
 .project-assistants .pa-group-unknown { color:var(--pa-dim);font-size:15px; }

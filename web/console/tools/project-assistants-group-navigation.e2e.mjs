@@ -32,6 +32,78 @@ const server=createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,pw=await import(pathToFileURL(module).href),evidence=[]
 const position=room=>room.locator('.pa-chat-scroll').evaluate(el=>{const top=el.getBoundingClientRect().top,row=[...el.querySelectorAll('[data-room-seq]')].find(row=>row.getBoundingClientRect().bottom>top);return {top:el.scrollTop,seq:row?.dataset.roomSeq,offset:row?row.getBoundingClientRect().top-top:null}})
+
+async function verifyCreationMenu(page,click,language,mode,name) {
+ const words=language==='en'
+  ?{add:'Add',bot:'Create Bot',group:'New group',cancel:'Cancel'}
+  :{add:'新增',bot:'新增 Bot',group:'新增群組',cancel:'取消'}
+ const roster=page.locator('.pa-roster'),trigger=roster.getByRole('button',{name:words.add,exact:true})
+ const legacyEntries=roster.getByRole('button',{name:words.bot,exact:true}).or(roster.getByRole('button',{name:words.group,exact:true}))
+ if(mode==='read'){
+  assert.equal(await trigger.count(),0,'a read-only source exposed the Add menu')
+  assert.equal(await legacyEntries.count(),0,'a read-only source exposed a create action')
+  return {choices:[]}
+ }
+ assert.equal(await trigger.count(),1,'the roster must have one Add button')
+ assert.equal(await trigger.getAttribute('aria-haspopup'),'menu')
+ assert.equal(await legacyEntries.count(),0,'a standalone create button remained in the roster')
+ const menu=page.getByRole('menu',{name:words.add,exact:true})
+ const bot=menu.getByRole('menuitem',{name:words.bot,exact:true}),group=menu.getByRole('menuitem',{name:words.group,exact:true})
+ const focused=locator=>locator.evaluate(el=>document.activeElement===el)
+ await click(trigger)
+ await menu.waitFor()
+ assert.deepEqual(await menu.getByRole('menuitem').allTextContents(),[words.bot,words.group])
+ assert.equal(await focused(bot),true,'opening the menu did not focus its first action')
+ const anchor=await trigger.boundingBox(),box=await menu.boundingBox(),viewport=page.viewportSize()
+ assert.ok(Math.abs(anchor.x+anchor.width-box.x-box.width)<=1&&box.y>=anchor.y+anchor.height&&box.x>=0&&box.y+box.height<=viewport.height,'the menu is outside the viewport or detached from Add')
+ await page.screenshot({path:path.join(artifacts,name+'-creation-menu.png')})
+ await page.keyboard.press('Escape')
+ await menu.waitFor({state:'detached'})
+ assert.equal(await focused(trigger),true,'Escape did not return focus to Add')
+ for(const [action,title] of [[bot,words.bot],[group,words.group]]){
+  if(viewport.width===390){
+   await click(trigger)
+   await click(action)
+  }else{
+   await trigger.press('ArrowDown')
+   await menu.waitFor()
+   if(action===group)await page.keyboard.press('ArrowDown')
+   assert.equal(await focused(action),true)
+   await page.keyboard.press('Enter')
+  }
+  const form=page.getByRole('dialog',{name:title,exact:true})
+  await form.waitFor()
+  await form.getByRole('textbox').first().fill('Unsaved fixture name')
+  await click(form.getByRole('button',{name:words.cancel,exact:true}))
+  await form.waitFor({state:'detached'})
+  assert.equal(await focused(trigger),true,`${title} cancellation lost its Add trigger`)
+  assert.equal(await trigger.getAttribute('aria-expanded'),'false')
+ }
+ return {choices:[words.bot,words.group],anchor,box,focusRestored:true}
+}
+
+async function verifyDetailsChevron(page,click,language,name) {
+ const info=page.getByRole('button',{name:language==='en'?'Stranger · Bot information':'Stranger · Bot 資訊',exact:true})
+ const identity=await info.elementHandle()
+ const panel=page.locator('.pa-main .pa-info-panel')
+ const direction=await info.evaluate(button=>{
+  const arrow=button.querySelector('svg[aria-hidden="true"].pa-chat-identity-chevron path')
+  if(!arrow)return null
+  const length=arrow.getTotalLength(),start=arrow.getPointAtLength(0),tip=arrow.getPointAtLength(length/2),end=arrow.getPointAtLength(length)
+  return tip.x>start.x&&tip.x>end.x&&start.y<tip.y&&tip.y<end.y
+ })
+ assert.equal(direction,true,'the Bot information chevron must point right')
+ await page.screenshot({path:path.join(artifacts,name+'-details-chevron.png')})
+ if(page.viewportSize().width===390)await click(info.getByText('Stranger',{exact:true}))
+ else await info.press('Enter')
+ await panel.waitFor({state:'visible'})
+ assert.equal(await identity.getAttribute('aria-expanded'),'true')
+ await click(panel.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}))
+ await panel.waitFor({state:'hidden'})
+ assert.equal(await info.getAttribute('aria-expanded'),'false')
+ return {right:true,opensDetails:true}
+}
+
 try{
  for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')){
   const browser=await pw[engine].launch({headless:true,...(engine==='chromium'?{args:['--disable-features=OmniboxEverywhere']}:{})})
@@ -45,11 +117,17 @@ try{
      await page.goto(origin+'/?'+new URLSearchParams({mode,lang:language,history:mode==='cloud'?'1':'0'}))
      const bot=id=>page.locator('[data-bot-key]').filter({has:page.locator('strong',{hasText:new RegExp('^'+id+'$')})}),row=page.locator('[data-group-key]').filter({has:page.getByText('Review room',{exact:true})})
      await bot('Stranger').waitFor();await row.waitFor()
+     const controlErrors=[]
+     const creation=baseline?null:await verifyCreationMenu(page,click,language,mode,name).catch(error=>controlErrors.push(error.message))
      assert.equal(traffic.slice(start).filter(record=>record.word==='project-assistants.group-history'||/\/rooms\/groups\/[^/?]+\?/.test(record.path)).length,0,'list preview fetched room histories')
      assert.equal(await row.locator('.pa-avatar').count(),2)
      assert.match(await row.locator('.pa-row-preview').innerText(),/Bob:/)
      await click(bot('Stranger'))
      await page.locator('.pa-main .pa-chat-header h2').filter({hasText:'Stranger'}).waitFor()
+     const details=baseline?null:await verifyDetailsChevron(page,click,language,name).catch(error=>controlErrors.push(error.message))
+     assert.deepEqual(controlErrors,[])
+     const writes=traffic.slice(start).filter(r=>/^project-assistants\.(create|group-create)$/.test(r.word??'')||r.method==='POST'&&/^\/v1\/project-assistants(?:\/rooms\/groups)?$/.test(r.path))
+     assert.equal(writes.length,0,'a cancelled form issued a create request')
      if(width>390)assert.equal(await page.locator('.pa-main .pa-chat-back').isVisible(),false,'ordinary desktop chat gained a group return action')
      if(width===390){await click(page.locator('.pa-main .pa-chat-back'));await page.waitForFunction(()=>!document.querySelector('.pa-shell.pa-selected'))}
      await row.scrollIntoViewIfNeeded();const originTop=await page.locator('.pa-roster-scroll').evaluate(el=>el.scrollTop)
@@ -159,18 +237,11 @@ try{
      await room.waitFor({state:'detached'});await page.waitForFunction(()=>document.activeElement?.matches('[data-group-key]'))
      assert.equal(await row.evaluate(el=>document.activeElement===el),true)
      assert.equal(await page.locator('.pa-roster-scroll').evaluate(el=>el.scrollTop),originTop)
-     if(mode!=='read'){
-      const create=page.getByRole('button',{name:language==='en'?'New group':'新增群組',exact:true})
-      await click(create)
-      const form=page.getByRole('dialog',{name:language==='en'?'New group':'新增群組',exact:true})
-      await form.waitFor();await click(form.getByRole('button',{name:language==='en'?'Cancel':'取消',exact:true}));await form.waitFor({state:'detached'})
-      assert.equal(await create.evaluate(button=>document.activeElement===button),true,'new-group cancellation lost its opener')
-     }
      assert.equal(traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)).length,0,'a cancelled form wrote group data')
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
      assert.equal(traffic.slice(start).filter(record=>record.word==='project-assistants.send'||record.word==='project-assistants.group-send'||/\/messages$/.test(record.path)).length,0,'navigation sent a prompt')
      assert.deepEqual(errors,[])
-     evidence.push({engine,mode,language,width,height,baseline:baseline??null,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,clicks:{openGroup:1,openMembers:1,openMemberChat:1,returnRoom:1,closeMembers:1,returnList:1},frontendPrompts:0,sourceAPI:mode==='old'?87:88,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
+     evidence.push({engine,mode,language,width,height,baseline:baseline??null,creation,details,createWrites:writes.length,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,clicks:{openGroup:1,openMembers:1,openMemberChat:1,returnRoom:1,closeMembers:1,returnList:1},frontendPrompts:0,sourceAPI:mode==='old'?87:88,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
      await page.screenshot({path:path.join(artifacts,name+'-returned-list.png')})
     }catch(error){await page.screenshot({path:path.join(artifacts,name+'-failure.png')});await writeFile(path.join(artifacts,name+'-failure.json'),JSON.stringify({error:String(error),focus:await page.evaluate(()=>document.activeElement?.outerHTML),rooms:await page.locator('.pa-room-layout').evaluateAll(rooms=>rooms.map(room=>({hidden:room.hidden,connected:room.isConnected}))),text:await page.locator('body').innerText(),errors},null,2));throw error}
     finally{await context.close()}

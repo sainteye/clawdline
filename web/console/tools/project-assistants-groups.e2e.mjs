@@ -90,13 +90,20 @@ try{
     const selector=await evaluate(sessionId,`(()=>{const buttons=[...document.querySelectorAll('button')];const index=buttons.findIndex(b=>(b.getAttribute('aria-label')===${JSON.stringify(text)}||b.textContent.trim()===${JSON.stringify(text)})&&!b.disabled&&b.getBoundingClientRect().height>0);if(index<0)throw Error('Missing button '+${JSON.stringify(text)});buttons[index].setAttribute('data-fixture-hit','true');return 'button[data-fixture-hit=true]'})()`)
     try{await hit(sessionId,selector)}finally{await evaluate(sessionId,"document.querySelector('[data-fixture-hit]')?.removeAttribute('data-fixture-hit')")}
   }
+  const openGroupCreator=async(sessionId,zh)=>{
+    const add=zh?"新增":"Add",create=zh?"新增群組":"New group"
+    await until(sessionId,`!!document.querySelector('.pa-toolbar button[aria-label="${add}"]')`)
+    await click(sessionId,add)
+    const choices=await evaluate(sessionId,`[...document.querySelectorAll('.pa-toolbar [role="menuitem"]')].map(item=>item.textContent.trim())`)
+    assert.deepEqual(choices,[create],"the group-only roster exposed another creation action")
+    await click(sessionId,create)
+  }
   const key=async(sessionId,key,code=key)=>{operations.push({action:"key",key,at:Date.now()});await send("Input.dispatchKeyEvent",{type:"keyDown",key,code},sessionId);await send("Input.dispatchKeyEvent",{type:"keyUp",key,code},sessionId)}
   const fill=async(sessionId,selector,value)=>evaluate(sessionId,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing input');e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.setSelectionRange?.(e.value.length,e.value.length);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('select',{bubbles:true}));})()`)
   if(process.env.BOTS_GROUP_BACKGROUND==="1"){
     for(const [mode,lang,width,height,outcome] of [["local","en",1280,800,"complete"],["cloud","zh-Hant",390,844,"complete"],["cloud","en",1280,800,"refusal"]]){
       const start=traffic.length,{targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant"
-      await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(zh?"新增群組":"New group")})`)
-      await click(sessionId,zh?"新增群組":"New group");await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')")
+      await openGroupCreator(sessionId,zh);await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')")
       await fill(sessionId,"dialog[open] input:not([type=checkbox])","Background observation "+mode)
       await evaluate(sessionId,"for(const e of document.querySelectorAll('dialog[open] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
       await click(sessionId,zh?"儲存":"Save");await until(sessionId,"!!document.querySelector('[role=dialog] textarea:not(:disabled)')")
@@ -136,8 +143,8 @@ try{
   }else{
   for(const [mode,lang,width,height]of [["local","en",1280,800],["local","zh-Hant",390,844],["cloud","en",1280,800],["cloud","zh-Hant",390,844]]){
     const {targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant",name=`Review ${mode} ${lang}`
-    const copy=zh?{create:"新增群組",save:"儲存",edit:"編輯群組",send:"傳送",stop:"停止群組",remove:"刪除群組",confirm:"確認刪除群組"}:{create:"New group",save:"Save",edit:"Edit group",send:"Send",stop:"Stop group",remove:"Delete group",confirm:"Confirm group deletion"}
-    await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(copy.create)})`);await click(sessionId,copy.create)
+    const copy=zh?{save:"儲存",edit:"編輯群組",send:"傳送",stop:"停止群組",remove:"刪除群組",confirm:"確認刪除群組"}:{save:"Save",edit:"Edit group",send:"Send",stop:"Stop group",remove:"Delete group",confirm:"Confirm group deletion"}
+    await openGroupCreator(sessionId,zh)
     await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')");await fill(sessionId,"dialog[open] input:not([type=checkbox])",name)
     assert.equal(await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] input[type=checkbox]')].some(e=>e.parentElement.textContent.includes('Stranger'))"),false,"another Project was offered as a room member")
     await evaluate(sessionId,"for(const e of document.querySelectorAll('dialog[open] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")

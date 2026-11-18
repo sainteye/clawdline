@@ -13251,6 +13251,7 @@
   "capacityRow.bots.cloud_refresh_seconds.full": "At this delay the source waits before another metadata check. Ambiguous native work remains retained and is never automatically resent.",
   "projectAssistants.rosterPinGroup": "Pin group",
   "projectAssistants.rosterUnpinGroup": "Unpin group",
+  "projectAssistants.rosterCreate": "Add",
   "projectAssistants.rosterOptions": "List options",
   "projectAssistants.rosterSort": "Reorder conversations",
   "projectAssistants.rosterSortDone": "Done",

@@ -13251,6 +13251,7 @@
   "capacityRow.bots.cloud_refresh_seconds.full": "達到這段等待時間時，來源等候後再查能力資料；結果未知的原生工作繼續保留，不會自動重送。",
   "projectAssistants.rosterPinGroup": "釘選群組",
   "projectAssistants.rosterUnpinGroup": "取消釘選群組",
+  "projectAssistants.rosterCreate": "新增",
   "projectAssistants.rosterOptions": "清單選項",
   "projectAssistants.rosterSort": "調整對話順序",
   "projectAssistants.rosterSortDone": "完成",
