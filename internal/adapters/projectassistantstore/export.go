@@ -57,7 +57,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // Legacy exports retain their original facts and command identities. Restore
 // validates both versions identically; the next export uses the current schema.
 func restorableSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == 11 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
@@ -167,6 +167,13 @@ func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
 func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	if in.ContractVersion != pa.ContractVersion || !restorableSchema(in.SchemaVersion) {
 		return failure(pa.Unsupported, "export_version")
+	}
+	if in.SchemaVersion < 12 {
+		for _, entry := range in.MemoryEntries {
+			if entry.Kind != "" || entry.Title != "" || entry.Summary != "" {
+				return failure(pa.Unsupported, "topic_memory_schema")
+			}
+		}
 	}
 	// A single-Bot archive cannot authorize a two-Bot replay. Preserve all
 	// exchange facts on export and refuse this transfer boundary explicitly.

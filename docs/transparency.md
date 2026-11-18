@@ -802,3 +802,15 @@ memory sources, execution permissions or automatic save/replay. The existing
 English and Taiwan Traditional Chinese Bot explanations were reviewed against
 those unchanged boundaries. Conversation compaction remains an unqualified
 capability gap rather than a placeholder control.
+
+## Named Bot topic memory source foundation
+
+The persistent-Bot entry was reviewed in English and Taiwan Traditional
+Chinese for the new title/summary indexes and explicit `read_memory` detail
+argument. Full note bodies are absent from assembled context and index
+responses. Actor and full Project ownership, memory revisions, forget
+tombstones and opaque-resume refusal stay in force. The Project shared-memory
+view remains read-only and outside model context. Native note writing, the
+editor and clean installed-native recall are separately pending. The source
+receipt covers the schema-12 protection, compact index and detail paths;
+website publication follows the delivered product revision.

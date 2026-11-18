@@ -25,6 +25,7 @@ export interface SourceClient {
  loginProfiles?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfilesResponse>
  loginProfileAction?(request:W.ProjectAssistantLoginProfileAction,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfileResponse>
   extensions?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantExtensionsResponse>
+  canTopicMemory?():boolean
   canMemorySettings?():boolean
   memoryView?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}):Promise<W.ProjectAssistantMemoryViewResponse>
   configuration?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string):Promise<W.ProjectAssistantConfigurationResponse>

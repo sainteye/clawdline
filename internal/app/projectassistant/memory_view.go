@@ -115,6 +115,10 @@ func (s *Service) ReadMemory(ctx context.Context, q MemoryReadRequest) (MemoryRe
 			return MemoryReadResult{}, serviceFailure(pa.ContextStale, "memory_revision")
 		}
 		out.Detail = &pa.MemoryDetail{Layer: q.Layer, ID: q.EntryID, Revision: layer.Revision, Text: text}
+		if q.Layer == "bot" && len(layer.Entries) == 1 {
+			row := layer.Entries[0]
+			out.Detail.Kind, out.Detail.Title, out.Detail.Summary = row.Kind, row.Title, row.Text
+		}
 		out.View.Layers = []pa.MemoryLayer{} // detail does not repeat previews
 	}
 	out.check = func(ctx context.Context) error {

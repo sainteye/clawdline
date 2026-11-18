@@ -3598,6 +3598,26 @@
         {
           "path": "internal/adapters/projectassistantacp/trace.go",
           "line": 1
+        },
+        {
+          "path": "internal/domain/projectassistant/memory_notes.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/memory_index.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/memory_view.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/memory_tools.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/schema.go",
+          "line": 1
         }
       ],
       "original": [
@@ -4686,7 +4706,7 @@
     "internal/adapters/projectassistantacp/installation_codex.go": "229fd1007a373608c378f75257823846b09f03157b260773057e0657c8062551",
     "internal/adapters/projectassistantacp/installation_isolation.go": "2e3d55848a1fa2d18842539a306cd591334df3e01bfa00cdff7ef8d1c293c3cf",
     "internal/adapters/projectassistantacp/login_profiles.go": "3b612a6d02e2ad26d7be0d91d4643d83281b3ee713331c137052afa40440aa51",
-    "internal/adapters/projectassistantacp/mcp.go": "0cf3e8296dc98812314b617cc91c44359359f8b66370b4c64c0e5e7597b1fed1",
+    "internal/adapters/projectassistantacp/mcp.go": "f94b361c5008cee67cb8bde97a96abab9b4847ebc72220e4eb0d079fd57289ea",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
     "internal/adapters/projectassistantacp/model_configuration.go": "a27e154c02f76a7bbe9383b2c503998c017b58e92f7ed531ea4728056b00003b",
@@ -4697,15 +4717,18 @@
     "internal/adapters/projectassistantacp/trace.go": "44a1caf9239cb9b02009cc47879b974dd87132d80734bebf42ab09ebcd4bb137",
     "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
-    "internal/adapters/projectassistanthost/provider.go": "f7ef1a0a04939b182aba463d637de65e8dba686e798dc40b993738ddf22241dd",
+    "internal/adapters/projectassistanthost/provider.go": "5049870c3b32904c461c4dc04d8e506573a8a9b0a66a75e6690ba1c6a6c0a3a1",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/collaboration.go": "a0eea746b9f472c4ed122700c58da9500404537ded316da09b9b75987522c7a4",
     "internal/adapters/projectassistantstore/fallback.go": "2a4649823fe00c9a3abfcf54ec34d1baa1a379899d9ea834a39a6460436b2550",
     "internal/adapters/projectassistantstore/groups.go": "5bf68258471963452669ab29edd951974204129b6b875dcda6b26b29ccd1b48e",
     "internal/adapters/projectassistantstore/inputs.go": "b9f68823dcbd69ca9d5f2ad1e7d19e07da813299e62d4ca02b2f15c3cdf8319b",
-    "internal/adapters/projectassistantstore/memory.go": "a3183682d04e07f5299602ac8f5a40780749c18e4f1966fb6292868856762505",
+    "internal/adapters/projectassistantstore/memory.go": "658fb5aa25e03d43e82a0b0f04a9c6a6d4660e0b924a535cec7a2009e3f0d879",
+    "internal/adapters/projectassistantstore/memory_index.go": "6d0490b8da69d520f9c3248d8f302e2d9aee38d6f26efb664cff76e8772e4b53",
+    "internal/adapters/projectassistantstore/memory_view.go": "4898a2eb71ac3e88ce9c63c3362cbed7be04ae132a3563cc95d4af29422a5865",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
+    "internal/adapters/projectassistantstore/schema.go": "7226f2721734fa7280574022b757437a98521c639121c6f2c6c9291a5b975fc8",
     "internal/adapters/projectassistantstore/team.go": "58dbafc531786727a2c365344f5dc840223875ad45aeb5df8f3bfb79ca94f99f",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
@@ -4750,7 +4773,8 @@
     "internal/app/projectassistant/inputs.go": "745f888b5c7279a0fbb8cea53e76ba4b60a3e50140819f821552cbf01d47fdb8",
     "internal/app/projectassistant/lifecycle.go": "4665edd5b683c5cdcee7a88a2ffeafc3c6f753acbab0b2db9a74a112306b8ee6",
     "internal/app/projectassistant/login_profiles.go": "b9a49710ccc1396c49b0e82bff8154de64012d57f7acd936161ed626615ef693",
-    "internal/app/projectassistant/memory_view.go": "6b1790845689fbcf594c640660862077334e806c859d4880c11323ce192d800b",
+    "internal/app/projectassistant/memory_tools.go": "3f5dc1b1a2e4da1f826fc3ac9a5bdc327a324159741dbe9ef9f3cfcf40f39612",
+    "internal/app/projectassistant/memory_view.go": "2a2922219c6a0437ae5bf5e072afad037eda487922d590a2de7152ee8a7bb881",
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
     "internal/app/projectassistant/provider_failure.go": "af218c40dbd45a8a089c8a010e2a965424ab50d0756921b666d932a4b91cae81",
     "internal/app/projectassistant/routines.go": "c4c264e07f013c24a776a9f46953bc13389fb34fab81a42e3cfa6adbbd07e2bd",
@@ -4771,6 +4795,7 @@
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/projectassistant/fallback.go": "b8c9ed170a6b24c01c7943d6697310c3abe4c6c3df0c2b1937220c80415f0ee6",
     "internal/domain/projectassistant/inputs.go": "f7b8825cf13e1a6573dcf33b985f7010b5771a1421f611efc184f823d5118f37",
+    "internal/domain/projectassistant/memory_notes.go": "728ee7db6202d38df7ec9d4cf2c0c7b4ef595e04d00140e9746eefbe4ac70321",
     "internal/domain/projectassistant/routine_events.go": "e21f014f2d4723215a6946034b363c8d8ffd1336303c424721a21476281adb81",
     "internal/domain/projectassistant/routine_progress.go": "b1db1a4bde2710b01edf53eedf6d3fafac63fc7bef2e0343a1c1456075575cc1",
     "internal/domain/projectassistant/routine_schedule.go": "1b81b3183f4ae673d767e6c72a4ed9d6c66548a74f7d070391e7e6cf473f31b5",
@@ -4833,7 +4858,7 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/cloud/project-assistants.ts": "73223176d9dc70f13b7538c1fd1a7c15e69edad9067a28013a7d5483f0742128",
+    "web/console/src/cloud/project-assistants.ts": "bd1b6662ef715286e55b31794002b780e8280711391465a8edca2b1e72b51b6f",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "2229332b126219522f267ecb5703da0374f328e1d64fb0dcfaba4e54b3fdf245",
@@ -4881,7 +4906,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "0d1da1e4cde9a0fb5b7ccebf9d0517ddcd222b067320347bc8b05bbaf04020d6",
-    "zh-Hant": "36a03aeb5a2cd1a183d894318cb16443c8d260cfb253b52f5fbeddaf60055052"
+    "en": "c0588b9b595b11b72b5efcd12b0b79f1be6ab9d127df5a09239e656ef394416f",
+    "zh-Hant": "5f86eebd2225470ceb469f166719c5dd33b1333f31a1d68696594c773fef8ef2"
   }
 }

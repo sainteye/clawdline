@@ -49,6 +49,11 @@ type NativeTools interface {
 	EditMemory(context.Context, string, MemoryEdit) error
 }
 
+// MemoryDetailTools is additive; only the current actor can resolve an entry ID.
+type MemoryDetailTools interface {
+	MemoryDetail(context.Context, string) (pa.MemoryDetail, error)
+}
+
 // CollaborationTools is optional and entirely bound by the current Host turn.
 type CollaborationTools interface {
 	ListBots(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)

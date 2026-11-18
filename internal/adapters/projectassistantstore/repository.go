@@ -753,6 +753,9 @@ func validateAggregate(a aggregate) error {
 		return err
 	}
 	for id, entry := range a.Entries {
+		if err := pa.ValidateMemoryContent(entry); err != nil {
+			return err
+		}
 		if id != entry.ID || entry.Key != b.Key || entry.Project != b.Project || entry.Revision < 1 || entry.Revision > a.Memory.Revision {
 			return failure(pa.ScopeDenied, "memory_entry")
 		}

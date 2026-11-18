@@ -1990,6 +1990,18 @@
         "updated_at": {
           "type": "string",
           "description": "Source-owned last write time. Absent for legacy entries whose time was never recorded."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Absent for legacy short facts; note identifies a named topic note."
+        },
+        "title": {
+          "type": "string",
+          "description": "The note name. The full body is read only by entry ID."
+        },
+        "summary": {
+          "type": "string",
+          "description": "A note summary; previews use the existing memory-preview budget."
         }
       },
       "required": [
@@ -3708,6 +3720,14 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantMemorySource"
           }
+        },
+        "kind": {
+          "type": "string",
+          "description": "Absent for legacy short facts; note identifies a named topic note."
+        },
+        "title": {
+          "type": "string",
+          "description": "The note name. The full body is read only by entry ID."
         }
       },
       "required": [
@@ -3799,6 +3819,18 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Absent for legacy short facts; note identifies a named topic note."
+        },
+        "title": {
+          "type": "string",
+          "description": "The note name. The full body is read only by entry ID."
+        },
+        "summary": {
+          "type": "string",
+          "description": "A note summary; previews use the existing memory-preview budget."
         }
       },
       "required": [

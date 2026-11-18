@@ -316,3 +316,37 @@ func TestOwnedMCPMemoryToolsReadSearchAndEdit(t *testing.T) {
 		t.Fatalf("edits=%+v", edits)
 	}
 }
+
+type topicDetailTestTools struct {
+	mcpTestTools
+	calls *[]string
+}
+
+func (t topicDetailTestTools) MemoryDetail(_ context.Context, id string) (pa.MemoryDetail, error) {
+	*t.calls = append(*t.calls, id)
+	if id != "topic" {
+		return pa.MemoryDetail{}, refusal(pa.NotFound, "memory_entry")
+	}
+	return pa.MemoryDetail{Layer: "bot", ID: id, Kind: pa.TopicMemory, Title: "Release checklist", Summary: "Readiness", Text: "BODY-ONLY-TOPIC-DETAIL", Revision: "2"}, nil
+}
+func TestOwnedMCPTopicMemoryIndexAndExplicitBodyRead(t *testing.T) {
+	calls := []string{}
+	f := newMCPFixture(t, topicDetailTestTools{mcpTestTools: mcpTestTools{memory: []pa.MemoryEntry{{ID: "topic", Kind: pa.TopicMemory, Title: "Release checklist", Text: "Readiness"}}}, calls: &calls})
+	f.initialize(t)
+	_, body := f.post(t, mcpCall("read_memory", nil), nil)
+	if bytes.Contains(body, []byte("BODY-ONLY")) || !bytes.Contains(body, []byte("Release checklist")) || len(calls) != 0 {
+		t.Fatal("index read fetched or exposed a body", string(body), calls)
+	}
+	_, body = f.post(t, mcpCall("read_memory", map[string]any{"entry_id": "topic"}), nil)
+	if !bytes.Contains(body, []byte("BODY-ONLY-TOPIC-DETAIL")) || bytes.Contains(body, []byte(`"isError":true`)) {
+		t.Fatal("explicit note read failed", string(body))
+	}
+	_, body = f.post(t, mcpCall("read_memory", map[string]any{"entry_id": "foreign"}), nil)
+	if !bytes.Contains(body, []byte(string(pa.NotFound))) {
+		t.Fatal("unknown ID appeared readable", string(body))
+	}
+	_, body = f.post(t, mcpCall("read_memory", map[string]any{"entry_id": "topic", "bot_id": "foreign"}), nil)
+	if !bytes.Contains(body, []byte(`"isError":true`)) || len(calls) != 2 {
+		t.Fatal("client-selected owner reached note reader", string(body), calls)
+	}
+}

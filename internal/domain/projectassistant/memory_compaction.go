@@ -55,7 +55,7 @@ func CompactMemoryEntries(entries []MemoryEntry, groupThreshold int) (CompactedM
 	// Filter out forgotten entries
 	active := make([]MemoryEntry, 0, len(entries))
 	for _, e := range entries {
-		if !e.Forgotten && strings.TrimSpace(e.Text) != "" {
+		if !e.Forgotten && e.Kind != TopicMemory && strings.TrimSpace(e.Text) != "" {
 			active = append(active, e)
 		}
 	}

@@ -33,7 +33,8 @@ import (
 // Local Bot consent synchronization arrives at API 86 without a schema change.
 // Project Session message boards arrive at level 87.
 // Exact group quotes, room activity and optional list previews arrive at API 88.
-const APILevel = 88
+// Named topic memory and on-demand native memory detail arrive at API 89.
+const APILevel = 89
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

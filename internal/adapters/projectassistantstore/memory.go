@@ -2,6 +2,8 @@ package projectassistantstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"sort"
@@ -30,11 +32,13 @@ func snapshot(a aggregate) pa.ContextSnapshot {
 		if e.Forgotten {
 			continue
 		}
-		if pa.ValidateMemoryWrite(pa.MemoryEntry{ID: e.ID, Key: e.Key, Project: e.Project, Text: e.Text, Sources: e.Sources, Revision: a.Memory.Revision}, a.Memory, a.Memory.Revision) != nil {
+		current := e
+		current.Revision = a.Memory.Revision
+		if pa.ValidateMemoryWrite(current, a.Memory, a.Memory.Revision) != nil {
 			out.ProvenanceComplete = false
 			continue
 		}
-		texts = append(texts, e.Text)
+		texts = append(texts, pa.MemoryContextText(e))
 		for _, source := range e.Sources {
 			if old, ok := seen[source.ID]; ok && old != source {
 				out.ProvenanceComplete = false
@@ -143,6 +147,9 @@ func (s *Store) Forget(ctx context.Context, in app.ForgetRequest) (pa.MemoryRevi
 					e.Forgotten = true
 				}
 			}
+			if e.Forgotten && e.Kind == pa.TopicMemory {
+				e.Text, e.Title, e.Summary = "", "", ""
+			}
 			a.Entries[id] = e
 		}
 		return nil
@@ -204,14 +211,21 @@ func (s *Store) changeMemory(ctx context.Context, cmd pa.Command, change func(*a
 		return old, err
 	}
 	f := pa.Fence{Key: a.Bot.Key, Project: a.Bot.Project, ConversationID: a.Conversation.ID, BindingID: a.Conversation.BindingID, Generation: a.Conversation.Generation}
-	seq, err := appendEvent(ctx, tx, a, pa.Event{Version: pa.ContractVersion, ID: string(cmd.Operation) + "/" + cmd.IdempotencyKey, Fence: f, Kind: pa.MemoryChanged, Memory: &a.Memory, At: time.Now().UTC()})
+	identity, _ := json.Marshal(struct {
+		Key       pa.BotKey
+		Operation pa.Operation
+		Intent    string
+	}{cmd.Key, cmd.Operation, cmd.IdempotencyKey})
+	sum := sha256.Sum256(identity)
+	eventID := string(cmd.Operation) + "/" + hex.EncodeToString(sum[:])
+	seq, err := appendEvent(ctx, tx, a, pa.Event{Version: pa.ContractVersion, ID: eventID, Fence: f, Kind: pa.MemoryChanged, Memory: &a.Memory, At: time.Now().UTC()})
 	if err != nil {
 		return old, err
 	}
 	if err = persist(ctx, tx, a, expected); err != nil {
 		return old, err
 	}
-	r := pa.Receipt{Command: cmd, ID: string(cmd.Operation) + "/" + cmd.IdempotencyKey, State: pa.EffectDelivered, ResourceID: a.Bot.Key.BotID, EventSeq: seq}
+	r := pa.Receipt{Command: cmd, ID: eventID, State: pa.EffectDelivered, ResourceID: a.Bot.Key.BotID, EventSeq: seq}
 	if err = writeReceipt(ctx, tx, r); err != nil {
 		return old, err
 	}

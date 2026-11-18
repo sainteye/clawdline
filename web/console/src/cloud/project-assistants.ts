@@ -26,6 +26,7 @@ export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
 export const PROJECT_ASSISTANTS_LOGIN_API_LEVEL = 81
+export const PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL = 89
 export const PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL = 79
 export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
@@ -438,6 +439,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canLoginProfiles(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL);return true}catch{return false}}
   loginProfiles(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantLoginProfilesResponse>(endpoint(key,"/login-profiles")+query({machine_id:this.machineID,conversation_id:conversation,agent}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
   loginProfileAction(r:W.ProjectAssistantLoginProfileAction,signal:AbortSignal){return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-profile"),signal,r,"POST",true,r.kind==="api_key"||r.action==="prepare-key"?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
+  canTopicMemory(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL);return true}catch{return false}}
   canMemorySettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL);return true}catch{return false}}
   async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}){
     this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
@@ -446,7 +448,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model,...(loginProfile!==undefined?{login_profile:loginProfile}:{})}),signal,undefined,"GET",true,loginProfile!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
   forget(r: W.ProjectAssistantForgetRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory/forget"),s,r,"POST") }
-  saveMemory(r: W.ProjectAssistantMemoryWriteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory"),s,r,"POST") }
+  saveMemory(r: W.ProjectAssistantMemoryWriteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory"),s,r,"POST",true,r.entry?.kind!==undefined||r.entry?.title!==undefined||r.entry?.summary!==undefined?PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
   export(r: W.ProjectAssistantBotKey,s: AbortSignal) { this.key(r); return this.request<W.ProjectAssistantExport>(endpoint(r,"/export")+query({machine_id:this.machineID}),s) }
   /** Board remains its existing owner; this only reads its full item on the captured source. */
   async workItem(work: W.ProjectAssistantWorkLink,s: AbortSignal): Promise<WorkV2Item> {

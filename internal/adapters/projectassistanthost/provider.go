@@ -72,6 +72,7 @@ type NativeWork struct {
 	dispatch      func(context.Context, string, string, []string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
+	memoryDetail  func(context.Context, string) (pa.MemoryDetail, error)
 	edit          func(context.Context, string, app.MemoryEdit) error
 	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
 	artifacts     func(context.Context) ([]app.ArtifactInfo, error)
@@ -130,6 +131,12 @@ func (w NativeWork) Memory(ctx context.Context) ([]pa.MemoryEntry, error) {
 		return nil, failure(pa.Disabled, "native_memory")
 	}
 	return w.memory(ctx)
+}
+func (w NativeWork) MemoryDetail(ctx context.Context, id string) (pa.MemoryDetail, error) {
+	if w.memoryDetail == nil {
+		return pa.MemoryDetail{}, failure(pa.Disabled, "native_memory")
+	}
+	return w.memoryDetail(ctx, id)
 }
 func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEdit) error {
 	if w.edit == nil {
@@ -727,6 +734,17 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return nil, e
 		}
 		return r.MemoryEntries(ctx, q.Bot.Key)
+	}
+	tools.memoryDetail = func(ctx context.Context, id string) (pa.MemoryDetail, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.MemoryDetail{}, e
+		}
+		defer cancel()
+		if e = journal(ctx, "memory-detail"); e != nil {
+			return pa.MemoryDetail{}, e
+		}
+		return r.MemoryDetail(ctx, q.Bot.Key, id)
 	}
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
 		if pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
