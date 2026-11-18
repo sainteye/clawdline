@@ -439,3 +439,30 @@ both snapshots and bilingual explanations are registered; a fresh uninstalled
 source has no allocation, while installed Host server occupancy remains
 explicitly unavailable until composition supplies it. No outward API level,
 Bot format, maintenance writer or deployed capability changes here.
+
+### Atomic source-local server catalog
+
+The SQLite adapter now supplies the registry's definition catalog and a bound
+attempt journal. Definition creation alone cannot start work. Accepted intent,
+the definition's current-attempt pointer and the source-wide process budget
+are checked in one transaction. A restart compares the previous terminal
+receipt; a historical journal cannot move the current pointer back to an old
+attempt. Updates keep the original ledger's complete identity/revision CAS.
+
+Catalog installation is explicit and has a separate version-1 marker. Unknown
+or partial shapes, malformed command data, dangling pointers and unowned live
+ledger receipts are refused without reconstruction or downstamping. A removed
+clean definition frees its slot and clears executable command text, while an
+ID-only tombstone prevents identity reuse and past attempt receipts remain.
+Bot portable export data, its schema marker and SQLite user_version are not
+changed by this source-local catalog.
+
+Temporary SQLite tests cover transaction rollback, competing admissions,
+independent connections contending for the last process slot, database reopen,
+lost commit acknowledgement and an actual registry start/stop/restart cycle
+with synthetic processes. Those observations qualify the persistence boundary;
+they do not establish an installed server, real command approval, source
+environment isolation, kernel process-generation recovery or a production
+Host/tool/API/UI entry point. The preceding registry-unit limitations describe
+that earlier unit; this catalog closes its storage port only. Host maintenance
+writer qualification remains separate and closed.

@@ -197,7 +197,7 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 		r.mu.Unlock()
 	}
 	i := Identity{Key: spec.Key, Project: spec.Project, ServerID: e.saved.ID, AttemptID: attemptID, Fingerprint: fingerprint}
-	journal, err := r.o.Catalog.Journal(ctx, e.saved, i)
+	journal, err := r.o.Catalog.Journal(ctx, r.view(e), i)
 	if err != nil {
 		return r.view(e), err
 	}

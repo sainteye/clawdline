@@ -307,7 +307,22 @@ func TestLedgerDoesNotChangeTheRealBotArchiveOrSchema(t *testing.T) {
 	s := ready(t, db)
 	i := identity()
 	i.Key, i.Project = before.Bot.Key, before.Bot.Project
-	if err := s.Save(ctx, 0, servers.Record{Identity: i, Version: 1, State: servers.Accepted}); err != nil {
+	r := servers.Record{Identity: i, Version: 1, State: servers.Accepted}
+	if err := s.Save(ctx, 0, r); err != nil {
+		t.Fatal(err)
+	}
+	r.Version, r.State = 2, servers.Stopped
+	if err := s.Save(ctx, 1, r); err != nil {
+		t.Fatal(err)
+	}
+	c := readyCatalog(t, db)
+	saved := savedDefinition("catalog-archive-boundary")
+	saved.Spec.Key, saved.Spec.Project = before.Bot.Key, before.Bot.Project
+	if err := c.Create(ctx, saved); err != nil {
+		t.Fatal(err)
+	}
+	j, intent := newIntent(t, c, saved, "first")
+	if err := j.Save(ctx, 0, intent); err != nil {
 		t.Fatal(err)
 	}
 	after, err := bots.Export(ctx, before.Bot.Key)

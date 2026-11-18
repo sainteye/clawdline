@@ -145,8 +145,19 @@ func key(i servers.Identity) string {
 }
 
 func load(ctx context.Context, tx *sql.Tx, i servers.Identity) (servers.Record, error) {
+	r, err := recordAt(ctx, tx, key(i))
+	if err != nil || r.Version == 0 {
+		return r, err
+	}
+	if r.Identity != i {
+		return servers.Record{}, refusal(pa.ScopeDenied, "server_attempt")
+	}
+	return r, nil
+}
+
+func recordAt(ctx context.Context, tx *sql.Tx, attemptKey string) (servers.Record, error) {
 	var r servers.Record
-	err := tx.QueryRowContext(ctx, `SELECT machine,bot,project,canonical,kind,server,attempt,fingerprint,revision,state,failure FROM bot_devserver_attempts WHERE attempt_key=?`, key(i)).Scan(
+	err := tx.QueryRowContext(ctx, `SELECT machine,bot,project,canonical,kind,server,attempt,fingerprint,revision,state,failure FROM bot_devserver_attempts WHERE attempt_key=?`, attemptKey).Scan(
 		&r.Identity.Key.MachineID, &r.Identity.Key.BotID, &r.Identity.Project.ProjectID, &r.Identity.Project.CanonicalID, &r.Identity.Project.Kind,
 		&r.Identity.ServerID, &r.Identity.AttemptID, &r.Identity.Fingerprint, &r.Version, &r.State, &r.Failure)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -159,8 +170,8 @@ func load(ctx context.Context, tx *sql.Tx, i servers.Identity) (servers.Record, 
 	if err = r.Validate(); err != nil {
 		return servers.Record{}, err
 	}
-	if r.Identity != i {
-		return servers.Record{}, refusal(pa.ScopeDenied, "server_attempt")
+	if key(r.Identity) != attemptKey {
+		return servers.Record{}, refusal(pa.Invalid, "server_attempt_key")
 	}
 	return r, nil
 }
@@ -200,11 +211,8 @@ func transition(from, to servers.State) bool {
 // Save is a CAS, deliberately not an idempotent insert: two different owners
 // cannot both win the same accepted intent even when their payloads match.
 func (s *Ledger) Save(ctx context.Context, expected int64, r servers.Record) error {
-	if err := r.Validate(); err != nil {
+	if err := validateSave(expected, r); err != nil {
 		return err
-	}
-	if expected < 0 || r.Version <= expected || r.Version-expected != 1 {
-		return refusal(pa.StaleVersion, "server_revision")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -216,6 +224,25 @@ func (s *Ledger) Save(ctx context.Context, expected int64, r servers.Record) err
 	} else if !present {
 		return refusal(pa.Disabled, "server_ledger_absent")
 	}
+	if err := saveAttempt(ctx, tx, expected, r); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func validateSave(expected int64, r servers.Record) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if expected < 0 || r.Version <= expected || r.Version-expected != 1 {
+		return refusal(pa.StaleVersion, "server_revision")
+	}
+	return nil
+}
+
+// The caller has checked both schema and receipt and owns the transaction.
+// Catalog admission uses this same CAS without an intermediate commit.
+func saveAttempt(ctx context.Context, tx *sql.Tx, expected int64, r servers.Record) error {
 	prior, err := load(ctx, tx, r.Identity)
 	if err != nil {
 		return err
@@ -242,5 +269,5 @@ func (s *Ledger) Save(ctx context.Context, expected int64, r servers.Record) err
 	} else if n != 1 {
 		return refusal(pa.StaleVersion, "server_revision")
 	}
-	return tx.Commit()
+	return nil
 }
