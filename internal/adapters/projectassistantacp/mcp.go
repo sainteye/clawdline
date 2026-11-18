@@ -633,6 +633,13 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			}
 			return map[string]any{"entry": detail}, nil
 		}
+		if indexed, ok := s.tools.(app.MemoryIndexTools); ok {
+			index, err := indexed.MemoryIndex(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"revision": index.Revision, "entries": mcpMemoryLines(index.Entries)}, nil
+		}
 		entries, err := s.tools.Memory(ctx)
 		if err != nil {
 			return nil, err
@@ -653,16 +660,20 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		return map[string]any{"entries": mcpMemoryLines(found), "more": more}, nil
 	case "edit_memory":
 		var q struct {
-			ID     string `json:"idempotency_key"`
-			Append string `json:"append"`
-			Old    string `json:"old"`
-			New    string `json:"new"`
-			Delete bool   `json:"delete"`
+			ID     string              `json:"idempotency_key"`
+			Append string              `json:"append"`
+			Old    string              `json:"old"`
+			New    string              `json:"new"`
+			Delete bool                `json:"delete"`
+			Note   *app.MemoryNoteEdit `json:"note"`
 		}
-		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Append == "" && q.Old == "" {
+		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Append == "" && q.Old == "" && q.Note == nil {
 			return nil, refusal(pa.Invalid, "mcp_memory")
 		}
-		if err := s.tools.EditMemory(ctx, q.ID, app.MemoryEdit{Append: q.Append, Old: q.Old, New: q.New, Delete: q.Delete}); err != nil {
+		if q.Note != nil && (q.Append != "" || q.Old != "" || q.New != "" || q.Delete || q.Note.ExpectedRevision < 1) {
+			return nil, refusal(pa.Invalid, "mcp_memory")
+		}
+		if err := s.tools.EditMemory(ctx, q.ID, app.MemoryEdit{Append: q.Append, Old: q.Old, New: q.New, Delete: q.Delete, Note: q.Note}); err != nil {
 			return nil, err
 		}
 		return map[string]string{"state": "saved", "idempotency_key": q.ID}, nil
@@ -723,8 +734,8 @@ func mcpTools() []any {
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
 		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),
-		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. This tool does not edit named topic notes. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
-			map[string]any{"idempotency_key": text(), "append": text(), "old": text(), "new": map[string]any{"type": "string"}, "delete": map[string]any{"type": "boolean"}}, "idempotency_key"),
+		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. For named topic notes use note with title, summary, body and expected_revision from read_memory; entry_id replaces an existing note. note with entry_id, expected_revision and forget=true forgets it. Do not combine note and short-fact fields. After success read_memory returns the new index and revision. Revision conflicts require rereading; unknown responses require the exact same key and payload. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
+			map[string]any{"idempotency_key": text(), "append": text(), "old": text(), "new": map[string]any{"type": "string"}, "delete": map[string]any{"type": "boolean"}, "note": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"entry_id": text(), "title": text(), "summary": text(), "body": text(), "expected_revision": map[string]any{"type": "integer", "minimum": 1}, "forget": map[string]any{"type": "boolean"}}, "required": []string{"expected_revision"}}}, "idempotency_key"),
 	}
 }
 

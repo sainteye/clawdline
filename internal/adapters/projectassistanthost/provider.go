@@ -72,6 +72,7 @@ type NativeWork struct {
 	dispatch      func(context.Context, string, string, []string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
+	memoryIndex   func(context.Context) (app.MemoryIndex, error)
 	memoryDetail  func(context.Context, string) (pa.MemoryDetail, error)
 	edit          func(context.Context, string, app.MemoryEdit) error
 	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
@@ -131,6 +132,12 @@ func (w NativeWork) Memory(ctx context.Context) ([]pa.MemoryEntry, error) {
 		return nil, failure(pa.Disabled, "native_memory")
 	}
 	return w.memory(ctx)
+}
+func (w NativeWork) MemoryIndex(ctx context.Context) (app.MemoryIndex, error) {
+	if w.memoryIndex == nil {
+		return app.MemoryIndex{}, failure(pa.Disabled, "native_memory")
+	}
+	return w.memoryIndex(ctx)
 }
 func (w NativeWork) MemoryDetail(ctx context.Context, id string) (pa.MemoryDetail, error) {
 	if w.memoryDetail == nil {
@@ -724,16 +731,20 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return out, nil
 	}
-	tools.memory = func(ctx context.Context) ([]pa.MemoryEntry, error) {
+	tools.memoryIndex = func(ctx context.Context) (app.MemoryIndex, error) {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
-			return nil, e
+			return app.MemoryIndex{}, e
 		}
 		defer cancel()
 		if e = journal(ctx, "memory"); e != nil {
-			return nil, e
+			return app.MemoryIndex{}, e
 		}
-		return r.MemoryEntries(ctx, q.Bot.Key)
+		return r.MemoryIndex(ctx, q.Bot.Key)
+	}
+	tools.memory = func(ctx context.Context) ([]pa.MemoryEntry, error) {
+		index, e := tools.memoryIndex(ctx)
+		return index.Entries, e
 	}
 	tools.memoryDetail = func(ctx context.Context, id string) (pa.MemoryDetail, error) {
 		ctx, cancel, e := bound(ctx)
