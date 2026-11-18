@@ -53,8 +53,10 @@ else{
    await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar g path:last-child')?.getAttribute('transform')?.includes('scale(1 0.15)'),null,{timeout:5500,polling:20})
    await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar g path:last-child')?.getAttribute('transform')?.includes('scale(1 1)'),null,{timeout:1000,polling:20})
    const refresh=async()=>{
-    await page.getByRole('button',{name:language==='en'?'More actions':'更多動作',exact:true}).click()
-    await page.getByRole('menuitem',{name:language==='en'?'Check for updates':'檢查新訊息',exact:true}).click()
+    await page.locator('.pa-chat-identity').click()
+    const info=page.locator('.pa-info-panel')
+    await info.getByRole('button',{name:language==='en'?'Check for updates':'檢查新訊息',exact:true}).click()
+    await info.locator('.pa-info-close').click()
    }
    await page.evaluate(()=>window.fixtureMotion.phase('needsInput'));await refresh()
    await page.waitForFunction(()=>document.querySelector('.pa-chat-header .pa-avatar')?.getAttribute('data-mood')==='needsInput')

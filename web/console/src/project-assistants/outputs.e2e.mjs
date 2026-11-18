@@ -71,9 +71,10 @@ try{
     await inner.getByRole("button",{name:"Try interaction",exact:true}).waitFor()
     await dialog.getByRole("button",{name:close,exact:true}).click()
     const before=reads;await page.waitForTimeout(100);assert.equal(reads,before,"closed viewer performs no further reads")
-    await page.getByRole("button",{name:zh?"更多動作":"More actions",exact:true}).click()
-    await page.getByRole("menuitem",{name:zh?"檔案庫":"Library",exact:true}).click()
-    const library=page.getByRole("dialog",{name:zh?"檔案庫":"Library",exact:true});await library.locator(".pa-output-card").first().waitFor()
+    await page.locator(".pa-chat-identity").click()
+    const libraryName=zh?"檔案庫":"Library"
+    await page.getByRole("tab",{name:libraryName,exact:true}).click()
+    const library=page.getByRole("tabpanel",{name:libraryName,exact:true});await library.locator(".pa-output-card").first().waitFor()
     assert.equal(await library.locator(".pa-output-card").count(),2,"library deduplicates artifact revisions")
     await page.screenshot({path:path.join(artifacts,language+"-library.png"),fullPage:true})
     assert.deepEqual(external,[],"sandbox blocks script network and popups before requests")

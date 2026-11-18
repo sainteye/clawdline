@@ -70,7 +70,7 @@ try {
   {
     const {en:copy}=await import("../src/project-assistants/words.ts")
     const opened=await browser("open",origin+"/?lang=en&journal=broken");tab=opened.tab
-    await waitText("Synthetic Bot");await browser("click",copy.moreActions);await browser("click",copy.routines)
+    await waitText("Synthetic Bot");await browser("click","Synthetic Bot · "+copy.botInformation);await browser("click",copy.routines)
     await waitText(copy.routineJournalUnreadable??copy.unknown)
     const before=requests.filter(r=>r.method!=="GET").length
     try{await browser("click",copy.routineNew)}catch(error){operations.push({op:"blocked-new-routine",detail:String(error)})}
@@ -78,23 +78,23 @@ try {
     assert.ok(!read.text?.includes(copy.routineInstruction),"Unreadable original command must prevent a replacement form")
     assert.equal(requests.filter(r=>r.method!=="GET").length,before,"Unreadable journal must never send a new operation")
     await browser("screenshot","--out",path.join(artifacts,"unreadable-command-held.jpg"))
-    await browser("click",copy.close);await browser("click",copy.moreActions);await browser("click",copy.routines)
+    await browser("click",copy.closeInformation);await browser("click","Synthetic Bot · "+copy.botInformation)
     await waitText(copy.routineJournalUnreadable??copy.unknown)
     assert.equal(requests.filter(r=>r.method!=="GET").length,before,"Panel remount must preserve the held state")
     await browser("close");tab=undefined
   }
   for(const language of ["en","zh-Hant"]) {
     const zh=language!=="en",{en,zhHant}=await import("../src/project-assistants/words.ts"),copy=zh?zhHant:en
-    const w={more:copy.moreActions,routines:copy.routines,create:copy.routineNew,name:copy.name,instructions:copy.routineInstruction,save:copy.save,edit:copy.routineEdit,test:copy.routineTest,refresh:copy.routineRefresh,pause:copy.routinePause,enable:copy.routineEnable,paused:copy.routinePaused,remove:copy.routineDelete,confirm:copy.routineConfirmDelete,empty:copy.routinesEmpty}
+    const w={identity:"Synthetic Bot · "+copy.botInformation,routines:copy.routines,create:copy.routineNew,name:copy.name,instructions:copy.routineInstruction,save:copy.save,edit:copy.routineEdit,test:copy.routineTest,refresh:copy.routineRefresh,pause:copy.routinePause,enable:copy.routineEnable,paused:copy.routinePaused,remove:copy.routineDelete,confirm:copy.routineConfirmDelete,empty:copy.routinesEmpty}
 
     const opened=await browser("open",origin+"/?lang="+language);tab=opened.tab
     await browser("viewport",zh?"mobile":"desktop")
-    await waitText("Synthetic Bot");await browser("click",w.more);await browser("click",w.routines);await waitText(w.empty)
+    await waitText("Synthetic Bot");await browser("click",w.identity);await browser("click",w.routines);await waitText(w.empty)
     await browser("click",w.create);await browser("click",w.name);await browser("type","Browser interval "+language);await browser("click",w.instructions);await browser("type","Synthetic browser routine task "+language);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-editor.jpg`));await browser("click",w.save)
     if(!zh) {
       await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Unknown outcome never automatically sends a replacement")
-      const beforeReload=pageLoads;await browser("viewport","mobile");await waitText("Synthetic Bot");await browser("viewport","desktop");await waitText("Synthetic Bot");assert.ok(pageLoads>=beforeReload+2,"Actual origin reloads were served");await browser("click",w.more);await browser("click",w.routines);await waitText(copy.routineHeld)
+      const beforeReload=pageLoads;await browser("viewport","mobile");await waitText("Synthetic Bot");await browser("viewport","desktop");await waitText("Synthetic Bot");assert.ok(pageLoads>=beforeReload+2,"Actual origin reloads were served");await browser("click",w.identity);await browser("click",w.routines);await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Reload preserves the command without sending it")
       await browser("screenshot","--out",path.join(artifacts,"en-routine-held-after-reload.jpg"));await browser("click",copy.routineReplay)
     }

@@ -7,8 +7,8 @@ import type { Words } from "./words"
 import "./bot-template.css"
 
 /** Read and copy only this mounted conversation's currently authorized settings. */
-export function BotTemplate({source,current,scope,available,w,onClose}: {
-  source:SourceClient;current:()=>readonly SourceClient[];scope:ReadScope;available:()=>boolean;w:Words;onClose:()=>void;
+export function BotTemplate({opener,source,current,scope,available,w,onClose}: {
+  opener:HTMLButtonElement;source:SourceClient;current:()=>readonly SourceClient[];scope:ReadScope;available:()=>boolean;w:Words;onClose:()=>void;
 }) {
   const [preview,setPreview]=useState<string|null>(null),[state,setState]=useState("loading")
   const dialog=useRef<HTMLDialogElement>(null),control=useRef<AbortController|null>(null),busy=useRef(false)
@@ -18,7 +18,7 @@ export function BotTemplate({source,current,scope,available,w,onClose}: {
   const close=()=>{if(history.state?.paTemplate===marker)history.back();else closeRef.current()}
   useEffect(()=>{
     setPreview(null);setState("loading")
-    const node=dialog.current!,opener=node.closest(".pa-chat")?.querySelector<HTMLElement>('.pa-chat-header button[aria-haspopup="menu"]')
+    const node=dialog.current!
     const before=history.state
     const controller=new AbortController();control.current=controller
     // StrictMode's discarded effect must not leave an extra browser Back entry.
@@ -34,9 +34,12 @@ export function BotTemplate({source,current,scope,available,w,onClose}: {
     return()=>{
       controller.abort();node.close();window.removeEventListener("popstate",back)
       if(history.state?.paTemplate===marker)history.replaceState(before,"")
-      if(opener?.isConnected)opener.focus({preventScroll:true})
+      // Browser Back restores its own focus after the popstate listener returns.
+      requestAnimationFrame(()=>{
+        if(opener.isConnected&&!document.querySelector("dialog[open]"))opener.focus({preventScroll:true})
+      })
     }
-  },[source,current,scope,marker])
+  },[opener,source,current,scope,marker])
   const copy=async()=>{
     if(busy.current||preview===null)return
     busy.current=true;setState("copying")

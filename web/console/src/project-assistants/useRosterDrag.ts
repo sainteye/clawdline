@@ -73,7 +73,8 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
       copy.classList.remove("pa-roster-entry","pa-project-heading");copy.classList.add("pa-roster-ghost-row")
       for(const el of copy.querySelectorAll("[data-bot-key],[data-group-key]")){el.removeAttribute("data-bot-key");el.removeAttribute("data-group-key")}
       for(const el of [copy,...copy.querySelectorAll<HTMLElement>("[id],[data-roster-drop-kind]")]){el.removeAttribute("id");el.removeAttribute("data-roster-drop-kind");el.removeAttribute("data-roster-drop-key")}
-      copy.querySelector(".pa-roster-actions")?.remove();ghost.append(copy);ghost.style.width=`${box.width}px`;document.body.append(ghost);g.ghost=ghost
+      for(const el of copy.querySelectorAll(".pa-roster-actions,.pa-roster-read"))el.remove()
+      ghost.append(copy);ghost.style.width=`${box.width}px`;document.body.append(ghost);g.ghost=ghost
       node.dataset.rosterDragging="true";document.documentElement.classList.add("pa-roster-dragging")
       latest.current.start(g.source,g.direct);update();frame=requestAnimationFrame(tick)
     }
@@ -81,7 +82,7 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
       if(gesture){finish(false);return}
       swallow=false
       const handle=element?.closest(".pa-roster-handle"),row=element?.closest<HTMLElement>(rowSelector)
-      if(!row||!node.contains(row)||(!handle&&(!row.matches(".pa-roster-entry")||element?.closest(".pa-roster-actions"))))return
+      if(!row||!node.contains(row)||(!handle&&(!row.matches(".pa-roster-entry")||element?.closest(".pa-roster-actions,.pa-roster-read"))))return
       const source=target(row);if(!source)return
       gesture={id,touch,from:at,at,row,source,lifted:false,ghost:null,grab:{x:0,y:0},direct:!handle}
       if(handle)lift();else timer=setTimeout(lift,RosterHoldMs)

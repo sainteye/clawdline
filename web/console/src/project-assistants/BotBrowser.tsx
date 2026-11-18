@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import {createBrowserHandback} from "./browser-handback"
 import {toast} from "../overlays/toast"
@@ -13,14 +13,16 @@ const BrowserPanel=lazy(()=>import("../session/BrowserPanel").then(module=>({def
 const BrowserChip=lazy(()=>import("../session/BrowserPanel").then(module=>({default:module.BrowserChip})))
 
 /** The Session chip, with reads captured to this Bot's current source and conversation. */
-export function BotBrowserChip({source,current,bot,hidden,onOpen}:{source:SourceClient;current:()=>readonly SourceClient[];bot:W.ProjectAssistantBot;hidden:boolean;onOpen:()=>void}) {
+export function BotBrowserChip({source,current,bot,hidden,paused,onOpen}:{source:SourceClient;current:()=>readonly SourceClient[];bot:W.ProjectAssistantBot;hidden:boolean;paused:boolean;onOpen:(opener:HTMLButtonElement)=>void}) {
   const [owned,setOwned]=useState<{source:SourceClient;conversation:string;tab:number}|null>(null)
+  const chip=useRef<HTMLSpanElement>(null)
+  const suspended=useRef(paused);suspended.current=paused
   useEffect(()=>{
     setOwned(null)
     if(hidden||!botBrowserSupported(source))return
     const controller=new AbortController();let inFlight=false
     const read=async()=>{
-      if(document.hidden||inFlight)return
+      if(document.hidden||suspended.current||inFlight)return
       inFlight=true
       try {
         const status=await authorized(source,current,signal=>source.browser!<BotBrowserStatus>(bot.key,bot.conversation_id,"GET","/v1/browser/status",undefined,signal),controller.signal)
@@ -34,7 +36,10 @@ export function BotBrowserChip({source,current,bot,hidden,onOpen}:{source:Source
     return()=>{controller.abort();window.clearInterval(timer);document.removeEventListener("visibilitychange",read)}
   },[source,current,bot.key.machine_id,bot.key.bot_id,bot.conversation_id,hidden])
   if(hidden||owned?.source!==source||owned?.conversation!==bot.conversation_id||!botBrowserSupported(source))return null
-  return <Suspense fallback={null}><BrowserChip onOpen={onOpen}/></Suspense>
+  return <span ref={chip}><Suspense fallback={null}><BrowserChip onOpen={()=>{
+    const opener=chip.current?.querySelector("button")
+    if(opener)onOpen(opener)
+  }}/></Suspense></span>
 }
 
 /** The panel's authority is the same immutable source as the chat beside it. */
@@ -44,6 +49,7 @@ export function BotBrowser({source,current,bot,writable,reason,onClose,onStale}:
 }) {
   const [stale,setStale]=useState(false),[closing,setClosing]=useState(false),[exitError,setExitError]=useState("")
   const host=useRef<HTMLDivElement>(null)
+  useLayoutEffect(()=>{host.current?.focus({preventScroll:true})},[])
   const stopped=useRef(false)
   const lifetime=useMemo(()=>new AbortController(),[source,current,bot.key.machine_id,bot.key.bot_id,bot.conversation_id])
   const handback=useMemo(()=>createBrowserHandback(<T,>(method:"GET"|"POST",path:string,body?:unknown)=>authorized(source,current,signal=>source.browser!<T>(bot.key,bot.conversation_id,method,path,body,signal),new AbortController().signal)),[source,current,bot.key.machine_id,bot.key.bot_id,bot.conversation_id])
@@ -56,7 +62,6 @@ export function BotBrowser({source,current,bot,writable,reason,onClose,onStale}:
     try{await handback.exit();onClose()}catch(error){setExitError(exitFailure(error));setClosing(false)}
   }
   const reload=useRef(onStale);reload.current=onStale
-  const opener=useRef(document.activeElement instanceof HTMLElement?document.activeElement:null)
   useEffect(()=>()=>{
     // StrictMode replays effects while this same panel is still connected.
     queueMicrotask(()=>{
@@ -65,10 +70,6 @@ export function BotBrowser({source,current,bot,writable,reason,onClose,onStale}:
       void handback.exit().catch(error=>toast(exitFailure(error),true)).finally(()=>lifetime.abort())
     })
   },[handback,lifetime])
-  useEffect(()=>{
-    const fallback=host.current?.closest(".pa-chat")?.querySelector<HTMLElement>('.pa-chat-header button[aria-haspopup="menu"]')
-    return()=>{const node=opener.current?.isConnected?opener.current:fallback;if(node?.isConnected)node.focus({preventScroll:true})}
-  },[])
   const call:BrowserCall=useCallback(async<T,>(method:"GET"|"POST",path:string,body?:unknown):Promise<T>=>{
     if(stopped.current||handback.closing())throw Object.assign(new Error("pa_stale_version"),{code:"pa_stale_version"})
     if(!source.browser)throw Object.assign(new Error("pa_unsupported"),{code:"pa_unsupported"})
@@ -95,7 +96,7 @@ export function BotBrowser({source,current,bot,writable,reason,onClose,onStale}:
   const target:BrowserPanelTarget=useMemo(()=>({kind:"bot",id:JSON.stringify([source.machineID,source.authorizationRevision,bot.key.bot_id]),conversation:bot.conversation_id,name:bot.name,
     remote:source.browserRemote??false,writable:writable&&!unavailable&&!stale&&!closing,reason:closing?botBrowserWord("handingBack"):stale?botBrowserWord("stale"):unavailable?refusal({code:unavailable}):reason,
     call,refusal}),[source,bot.key.bot_id,bot.conversation_id,bot.name,writable,unavailable,stale,closing,reason,call,refusal])
-  return <div ref={host} className="pa-browser" role="dialog" aria-modal="true" aria-label={bot.name+" · "+botBrowserWord("open")} onKeyDown={event=>{
+  return <div ref={host} className="pa-browser" role="dialog" aria-modal="true" tabIndex={-1} aria-label={bot.name+" · "+botBrowserWord("open")} onKeyDown={event=>{
     if(event.defaultPrevented)return
     if(event.key==="Escape"){event.preventDefault();event.stopPropagation();void close();return}
     if(event.key!=="Tab")return
