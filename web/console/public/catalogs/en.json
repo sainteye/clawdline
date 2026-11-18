@@ -13234,5 +13234,14 @@
   "projectAssistants.settingsNetwork": "Network access",
   "projectAssistants.settingsRules": "Saved permission rules",
   "projectAssistants.settingsLoginManage": "Manage login profiles",
-  "projectAssistants.settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}"
+  "projectAssistants.settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}",
+  "projectAssistants.memoryPolicyLabel": "Memory scope",
+  "projectAssistants.memoryCreateNote": "New topic note",
+  "projectAssistants.memoryEditNote": "Edit topic note",
+  "projectAssistants.memoryNoteTitle": "Note name",
+  "projectAssistants.memoryNoteSummary": "Index summary",
+  "projectAssistants.memoryNoteBody": "Note body",
+  "projectAssistants.memoryNoteHint": "The name and summary enter this Bot’s memory index. The body is read only when requested.",
+  "projectAssistants.memoryShortFacts": "Remember a short fact",
+  "projectAssistants.memoryRefresh": "Refresh memory"
 }

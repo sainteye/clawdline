@@ -811,7 +811,7 @@ argument. Full note bodies are absent from assembled context and index
 responses. Actor and full Project ownership, memory revisions, forget
 tombstones and opaque-resume refusal stay in force. The Project shared-memory
 view remains read-only and outside model context. Native note writing, the
-editor and clean installed-native recall are separately pending. The source
+clean installed-native recall is separately pending. The source
 receipt covers the schema-12 protection, compact index and detail paths;
 website publication follows the delivered product revision.
 
@@ -850,4 +850,10 @@ force. This increment retains the existing core/archive schema 12 data shape
 and API 89. It does not include the separately isolated additive topic store
 or change metadata. Scripted tool tests are separate from installed-model
 selection, clean-conversation recall, updater qualification and production
-acceptance. The note editor remains follow-up work.
+acceptance. The note editor is now part of this source construction: it keeps
+full bodies out of the index, binds edits to the displayed revision, and keeps
+the literal request after an uncertain acknowledgement. It does not change the
+memory authority or enable Project memory writes. Low-frequency policy,
+short-fact and bulk-forget controls are disclosed when needed. Both language
+versions were checked against these same boundaries. Its real-parent browser
+fixture is independent of installed-provider and production visual acceptance.

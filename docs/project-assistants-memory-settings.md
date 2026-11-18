@@ -215,7 +215,15 @@ or forget; a changed payload with the same key conflicts. A revision conflict
 requires a fresh index and a new intentional edit, while an unknown result
 requires the original key and payload. The existing Host lifetime, active-turn,
 current-grant and peer-request restrictions enclose this same tool path.
-The dedicated note editor remains follow-up construction.
+The Bot layer has an explicit named-note editor. It lists names and summaries,
+then reads the full body only when that entry is opened. Creating a note or
+editing a detail captures the displayed memory revision; refreshing the index
+does not silently rebase an unsaved draft. A known conflict retains that draft.
+A lost acknowledgement retains the original command and literal note fields,
+locks changes to them and offers an explicit retry of that same request.
+Switching between Details and Memory preserves the editor. Short-fact writing
+and bulk forgetting remain available in collapsed sections. Project shared
+memory remains read-only, and sources below API 89 expose no note-write action.
 
 Human writes retain the existing authenticated memory route and revision CAS.
 A new client refuses note metadata before transport to a source below API 89;
@@ -238,7 +246,8 @@ older short-fact archives remain restorable; note-bearing archives cannot
 pretend to be schema 11. Newer metadata must never be lowered for rollback.
 Focused SQLite, owned MCP and scripted Host tests cover these source rules.
 They do not establish clean installed-native recall, deployed Cloud behavior,
-editor interactions or actual memory forgetting across fresh model dialogs.
+actual memory forgetting across fresh model dialogs. Editor behavior has its
+own isolated browser entry point below, separate from production acceptance.
 
 The revisioned native writer is covered by
 `TestHostTopicNoteEditsKeepRevisionAndReplayIdentity`: a fixture drops the
@@ -259,3 +268,17 @@ still establish that notes written after the update survive rollback to that
 previous schema-12 binary. This does not make schema-11 binaries able to open
 a schema-12 store and does not authorize lowering metadata or restoring a
 pre-update snapshot over newer successful writes.
+
+
+## Topic-note editor verification
+
+`TestTopicMemoryEditorBrowser` renders the production Bots parent, Chat and
+SourceClient over an isolated authenticated HTTP/Host/SQLite fixture. Its
+Chromium/WebKit matrix covers English desktop and Taiwan Chinese touch input,
+authorised read-only access and an API-88 source. It edits no production Bot
+and asserts zero execution turns. The scenario covers creation, preservation
+across Details/Memory switching, an acknowledgement lost after a successful
+save, exact replay, body-free indexes, explicit body reads, an actual concurrent
+write and revision conflict, same-ID replacement, forgetting and a refused
+read of the forgotten detail. These are scripted browser checks; clean native
+recall, updater compatibility and production visual acceptance stay separate.

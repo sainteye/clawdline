@@ -3,10 +3,15 @@ import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
 import type { Words } from "./words"
 import { LoadingSkeleton } from "../LoadingSkeleton"
+import "./topic-memory.css"
+
+export type MemoryNoteDraft={entry_id:string;title:string;summary:string;text:string;expected_revision:number}
 
 type MemoryProps={
   pendingText?:string;pendingSources?:string[];enabled:boolean;w:Words;
-  onSave:(text:string)=>Promise<void>;onForget:(ids:string[])=>Promise<void>;
+  onSave:(text:string)=>Promise<void>;
+  onSaveNote?:(note:MemoryNoteDraft)=>Promise<void>;noteDraft?:MemoryNoteDraft|null;onNoteDraft?:(draft:MemoryNoteDraft|null)=>void;pendingNote?:MemoryNoteDraft;
+  onForget:(ids:string[])=>Promise<void>;
   onRefresh:()=>Promise<void>;onClose:()=>void;
   readDetail:(detail:{source_epoch:string;layer:string;entry_id:string;revision:string})=>Promise<W.ProjectAssistantMemoryViewResponse>
 }
@@ -25,9 +30,13 @@ function MemoryLoading({w,onClose}:{w:Words;onClose:()=>void}) {
   </section>
 }
 
-function MemoryContent({value,pendingText,pendingSources,enabled,onSave,onForget,onRefresh,onClose,readDetail,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
+function MemoryContent({value,pendingText,pendingSources,pendingNote,noteDraft,onNoteDraft,enabled,onSave,onSaveNote,onForget,onRefresh,onClose,readDetail,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
   const [text,setText]=useState(pendingText??""),[selected,setSelected]=useState<string[]>(()=>(value.view.layers.find(layer=>layer.layer==="bot")?.entries??[]).filter(entry=>entry.sources.some(source=>pendingSources?.includes(source.id))).map(entry=>entry.id))
-  const [busy,setBusy]=useState(false),[error,setError]=useState("")
+  const [busy,setBusy]=useState(false),[error,setError]=useState(pendingNote?"pa_outcome_unknown":""),[uncertain,setUncertain]=useState(!!pendingNote)
+  const [localNote,setLocalNote]=useState<MemoryNoteDraft|null>(pendingNote??null)
+  const note=noteDraft===undefined?localNote:noteDraft,setNote=onNoteDraft??setLocalNote
+  const noteForm=useRef<HTMLFormElement>(null)
+  useEffect(()=>{if(note)noteForm.current?.querySelector<HTMLInputElement>("input")?.focus({preventScroll:true})},[note?.entry_id])
   const [layer,setLayer]=useState("bot"),[detail,setDetail]=useState<W.ProjectAssistantMemoryDetail|null>(null),[reading,setReading]=useState(false)
   const detailSequence=useRef(0),detailAlive=useRef(true)
   useEffect(()=>{detailAlive.current=true;return()=>{detailAlive.current=false;detailSequence.current++}},[])
@@ -45,34 +54,42 @@ function MemoryContent({value,pendingText,pendingSources,enabled,onSave,onForget
     target?.focus({preventScroll:true})
   },[])
   const entries=(value.view.layers.find(layer=>layer.layer==="bot")?.entries??[])
-  const sourceIDs=[...new Set(entries.filter(entry=>selected.includes(entry.id)).flatMap(entry=>entry.sources.map(source=>source.id)))]
+  const sourceIDs=[...new Set(entries.filter(entry=>selected.includes(entry.id)).flatMap(entry=>[...(entry.kind==="note"?[entry.id]:[]),...entry.sources.map(source=>source.id)]))]
   const run=async(action:()=>Promise<void>,done:()=>void=()=>{})=>{
     if(pending.current||!enabled)return
     pending.current=true;setBusy(true);setError("")
-    try{await action();done()}catch(error){setError(errorCode(error))}
+    try{await action();setUncertain(false);done()}catch(error){const code=errorCode(error);setError(code);setUncertain(["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(code)||(error as Error)?.name==="AbortError")}
     finally{pending.current=false;setBusy(false)}
   }
   return <section ref={panel} className="pa-card pa-memory" aria-label={w.memory}>
     <header className="pa-toolbar"><h3 tabIndex={-1}>{w.memory}</h3><button type="button" onClick={onClose}>{w.close}</button></header>
-    <nav className="pa-toolbar" aria-label={w.memory}><button aria-pressed={layer==="project"} onClick={()=>setLayer("project")}>{w.memoryProject}</button><button aria-pressed={layer==="bot"} onClick={()=>setLayer("bot")}>{w.memoryBot}</button><button onClick={()=>void onRefresh().catch(e=>setError(errorCode(e)))}>{w.refresh}</button></nav>
-    <p>{w.memoryPolicy}</p>
-    {!shown?.available?<p role="status">{w.memoryUnavailable}</p>:<><p>{w.memoryUsage.replace("{used}",String(shown.used)).replace("{cap}",String(shown.cap))}</p>{shown.truncated&&<p role="status">{w.memoryTruncated}</p>}{shown.entries.length===0&&<p>{w.emptyMemory}</p>}{shown.entries.map(entry=><article key={entry.id} className="pa-memory-entry"><button type="button" aria-label={w.memoryRead+": "+entry.id} onClick={()=>void open(entry)}>{entry.text}</button><small>{entry.author==="human"?w.memoryAuthorHuman:entry.author==="bot"?w.memoryAuthorBot:entry.author||w.memoryAuthorUnknown} · {entry.updated_at||w.memoryTimeUnknown}</small></article>)}</>}
+    <nav className="pa-toolbar" aria-label={w.memory}><button aria-pressed={layer==="project"} onClick={()=>setLayer("project")}>{w.memoryProject}</button><button aria-pressed={layer==="bot"} onClick={()=>setLayer("bot")}>{w.memoryBot}</button><button onClick={()=>void onRefresh().catch(e=>setError(errorCode(e)))}>{w.memoryRefresh}</button></nav>
+    <details className="pa-memory-policy"><summary>{w.memoryPolicyLabel}</summary><p>{w.memoryPolicy}</p></details>
+    {layer==="bot"&&onSaveNote&&<button className="pa-memory-create-note" type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>setNote({entry_id:crypto.randomUUID(),title:"",summary:"",text:"",expected_revision:value.view.memory.revision})}>{w.memoryCreateNote}</button>}
+    {!shown?.available?<p role="status">{w.memoryUnavailable}</p>:<><p>{w.memoryUsage.replace("{used}",String(shown.used)).replace("{cap}",String(shown.cap))}</p>{shown.truncated&&<p role="status">{w.memoryTruncated}</p>}{shown.entries.length===0&&<p>{w.emptyMemory}</p>}{shown.entries.map(entry=><article key={entry.id} className="pa-memory-entry"><button type="button" className="pa-memory-index" aria-label={w.memoryRead+": "+entry.id} onClick={()=>void open(entry)}>{entry.title&&<strong>{entry.title}</strong>}<span>{entry.text}</span></button><small>{entry.author==="human"?w.memoryAuthorHuman:entry.author==="bot"?w.memoryAuthorBot:entry.author||w.memoryAuthorUnknown} · {entry.updated_at||w.memoryTimeUnknown}</small></article>)}</>}
     {reading&&<p role="status">{w.memoryLoading}</p>}
-    {detail&&<section aria-label={w.memoryRead}><h4>{detail.id}</h4><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{detail.text}</pre>{detail.truncated&&<p>{w.memoryTruncated}</p>}</section>}
-    {layer==="bot"&&<><p>{w.forgetScope}</p>
+    {detail&&<section className="pa-memory-detail" aria-label={w.memoryRead}><h4>{detail.title||detail.id}</h4>{layer==="bot"&&detail.kind==="note"&&onSaveNote&&<div className="pa-toolbar"><button type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>setNote({entry_id:detail.id,title:detail.title??"",summary:detail.summary??"",text:detail.text,expected_revision:value.view.memory.revision})}>{w.memoryEditNote}</button><button type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>{const row=entries.find(entry=>entry.id===detail.id);void run(()=>onForget([detail.id,...(row?.sources.map(source=>source.id)??[])]),()=>setDetail(null))}}>{w.forget}</button></div>}<pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{detail.text}</pre>{detail.truncated&&<p>{w.memoryTruncated}</p>}</section>}
+    {layer==="bot"&&note&&onSaveNote&&<form ref={noteForm} className="pa-memory-note-editor" aria-label={w.memoryEditNote} onSubmit={event=>{event.preventDefault();void run(()=>onSaveNote(note),()=>setNote(null))}}>
+      <label>{w.memoryNoteTitle}<input value={note.title} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,title:event.target.value})}/></label>
+      <label>{w.memoryNoteSummary}<textarea value={note.summary} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,summary:event.target.value})}/></label>
+      <p>{w.memoryNoteHint}</p>
+      <label>{w.memoryNoteBody}<textarea className="pa-memory-note-body" value={note.text} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,text:event.target.value})}/></label>
+      <div className="pa-toolbar"><button type="button" disabled={busy||uncertain} onClick={()=>setNote(null)}>{w.cancel}</button><button type="submit" disabled={!enabled||busy||!note.title.trim()||!note.summary.trim()||!note.text.trim()}>{uncertain?w.retry:w.save}</button></div>
+    </form>}
+    {layer==="bot"&&<><details className="pa-memory-short-facts" open={!!pendingText||undefined}><summary>{w.memoryShortFacts}</summary><p>{w.forgetScope}</p>
     <form onSubmit={event=>{event.preventDefault();void run(()=>onSave(text.trim()),()=>setText(""))}}>
       <label>{w.memoryNote}<textarea value={text} disabled={!enabled||busy} onChange={event=>setText(event.target.value)}/></label>
       <button type="submit" disabled={!enabled||busy||!text.trim()}>{w.remember}</button>
     </form>
-    <fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
+    </details><details className="pa-memory-forget"><summary>{w.forget}</summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
       {entries.length?entries.map(entry=><label className="pa-memory-entry" key={entry.id}>
         <input type="checkbox" checked={selected.includes(entry.id)} disabled={!entry.sources.length} onChange={event=>setSelected(old=>event.target.checked?[...old,entry.id]:old.filter(id=>id!==entry.id))}/>
-        <span>{entry.text}</span>
+        <span>{entry.title||entry.text}</span>
       </label>):<p>{w.emptyMemory}</p>}
       <button type="button" disabled={!enabled||busy||!sourceIDs.length} onClick={()=>void run(()=>onForget(sourceIDs),()=>setSelected([]))}>{w.forget}</button>
-    </fieldset>
+    </fieldset></details>
     </>}<p>{w.memoryRevision}: {value.view.memory.revision} · {w.forgotten}: {value.view.memory.forgotten_count}</p>
-    {error&&<p role="alert">{error==="pa_outcome_unknown"?w.unknown:error==="pa_context_stale"?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");void onRefresh().catch(error=>setError(errorCode(error)))}}>{w.refresh}</button></p>}
+    {error&&<p role="alert">{uncertain?w.unknown:["pa_context_stale","pa_stale_version"].includes(error)?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");void onRefresh().catch(error=>setError(errorCode(error)))}}>{w.memoryRefresh}</button></p>}
     {busy&&<p role="status">{w.savingMemory}</p>}
   </section>
 }
