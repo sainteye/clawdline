@@ -886,9 +886,10 @@ Codex CLI child does not gain the ChatGPT desktop app's built-in `@Browser` mere
 flag. For a UI, accessibility or responsive-layout review, route the work to a surface that really
 has Browser/Computer Use, or name an acceptance-equivalent local browser harness such as
 Playwright/Chrome CDP and prove it is installed. When that surface may request app, origin or GUI
-access, dispatch with `--permission-mode ask`: Codex `full` means a non-interactive shell launch
-(`--ask-for-approval never`), not every tool, and Auto-review cannot review a request that is never
-created. At task start the child exercises each required tool, not just checks a command name. If
+access that a person must confirm, dispatch with `--permission-mode ask` to retain the person's
+native permission settings. Codex `full` keeps the workspace sandbox, uses
+`--ask-for-approval on-request`, and routes requested exceptions through native Auto-review; it neither supplies missing tools nor guarantees approval.
+At task start the child exercises each required tool, not just checks a command name. If
 one is unavailable, it reports the exact gap immediately and the root restores access or
 redispatches. It does not finish a tool-dependent acceptance check as unverified because the root
 chose an incompatible worker.

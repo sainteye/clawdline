@@ -644,7 +644,7 @@ func TestDispatchGuidesMatchRequiredToolsToApprovalMode(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, want := range []string{"Browser", "Computer Use", "--permission-mode ask",
-			"--ask-for-approval never", "Auto-review", "Codex CLI", "Chrome CDP"} {
+			"--ask-for-approval on-request", "Auto-review", "Codex CLI", "Chrome CDP"} {
 			if !bytes.Contains(guide, []byte(want)) {
 				t.Errorf("%s dispatch guide omits tool authorization rule %q", language, want)
 			}

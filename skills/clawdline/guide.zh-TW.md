@@ -771,9 +771,9 @@ daemon 重啟後也一樣；無活動只代表結果不確定，不代表完成�
 root 也必須證明選到的 surface 真的提供它們。Codex CLI child 不會因為調整 permission flag，就得到
 ChatGPT desktop app 內建的 `@Browser`。UI、無障礙或 responsive-layout review 必須派到真正有
 Browser／Computer Use 的 surface，或明確指定 Playwright／Chrome CDP 等等同驗收能力的本機 browser harness，
-並先證明它已安裝。若該 surface 可能要求 App、origin 或 GUI 權限，就用 `--permission-mode ask`：Codex
-`full` 是 non-interactive shell 啟動（`--ask-for-approval never`），不是所有工具；沒有建立 request，
-Auto-review 就無從審核。child 開始時要真的操作每項必要工具，不能只檢查 command name；缺少任何一項就
+並先證明它已安裝。若該 surface 需要使用者親自確認 App、origin 或 GUI 權限，就用 `--permission-mode ask`
+沿用使用者的原生權限設定。Codex `full` 保留工作區沙箱，使用 `--ask-for-approval on-request`，
+將提出的例外請求交給原生 Auto-review；它不會補上缺少的工具，也不保證核准。child 開始時要真的操作每項必要工具，不能只檢查 command name；缺少任何一項就
 立即回報具體缺口，由 root 補回權限或重派。不得因 root 選錯 worker，就把依賴工具的驗收標成 unverified 後結束。
 
 **`root.session_id` 是你的 conversation id，絕對不是 terminal id。** Claude Code 把它 export 成

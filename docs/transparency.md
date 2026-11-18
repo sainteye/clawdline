@@ -13,6 +13,10 @@ switch or remove the sandbox. The bilingual machine-workflow and CodeGraph
 explanations were reviewed: their frozen instruction text, selection rules and
 context-provision authority are unchanged. Only the dispatch source receipt
 changes; automatic review is an execution decision, not a new workflow prompt.
+The English and Taiwan Traditional Chinese tool-preflight guides also describe
+this request path, replacing their obsolete `never` explanation. They still
+require exercising the actual installed tool and reporting refusals, rather
+than treating an approval setting as proof of browser availability.
 
 The Bot dialogue alignment explains explicit multi-message delivery and the
 last-text fallback in English and Taiwan Traditional Chinese. Its fixed prompt
