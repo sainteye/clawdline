@@ -34,6 +34,29 @@ export function playChime(context: AudioContext): void {
 
 type AudioContextClass = new () => AudioContext
 type AudioSession = { type: string }
+const playbackOwners = new WeakMap<AudioSession, { previous: string; count: number }>()
+
+/** Overlapping cues borrow one category; their last owner restores it once. */
+function borrowPlayback(): () => void {
+  const session = (globalThis.navigator as { audioSession?: AudioSession } | undefined)?.audioSession
+  if (!session) return () => undefined
+  let owner = playbackOwners.get(session)
+  if (!owner) {
+    const previous = session.type
+    try { session.type = 'playback' } catch { return () => undefined }
+    owner = { previous, count: 0 }
+    playbackOwners.set(session, owner)
+  }
+  owner.count++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    if (--owner.count) return
+    playbackOwners.delete(session)
+    try { if (session.type === 'playback') session.type = owner.previous } catch { /* refusal-ok: the browser retains its own category. */ }
+  }
+}
 
 /** Longer than a recording's whole stop, prepare and read deadlines together. */
 const PRIMED_MS = 180000
@@ -71,14 +94,21 @@ export function primeChime(): { play(): void; drop(): void } {
       // the person sent should still be heard, as the copilot's call is;
       // the session goes back to the browser's choice afterwards so the
       // next recording opens the microphone as before.
-      const session = (globalThis.navigator as { audioSession?: AudioSession } | undefined)?.audioSession
-      const before = session?.type
-      try { if (session) session.type = "playback" } catch { /* refusal-ok: an older browser keeps its own session. */ }
-      playChime(was)
-      setTimeout(() => {
-        try { if (session && before !== undefined) session.type = before } catch { /* refusal-ok: as above. */ }
+      const release = borrowPlayback()
+      let finished = false
+      const interrupted = () => { if (was.state !== 'running') finish() }
+      const finish = () => {
+        if (finished) return
+        finished = true
+        clearTimeout(timer)
+        was.removeEventListener('statechange', interrupted)
+        release()
         void was.close().catch(() => undefined)
-      }, 1000)
+      }
+      const timer = setTimeout(finish, 1000)
+      was.addEventListener('statechange', interrupted)
+      playChime(was)
+      interrupted()
     },
     drop: close,
   }

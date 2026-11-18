@@ -7,8 +7,9 @@ const {outputFiles}=await build({stdin:{contents:'export {CallMeter} from "./cop
 const module={exports:{}};new Function('require','module','exports',outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
 const {CallMeter}=module.exports
 function context(){
- const tones=[],gains=[]
+ const tones=[],gains=[],events=new EventTarget()
  const audio={state:'running',currentTime:1,destination:{},tones,gains,
+  addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events),dispatchEvent:events.dispatchEvent.bind(events),
   createGain(){const events=[];const node={events,disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{setValueAtTime(value,at){events.push(['set',value,at])},linearRampToValueAtTime(value,at){events.push(['ramp',value,at])}}};gains.push(node);return node},
   createOscillator(){return {type:'sine',frequency:{value:0},onended:undefined,disconnected:false,connect(){},disconnect(){this.disconnected=true},start(at){this.record={hz:this.frequency.value,type:this.type,at};tones.push(this.record)},stop(at){if(this.record)this.record.stoppedAt=at;this.onended?.()}}},
  }
@@ -28,6 +29,20 @@ test('ending a local call detaches capture before a descending cue and closes on
  meter.close(true)
  assert.deepEqual(audio.tones.map(t=>t.hz),[660,480]);assert.equal(audio.closed,1);assert.equal(meter.context,null)
  meter.close(true);assert.equal(audio.tones.length,2,'repeated close cannot replay the hangup sound')
+})
+
+test('an interrupted hangup cue releases its context even when its ended event never arrives',async()=>{
+ const meter=new CallMeter(),audio=context(),nodes=[]
+ audio.closed=0;audio.close=async()=>{audio.closed++}
+ const make=audio.createOscillator.bind(audio)
+ audio.createOscillator=()=>{const tone=make();tone.stop=()=>{};nodes.push(tone);return tone}
+ meter.context=audio;meter.close(true)
+ assert.deepEqual(audio.tones.map(t=>t.hz),[660,480]);assert.equal(audio.closed,0)
+ const next=context();meter.context=next
+ audio.state='suspended';audio.dispatchEvent(new Event('statechange'))
+ assert.equal(audio.closed,1,'backgrounding must not leave the old audio session open')
+ assert.equal(meter.context,next,'the next call retains its own context')
+ nodes.at(-1).onended?.();assert.equal(audio.closed,1,'late ended events cannot close twice')
 })
 
 test('entering a Session has a distinct short local melody and releases its nodes',()=>{
