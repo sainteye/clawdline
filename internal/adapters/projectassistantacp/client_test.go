@@ -88,6 +88,11 @@ func TestACPTestPeer(t *testing.T) {
 					os.Exit(5)
 				}
 			}
+			if mode == "native-context" {
+				// Adapters may publish metadata before answering session/new.
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{map[string]string{"name": "compact"}}}})})
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 0, "size": 100000}})})
+			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_NEW_ID")})})
 		case "session/load":
 			if path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE"); path != "" {
@@ -112,6 +117,12 @@ func TestACPTestPeer(t *testing.T) {
 				if closeErr := log.Close(); err != nil || closeErr != nil {
 					os.Exit(9)
 				}
+			}
+			if mode == "native-context" {
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 12, "size": 100000}})})
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Synthetic answer"}}})})
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
 			}
 			if mode == "provider-error" || mode == "provider-error-eof" {
 				var rpc rpcError

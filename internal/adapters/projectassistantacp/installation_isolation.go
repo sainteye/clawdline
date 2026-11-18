@@ -95,6 +95,13 @@ type isolatedNativeSession struct {
 	once    sync.Once
 }
 
+func (s *isolatedNativeSession) NativeContext() app.NativeContextState {
+	if reader, ok := s.ProviderSession.(app.NativeContextReader); ok {
+		return reader.NativeContext()
+	}
+	return app.NativeContextState{}
+}
+
 // Steer forwards Send now to the client when it can steer.
 func (s *isolatedNativeSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {

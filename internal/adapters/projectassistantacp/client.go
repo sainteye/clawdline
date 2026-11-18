@@ -73,6 +73,7 @@ type Client struct {
 	stop           sync.Once
 	failure        error
 	sessionID      string
+	nativeContext  app.NativeContextState
 	turnID         string
 	partial        string
 	traceSegment   pa.Trace
@@ -642,10 +643,16 @@ func (c *Client) handle(f frame) error {
 				ToolCallID string          `json:"toolCallId"`
 				Status     string          `json:"status"`
 				Meta       json.RawMessage `json:"_meta"`
+				Commands   json.RawMessage `json:"availableCommands"`
+				Used       json.RawMessage `json:"used"`
+				Size       json.RawMessage `json:"size"`
 			} `json:"update"`
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
 			return refusal(pa.Invalid, "update")
+		}
+		if p.Update.SessionUpdate == "usage_update" || p.Update.SessionUpdate == "available_commands_update" {
+			return c.updateNativeContext(p.SessionID, p.Update.SessionUpdate, p.Update.Commands, p.Update.Used, p.Update.Size)
 		}
 		if p.SessionID != c.SessionID() {
 			return refusal(pa.StaleGeneration, "native_session")

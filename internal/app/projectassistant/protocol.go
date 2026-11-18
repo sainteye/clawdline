@@ -149,6 +149,26 @@ type SessionUsage struct {
 	CapturedBytes       int
 	StderrBytes         int
 }
+
+// NativeContextState is a live session's own advertised command and token
+// reading. Unknown is separate from an observed zero; no model/window value
+// is inferred. This is not permission to execute a maintenance command.
+type NativeContextState struct {
+	Fence             pa.Fence
+	NativeSessionID   string
+	CommandsKnown     bool
+	CompactAdvertised bool
+	UsageKnown        bool
+	UsedTokens        int64
+	WindowTokens      int64
+}
+
+// NativeContextReader is optional so providers without native context reports
+// remain explicitly unqualified. It does not change persisted Bot formats.
+type NativeContextReader interface {
+	NativeContext() NativeContextState
+}
+
 type RuntimeUsage struct {
 	ActiveActors int
 	Processes    int
