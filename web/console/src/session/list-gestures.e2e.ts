@@ -70,6 +70,7 @@ type ReadingScenario =
   | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
+let boardKeyboardFixture = false
 let fixtureLanguage = "zh-Hant"
 const callbackReason = "Go tests for a long command whose complete name cannot fit on a phone"
 let inlineDecisionFixture = false
@@ -423,7 +424,17 @@ function daemon(): Server {
       if (url.searchParams.has("look")) openedLooks.push(url.searchParams.get("look") ?? "")
       return json(res, 200, snapshot())
     }
-    if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardKeyboardFixture ? { api_level: 87 } : {}) })
+    if (path === "/v1/orchestrator/session-boards" && boardKeyboardFixture) {
+      return json(res, 200, { boards: [{
+        id: "review", project: "fixture", name: "Keyboard board", purpose: "Check group focus", summary: "", latest: 0,
+        lead: "claude:conversation-" + SAFE,
+        members: [
+          { id: "claude:conversation-" + SAFE, label: "Lead" },
+          { id: "claude:conversation-" + NEEDS_ATTESTATION, label: "Member" },
+        ],
+      }] })
+    }
     if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
       return json(res, 200, { ok: true, rows: [], truncated: false })
     if (path === "/v1/machine/usage") return json(res, 200, {
@@ -1161,8 +1172,8 @@ class Tab {
     })()`)
   }
 
-  async key(key: "ArrowDown" | "Enter" | "Escape" | "Tab", shift = false): Promise<void> {
-    const code = key === "ArrowDown" ? 40 : key === "Enter" ? 13 : key === "Tab" ? 9 : 27
+  async key(key: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Tab", shift = false): Promise<void> {
+    const code = key === "ArrowDown" ? 40 : key === "ArrowUp" ? 38 : key === "Enter" ? 13 : key === "Tab" ? 9 : 27
     const modifiers = shift ? 8 : 0
     await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: code, modifiers, ...(key === "Enter" ? { text: "\r" } : {}) }, this.session)
     await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
@@ -1434,6 +1445,31 @@ test("keyboard moves through focused options and Enter opens the highlighted Ses
       assert.equal(openedLooks.at(-1), NEEDS_ATTESTATION)
     }
   }))
+
+test("Session navigation keeps focus on grouped rows in their visible order", async () => {
+  boardKeyboardFixture = true
+  try {
+    await inTab(async (tab) => {
+      await tab.go("/")
+      await shortcutUntil(tab, 'document.querySelectorAll("#rows .session-board-group li.row").length === 2')
+      const order = await tab.run(`[...document.querySelectorAll('#rows li.row[role="option"]')].map(row => row.dataset.id)`)
+      assert.equal(order[1], SAFE)
+      assert.equal(order[2], NEEDS_ATTESTATION)
+      await tab.run(`document.getElementById('rows').focus()`)
+      for (const [key, id] of [["k", order[0]], ["ArrowDown", SAFE], ["j", NEEDS_ATTESTATION], ["k", SAFE], ["ArrowUp", order[0]]]) {
+        if (key === "ArrowDown" || key === "ArrowUp") await tab.key(key)
+        else await tab.shortcut(key)
+        const result = await tab.run(`({
+          selection: document.querySelector('#rows li.row[aria-selected="true"]')?.dataset.id,
+          focus: document.activeElement?.dataset.id
+        })`)
+        assert.deepEqual(result, { selection: id, focus: id }, key)
+      }
+    })
+  } finally {
+    boardKeyboardFixture = false
+  }
+})
 
 /** Wait for a visible keyboard outcome rather than a fixed animation delay. */
 async function shortcutUntil(tab: Tab, expression: string): Promise<void> {

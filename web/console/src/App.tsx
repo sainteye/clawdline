@@ -229,7 +229,7 @@ function interactive(el: Element | null): boolean {
 
 /** A row's node, as `rowNodes` holds it there. */
 function rowNode(id: string): HTMLElement | null {
-  for (const node of document.querySelectorAll<HTMLElement>("#rows > li.row")) {
+  for (const node of document.querySelectorAll<HTMLElement>('#rows li.row[role="option"]')) {
     if (node.dataset.id === id) return node
   }
   return null
@@ -542,28 +542,42 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   snapshotRef.current = fleet.snapshot
   const T = L.strings
 
+  const focusRow = (node: HTMLElement) => {
+    node.focus({ preventScroll: true })
+    node.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" })
+  }
+
   // `select` (`session/agent.js`): the highlight moves, and the keyboard with it.
   const select = (id: string) => {
     if (!rowsRef.current.some((r) => r.id === id)) return
     setSelected(id)
     const node = rowNode(id)
-    if (node) {
-      node.focus({ preventScroll: true })
-      node.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" })
-    }
+    if (node) focusRow(node)
   }
 
   // `move`: through the list as it is drawn, from the highlight, or from an
   // end when there is none.
   const move = (delta: number) => {
+    const nextIndex = (at: number, count: number) =>
+      at < 0 ? (delta > 0 ? 0 : count - 1) : Math.min(count - 1, Math.max(0, at + delta))
+
+    if (fleetList) {
+      const visible = [...document.querySelectorAll<HTMLElement>('.cloud-all-list-scroll li.projected-row[role="option"]')]
+        .filter((row) => !row.closest("[inert]") && row.getClientRects().length > 0)
+      if (!visible.length) return
+      const at = visible.findIndex((row) => row === document.activeElement)
+      const from = at >= 0 ? at : visible.findIndex((row) => row.getAttribute("aria-selected") === "true")
+      focusRow(visible[nextIndex(from, visible.length)])
+      return
+    }
+
     const drawn = document.getElementById("rows")
     const ids = drawn?.querySelector(".session-board-group")
       ? [...drawn.querySelectorAll<HTMLElement>('li[role="option"][data-id]')].map(row => row.dataset.id!)
       : L.orderedRows().filter(row => matchesLocalStateFilter(row, statusFilter)).map(row => row.id)
     if (!ids.length) return
     const at = selectedRef.current ? ids.indexOf(selectedRef.current) : -1
-    const next = at < 0 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, at + delta))
-    select(ids[next])
+    select(ids[nextIndex(at, ids.length)])
   }
 
   // While a session is being ended, and until that settles, the open session is
@@ -1092,7 +1106,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         move(-1)
         break
       case "Enter":
-        if (selectedRef.current) {
+        if (!fleetList && selectedRef.current) {
           ev.preventDefault()
           openSession(selectedRef.current)
         }
