@@ -21,6 +21,7 @@ import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
 import { NAVIGATION_MARK } from "./brand-mark.js"
+import mobileNavigationMark from "./brand-navigation-mobile.js"
 import "./session/first-run.css"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
@@ -1182,6 +1183,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         >
           <span className="brand-handle" aria-hidden="true">
             <canvas id="brand-mark" width={0} height={0} ref={markRef} />
+            <img className="brand-mobile-mark" src={mobileNavigationMark} width={24} height={16.5} alt="" draggable={false} />
             <svg className="brand-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" focusable="false">
               <path d="m10 4-4 4 4 4" />
             </svg>

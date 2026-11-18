@@ -18,10 +18,21 @@
     border-radius: 9px;
     background: var(--card);
 }
-.brand-handle canvas {
+.brand-handle canvas,
+.brand-handle .brand-mobile-mark {
     transition: transform 240ms cubic-bezier(.2, .7, .2, 1);
 }
-.brand[aria-expanded="true"] .brand-handle canvas { transform: translateX(20px); }
+.brand[aria-expanded="true"] .brand-handle canvas,
+.brand[aria-expanded="true"] .brand-handle .brand-mobile-mark { transform: translateX(20px); }
+.brand-handle .brand-mobile-mark {
+    display: none;
+    flex: 0 0 auto;
+    image-rendering: auto;
+}
+@media (max-width: 899px) {
+    .brand-handle canvas { display: none; }
+    .brand-handle .brand-mobile-mark { display: block; }
+}
 .brand-chevron {
     position: absolute;
     left: 8px;
@@ -77,6 +88,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .brand-handle canvas,
+    .brand-handle .brand-mobile-mark,
     .brand-chevron { transition: none; }
 }
 
