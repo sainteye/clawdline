@@ -445,20 +445,31 @@ func runCallbackStart(ctx context.Context, b *Broker, e store.Effect) effectResu
 		b.settleCallbackExit(ctx, r.ID, nil, "", 0)
 		return effectResult{state: store.EffectDone, outcome: "started before and ended with no exit status; not run again"}
 	}
-	var resourceErr error
-	r, resourceErr = b.prepareCallbackResources(ctx, r)
+	prepared, resourceErr := b.prepareCallbackResources(ctx, r)
 	if resourceErr != nil {
-		_, ids, err := b.settleWith(ctx, r.ID, StateFailure, "resource_admission_refused: "+resourceErr.Error(), nil, func(x *Record) {
-			x.Callback.NotStarted = e.Attempts == 1 && x.Callback.PID == 0 && x.Callback.StartedAt.IsZero()
+		// Preparation can exhaust the attempt's context or return an empty
+		// record. Persist its cause under the original ID and a record context
+		// of its own, just as finishEffect does for the outbox outcome.
+		rec, cancel := recordContext(ctx)
+		defer cancel()
+		cause := "resource_admission_refused: " + resourceErr.Error()
+		_, ids, err := b.settleWith(rec, r.ID, StateFailure, cause, nil, func(x *Record) {
+			// StartEffect returns the row before incrementing Attempts. Only
+			// its first invocation proves no earlier launch was possible.
+			x.Callback.NotStarted = e.Attempts == 0 && x.Callback.PID == 0 && x.Callback.StartedAt.IsZero()
 		})
+		if errors.Is(err, errAlreadyTerminal) {
+			return effectResult{state: store.EffectDone, outcome: "the callback had already ended"}
+		}
 		if err == nil {
-			b.runRecorded(ctx, ids)
+			b.runRecorded(rec, ids)
 		}
 		if err != nil {
-			return effectResult{state: store.EffectFailed, outcome: "resource admission could not be recorded"}
+			return effectResult{state: store.EffectFailed, outcome: cause + "; resource admission could not be recorded: " + err.Error()}
 		}
-		return effectResult{state: store.EffectDone, outcome: "resource admission refused; no command started"}
+		return effectResult{state: store.EffectDone, outcome: cause}
 	}
+	r = prepared
 	proc, err := startCallbackProcess(r, files, b.callbackLive(ctx, r.ID))
 	if errors.Is(err, errCallbackSettled) {
 		return effectResult{state: store.EffectDone, outcome: "the callback was settled before its command started; not started"}
