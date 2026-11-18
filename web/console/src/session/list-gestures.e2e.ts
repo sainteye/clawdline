@@ -1623,6 +1623,39 @@ test("Session board stays the same height while its index and messages load", as
   }
 })
 
+test("Session board header closes a direct open and returns to the index from the Status Line", async () => {
+  boardFixture = true
+  try {
+    await inTab(async tab => {
+      await tab.go("/")
+      const opener = "#rows .session-board-group > button"
+      const dialog = ".session-board-dialog[open]"
+      const headerAction = `${dialog} > header > .session-board-icon-button`
+      await shortcutUntil(tab, `!!document.querySelector('${opener}')`)
+      await tab.run(`document.querySelector('${opener}').focus()`)
+      await tab.key("Enter")
+      await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && document.querySelector('${dialog}').getAnimations().length === 0`)
+      assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "down")
+      assert.equal(await tab.run(`getComputedStyle(document.querySelector('${headerAction}')).outlineStyle`), "none")
+      await tab.key("Tab", true)
+      assert.ok(await tab.run(`document.activeElement.matches('${headerAction}')`))
+      assert.equal(await tab.run(`getComputedStyle(document.activeElement).outlineStyle`), "solid")
+      await tab.key("Enter")
+      await shortcutUntil(tab, `!document.querySelector('${dialog}') && document.activeElement.matches('${opener}')`)
+
+      await tab.press(".session-board-dock")
+      await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+      await tab.press(`${dialog} .session-board-index-card`)
+      await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && !!document.querySelector('${headerAction} svg')`)
+      assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "back")
+      await tab.press(headerAction)
+      await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card') && !document.querySelector('${headerAction}')`)
+    })
+  } finally {
+    boardFixture = false
+  }
+})
+
 test("a click on the Session board backdrop closes the dialog and returns focus", async () => {
   boardFixture = true
   try {

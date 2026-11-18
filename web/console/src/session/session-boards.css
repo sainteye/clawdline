@@ -76,6 +76,7 @@
   border-bottom: 1px solid var(--line); background: var(--card);
 }
 .session-board-heading, .session-board-dialog > header > h2 { flex: 1; min-width: 0; }
+.session-board-dialog > header h2:focus { outline: none; }
 .session-board-dialog > header h2 { margin: 0; font-size: 1.15rem; line-height: 1.25; overflow-wrap: anywhere; }
 .session-board-dialog > header h2:has(.session-board-project-mark) {
   display: flex; align-items: center; gap: 7px;
@@ -105,6 +106,7 @@
 .session-board-dialog .session-board-icon-button {
   display: inline-grid; place-items: center; flex: none; width: 36px; padding: 0; color: var(--dim);
 }
+.session-board-dialog > header > .session-board-icon-button:focus-visible { outline-color: var(--dim); }
 .session-board-icon-button svg, .session-board-chevron { width: 18px; height: 18px; flex: none; }
 .session-board-chevron[data-direction="back"] { transform: rotate(180deg); }
 .session-board-chevron[data-direction="down"] { transform: rotate(90deg); }

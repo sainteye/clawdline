@@ -391,6 +391,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
+  const title = useRef<HTMLHeadingElement>(null)
   const motion = useDockMotion(dialog)
   const dismiss = () => motion.close(() => dialog.current?.close())
   const backdrop = useBoardBackdrop(dismiss)
@@ -407,12 +408,18 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
   useEffect(() => { dialog.current?.showModal(); motion.capture(opener); motion.open() }, [])
+  useEffect(() => {
+    if (dialog.current?.open) title.current?.focus({ preventScroll: true })
+  }, [selected])
+  const headingAction = t(initial ? "sessionBoardClose" : "sessionBoardBack")
   return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
     <header>
-      {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
-        title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}
+      {selected && <button type="button" className="session-board-icon-button" aria-label={headingAction}
+        title={headingAction} onClick={initial ? dismiss : () => { switchBoard(""); void refresh() }}>
+        <BoardChevron direction={initial ? "down" : "back"} />
+      </button>}
       <div className="session-board-heading">
-        <h2 id={heading}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
+        <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
         {selectedBoard && <details className="session-board-heading-purpose" key={selectedBoard.id}>
           <summary><span>{selectedBoard.purpose}</span><BoardChevron direction="down" /></summary>
         </details>}
