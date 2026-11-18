@@ -75,6 +75,13 @@ or listener comprehension; recorded speech and human listening remain required
 for that acceptance. Guidance follows the official Realtime prompting guide:
 https://developers.openai.com/api/docs/guides/voice-prompting .
 
+The existing GPT-Live 1.1 choice now asks for more compact, continuous articulation,
+short sentence pauses and clean endings through the entire reply in English and
+Taiwan Mandarin. The other saved rates are unchanged. Startup and in-call pace
+updates use the same instructions. This is a qualitative instruction, not a
+measured playback multiplier; it preserves information and response length.
+Provider-free checks establish which instruction is sent, not audible pace.
+
 ## Delivered boundary and rollout
 
 The new sidebar page is a machine-owned assistant workspace. It is not an invented
@@ -508,14 +515,16 @@ live-call acceptance; these tests establish local routing and queue behavior.
 
 ### Short-screen tool-history layout
 
-The tool-history wrapper keeps its intrinsic height instead of shrinking below
-its capsules. Usage grows with its content rather than overflowing a fixed-height footer. The call body scrolls separately above fixed-in-flow hangup controls, so sticky
+The tool-history wrapper reserves room for visible capsules and scrolls longer
+trails within its own bounds. Usage grows with its content rather than overflowing a fixed-height footer. The call body scrolls separately above fixed-in-flow hangup controls, so sticky
 controls cannot overlay its content. The obsolete application-gated
 waiting-proposal card is removed; draft review
 now happens in conversation. The call body scrolls when a small screen needs
-more room; the capsule trail retains its own
-compact scroll area. A provider-free fixture with long transcript text, usage and
-both engines checks child containment as well as sibling geometry.
+more room. The capsule trail shares spare height with the transcript instead of
+being capped at 48 pixels, so resizing the orb also gives the trail more room.
+The trail and transcript each scroll independently. A provider-free fixture
+with long transcript text, usage and both engines checks child containment as
+well as sibling geometry.
 
 ## Compact call sheet and fresh calls
 
@@ -525,6 +534,10 @@ history heading, including before the first tool starts. A paused report can sti
 continued from that picker. The subtitle, connected-state/progress copy, automatic-report
 explanation and diagnostic-log entry are removed; connection failures and action notices
 remain available. Unpriced totals retain their lower-bound wording.
+
+Quick commands fade and slide in and out over 180 milliseconds. A closing panel
+becomes inert and leaves the accessibility tree immediately; only its picture
+remains during the exit. Reduced-motion preferences disable the transition.
 
 The browser no longer saves conversation turns for a later call. Realtime configuration
 and Live backend updates contain the current Session snapshot, settings and briefing,

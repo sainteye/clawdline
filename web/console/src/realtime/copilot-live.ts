@@ -34,7 +34,7 @@ const LIVE_PACING = {
       '0.8': '用明顯偏慢、從容清楚的速度說話。每個詞的發音稍微放慢，按自然語意分組，在完整句子之間短暫停頓。保持語句連貫，不要逐字拆開，也不要用長時間沉默來製造慢速。',
       '0.9': '用比日常聊天稍慢的速度說話，放鬆、清楚、容易跟上。詞語之間保持連貫，只在語意轉折與句尾稍作停頓。避免拖長單字或刻意拉開每個字的間隔。',
       '1.0': '用自然日常聊天的正常速度說話，節奏流暢。按語意自然停頓，句尾俐落收束。中文不要逐字慢念；英文使用自然的連音，讓整句順暢地說完。',
-      '1.1': '用明顯比正常聊天更快、但仍輕鬆清楚的速度說話。加快詞句本身的發音節奏，縮短不必要的詞間與句間停頓，讓整句連貫流暢。每個字仍須清楚，尤其是姓名、數字與關鍵資訊；不要吞字，並維持快節奏直到句尾。',
+      '1.1': '用明顯比正常聊天更快、俐落緊湊的速度說話。像熟悉工作的同事快速交代近況，直接把完整的語意一口氣順暢說完。加快每個詞句本身的發音節奏；詞語緊密相接，句間只留理解所需的短停頓，接著立即說下一句。不要拖長音節或句尾，不要在每個逗號停下來，也不要說到後半段又放慢。姓名、數字與關鍵資訊仍須發音清楚，必要時只把該詞稍作強調，隨即恢復快節奏。維持相同內容與回答長度，不省略資訊，不靠減少句子來加速；直到最後一句都保持俐落。',
     },
   },
   en: {
@@ -43,7 +43,7 @@ const LIVE_PACING = {
       '0.8': 'Speak at a distinctly slow, relaxed pace. Take more time to articulate each phrase, group words naturally, and pause briefly between complete sentences. Keep speech connected rather than separating every word. Achieve the slower pace through articulation, without adding long silences.',
       '0.9': 'Speak a little more slowly than ordinary conversation, with relaxed, clear delivery. Keep words connected and allow small pauses at changes of thought and sentence endings. Avoid stretching individual words or spacing out every syllable.',
       '1.0': 'Speak at a natural, everyday conversational pace with a smooth rhythm. Pause where the meaning calls for it and finish sentences cleanly. Keep Mandarin phrases flowing rather than reading character by character, and use natural connected speech in English.',
-      '1.1': 'Speak noticeably faster than ordinary conversation while staying relaxed and easy to understand. Increase the pace of articulation itself and shorten unnecessary gaps between words and sentences. Keep phrases flowing, pronounce every word clearly, especially names, numbers, and key facts, and sustain the brisk pace through the final sentence.',
+      '1.1': 'Speak noticeably faster than ordinary conversation, with brisk, compact delivery, like a colleague quickly catching someone up on familiar work. Carry each complete thought through in one flowing phrase. Articulate the words themselves faster, connect them closely, and leave only the brief pauses needed for comprehension before moving straight into the next sentence. Do not stretch syllables or sentence endings, pause at every comma, or drift back to a slower pace halfway through. Keep names, numbers, and key facts clear; briefly emphasize only the necessary word, then immediately resume the brisk pace. Preserve the same content and response length without dropping facts or cutting sentences to sound faster. Sustain this crisp pace through the final sentence.',
     },
   },
 }

@@ -814,8 +814,8 @@
 .copilot-demo-note { margin: 10px 0 0; font-size: 12px; color: var(--dim); }
 .realtime-key-status-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
-/* In a live call the transcript owns the spare height. Speech, tool results,
-   costs and notices cannot change its bounds. Only the person's resize can. */
+/* Speech and the whole-call tool trail share spare height. Both scroll within
+   their own bounds, while usage and hangup keep their intrinsic height. */
 .realtime-modal-sheet.in-call {
   height: min(800px, 100dvh);
   overflow: hidden;
@@ -834,14 +834,17 @@
 }
 .in-call .realtime-visual-box .copilot-notice { position: absolute; bottom: 42px; max-width: 100%; box-sizing: border-box; }
 .in-call .realtime-transcript-box {
-  flex: 1 1 0; min-height: 140px; max-height: none; box-sizing: border-box;
+  flex: 2 1 140px; min-height: 140px; max-height: none; box-sizing: border-box;
   overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable;
   font-size: 14px; line-height: 1.65;
 }
 .realtime-transcript-box > * { flex-shrink: 0; white-space: pre-wrap; }
 .realtime-transcript-empty { color: var(--dim); }
 .in-call .realtime-content > .copilot-tool-history { margin: 0; flex: 0 0 auto; }
-.in-call .realtime-content > .copilot-tool-history .copilot-tools-trail { max-height: 48px; margin: 4px 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+/* Reserve the 44px command control plus 8px trail margins before sharing spare height. */
+.in-call .realtime-content > .copilot-tool-history:has(.copilot-tools-trail > li) { display: flex; flex-direction: column; flex: 1 0 calc(52px + min(96px, 18dvh)); min-height: 0; }
+.in-call .copilot-history-heading { flex: 0 0 auto; }
+.in-call .realtime-content > .copilot-tool-history .copilot-tools-trail { flex: 1 1 0; min-height: 0; margin: 4px 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 .in-call .realtime-secondary { min-height: 0; height: auto; flex-shrink: 0; display: flex; flex-direction: column; justify-content: end; gap: 2px; position: relative; }
 .in-call .realtime-logs-container { position: relative; margin: 0; }
 .in-call .realtime-logs-toggle-btn { font-size: 11px; padding: 2px 0; }
@@ -871,6 +874,8 @@
 .copilot-questions-toggle > span { display: flex; align-items: center; gap: 9px; }
 .copilot-questions-toggle > span svg { color: var(--accent, #e29b6d); }
 .copilot-questions-panel { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); width: min(448px, calc(100vw - 32px)); box-sizing: border-box; top: auto; bottom: max(94px, calc(80px + env(safe-area-inset-bottom))); max-height: min(64dvh, 550px); overflow: auto; overscroll-behavior: contain; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg, #111); box-shadow: 0 16px 48px #0006; font-size: 14px; scrollbar-gutter: stable; }
+.copilot-questions-panel { opacity: 0; visibility: hidden; transform: translate(-50%, 8px); pointer-events: none; transition: opacity 180ms ease-out, transform 180ms ease-out, visibility 0s linear 180ms; }
+.copilot-questions-panel.is-open { opacity: 1; visibility: visible; transform: translateX(-50%); pointer-events: auto; transition-delay: 0s; }
 .copilot-questions-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 14px; }
 .copilot-questions-heading strong { font-size: 17px; font-weight: 650; }
 .copilot-questions-panel p { margin: 5px 0 0; line-height: 1.6; color: var(--dim); font-size: 13px; }
@@ -894,7 +899,14 @@
 .copilot-question details button { font-size: 13px; color: var(--dim); }
 .copilot-question button:disabled, .copilot-question-options:disabled { opacity: .55; }
 .copilot-questions-readiness { margin-bottom: 12px !important; }
-@media (max-width: 639px) { .copilot-questions-panel { width: auto; transform: none; top: auto; inset-inline: 12px; bottom: max(94px, calc(80px + env(safe-area-inset-bottom))); max-height: 70dvh; padding: 14px; border-radius: 16px; } }
+@media (max-width: 639px) {
+  .copilot-questions-panel { width: auto; transform: translateY(8px); top: auto; inset-inline: 12px; bottom: max(94px, calc(80px + env(safe-area-inset-bottom))); max-height: 70dvh; padding: 14px; border-radius: 16px; }
+  .copilot-questions-panel.is-open { transform: none; }
+}
+@media (min-width: 640px) {
+  .in-call .copilot-questions-panel { bottom: calc(max(0px, (100dvh - 800px) / 2) + max(94px, calc(80px + env(safe-area-inset-bottom)))); }
+}
+@media (prefers-reduced-motion: reduce) { .copilot-questions-panel { transition: none; } }
 
 /* Project marks stay inside the call sheet, including on mobile Safari. */
 .copilot-target-toggle { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--fg) 3%, var(--bg)); color: var(--fg); font: inherit; text-align: left; }

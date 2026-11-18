@@ -55,7 +55,7 @@ export function CopilotQuestions({ ready, targets, send, compact=false, continue
   }
   return <section className={`copilot-questions${compact ? " compact" : ""}`} onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); if (choosing) { setChoosing(false); chooseButton.current?.focus(); return }; setOpen(false); (event.currentTarget.querySelector('.copilot-questions-toggle') as HTMLButtonElement | null)?.focus() } }}>
     <button type="button" className="copilot-questions-toggle" aria-expanded={open} aria-controls="copilot-questions-panel" onClick={() => setOpen(!open)}><span><QuestionIcon group="understand" />{nextWord('copilotQuestions')}</span>{!compact && <svg viewBox="0 0 20 20" aria-hidden="true"><path d={open ? 'm5 12 5-5 5 5' : 'm5 8 5 5 5-5'} /></svg>}</button>
-    {open && <div id="copilot-questions-panel" className="copilot-questions-panel">
+    <div id="copilot-questions-panel" className={`copilot-questions-panel${open ? ' is-open' : ''}`} inert={!open} aria-hidden={!open}>
       <div className="copilot-questions-heading"><div><strong>{nextWord('copilotQuestions')}</strong><p>{nextWord('copilotQuestionsHint')}</p></div><button type="button" className="copilot-questions-close" aria-label={nextWord('copilotQuestionsClose')} onClick={() => setOpen(false)}>×</button></div>
       {continueReport && <button type="button" className="copilot-question-continue" onClick={() => {continueReport();setOpen(false)}}>{nextWord('copilotReportContinue')}</button>}
       <div className="copilot-questions-target" ref={picker}>
@@ -87,7 +87,7 @@ export function CopilotQuestions({ ready, targets, send, compact=false, continue
       </fieldset>
       {sending && <p role="status">{nextWord('copilotQuestionSending')}</p>}
       {error && <p role="alert">{error}</p>}
-    </div>}
+    </div>
   </section>
 }
 
