@@ -1,0 +1,382 @@
+{
+  "source": "https://clawdline.com/",
+  "websiteCommit": "589a71b2b51a02b746e10a6607d97cdab88fdf7b",
+  "rows": {
+    "en": [
+      {
+        "id": "a",
+        "project": "clawdline",
+        "title": "prepare the 0.4 release",
+        "who": "claude",
+        "cwd": "~/code/clawdline",
+        "tty": "ttys004",
+        "state": "working",
+        "coordinator": true,
+        "depth": 0,
+        "relation": "Root · 3",
+        "status": "planning · 3 Child Sessions · landing owner",
+        "terminalRequest": "Prepare the 0.4 release. Compare the public docs, test evidence, and exact candidate tree before landing.",
+        "terminalAction": "Reading the release checklist and comparing it with the exact candidate tree.",
+        "terminalTool": "Read 2 files",
+        "terminalFile": "docs/release.md · go.mod",
+        "terminalResult": "The checklist matches the candidate tree. Next I will collect each Child Session receipt before the Root lands the release.",
+        "detail": "The crown marks this machine's registered Clawdfather. It keeps the product intent and final landing responsibility while three Child Sessions handle bounded work beneath it."
+      },
+      {
+        "id": "b",
+        "project": "harbour",
+        "title": "build the Session status example",
+        "who": "codex",
+        "cwd": "~/code/website",
+        "tty": "ttys012",
+        "state": "working",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "working · claims website/session-list",
+        "terminalRequest": "Make the homepage explain how Clawdline organizes the same work that appears in Terminal tabs.",
+        "terminalAction": "Editing the homepage Session hierarchy and checking the mobile comparison.",
+        "terminalTool": "Edit + browser QA",
+        "terminalFile": "src/components/SessionList.astro",
+        "terminalResult": "The mobile layout is ready for your eyes. I sent the design below; tell me what to change before I hand the result back.",
+        "image": {
+          "file": "session-list-mobile.png",
+          "size": "390 × 844",
+          "note": "Sent by the Agent · tap to open"
+        },
+        "detail": "The indent and Child Session chip show work dispatched by the Root above. The pixel ring means this terminal is actively working; the status line also names its bounded write claim."
+      },
+      {
+        "id": "c",
+        "project": "lantern",
+        "title": "review the status vocabulary",
+        "who": "claude",
+        "cwd": "~/code/website",
+        "tty": "ttys007",
+        "state": "waiting_session",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "waiting for another Session · implementation result",
+        "terminalRequest": "Review the Status vocabulary after the homepage implementation arrives.",
+        "terminalAction": "Waiting for the implementation receipt before reviewing the status labels.",
+        "terminalTool": "Wait for Task",
+        "terminalFile": "PUBLIC-DOCS-STYLE.md",
+        "terminalResult": "No review has started yet. This Session will continue as soon as the implementation result is available.",
+        "detail": "The hourglass is a coordination wait: this reviewer needs another Session's result first. It asks nothing from you, so it stays quiet instead of borrowing the orange human-attention state."
+      },
+      {
+        "id": "d",
+        "project": "orchard",
+        "title": "verify the Cloud release path",
+        "who": "codex",
+        "cwd": "~/code/website",
+        "tty": "ttys016",
+        "state": "milestone_complete",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "delivered · awaiting Root review",
+        "terminalRequest": "Verify the Cloud release path and return evidence for every public route.",
+        "terminalAction": "Deployment smoke checks passed. Preparing the evidence summary for the Root.",
+        "terminalTool": "Run release smoke",
+        "terminalFile": "scripts/deploy-marketing.py",
+        "terminalResult": "All public and localized routes returned the expected status. The result is delivered and waiting for Root review.",
+        "detail": "One check means the Child Session delivered a result with evidence. It still needs Root review and landing; delivered, integrated and safe to close remain separate facts."
+      },
+      {
+        "id": "e",
+        "project": "beacon",
+        "title": "approve the production deploy",
+        "who": "claude",
+        "cwd": "~/code/beacon",
+        "tty": "ttys009",
+        "state": "waiting_you",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "waiting on you · deploy to production?",
+        "terminalRequest": "Deploy the approved build to production when I confirm the final release window.",
+        "terminalAction": "Approval is required before the production deployment can begin.",
+        "terminalTool": "Approval required",
+        "terminalFile": "infra/cloudflare.tf",
+        "terminalResult": "No deployment has started. Reply with approval or a new release window to move this Session forward.",
+        "detail": "Orange is reserved for the one state that needs you now. Open this Session and answer the pending decision; working, coordination waits and unknown evidence never compete with it."
+      },
+      {
+        "id": "f",
+        "project": "meadow",
+        "title": "organise the photo import rules",
+        "who": "codex",
+        "cwd": "~/code/meadow",
+        "tty": "ttys014",
+        "state": "ready",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "ready for new work · self-declared",
+        "terminalRequest": "Organize the photo import rules and report when this Session can accept another task.",
+        "terminalAction": "The previous request is complete. This Session is ready for the next instruction.",
+        "terminalTool": "Inspect working tree",
+        "terminalFile": "src/import/PhotoRules.swift",
+        "terminalResult": "The rules are organized and no action is running. Ready means this Session can accept work; it is not a closeability claim.",
+        "detail": "The open mailbox means this Session says it can accept new work. Ready is not the same as complete, and it is not proof that closing the terminal would be safe."
+      },
+      {
+        "id": "g",
+        "project": "clawdline",
+        "title": "inspect an attached legacy terminal",
+        "who": "codex",
+        "cwd": "~/code/clawdline",
+        "tty": "ttys021",
+        "state": "unknown",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "status unknown · screen temporarily unreadable",
+        "terminalRequest": "Inspect this attached legacy terminal without guessing when its screen evidence is incomplete.",
+        "terminalAction": "The terminal is attached, but its latest output cannot be classified safely.",
+        "terminalTool": "Read terminal screen",
+        "terminalFile": "Sources/TerminalInventory.swift",
+        "terminalResult": "The Session remains visible as Unknown. Clawdline will update it only after fresh terminal evidence arrives.",
+        "detail": "This is the one honest unknown in the example: Clawdline can see the terminal but lacks enough evidence to name its state. Unknown does not mean failed, finished or offline."
+      }
+    ],
+    "zh-Hant": [
+      {
+        "id": "a",
+        "project": "clawdline",
+        "title": "準備 0.4 版發佈",
+        "who": "claude",
+        "cwd": "~/code/clawdline",
+        "tty": "ttys004",
+        "state": "working",
+        "coordinator": true,
+        "depth": 0,
+        "relation": "Root · 3",
+        "status": "規劃中 · 3 個 Child Session · 負責最後落地",
+        "terminalRequest": "準備 0.4 版發佈。落地之前，請比對公開文件、測試證據與精準候選樹。",
+        "terminalAction": "正在閱讀發佈檢查清單，並與這次準備釋出的精準候選樹逐項比對。",
+        "terminalTool": "讀取 2 個檔案",
+        "terminalFile": "docs/release.md · go.mod",
+        "terminalResult": "檢查清單與候選樹一致。下一步會收齊每個 Child Session 的回條，再由 Root 完成落地。",
+        "detail": "皇冠代表這台機器已登記的 Clawdfather。它保存完整的產品目標與最後落地責任，再把三份範圍明確的工作交給下方的 Child Session。"
+      },
+      {
+        "id": "b",
+        "project": "harbour",
+        "title": "建立 Session Status 範例",
+        "who": "codex",
+        "cwd": "~/code/website",
+        "tty": "ttys012",
+        "state": "working",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "執行中 · 寫入 website/session-list",
+        "terminalRequest": "請讓首頁說明 Clawdline 如何整理 Terminal Tabs 裡的同一批工作。",
+        "terminalAction": "正在修改首頁的 Session 階層，並檢查手機版的兩種檢視是否一致。",
+        "terminalTool": "編輯並執行瀏覽器 QA",
+        "terminalFile": "src/components/SessionList.astro",
+        "terminalResult": "手機版版面做好了，請你先看一下。設計圖附在下面；有要改的地方告訴我，我再把結果交回 Root。",
+        "image": {
+          "file": "session-list-mobile.png",
+          "size": "390 × 844",
+          "note": "Agent 傳來的圖片 · 點一下放大"
+        },
+        "detail": "縮排與 Child Session 標籤表示這份工作由上方 Root 派出。像素旋轉環代表終端機正在工作；同一列也會說明它能寫入的範圍。"
+      },
+      {
+        "id": "c",
+        "project": "lantern",
+        "title": "審查 Status 詞彙",
+        "who": "claude",
+        "cwd": "~/code/website",
+        "tty": "ttys007",
+        "state": "waiting_session",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "等待另一個 Session · 等候實作結果",
+        "terminalRequest": "首頁實作完成後，請審查畫面中的 Status 詞彙。",
+        "terminalAction": "正在等待實作回條；收到結果後，才會開始審查畫面上的 Status 說明。",
+        "terminalTool": "等待 Task",
+        "terminalFile": "PUBLIC-DOCS-STYLE.md",
+        "terminalResult": "審查尚未開始。實作結果送達後，這個 Session 會自動繼續原本的任務。",
+        "detail": "沙漏代表協調等待：Reviewer 必須先取得另一個 Session 的結果。它不需要你回答，因此保持安靜，不會借用橘色的人員提醒狀態。"
+      },
+      {
+        "id": "d",
+        "project": "orchard",
+        "title": "驗證 Cloud 發佈流程",
+        "who": "codex",
+        "cwd": "~/code/website",
+        "tty": "ttys016",
+        "state": "milestone_complete",
+        "coordinator": false,
+        "depth": 1,
+        "relation": "Child Session",
+        "status": "已交付 · 等 Root 驗收",
+        "terminalRequest": "請驗證 Cloud 發佈流程，並回傳每一條公開路由的證據。",
+        "terminalAction": "線上部署的 smoke test 已通過，現在正整理證據摘要，準備交給 Root 驗收。",
+        "terminalTool": "執行發佈 smoke test",
+        "terminalFile": "scripts/deploy-marketing.py",
+        "terminalResult": "所有公開與本地化路由都回傳預期狀態。結果已交付，目前正在等待 Root 驗收。",
+        "detail": "單勾代表 Child Session 已連同證據交付結果，但仍須由 Root 審查與落地。已交付、已整合與可安全關閉是三件不同的事。"
+      },
+      {
+        "id": "e",
+        "project": "beacon",
+        "title": "核准 production 部署",
+        "who": "claude",
+        "cwd": "~/code/beacon",
+        "tty": "ttys009",
+        "state": "waiting_you",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "在等你回答 · 是否現在部署？",
+        "terminalRequest": "等我確認最後的發佈時段後，再把已核准的版本部署到 production。",
+        "terminalAction": "系統正在等待你的核准；取得明確同意之前，不會開始 production 部署。",
+        "terminalTool": "需要人員核准",
+        "terminalFile": "infra/cloudflare.tf",
+        "terminalResult": "部署尚未開始。請回覆是否核准，或提供新的發佈時段，這個 Session 才會繼續。",
+        "detail": "橘色只留給現在需要你採取行動的狀態。請打開這個 Session 回答待決問題；執行中、等待其他 Session 與證據不足都不會和它搶注意力。"
+      },
+      {
+        "id": "f",
+        "project": "meadow",
+        "title": "整理圖片匯入規則",
+        "who": "codex",
+        "cwd": "~/code/meadow",
+        "tty": "ttys014",
+        "state": "ready",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "可接新工作 · Session 自行宣告",
+        "terminalRequest": "請整理圖片匯入規則，並在這個 Session 可以接新工作時回報。",
+        "terminalAction": "上一項需求已處理完畢，這個 Session 現在可以接受新的工作指示。",
+        "terminalTool": "檢查 working tree",
+        "terminalFile": "src/import/PhotoRules.swift",
+        "terminalResult": "規則已整理完成，目前沒有動作正在執行。Ready 只表示可以接工作，不代表可以安全關閉。",
+        "detail": "空信箱表示這個 Session 宣告自己可以接收新工作。可接工作不等於工作已完成，也不能證明現在關閉終端機是安全的。"
+      },
+      {
+        "id": "g",
+        "project": "clawdline",
+        "title": "檢查接入的舊終端機",
+        "who": "codex",
+        "cwd": "~/code/clawdline",
+        "tty": "ttys021",
+        "state": "unknown",
+        "coordinator": false,
+        "depth": 0,
+        "relation": "",
+        "status": "狀態不明 · 暫時讀不到終端機畫面",
+        "terminalRequest": "請檢查這個接入的舊終端機；證據不完整時，不要猜測它的工作狀態。",
+        "terminalAction": "終端機仍然連接中，但目前無法可靠判讀最新輸出，因此不會猜測工作狀態。",
+        "terminalTool": "讀取終端機畫面",
+        "terminalFile": "Sources/TerminalInventory.swift",
+        "terminalResult": "這個 Session 會繼續顯示為 Unknown。只有收到新的終端機證據後，Clawdline 才會更新狀態。",
+        "detail": "這是範例中唯一合理的 Unknown：Clawdline 看得到終端機，卻沒有足夠證據判定狀態。Unknown 不代表失敗、完成或離線。"
+      }
+    ]
+  },
+  "marks": {
+    "clawdline": {
+      "label": "the registered Clawdline mark",
+      "accent": "#D97757",
+      "palette": {
+        "#": "#D97757",
+        "o": "#141416",
+        "-": "#4CCB7F"
+      },
+      "grid": [
+        "..############..",
+        "..############..",
+        "..##oo####oo##..",
+        "..##oo####oo##..",
+        "################",
+        "################",
+        "..############..",
+        "..############..",
+        "................",
+        "................",
+        "----------------"
+      ]
+    },
+    "harbour": {
+      "label": "a generated blue Session creature",
+      "accent": "#7FB0D4",
+      "palette": {
+        "#": "#7FB0D4",
+        "+": "#3F5A6E"
+      },
+      "grid": [
+        "+.+.+",
+        "#####",
+        "#.#.#",
+        "++.++"
+      ]
+    },
+    "lantern": {
+      "label": "a generated yellow Session creature",
+      "accent": "#E3B341",
+      "palette": {
+        "#": "#E3B341",
+        "+": "#7A6127"
+      },
+      "grid": [
+        ".+.+.",
+        "#.#.#",
+        "#####",
+        "+.+.+"
+      ]
+    },
+    "orchard": {
+      "label": "a generated pink Session creature",
+      "accent": "#C98BBD",
+      "palette": {
+        "#": "#C98BBD",
+        "+": "#6E4A67"
+      },
+      "grid": [
+        "++.++",
+        "#####",
+        "#.#.#",
+        ".+++."
+      ]
+    },
+    "beacon": {
+      "label": "a generated cyan Session creature",
+      "accent": "#5FB8C0",
+      "palette": {
+        "#": "#5FB8C0",
+        "+": "#2F6068"
+      },
+      "grid": [
+        "+++++",
+        "#.#.#",
+        "#####",
+        "+...+"
+      ]
+    },
+    "meadow": {
+      "label": "a generated green Session creature",
+      "accent": "#7FB069",
+      "palette": {
+        "#": "#7FB069",
+        "+": "#41603A"
+      },
+      "grid": [
+        "+...+",
+        "#####",
+        "#.#.#",
+        "+++++"
+      ]
+    }
+  },
+  "attachment": "<svg viewBox=\"0 0 78 132\" width=\"780\" height=\"1320\" xmlns=\"http://www.w3.org/2000/svg\">\n    <rect x=\"1\" y=\"1\" width=\"76\" height=\"130\" rx=\"9\" fill=\"#0d0d11\" stroke=\"#34343c\" />\n    <rect x=\"8\" y=\"9\" width=\"30\" height=\"5\" rx=\"2\" fill=\"#5d5d66\" />\n    <rect x=\"52\" y=\"9\" width=\"18\" height=\"5\" rx=\"2.5\" fill=\"#2f5d3f\" />\n    <rect x=\"8\" y=\"20\" width=\"62\" height=\"9\" rx=\"3\" fill=\"#18181d\" stroke=\"#2a2a31\" />\n    <rect x=\"8\" y=\"35\" width=\"62\" height=\"20\" rx=\"4\" fill=\"#15151a\" stroke=\"#2a2a31\" />\n    <rect x=\"12\" y=\"40\" width=\"9\" height=\"9\" rx=\"1.5\" fill=\"#d97757\" />\n    <rect x=\"25\" y=\"40\" width=\"30\" height=\"4\" rx=\"2\" fill=\"#c6c6cd\" />\n    <rect x=\"25\" y=\"47\" width=\"20\" height=\"3\" rx=\"1.5\" fill=\"#5d5d66\" />\n    <rect x=\"8\" y=\"59\" width=\"62\" height=\"20\" rx=\"4\" fill=\"#15151a\" stroke=\"#2a2a31\" />\n    <rect x=\"16\" y=\"64\" width=\"9\" height=\"9\" rx=\"1.5\" fill=\"#6aa7d8\" />\n    <rect x=\"29\" y=\"64\" width=\"28\" height=\"4\" rx=\"2\" fill=\"#c6c6cd\" />\n    <rect x=\"29\" y=\"71\" width=\"18\" height=\"3\" rx=\"1.5\" fill=\"#5d5d66\" />\n    <rect x=\"8\" y=\"83\" width=\"62\" height=\"20\" rx=\"4\" fill=\"rgba(217,119,87,.10)\" stroke=\"#d97757\" />\n    <rect x=\"12\" y=\"88\" width=\"9\" height=\"9\" rx=\"1.5\" fill=\"#aaa397\" />\n    <rect x=\"25\" y=\"88\" width=\"32\" height=\"4\" rx=\"2\" fill=\"#c6c6cd\" />\n    <rect x=\"25\" y=\"95\" width=\"24\" height=\"3\" rx=\"1.5\" fill=\"#d97757\" />\n    <rect x=\"8\" y=\"107\" width=\"62\" height=\"18\" rx=\"4\" fill=\"#15151a\" stroke=\"#2a2a31\" />\n    <rect x=\"12\" y=\"111\" width=\"9\" height=\"9\" rx=\"1.5\" fill=\"#7cc48f\" />\n    <rect x=\"25\" y=\"112\" width=\"26\" height=\"4\" rx=\"2\" fill=\"#c6c6cd\" />\n</svg>",
+  "attachmentBytes": 38264
+}
