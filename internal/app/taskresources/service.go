@@ -44,22 +44,6 @@ type OwnerState struct {
 	EvidenceDigest string
 }
 
-type Failure struct {
-	Code  string
-	Cause error
-}
-
-func (e Failure) Error() string { return e.Code }
-func (e Failure) Unwrap() error { return e.Cause }
-func fail(code string) error    { return Failure{Code: code} }
-
-func measurementFailure(code string, cause error) error {
-	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
-		code = "resource_measurement_interrupted"
-	}
-	return Failure{Code: code, Cause: cause}
-}
-
 type Service struct {
 	Store     *store.Store
 	FS        *resourcefs.Root
@@ -148,7 +132,7 @@ func (s *Service) resource(ctx context.Context, scope Scope, id string) (taskres
 	}
 	r, err := s.Store.TaskResource(ctx, id)
 	if err != nil {
-		return taskresource.Resource{}, fail("resource_not_found")
+		return taskresource.Resource{}, readFailure(ctx, err, "resource.lookup", id)
 	}
 	if !scope.allows(r) {
 		return taskresource.Resource{}, fail("resource_scope_not_allowed")
@@ -594,21 +578,21 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	s.stats.Known = false
 	s.statsMu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.begin", "")
 	}
 	u := taskresource.Usage{Known: true}
 	if s.OtherUsage != nil {
 		var err error
 		u, err = s.OtherUsage(ctx)
 		if err != nil || !u.Known {
-			return taskresource.Usage{}, measurementFailure("resource_legacy_measurement_unknown", err)
+			return taskresource.Usage{}, measurementFailure("resource_legacy_measurement_unknown", err).WithContext(ctx, "measure.legacy", "")
 		}
 	}
 	after := ""
 	for {
 		rows, next, err := s.Store.TaskResourcePage(ctx, after, taskresource.PageRowsLimit, true)
 		if err != nil {
-			return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
+			return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.registry", "")
 		}
 		for _, r := range rows {
 			if r.Class == taskresource.Artifact || r.Class == taskresource.Evidence {
@@ -616,7 +600,7 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 			}
 			snapshot, err := s.FS.Snapshot(ctx, r)
 			if err != nil {
-				return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
+				return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.resource", r.ID)
 			}
 			size := snapshot.Logical
 			if snapshot.AllocationKnown {
@@ -638,10 +622,10 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	}
 	free, err := s.FreeSpace()
 	if err != nil {
-		return taskresource.Usage{}, measurementFailure("resource_disk_space_unknown", err)
+		return taskresource.Usage{}, measurementFailure("resource_disk_space_unknown", err).WithContext(ctx, "measure.disk", "")
 	}
 	if err := ctx.Err(); err != nil {
-		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err)
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.complete", "")
 	}
 	u.Available = free
 	s.statsMu.Lock()
@@ -694,6 +678,7 @@ func (s *Service) Sweep(ctx context.Context, after string) (Result, string, erro
 // Admit first tries a bounded safe sweep, then refuses new managed heavy work if
 // capacity is still unavailable. It never relaxes retention or kills a reader.
 func (s *Service) Admit(ctx context.Context) error {
+	ctx = withDefaultCaller(ctx, "resources.admit")
 	if !s.ready() {
 		return fail("resource_service_unavailable")
 	}
@@ -711,7 +696,7 @@ func (s *Service) Admit(ctx context.Context) error {
 	s.statsMu.Unlock()
 	_, next, err := s.Sweep(ctx, after)
 	if err != nil {
-		return err
+		return Explain(ctx, err, "admission.sweep")
 	}
 	s.statsMu.Lock()
 	s.admitAfter = next

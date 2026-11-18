@@ -212,3 +212,23 @@ when the daemon cannot be reached remains a separately reported path; a refused
 lease is not reported as held. Regression coverage includes slow admission,
 request cancellation, replay, cancellation before launch, expired failure receipts,
 unknown measurement retention and pressure-page progress.
+
+## Admission failure correlation (2026-11-18)
+
+A missing resource is only a store lookup that positively returns no row.
+Cancellation, deadline expiry and unreadable records retain different typed
+causes. Machine refusal diagnostics include the source caller, lookup or
+measurement phase, a known opaque resource ID and the server deadline when
+one exists. The structured diagnostic also has scalar aliases for the existing
+CLI refusal renderer. They omit database error text, filesystem paths and data
+contents.
+The broker records its admission refusal on a fresh record context; this
+proves the server decision, not response delivery to a disconnected client.
+Callbacks retain the same safe fields in their durable verdict before launch.
+Historical refusals without a resource ID or cause remain unknown; a two-minute
+runtime alone does not establish which resource failed or whether it was deleted.
+
+The diagnostic does not alter storage limits, the advancing-page admission
+policy, output sealing or cleanup authority. A failed lookup never grants
+permission to allocate over it, delete a directory, or rerun a command whose
+outcome is unknown.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -415,7 +416,9 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 		if !errors.Is(err, needsStorageAdmission) {
 			break
 		}
-		if err = b.AdmitHeavyResources(ctx); err != nil {
+		admissionContext := taskresources.WithCaller(ctx, "heavy.acquire", req.RequestID)
+		admissionContext = taskresources.WithCallback(admissionContext, req.CallbackTaskID)
+		if err = b.AdmitHeavyResources(admissionContext); err != nil {
 			return LeaseAnswer{}, err
 		}
 		admitted = true

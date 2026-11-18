@@ -458,7 +458,7 @@ func runCallbackStart(ctx context.Context, b *Broker, e store.Effect) effectResu
 		// of its own, just as finishEffect does for the outbox outcome.
 		rec, cancel := recordContext(ctx)
 		defer cancel()
-		cause := "resource_admission_refused: " + resourceErr.Error()
+		cause := callbackResourceFailure(ctx, r.ID, resourceErr)
 		_, ids, err := b.settleWith(rec, r.ID, StateFailure, cause, nil, func(x *Record) {
 			// StartEffect returns the row before incrementing Attempts. Only
 			// its first invocation proves no earlier launch was possible.

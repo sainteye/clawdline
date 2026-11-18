@@ -1,10 +1,12 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
@@ -24,8 +26,24 @@ func (s *Server) taskResourcesRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	scope := taskresources.Scope{Actor: "machine", AllProjects: true, Inspect: true, Reclaim: true, Publish: true, Unpin: true}
 	path := strings.TrimSuffix(routePath(r), "/")
+	caller := "resources.inspect"
+	switch strings.TrimPrefix(path, "/v1/orchestrator/resources/") {
+	case "admit":
+		caller = "resources.admit"
+	case "allocate":
+		caller = "resources.allocate"
+	case "publish":
+		caller = "resources.publish"
+	}
+	r = r.WithContext(taskresources.WithCaller(r.Context(), caller, ""))
 	respond := func(v any, err error) {
 		if err != nil {
+			var failure taskresources.Failure
+			if errors.As(err, &failure) {
+				diagnostic := failure.WithContext(r.Context(), "resource.operation", "").Diagnostic()
+				writeBrokerRefusal(w, orchestrator.Refusal{Status: 409, Code: failure.Code, Message: "Resource operation refused; inspect the reason and preserved data before retrying.", Extra: diagnostic.Fields()})
+				return
+			}
 			writeRefusal(w, 409, err.Error(), "Resource operation refused; inspect the reason and preserved data before retrying.")
 			return
 		}

@@ -1373,5 +1373,6 @@
   "http.068c75f90ddbd81a": "Invalid resource page size.",
   "http.53864d798d4d0614": "Specify pinned explicitly.",
   "http.f91d005f881f0074": "Resource response contract is unavailable.",
-  "http.f83c60ec892ca7ae": "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
+  "http.f83c60ec892ca7ae": "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry.",
+  "http.07ec92f4cf2b6ddd": "Managed storage could not be verified. Inspect resource diagnostics before retrying."
 }
