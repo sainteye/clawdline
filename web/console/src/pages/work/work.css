@@ -714,7 +714,7 @@
     box-sizing: border-box; width: min(520px, 100%); padding: 22px; border: 1px solid var(--line);
     border-radius: 16px; background: var(--bg); color: var(--ink); box-shadow: 0 24px 80px #000a;
 }
-.session-todo-modal > form { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.session-todo-modal > form { --work-modal-padding: 22px; max-height: calc(100dvh - 32px); overflow-y: auto; }
 .session-todo-modal h2 { margin: 0 0 8px; font-size: 18px; }
 .session-todo-modal p { color: var(--dim); font-size: 13px; }
 .session-todo-modal textarea {
@@ -763,10 +763,12 @@
    they go instead of hiding that rule in a select. */
 .work-new-modal form { width: min(620px, 100%); max-height: min(780px, calc(100dvh - 32px)); overflow: auto; }
 .work-new-modal .work-actions { margin-top: 16px; }
-.work-created-modal { align-items: safe center; overflow: auto; }
 .work-created-panel {
-    box-sizing: border-box; width: min(720px, 100%); max-height: none; overflow: visible; margin-block: auto;
-    padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); color: var(--ink);
+    --work-modal-padding: 22px;
+    box-sizing: border-box; width: min(720px, 100%); max-height: calc(100dvh - 32px);
+    overflow: hidden auto; overscroll-behavior: contain;
+    padding: 0 var(--work-modal-padding) var(--work-modal-padding); border: 1px solid var(--line);
+    border-radius: 16px; background: var(--bg); color: var(--ink);
     box-shadow: 0 24px 80px #000a;
 }
 
@@ -777,22 +779,18 @@
     padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
 @media (max-width: 720px) {
-    .work-created-panel { --work-modal-padding: 16px; padding: 16px; border-radius: 14px; }
+    .work-created-panel { --work-modal-padding: 16px; border-radius: 14px; }
 }
-.work-item-detail-modal {
-    align-items: safe center; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
-    -webkit-overflow-scrolling: touch;
-}
-.work-item-detail-panel { display: grid; gap: 14px; width: min(720px, 100%); max-height: none; overflow: visible; margin-block: auto; }
+.work-item-detail-panel { display: grid; gap: 14px; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 .work-item-detail-panel h2 { margin: 0; }
 .work-edit-modal form { width: min(620px, 100%); }
 .work-delete-modal form { width: min(500px, 100%); }
 .work-delete-modal strong { color: var(--ink); }
 .work-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.session-todo-modal > form, .work-created-panel { --work-modal-padding: 22px; }
+.session-todo-modal > form:has(> .work-modal-head) { padding-block-start: 0; }
 .session-todo-modal > form > .work-modal-head, .work-created-panel > .work-modal-head {
     position: sticky; top: 0; z-index: 2; background: var(--bg);
-    margin: calc(0px - var(--work-modal-padding)) calc(0px - var(--work-modal-padding)) 0;
+    margin-inline: calc(0px - var(--work-modal-padding));
     padding: var(--work-modal-padding) var(--work-modal-padding) 10px;
 }
 .work-modal-head .board-eyebrow { margin: 0 0 4px; }

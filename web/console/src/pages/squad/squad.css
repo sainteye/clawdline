@@ -175,11 +175,11 @@
 .squad-skeleton-name { width: 64%; height: 13px; }
 .squad-skeleton-title { width: 52%; height: 22px; }
 .squad-skeleton-foot { width: 40%; height: 9px; }
-.squad-dialog { width: min(620px, calc(100vw - 24px)); max-height: min(85dvh, 900px); padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--ink); overflow: auto; }
+.squad-dialog { width: min(620px, calc(100vw - 24px)); max-height: min(85dvh, 900px); padding: 0 20px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--ink); overflow: auto; }
 .squad-dialog::backdrop { background: rgba(0,0,0,.68); }
 .squad-dialog-head {
     position: sticky; top: 0; z-index: 3; display: flex; align-items: start; justify-content: space-between; gap: 15px;
-    margin: -20px -20px 0; padding: 20px 20px 8px; background: var(--card);
+    margin-inline: -20px; padding: 20px 20px 8px; background: var(--card);
 }
 .squad-dialog-head h2 { margin: 0; font-size: 22px; }
 .squad-dialog-head button { flex: none; width: 44px; padding: 0; font-size: 23px; }

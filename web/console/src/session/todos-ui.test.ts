@@ -168,8 +168,6 @@ test("a recent Board item opens its durable completion report in one click", () 
   assert.match(report, pattern`\{${wordCall("寫於")}\} \{when\(document\.created_at\)\}`)
   assert.match(report, /L\.richTextHTML\(completionReportText\(document\.body\)\)/)
   assert.match(styles, /\.work-completion-report/)
-  assert.match(styles, /\.work-item-detail-modal[^}]*overflow-y:\s*auto[^}]*touch-action:\s*pan-y/)
-  assert.match(styles, /\.work-item-detail-panel[^}]*overflow:\s*visible/)
 })
 
 test("folded Session todos show finished, active and not-started counts", () => {

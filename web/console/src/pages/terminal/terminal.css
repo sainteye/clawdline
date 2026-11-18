@@ -321,12 +321,12 @@
 .cloud-skel-round { flex: none; width: 44px; height: 44px; border-radius: 22px; }
 .cloud-skel-chip { flex: none; width: 56px; height: 44px; border-radius: 22px; }
 
-.terminal-connections-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 3rem); overflow: auto; padding: 1.25rem; color: var(--text); background: var(--panel, #161619); border: 1px solid var(--border, #303038); border-radius: 12px; }
+.terminal-connections-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 3rem); overflow: auto; padding: 0 1.25rem 1.25rem; color: var(--text); background: var(--panel, #161619); border: 1px solid var(--border, #303038); border-radius: 12px; }
 .terminal-connections-dialog::backdrop { background: rgb(0 0 0 / 65%); }
 .terminal-connections-heading {
     position: sticky; top: 0; z-index: 1;
     display: flex; gap: 1rem; align-items: center; justify-content: space-between;
-    margin: -1.25rem -1.25rem 0; padding: 1.25rem;
+    margin-inline: -1.25rem; padding: 1.25rem;
     background: var(--panel, #161619);
 }
 .terminal-connections-heading h2 { margin: 0; font-size: 1.15rem; }

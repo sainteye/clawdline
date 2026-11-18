@@ -116,7 +116,7 @@
 .project-assistants .pa-tabs button[aria-pressed="true"] { color:#fafafa;background:#303033; }
 .project-assistants .pa-status { padding:24px;overflow:auto;max-height:100%; }
 .project-assistants .pa-status-mobile { display:none; }
-.project-assistants .pa-form-panel { position:absolute;inset:0;z-index:5;background:var(--pa-bg);overflow:auto;max-width:600px;margin:auto;border:1px solid var(--pa-line);padding:20px 18px max(20px,env(safe-area-inset-bottom)); }
+.project-assistants .pa-form-panel { position:absolute;inset:0;z-index:5;background:var(--pa-bg);overflow:auto;max-width:600px;margin:auto;border:1px solid var(--pa-line);padding:0 18px max(20px,env(safe-area-inset-bottom)); }
 .project-assistants .pa-form-panel .pa-toolbar button { border:0;background:transparent;padding:6px 0;font-size:14px; }
 .project-assistants .pa-form-body { margin-top:30px; }
 .project-assistants .pa-form-avatar { display:flex;justify-content:center;margin:20px 0; }
@@ -394,11 +394,11 @@
 .pa-output-card strong{overflow-wrap:anywhere}
 .pa-output-card small{opacity:.7}
 .pa-output-scrim { position: fixed; inset: 0; z-index: 1500; background: #0009; }
-.pa-output-overlay{position:absolute;inset:12px;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:auto}
+.pa-output-overlay{position:absolute;inset:12px;display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:hidden auto}
 .pa-output-overlay > header {
     position: sticky; top: 0; z-index: 1;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin: -16px -16px 0; padding: 16px; background: var(--pa-bg,#080808);
+    flex: none; margin-inline: -16px; padding: 16px; background: var(--pa-bg,#080808);
 }
 .pa-output-overlay h3{margin:0;overflow-wrap:anywhere}
 .pa-output-overlay>button{align-self:flex-start}
@@ -650,6 +650,6 @@
 .project-assistants .pa-form-scrim > .pa-form-panel { box-shadow: none; }
 .project-assistants .pa-form-panel > .pa-toolbar {
     position: sticky; top: 0; z-index: 3;
-    margin: -20px -18px 0; padding: 20px 18px 8px;
+    margin-inline: -18px; padding: 8px 18px;
     background: var(--pa-bg);
 }

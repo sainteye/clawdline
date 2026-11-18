@@ -2904,6 +2904,25 @@ test("phone and desktop: new Board Sessions keep compact model and team-role cho
       await tab.run(`document.querySelector('.work-card-summary').click()`)
       await wait(`document.querySelector('.work-created-modal [aria-controls^="work-roles-"]')`)
       assert.deepEqual(await tab.run(`(() => {
+        const panel = document.querySelector('.work-item-detail-panel')
+        const close = panel.querySelector('.work-modal-close')
+        const end = document.createElement('p')
+        end.textContent = 'End of Board details'
+        end.style.marginTop = '100vh'
+        panel.append(end)
+        panel.scrollTop = panel.scrollHeight
+        const titlebar = close.closest('.work-modal-head')
+        const innerTop = panel.getBoundingClientRect().top + panel.clientTop
+        const box = close.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        const result = { scrolled: panel.scrollTop > 0,
+          endVisible: end.getBoundingClientRect().bottom <= panel.getBoundingClientRect().bottom,
+          pinned: Math.abs(titlebar.getBoundingClientRect().top - innerTop) <= 1 && close.contains(hit) }
+        end.remove()
+        panel.scrollTop = 0
+        return result
+      })()`), { scrolled: true, endVisible: true, pinned: true }, 'the close control stays on the visible top edge when Board details scroll')
+      assert.deepEqual(await tab.run(`(() => {
         const modal = document.querySelector('.work-created-modal')
         return [...modal.querySelectorAll('.work-launch-toggle')].map(button => ({
           name: button.textContent, expanded: button.getAttribute('aria-expanded'),
