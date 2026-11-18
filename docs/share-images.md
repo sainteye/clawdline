@@ -16,3 +16,14 @@ green underline. Regenerate the cross-machine diagrams with
 `python3 tools/render-cross-machine-diagram.py`; render each editable overview SVG
 with the pinned Resvg version above after changing its artwork. The diagrams retain
 their existing text, dimensions and workflow layout.
+
+The macOS notch draws the same rounded orange mascot natively through
+`shell/darwin/RoundedBrandMascot.swift`. Its coordinates and warm-light gradient
+follow the mascot group in `brand.svg`; the website's separate green line is not
+part of the notch character. The existing routines still control its movement,
+speed, blinking and sleeping expression. An unchanged copy of the bundled
+`clawd.json` follows this brand update, including copies installed by earlier
+versions. An edited pack or a different selected character keeps its own artwork.
+Run `sh tools/test-rounded-brand-mascot.sh` for the selection and native rendering
+checks; an optional directory argument also exports the expression and notch-scale
+PNG samples.

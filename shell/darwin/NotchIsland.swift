@@ -1166,20 +1166,23 @@ struct IslandMascotPack: Decodable {
     /// Search order: this app's own pack directory first, then the ones bundled
     /// with it. A user copy always wins, so editing a bundled pack never gets
     /// undone by an update.
-    static func load(named name: String) -> (pack: IslandMascotPack?, error: String?) {
+    static func load(named name: String) -> (pack: IslandMascotPack?, error: String?, roundedBrand: Bool) {
         var candidates: [URL] = [MascotPacks.userDirectory.appendingPathComponent("\(name).json")]
-        if let bundled = Bundle.main.url(forResource: name, withExtension: "json", subdirectory: "mascots") {
+        let bundled = Bundle.main.url(forResource: name, withExtension: "json", subdirectory: "mascots")
+        if let bundled {
             candidates.append(bundled)
         }
         guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            return (nil, "No mascot named \"\(name)\" in \(MascotPacks.userDirectory.path)")
+            return (nil, "No mascot named \"\(name)\" in \(MascotPacks.userDirectory.path)", false)
         }
         do {
-            let pack = try JSONDecoder().decode(IslandMascotPack.self, from: Data(contentsOf: url))
-            if let problem = pack.validate() { return (nil, "\(url.lastPathComponent): \(problem)") }
-            return (pack, nil)
+            let data = try Data(contentsOf: url)
+            let pack = try JSONDecoder().decode(IslandMascotPack.self, from: data)
+            if let problem = pack.validate() { return (nil, "\(url.lastPathComponent): \(problem)", false) }
+            let bundledData = bundled.flatMap { try? Data(contentsOf: $0) }
+            return (pack, nil, RoundedBrandMascot.replacesDefault(named: name, data: data, bundled: bundledData))
         } catch {
-            return (nil, "\(url.lastPathComponent): \(error.localizedDescription)")
+            return (nil, "\(url.lastPathComponent): \(error.localizedDescription)", false)
         }
     }
 
@@ -1321,6 +1324,7 @@ final class IslandMascotView: NSView {
     private(set) var routine = "idle"
     private(set) var pack: IslandMascotPack?
     private(set) var loadError: String?
+    private var roundedBrand = false
 
     private var started = CACurrentMediaTime()
     private var fallback = "idle"
@@ -1383,6 +1387,7 @@ final class IslandMascotView: NSView {
         let result = IslandMascotPack.load(named: NextConfig.shared.mascot)
         if let p = result.pack {
             pack = p
+            roundedBrand = result.roundedBrand
             loadError = nil
         } else {
             loadError = result.error
@@ -1512,6 +1517,12 @@ final class IslandMascotView: NSView {
         tf.scaleX(by: f.sx, yBy: f.sy)
         tf.translateX(by: -cx, yBy: -cy)
         tf.concat()
+
+        if roundedBrand {
+            RoundedBrandMascot.draw(in: rect, eyes: f.eyes)
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
 
         // Collect each colour into one path and fill once. Filling cell by cell
         // antialiases every boundary separately once scaling lands them
