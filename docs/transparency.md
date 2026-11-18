@@ -12,6 +12,16 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The optional source TCP observer adds no model instruction, native tool or
+human control. Reviewed the existing English and Taiwan Chinese explanations:
+owned-port display and physical recovery still remain unqualified. Its kernel
+root pin belongs only to combined-output source commands, and a fresh rooted
+identity check fences each bounded read. A full probe pool refuses without
+starting another OS query; its actual count has a capacity measurement. Register
+the observer source with persistent-bots, retaining the separate Host/UI/Cloud
+and crash-recovery construction gaps. No website deployment follows a receipt
+refresh alone.
+
 The details server section reuses the existing source API and anchored menu;
 it adds no model tool or instruction. Reviewed both language explanations for
 known-ID controls, plain-text logs, incomplete tails and the inspection lock

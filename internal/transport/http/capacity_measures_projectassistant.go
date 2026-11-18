@@ -2,6 +2,8 @@ package http
 
 import (
 	"context"
+
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"time"
@@ -100,6 +102,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.server_spec_bytes":      pure,
 		"bots.server_log_bytes":       serverUnobserved,
 		"bots.server_caller_receipts": serverUnobserved,
+		"bots.server_probe_readers": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(projectassistantacp.SourceTCPReaders()), Note: "actual active source TCP observations; busy readers refuse without queuing another OS probe"}
+		},
 		"bots.archive_bytes": func() capacity.Reading {
 			return capacity.Unmeasured("offline CLI input is not retained or observed by the daemon")
 		},

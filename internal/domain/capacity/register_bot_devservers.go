@@ -11,6 +11,8 @@ const (
 	MaximumBotServerLogBytes = 64 << 10
 	// Scoped start receipts are retained until the calling execution ends.
 	MaximumBotServerCallerReceipts = 32
+	// Read-only listener snapshots do not queue extra OS probes when busy.
+	MaximumBotServerProbeReaders = 4
 )
 
 func botServerBounds() []Entry {
@@ -20,5 +22,6 @@ func botServerBounds() []Entry {
 		{Name: "bots.server_spec_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumBotServerSpecBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotServerSpecBytes"}},
 		{Name: "bots.server_log_bytes", Class: Observation, Unit: Bytes, Limit: MaximumBotServerLogBytes, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerLogBytes"}},
 		{Name: "bots.server_caller_receipts", Class: Buffer, Unit: Rows, Limit: MaximumBotServerCallerReceipts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerCallerReceipts"}},
+		{Name: "bots.server_probe_readers", Class: Buffer, Unit: Rows, Limit: MaximumBotServerProbeReaders, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerProbeReaders", "internal/adapters/projectassistantacp.package:chan(capacity.MaximumBotServerProbeReaders)", "internal/adapters/projectassistantacp.tcpReadLimit"}},
 	}
 }

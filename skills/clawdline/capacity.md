@@ -181,6 +181,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.server_caller_receipts` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_definitions` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_log_bytes` | 65536 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `bots.server_probe_readers` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

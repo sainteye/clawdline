@@ -13311,5 +13311,7 @@
   "capacityRow.bots.server_log_bytes.full": "Older output is discarded; the reply reports that the retained tail is incomplete.",
   "capacityRow.bots.server_caller_receipts.what": "Mutation receipts retained by one live source-owned calling execution.",
   "capacityRow.bots.server_caller_receipts.full": "Further mutations are refused; earlier and uncertain receipts are retained.",
-  "projectAssistants.permissionSourceAuthority": "Runs with the source computer's file and network permissions, outside the Agent's terminal sandbox."
+  "projectAssistants.permissionSourceAuthority": "Runs with the source computer's file and network permissions, outside the Agent's terminal sandbox.",
+  "capacityRow.bots.server_probe_readers.what": "Concurrent checks of which TCP ports managed servers listen on. These checks share a limit across this computer.",
+  "capacityRow.bots.server_probe_readers.full": "A busy observation is refused without queuing another OS query. The managed server keeps running; refresh later to inspect its ports."
 }

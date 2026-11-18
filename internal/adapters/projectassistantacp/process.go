@@ -65,6 +65,7 @@ type Process struct {
 	rootObserved   bool
 	rootStamp      string
 	censusOverride func(context.Context) ([]processIdentity, error)
+	tcp            *tcpObserver
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -238,6 +239,14 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 		errRead.Close()
 		return nil, err
 	}
+	if o.CombinedOutput {
+		// Pin while the direct child cannot yet be reaped or its PID reused.
+		// A missing optional observation capability never grants ownership or
+		// prevents the existing command owner from retaining its process.
+		observe, cancel := context.WithTimeout(context.Background(), o.Limits.CleanupTimeout)
+		p.tcp = newTCPObserver(observe, cmd.Process.Pid, o.Limits, p.tcpIdentities)
+		cancel()
+	}
 	go func() {
 		defer errRead.Close()
 		buf := make([]byte, o.Limits.StderrBytes)
@@ -308,6 +317,9 @@ func (p *Process) Stderr() string {
 }
 func (p *Process) Close(ctx context.Context) error {
 	p.closeOnce.Do(func() {
+		if p.tcp != nil && p.tcp.root != nil {
+			defer p.tcp.root.close()
+		}
 		defer p.stdout.Close()
 		defer p.stderrReader.Close()
 		cleanup, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)

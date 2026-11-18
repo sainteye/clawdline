@@ -3523,6 +3523,28 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.server_probe_readers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerProbeReaders",
+      "internal/adapters/projectassistantacp.package:chan(capacity.MaximumBotServerProbeReaders)",
+      "internal/adapters/projectassistantacp.tcpReadLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.server_processes",
     "Class": "buffer",
     "Unit": "rows",

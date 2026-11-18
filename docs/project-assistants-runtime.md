@@ -470,6 +470,36 @@ retains an ID-only tombstone, so late controls cannot address a reused ID.
 These local tables change neither portable Bot core/archive 12 nor SQLite's
 host user_version. The maintenance writer stays closed.
 
+The command adapter now has an optional read-only TCP observer. It pins the
+root before the direct child can be reaped: Darwin uses kernel birth plus the
+exec-stable unique process ID; Linux retains a pidfd and kernel start ticks.
+Each observation brackets the listener read with fresh, complete rooted parent
+and kernel-identity snapshots. A reused PID, changed ancestry, missing root,
+incomplete inventory or unsupported platform returns an unknown/unavailable
+reading, never guessed addresses. Darwin queries lsof with an explicit PID
+intersection and TCP LISTEN selector. Linux joins only the owned processes'
+socket descriptors to TCP tables in the source host's network namespace, then
+rechecks matching descriptors. Other network namespaces remain unsupported. No command text,
+file contents, argv or environment is returned.
+
+OS probes share the existing census byte, descendant and cleanup-time budgets.
+At most four source TCP observations run at once across the process; a busy read
+refuses without queuing another probe, and the existing capacity override may
+only lower this admission limit. The capacity view reports the actual active
+count. The new bound's unregistered guard was exercised red before registration.
+A controlled PID-only comparison disclosed a replaced child's bind; the full
+identity comparison refuses it. Actual Darwin Go HTTP peers cover exclusion of
+an unrelated listener, exec without losing ownership and port closure on cleanup.
+Linux implementation and tests still require their platform CI; a Darwin test
+is not Linux runtime evidence.
+
+This optional observer is not yet carried by the Host's server-list response,
+ports/title UI, Cloud bridge or a background change stream. Ordinary ACP peers
+retain no observer. It does not replace the existing cleanup supervisor, persist
+kernel facts, adopt an escaped/crashed owner or authorize kill/restart by PID.
+Physical crash/boot recovery and durable clean-restart intent remain separate
+construction; portable Bot/archive 12 and the maintenance writer are unchanged.
+
 The registry owns foreground process handles through the existing ACP physical
 supervisor, without creating another native provider. It drains combined output
 into the bounded tail and retains an acquired handle even when launch returns

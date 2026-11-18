@@ -13311,5 +13311,7 @@
   "capacityRow.bots.server_log_bytes.full": "捨棄較舊輸出，並在回覆標明保留的尾端紀錄不完整。",
   "capacityRow.bots.server_caller_receipts.what": "一個仍有效的來源自有執行所保留的變更操作收據。",
   "capacityRow.bots.server_caller_receipts.full": "達上限後拒絕後續變更，既有與結果不明的收據繼續保留。",
-  "projectAssistants.permissionSourceAuthority": "使用來源電腦的檔案與網路權限，在 Agent 的終端沙箱之外執行。"
+  "projectAssistants.permissionSourceAuthority": "使用來源電腦的檔案與網路權限，在 Agent 的終端沙箱之外執行。",
+  "capacityRow.bots.server_probe_readers.what": "這台電腦同時進行的受管理伺服器 TCP 埠盤點；所有盤點共用名額。",
+  "capacityRow.bots.server_probe_readers.full": "名額已滿時會拒絕這次盤點，不排入另一個系統查詢。受管理的伺服器繼續執行，可稍後重新整理查看埠。"
 }

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13311,
+  "englishKeys": 13313,
   "counts": {
-    "negation": 3509,
-    "state": 2256,
+    "negation": 3510,
+    "state": 2257,
     "permission": 811,
     "deletion": 313,
     "uncertainty": 547
   },
-  "unionCount": 5744,
+  "unionCount": 5745,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -234,6 +234,7 @@
       "capacityRow.bots.rpc_rows.full",
       "capacityRow.bots.rules_file_bytes.full",
       "capacityRow.bots.send_body_bytes.full",
+      "capacityRow.bots.server_probe_readers.full",
       "capacityRow.bots.server_spec_bytes.full",
       "capacityRow.bots.survey_ms.full",
       "capacityRow.bots.tool_probe_bytes.full",
@@ -3731,6 +3732,7 @@
       "capacityRow.bots.server_caller_receipts.full",
       "capacityRow.bots.server_definitions.full",
       "capacityRow.bots.server_definitions.what",
+      "capacityRow.bots.server_probe_readers.full",
       "capacityRow.bots.server_processes.full",
       "capacityRow.bots.server_spec_bytes.full",
       "capacityRow.bots.server_spec_bytes.what",
@@ -7908,6 +7910,7 @@
     "capacityRow.bots.server_definitions.full",
     "capacityRow.bots.server_definitions.what",
     "capacityRow.bots.server_log_bytes.full",
+    "capacityRow.bots.server_probe_readers.full",
     "capacityRow.bots.server_processes.full",
     "capacityRow.bots.server_spec_bytes.full",
     "capacityRow.bots.server_spec_bytes.what",

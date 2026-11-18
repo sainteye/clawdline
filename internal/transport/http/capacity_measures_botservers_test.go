@@ -10,7 +10,7 @@ func TestBotServerCapacityCountsTheRealRegistryAndKeepsUnobservedBuffersUnknown(
 		t.Fatal("fixture did not install the real Host")
 	}
 	measures := f.s.projectAssistantCapacityMeasures()
-	for _, name := range []string{"bots.server_definitions", "bots.server_processes"} {
+	for _, name := range []string{"bots.server_definitions", "bots.server_processes", "bots.server_probe_readers"} {
 		if got := measures[name](); !got.Known || got.Used != 0 || got.Note == "" {
 			t.Errorf("fresh real registry count for %s: %+v", name, got)
 		}

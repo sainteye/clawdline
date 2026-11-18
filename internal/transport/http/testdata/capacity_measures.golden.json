@@ -868,6 +868,11 @@
     "Note": true
   },
   {
+    "Name": "bots.server_probe_readers",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.server_processes",
     "Known": true,
     "Note": true
