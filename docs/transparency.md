@@ -881,3 +881,10 @@ execute tools, replay requests or grant consent. Its private journal metadata
 uses existing flushes. Reload persistence and cross-device history are not
 claimed. The reviewed sources include the ledger and its real modal component;
 website snapshot publication remains separate from source receipt freshness.
+
+The anchored message-action update changes transient menu placement and the display of
+pending and receipt-confirmed reactions. Review of the Bot-review explanation in English
+and Taiwan Traditional Chinese found no change to peer prompts, exchange ownership,
+memory selection, native permission or replay authority. Unknown reaction outcomes still
+retain their original request. The ChatRows source receipt follows the reviewed renderer;
+the existing bilingual instruction explanation remains applicable.

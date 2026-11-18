@@ -69,17 +69,37 @@ release acceptance or human visual approval.
 
 ## Conversation presentation and message actions
 
-Single-chat text uses compact, separate user and assistant bubbles, with controls outside the
-text surface. Desktop hover and keyboard focus reveal reply/copy and reaction controls; their
-reserved space prevents the next message from moving on hover. Touch layouts keep action
-entries visible and give them a 44px target. User-message actions also open from a dedicated
-button or Enter/Space on the message. Escape dismisses the reaction palette and returns
-focus to its trigger. Opening or switching inspector tabs dismisses transient message menus
-and palettes without discarding an unresolved reaction intent. No reaction is sent by opening,
-dismissing or moving focus between these controls.
+Single-chat text uses separate user and assistant bubbles. One More button opens the
+message's quick reactions, Reply and Copy in a viewport-clamped portal. The same entry is
+visible on touch layouts, appears on desktop hover or keyboard focus, and opens from
+Enter/Space on the message or its context menu. It does not add an open-state background
+to the message. Popup focus uses preventScroll; Escape returns to the trigger. Inspector
+navigation dismisses only the transient menu, retaining any unresolved reaction intent.
 
-The comparison uses the pinned 2.47 source and existing native screenshots. Screenshot pixels
-do not establish the native window's CSS viewport, and untested Codync touch or keyboard
-gestures are not claimed. Equal-size Clawdline captures use synthetic four-message history at
-1672×976 and 390×720; reconstructed local baseline captures are distinct from actual Cloud
-screenshots. These checks do not establish cross-product response speed or visual approval.
+Reaction summaries have reserved row space, so opening a picker, adding or removing one
+reaction does not change the bubble or scroll geometry. A selected emoji closes the
+picker immediately and shows a marked pending preview. The existing typed, same-ID desired
+state command still owns persistence. A validated delivered receipt confirms that preview
+at the submitted actor revision plus one, until the same or newer actor revision arrives
+from the source. Older poll results cannot flash back over a confirmed local operation.
+A known refusal restores the previous state; unknown results retain the original intent,
+remain visibly uncertain and require explicit same-ID recovery. No background replay,
+new API operation, source permission or model request is introduced.
+
+Codync 2.47 source at `9f67eb09084db61b3cca9c84a11bc03df9de29b7` separates the summary and
+message actions in `ChatRows.tsx` (lines258-324), anchors a portal in `Menu.tsx` (lines183-227),
+and replaces its immediate local reaction with the Host response in `bot-store.ts`
+(lines242-259). These are source observations. Existing native screenshots do not establish
+its CSS viewport; untested Codync touch or keyboard behavior and cross-product response
+speed are not claimed. Clawdline retains its explicit pending/unknown receipt distinction.
+
+`TestProjectAssistantMessageActionsBrowser` uses production Chat and SourceClient with real
+HTTP/Host/SQLite, synthetic long history and scripted provider work. Its desktop,390px and
+320px cases record bubble/scroll coordinates, per-frame pending/confirmed feedback, the
+source transaction response and delayed HTTP acknowledgement separately. The proxy can
+withhold event visibility to test receipt projection without changing the polling cadence.
+It records original WebM video and checks keyboard focus, touch input and a known refusal.
+`BOTS_ACTIONS_BASELINE` loads the exact four old presentation sources for the same reproducer.
+The existing reaction browser test separately covers persistence, same-ID unknown recovery
+and revoked late replies. These isolated checks do not replace formal Cloud or physical
+phone acceptance, installed-native qualification or human visual review.

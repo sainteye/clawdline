@@ -139,13 +139,13 @@ try{
   assert.equal(await evaluate('!!document.querySelector(".pa-reaction-palette")'),false,"Details does not retain a stale palette")
   await evaluate('document.querySelector(".pa-mine").focus()');await key("Enter");await waitFor('!!document.querySelector(".pa-message-actions")')
   await key("Escape");await waitFor('!document.querySelector(".pa-message-actions")')
-  assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-mine")'),true)
+  assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-mine .pa-message-more")'),true)
   const reply='.pa-message:not(.pa-mine)'
   const point=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(reply)}).getBoundingClientRect();return {x:r.x+5,y:r.y+5}})()`)
   await send("Input.dispatchMouseEvent",{type:"mouseMoved",...point},session)
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-foot")})).opacity`),"1","pointer reveals reply actions")
-  await evaluate(`document.querySelector(${JSON.stringify(reply+" .pa-copy")}).focus()`);assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-foot")})).opacity`),"1","keyboard focus reveals reply actions")
-  await hit(reply+' .pa-quote');await waitFor('!!document.querySelector(".pa-reply")')
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-more")})).opacity`),"1","pointer reveals reply actions")
+  await evaluate(`document.querySelector(${JSON.stringify(reply+" .pa-message-more")}).focus()`);assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-more")})).opacity`),"1","keyboard focus reveals reply actions")
+  await hit(reply+' .pa-message-more');await hit('.pa-message-menu [role=menuitem]');await waitFor('!!document.querySelector(".pa-reply")')
   await capture(mobile?'mobile-actions':'desktop-actions');await close()
  }
 
