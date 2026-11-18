@@ -32,10 +32,10 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false, boa
 }) {
   const who = assistant ? L.whoHTML(assistant) : ""
   return <>
-    {crown ? <span className="coordinator-mark" aria-hidden="true"><Mark icon={icon} cellPx={4} />
+    {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true"><Mark icon={icon} cellPx={4} />
       <span className="clawdfather-crown" aria-hidden="true" /></span> : <Mark icon={icon} cellPx={4} />}
     {bound && <span className="coordinator-identity">Clawdfather</span>}
-    <div className="title" style={{ color: L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
+    <div className="title" style={{ color: L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead crown={false} />}
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} /></div>
   </>
 }

@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom"
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { nextWord as t } from "../next-strings.js"
 import { client, followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
 import { richText } from "../legacy/js/view/markdown.js"
@@ -137,10 +137,16 @@ function unreadFor(source: SessionBoardSource, board: Board) {
   return board.archived_at ? 0 : Math.max(0, board.latest - currentCursor(source, board.id))
 }
 
-export function SessionBoardLead() {
+export function SessionBoardLead({ crown = true }: { crown?: boolean }) {
   return <span className="session-board-lead">
-    <span className="clawdfather-crown" aria-hidden="true" />{t("sessionBoardLead")}
+    {crown && <span className="clawdfather-crown" aria-hidden="true" />}{t("sessionBoardLead")}
   </span>
+}
+
+function BoardChevron({ direction }: { direction: "back" | "forward" | "down" }) {
+  return <svg className="session-board-chevron" data-direction={direction} aria-hidden="true" viewBox="0 0 24 24">
+    <path d="m9 6 6 6-6 6" />
+  </svg>
 }
 
 function BoardGlyph() {
@@ -318,36 +324,64 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
   const [selected, select] = useState(initial)
+  const [opened, setOpened] = useState<Board>()
+  const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
+  const view = useRef<HTMLDivElement>(null)
+  const switchBoard = (id: string) => {
+    select(id)
+    if (view.current) view.current.scrollTop = 0
+  }
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
   useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} className="session-board-dialog" data-expanded={expanded} aria-labelledby={heading} onClose={close}>
+  return <dialog ref={dialog} className="session-board-dialog" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close}>
     <header>
-      <h2 id={heading}>{t("sessionBoards")}</h2>
+      {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
+        title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}
+      <div className="session-board-heading">
+        <h2 id={heading}>{selectedBoard?.name ?? t("sessionBoards")}</h2>
+        {selectedBoard && <details className="session-board-heading-purpose" key={selectedBoard.id}>
+          <summary><span>{selectedBoard.purpose}</span><BoardChevron direction="down" /></summary>
+        </details>}
+      </div>
       <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>{t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}</button>
       <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
     </header>
-    {selected ? <>
-      <nav><button type="button" onClick={() => { select(""); void refresh() }}>{t("sessionBoards")}</button></nav>
-      <BoardMessages key={selected} source={source} id={selected} candidates={candidates} />
-    </> : <div className="session-board-body" aria-busy={!loaded}>
-      <div className="session-board-actions">
-        <button type="button" onClick={() => void refresh()}>{t("sessionBoardRefresh")}</button>
-        {source.writable && candidates.length > 0 && <button type="button" onClick={() => create(!creating)}>{t("sessionBoardCreate")}</button>}
+    <div className="session-board-scroll" ref={view}>
+    {selected ? <BoardMessages key={selected} source={source} id={selected} candidates={candidates} onRead={setOpened} />
+    : <div className="session-board-body" aria-busy={!loaded}>
+      <div className="session-board-actions session-board-index-actions">
+        {source.writable && candidates.length > 0 && <button type="button" className="session-board-primary"
+          aria-expanded={creating} onClick={() => create(!creating)}>{t("sessionBoardCreate")}</button>}
+        <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardRefresh")}
+          title={t("sessionBoardRefresh")} onClick={() => void refresh()}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 7a8 8 0 1 0 1 10M19 3v4h-4" /></svg>
+        </button>
       </div>
       {creating && source.writable && <BoardCreate source={source} candidates={candidates} onCreated={id => {
-        create(false); select(id)
+        create(false); switchBoard(id)
       }} />}
       {problem && <p role="alert">{t("sessionBoardReadError")}</p>}
       {loaded && boards.length === 0 && !problem && <p>{t("sessionBoardsEmpty")}</p>}
-      <ul className="session-board-index">{boards.map(board => <li key={board.id}>
-        <button type="button" onClick={() => select(board.id)}>
-          <strong>{board.name}</strong>{board.archived_at ? <span>{t("sessionBoardArchived")}</span> : null}
-          <span>{board.purpose}</span>
-          {unreadFor(source, board) > 0 && <small>{t("sessionBoardUnread", { count: unreadFor(source, board) })}</small>}
-        </button>
-      </li>)}</ul>
+      <ul className="session-board-index">{boards.map(board => {
+        const unread = unreadFor(source, board)
+        return <li key={board.id}>
+          <button type="button" className="session-board-index-card" onClick={() => switchBoard(board.id)}>
+            <span className="session-board-index-mark"><BoardGlyph /></span>
+            <span className="session-board-index-content">
+              <strong>{board.name}</strong>
+              <span className="session-board-index-purpose">{board.purpose}</span>
+              <span className="session-board-index-meta">
+                {board.archived_at ? t("sessionBoardArchived") : t("sessionBoardMemberCount", { count: board.members?.length ?? 0 })}
+                {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
+              </span>
+            </span>
+            <BoardChevron direction="forward" />
+          </button>
+        </li>
+      })}</ul>
     </div>}
+    </div>
   </dialog>
 }
 
@@ -392,11 +426,12 @@ function BoardCreate({ source, candidates, onCreated }: { source: SessionBoardSo
   </form>
 }
 
-function BoardMessages({ source, id, candidates }: { source: SessionBoardSource; id: string; candidates: Actor[] }) {
+function BoardMessages({ source, id, candidates, onRead }: {
+  source: SessionBoardSource; id: string; candidates: Actor[]; onRead: (board: Board) => void
+}) {
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
   const [reading, setReading] = useState(false)
-  const [compact] = useState(() => window.matchMedia("(max-width: 700px)").matches)
   const [unreadSince, setUnreadSince] = useState(() => currentCursor(source, id))
   const [draft, setDraft] = useState("")
   const [reply, setReply] = useState<number>()
@@ -415,6 +450,7 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
       const next = await sourceRef.current.read<Page>(before ? { board: id, before } : { board: id }, request.signal)
       if (request.signal.aborted) return
       setPage(previous => before && previous ? { ...next, posts: [...next.posts, ...previous.posts] } : next)
+      onRead(next.board)
       if (!before && next.posts.length > 0) {
         const current = sourceRef.current
         const cursor = currentCursor(current, id)
@@ -430,7 +466,7 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
       if (!request.signal.aborted) setError(boardErrorCode(e, "session_board_read_unavailable"))
     }
     finally { if (!request.signal.aborted) setReading(false) }
-  }, [id])
+  }, [id, onRead])
   useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
   const b = page?.board
   const allowed = source.writable && b && !b.archived_at
@@ -450,17 +486,28 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
     {error && <p role="alert">{t("sessionBoardReadError")} <code>{error}</code></p>}
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
-      <h3 className="session-board-name">{b.name}</h3>
-      <p className="session-board-purpose">{b.purpose}</p>
-      {lead && <div className="session-board-lead-strip"><SessionBoardLead /> <strong>{lead.label}</strong></div>}
-      <div className="session-board-actions">
-        <button type="button" disabled={reading} onClick={() => void load()}>{t("sessionBoardRefresh")}</button>
-        {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
-        {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
+      <div className="session-board-overview">
+        {lead && <div className="session-board-lead-strip"><SessionBoardLead /> <strong>{lead.label}</strong></div>}
+        <div className="session-board-actions">
+          <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardRefresh")}
+            title={t("sessionBoardRefresh")} disabled={reading} onClick={() => void load()}>
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 7a8 8 0 1 0 1 10M19 3v4h-4" /></svg>
+          </button>
+          {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
+          {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
+        </div>
       </div>
-      <div className="session-board-discussion">
-      <div className="session-board-thread">
-      {b.summary && <details className="session-board-summary" open><summary>{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
+      <div className="session-board-disclosures">
+        {b.summary && <details className="session-board-summary"><summary>{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
+        {b.members && <details className="session-board-members">
+          <summary>{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
+          <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
+            <span className="session-board-member-mark" aria-hidden="true"><BoardGlyph /></span>
+            <strong>{member.label}</strong>
+            {member.id === b.lead && <SessionBoardLead />}
+          </li>)}</ul>
+        </details>}
+      </div>
       {allowed && manage && <div className="session-board-management">
         <form key={b.summary} onSubmit={e => { e.preventDefault(); action({ action: "summary", text: String(new FormData(e.currentTarget).get("summary")) }) }}>
           <label>{t("sessionBoardSummary")}<textarea name="summary" defaultValue={b.summary} rows={3} /></label>
@@ -481,15 +528,16 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
       {unread > 0 && <p className="session-board-new" role="status">{t("sessionBoardUnread", { count: unread })}</p>}
       {!page.posts.length && <p>{t("sessionBoardNoPosts")}</p>}
       <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p => <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>
-        <div>
+        <div className="session-board-post-meta">
           <strong>{p.author.id === "person" ? t("sessionBoardPerson") : p.author.label}</strong>
           {p.author.id === b.lead && <SessionBoardLead />}
-          <time dateTime={new Date(p.at * 1000).toISOString()}>{new Date(p.at * 1000).toLocaleString(document.documentElement.lang || undefined)}</time>
+          <time dateTime={new Date(p.at * 1000).toISOString()}>
+            {new Date(p.at * 1000).toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" })}
+          </time>
           <span>#{p.seq}</span>
         </div>
         {p.reply_to && <small>{t("sessionBoardReplyTo", { seq: p.reply_to })}</small>}
-        <div className="session-board-text" dangerouslySetInnerHTML={{ __html: richText(p.text, { codeCopy: false }) }} />
-        {allowed && <button type="button" onClick={() => setReply(p.seq)}>{t("sessionBoardReply")}</button>}
+        <BoardPostText text={p.text} reply={allowed ? () => setReply(p.seq) : undefined} />
       </li>)}</ol>
       {page.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardEarlier")}</button>}
       {allowed && <form onSubmit={post}>
@@ -497,16 +545,45 @@ function BoardMessages({ source, id, candidates }: { source: SessionBoardSource;
         <label>{t("sessionBoardMessage")}<textarea value={draft} onChange={e => setDraft(e.currentTarget.value)} rows={3} required /></label>
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
-      </div>
-      {b.members && <details className="session-board-members" open={!compact}>
-        <summary>{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
-        <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
-          <span className="session-board-member-mark" aria-hidden="true"><BoardGlyph /></span>
-          <strong>{member.label}</strong>
-          {member.id === b.lead && <SessionBoardLead />}
-        </li>)}</ul>
-      </details>}
-      </div>
     </>}
   </div>
+}
+
+// A collapsed note shows plain text so its hidden links cannot take focus.
+function BoardPostText({ text, reply }: { text: string; reply?: () => void }) {
+  const [expanded, expand] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  const content = useId()
+  const excerpt = useRef<HTMLParagraphElement>(null)
+  const { html, preview } = useMemo(() => {
+    const html = richText(text, { codeCopy: false })
+    const template = document.createElement("template")
+    template.innerHTML = html
+    const preview = Array.from(template.content.childNodes, node => node.textContent ?? "")
+      .join(" ").replace(/\s+/g, " ").trim() || text
+    return { html, preview }
+  }, [text])
+  const hasFormatting = preview !== text.replace(/\s+/g, " ").trim()
+  useLayoutEffect(() => {
+    const element = excerpt.current
+    if (!element || hasFormatting) return
+    const check = () => setClipped(element.scrollHeight > element.clientHeight + 1)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [expanded, hasFormatting, preview])
+  const canExpand = expanded || hasFormatting || clipped
+  return <>
+    {expanded
+      ? <div id={content} className="session-board-text" dangerouslySetInnerHTML={{ __html: html }} />
+      : <p id={content} ref={excerpt} className="session-board-note-preview">{preview}</p>}
+    {(canExpand || reply) && <div className="session-board-post-actions">
+      {canExpand && <button type="button" className="session-board-note-control" aria-expanded={expanded} aria-controls={content}
+        onClick={() => expand(!expanded)}>
+        <BoardChevron direction="down" />{t(expanded ? "sessionBoardHidePost" : "sessionBoardShowPost")}
+      </button>}
+      {reply && <button className="session-board-reply" type="button" onClick={reply}>{t("sessionBoardReply")}</button>}
+    </div>}
+  </>
 }
