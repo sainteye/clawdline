@@ -70,6 +70,7 @@ type runtimeActor struct {
 	cleanupErr error              // Engine.mu
 	completion *routineCompletion // actor.mu; persisted before releasing a retained owner
 	opening    bool               // actor.mu
+	closing    bool               // actor.mu: seals live readings before native cleanup
 	working    bool
 	cancel     context.CancelFunc
 	session    ProviderSession
@@ -1046,6 +1047,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	a.mu.Lock()
 	a.opening = false
+	a.closing = false
 	a.session = session
 	a.mu.Unlock()
 	if session == nil {

@@ -316,6 +316,23 @@ type ownedSession struct {
 	life *workLifetime
 }
 
+// NativeContext must cross the same sealed lifetime as native tools. Embedding
+// ProviderSession alone hides this optional provider capability.
+func (s *ownedSession) NativeContext() app.NativeContextState {
+	if s.life.closed.Load() {
+		return app.NativeContextState{}
+	}
+	reader, ok := s.ProviderSession.(app.NativeContextReader)
+	if !ok {
+		return app.NativeContextState{}
+	}
+	state := reader.NativeContext()
+	if s.life.closed.Load() {
+		return app.NativeContextState{}
+	}
+	return state
+}
+
 // Send is a bounded write inside the engine memory lock. A provider must defer
 // tool callbacks to its independent consumer/Wait, never await a journal here.
 func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {

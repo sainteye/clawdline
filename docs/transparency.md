@@ -823,6 +823,16 @@ input explanations in English and Taiwan Traditional Chinese found no new
 prompt text, memory input, execution permission or automatic replay. This
 internal read port does not execute compaction or add a policy control.
 
+The Host now transfers that cached reading only from an existing live actor,
+through the owned-session lifetime. Human and background authority, complete
+execution/native identity, current binding and memory/instruction revisions
+qualify it; closing seals the reading before native cleanup. This adds no
+provider initialization, prompt text, memory input, native write, tool or
+automatic trigger. Review of the existing English and Taiwan Traditional
+Chinese Bot explanations confirms those boundaries remain accurate. Both
+Host and runtime read sources are included in the reviewed inventory. No
+HTTP/UI command or idle maintenance policy is introduced by this read path.
+
 The separate native maintenance port uses the adapter's literal `/compact`
 convention without ordinary chat context. It advertises and consumes typed
 compaction facts, checks the captured session fence and accepts one attempt
