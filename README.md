@@ -50,6 +50,16 @@ Clawdline runs the daemon and console on your machine and works with Claude Code
 
 Official [Grok Build coding Sessions](docs/grok-cli.md) also support native file edits, tool approvals and worktree dispatch after CLI sign-in.
 
+## Talk to your Sessions by voice
+
+Call the voice copilot to hear what needs you, ask about a Session's progress or a message board's current Lead, and open the relevant conversation. It reads the full recipient and message back for your agreement before sending. Green capsules keep the call's tool activity, with quick commands beside them and duration and amount below.
+
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-en.jpg" width="390" alt="Voice copilot reporting on sample Sessions, with green tool-history capsules, Quick commands, call duration and amount." /></a>
+
+*Current Cloud/dev interface with synthetic example data. Voice calls use your own OpenAI API key.*
+
+[Voice copilot guide and demo](https://clawdline.com/docs/voice-copilot/) · [Watch the English demo video](https://media.clawdline.com/voice-copilot/demo-en-b206a48a82f1.mp4). The recorded film uses an earlier call layout; its voices, Sessions and costs are demonstration data.
+
 ## Sessions that work across machines (Cloud)
 
 Let Codex on your Mac work with Claude Code on Linux. After reciprocal pairing, Agents can discover remote Projects and Sessions, dispatch work to a chosen Project, message an existing Session, and resume when results return. You do not have to copy instructions and replies between machines.

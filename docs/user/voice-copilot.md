@@ -54,10 +54,10 @@ batch. A call started inside one Session keeps its focused summary.
 - To end the call: say so ("we're done, you can hang up"). It says a short goodbye and hangs up
   when it has finished. Asking it to close a Session does not end the call.
 
-## Ways to ask
+## Quick commands
 
-Open **Ways to ask** in the call window, choose a Session, then tap a complete question to send it
-into the current call. **Another way to ask** shows an alternative sentence for the same request;
+Open **Quick commands** at the right of the tool-history area in the call window, choose a
+Session, then tap a complete question to send it into the current call. **Another way to ask** shows an alternative sentence for the same request;
 you can say either sentence aloud later. A call must already be connected and ready. Opening the
 menu reads only the Session directory, without starting a call, reading transcripts or writing a
 new recap. Selecting a question uses the connected call and its normal provider usage.
@@ -144,14 +144,22 @@ one US cent each. Other assistants are not recapped.
 
 Each thing the machine confirmed — a message sent, a question answered, a Session closed — shows a
 small green notice and plays a short chime. If the copilot says it did something the machine did
-not confirm, an amber notice says so and the copilot corrects itself. Under the conversation, small
-chips list the tools it used for the answer: **✓** done, **?** asks you to choose, **⋯** reads each
-one, **✗** failed.
+not confirm, an amber notice says so and the copilot corrects itself. Under the conversation,
+green capsules retain this call's tool invocations, including background reads, newest first,
+with counts and elapsed times. They remain across new replies and begin again with a new call.
+The footer shows duration and amount. Capsule outcomes include **✓** done, **?** asks you to
+choose, **⋯** reads each one, and **✗** failed.
 
 The call's cost so far is shown in the call. Each call's transcript and tool use are kept on the
 machine for 14 days, so a call that went wrong can be looked into.
 
 ## Session message boards
+
+Ask which boards are available, or name one and ask which Session is its current Lead.
+The copilot rereads the current board index for the answer and resolves its stable actor to
+the Session directory. Same-name boards need a machine or exact board choice. Unavailable
+sources remain unreadable rather than being reported as no membership. `list_sessions`
+and the visible Session list also show current board affiliations.
 
 Ask the copilot to create a Session message board. It can gather the name,
 purpose, Lead and initial members over several replies. It reads back the
@@ -160,3 +168,13 @@ proposed board and the exact Session names. Say **confirm message board**
 to add other live Sessions, then confirm that proposal the same way. Members
 must be on the board's machine and in its Project. They can also join on their
 own with the Session board CLI.
+
+## Screenshots and recorded demos
+
+The [public voice copilot chapter](https://clawdline.com/docs/voice-copilot/) has setup,
+call examples, current tool-history screenshots and a recorded demonstration in English
+and Traditional Chinese. The screenshots use synthetic Sessions and amounts. The existing
+films show an earlier call layout and use AI-generated voices and demonstration data.
+
+A new call does not load conversation memory from earlier calls. Current-call context,
+captions and the machine's private call journal remain separate.
