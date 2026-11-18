@@ -38,7 +38,7 @@ func (s *Server) sessionBoardActor(ctx context.Context, inv session.Inventory, i
 		if label == "" {
 			label = string(row.Assistant)
 		}
-		actor, cwd = sb.Actor{ID: actorID, Label: label}, row.CWD
+		actor, cwd = sb.Actor{ID: actorID, Label: label, Persona: row.Persona}, row.CWD
 	}
 	if actor.ID == "" || cwd == "" {
 		return sb.Actor{}, "", false

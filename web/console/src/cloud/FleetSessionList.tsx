@@ -472,25 +472,27 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               <p>{reading.value.rows.length === 0 ? nextWord(reading.value.complete ? "cloudAllEmptyMachine" : "cloudAllPartialEmpty") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
                 <SessionBoardRows source={isCollapsed ? undefined : sessionBoardSource?.(machine.id)}
-                  rows={rows.map(({ row, depth, branchThrough, ancestorThrough }) => {
+                  rows={rows.map(({ row, parent, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
+                  const status = displayedPresentationStatus(row, presentation)
                   const title = fleetRowTitle(row, presentation, nextWord("cloudAllUnknown"),
                     confirmedTitles?.get(destinationKey(row.destination)))
                   const actions = sessionSwipeActions(row.freshness,
-                    displayedPresentationStatus(row, presentation)?.sessionId, row.backend)
+                    status?.sessionId, row.backend)
                   return {
+                    id: row.destination.sessionID, parent,
                     actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
-                      displayedPresentationStatus(row, presentation)?.sessionId, title),
-                    render: (grouped, lead) => <ProjectedRow boardLead={lead} key={destinationKey(row.destination)}
+                      status?.sessionId, title, status?.persona, presentation?.icon),
+                    render: board => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
-                    status={displayedPresentationStatus(row, presentation)}
+                    status={status}
                     runningAgents={row.freshness === "current" ? row.agentCountUnknown ? null : row.runningAgentCount : undefined}
                     sessionID={row.destination.sessionID} machineID={machine.id} machineName={machine.name}
                     assistant={row.assistant ?? presentation?.assistant} state={row.state} stateLabel={row.providerBlock === "model_capacity" ? nextWord("sessionModelCapacity") : stateWord(row.state)}
                     freshness={row.freshness === "unknown" ? nextWord("cloudAllUnknown") : ""}
                     lastMovementAt={row.lastMovementAt} attention={row.needsAttention === true}
-                    depth={grouped ? 0 : depth} branchThrough={!grouped && branchThrough} ancestorThrough={!grouped && ancestorThrough}
+                    depth={board?.depth ?? depth} branchThrough={board?.branchThrough ?? branchThrough} ancestorThrough={board?.ancestorThrough ?? ancestorThrough}
                     open={!!target && destinationKey(target) === destinationKey(row.destination)}
                     selectionKey={destinationKey(row.destination)}
                     swiped={swiped === destinationKey(row.destination)}

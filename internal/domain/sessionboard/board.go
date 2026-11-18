@@ -29,8 +29,9 @@ var (
 )
 
 type Actor struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Persona string `json:"persona,omitempty"`
 }
 
 type Board struct {

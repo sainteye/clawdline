@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS session_boards (
 );
 CREATE TABLE IF NOT EXISTS session_board_members (
  board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
- actor TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY (board, actor)
+ actor TEXT NOT NULL, label TEXT NOT NULL, persona TEXT NOT NULL DEFAULT '', PRIMARY KEY (board, actor)
 );
 CREATE TABLE IF NOT EXISTS session_board_posts (
  board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
- seq INTEGER NOT NULL, actor TEXT NOT NULL, label TEXT NOT NULL, text TEXT NOT NULL,
+ seq INTEGER NOT NULL, actor TEXT NOT NULL, label TEXT NOT NULL, persona TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
  reply_to INTEGER NOT NULL, at INTEGER NOT NULL, request_key TEXT NOT NULL,
  PRIMARY KEY (board, seq), UNIQUE (board, actor, request_key)
 );
@@ -34,6 +34,24 @@ CREATE TABLE IF NOT EXISTS session_board_posts (
 type sessionBoardQuery interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func openSessionBoards(db *sql.DB) error {
+	if _, err := db.Exec(sessionBoardSchema); err != nil {
+		return err
+	}
+	for _, table := range []string{"session_board_members", "session_board_posts"} {
+		has, err := hasColumn(db, table, "persona")
+		if err != nil {
+			return err
+		}
+		if !has {
+			if _, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN persona TEXT NOT NULL DEFAULT ''"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 const boardColumns = "id,project,name,purpose,lead,summary,archived_at,latest"
@@ -48,7 +66,7 @@ func scanSessionBoard(row interface{ Scan(...any) error }) (sb.Board, error) {
 }
 
 func sessionBoardMembers(ctx context.Context, q sessionBoardQuery, id string) ([]sb.Actor, error) {
-	rows, err := q.QueryContext(ctx, "SELECT actor,label FROM session_board_members WHERE board=? ORDER BY actor", id)
+	rows, err := q.QueryContext(ctx, "SELECT actor,label,persona FROM session_board_members WHERE board=? ORDER BY actor", id)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +74,7 @@ func sessionBoardMembers(ctx context.Context, q sessionBoardQuery, id string) ([
 	out := []sb.Actor{}
 	for rows.Next() {
 		var a sb.Actor
-		if err := rows.Scan(&a.ID, &a.Label); err != nil {
+		if err := rows.Scan(&a.ID, &a.Label, &a.Persona); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -134,7 +152,7 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 	if actor != "" && !boardMember(b.Members, actor) {
 		return sb.Page{}, sb.ErrDenied
 	}
-	query := "SELECT seq,actor,label,text,reply_to,at FROM session_board_posts WHERE board=?"
+	query := "SELECT seq,actor,label,persona,text,reply_to,at FROM session_board_posts WHERE board=?"
 	args := []any{id}
 	switch {
 	case after > 0:
@@ -154,7 +172,7 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 	page := sb.Page{Board: b, Posts: []sb.Post{}}
 	for rows.Next() {
 		var p sb.Post
-		if err := rows.Scan(&p.Seq, &p.Author.ID, &p.Author.Label, &p.Text, &p.ReplyTo, &p.At); err != nil {
+		if err := rows.Scan(&p.Seq, &p.Author.ID, &p.Author.Label, &p.Author.Persona, &p.Text, &p.ReplyTo, &p.At); err != nil {
 			return sb.Page{}, err
 		}
 		page.Posts = append(page.Posts, p)
@@ -295,8 +313,8 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 			return result, sb.ErrInvalid
 		}
 		result.Seq = b.Latest + 1
-		_, err = tx.ExecContext(ctx, "INSERT INTO session_board_posts(board,seq,actor,label,text,reply_to,at,request_key) VALUES(?,?,?,?,?,?,?,?)",
-			b.ID, result.Seq, postActor, actor.Label, c.Text, c.ReplyTo, now.Unix(), key)
+		_, err = tx.ExecContext(ctx, "INSERT INTO session_board_posts(board,seq,actor,label,persona,text,reply_to,at,request_key) VALUES(?,?,?,?,?,?,?,?,?)",
+			b.ID, result.Seq, postActor, actor.Label, actor.Persona, c.Text, c.ReplyTo, now.Unix(), key)
 		if err == nil {
 			_, err = tx.ExecContext(ctx, "UPDATE session_boards SET latest=? WHERE id=?", result.Seq, b.ID)
 		}
@@ -323,13 +341,19 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 
 func insertSessionBoardMembers(ctx context.Context, tx *sql.Tx, board string, current, additions []sb.Actor) error {
 	for _, actor := range additions {
-		if boardMember(current, actor.ID) {
+		if i := slices.IndexFunc(current, func(member sb.Actor) bool { return member.ID == actor.ID }); i >= 0 {
+			if current[i].Persona == "" && actor.Persona != "" {
+				if _, err := tx.ExecContext(ctx, "UPDATE session_board_members SET persona=? WHERE board=? AND actor=?", actor.Persona, board, actor.ID); err != nil {
+					return err
+				}
+				current[i].Persona = actor.Persona
+			}
 			continue
 		}
 		if len(current) >= sb.MaxMembers {
 			return sb.ErrFull
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label) VALUES(?,?,?)", board, actor.ID, actor.Label); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label,persona) VALUES(?,?,?,?)", board, actor.ID, actor.Label, actor.Persona); err != nil {
 			return err
 		}
 		current = append(current, actor)

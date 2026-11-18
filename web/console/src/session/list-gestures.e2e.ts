@@ -71,6 +71,7 @@ type ReadingScenario =
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
 let boardFixture = false
+let boardTreeFixture = false
 let holdBoardIndex: Promise<void> | undefined
 let holdBoardThread: Promise<void> | undefined
 let failBoardThread = false
@@ -176,6 +177,13 @@ const MOVED = { safe: 300, needsAttestation: 250, unknown: 200, spare: 100, spar
 let spareMoved = MOVED.spare
 
 function rows(): Row[] {
+  if (boardTreeFixture) return [
+    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500),
+    row(SAFE, "Lead", safeCloseability(), 350, { icon: { accent: "#715546", cells: [["#715546"]] } }),
+    row(BLOCKED, "Child", blockedCloseability(), 300),
+    row(UNKNOWN, "Grandchild", unknownCloseability(), 250),
+    row(SPARE, "Outside", safeCloseability(), 200),
+  ]
   if (readingScenario === "expired") return []
   if (readingScenario === "callback-owner") return [
     row(SAFE, "示範：Go 測試", safeCloseability(), Date.now() / 1000,
@@ -434,7 +442,8 @@ function daemon(): Server {
         lead: "claude:conversation-" + SAFE,
         members: [
           { id: "claude:conversation-" + SAFE, label: "Lead" },
-          { id: "claude:conversation-" + NEEDS_ATTESTATION, label: "Member" },
+          { id: "claude:conversation-" + NEEDS_ATTESTATION, label: boardTreeFixture ? "Reviewer" : "Member",
+            ...(boardTreeFixture ? { persona: "test-reviewer" } : {}) },
         ],
       }
       const thread = url.searchParams.has("board")
@@ -443,13 +452,17 @@ function daemon(): Server {
         if (res.destroyed) return
         if (thread && failBoardThread) return json(res, 503, { error: "session_board_unavailable" })
         return json(res, 200, thread ? {
-          board, posts: [{ seq: 1, author: board.members[0], text: "Review complete.", at: 1 }], more: false,
+          board, posts: [{ seq: 1, author: board.members[boardTreeFixture ? 1 : 0], text: "Review complete.", at: 1 }], more: false,
         } : { boards: [board] })
       }
       if (hold) void hold.then(send)
       else send()
       return
     }
+    if (path === "/v1/personas" && boardTreeFixture) return json(res, 200, { personas: [{
+      id: "test-reviewer", source: "builtin", name: { en: "Fixture reviewer" }, summary: { en: "Reviews changes" },
+      icon: { accent: "#1234ab", cells: [["#1234ab"]] },
+    }] })
     if (path.startsWith("/v1/work/v2/human-interventions/") && req.method === "GET")
       return json(res, 200, { ok: true, rows: [], truncated: false })
     if (path === "/v1/machine/usage") return json(res, 200, {
@@ -805,7 +818,10 @@ function daemon(): Server {
     }
     if (path.includes("/shells/callback-heavy")) return json(res, 200, { shell: { id: "callback-heavy", kind: "callback", state: callbackDone ? "success" : "running", at: Math.floor(Date.now()/1000)-75, started_at: Math.floor(Date.now()/1000)-72, command: "go test ./...", directory: "/tmp/fixture", what: "Verify the dev" }, text: callbackDone ? "verification passed\n" : "compiling the changed module\n", signature: callbackDone ? "done" : "running", ended: callbackDone })
     if (path === "/v1/orchestrator/tasks") {
-      const tasks = readingScenario === "session-gap"
+      const tasks = boardTreeFixture ? [
+        { id: "board-child", state: "briefed", created: 1, root: { terminalId: SAFE }, child: { terminalId: BLOCKED } },
+        { id: "board-grandchild", state: "briefed", created: 1, root: { terminalId: BLOCKED }, child: { terminalId: UNKNOWN } },
+      ] : readingScenario === "session-gap"
         ? [{ id: "task-gap-fixture", state: "briefed", created: 1,
             root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
         : readingScenario === "callback-owner" && !callbackDone
@@ -1489,6 +1505,41 @@ test("Session navigation keeps focus on grouped rows in their visible order", as
   }
 })
 
+test("a Session board keeps child Sessions, role art and the Lead mark inside its frame", async () => {
+  boardFixture = boardTreeFixture = true
+  try {
+    await inTab(async tab => {
+      await tab.go("/")
+      const group = "#rows .session-board-group"
+      await shortcutUntil(tab, `document.querySelectorAll('${group} li.row').length === 4`)
+      const rendered = await tab.run(`[...document.querySelectorAll('${group} li.row')].map(row =>
+        ({ id: row.dataset.id, depth: Number(row.dataset.depth ?? 0) }))`)
+      assert.deepEqual(rendered, [{ id: SAFE, depth: 0 }, { id: BLOCKED, depth: 1 },
+        { id: UNKNOWN, depth: 2 }, { id: NEEDS_ATTESTATION, depth: 0 }])
+      assert.equal(await tab.run(`document.querySelectorAll('${group} .clawdfather-crown').length`), 1)
+      assert.equal(await tab.run(`Boolean(document.querySelector('#rows > li.row[data-id="${SPARE}"]'))`), true)
+      assert.ok(await tab.run(`(() => {
+        const frame = document.querySelector('${group}')
+        const first = frame.querySelector('.row').getBoundingClientRect()
+        const head = frame.querySelector(':scope > button').getBoundingClientRect()
+        return first.top - head.bottom >= 5
+      })()`))
+      const pixel = (selector: string) => `Array.from(document.querySelector(${JSON.stringify(selector)})?.getContext('2d').getImageData(0,0,1,1).data ?? []).join(',')`
+      const rowArt = `${group} [data-id="${NEEDS_ATTESTATION}"] > canvas.mark`
+      await shortcutUntil(tab, `${pixel(rowArt)} === "18,52,171,255"`)
+      assert.equal(await tab.run(pixel(`${group} .session-board-project-mark canvas`)), "113,85,70,255")
+      await tab.press(`${group} > button`)
+      const authorArt = ".session-board-post-meta .session-board-avatar canvas"
+      await shortcutUntil(tab, `${pixel(authorArt)} === "18,52,171,255"`)
+      const memberList = ".session-board-dialog .session-board-members"
+      await tab.press(`${memberList} summary`)
+      assert.equal(await tab.run(`document.querySelectorAll('${memberList}[open] li').length`), 2)
+    })
+  } finally {
+    boardFixture = boardTreeFixture = false
+  }
+})
+
 test("Session board stays the same height while its index and messages load", async () => {
   boardFixture = true
   try {
@@ -1505,6 +1556,7 @@ test("Session board stays the same height while its index and messages load", as
           await tab.press(".session-board-dock")
           const dialog = '.session-board-dialog[open]'
           await shortcutUntil(tab, `!!document.querySelector('${dialog}')`)
+          await shortcutUntil(tab, `document.querySelector('${dialog}').getAnimations().length === 0`)
           const height = () => tab.run(`document.querySelector('${dialog}').getBoundingClientRect().height`)
           const skeletonVisible = (id: string) => shortcutUntil(tab, `(() => {
             const status = document.querySelector('${dialog} [data-loading-id="${id}"][role="status"]')
@@ -1561,6 +1613,7 @@ test("a click on the Session board backdrop closes the dialog and returns focus"
       for (const thread of [false, true]) {
         await tab.press(dock)
         await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+        await shortcutUntil(tab, `document.querySelector('${dialog}').getAnimations().length === 0`)
         if (thread) {
           await tab.press(`${dialog} .session-board-index-card`)
           await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-posts > li')`)

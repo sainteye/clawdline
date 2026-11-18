@@ -1903,7 +1903,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (!source) return []
     const candidates = [...fleetPresentations.current.values()].flatMap(row => {
       if (row.destination.machineID !== machine.id || row.projection?.freshness !== "current") return []
-      const actor = sessionBoardActor(row.assistant ?? row.projection?.assistant, row.status?.sessionId, row.title)
+      const actor = sessionBoardActor(row.assistant ?? row.projection?.assistant, row.status?.sessionId, row.title, row.status?.persona, row.icon)
       return actor ? [actor] : []
     })
     return [{ machine: machine.id, source, label: machine.name || machine.label || machine.id, candidates }]

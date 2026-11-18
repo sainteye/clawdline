@@ -4912,7 +4912,7 @@
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
-    "internal/transport/http/session_boards.go": "a41fe55768e3c5a3d4369025cc3582c083a40e304cafff6d4f089dcf17a8d9c8",
+    "internal/transport/http/session_boards.go": "b44a515fe7079c275dfa876d348668126ed31af3647dc6d623df3862d5014f98",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
@@ -4988,7 +4988,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "ab7b7a44d1ef0cecd2b7a56933ff71fd9e1c140d61455ed0532061c149fd2ccc",
-    "zh-Hant": "029417f164aeb3b02293cd66d72fcacddfa98cfe21f2739f1d474881067f0261"
+    "en": "c431d07d548d27fa4951e4ddb7d34b4cee7d43474aa048554620567073e823f9",
+    "zh-Hant": "a016cd67a134f233bbf8745778d50cda47aa26c5ad26c5ef5f69671b75e31509"
   }
 }

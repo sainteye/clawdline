@@ -33,13 +33,29 @@
 .session-board-group > button svg { width: 19px; height: 19px; color: var(--session-board-accent); flex: none; }
 .session-board-group > button strong { min-width: 0; overflow-wrap: anywhere; }
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
-.session-board-group > .rows { padding: 0 5px 5px; }
+.session-board-group > .rows { padding: 6px 5px 5px; }
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
+.session-board-group .row .title { color: var(--ink); }
+.session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
   color: var(--ink); font-size: .8em; font-weight: 650; white-space: nowrap;
 }
-.session-board-dialog .session-board-lead .clawdfather-crown { position: static; flex: 0 0 15px; transform: none; }
+.session-board-project-mark, .session-board-avatar {
+  display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px;
+}
+.session-board-project-mark canvas, .session-board-avatar canvas {
+  display: block; max-width: 24px; height: auto; image-rendering: pixelated;
+}
+.session-board-avatar {
+  position: relative; border: 1px solid var(--line); border-radius: 6px; background: var(--card-hi);
+}
+.session-board-avatar .clawdfather-crown {
+  position: absolute; top: -4px; left: -4px; width: 13px; height: 9px;
+  background: #f0c75e; pointer-events: none;
+  clip-path: polygon(0 18%, 27% 52%, 43% 0, 58% 52%, 100% 18%, 86% 100%, 14% 100%);
+  transform: rotate(-30deg); transform-origin: 50% 80%;
+}
 
 .session-board-dialog {
   width: min(35rem, 92vw); max-height: min(90dvh, 52rem); padding: 0;
@@ -55,6 +71,9 @@
 }
 .session-board-heading, .session-board-dialog > header > h2 { flex: 1; min-width: 0; }
 .session-board-dialog > header h2 { margin: 0; font-size: 1.15rem; line-height: 1.25; overflow-wrap: anywhere; }
+.session-board-dialog > header h2:has(.session-board-project-mark) {
+  display: flex; align-items: center; gap: 7px;
+}
 .session-board-heading-purpose {
   margin-block-start: .2rem; color: var(--dim); font-size: .84em;
 }
@@ -127,17 +146,12 @@
 .session-board-members ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .session-board-members li { display: flex; align-items: center; gap: 6px; padding: 7px 0; }
 .session-board-members li strong { min-width: 0; overflow-wrap: anywhere; font-size: .85em; }
-.session-board-member-mark {
-  display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 7px;
-  background: var(--card); color: var(--dim);
-}
-.session-board-member-mark svg { width: 16px; height: 16px; }
 
 .session-board-new { color: var(--session-board-accent); font-size: .84em; margin: 0 0 6px; }
 .session-board-posts { margin-bottom: 9px; }
 .session-board-posts li { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; }
 .session-board-posts li[data-unread] { background: var(--session-board-tint); border-color: var(--session-board-edge); }
-.session-board-post-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 7px; font-size: .9em; }
+.session-board-post-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 7px; font-size: .9em; }
 .session-board-post-meta strong { min-width: 0; overflow-wrap: anywhere; }
 .session-board-post-meta time { margin-inline-start: auto; }
 .session-board-post-meta time, .session-board-post-meta > span:last-child, .session-board-posts li > small { color: var(--dim); font-size: .84em; }

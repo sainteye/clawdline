@@ -8,11 +8,15 @@ import type { CloudClientHandle } from "../cloud/copied.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useDockMotion } from "../ui/dock-motion.js"
+import type { Icon } from "@clawdline/contract"
+import { sessionBoardAvatar, SessionBoardMark } from "./board-avatars.js"
+import { usePersonas } from "./PersonaBot.js"
+import { visualBranches } from "./order.js"
 import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
 
-export type SessionBoardMember = { id: string; label: string }
+export type SessionBoardMember = { id: string; label: string; persona?: string; projectIcon?: Icon }
 type Actor = SessionBoardMember
 export type SessionMessageBoard = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
 type Board = SessionMessageBoard
@@ -22,9 +26,11 @@ type Cursor = { board?: string; before?: number; after?: number }
 export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
 type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
-type Entry = { actor?: Actor; render: (grouped: boolean, lead?: boolean) => ReactNode }
+type BoardRow = { lead: boolean; avatar: Icon; depth: number; branchThrough: boolean; ancestorThrough: boolean }
+type Entry = { id: string; parent?: string; actor?: Actor; render: (board?: BoardRow) => ReactNode }
 export type SessionBoardSource = {
   key: string
+  machine?: string
   writable: boolean
   read<T>(fields: Cursor, signal?: AbortSignal): Promise<T>
   change(command: Command, key: string): Promise<Receipt>
@@ -81,7 +87,7 @@ export function cloudSessionBoardSource(machine: string, account: string, writab
     return c
   }
   return {
-    key: JSON.stringify([account, machine]), writable,
+    key: JSON.stringify([account, machine]), machine, writable,
     async read<T>(fields: Cursor, signal?: AbortSignal): Promise<T> {
       const word = "session-boards.read"
       const c = connection(word)
@@ -101,8 +107,9 @@ export function cloudSessionBoardSource(machine: string, account: string, writab
   }
 }
 
-export function sessionBoardActor(assistant: string | undefined, conversation: string | undefined, label: string): Actor | undefined {
-  return assistant && conversation ? { id: `${assistant}:${conversation}`, label } : undefined
+export function sessionBoardActor(assistant: string | undefined, conversation: string | undefined, label: string,
+  persona?: string, projectIcon?: Icon): Actor | undefined {
+  return assistant && conversation ? { id: `${assistant}:${conversation}`, label, persona, projectIcon } : undefined
 }
 
 export function useLocalSessionBoards(enabled: boolean): SessionBoardSource | undefined {
@@ -125,7 +132,7 @@ function currentCursor(source: SessionBoardSource, id: string) {
 export function SessionBoardRows({ source, rows, candidates }: {
   source?: SessionBoardSource; rows: Entry[]; candidates?: Actor[]
 }) {
-  if (!source) return rows.map(row => row.render(false))
+  if (!source) return rows.map(row => row.render())
   return <BoardRows key={source.key} source={source} rows={rows} candidates={candidates} />
 }
 
@@ -140,10 +147,8 @@ function unreadFor(source: SessionBoardSource, board: Board) {
   return board.archived_at ? 0 : Math.max(0, board.latest - currentCursor(source, board.id))
 }
 
-export function SessionBoardLead({ crown = true }: { crown?: boolean }) {
-  return <span className="session-board-lead">
-    {crown && <span className="clawdfather-crown" aria-hidden="true" />}{t("sessionBoardLead")}
-  </span>
+export function SessionBoardLead() {
+  return <span className="session-board-lead">{t("sessionBoardLead")}</span>
 }
 
 function BoardChevron({ direction }: { direction: "back" | "forward" | "down" }) {
@@ -216,41 +221,68 @@ function useBoardList(source: SessionBoardSource, watchMessages = false) {
   return { boards, problem, loaded, refresh }
 }
 
+function boardProjectIcon(board: Board, candidates: ReadonlyMap<string, Actor>) {
+  return candidates.get(board.lead)?.projectIcon ??
+    board.members?.map(member => candidates.get(member.id)?.projectIcon).find(Boolean)
+}
+
 function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; rows: Entry[]; candidates?: Actor[] }) {
   const list = useBoardList(source, true)
   const { boards, refresh } = list
   const [show, setShow] = useState<string>()
   const leadOptions = candidates ?? rows.flatMap(row => row.actor ? [row.actor] : [])
+  const candidateMap = new Map(leadOptions.map(actor => [actor.id, actor]))
+  const personas = usePersonas(source.machine)
   const assigned = new Map<string, Board>()
   for (const b of boards) {
     if (b.archived_at) continue
     for (const member of b.members ?? []) if (!assigned.has(member.id)) assigned.set(member.id, b)
   }
-  const grouped = new Map<string, Entry[]>()
+  const grouped = new Map<string, { entry: Entry; depth: number }[]>()
+  const placement = new Map<string, { board: Board; depth: number }>()
   for (const row of rows) {
-    const board = row.actor && assigned.get(row.actor.id)
+    const parent = row.parent ? placement.get(row.parent) : undefined
+    const board = (row.actor && assigned.get(row.actor.id)) ?? parent?.board
     if (!board) continue
+    const depth = parent?.board === board && row.actor?.id !== board.lead ? parent.depth + 1 : 0
+    placement.set(row.id, { board, depth })
     const group = grouped.get(board.id) ?? []
-    group.push(row)
+    group.push({ entry: row, depth })
     grouped.set(board.id, group)
   }
   const shown = new Set<string>()
   return <>
     {rows.map(row => {
-      const b = row.actor && assigned.get(row.actor.id)
-      if (!b) return row.render(false)
+      const b = placement.get(row.id)?.board
+      if (!b) return row.render()
       if (shown.has(b.id)) return null
       shown.add(b.id)
       const unread = unreadFor(source, b)
       const members = grouped.get(b.id) ?? []
-      const lead = members.find(entry => entry.actor?.id === b.lead)
+      const leadAt = members.findIndex(({ entry }) => entry.actor?.id === b.lead)
+      // Keep the Lead's child Sessions directly underneath it when moving it.
+      const nextRoot = members.findIndex(({ depth }, index) => index > leadAt && depth === 0)
+      const ordered = leadAt > 0
+        ? [...members.slice(leadAt, nextRoot < 0 ? undefined : nextRoot),
+          ...members.slice(0, leadAt), ...(nextRoot < 0 ? [] : members.slice(nextRoot))]
+        : members
+      const depths = new Map(ordered.map(({ entry, depth }) => [entry.id, depth]))
+      const branches = visualBranches(ordered.map(({ entry }) => entry), depths)
+      const enrolled = new Map(b.members?.map(member => [member.id, member]))
+      const icon = boardProjectIcon(b, candidateMap)
       return <li key={b.id} className="session-board-group" role="presentation">
         <button type="button" onClick={() => setShow(b.id)}>
-          <BoardGlyph />
+          {icon ? <SessionBoardMark icon={icon} project /> : <BoardGlyph />}
           <strong>{b.name}</strong>
           {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
         </button>
-        <ul className="rows" role="group" aria-label={b.name}>{lead?.render(true, true)}{members.filter(row => row !== lead).map(row => row.render(true))}</ul>
+        <ul className="rows" role="group" aria-label={b.name}>{ordered.map(({ entry, depth }) => {
+          const actor = entry.actor
+          const lead = actor?.id === b.lead
+          return entry.render({ lead, depth,
+            avatar: sessionBoardAvatar(actor?.id ?? entry.id, (actor && enrolled.get(actor.id)?.persona) || actor?.persona, lead, personas),
+            branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) })
+        })}</ul>
       </li>
     })}
     {show !== undefined && createPortal(<BoardDialog source={source} initial={show} {...list}
@@ -365,6 +397,8 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
   const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
+  const candidateMap = new Map(candidates.map(actor => [actor.id, actor]))
+  const projectIcon = selectedBoard && boardProjectIcon(selectedBoard, candidateMap)
   const view = useRef<HTMLDivElement>(null)
   const switchBoard = (id: string) => {
     select(id)
@@ -378,7 +412,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
       {selected && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardBack")}
         title={t("sessionBoardBack")} onClick={() => { switchBoard(""); void refresh() }}><BoardChevron direction="back" /></button>}
       <div className="session-board-heading">
-        <h2 id={heading}>{selectedBoard?.name ?? t("sessionBoards")}</h2>
+        <h2 id={heading}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
         {selectedBoard && <details className="session-board-heading-purpose" key={selectedBoard.id}>
           <summary><span>{selectedBoard.purpose}</span><BoardChevron direction="down" /></summary>
         </details>}
@@ -506,6 +540,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
   }, [id, onRead])
   useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
   const b = page?.board
+  const personas = usePersonas(source.machine)
   const allowed = source.writable && b && !b.archived_at
   const action = (cmd: Command, done?: () => void) => {
     void change.send({ ...cmd, board: id }, () => {
@@ -518,6 +553,13 @@ function BoardMessages({ source, id, candidates, onRead }: {
   }
   const lead = b?.members?.find(m => m.id === b.lead)
   const members = b?.members?.filter(member => member.id !== b.lead) ?? []
+  const roleByActor = new Map(candidates.map(actor => [actor.id, actor.persona]))
+  for (const member of b?.members ?? []) if (member.persona) roleByActor.set(member.id, member.persona)
+  const avatar = (actor: Actor) => {
+    const isLead = actor.id === b?.lead
+    return <SessionBoardMark lead={isLead}
+      icon={sessionBoardAvatar(actor.id, roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
+  }
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
     {!page && !error && <LoadingSkeleton id="SK-37" kind="cards" label={t("sessionBoardMessagesLoading")} />}
@@ -526,7 +568,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
       <div className="session-board-overview">
-        {lead && <div className="session-board-lead-strip"><SessionBoardLead /> <strong>{lead.label}</strong></div>}
+        {lead && <div className="session-board-lead-strip">{avatar(lead)}<SessionBoardLead /><strong>{lead.label}</strong></div>}
         <div className="session-board-actions">
           <BoardRefresh refresh={() => void load()} disabled={reading} />
           {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
@@ -538,7 +580,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
         {b.members && <details className="session-board-members">
           <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
           <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
-            <span className="session-board-member-mark" aria-hidden="true"><BoardGlyph /></span>
+            {avatar(member)}
             <strong>{member.label}</strong>
             {member.id === b.lead && <SessionBoardLead />}
           </li>)}</ul>
@@ -565,6 +607,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
       {!page.posts.length && <p>{t("sessionBoardNoPosts")}</p>}
       <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p => <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>
         <div className="session-board-post-meta">
+          {p.author.id !== "person" && avatar(p.author)}
           <strong>{p.author.id === "person" ? t("sessionBoardPerson") : p.author.label}</strong>
           {p.author.id === b.lead && <SessionBoardLead />}
           <time dateTime={new Date(p.at * 1000).toISOString()}>

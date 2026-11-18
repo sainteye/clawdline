@@ -26,16 +26,17 @@ export function SessionRowLayout({ children, className, ...props }: ComponentPro
 }
 
 /** Identity and activity are the same cells in a local or a fleet list. */
-function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false }: {
+function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false, boardAvatar }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
-  crown?: boolean; bound?: boolean; boardLead?: boolean
+  crown?: boolean; bound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"]
 }) {
   const who = assistant ? L.whoHTML(assistant) : ""
+  const mark = <Mark icon={boardAvatar ?? icon} cellPx={boardAvatar && boardLead ? 2 : 4} />
   return <>
-    {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true"><Mark icon={icon} cellPx={4} />
-      <span className="clawdfather-crown" aria-hidden="true" /></span> : <Mark icon={icon} cellPx={4} />}
+    {crown || boardLead ? <span className="coordinator-mark" aria-hidden="true">{mark}
+      <span className="clawdfather-crown" aria-hidden="true" /></span> : mark}
     {bound && <span className="coordinator-identity">Clawdfather</span>}
-    <div className="title" style={{ color: L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead crown={false} />}
+    <div className="title" style={{ color: boardAvatar ? undefined : L.accentTint(icon?.accent) }}><span className="label">{title}</span>{boardLead && <SessionBoardLead />}
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} /></div>
   </>
 }
@@ -59,12 +60,12 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false,
+  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
   icon?: SessionRow["icon"]; cwd?: string
-  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean
+  machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"]
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   runningAgents?: number | null
@@ -93,7 +94,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
     } }}>
     <span className="kid" hidden={!depth} aria-hidden="true" />
     {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
-    <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} />
+    <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} boardAvatar={boardAvatar} />
     <div className="meta">{cwd && <span className="path">{L.path(cwd)}</span>}
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
@@ -408,10 +409,11 @@ export function Row({
   open,
   swiped,
   onOpen,
-  boardLead = false,
+  boardLead = false, boardAvatar,
 }: {
   row: SessionRow
   boardLead?: boolean
+  boardAvatar?: SessionRow["icon"]
   depth: number
   branchThrough: boolean
   ancestorThrough: boolean
@@ -487,7 +489,7 @@ export function Row({
       <span className="kid" hidden={!place.depth} aria-hidden="true" />
       {ancestorThrough ? <span className="tree-ancestor" aria-hidden="true" /> : null}
       {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
-      <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} />
+      <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} boardAvatar={boardAvatar} />
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>

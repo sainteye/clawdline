@@ -625,7 +625,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const boardTargets = sessionBoardTargets ?? (boardSource ? [{
     source: boardSource, machine: fleetReaderMachine ?? undefined, label: quotaMachineName ?? "",
     candidates: rows.flatMap(row => {
-      const actor = sessionBoardActor(row.assistant, row.sessionId, row.label || row.id)
+      const actor = sessionBoardActor(row.assistant, row.sessionId, row.label || row.id, row.persona, row.icon)
       return actor ? [actor] : []
     }),
   }] : [])

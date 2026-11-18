@@ -18,8 +18,8 @@ func TestSessionBoardLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = st.Close() }()
-	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
-	member := sb.Actor{ID: "claude:member", Label: "Member"}
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead", Persona: "architect"}
+	member := sb.Actor{ID: "claude:member", Label: "Member", Persona: "code-reviewer"}
 	person := sb.Actor{Label: "Person"}
 	now := time.Now()
 	const project = "project-one"
@@ -79,7 +79,8 @@ func TestSessionBoardLifecycle(t *testing.T) {
 	}
 	page, err := st.SessionBoardPage(ctx, project, member.ID, id, 1, 0)
 	if err != nil || page.Board.ArchivedAt == 0 || page.Board.Lead != member.ID ||
-		page.Board.Summary != "Summary" || len(page.Posts) != 1 || page.Posts[0].ReplyTo != 1 || page.Posts[0].Author != member {
+		page.Board.Summary != "Summary" || len(page.Board.Members) != 1 || page.Board.Members[0] != member ||
+		len(page.Posts) != 1 || page.Posts[0].ReplyTo != 1 || page.Posts[0].Author != member {
 		t.Fatalf("reopened board: %+v %v", page, err)
 	}
 	if err := st.pruneSessionBoards(ctx, now.AddDate(0, 0, sb.MaxArchiveDays-1)); err != nil {
@@ -96,6 +97,43 @@ func TestSessionBoardLifecycle(t *testing.T) {
 	}
 	if n, err := st.SessionBoardOccupancy(ctx, "members"); n != 0 || err != nil {
 		t.Fatalf("archive cleanup left %d members: %v", n, err)
+	}
+}
+
+func TestSessionBoardAddsRolesToAnExistingStore(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	now := time.Now()
+	board, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, sb.Command{Action: "create", Name: "Review", Text: "Share decisions"}, "create", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"session_board_members", "session_board_posts"} {
+		if _, err := st.db.Exec("ALTER TABLE " + table + " DROP COLUMN persona"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	id := board.ID
+	lead.Persona = "architect"
+	if _, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, sb.Command{Action: "join", Board: id}, "", now); err != nil {
+		t.Fatal(err)
+	}
+	page, err := st.SessionBoardPage(ctx, "project", lead.ID, id, 0, 0)
+	if err != nil || len(page.Board.Members) != 1 || page.Board.Members[0] != lead {
+		t.Fatalf("migrated board: %+v %v", page, err)
 	}
 }
 

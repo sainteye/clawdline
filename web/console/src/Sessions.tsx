@@ -8,7 +8,7 @@ import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskLis
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
-import { visualBranches, visualDepths } from "./session/order.js"
+import { visualBranches, visualDepths, visualParents } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
@@ -231,6 +231,7 @@ export function SessionsPage({
     machine: machineOffline?.machine ?? "", seen: offlineSeen })
     : sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
   const depths = visualDepths(drawn, tasks ?? [], L.taskShaping)
+  const parents = visualParents(drawn, tasks ?? [], L.taskShaping)
   const branches = visualBranches(drawn, depths)
 
   // Every spinner in the list, handed to the one clock that drives them all.
@@ -358,16 +359,17 @@ export function SessionsPage({
               {!skeleton && arriving && <StartingRow place={arriving} />}
               <SessionBoardRows source={sessionBoardSource}
                 candidates={rows.flatMap(r => {
-                  const actor = sessionBoardActor(r.assistant, r.sessionId, r.label || r.id)
+                  const actor = sessionBoardActor(r.assistant, r.sessionId, r.label || r.id, r.persona, r.icon)
                   return actor ? [actor] : []
                 })}
-                rows={drawn.map(r => ({ actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id),
-                  render: (grouped, lead) => <Row boardLead={lead}
+                rows={drawn.map(r => ({ id: r.id, parent: parents.get(r.id),
+                  actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id, r.persona, r.icon),
+                  render: board => <Row boardLead={board?.lead} boardAvatar={board?.avatar}
                   key={L.selectionKey(r)}
                   row={r}
-                  depth={grouped ? 0 : depths.get(r.id) ?? 0}
-                  branchThrough={!grouped && branches.through.has(r.id)}
-                  ancestorThrough={!grouped && branches.ancestorThrough.has(r.id)}
+                  depth={board?.depth ?? depths.get(r.id) ?? 0}
+                  branchThrough={board?.branchThrough ?? branches.through.has(r.id)}
+                  ancestorThrough={board?.ancestorThrough ?? branches.ancestorThrough.has(r.id)}
                   selected={r.id === selected}
                   open={r.id === openId}
                   swiped={r.id === swipedId}

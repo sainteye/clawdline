@@ -202,7 +202,7 @@ export function visualDepths(list: SessionRow[], tasks: readonly TaskRow[], shap
 }
 
 /** The tree trunks that must pass a row to reach later visible siblings. */
-export function visualBranches(list: readonly SessionRow[], depths: ReadonlyMap<string, number>): {
+export function visualBranches(list: readonly Pick<SessionRow, "id">[], depths: ReadonlyMap<string, number>): {
   through: Set<string>
   ancestorThrough: Set<string>
 } {
@@ -230,7 +230,7 @@ export function visualBranches(list: readonly SessionRow[], depths: ReadonlyMap<
   return { through, ancestorThrough }
 }
 
-function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, string> {
+export function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, string> {
   const here = new Map(list.map((row) => [row.id, row]))
   const childOf = new Map<string, string>()
   const byConversation = new Map<string, string | null>()
