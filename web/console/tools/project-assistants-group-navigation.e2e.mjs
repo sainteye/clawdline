@@ -58,7 +58,14 @@ try{
      assert.equal(await page.locator('.pa-shell').evaluate(el=>el.classList.contains('pa-selected')),false,'opening the group retained the prior Bot selection')
      const originalRoom=await room.elementHandle()
      await room.locator('[data-room-seq="6"]').waitFor()
-     const bounds=await room.boundingBox();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.width>=width-2&&bounds.y+bounds.height<=height+2,'Room remains trapped in roster')
+     const {bounds,shell,roster,rowHit}=await room.evaluate(el=>{
+      const box=node=>node.getBoundingClientRect().toJSON(),shell=el.parentElement
+      const roster=shell.querySelector('.pa-roster'),row=roster.querySelector('[data-group-key][aria-current=true]'),r=box(row)
+      return {bounds:box(el),shell:box(shell),roster:box(roster),rowHit:row.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))}
+     })
+     assert.ok(bounds.y>=0&&bounds.bottom<=height+2&&Math.abs(bounds.right-shell.right)<=1)
+     assert.ok(Math.abs(bounds.left-(width>700?roster.right:shell.left))<=1)
+     assert.equal(rowHit,width>700,'the roster must receive desktop pointer hits and remain behind the mobile room')
      const text=room.locator('textarea'),quote=mode!=='read'&&mode!=='old'
      if(mode==='old')assert.equal(await room.locator('.pa-room-reply').count(),0,'API87 source exposed API88 quote actions')
      if(mode==='read')assert.equal(await room.locator('.pa-room-reply').first().isDisabled(),true)

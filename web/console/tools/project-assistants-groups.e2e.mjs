@@ -96,9 +96,9 @@ try{
     for(const [mode,lang,width,height,outcome] of [["local","en",1280,800,"complete"],["cloud","zh-Hant",390,844,"complete"],["cloud","en",1280,800,"refusal"]]){
       const start=traffic.length,{targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant"
       await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(zh?"新增群組":"New group")})`)
-      await click(sessionId,zh?"新增群組":"New group");await until(sessionId,"!!document.querySelector('[role=dialog] input:not([type=checkbox])')")
-      await fill(sessionId,"[role=dialog] input:not([type=checkbox])","Background observation "+mode)
-      await evaluate(sessionId,"for(const e of document.querySelectorAll('[role=dialog] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
+      await click(sessionId,zh?"新增群組":"New group");await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')")
+      await fill(sessionId,"dialog[open] input:not([type=checkbox])","Background observation "+mode)
+      await evaluate(sessionId,"for(const e of document.querySelectorAll('dialog[open] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
       await click(sessionId,zh?"儲存":"Save");await until(sessionId,"!!document.querySelector('[role=dialog] textarea:not(:disabled)')")
       const created=traffic.slice(start).find(row=>row.response?.group?.name==="Background observation "+mode).response.group
       // Remote controls can send to a hidden document. This fixture makes
@@ -138,14 +138,20 @@ try{
     const {targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant",name=`Review ${mode} ${lang}`
     const copy=zh?{create:"新增群組",save:"儲存",edit:"編輯群組",send:"傳送",stop:"停止群組",remove:"刪除群組",confirm:"確認刪除群組"}:{create:"New group",save:"Save",edit:"Edit group",send:"Send",stop:"Stop group",remove:"Delete group",confirm:"Confirm group deletion"}
     await until(sessionId,`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()===${JSON.stringify(copy.create)})`);await click(sessionId,copy.create)
-    await until(sessionId,"!!document.querySelector('[role=dialog] input:not([type=checkbox])')");await fill(sessionId,"[role=dialog] input:not([type=checkbox])",name)
-    assert.equal(await evaluate(sessionId,"[...document.querySelectorAll('[role=dialog] input[type=checkbox]')].some(e=>e.parentElement.textContent.includes('Stranger'))"),false,"another Project was offered as a room member")
-    await evaluate(sessionId,"for(const e of document.querySelectorAll('[role=dialog] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
+    await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')");await fill(sessionId,"dialog[open] input:not([type=checkbox])",name)
+    assert.equal(await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] input[type=checkbox]')].some(e=>e.parentElement.textContent.includes('Stranger'))"),false,"another Project was offered as a room member")
+    await evaluate(sessionId,"for(const e of document.querySelectorAll('dialog[open] input[type=checkbox]'))if(['Alice','Bob'].includes(e.parentElement.textContent.trim()))e.click()")
     await click(sessionId,copy.save);await until(sessionId,`!!document.querySelector('.pa-chat-header h2')&&document.querySelector('.pa-chat-header h2').textContent===${JSON.stringify(name)}`)
-    const bounds=await evaluate(sessionId,"(()=>{const r=document.querySelector('.pa-room-layout').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight}})()")
+    const bounds=await evaluate(sessionId,`(()=>{
+      const room=document.querySelector('.pa-room-layout'),shell=room.parentElement,roster=shell.querySelector('.pa-roster'),search=roster.querySelector('input[type=search]')
+      const rect=node=>node.getBoundingClientRect().toJSON(),s=rect(search)
+      return {room:rect(room),shell:rect(shell),roster:rect(roster),searchHit:search.contains(document.elementFromPoint(s.left+s.width/2,s.top+s.height/2))}
+    })()`)
     await writeFile(path.join(artifacts,`room-bounds-${mode}-${lang}.json`),JSON.stringify(bounds,null,2))
     const positionShot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`room-position-${mode}-${lang}.png`),Buffer.from(positionShot.data,"base64"))
-    assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.width>=width-2&&bounds.y+bounds.height<=height+2,"group room must fill its shell inside the viewport: "+JSON.stringify(bounds))
+    assert.ok(bounds.room.top>=0&&bounds.room.bottom<=height+2&&Math.abs(bounds.room.right-bounds.shell.right)<=1,JSON.stringify(bounds))
+    assert.ok(Math.abs(bounds.room.left-(width>700?bounds.roster.right:bounds.shell.left))<=1,JSON.stringify(bounds))
+    assert.equal(bounds.searchHit,width>700,"only the desktop room leaves the roster reachable")
     await fetch(origin+"/fixture/hold",{method:"POST"})
     await fill(sessionId,"[role=dialog] textarea","Synthetic UI room message");await click(sessionId,copy.send)
     await until(sessionId,"[...document.querySelectorAll('[data-working-member]')].some(row=>JSON.parse(row.dataset.workingMember)[1]==='alice'&&row.dataset.workingState==='running')")
@@ -187,8 +193,8 @@ try{
     await until(sessionId,"document.querySelector('.pa-room-members').hidden")
     assert.equal(await evaluate(sessionId,"document.querySelector('[role=dialog] textarea').value"),"Synthetic draft retained in member details")
     await fill(sessionId,"[role=dialog] textarea","")
-    await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.edit);await until(sessionId,"!!document.querySelector('[role=dialog] [role=dialog] input:not([type=checkbox])')");await fill(sessionId,"[role=dialog] [role=dialog] input:not([type=checkbox])",name+" changed")
-    await evaluate(sessionId,"[...document.querySelectorAll('[role=dialog] [role=dialog] input[type=checkbox]')].find(e=>e.parentElement.textContent.trim()==='Bob').click()")
+    await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.edit);await until(sessionId,"!!document.querySelector('dialog[open] input:not([type=checkbox])')");await fill(sessionId,"dialog[open] input:not([type=checkbox])",name+" changed")
+    await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] input[type=checkbox]')].find(e=>e.parentElement.textContent.trim()==='Bob').click()")
     await click(sessionId,copy.save);await until(sessionId,`document.querySelector('.pa-chat-header h2')?.textContent===${JSON.stringify(name+" changed")}`)
     await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.stop);await until(sessionId,"!!document.querySelector('[role=dialog] textarea:not(:disabled)')")
     await click(sessionId,zh?"更多動作":"More actions");await click(sessionId,copy.remove);await click(sessionId,copy.confirm);await until(sessionId,"!document.querySelector('[role=dialog]')")
