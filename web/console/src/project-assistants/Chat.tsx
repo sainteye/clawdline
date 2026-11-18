@@ -16,7 +16,7 @@ import { BotSettings } from "./BotSettings"
 import { BotTemplate } from "./BotTemplate"
 import { TeamApprovals } from "./Groups"
 import { Routines } from "./Routines"
-import { MemoryPanel } from "./MemoryPanel"
+import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
 import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
@@ -104,6 +104,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     || (entryUnknown.current&&!view.unverifiedDrafts.continuing(draftKey,scope))
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
   const stopping=useRef(false)
+  const [memoryNoteDraft,setMemoryNoteDraft]=useState<MemoryNoteDraft|null>(null)
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
   const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
@@ -626,16 +627,18 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     loading:setMemoryLoading,
     fail:error=>failRef.current(error)})
   const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
-  const saveMemory=async(text:string)=>{
+  const saveMemory=async(input:string|MemoryNoteDraft)=>{
+    const note=typeof input==="string"?null:input,text=typeof input==="string"?input:input.text
     if(!memory||!text.trim())return
+    if(note&&!source.canTopicMemory?.())throw failure("pa_unsupported")
     if(memoryForget.current)throw failure("pa_outcome_unknown")
     // Keep the same request after an uncertain reply; a second click cannot
     // turn one note into two entries or move it onto a newer revision.
     let intent=memorySave.current
-    if(intent&&intent.entry.text!==text)throw failure("pa_outcome_unknown")
+    if(intent&&(intent.entry.text!==text||(intent.entry.kind??"")!==(note?"note":"")||(note&&(intent.entry.id!==note.entry_id||intent.entry.title!==note.title||intent.entry.summary!==note.summary||intent.expected_revision!==note.expected_revision))))throw failure("pa_outcome_unknown")
     if(!intent){
-      const id=crypto.randomUUID()
-      intent={command:command(key,"memory_save"),expected_revision:memory.view.memory.revision,entry:{id,key,project:memory.view.bot.project,text,revision:memory.view.memory.revision,sources:[],forgotten:false}}
+      const id=note?.entry_id??crypto.randomUUID(),revision=note?.expected_revision??memory.view.memory.revision
+      intent={command:command(key,"memory_save"),expected_revision:revision,entry:{id,key,project:memory.view.bot.project,text,revision,sources:[],forgotten:false,...(note?{kind:"note",title:note.title,summary:note.summary}:{})}}
       memorySave.current=intent
     }
     const request=intent
@@ -708,7 +711,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     </div><BotSidePanel bot={bot} tab={infoTab} onTab={openInfo} onClose={()=>setInfoTab(null)} w={w} editor={<BotSettings key={settingsRevision} embedded part={infoTab==="settings"?"rarely":"often"} onFrequent={()=>openInfo("details")} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettingsRevision(n=>n+1);setSettings(false)}}catch(e){fail(e);throw e}}}/>} children={{
       details:<><BotDetailsPanel showInstructions={false} bot={bot} projectName={projectName||bot.project.project_id} machineName={machineName||source.machineName||key.machine_id} onSettings={()=>openInfo("settings")} onRoutines={()=>setRoutines(true)} w={w}/>{routines&&<Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])} onClose={()=>setRoutines(false)}/>}</>,
       library:<OutputLibrary embedded source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoTab(null)}/>,
-      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel value={memory} readDetail={async detail=>{if(!source.memoryView)throw failure("pa_unsupported");return authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail),new AbortController().signal)}} pendingText={memorySave.current?.entry.text} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoTab(null)} w={w}/>}</div>,
+      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel value={memory} readDetail={async detail=>{if(!source.memoryView)throw failure("pa_unsupported");return authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail),new AbortController().signal)}} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoTab(null)} w={w}/>}</div>,
       settings:null
     }}/>
   </section>

@@ -1,0 +1,8 @@
+.project-assistants .pa-memory-index{display:grid;width:100%;gap:4px;text-align:start;white-space:normal;overflow-wrap:anywhere}
+.project-assistants .pa-memory-index span{color:var(--text-muted,#999)}
+.project-assistants .pa-memory-note-editor{display:grid;gap:12px;padding-block:12px}
+.project-assistants .pa-memory-note-editor label{display:grid;gap:6px;min-width:0}
+.project-assistants .pa-memory-note-editor input,.project-assistants .pa-memory-note-editor textarea{width:100%;box-sizing:border-box}
+.project-assistants .pa-memory-note-body{min-height:16em;resize:vertical}
+.project-assistants .pa-memory-policy,.project-assistants .pa-memory-short-facts,.project-assistants .pa-memory-forget{margin-block:12px}
+.project-assistants .pa-memory-detail{min-width:0}
