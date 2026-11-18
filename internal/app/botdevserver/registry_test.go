@@ -87,7 +87,7 @@ func registryFixture(t *testing.T) (RegistryOptions, *catalogFixture, *atomic.In
 	o := RegistryOptions{MachineID: "synthetic-machine", Lifetime: context.Background(), Catalog: c,
 		ID: func() string { return fmt.Sprintf("synthetic-%d", ids.Add(1)) }, CleanupTimeout: time.Second,
 		CheckControl: func(ctx context.Context, _ Spec) error { return ctx.Err() },
-		AuthorizeStart: func(ctx context.Context, _ Spec) (func(context.Context) error, error) {
+		AuthorizeStart: func(ctx context.Context, _ SavedServer) (func(context.Context) error, error) {
 			approvals.Add(1)
 			return func(ctx context.Context) error { return ctx.Err() }, ctx.Err()
 		},
@@ -263,7 +263,7 @@ func TestServerRegistryRefusesAFullOrInvalidDefinitionCatalog(t *testing.T) {
 func TestServerRegistryRechecksAdmissionAfterWaitingForApproval(t *testing.T) {
 	o, _, launches, _ := registryFixture(t)
 	entered, release := make(chan struct{}), make(chan struct{})
-	o.AuthorizeStart = func(context.Context, Spec) (func(context.Context) error, error) {
+	o.AuthorizeStart = func(context.Context, SavedServer) (func(context.Context) error, error) {
 		close(entered)
 		<-release
 		return func(ctx context.Context) error { return ctx.Err() }, nil
@@ -279,7 +279,7 @@ func TestServerRegistryRechecksAdmissionAfterWaitingForApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	close(release)
-	if err := <-done; err == nil || launches.Load() != 0 || r.Usage().Definitions != 0 {
+	if err := <-done; err == nil || launches.Load() != 0 || r.Usage().Definitions != 1 || r.Usage().Processes != 0 {
 		t.Fatalf("a late approval escaped shutdown: %v", err)
 	}
 }
@@ -305,6 +305,27 @@ func TestServerRegistryConcurrentStartsHaveOneOwner(t *testing.T) {
 	waitRegistry(t, r, rows[0], Running)
 	if launches.Load() != 1 || r.Usage().Processes != 1 {
 		t.Fatal("concurrent starts acquired multiple process owners")
+	}
+}
+
+func TestRemovingAReviewedDefinitionCannotLaunchOrReuseItsApproval(t *testing.T) {
+	o, _, launches, _ := registryFixture(t)
+	entered, release := make(chan SavedServer, 1), make(chan struct{})
+	o.AuthorizeStart = func(_ context.Context, saved SavedServer) (func(context.Context) error, error) {
+		entered <- saved
+		<-release
+		return func(context.Context) error { return nil }, nil
+	}
+	r := openRegistry(t, o)
+	done := make(chan error, 1)
+	go func() { _, err := r.Start(context.Background(), specFixture(), "reviewed"); done <- err }()
+	saved := <-entered
+	if err := r.Remove(context.Background(), saved.Spec.Key, saved.Spec.Project, saved.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; pa.Code(err) != pa.StaleVersion || launches.Load() != 0 {
+		t.Fatal("deleted definition retained approval", err)
 	}
 }
 
@@ -422,7 +443,7 @@ func TestRestartedRegistryReportsLostHistoricalOutput(t *testing.T) {
 func TestDefinitionCanBeRemovedWhenAuthorityClosesBeforeIntent(t *testing.T) {
 	o, _, launches, _ := registryFixture(t)
 	var checks atomic.Int32
-	o.AuthorizeStart = func(context.Context, Spec) (func(context.Context) error, error) {
+	o.AuthorizeStart = func(context.Context, SavedServer) (func(context.Context) error, error) {
 		return func(context.Context) error {
 			if checks.Add(1) > 1 {
 				return failure(pa.Revoked, "synthetic_approval")

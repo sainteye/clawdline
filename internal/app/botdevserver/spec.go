@@ -21,11 +21,16 @@ type Spec struct {
 	Name      string          `json:"name"`
 	Command   string          `json:"command"`
 	Directory string          `json:"directory"`
+	// The Forget boundary is independent of ordinary memory edits and turns.
+	ForgottenThrough int64 `json:"forgotten_through,omitempty"`
 }
 
 func (s Spec) Validate() error {
 	if err := pa.ValidateScope(s.Project); err != nil {
 		return err
+	}
+	if s.ForgottenThrough < 0 {
+		return failure(pa.Invalid, "server_provenance")
 	}
 	if s.Key.BotID == "" || s.Key.MachineID != s.Project.MachineID {
 		return failure(pa.ScopeDenied, "server_spec")
@@ -61,4 +66,16 @@ func (s Spec) Fingerprint() (string, error) {
 	}
 	digest := sha256.Sum256(b)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+// CheckMemory prevents old command/output from becoming input to a new context.
+// Human cleanup uses its separate, authenticated control path.
+func (s Spec) CheckMemory(m pa.MemoryRevision) error {
+	if m.Key != s.Key || m.Project != s.Project || m.Revision < 1 || m.ForgottenThrough < 0 || m.ForgottenThrough > m.Revision {
+		return failure(pa.ScopeDenied, "server_provenance")
+	}
+	if m.ForgottenThrough != s.ForgottenThrough {
+		return failure(pa.ContextStale, "server_provenance")
+	}
+	return nil
 }

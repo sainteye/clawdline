@@ -49,6 +49,8 @@ export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
 // Listing and revoking a Claude Bot's standing rules arrived at 66; this machine's own console only.
 export const PROJECT_ASSISTANTS_RULES_API_LEVEL = 66
+// Reserved for the integrated source-owned server contract, not enabled by local rules alone.
+export const PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL = 90
 // Hiding and deleting a Bot arrived at 67; this machine's own console only, until the Cloud relay carries them.
 export const PROJECT_ASSISTANTS_MANAGE_API_LEVEL = 67
 const base = "/v1/project-assistants"
@@ -419,6 +421,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   // Hide and delete are carried over Cloud too, so a phone can remove a Bot.
   canManage() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
   canRules() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
+  canSourceRules() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL }
   canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }

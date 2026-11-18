@@ -830,3 +830,15 @@ test("topic memory writes require API89 before transport while short facts retai
  const plain={...request,entry:{...request.entry,kind:undefined,title:undefined,summary:undefined}}
  await old.saveMemory(plain,signal());assert.equal(writes,2)
 })
+
+
+test("source command rules stay hidden on machines with only native rule support", () => {
+ const registry=new ProjectAssistantRegistry("account","trusted-reader")
+ const transport=()=>async()=>Response.json(sourceStatus())
+ for(const [level,expected] of [[undefined,false],[66,false],[89,false],[90,true],[89,false]] as const){
+  registry.sync([{...grant(),apiLevel:level}],transport)
+  const source=registry.getSnapshot()[0] as ProjectAssistantSourceClient
+  assert.equal(source.canSourceRules(),expected)
+ }
+ registry.revoke()
+})

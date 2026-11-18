@@ -523,3 +523,38 @@ the private Host callback is for that handler. Server Host ownership, native
 start/list/stop/log tools, persisted command provenance, ports, UI and physical
 process recovery still require integration. This unit opens no maintenance
 writer and performs no native-model qualification.
+
+
+### Exact local server rules (isolated construction)
+
+The source command approval handler now implements all four choices against a
+real saved definition. Its full structured review binds the Bot, canonical
+Project, command, directory and Forget boundary; the label does not authorize
+a different command. Always allow and Never persist a versioned local rule
+before returning, and a failed or uncertain save releases no launch check.
+An ordinary memory edit does not change a definition's Forget boundary.
+Forget changes its identity and prevents the old definition from becoming new
+model input; composing that check at the production tool/publication boundary
+remains required. Definitions are saved before review so a declined command has
+a bounded stable identity, but it has no accepted attempt or process.
+
+Known source-local catalog version 1 upgrades explicitly and atomically to 2,
+adding one optional rule per definition. Inspection alone refuses the old
+format without writing; malformed/unknown schemas are not repaired. Previous
+definitions retain epoch zero and no approval. This is not a portable Bot
+format change: core 12 and the closed maintenance writer remain unchanged.
+Revocation retains a version fence, so an old card cannot recreate a rule.
+Removing a definition clears its command text and rule while keeping its ID
+unusable. Rules are available through the existing human rules API for either
+agent, alongside Claude Code's separate native Project rules. The GUI keeps
+Codex source rules hidden below the reserved complete-server API 90 capability;
+this isolated unit does not raise source API 89 or claim those tools exist. A failed store
+is reported instead of being presented as an empty rule list.
+
+Real temporary SQLite and synthetic Host tests exercise persistence across
+reopen, exact scope, all four choices, revocation, lost-save acknowledgement,
+legacy migration rollback and the existing settings entry. A concurrent
+removal during human review must produce a stale-definition refusal, never
+a launch or a nil owner. The Host registry lifetime, actual native command
+tools, known-ID paired controls, owned ports, quiet server UI and physical
+crash recovery remain unintegrated; these local rule tests do not prove them.

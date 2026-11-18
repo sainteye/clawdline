@@ -2,8 +2,8 @@
   "version": 1,
   "englishKeys": 13293,
   "counts": {
-    "negation": 3508,
-    "state": 2251,
+    "negation": 3507,
+    "state": 2252,
     "permission": 811,
     "deletion": 312,
     "uncertainty": 545
@@ -3118,7 +3118,6 @@
       "projectAssistants.routinesEmpty",
       "projectAssistants.ruleDeny",
       "projectAssistants.rulesEmpty",
-      "projectAssistants.rulesHint",
       "projectAssistants.searchEmpty",
       "projectAssistants.settingsNoFallbacks",
       "projectAssistants.sourceError",
@@ -5499,6 +5498,7 @@
       "projectAssistants.routineHeld",
       "projectAssistants.routineHint",
       "projectAssistants.routineJournalUnreadable",
+      "projectAssistants.rulesHint",
       "projectAssistants.savedMemory",
       "projectAssistants.sendAccepted",
       "projectAssistants.settingsRules",

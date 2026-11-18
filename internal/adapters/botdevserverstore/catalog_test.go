@@ -322,7 +322,7 @@ func registryOptions(c servers.Catalog, launches *atomic.Int32, started chan *ca
 	return servers.RegistryOptions{MachineID: identity().Key.MachineID, Lifetime: context.Background(), Catalog: c,
 		ID: func() string { return fmt.Sprintf("owned-%d", ids.Add(1)) }, CleanupTimeout: time.Second,
 		CheckControl: func(ctx context.Context, _ servers.Spec) error { return ctx.Err() },
-		AuthorizeStart: func(ctx context.Context, _ servers.Spec) (func(context.Context) error, error) {
+		AuthorizeStart: func(ctx context.Context, _ servers.SavedServer) (func(context.Context) error, error) {
 			return func(ctx context.Context) error { return ctx.Err() }, nil
 		}, Launch: func(context.Context, servers.Spec) (servers.Process, error) {
 			launches.Add(1)
@@ -464,6 +464,8 @@ func TestCatalogUnknownAndPartialSchemasRemainUnchanged(t *testing.T) {
 		`DROP TABLE bot_devserver_definitions`,
 		`ALTER TABLE bot_devserver_definitions ADD COLUMN future TEXT`,
 		`ALTER TABLE bot_devserver_catalog_schema ADD COLUMN future TEXT`,
+		`UPDATE bot_devserver_definitions SET rule_decision='unknown',rule_version=1`,
+		`UPDATE bot_devserver_definitions SET rule_version=-1`,
 	} {
 		t.Run(mutate, func(t *testing.T) {
 			db, _ := testDatabase(t)

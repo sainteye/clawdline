@@ -46,7 +46,8 @@ type ServiceOptions struct {
 	Runtime           Runtime
 	Projects          ProjectResolver
 	// Rules is optional; without it the rules routes answer unsupported.
-	Rules RuleStore
+	Rules       RuleStore
+	SourceRules SourceRuleStore
 	// Deleter removes a Bot's stored records; without it Delete is unsupported.
 	Deleter BotDeleter
 	// Groups and Rooms are optional; without them the group operations
@@ -634,18 +635,36 @@ func (s *Service) AuthorizeRead(ctx context.Context, key pa.BotKey) error {
 	return err
 }
 
-// Rules lists the standing rules the Bot's agent keeps for its Project, as
-// Codync lets the person see what Always allow and Never left behind. Only
-// Claude Code keeps them in a file Clawdline can read.
+// Rules combines the source's exact command rules with the agent's Project
+// rules. A failed store never becomes an apparently complete empty result.
 func (s *Service) Rules(ctx context.Context, key pa.BotKey) ([]pa.PermissionRule, error) {
 	if _, err := s.authorize(ctx, key, false); err != nil {
 		return nil, err
 	}
+	out := []pa.PermissionRule{}
+	if s.opts.SourceRules != nil {
+		bot, err := s.opts.Repository.Bot(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		rules, err := s.opts.SourceRules.List(ctx, key, bot.Project)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rules...)
+	}
 	dir, err := s.ruleDirectory(ctx, key)
+	if err != nil {
+		if s.opts.SourceRules != nil && pa.Code(err) == pa.Unsupported {
+			return out, nil
+		}
+		return nil, err
+	}
+	rules, err := s.opts.Rules.List(dir)
 	if err != nil {
 		return nil, err
 	}
-	return s.opts.Rules.List(dir)
+	return append(out, rules...), nil
 }
 
 // RemoveRule revokes one standing rule for the Bot's Project.
@@ -662,6 +681,13 @@ func (s *Service) RemoveRule(ctx context.Context, c pa.Command, rule pa.Permissi
 	}
 	if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
 		return err
+	}
+	if s.opts.SourceRules != nil && s.opts.SourceRules.Handles(rule) {
+		bot, err := s.opts.Repository.Bot(ctx, c.Key)
+		if err != nil {
+			return err
+		}
+		return s.opts.SourceRules.Remove(ctx, c.Key, bot.Project, rule)
 	}
 	dir, err := s.ruleDirectory(ctx, c.Key)
 	if err != nil {

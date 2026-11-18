@@ -40,7 +40,7 @@ type RegistryOptions struct {
 	// AuthorizeStart obtains exact command approval and returns a Host-owned
 	// launch check. That check must not expire merely because the Agent turn
 	// ends. It still rechecks source revocation, Project and forgotten context.
-	AuthorizeStart func(context.Context, Spec) (func(context.Context) error, error)
+	AuthorizeStart func(context.Context, SavedServer) (func(context.Context) error, error)
 	Launch         func(context.Context, Spec) (Process, error)
 	CleanupTimeout time.Duration
 }
@@ -150,12 +150,16 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 	// not execute a command and must not create another approval card.
 	r.ops.Lock()
 	e, prior, done, err := r.admit(ctx, fingerprint, attemptID)
+	if !done && err == nil && e == nil {
+		e, err = r.define(ctx, spec, fingerprint)
+	}
 	r.ops.Unlock()
 	if done || err != nil {
 		return prior, err
 	}
 	// Human approval can wait, so it must not hold either registry mutex.
-	check, err := r.o.AuthorizeStart(ctx, spec)
+	reviewedID := e.saved.ID
+	check, err := r.o.AuthorizeStart(ctx, r.view(e))
 	if err != nil {
 		return SavedServer{}, err
 	}
@@ -174,28 +178,13 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 	if done || err != nil {
 		return prior, err
 	}
+	if e == nil || e.saved.ID != reviewedID {
+		return SavedServer{}, failure(pa.StaleVersion, "server_definition")
+	}
 	if err = check(ctx); err != nil {
 		return SavedServer{}, err
 	}
-	if e == nil {
-		saved := SavedServer{ID: r.o.ID(), Spec: spec}
-		if saved.ID == "" {
-			return saved, failure(pa.Invalid, "server_id")
-		}
-		r.mu.Lock()
-		collision := r.rows[saved.ID] != nil
-		r.mu.Unlock()
-		if collision {
-			return SavedServer{}, failure(pa.IdempotencyConflict, "server_id")
-		}
-		if err = r.o.Catalog.Create(ctx, saved); err != nil {
-			return saved, err // Definition storage cannot execute a command.
-		}
-		e = &registered{saved: saved, log: &LogTail{}}
-		r.mu.Lock()
-		r.rows[saved.ID], r.bySpec[fingerprint] = e, saved.ID
-		r.mu.Unlock()
-	}
+
 	i := Identity{Key: spec.Key, Project: spec.Project, ServerID: e.saved.ID, AttemptID: attemptID, Fingerprint: fingerprint}
 	journal, err := r.o.Catalog.Journal(ctx, r.view(e), i)
 	if err != nil {
@@ -239,6 +228,29 @@ func (r *Registry) Start(ctx context.Context, spec Spec, attemptID string) (Save
 		}()
 	}
 	return r.view(e), err
+}
+
+// Definitions persist before review, so an exact standing rule can reference a
+// real, bounded, immutable ID. A declined command has no attempt or process.
+func (r *Registry) define(ctx context.Context, spec Spec, fingerprint string) (*registered, error) {
+	saved := SavedServer{ID: r.o.ID(), Spec: spec}
+	if saved.ID == "" {
+		return nil, failure(pa.Invalid, "server_id")
+	}
+	r.mu.Lock()
+	collision := r.rows[saved.ID] != nil
+	r.mu.Unlock()
+	if collision {
+		return nil, failure(pa.IdempotencyConflict, "server_id")
+	}
+	if err := r.o.Catalog.Create(ctx, saved); err != nil {
+		return nil, err
+	}
+	e := &registered{saved: saved, log: &LogTail{}}
+	r.mu.Lock()
+	r.rows[saved.ID], r.bySpec[fingerprint] = e, saved.ID
+	r.mu.Unlock()
+	return e, nil
 }
 
 // admit holds ops. A completed owner may have published its terminal receipt

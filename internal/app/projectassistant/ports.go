@@ -258,6 +258,14 @@ type RuleStore interface {
 	Remove(dir string, rule pa.PermissionRule) error
 }
 
+// SourceRuleStore exposes Host-owned exact rules through the existing human
+// settings surface. It never grants permission on behalf of a native provider.
+type SourceRuleStore interface {
+	Handles(pa.PermissionRule) bool
+	List(context.Context, pa.BotKey, pa.ProjectScope) ([]pa.PermissionRule, error)
+	Remove(context.Context, pa.BotKey, pa.ProjectScope, pa.PermissionRule) error
+}
+
 type ProjectResolver interface {
 	Resolve(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }

@@ -24,7 +24,9 @@ const catalogMarker = `CREATE TABLE bot_devserver_catalog_schema (id INTEGER PRI
 const definitions = `CREATE TABLE bot_devserver_definitions (
  id TEXT NOT NULL PRIMARY KEY, fingerprint TEXT NOT NULL,
  spec BLOB NOT NULL, current_attempt TEXT NOT NULL,
- removed INTEGER NOT NULL CHECK(removed IN (0,1)))`
+ removed INTEGER NOT NULL CHECK(removed IN (0,1)),
+ rule_version INTEGER NOT NULL DEFAULT 0,
+ rule_decision TEXT NOT NULL DEFAULT '')`
 
 type column struct {
 	name, kind        string
@@ -60,6 +62,10 @@ func columnsMatch(ctx context.Context, tx *sql.Tx, query string, want []column) 
 }
 
 func catalogSchema(ctx context.Context, tx *sql.Tx) (bool, error) {
+	return inspectCatalogSchema(ctx, tx, false)
+}
+
+func inspectCatalogSchema(ctx context.Context, tx *sql.Tx, legacy bool) (bool, error) {
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('bot_devserver_catalog_schema','bot_devserver_definitions')`).Scan(&count); err != nil {
 		return false, err
@@ -81,12 +87,14 @@ func catalogSchema(ctx context.Context, tx *sql.Tx) (bool, error) {
 	if rows != 1 || !id.Valid || id.Int64 != 1 || !low.Valid || low != high {
 		return false, refusal(pa.Invalid, "server_catalog_marker")
 	}
-	if low.Int64 != 1 {
+	if low.Int64 != 2 && !(legacy && low.Int64 == 1) {
 		return false, refusal(pa.Unsupported, "server_catalog_schema")
 	}
-	if err := columnsMatch(ctx, tx, `PRAGMA table_info(bot_devserver_definitions)`, []column{
-		{"id", "TEXT", 1, 1}, {"fingerprint", "TEXT", 1, 0}, {"spec", "BLOB", 1, 0}, {"current_attempt", "TEXT", 1, 0}, {"removed", "INTEGER", 1, 0},
-	}); err != nil {
+	want := []column{{"id", "TEXT", 1, 1}, {"fingerprint", "TEXT", 1, 0}, {"spec", "BLOB", 1, 0}, {"current_attempt", "TEXT", 1, 0}, {"removed", "INTEGER", 1, 0}}
+	if low.Int64 == 2 {
+		want = append(want, column{"rule_version", "INTEGER", 1, 0}, column{"rule_decision", "TEXT", 1, 0})
+	}
+	if err := columnsMatch(ctx, tx, `PRAGMA table_info(bot_devserver_definitions)`, want); err != nil {
 		return false, err
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM bot_devserver_definitions WHERE removed NOT IN (0,1)`).Scan(&count); err != nil {
@@ -111,7 +119,7 @@ func InstallCatalog(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := catalogSchema(ctx, tx)
+	catalog, err := inspectCatalogSchema(ctx, tx, true)
 	if err != nil {
 		return err
 	}
@@ -135,14 +143,60 @@ func InstallCatalog(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	if !catalog {
-		for _, statement := range []string{catalogMarker, definitions, `INSERT INTO bot_devserver_catalog_schema(id,version) VALUES(1,1)`} {
+		for _, statement := range []string{catalogMarker, definitions, `INSERT INTO bot_devserver_catalog_schema(id,version) VALUES(1,2)`} {
 			if _, err := tx.ExecContext(ctx, statement); err != nil {
 				return err
 			}
 		}
 	}
+	if catalog {
+		var version int
+		if err := tx.QueryRowContext(ctx, `SELECT version FROM bot_devserver_catalog_schema WHERE id=1`).Scan(&version); err != nil {
+			return err
+		}
+		if version == 1 {
+			// Upgrade only this known source-local format, within one transaction.
+			// Existing definitions retain epoch zero and no standing approval.
+			for _, statement := range []string{
+				`ALTER TABLE bot_devserver_definitions ADD COLUMN rule_version INTEGER NOT NULL DEFAULT 0`,
+				`ALTER TABLE bot_devserver_definitions ADD COLUMN rule_decision TEXT NOT NULL DEFAULT ''`,
+				`UPDATE bot_devserver_catalog_schema SET version=2 WHERE id=1 AND version=1`,
+			} {
+				if _, err := tx.ExecContext(ctx, statement); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	if err := catalogReady(ctx, tx); err != nil {
 		return err
+	}
+	// Validate every retained executable definition before committing a migration.
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM bot_devserver_definitions WHERE removed=0 LIMIT ?`, capacity.MaximumBotServerDefinitions+1)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if len(ids) > capacity.MaximumBotServerDefinitions {
+		return refusal(pa.CapacityFull, "server_definitions")
+	}
+	for _, id := range ids {
+		if _, _, err := definition(ctx, tx, id); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -170,6 +224,12 @@ func catalogReady(ctx context.Context, tx *sql.Tx) error {
 	}
 	if invalid != 0 {
 		return refusal(pa.ExecutionEffectUnknown, "server_ledger_unowned")
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM bot_devserver_definitions WHERE rule_version<0 OR rule_decision NOT IN ('','allow','deny') OR (rule_version=0 AND rule_decision<>'') OR (removed=1 AND rule_decision<>'')`).Scan(&invalid); err != nil {
+		return err
+	}
+	if invalid != 0 {
+		return refusal(pa.Invalid, "server_rule")
 	}
 	return nil
 }
@@ -337,7 +397,7 @@ func (c *Catalog) Remove(ctx context.Context, expected servers.SavedServer) erro
 	}
 	// Retain an ID-only tombstone so delayed controls cannot address a reused
 	// definition. Remove executable command text; retain past attempt receipts.
-	if _, err := tx.ExecContext(ctx, `UPDATE bot_devserver_definitions SET spec=x'',fingerprint='',current_attempt='',removed=1 WHERE id=? AND removed=0`, expected.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE bot_devserver_definitions SET spec=x'',fingerprint='',current_attempt='',removed=1,rule_decision='' WHERE id=? AND removed=0`, expected.ID); err != nil {
 		return err
 	}
 	return tx.Commit()

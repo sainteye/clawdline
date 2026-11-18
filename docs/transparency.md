@@ -964,3 +964,13 @@ isolated database. Neither command starts a native provider, resumes imported
 turns or replaces the running daemon's data. This introduces no model prompt
 or live recovery policy. The new command and refreshed parent-command source
 receipts do not establish actual-binary qualification or destination acceptance.
+
+
+The source-owned dev-server rule continuation adds an exact local approval
+store and human list/revoke integration for both agents. Reviewed the related
+persistent-bots explanation in English and Taiwan Traditional Chinese; native
+rules retain their existing scope, while saved local command rules include
+complete Bot/Project/command/directory/Forget identity. The text explicitly
+does not advertise native server tools, which remain unintegrated. Register
+the source command approval and human rule adapter with that card. Refreshing
+these reviewed source/copy receipts does not publish the website snapshot.

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	serverstore "github.com/sainteye/clawdline/internal/adapters/botdevserverstore"
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -108,6 +109,9 @@ func New(ctx context.Context, o Options) (*Host, error) {
 		if err = app.InstallSchemas(ctx, o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
 			return nil, err
 		}
+		if err = serverstore.InstallCatalog(ctx, o.Database); err != nil {
+			return nil, err
+		}
 		if err = h.makeService(); err != nil {
 			return nil, err
 		}
@@ -199,7 +203,7 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{NetworkAccount: h.networkAccount, NetworkSettings: h.store, NetworkCapabilities: h.o.NetworkCapabilities, Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{NetworkAccount: h.networkAccount, NetworkSettings: h.store, NetworkCapabilities: h.o.NetworkCapabilities, Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, SourceRules: hostSourceRules{h}, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -411,6 +415,9 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.mu.Unlock()
 	}
 	if err := app.InstallSchemas(ctx, h.o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
+		return err
+	}
+	if err := serverstore.InstallCatalog(ctx, h.o.Database); err != nil {
 		return err
 	}
 	h.mu.Lock()

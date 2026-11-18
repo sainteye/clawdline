@@ -1349,7 +1349,7 @@ func TestHostBotPermissionSettingChangesAfterCreation(t *testing.T) {
 }
 
 // A Claude Code Bot's standing rules are read from and revoked in its own
-// Project's local settings; a Codex Bot has none Clawdline can read.
+// Project's local settings, alongside source rules available to either agent.
 func TestHostListsAndRevokesAClaudeBotsProjectRules(t *testing.T) {
 	f := newHostFixture(t)
 	f.o.Rules = ruleStoreForTest{}
@@ -1381,8 +1381,8 @@ func TestHostListsAndRevokesAClaudeBotsProjectRules(t *testing.T) {
 		t.Fatalf("after revoking: %+v %v", rules, e)
 	}
 	codex := f.create(t, "codex")
-	if _, e = s.Rules(ctx, codex.Key); pa.Code(e) != pa.Unsupported {
-		t.Fatalf("a Codex Bot's rules: %v", e)
+	if rules, e = s.Rules(ctx, codex.Key); e != nil || len(rules) != 0 {
+		t.Fatalf("a Codex Bot's empty source rules: %+v %v", rules, e)
 	}
 }
 
