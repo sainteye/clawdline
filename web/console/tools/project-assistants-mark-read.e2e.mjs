@@ -19,7 +19,8 @@ const botPath="/v1/project-assistants/"+bot
 const server=createServer(async(req,res)=>{try{
   const url=new URL(req.url,"http://fixture")
   if(url.pathname.startsWith("/v1/")){
-    const read=url.searchParams.has("fixture_read");url.searchParams.delete("fixture_read")
+    const read=url.searchParams.has("fixture_read"),forceUnread=url.searchParams.has("fixture_force_unread")
+    url.searchParams.delete("fixture_read");url.searchParams.delete("fixture_force_unread")
     const record={method:req.method,path:url.pathname};requests.push(record)
     assert.ok(req.method==="GET"||(req.method==="POST"&&url.pathname===botPath+"/read"),"Only read cursor observation is allowed")
     const chunks=[];for await(const chunk of req)chunks.push(chunk);const raw=Buffer.concat(chunks)
@@ -30,6 +31,11 @@ const server=createServer(async(req,res)=>{try{
     record.status=answer.status
     if(holdNext&&url.pathname===botPath+"/view"&&url.searchParams.get("mode")==="snapshot"){held=true;await new Promise(resolve=>{holds.push(resolve)})}
     if(replaceConversation&&url.pathname===botPath+"/view"){const value=JSON.parse(body);value.head.conversation.id="other-synthetic-conversation";body=Buffer.from(JSON.stringify(value))}
+    if(forceUnread&&record.status===200&&req.method==="GET"&&url.pathname==="/v1/project-assistants"){
+      const value=JSON.parse(body)
+      for(const row of value.items)if(row.bot.key.bot_id===bot)row.unread_count=1
+      body=Buffer.from(JSON.stringify(value))
+    }
     if(req.method==="POST")record.response=JSON.parse(body)
     res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(body);return
   }
@@ -68,15 +74,20 @@ async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=a
 
 async function waitFor(expression){for(let n=0;n<100;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,50))}throw Error("Condition did not become true: "+expression+"\n"+(await browser("read")).text)}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
-async function readyMenu(zh=false){await browser("click",zh?"更多動作":"More actions");await waitFor(`(()=>{const e=[...document.querySelectorAll('button[role="menuitem"]')].find(b=>b.textContent===${JSON.stringify(zh?"全部標為已讀":"Mark all as read")});return e&&!e.disabled})()`)}
-async function openChat(language="en",readonly=false){await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",language==="en"?"desktop":"mobile");await waitFor('!!document.querySelector(".pa-composer textarea")')}
+const action=zh=>zh?"全部標為已讀":"Mark all as read"
+async function openRoster(language="en",readonly=false,forceUnread=false){
+  await browser("open",origin+"/?lang="+language+(readonly?"&read=1":"")+(forceUnread?"&force_unread=1":""))
+  await browser("viewport",language==="en"?"desktop":"mobile")
+  await waitFor('!!document.querySelector(".pa-roster-read:not(:disabled)")')
+  return evaluate('document.querySelector(".pa-roster-read").getAttribute("aria-label")')
+}
 const readPosts=()=>requests.filter(r=>r.method==="POST")
 try{
   await connect()
   for(const [language,readonly] of [["en",false],["zh-Hant",true]]){
-    const zh=language!=="en";await openChat(language,readonly);await readyMenu(zh)
+    const zh=language!=="en",label=await openRoster(language,readonly);assert.ok(label.startsWith(action(zh)))
     const before=readPosts().length
-    await browser("click",zh?"全部標為已讀":"Mark all as read");await waitText(zh?"已全部標為已讀":"Marked all as read")
+    await browser("click",label);await waitFor('!document.querySelector(".pa-roster-read")')
     assert.equal(readPosts().length,before+1)
     const record=readPosts().at(-1);assert.equal(record.status,200);assert.equal(record.body.cursor.message_seq,record.response.cursor.message_seq);assert.ok(record.body.cursor.message_seq>0)
     assert.equal(record.body.cursor.conversation_id,record.response.cursor.conversation_id)
@@ -86,18 +97,18 @@ try{
     await browser("close");tab=undefined;results.push({language,readonly,sequence:record.body.cursor.message_seq,acknowledged:true})
   }
   // A delayed snapshot cannot authorize a read after the captured grant changes.
-  await openChat();await readyMenu();holdNext=true;held=false;const beforeRevoke=readPosts().length
-  await browser("click","Mark all as read");await waitHeld();await evaluate("window.fixtureRevoke()");releaseHeld();await waitText("pa_revoked");assert.equal(readPosts().length,beforeRevoke)
+  const revokeButton=await openRoster("en",false,true);holdNext=true;held=false;const beforeRevoke=readPosts().length
+  await browser("click",revokeButton);await waitHeld();await evaluate("window.fixtureRevoke()");releaseHeld();await waitText("pa_revoked");assert.equal(readPosts().length,beforeRevoke)
   assert.equal(await evaluate('document.documentElement.dataset.readAcknowledged'),undefined)
   await browser("close");tab=undefined
   // A source snapshot for another conversation must not produce a cursor write.
-  await openChat();await readyMenu();replaceConversation=true;const beforeMismatch=readPosts().length;await browser("click","Mark all as read");await waitText("pa_scope_denied");assert.equal(readPosts().length,beforeMismatch);replaceConversation=false
+  const mismatchButton=await openRoster("en",false,true);replaceConversation=true;const beforeMismatch=readPosts().length;await browser("click",mismatchButton);await waitText("pa_scope_denied");assert.equal(readPosts().length,beforeMismatch);replaceConversation=false
   await browser("close");tab=undefined
   // Leaving the chat cancels a pending observation without marking a replacement view.
-  await openChat();await readyMenu();holdNext=true;held=false;const beforeLeave=readPosts().length;await browser("click","Mark all as read");await waitHeld();await browser("close");tab=undefined;releaseHeld();assert.equal(readPosts().length,beforeLeave)
+  const leaveButton=await openRoster("en",false,true);holdNext=true;held=false;const beforeLeave=readPosts().length;await browser("click",leaveButton);await waitHeld();await browser("close");tab=undefined;releaseHeld();assert.equal(readPosts().length,beforeLeave)
   assert.equal(readPosts().length,2);assert.ok(readPosts().every(r=>r.path===botPath+"/read"))
   results.push({revokedGrantRefused:true,foreignConversationRefused:true,unmountedObservationCancelled:true,executionMutations:0,providerCalls:0})
-  console.log("PASS: bilingual production Chat menu -> fresh source sequence -> authenticated read cursor acknowledgement; read-only observation, late revocation/conversation/leave fences; execution/model mutations=0")
+  console.log("PASS: bilingual production unread roster row -> fresh source sequence -> authenticated read cursor acknowledgement; read-only observation, late revocation/conversation/leave fences; execution/model mutations=0")
 }finally{
   releaseHeld?.()
   if(tab&&send)await browser("close").catch(error=>console.error("Owned tab cleanup:",error.message))

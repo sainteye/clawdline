@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { ReactNode } from "react"
 import type * as W from "@clawdline/contract"
 import { BotRow } from "./BotRow"
+import { BotRosterReadAction } from "./BotRosterReadAction"
 import { botIdentity } from "./view-state"
 import type { Words } from "./words"
 import { PaSelect,PaMenu } from "./PaSelect"
@@ -18,9 +19,10 @@ import { moveRosterBot, pinRosterBot, reorderKeys, type RosterState } from "./ro
 import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import "./roster-controls.css"
-export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],groupsItems,onOpenGroup,onGroupOpenChange}: {
+export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange}: {
   onOpenGroup?:()=>void;onGroupOpenChange?:(open:boolean)=>void;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
+  current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
   errors:readonly [string,string,boolean][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
   const {state: rosterState, problem, update} = useRosterState(rosterScope)
@@ -105,10 +107,12 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
           {group.items.map(item => {
             const key = item.key, project = projectKey(item.machineID,item.projectID), name=item.kind==="bot"?item.item.bot.name:item.entry.group.name
             const pinLabel=item.kind==="bot"?(pinned?w.rosterUnpin:w.rosterPin):(pinned?w.rosterUnpinGroup:w.rosterPinGroup)
+            const source=item.kind==="bot"&&sources.find(source=>source.machineID===item.machineID)
             return <div className="pa-roster-entry" key={key} {...targetProps({kind:"bot",key})}
               onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){event.preventDefault();beginSorting(key)}}}}
               onContextMenu={event=>{event.preventDefault();if(!active)beginSorting(key)}}>
               {item.kind==="bot"?<BotRow item={item.item} grouped={!pinned} selected={selected===key} onSelect={()=>onSelect(item.item)} w={w} language={language} projectName={projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!pinned} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>}
+              {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}/>}
               {sorting&&<div className="pa-roster-actions"><button type="button" className="pa-roster-pin" aria-label={`${pinLabel}: ${name}`} aria-pressed={pinned} title={pinLabel} onClick={()=>pin(key,!pinned)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill={pinned?"currentColor":"none"} stroke="currentColor" strokeWidth="1.3"><path d="m8 1.7 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2.1.7-4.3-3.1-3 4.3-.6Z"/></svg></button>{handle({kind:"bot",key},name,keys)}</div>}
             </div>
           })}

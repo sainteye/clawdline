@@ -151,15 +151,23 @@ async function catalogChecks(page,origin,language,shot,log) {
 }
 /** The real Chat is mounted against adversarial, bounded synthetic SourceClients. */
 async function boundedChecks(page,origin,language,width,shot,log) {
-  const zh=language!=="en",w=zh?{all:"所有 Bots",message:"訊息",back:"返回 Bots",moreActions:"更多動作",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息",more:"載入更多",details:"查看詳細內容",allow:"允許這次",trace:"查看處理過程",unknown:"結果未知；不會自動重送",quote:"引用回覆",clear:"取消引用",settings:"Bot 設定"}:{all:"All Bots",message:"Message",back:"Back to Bots",moreActions:"More actions",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates",more:"Load more",details:"View details",allow:"Allow once",trace:"View processing steps",unknown:"Outcome unknown; no automatic retry",quote:"Reply",clear:"Remove reply",settings:"Bot settings"}
+  const zh=language!=="en",w=zh?{all:"所有 Bots",message:"訊息",back:"返回 Bots",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息",more:"載入更多",details:"查看詳細內容",allow:"允許這次",trace:"查看處理過程",unknown:"結果未知；不會自動重送",quote:"引用回覆",clear:"取消引用",settings:"Bot 設定"}:{all:"All Bots",message:"Message",back:"Back to Bots",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates",more:"Load more",details:"View details",allow:"Allow once",trace:"View processing steps",unknown:"Outcome unknown; no automatic retry",quote:"Reply",clear:"Remove reply",settings:"Bot settings"}
   const chat=page.locator(".pa-chat"),messageRows=chat.locator("[data-message-id]")
   const exactText=value=>new RegExp("^"+value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"$")
   // A Bot reply renders as Markdown in .pa-markdown; the person's own text stays a paragraph.
-  const messageText=value=>chat.locator(".pa-message > p, .pa-message > .pa-markdown").filter({hasText:exactText(value)})
+  const messageText=value=>chat.locator(".pa-message-bubble > p, .pa-message-bubble > .pa-markdown").filter({hasText:exactText(value)})
   const workResult=value=>chat.locator(".pa-chat-content > article.pa-card code").filter({hasText:exactText(value)})
-  const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${name}, [^,]+, ${machine}(,|$)`)})
-  // Check for updates lives in the chat header's ··· menu.
-  const refresh=async()=>{await chat.getByRole("button",{name:w.moreActions,exact:true}).click();await chat.getByRole("menuitem",{name:w.refresh,exact:true}).click()}
+  const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.locator(`.pa-bot-row[data-bot-key^='["${machine}",']`).filter({hasText:name})
+  const info=page.locator(".pa-info-panel")
+  const openInfo=()=>chat.locator(".pa-chat-identity").click()
+  const closeInfo=()=>info.getByRole("button",{name:zh?"關閉資訊":"Close information",exact:true}).click()
+  const refresh=async()=>{
+    const retry=chat.getByRole("alert").getByRole("button",{name:w.refresh,exact:true})
+    if(await retry.isVisible()){await retry.click();return}
+    await openInfo()
+    await info.getByRole("button",{name:w.refresh,exact:true}).click()
+    await closeInfo()
+  }
   const alert=code=>chat.getByRole("alert").filter({hasText:code}).waitFor()
   const all=[];page.boundedRequests=all
   const fresh=async setup=>{
@@ -195,10 +203,12 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       await page.evaluate(()=>window.botsFixture.a.holdSnapshots())
       const initial=(await views("snapshot")).length
       await editor().press("Enter");await waitView("snapshot",initial)
-      await chat.getByRole("button",{name:w.moreActions,exact:true}).click();await chat.getByRole("menuitem",{name:w.settings,exact:true}).click()
-      const dialog=page.getByRole("dialog")
-      await dialog.getByRole("button",{name:zh?"儲存":"Save",exact:true}).click();await waitView("snapshot",initial+1)
-      await dialog.getByRole("button",{name:zh?"取消":"Cancel",exact:true}).click();await dialog.waitFor({state:"hidden"})
+      await openInfo()
+      await info.getByRole("tab",{name:w.settings,exact:true}).click()
+      await info.locator(".pa-settings-part:not([hidden]) .pa-settings-disclosure > summary").first().click()
+      await info.getByRole("textbox",{name:zh?"名稱":"Name",exact:true}).fill("Pending synthetic edit")
+      await info.getByRole("button",{name:zh?"儲存":"Save",exact:true}).click();await waitView("snapshot",initial+1)
+      await info.getByRole("button",{name:zh?"取消":"Cancel",exact:true}).click();await info.waitFor({state:"hidden"})
       if(finish==="same-fence-recovery"){
         await page.evaluate(()=>window.botsFixture.a.expireSameFence());await refresh();await waitView("snapshot",initial+2)
         // Release the recovery snapshot first. Both old preflights remain held until unlock.
@@ -226,7 +236,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     await card.waitFor()
     await editor().fill('New instruction after the old work');await editor().press('Enter')
     const latest=messageText('New instruction after the old work');await latest.waitFor()
-    const latestID=await latest.locator('..').getAttribute('data-message-id')
+    const latestRow=latest.locator('xpath=ancestor::article');const latestID=await latestRow.getAttribute('data-message-id')
     const assertOrder=async()=>{
       const ids=await order()
       assert.ok(ids.indexOf('PA-01')<ids.indexOf(latestID),'an old work card stays before the new instruction')
@@ -238,7 +248,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       a.push({id:crypto.randomUUID(),seq:0,at:'2026-11-13T00:00:00Z',version:'project-assistants.v1',kind:'work_updated',fence:work.fence,work:{...work,state:'landed',landing_commit:'updated-old-work'}})
     })
     await refresh();await workResult('updated-old-work').waitFor();await assertOrder()
-    await latest.click();await latest.locator('..').getByRole('menuitem',{name:w.quote,exact:true}).click()
+    await latestRow.locator('.pa-message-more').click();await latestRow.getByRole('menuitem',{name:w.quote,exact:true}).click()
     await chat.getByRole('button',{name:w.clear,exact:true}).waitFor()
     await shot('work-order-after-update')
 
@@ -387,7 +397,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await fresh(()=>{window.botsFixture.a.seedPending(16,17);window.botsFixture.a.configureViews({forbidLegacy:true})});await open()
   // Queued messages behind a turn that is not running are already part of the conversation
   // (partitionMessages, as in Codync); the tray holds only those behind a running turn.
-  await page.waitForFunction(()=>Array.from({length:16},(_,i)=>"Pending message "+i).every(text=>[...document.querySelectorAll(".pa-chat .pa-message.pa-mine > p")].some(p=>p.textContent===text)))
+  await page.waitForFunction(()=>Array.from({length:16},(_,i)=>"Pending message "+i).every(text=>[...document.querySelectorAll(".pa-chat .pa-message.pa-mine .pa-message-bubble > p")].some(p=>p.textContent===text)))
   // Only this tab's own uncertain send holds the composer; unknown turns from
   // elsewhere stay visible and a new message is a new turn, as in Codync.
   assert.equal(await editor().isDisabled(),false)
@@ -464,7 +474,7 @@ const origin=`http://127.0.0.1:${server.address().port}`,results=[]
 const failures=[]
 try {
   for(const engine of [chromium,webkit].filter(e=>!process.env.BOTS_ENGINE||e.name()===process.env.BOTS_ENGINE))for(const width of (process.env.BOTS_WIDTH?[Number(process.env.BOTS_WIDTH)]:[390,1440]))for(const language of (process.env.BOTS_LANGUAGE?[process.env.BOTS_LANGUAGE]:["zh-Hant","en"])) {
-    const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",moreActions:"More actions",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",moreActions:"更多動作",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
+    const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true}),name=`${engine.name()}-${width}-${language}`
     const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce"})
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))

@@ -66,8 +66,11 @@ async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=a
 async function waitFor(expression){for(let n=0;n<100;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,50))}throw Error("Condition did not become true: "+expression+"\n"+(await browser("read")).text)}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
 const expected=JSON.stringify({format:"clawdline.bot-template.v1",settings:{agent:"codex",appearance:{color:"#e39567",shape:"blob"},instructions:'Synthetic configured instructions.\n</textarea><script>window.templateExecuted=true</script>',name:"Synthetic template Bot",notify:"off",permission_policy:"ask",runtime_settings:{model:"synthetic-model",options:{effort:"high",fast:"false"}}}},null,2)
-async function readyMenu(zh=false){await browser("click",zh?"更多動作":"More actions");await waitFor(`(()=>{const e=[...document.querySelectorAll('button[role="menuitem"]')].find(b=>b.textContent===${JSON.stringify(zh?"建立範本":"Create template")});return e&&!e.disabled})()`)}
-async function openPreview(zh=false){await readyMenu(zh);await browser("click",zh?"建立範本":"Create template");await waitFor('!!document.querySelector("dialog textarea")')}
+async function readyTemplate(zh=false){
+  if(await evaluate('document.querySelector(".pa-info-panel").hidden'))await browser("click",zh?"Synthetic template Bot · Bot 資訊":"Synthetic template Bot · Bot information")
+  await waitFor(`(()=>{const e=[...document.querySelectorAll('.pa-info-data button')].find(b=>b.textContent===${JSON.stringify(zh?"建立範本":"Create template")});return e&&!e.disabled})()`)
+}
+async function openPreview(zh=false){await readyTemplate(zh);await browser("click",zh?"建立範本":"Create template");await waitFor('!!document.querySelector("dialog textarea")')}
 async function closePreview(){await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27},session);await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27},session);await waitFor('!document.querySelector("dialog")')}
 try{
   await connect()
@@ -90,7 +93,9 @@ try{
     await writeFile(path.join(artifacts,language+"-clipboard.json"),clipboard)
     await browser("screenshot","--out",path.join(artifacts,language+"-copied.jpg"))
     await closePreview()
-    assert.equal(await evaluate('document.activeElement?.getAttribute("aria-haspopup")'),"menu")
+
+    await waitFor('document.activeElement?.textContent==='+JSON.stringify(zh?"建立範本":"Create template"))
+    assert.equal(await evaluate('document.activeElement?.textContent'),zh?"建立範本":"Create template")
     if(!readonly)assert.equal(await evaluate('document.querySelector(".pa-composer textarea").value'),"Preserved synthetic draft")
     await openPreview(zh);await evaluate("history.back()");await waitFor('!document.querySelector("dialog")')
     assert.ok(await evaluate('!!document.querySelector(".pa-chat")'))
@@ -110,7 +115,7 @@ try{
   }
   // Revoke while the preview's authorized read is in flight.
   await browser("open",origin+"/?lang=en&read=1");await waitText("Synthetic template Bot");await waitFor('!!document.querySelector(".pa-composer textarea")');holdNext=true;held=false
-  await readyMenu();await browser("click","Create template");await waitHeld();await evaluate("window.fixtureRevoke()");releaseHeld();await waitText("Nothing was copied.");assert.equal(await evaluate('!!document.querySelector("dialog textarea")'),false)
+  await readyTemplate();await browser("click","Create template");await waitHeld();await evaluate("window.fixtureRevoke()");releaseHeld();await waitText("Nothing was copied.");assert.equal(await evaluate('!!document.querySelector("dialog textarea")'),false)
   await browser("close");tab=undefined
   // Revoke while copy revalidates; a late response cannot reach clipboard.
   await browser("open",origin+"/?lang=en&read=1");await waitText("Synthetic template Bot");await openPreview();await evaluate('navigator.clipboard.writeText("synthetic clipboard sentinel")');holdNext=true;held=false
