@@ -339,14 +339,66 @@ remains read-only and is not added to model context. Dreams and a full note
 version-history browser remain deferred.
 
 The migration from core schema 11 to 12 keeps existing Bot JSON/history bytes
-unchanged. Supported older short-fact archives remain restorable; note-bearing
-archives cannot
-pretend to be schema 11. Newer metadata must never be lowered for rollback.
+unchanged. Store-level `Restore` and `RestoreArchive` tests cover supported
+older short-fact archives; note-bearing archives cannot pretend to be schema
+11. These source interfaces are not a shipped archive-import command. The Bot
+CLI, HTTP routes and Cloud vocabulary expose export, but no Bot archive import
+or restore entry point. Project import and archived Session restore operate on
+different data. Newer metadata must never be lowered for rollback.
 Focused SQLite, owned MCP and scripted Host tests cover these source rules.
 Editor behavior has its own isolated browser entry point below, separate from
 production acceptance. The installed-native evidence below qualifies a
 controlled Codex path; it does not turn the scripted checks into native or
 production acceptance for both agents.
+
+### Isolated core11 compatibility qualification
+
+On 2026-11-18, the unchanged binary from
+`90c7c21fd45a8f1d2efb6aecc7f4692637d874e8` and an isolated prototype from
+`05e9fb26ea4f712c9b1fe329941801d5df158b2b` exercised the same synthetic
+core11 SQLite baseline. The prototype keeps the original aggregate format and
+stores topic notes separately under topic format 1. It is not merged into this
+implementation and is not a migration or rollback path for production core12.
+The actual prototype binary's version and console stamp matched its source;
+the original binary was unchanged throughout the comparison.
+
+| Boundary | Actual observation | Qualification limit |
+| --- | --- | --- |
+| Same data across binaries | The prototype wrote a note, the original binary directly reopened the same database and wrote an ordinary fact, and the prototype reopened it again. Both successful writes, two messages and one completed turn survived. | No snapshot, archive restore or lowered schema marker replaced the direct reopen. |
+| Empty database | The prototype initialized core11/topic1. | This does not permit installing it over core12. |
+| Prototype format refusal | Unknown topic version, missing topic marker, missing notes table and an actual core12 database returned typed `pa_unsupported` before changing SQLite logical contents. | These are the prototype's refusals, not the original binary's error classification. |
+| Original Forget and delete | Both returned success and removed the applicable live topic content. | Independent exports and provider transcripts remain separate. |
+| Combined capacity | The original binary made 253 successful HTTP writes to reach 255 facts plus one note. Another write was blocked without changing facts or the note; the prototype returned `pa_capacity_full` at the same total. | The original binary returned `pa_outcome_unknown`, not a known capacity refusal. |
+| Capacity control | A derived synthetic copy had only its external note row removed through SQL. The same original binary then successfully wrote the final fact through HTTP. | The control preparation was not a successful HTTP deletion receipt or a change to the primary positive baseline. |
+| Original ID collision and unknown topic format | Writes were blocked and contents remained unchanged. | Both returned `pa_outcome_unknown`; clear legacy refusal semantics remain unqualified. |
+| Export versions | The prototype's no-topic wire export reported 11; note and note-tombstone exports reported 12. The original binary's wire export reported 11 and omitted the external note. | Export headers and preserved SQLite data do not establish archive import, roundtrip or old-reader version refusal. |
+
+An earlier capacity preparation omitted a source Project and was rejected
+before reaching the capacity guard. That failed preparation is retained and
+does not count as capacity evidence; the later HTTP-filled comparison above
+is a separate run. The qualification used no provider prompt or production
+data. Task-private source, binary fingerprints, HTTP receipts, SQLite logical
+comparisons and both failed and successful preparations are preserved.
+
+The original binary and the prototype have no archive-input entry point.
+Therefore archive11 import and archive12 rejection by the unchanged binary
+remain **unexercised: no original entry point**. A new Go helper, JSON parsing
+or an unsupported-route response cannot stand in for that binary consuming an
+archive. Existing Store-level roundtrip tests retain their source-level scope.
+Updater installation/rollback and the separately designated core12 recovery
+binary are also not qualified by this trial.
+
+The published release tags inspected through `v2.19.0`
+(`69d25d02c653e8ca2848ca1610f384279d72a6e7`) contain no Bot archive consumer.
+The first supported archive-input version must be identified by its actual
+entry point, source commit and binary fingerprint, then qualify legacy and
+current archives, integrity, scope, tombstones, refusal and recovery through
+that entry point. Validation alone is not a restore roundtrip. Readable format
+limits and the default write generation must stay separate; opening an empty
+database or failing an import must not stamp a future generation. Only after
+the designated reader and recovery binaries are qualified may new-format
+writers be considered. No future generation is allocated here, and durable
+Host maintenance writers remain closed.
 
 ### Controlled installed-native qualification
 
