@@ -75,7 +75,8 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 		}
 		r := m()
 		if e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes || e.Name == capacity.BotsRosterClientRows || e.Name == capacity.BotsGroupPreviewAvatars ||
-			strings.HasPrefix(e.Name, "console.view_plugin_") || e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
+			strings.HasPrefix(e.Name, "console.view_plugin_") || strings.HasPrefix(e.Name, "console.transcript_quiet_") || e.Name == "console.transcript_slow_milliseconds" ||
+			e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
 			if r.Known || r.Err == "" {
 				t.Errorf("%s must explain its unavailable external-surface measurement: %+v", e.Name, r)
 			}
@@ -464,7 +465,8 @@ func TestSessionPresentationOccupancyIsUnknownWithoutBrowserEvidence(t *testing.
 	tracker := capacity.NewTracker()
 	checked := 0
 	for _, entry := range capacity.Register() {
-		if entry.Name != "console.copilot_session_report_batch" && entry.Name != "console.copilot_session_report_refs" && entry.Name != "console.copilot_session_report_sessions" {
+		if entry.Name != "console.copilot_session_report_batch" && entry.Name != "console.copilot_session_report_refs" && entry.Name != "console.copilot_session_report_sessions" &&
+			entry.Name != "console.transcript_quiet_failures" && entry.Name != "console.transcript_quiet_milliseconds" && entry.Name != "console.transcript_slow_milliseconds" {
 			continue
 		}
 		reading := measures[entry.Name]()
@@ -477,7 +479,7 @@ func TestSessionPresentationOccupancyIsUnknownWithoutBrowserEvidence(t *testing.
 		}
 		checked++
 	}
-	if checked != 3 {
+	if checked != 6 {
 		t.Fatalf("checked %d presentation bounds", checked)
 	}
 }

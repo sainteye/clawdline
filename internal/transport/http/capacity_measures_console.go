@@ -110,6 +110,15 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.transcript_revision_restarts": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console older-page recovery guard; daemon cannot measure another device's restart count"}
 		},
+		"console.transcript_quiet_failures": func() capacity.Reading {
+			return capacity.Reading{Err: "live browser transcript failure counts are not observed by the daemon"}
+		},
+		"console.transcript_quiet_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Err: "live browser transcript recovery timers are not observed by the daemon"}
+		},
+		"console.transcript_slow_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Err: "live browser transcript loading timers are not observed by the daemon"}
+		},
 		"console.assistant_facts_read_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console inventory read deadline; daemon cannot measure another device's pending read"}
 		},

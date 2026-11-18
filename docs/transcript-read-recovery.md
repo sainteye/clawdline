@@ -22,6 +22,11 @@ capped at thirty seconds. No new retry loop, queue capacity or transport deadlin
 The Cloud read lane remains separately bounded at eight workers and sixty-four waiting reads;
 queue saturation is a typed refusal, not evidence of an empty conversation.
 
+The three presentation thresholds also have diagnostic measurement entries. Their live browser
+timers and failure counts remain explicitly unknown to the daemon, with an explanation; absence
+of browser evidence is neither zero occupancy nor an exhausted limit. The HTTP measurement
+coverage and unknown-occupancy tests exercise this seam in addition to capacity registration.
+
 ## Rerunnable checks
 
 - `node --experimental-strip-types --test web/console/src/session/transcript-trouble.test.ts web/console/src/cloud/status-client.test.mjs`

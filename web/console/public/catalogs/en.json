@@ -10268,7 +10268,7 @@
   "projectAssistants.rosterPin": "Pin Bot",
   "projectAssistants.rosterUnpin": "Unpin Bot",
   "projectAssistants.rosterReorder": "Reorder",
-  "projectAssistants.rosterReorderHint": "Drag to reorder, or use Up and Down arrow keys",
+  "projectAssistants.rosterReorderHint": "Hold a row to drag. Alt+Up/Down moves the focused row; List options provides pinning and keyboard controls.",
   "projectAssistants.rosterDropPin": "Drop here to pin",
   "projectAssistants.rosterUnsaved": "Roster preferences could not be saved. Changes are kept for this view.",
   "playbook.boardDriveTitle": "Drive Board Items to Done",

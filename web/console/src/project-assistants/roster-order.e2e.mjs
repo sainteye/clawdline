@@ -29,10 +29,15 @@ try{
         const sort=async target=>{const options=target.getByRole("button",{name:language==="en"?"List options":"清單選項",exact:true});if(await options.count()){await options.click();await target.getByRole("menuitem",{name:language==="en"?"Reorder conversations":"調整對話順序",exact:true}).click()}}
         const row=name=>page.locator(".pa-roster-entry").filter({has:page.locator(".pa-bot-row strong",{hasText:name})})
         const order=()=>page.locator(".pa-roster-entry .pa-bot-row strong").allTextContents()
-        await row("Alpha One").waitFor();await sort(page)
+        await row("Alpha One").waitFor()
+        // A delayed animation frame must not steal a row focus chosen since entering sort mode.
+        await page.evaluate(()=>{const original=requestAnimationFrame,frames=[];window.requestAnimationFrame=callback=>{frames.push(callback);return frames.length};window.flushRosterFocus=()=>{window.requestAnimationFrame=original;for(const callback of frames)callback(performance.now())}})
+        await sort(page)
         assert.deepEqual(await order(),["Alpha One","Alpha Two","Beta One","Other Alpha","Named Pinned"])
         await row("Alpha Two").locator(".pa-roster-handle").focus()
+        await page.evaluate(()=>window.flushRosterFocus())
         await page.keyboard.press("ArrowUp")
+        await page.waitForFunction(()=>document.querySelector(".pa-roster-entry .pa-bot-row strong")?.textContent==="Alpha Two",null,{timeout:3000}).catch(async error=>{await writeFile(path.join(artifacts,"focus-failure.json"),JSON.stringify(await page.evaluate(()=>({focused:document.activeElement?.getAttribute("aria-label"),rows:[...document.querySelectorAll(".pa-roster-entry strong")].map(el=>el.textContent)})),null,2));throw error})
         assert.deepEqual((await order()).slice(0,2),["Alpha Two","Alpha One"])
         await page.reload();await row("Alpha One").waitFor();await sort(page)
         assert.deepEqual((await order()).slice(0,2),["Alpha Two","Alpha One"])
