@@ -1593,7 +1593,7 @@ test('reading an opening only advances the report mark when narration is submitt
   assert.equal(saved.length,1)
 })
 
-test('managed calls retain immediate reads and route work without exposing direct mutations',()=>{
+test('managed calls expose conversational message sends while other mutations remain in the work list',()=>{
  const session=(sessionUpdateEvent('','',{workEnabled:true}) as {session:{tools:{name:string}[];tool_choice:string}}).session
  const names=session.tools.map(t=>t.name)
  assert.ok(names.includes('get_session_recap'))
@@ -1601,7 +1601,7 @@ test('managed calls retain immediate reads and route work without exposing direc
  assert.ok(names.includes('queue_voice_work'))
  assert.ok(names.includes('get_voice_work'))
  assert.ok(names.includes('retry_voice_work'))
- assert.ok(!names.includes('send_message_to_session'))
+ assert.ok(names.includes('send_message_to_session'))
  assert.ok(!names.includes('smart_rename_sessions'))
  assert.equal(session.tool_choice,'auto')
 })

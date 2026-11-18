@@ -29,3 +29,8 @@ test('ending a local call detaches capture before a descending cue and closes on
  assert.deepEqual(audio.tones.map(t=>t.hz),[660,480]);assert.equal(audio.closed,1);assert.equal(meter.context,null)
  meter.close(true);assert.equal(audio.tones.length,2,'repeated close cannot replay the hangup sound')
 })
+
+test('entering a Session has a distinct short local melody and releases its nodes',()=>{
+ const meter=new CallMeter(),audio=context();meter.context=audio
+ meter.sessionChanged();assert.deepEqual(audio.tones.map(t=>t.hz),[660,880,660]);assert.equal(audio.gains.every(g=>g.disconnected),true)
+})

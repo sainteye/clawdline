@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "englishKeys": 13276,
+  "englishKeys": 13277,
   "counts": {
     "negation": 3502,
-    "state": 2241,
+    "state": 2240,
     "permission": 812,
     "deletion": 311,
     "uncertainty": 543
@@ -5670,7 +5670,6 @@
       "transparency.card.voice-question-menu.summary",
       "transparency.card.voice-session-boards.how",
       "transparency.card.voice-work.effect",
-      "transparency.card.voice-work.how",
       "transparency.card.voice-work.summary",
       "ui.unsupportedAgentHint",
       "ui.unsupportedHint",

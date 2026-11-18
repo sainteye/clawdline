@@ -116,20 +116,22 @@ export class CallMeter {
     }
   }
 
-  /** Two low notes acknowledge configured tools, without generating model speech. */
-  connected(): void {
+  /** Distinct local cues for connection readiness and entering a Session. */
+  connected():void{this.notes([480,660])}
+  sessionChanged():void{this.notes([660,880,660])}
+  private notes(frequencies:readonly number[]):void{
     const context=this.context
     if(!context||context.state!=='running')return
-    try {
+    try{
       const gain=context.createGain();gain.connect(context.destination)
-      for(const [index,hz] of [480,660].entries()){
+      for(const [index,hz] of frequencies.entries()){
         const tone=context.createOscillator(),at=context.currentTime+index*CHIME_NOTE_S
         tone.connect(gain);tone.frequency.value=hz
         gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(RING_LEVEL/4,at+0.01);gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
-        tone.onended=()=>{tone.disconnect();if(index===1)gain.disconnect()}
+        tone.onended=()=>{tone.disconnect();if(index===frequencies.length-1)gain.disconnect()}
         tone.start(at);tone.stop(at+CHIME_NOTE_S)
       }
-    }catch{/* refusal-ok: the visible connected state remains when local audio is unavailable. */}
+    }catch{/* refusal-ok: the visible state remains when local audio is unavailable. */}
   }
 
   /** A single soft low note means processing started, never success. No loop. */

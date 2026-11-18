@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error -- Node executes the TypeScript source.
-import {callWorkEvidence,callProgress,deliveryQuestion,ProgressCue,plainConsent,proposalSpoken} from './copilot-feedback.ts'
+import {callWorkEvidence,callProgress,deliveryQuestion} from './copilot-feedback.ts'
 const input={id:'request',call:'call',text:'Send this requirement to the Session.',planned:false,at:1}
 const state={id:'workspace',revision:1,plan_version:0,inputs:[input],tasks:[]}
 test('saving or planning a request does not establish message delivery',()=>{
@@ -24,22 +24,4 @@ test('status questions request fresh work evidence instead of inferring from Ses
 test('waiting confirmation and failed planning are stopped states, not active work',()=>{
  assert.equal(callProgress({saving:false,reading:false,responding:false,work:callWorkEvidence({...state,inputs:[{...input,planning_error:'voice_work_timeout'}]},'call',false)})?.phase,'failed')
  assert.equal(callProgress({saving:false,reading:true,responding:false})?.phase,'reading')
-})
-test('an executing task repeats its cue while quiet and never over either speaker',()=>{
- let played=0,now=0;const cue=new ProgressCue(()=>played++,()=>now)
- cue.update(true,true);assert.equal(played,0,'never over a speaker')
- cue.newTurn();cue.update(true,false);cue.update(true,false);assert.equal(played,1,'once when work starts')
- now=1000;cue.update(true,false,1);assert.equal(played,2,'again when another executing action starts')
- now=3000;cue.update(true,false,1);assert.equal(played,2,'not in a burst')
- now=5000;cue.update(true,false,1);assert.equal(played,3,'again while a wait stays silent')
- now=9500;cue.update(true,true,1);assert.equal(played,3,'not while the assistant speaks')
- cue.update(false,false);now=20000;cue.update(false,false);assert.equal(played,3,'silent when idle')
-})
-
-test('a read-back without the （machine） suffix still binds the proposal, and a plain yes is not a sentence',()=>{
- const proposal={id:'p',version:1,workspace:'w',target:'Clawdline 吉祥物與語音助理畫面\uff08work-box\uff09',message:'請先拿掉吉祥物',announced:false}
- assert.equal(proposalSpoken('要送給「Clawdline 吉祥物與語音助理畫面」：請先拿掉吉祥物。要送出嗎？',proposal),true)
- assert.equal(proposalSpoken('要送給「Clawdline 吉祥物與語音助理畫面」：請改名。',proposal),false)
- for(const yes of ['可以','好','Okay','我確認','好，送出吧','yes'])assert.equal(plainConsent(yes),true,yes)
- for(const no of ['不要','好像不對','可以改成別的嗎','先不要送','ok but change it'])assert.equal(plainConsent(no),false,no)
 })

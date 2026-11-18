@@ -17,7 +17,7 @@ const origin = { id: '%7', label: 'Prepare screenshots' }
 const row = { ...origin, assistant: 'codex', state: 'idle', sessionId: 'conversation-seven' }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const fixtures=new Set()
-afterEach(()=>{for(const c of fixtures){if(c.dc)c.dc.readyState='closed';c.resetSessionReports();clearTimeout(c.configurationTimer);clearInterval(c.cueTimer);clearInterval(c.liveTicker)}fixtures.clear()})
+afterEach(()=>{for(const c of fixtures){if(c.dc)c.dc.readyState='closed';c.resetSessionReports();clearTimeout(c.configurationTimer);clearInterval(c.liveTicker)}fixtures.clear()})
 
 function fixture(managed, target = origin) {
   globalThis.document??={documentElement:{lang:'en'}};globalThis.location??={hash:''}
@@ -144,7 +144,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   const oldFetch = globalThis.fetch
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   const oldDocument = globalThis.document, oldWindow = globalThis.window, oldPeer = globalThis.RTCPeerConnection
-  const sent = [], requests = []
+  const sent = [], requests = [];let ringStops=0,ringStoppedBeforeSettings=false
   const stream = { getAudioTracks: () => [{ stop() {} }], getTracks: () => [{ stop() {} }] }
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'synthetic-client', mediaDevices: { getUserMedia: async () => stream } } })
   globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({}) }
@@ -161,6 +161,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   }
   globalThis.fetch = async (path, init) => {
     requests.push({ path, init })
+    if(path==='/v1/settings/copilot')ringStoppedBeforeSettings=ringStops>0
     if (path === '/v1/settings/copilot') return managed===null?new Response('',{status:503}):Response.json({ work_enabled: managed, engine, speed: '1.1' })
     if (path === '/v1/voice/copilot-live') return Response.json({ sdp: 'synthetic-live-answer', session_id: 'synthetic-live-session' })
     if (path === '/v1/voice/copilot-session') return Response.json({ client_secret: 'fixture-not-a-key', work_enabled: managed })
@@ -177,12 +178,13 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     assert.fail(`unexpected request: ${path}`)
   }
   const c = new RealtimeCopilotClient()
-  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {}, attachInput: () => null, close() {} }
+  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {ringStops++}, attachInput: () => null, close() {} }
   c.addLog = () => {}
   c.state.engine = 'previous-call-engine'
   const previous=c.operations.begin({name:'previous-call-tool',source:'tool'});previous.end({outcome:'done'})
   try {
     await c.start(origin)
+    assert.equal(ringStoppedBeforeSettings,false,'ringback survives initial history and log state updates')
     assert.ok(!c.state.tools.some(row=>row.name==='previous-call-tool'),'the public start path resets the previous call history')
     if (managed===null || managed && protocol!==3) {
       assert.equal(c.state.status,'error')
@@ -200,6 +202,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     if (engine === 'live') {
       const request = requests.find(r => r.path === '/v1/voice/copilot-live')
       assert.match(JSON.parse(request.init.body).instructions, /Speak noticeably faster/)
+      assert.match(JSON.parse(request.init.body).instructions, /Before calling a message send tool/)
       assert.equal(c.call.options.speed, '1.1', 'the call keeps its saved speed for a later faster/slower request')
       assert.ok(!requests.some(r => r.path === '/v1/voice/copilot-session'), 'Live does not open a Realtime call')
       return
@@ -369,29 +372,6 @@ test('speech captures the new address before asynchronous screen following finis
  })}finally{globalThis.location=old}
 })
 
-for (const yes of ['可以','Okay','我確認','好，送出吧']) test(`a plain yes right after the exact read-back sends the message (${yes})`,async()=>{
- // Calls on 2026-11-13: 「可以」「Okay」「我確認」 were refused and the message never went.
- const f=fixture(true);f.c.call.options.messageActions=true
- await withLedger(f,async(state,requests)=>{
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'message'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'message'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'message',transcript:'Tell the Session to inspect the delay.'})
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'prepare'}})
-  await f.c.handleToolCall({call_id:'prepare',response_id:'prepare',name:'send_message_to_session',arguments:'{"session_id":"%7","message":"Please inspect the delay."}'})
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'prepare',status:'completed',output:[{type:'function_call'}]}})
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'proposal-read'}})
-  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to Prepare screenshots: Please inspect the delay. Send it?'})
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'proposal-read',status:'completed',output:[{type:'message'}]}})
-  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:yes})
-  assert.equal(requests.filter(r=>r.action==='confirm_message').length,1)
-  assert.equal(state.tasks[0].status,'queued')
- })
-})
-
 test('a plain yes with no read-back bound to it confirms nothing',async()=>{
  const f=fixture(true);f.c.call.options.messageActions=true
  await withLedger(f,async(state,requests)=>{
@@ -470,34 +450,6 @@ test('a delivery question reads the actual work receipt, without querying recipi
  })
 })
 
-test('a message is prepared without planning and confirmed only after exact audible proposal and fresh explicit consent',async()=>{
- const f=fixture(true);f.c.call.options.messageActions=true
- await withLedger(f,async(state,requests)=>{
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'message'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'message'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'message',transcript:'Tell the Session to inspect the delay.'})
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'prepare'}})
-  await f.c.handleToolCall({call_id:'prepare',response_id:'prepare',name:'send_message_to_session',arguments:'{"session_id":"%7","message":"Please inspect the delay.","confirmed":true}'})
-  assert.equal(state.tasks[0].status,'waiting_confirmation')
-  assert.equal(requests.some(r=>r.action==='plan'||r.action==='confirm_message'),false)
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'prepare',status:'completed',output:[{type:'function_call'}]}})
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'proposal-read'}})
-  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to Prepare screenshots. Message: Please inspect the delay. Say yes, send it to confirm.'})
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'proposal-read',status:'completed',output:[{type:'message'}]}})
-  assert.equal(f.c.messageProposal.announced,false,'generation completion is not playback completion')
-  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
-  assert.equal(f.c.messageProposal.announced,true)
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:'可以，送出。'})
-  assert.equal(requests.filter(r=>r.action==='confirm_message').length,1)
-  assert.equal(state.tasks[0].approved_version,1)
-  assert.equal(state.tasks[0].status,'queued','confirmation is still not delivery')
-  assert.ok(!f.reads.some(r=>r.init?.method==='POST'))
- })
-})
-
 test('connected cue precedes the automatic report and plays once after tools are configured',async()=>{
  const f=fixture(true,null);let connected=0
  f.c.state.status='connected';f.c.meter={connected:()=>connected++,pending(){}}
@@ -517,37 +469,17 @@ test('connected cue precedes the automatic report and plays once after tools are
  f.c.resetSessionReports()
 })
 
-test('a held Session query stays visible without playing the execution cue',async()=>{
+test('a held Session query plays its tool-start cue once and remains silent while waiting',async()=>{
  const f=fixture(true);let cues=0
  f.c.state.status='connected';f.c.meter={pending:()=>cues++,chime(){}}
  await withLedger(f,async()=>{
   const running=f.c.handleToolCall({call_id:'held',name:'get_session_recap',arguments:'{"session_id":"%7"}'})
   await tick()
-  assert.equal(f.c.state.progress.phase,'reading');assert.equal(cues,0)
-  f.c.updateState({});assert.equal(cues,0)
+  assert.equal(f.c.state.progress.phase,'reading');assert.equal(cues,1)
+  f.c.updateState({});assert.equal(cues,1)
   f.release();await running
   await f.c.handleRealtimeEvent({type:'response.done',response:{id:'finished',status:'completed',output:[{type:'message'}]}})
   assert.notEqual(f.c.state.progress?.phase,'reading')
- })
-})
-
-test('an interrupted or incorrect proposal cannot authorize a send',async()=>{
- const f=fixture(true)
- await withLedger(f,async(state,requests)=>{
-  state.inputs.push({id:'original',call:'test-call',text:'Send a message',planned:true})
-  state.tasks.push({id:'proposal',tool:'send_message_to_session',text:'Exact message',args:{session_id:'%7',message:'Exact message'},sources:['original'],version:1,status:'waiting_confirmation'})
-  f.c.messageProposal={id:'proposal',version:1,workspace:state.id,target:'Prepare screenshots',message:'Exact message',announced:false}
-  f.c.activeConversationInput='original'
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'wrong-read'}})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Send to another Session with a different message.'})
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'wrong-read',status:'completed',output:[{type:'message'}]}})
-  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped'})
-  assert.equal(f.c.messageProposal.announced,false)
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'unbound'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'unbound'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'unbound',transcript:'可以，送出。'})
-  assert.equal(requests.some(r=>r.action==='confirm_message'),false)
-  assert.equal(state.tasks[0].status,'waiting_confirmation')
  })
 })
 
@@ -569,37 +501,6 @@ for(const mode of ['complete','interrupted','changed'])test(`spoken next-batch a
   await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'batch-consent',transcript:'可以，繼續。'})
   assert.equal(requests.filter(r=>r.action==='continue_batch').length,mode==='complete'?1:0)
   assert.equal(requests.some(r=>r.action==='confirm_message'||r.action==='plan'),false)
- })
-})
-
-test('a mistaken plain-reply tool is prepared for spoken confirmation without pressing a menu or planning',async()=>{
- const f=fixture(true);f.c.call.options.messageActions=true
- await withLedger(f,async(state,requests)=>{
-  state.inputs.push({id:'plain-reply',call:'test-call',text:'Reply with clear everyday language.',deferred:true,planned:false,at:1})
-  f.c.activeConversationInput='plain-reply'
-  await f.c.handleToolCall({call_id:'wrong-tool',name:'answer_session_question',arguments:'{"session_id":"%7","selected_option":"Please use everyday language."}'})
-  assert.equal(requests.filter(r=>r.action==='prepare_message').length,1)
-  assert.equal(state.tasks[0].status,'waiting_confirmation')
-  assert.equal(requests.some(r=>['plan','confirm_message'].includes(r.action)),false)
-  assert.equal(f.reads.some(r=>r.init?.method==='POST'),false)
- })
-})
-
-for(const mode of ['cleared','changed-version'])test(`a message cannot use an interrupted or stale spoken proposal: ${mode}`,async()=>{
- const f=fixture(true)
- await withLedger(f,async(state,requests)=>{
-  state.tasks.push({id:'message',tool:'send_message_to_session',text:'Exact text',args:{session_id:'%7',message:'Exact text'},sources:['original'],version:1,status:'waiting_confirmation'})
-  f.c.messageProposal={id:'message',version:1,workspace:state.id,target:'Prepare screenshots',message:'Exact text',announced:false}
-  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'read-message'}})
-  await f.c.handleRealtimeEvent({type:'response.output_audio.delta'})
-  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'Prepare screenshots. Exact text. Say yes, send it.'})
-  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'read-message',status:'completed',output:[{type:'message'}]}})
-  await f.c.handleRealtimeEvent({type:mode==='cleared'?'output_audio_buffer.cleared':'output_audio_buffer.stopped'})
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_started',item_id:'consent'})
-  if(mode==='changed-version'){state.tasks[0].version=2;state.revision++}
-  await f.c.handleRealtimeEvent({type:'input_audio_buffer.speech_stopped',item_id:'consent'})
-  await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',item_id:'consent',transcript:'可以，送出。'})
-  assert.equal(requests.some(r=>r.action==='confirm_message'),false)
  })
 })
 
@@ -777,7 +678,7 @@ test('a GPT-Live call configures its backend after start, starts its report, and
   let cues = 0
   c.meter.pending = () => { cues++ }
   c.handleLiveEvent({ type: 'response.event', delegation_id: 'item_1', event: { type: 'response.output_item.done', response_id: 'resp_1', item: { type: 'function_call', call_id: 'call_1', name: 'list_sessions', arguments: '{}' } } })
-  assert.equal(cues, 0, 'a Session lookup never plays the execution cue')
+  assert.equal(cues, 1, 'a Session lookup plays one tool-start cue')
   for (let i = 0; i < 20 && !sent.some(e => e.type === 'response.create'); i++) await tick()
   assert.ok(reads.includes('/v1/sessions'), 'the tool ran in this browser')
   const result = sent.find(e => e.type === 'response.item.create')
@@ -1280,23 +1181,6 @@ test('continuing a completed report does not reread or restart the directory',as
  }
 })
 
-for(const live of [false,true])test(`direct messages require exact read-back and fresh consent before any send (live=${live})`,async()=>{
- const f=fixture(false);f.c.live=live;f.c.state.status='connected'
- let posts=0
- f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path,init)=>{
-  if(path==='/v1/sessions')return Response.json({sessions:[row]})
-  if(path.endsWith('/send')){posts++;return Response.json({ok:true,id:row.id,action:'typed'})}
-  return Response.json({})
- }})
- const args=JSON.stringify({session_id:row.id,session_label:row.label,message:'Please investigate the sound.',switch_confirmed:true,confirmed:true})
- if(live)await f.c.runLiveTool('unreviewed','send_message_to_session',args)
- else await f.c.handleToolCall({call_id:'unreviewed',name:'send_message_to_session',arguments:args})
- assert.equal(posts,0,'model flags and the original instruction cannot approve its drafted message')
- const result=f.sent.find(e=>e.item?.type==='function_call_output')
- assert.equal(JSON.parse(result.item.output).message_delivered,false)
- assert.equal(JSON.parse(result.item.output).proposal.message,'Please investigate the sound.')
-})
-
 function messageFixture(live){
  const f=fixture(false);f.c.live=live;f.c.state.status='connected'
  let current={...row},posts=0,levels={input:0,output:0},cues=0
@@ -1330,37 +1214,6 @@ function messageFixture(live){
  }
  return {...f,message,send,speak,answer,posts:()=>posts,cues:()=>cues,replace:()=>{current={...row,sessionId:'replacement-conversation'}}}
 }
-for(const live of [false,true])for(const scenario of ['approved','different words','incomplete','changed draft','changed conversation','cancelled','interrupted','not played'])test(`message review ${scenario} (live=${live})`,async()=>{
- const f=messageFixture(live),realNow=Date.now;let now=100000
- Date.now=()=>now
- try{
-  await f.send()
-  const text=`Send to ${row.label}: ${scenario==='different words'?'Another message.':scenario==='incomplete'?'Please investigate':f.message} Shall I send it?`
-  await f.speak(text,scenario==='interrupted')
-  if(scenario==='not played')f.c.audioEl.muted=true
-  if(scenario!=='interrupted')now+=2000
-  await f.answer(scenario==='cancelled'?'Okay, but do not send it.':'Okay')
-  now+=2000
-  if(scenario==='changed conversation')f.replace()
-  await f.send(scenario==='changed draft'?'Please delete the sound.':undefined)
-  assert.equal(f.posts(),scenario==='approved'?1:0)
-  if(scenario==='approved'){
-   assert.equal(f.cues(),1,'only the admitted send plays the task cue')
-   await f.send()
-   assert.equal(f.posts(),1,'the same approval never sends twice')
-  }
- }finally{Date.now=realNow}
-})
-
-test('Live backchannels cannot shorten the consent utterance or turn a cancellation into agreement',async()=>{
- const f=messageFixture(true),realNow=Date.now;let now=100000;Date.now=()=>now
- try{
-  await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);now+=2000
-  await f.answer('Okay');f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'Mm.'})
-  now+=100;await f.answer(', but do not send it.');now+=2000
-  await f.send();assert.equal(f.posts(),0)
- }finally{Date.now=realNow}
-})
 
 
 test('visible saving, reading, responding, planning and queued states never trigger periodic execution sounds',async()=>{
@@ -1381,31 +1234,18 @@ test('visible saving, reading, responding, planning and queued states never trig
   }
   assert.equal(cues,0)
   state.tasks[0].status='running';f.c.updateState({});assert.equal(cues,1)
-  now+=4000;f.c.updateState({});assert.equal(cues,2)
-  f.c.playing=true;now+=4000;f.c.updateState({});assert.equal(cues,2)
-  f.c.playing=false;state.tasks[0].status='done';now+=4000;f.c.updateState({});assert.equal(cues,2)
+  now+=4000;f.c.updateState({});assert.equal(cues,1)
+  f.c.playing=true;now+=4000;f.c.updateState({});assert.equal(cues,1)
+  f.c.playing=false;state.tasks[0].status='done';now+=4000;f.c.updateState({});assert.equal(cues,1)
  })}finally{Date.now=realNow}
 })
 
-test('a cancellation arriving while the approved send resolves its recipient blocks the effect',async()=>{
+test('changing the call during recipient resolution blocks the admitted transport effect',async()=>{
  const f=messageFixture(false)
- await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);await f.answer('Okay')
  const base=f.c.toolDeps;let release
- const held=new Promise(resolve=>release=resolve)
- f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path==='/v1/sessions')await held;return base().fetch(path,init)}})
- const sending=f.send();await tick()
- await f.answer('Do not send it.');release();await sending
+ f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path==='/v1/sessions')await new Promise(resolve=>release=resolve);return base().fetch(path,init)}})
+ const sending=f.send();await tick();f.c.attempt++;release();await sending
  assert.equal(f.posts(),0)
-})
-
-
-test('an uncertain send consumes its approval and cannot be retried automatically',async()=>{
- const f=messageFixture(false)
- await f.send();await f.speak(`Send to ${row.label}: ${f.message} Shall I send it?`);await f.answer('Okay')
- const base=f.c.toolDeps;let posts=0
- f.c.toolDeps=()=>({...base(),fetch:async(path,init)=>{if(path.endsWith('/send')){posts++;throw new TypeError('connection lost')}return base().fetch(path,init)}})
- await f.send();assert.equal(posts,1)
- await f.send();assert.equal(posts,1)
 })
 
 test('the call tool history survives the next Live answer and Realtime utterance',async()=>{
@@ -1496,4 +1336,63 @@ test('Live journals the completed item before moving to the next narration item'
  await f.c.presentLiveReport({sessions:rows},()=>f.c.dc?.readyState==='open')
  assert.deepEqual(saved.filter(e=>e.kind==='said').map(e=>e.text),['First explanation.'])
  assert.equal(f.c.liveSaid.peek(),'Second explanation.','the final item remains available for the normal journal flush')
+})
+
+test('tool starts sound once, nested reads do not repeat it, and a long wait is silent',()=>{
+ const f=fixture(false);f.c.live=true;f.c.state.status='connected';f.c.state.connectionReady=true
+ let sounds=0;f.c.meter={read:()=>({input:0,output:0}),pending:()=>sounds++}
+ const root=f.c.observeOperation({name:'list_sessions',source:'tool'})
+ const child=f.c.observeOperation({name:'read_session_transcript',source:'background',parent:root.id})
+ assert.equal(sounds,1)
+ for(let i=0;i<8;i++)f.c.updateState({})
+ assert.equal(sounds,1,'waiting is not another tool start')
+ child.end({outcome:'done'});root.end({outcome:'done'});assert.equal(sounds,1)
+ f.c.observeOperation({name:'get_sessions_summary',source:'background'});assert.equal(sounds,2)
+})
+
+for(const live of [false,true])for(const managed of [false,true])test(`the voice model decides message confirmation without a local transcript gate (live=${live}, managed=${managed})`,async()=>{
+ const f=fixture(managed);f.c.live=live;f.c.call.options.messageActions=true
+ let sends=0
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path,init)=>{
+  if(path==='/v1/sessions')return Response.json({sessions:[row]})
+  if(path.endsWith('/send')){sends++;assert.equal(JSON.parse(init.body).text,'Keep the dial tone.');return Response.json({ok:true,id:row.id,action:'typed'})}
+  return Response.json({})
+ }})
+ const args=JSON.stringify({session_id:row.id,message:'Keep the dial tone.',session_label:row.label})
+ if(live)await f.c.runLiveTool('model-approved','send_message_to_session',args)
+ else await f.c.handleToolCall({call_id:'model-approved',name:'send_message_to_session',arguments:args})
+ assert.equal(sends,1)
+ assert.equal(f.c.state.messageProposal,undefined)
+})
+
+for(const managed of [false,true])test(`message tools carry conversational confirmation instructions without a second local gate (managed=${managed})`,async()=>{
+ const f=fixture(managed);f.release();await f.c.sendSessionConfiguration()
+ const session=f.sent.find(e=>e.type==='session.update').session
+ const tool=session.tools.find(t=>t.name==='send_message_to_session')
+ assert.ok(tool)
+ assert.match(tool.description,/obtained their agreement/)
+ assert.match(session.instructions,/先完整說明收件對象與訊息全文/)
+ assert.doesNotMatch(tool.description,/only prepares|durable proposal/)
+})
+
+test('Session narration changes use a separate melody once per item, without cues for read-ahead',async()=>{
+ const f=fixture(false,null);f.c.live=true;f.c.state.status='connected';f.c.liveQuietMs=1;f.c.livePollMs=1
+ let switches=0;f.c.meter={sessionChanged:()=>switches++}
+ f.c.observeOperation({name:'read_session_summary',source:'background',target:'Another work'})
+ assert.equal(switches,0,'read-ahead alone is not a Session switch')
+ f.c.dc.send=text=>{const e=JSON.parse(text);f.sent.push(e);if(e.type==='session.commentary.append')queueMicrotask(()=>f.c.handleLiveEvent({type:'session.output_transcript.delta',delta:'A complete synthetic explanation.'}))}
+ const first={session_id:'one',label:'First work'},second={session_id:'two',label:'Second work'}
+ await f.c.presentLiveReport({sessions:[first,second]},()=>true)
+ assert.equal(switches,2)
+ await f.c.presentLiveReport({sessions:[second]},()=>true)
+ assert.equal(switches,2,'continuing the same item is not another Session switch')
+})
+
+test('Realtime Session name anchors cue each next item without repeating earlier names',async()=>{
+ const f=fixture(false,null);f.c.state.status='connected';let switches=0;f.c.meter={sessionChanged:()=>switches++}
+ f.c.presentSessionReport({sessions:[{session_id:'one',label:'First work'},{session_id:'two',label:'Second work'}]},()=>true)
+ await f.c.handleRealtimeEvent({type:'response.created',response:{id:'cue-names'}})
+ for(const [delta,count] of [['First work is being reviewed.',1],[' Second work has completed.',2],[' Its next step is verification.',2]]){
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta});assert.equal(switches,count)
+ }
 })

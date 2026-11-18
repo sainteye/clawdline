@@ -65,8 +65,6 @@ export interface ToolDeps {
   operationSource?:'tool'|'background'
   operationSignal?:AbortSignal
 
-  /** Direct-call draft gate, checked after target resolution and before any send effect. */
-  reviewMessage?: (row:CopilotSessionRow,message:string)=>unknown
 
   /**
    * The machine's dispatch records, read to tell dispatched children from
@@ -212,6 +210,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 不要客服腔：不過度客氣、不道歉、不誇張驚嘆，也不要像在主持節目。
 
 【最重要的規則】
+- 送出訊息前，先完整說明收件對象與訊息全文，問是否送出，停下來等回答；由你根據完整對話判斷使用者是否已同意，包括自然的確認語句。對方已同意且內容、對象沒有變更，就呼叫工具送出一次，不要再要求確認。工具不再替你比對念稿、播放靜默時間或同意句型；你仍須遵守先確認再送出的要求。收件對象或內容變更時，先說明新版再詢問。
 - 使用者問 Clawdline 本身怎麼用（任何功能、設定、畫面、按鈕在哪、能不能做某件事），一定先呼叫 clawdline_help，只照它回傳的說明講；你自己對 Clawdline 的印象很可能是錯的。但他是要你「做」一件你有工具可以做的事時（例如「用智慧命名重新命名」就是 smart_rename_sessions），直接照那個工具的規則做，不要先查說明。
 - 「智慧命名」「重新命名 Session」「改 Session 名稱」一律用 smart_rename_sessions 由機器直接改名；絕對不要用 send_message_to_session 傳訊息請 Session 自己改名。
 - 講到某個 Session 的內容，一律來自快照或工具結果；快照裡沒有它的細節（例如閒置、已完成的只有數量），就先呼叫 get_session_summary 再講，絕對不要自己編。
@@ -253,7 +252,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - smart_rename_sessions：用 Clawdline 的「智慧命名」替一個或幾個 Session 重新取名（機器上的助理依它的對話內容取名）。見下面【智慧命名】。
 - close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
-- send_message_to_session：先準備要送進 Session 的完整文字，不代表送出。凡是你整理、改寫或推測的內容，必須逐字念出完整收件對象與訊息，問是否送出並等下一次明確同意。不得先送出再確認；switch_confirmed 只確認對象，不確認內容。
+- send_message_to_session：呼叫即會送出，不是準備擬稿。凡是你整理、改寫或推測的內容，呼叫前先念完整收件對象與訊息、詢問並等同意。由你判斷確認是否完成，已同意的相同內容不要重問；不得先送出再確認。switch_confirmed 只表示已確認收件對象。
 - clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
 - get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
 【上次之後的新進展（get_session_updates）】
@@ -682,7 +681,7 @@ export const COPILOT_TOOLS = [
   {
     type: 'function',
     name: 'send_message_to_session',
-    description: 'Prepare the exact recipient and full message for read-back before sending. Read every word, ask whether to send and wait for fresh consent; never summarize the draft or claim it was sent while prepared. The application alone authorizes the reviewed text. 先完整念出收件對象與訊息，等使用者同意後才能送出；不可先送出再確認。',
+    description: 'Send one message after you have read the full recipient and message to the person and obtained their agreement. You judge confirmation from the conversation, including natural language; do not call before agreement or ask again for unchanged approved content. Tools do not re-check transcript wording or playback timing. 送出前由你先念完整收件對象與內容、詢問並等使用者同意；由你判斷是否已確認，已同意的相同內容不要重問。',
     parameters: {
       type: 'object',
       properties: {
@@ -701,17 +700,12 @@ const IMMEDIATE_READS = new Set(['get_call_status','get_status_briefing','list_s
 export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
   return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
 }
-/**
- * Changes only what this browser shows, never a Session or the machine, so a
- * managed call does them at once. On 2026-11-13 「幫我開啟…那個 Session」 was
- * turned into planned work awaiting confirmation twice and never opened.
- */
-// Ending the call changes nothing on the machine either: it only hangs up this browser's call.
-const IMMEDIATE_VIEW_ACTIONS = new Set(['open_session','open_snippets','end_call'])
-export function immediateVoiceAction(name:string):boolean { return IMMEDIATE_VIEW_ACTIONS.has(name) }
+/** View navigation and conversational messages run directly; other mutations use the work list. */
+const IMMEDIATE_ACTIONS = new Set(['open_session','open_snippets','end_call','send_message_to_session','answer_session_question'])
+export function immediateVoiceAction(name:string):boolean { return IMMEDIATE_ACTIONS.has(name) }
 export const CALL_WORK_TOOLS = [
   ...SESSION_BOARD_TOOLS,
-  ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)||IMMEDIATE_VIEW_ACTIONS.has(tool.name)),
+  ...COPILOT_TOOLS.filter(tool=>IMMEDIATE_READS.has(tool.name)||IMMEDIATE_ACTIONS.has(tool.name)),
   {type:'function',name:'get_voice_work',description:'Read the saved voice requests, pending tasks and planning errors. Use this before discussing work progress or retrying a failed request.',parameters:{type:'object',properties:{}}},
   {type:'function',name:'queue_voice_work',description:'Submit saved input IDs as continuing work when the person asks for an action, a multi-step task, or ongoing tracking. Do not queue an ordinary question that immediate read tools can answer. Use only the exact input IDs supplied by the application; never invent or rewrite the request. Mutations still require confirmation in the work list.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
   {type:'function',name:'retry_voice_work',description:'Retry the exact failed saved input IDs only when the person explicitly asks to retry. Read get_voice_work first. Never retry automatically or approve a mutation.',parameters:{type:'object',properties:{input_ids:{type:'array',items:{type:'string'}}},required:['input_ids']}},
@@ -726,7 +720,7 @@ If the person already named the exact recipient or confirmed it, switch_confirme
 export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
 Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
 Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
-For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. When send_message_to_session is available in this mode, it only prepares a durable proposal; it does not send. Use it for a single message or plain-text reply, instead of queue_voice_work. Read its exact recipient and message verbatim and ask in one short question whether to send it. A plain yes from the person right after that (「可以」「好」「送出」, "okay", "yes") is their consent; only the application consumes it for this exact proposal, and the message then sends without the work list. Opening a Session or its snippets on screen (open_session, open_snippets) runs at once without confirmation. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
+For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. Use send_message_to_session for messages or plain-text replies, instead of queue_voice_work. For multiple recipients, confirm their recipients and messages first, then invoke the send tool once for each; do not queue a message just to repeat confirmation. Before calling it, read the complete recipient and message, ask whether to send, then wait for the person's reply. You determine whether that reply confirms this draft, including natural confirmations. If confirmed, call the tool once; do not ask again for unchanged content. If the content or recipient changes, read the revised draft and ask again. The tool does not apply a second transcript, silence-duration or confirmation-phrase gate. Opening a Session or its snippets runs at once. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
 For Session message boards, use prepare_session_board and confirm_session_board directly. They keep a call-local plan and the application verifies the exact spoken confirmation. Ask for missing details one at a time.
 Use get_voice_work for task status. If planning failed, explain which request failed and its reason in everyday language; keep diagnostic stage/codes on screen; do not imply it is still working or invent a confirmation requirement. Only use retry_voice_work after an explicit retry request. Do not announce receipt or planning stages without a useful result.
 `
@@ -741,7 +735,6 @@ Use get_voice_work for task status. If planning failed, explain which request fa
  * tools or its instructions.
  */
 export interface CallOptions {
-  messageActions?: boolean
   workEnabled?: boolean
   /** semantic_vad's eagerness: low (default), auto, high. */
   eagerness?: string
@@ -851,7 +844,7 @@ export function sessionUpdateEvent(memory = '', snapshot = '', options: CallOpti
           speed: SPEEDS.includes(options.speed ?? '') ? Number(options.speed) : DEFAULT_SPEED,
         },
       },
-      tools: options.workEnabled ? [...CALL_WORK_TOOLS,...(options.messageActions?[{...COPILOT_TOOLS.find(tool=>tool.name==='send_message_to_session')!,description:'Prepare a durable message proposal for one Session, without sending it or using another planning model. State the exact recipient and message for explicit spoken confirmation. The application sends only after the person answers yes to your read-back. Never supply confirmed.'}]:[])] : COPILOT_TOOLS,
+      tools: options.workEnabled ? CALL_WORK_TOOLS : COPILOT_TOOLS,
       tool_choice: 'auto',
     },
   }
@@ -2409,8 +2402,6 @@ async function sendMessage(deps: ToolDeps, logs: ToolLog[], wanted: string, mess
     logs.push({ level: 'error', text: error })
     return { error }
   }
-  const review=deps.reviewMessage?.(row,message)
-  if(review)return review
   const request=(deps.newRequestID??(()=>crypto.randomUUID()))()
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/send`, {
     method: 'POST',

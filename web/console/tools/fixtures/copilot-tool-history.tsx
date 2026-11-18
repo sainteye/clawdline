@@ -49,10 +49,13 @@ client.toolDeps=()=>({observe:spec=>client.observeOperation(spec),sleep:async()=
 }})
 client.updateState({status:'connected',connectionReady:true,engine,speakingState:'listening',lastTranscript:'請介紹這些 Session。',lastAssistantSpeech:'這是本機假資料驗收，不會建立語音連線。',cost:{...emptyCost('fixture'),responses:1}})
 
+if(new URLSearchParams(location.search).has('stress'))client.updateState({remembered:3,lastAssistantSpeech:'This is the complete message read aloud for conversational confirmation. '.repeat(40),cost:{...emptyCost('fixture'),responses:1,live:{seconds:123,backendUSD:0},usd:0}})
+
 function Fixture(){
  const [open,setOpen]=useState(true),[result,setResult]=useState('Ready')
  const run=(action:()=>unknown)=>{try{void Promise.resolve(action()).catch(error=>setResult(String(error)))}catch(error){setResult(String(error))}}
  const validate=()=>{
+  const body=document.querySelector('.realtime-content')!;body.scrollTop=body.scrollHeight
   client.flushJournal()
   const records=client.state.tools??[]
   const summary=records.filter(row=>row.name==='read_session_summary')
@@ -73,7 +76,12 @@ function Fixture(){
   const speech=document.querySelector('.realtime-transcript-box')!.getBoundingClientRect()
   const usage=document.querySelector('.realtime-secondary')!.getBoundingClientRect()
   if(trail.top<speech.bottom||trail.bottom>usage.top)throw Error('History moved out of its required location')
+  const capsules=history.querySelector('.copilot-tools-trail')!.getBoundingClientRect()
+  if(capsules.bottom>trail.bottom+1)throw Error('Capsules overflow their history container')
+  for(const child of document.querySelector('.realtime-secondary')!.children){const rect=child.getBoundingClientRect();if(rect.top<usage.top-1||rect.bottom>usage.bottom+1)throw Error('Usage or memory rows overflow their container')}
   if(document.documentElement.scrollWidth>window.innerWidth)throw Error('Page overflows horizontally')
+  const actions=document.querySelector('.realtime-actions')!.getBoundingClientRect()
+  if(actions.top<usage.bottom||body.getBoundingClientRect().bottom>actions.top)throw Error('Call controls overlap usage or memory')
   setResult(`PASS · ${records.length} records · 3 summaries · 3 transcripts · existing summary · correct placement · ${journal.length} journal batches · provider calls 0`)
  }
  return <>

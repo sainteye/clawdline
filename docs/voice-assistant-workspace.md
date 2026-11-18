@@ -310,73 +310,46 @@ before. This replaces parking an interrupted conversation for a later call.
 
 ## Confirmed messages, connection cues and visible waiting
 
-Direct Live and unmanaged Realtime message tools now stop at a call-local draft
-review as well. The shared send function invokes this application gate after
-resolving and checking the recipient, immediately before the send effect. The
-original request to contact a Session, `switch_confirmed`, and model-supplied
-confirmation flags cannot approve the assistant's wording. The full recipient
-and message must be read back without shortening, followed by fresh agreement.
-Approval is consumed once and binds the exact text, machine, conversation,
-execution and current label. An edited draft, changed recipient, interruption,
-new caller speech or replacement call invalidates it. An uncertain send is not
-retried under the same approval.
+Message confirmation is conversational in Live, Realtime and managed mode.
+The assistant must read the full recipient and assistant-composed content, ask
+whether to send, and wait. The assistant interprets natural agreement from the
+conversation and invokes the message tool once, without asking again for the
+same approved recipient and content. Changed drafts require a revised read-back.
 
-Realtime uses its completed response and output-buffer stop to admit a read-back;
-a cleared buffer cannot do so. Live has no transcript-done or listener playback
-completion event. Its direct gate requires the complete matching read-back,
-observed local media output followed by the existing quiet window, and an
-unmuted, playing audio element before caller speech starts. Transcript quiet
-alone cannot approve a draft. It accumulates consent independently of caption
-bubbles, so a backchannel cannot turn "okay, but do not send" into "okay". This
-is conservative local playback evidence, not proof of what a person heard on
-an actual phone. Official [Live session documentation](https://developers.openai.com/api/docs/guides/live-conversations)
-keeps transcript timing separate from audio playback. Real device listening
-acceptance remains separate from synthetic event and audio-level checks.
+The user's 2026-11-18 decision replaces the application-owned draft gate. There
+is no transcript equality, playback-silence qualification, consent phrase list,
+or durable prepare-message round trip in conversational message sending. The
+send tool is an effect, not a drafting tool; its description says so. Routing
+still resolves the exact recipient and handles live questions, transport
+idempotency and actual receipts. A changed call cannot execute an old admitted
+request. Background work-list approval contracts for other mutations remain.
+Prompt compliance is not a programmatic proof that the assistant obtained
+consent. Local transport tests do not establish actual model compliance or
+what someone heard on their phone; those remain separate acceptance.
 
-A plain message has a deterministic preparation path: its original saved input,
-exact recipient identity and text become a durable task with no planning-model
-turn. Preparation never sends. The managed call advertises this path only when
-the selected machine reports `message_confirmation` support. The assistant must
-read the exact recipient and message; only completed audio playback makes that
-proposal eligible for a fresh explicit send utterance. Runtime and server bind
-consent to the saved utterance, call, workspace, task and version. A plain yes
-(「可以」「好」「送出」, "okay") answers the read-back like a conversation: it counts
-only when the browser bound it to a completed exact read-back and the daemon sees
-it as the call's newest utterance after the request. On 2026-11-13 the earlier
-rule, which accepted only 「可以，送出」, refused 「可以」「Okay」「我確認」 in four
-calls and nothing was sent. A model-provided confirmation flag, interrupted or
-inaccurate narration, a changed version and another call cannot approve it.
 Opening a Session or its snippets on screen changes only this browser, so a
 managed call runs open_session and open_snippets at once; on 2026-11-13 opening
-a Session was queued for the work list twice and never happened. The existing work-list button remains
-available for exact-spec confirmation. A mistaken plain-reply tool is converted
-to the same proposal only when the fresh directory has no live menu. Preparation
-and execution both refuse a live structured menu; they never guess a key or
-turn a menu choice into unreviewed text.
-
-This newer consent authorizes only the particular new message over earlier
-unresolved inbox entries. It does not dismiss those entries or release older
-approved writes; a later cancellation still wins at effect admission. The send
-keeps a stable request key. Only an actual `typed` response establishes delivery
-into Session input, not reading by the other assistant or completion of its goal.
-An `accepted` response means only acceptance. Missing or uncertain receipts never
-cause an automatic resend. The durable receipt survives manual goal completion.
-Ordinary acknowledgements cannot consume an action request before work exists.
+a Session was queued for the work list twice and never happened. The existing work-list button remains available for other exact-spec actions.
+Direct conversational messages do not create a pending-proposal card or a second
+confirmation task. Ordinary acknowledgements do not automatically execute work.
 Delivery questions read the work ledger rather than inferring from recipient
 activity, and each generated response receives current action evidence at flush.
 
 Connection is acknowledged by local audio after the voice service confirms the
 expected tools. Transport connection alone is not readiness. A configuration
 acknowledgement uses the existing workspace-control request deadline and fails
-explicitly if it never arrives. No generated greeting is required. A distinct
-soft execution note plays only while a task from this call is running or an
-admitted action request is in flight, repeating every four seconds while quiet.
-Session queries, input saving, planning, queued work, draft review and response
-preparation never start it. Direct tools observe action requests rather than
-treating every pending tool as task execution; read-only POST requests such as
-recaps do not qualify. Live also consults observed media output and recent
-speaker activity. It is switched in Voice assistant → Settings, per browser,
-not in the call sheet. Active saving, tool waiting,
+explicitly if it never arrives. No generated greeting is required. The ringback survives call-history initialization and continues until readiness,
+failure or hangup. Each top-level tool start, including automatic background
+queries, plays one soft local note. Nested reads share their parent start. A
+running durable task has one start cue per task version; ordinary state refreshes
+and long waits never create repeated audio. Entering another Session uses a
+three-note 660/880/660 Hz melody, distinct from readiness and hangup. Resuming
+one Session does not replay that switch cue. Realtime follows narrated name
+anchors; Live cues each single-item handover, and explicit successful navigation
+uses the same identity. These cues carry no model generation. Tool and Session
+cues follow the existing per-browser Processing sounds setting; ringback remains
+independent.
+Active saving, tool waiting,
 planning, execution and response preparation have visible state and elapsed time.
 Confirmation and failure are stopped states, not an animation claiming progress.
 The sheet and minimized bubble both expose state. Local tones use no model call;
@@ -529,3 +502,16 @@ item after requests for other Sessions. Synthetic regression inputs exercise the
 same presentation transition without retaining personal call content in this
 repository. Provider speech comprehension and actual device playback still need
 live-call acceptance; these tests establish local routing and queue behavior.
+
+
+### Short-screen tool-history layout
+
+The tool-history wrapper keeps its intrinsic height instead of shrinking below
+its capsules. Usage and remembered-conversation rows grow with their content
+rather than overflowing a fixed-height footer. The call body scrolls separately above fixed-in-flow hangup controls, so sticky
+controls cannot overlay its content. The obsolete application-gated
+waiting-proposal card is removed; draft review
+now happens in conversation. The call body scrolls when a small screen needs
+more room; the capsule trail retains its own
+compact scroll area. A provider-free fixture with long transcript text, usage, memory and
+both engines checks child containment as well as sibling geometry.
