@@ -281,7 +281,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
           const actor = entry.actor
           const lead = actor?.id === b.lead
           return entry.render({ lead, depth,
-            avatar: sessionBoardAvatar(actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas),
+            avatar: sessionBoardAvatar(actor?.id ?? entry.id, actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas),
             branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) }, actor&&membershipKnown?assigned.get(actor.id)?.name??null:undefined)
         })}</ul>
       </li>
@@ -559,7 +559,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
   const avatar = (actor: Actor) => {
     const isLead = actor.id === b?.lead
     return <SessionBoardMark lead={isLead}
-      icon={sessionBoardAvatar(roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
+      icon={sessionBoardAvatar(actor.id, roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
   }
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
