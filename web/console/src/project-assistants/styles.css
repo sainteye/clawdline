@@ -564,9 +564,10 @@
 .project-assistants .pa-room-person .pa-room-bubble { background:#303033; }
 .project-assistants .pa-room-context { color:var(--pa-dim);font-size:12px;margin-bottom:8px; }
 .project-assistants .pa-room-bubble blockquote { margin:0 0 10px;padding:10px 12px;background:#ffffff08;border:1px solid var(--pa-line);border-radius:12px;color:var(--pa-dim);font-size:13px; }
-.project-assistants .pa-room-bubble blockquote p { max-height:8em;overflow:hidden;margin-top:4px; }
+.project-assistants .pa-room-bubble blockquote p { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px; }
 .project-assistants .pa-room-reply { border:0;background:transparent;padding:5px 8px;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-room-reply { opacity:0; }
+.project-assistants .pa-room-reply { transition:opacity 120ms cubic-bezier(.25,.1,.25,1); }
 .project-assistants .pa-room-message:hover .pa-room-reply,.project-assistants .pa-room-message:focus-within .pa-room-reply { opacity:1; }
 .project-assistants .pa-room-member { width:100%;display:flex;align-items:center;gap:12px;border:0;background:transparent;text-align:left;padding:12px 0; }
 .project-assistants .pa-room-member>button:first-child { flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;border:0;background:transparent;padding:0; }
@@ -599,6 +600,11 @@
 .project-assistants .pa-permission-options button+button { border-top:1px solid var(--pa-line); }
 .project-assistants .pa-permission-options [data-option-kind^="reject"] { color:#f0a7a7; }
 .project-assistants .pa-permission-options [data-option-kind="allow_once"] { font-weight:600; }
+/* Codync ChatSidePanel/theme.css: one layout change, then the panel arrives
+   with its 300 ms spring. Closing remains immediate and never locks input. */
+.project-assistants .pa-room-members:not([hidden]) { animation:pa-room-members-in 300ms linear(0,.0712,.2244,.3992,.5638,.7018,.8077,.8834,.9342,.9663,.9853,.9958,1.0009,1.0028,1.0029,1); }
+@media(min-width:1001px) { .project-assistants .pa-room-members:not([hidden]) { position:relative; } }
+@keyframes pa-room-members-in { from { right:-100%; } to { right:0; } }
 @media(max-width:1000px) {
   .project-assistants .pa-chat-layout.pa-info-open,.project-assistants .pa-room-layout.pa-members-open { grid-template-columns:minmax(0,1fr); }
   .project-assistants .pa-info-panel,.project-assistants .pa-room-members { position:absolute;inset:0 0 0 auto;width:min(420px,100%);z-index:6;box-shadow:-16px 0 32px #0006; }
@@ -622,4 +628,13 @@
 
 @media (max-width: 700px) {
   .project-assistants .pa-status-bar { padding-bottom:max(var(--indicator,0px),env(safe-area-inset-bottom,0px),12px); }
+  /* The portal and connection details divide the same visible space. Neither
+     the keyboard nor an expanded footer may cover the room's composer. */
+  .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-roster>.pa-status-bar { position:absolute;left:0;right:0;bottom:var(--pa-room-visible-bottom,0px);margin:0; }
+  .project-assistants.pa-shell>.pa-room-layout { top:var(--pa-room-visible-top,0px);bottom:calc(var(--pa-room-visible-bottom,0px) + var(--pa-room-status-height,0px));height:auto; }
+  .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden])) .pa-source-checks { max-height:min(380px,var(--pa-room-details-height,100dvh)); }
+  .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden])) .pa-source-backdrop { display:none; }
+  .project-assistants .pa-room-layout .pa-chat-header,.project-assistants .pa-room-layout .pa-chat-footer { flex-shrink:0; }
+  .project-assistants .pa-room-layout .pa-chat-footer { padding-bottom:16px; }
+  .project-assistants .pa-room-reply { min-height:44px; }
 }
