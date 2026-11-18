@@ -365,15 +365,16 @@ export class RealtimeCopilotClient {
   private boardVoice = new CopilotSessionBoards()
   private boardVoiceTurn = 0
 
+  private boardTargets():readonly SessionBoardTarget[] {
+    const detail:{targets?:readonly SessionBoardTarget[]}={}
+    document.dispatchEvent(new CustomEvent('clawdline:copilot-session-boards',{detail}))
+    return detail.targets??[]
+  }
   private async boardTool(name: string, args: Record<string, unknown>) {
     const attempt = this.attempt
     const turn = this.boardVoiceTurn
     const speech = { utterance: this.heardNow, turn }
-    const targets = () => {
-      const detail: { targets?: readonly SessionBoardTarget[] } = {}
-      document.dispatchEvent(new CustomEvent('clawdline:copilot-session-boards', { detail }))
-      return detail.targets ?? []
-    }
+    const targets = () => this.boardTargets()
     try {
       return name === 'prepare_session_board'
         ? await this.boardVoice.prepare(args, { rows: () => readRows(this.toolDeps()), targets,
@@ -389,6 +390,7 @@ export class RealtimeCopilotClient {
   private toolDeps(): ToolDeps {
     const call=this.journalCall
     return {
+      boardTargets:()=>this.boardTargets(),
       observe:spec=>this.callObserving&&call===this.journalCall?this.observeOperation(spec):{id:'stale-call',end:()=>{}},
       fetch: (input, init) => fetch(input, init),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

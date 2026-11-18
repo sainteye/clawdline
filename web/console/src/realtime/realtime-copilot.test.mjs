@@ -1442,3 +1442,14 @@ for(const live of [false,true])test(`each call ignores and retires legacy browse
   assert.equal(writes.includes('clawdline.copilot.memory'),false,'captions cannot persist the next call context')
  }finally{if(before===undefined)delete globalThis.localStorage;else globalThis.localStorage=before}
 })
+
+
+for(const live of [false,true])for(const managed of [false,true])test(`Session-board Lead reads stay immediate in the call (live=${live}, managed=${managed})`,async()=>{
+ const f=fixture(managed,null);f.c.live=live
+ const board={id:'board',project:'/fixture',name:'Delivery board',purpose:'Review',lead:'codex:conversation-seven',summary:'',latest:0,members:[{id:'codex:conversation-seven',label:'Old label'}]}
+ f.c.toolDeps=()=>({sleep:async()=>{},fetch:async(path)=>{assert.equal(path,'/v1/sessions');return Response.json({sessions:[row]})},boardTargets:()=>[{label:'Fixture machine',candidates:[],source:{key:'local',writable:false,read:async()=>({boards:[board]}),change:async()=>assert.fail('query cannot write')}}]})
+ const args=JSON.stringify({board:'Delivery board'})
+ const output=live?await f.c.runLiveTool('board-query','get_session_board',args):await f.c.handleToolCall({call_id:'board-query',name:'get_session_board',arguments:args})
+ const answer=JSON.parse(output);assert.equal(answer.board.lead.session_id,row.id);assert.equal(answer.board.lead.label,row.label)
+ assert.equal(voiceWork.state?.tasks?.some(task=>task.tool==='get_session_board')??false,false)
+})

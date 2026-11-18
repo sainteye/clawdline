@@ -174,6 +174,18 @@ up to five seconds for a just-started Session to reach the list. On 2026-11-12, 
 projects came with the machine list, the copilot asked "專案A 還是專案B"; with them it named real
 projects and started codex in clawdline.
 
+**Session message boards.** `list_session_boards` reads the available active message
+boards; `get_session_board` rereads a named board's current Lead. These are separate
+from the Project planning Board. Results include the machine and stable Lead actor,
+plus the current Session ID and label when that actor appears in the Session directory.
+Same-name boards require machine or board-ID disambiguation. Unavailable sources and
+an ended or unreadable Lead Session remain explicit, rather than being guessed from a
+Session name. These queries are immediate reads in both direct and managed calls.
+`list_sessions` adds each Session's message-board membership and Lead role using its
+machine and stable actor identity; unavailable membership is not an empty membership.
+The visible local and fleet Session lists also label known board affiliations and
+known unassigned Sessions, using the existing board-index refresh path.
+
 **Writes go to the Session under discussion.** `send_message_to_session`,
 `answer_session_question` and `close_session` accept only a Session's id or its whole name (never
 an assistant type or part of a name), and require `session_label`, the

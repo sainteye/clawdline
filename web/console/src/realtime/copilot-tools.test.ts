@@ -89,7 +89,7 @@ test("list_sessions returns states and deliveries without reading transcripts", 
   assert.equal(out.working[0].working_for, "10 分鐘")
   assert.equal(out.working[0].latest, undefined)
   assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
-  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
+  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", message_board_status: "unavailable", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
   const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
   assert.equal(reads.length, 0)
   for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
@@ -191,7 +191,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["prepare_session_board", "confirm_session_board", "get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_session_boards", "get_session_board", "prepare_session_board", "confirm_session_board", "get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -1865,7 +1865,7 @@ test("dispatched children are counted under their root, not reported as Sessions
   }
   const list = JSON.parse((await runCopilotTool("list_sessions", "{}", deps)).output)
   assert.deepEqual(list.working.map((r: { id: string }) => r.id), ["%1"], "the child is not a working Session of its own")
-  assert.deepEqual(list.children, [{ id: "%2", label: "Child: fix tests", state: "working", for: "Voice realism" }])
+  assert.deepEqual(list.children, [{ id: "%2", label: "Child: fix tests", state: "working", message_board_status: "unavailable", for: "Voice realism" }])
   assert.equal(list.children_note, CHILDREN_NOTE)
   assert.match(list.summary, /^2 個 Session/)
   const group = JSON.parse((await runCopilotTool("get_sessions_summary", JSON.stringify({ which: "all" }), deps)).output)

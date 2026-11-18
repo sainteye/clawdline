@@ -510,8 +510,7 @@ live-call acceptance; these tests establish local routing and queue behavior.
 ### Short-screen tool-history layout
 
 The tool-history wrapper keeps its intrinsic height instead of shrinking below
-its capsules. Usage and remembered-conversation rows grow with their content
-rather than overflowing a fixed-height footer. The call body scrolls separately above fixed-in-flow hangup controls, so sticky
+its capsules. Usage grows with its content rather than overflowing a fixed-height footer. The call body scrolls separately above fixed-in-flow hangup controls, so sticky
 controls cannot overlay its content. The obsolete application-gated
 waiting-proposal card is removed; draft review
 now happens in conversation. The call body scrolls when a small screen needs
@@ -533,3 +532,34 @@ and Live backend updates contain the current Session snapshot, settings and brie
 with no prior-call section. Initialization removes only the retired voice-memory storage
 key without reading it. Current-call provider context, captions and operation journals
 are separate from this removed feature.
+
+
+## Read-only Session message-board queries
+
+The call's existing board target registry supplies `list_session_boards` and
+`get_session_board`. Both call engines expose them as immediate reads, including
+managed calls; they do not create a durable work task or call the mutation endpoint.
+Each invocation reads fresh board indexes through the target's existing local or
+Cloud source, alongside the Session directory for current Lead labels. Only active
+boards are returned. Posts are not fetched for these directory questions.
+
+Membership joins use machine identity and the stable assistant/conversation actor,
+never a Session label. A transferred Lead is read again, a no-longer-listed Lead
+retains its actor identity without an invented Session ID, and partial source failure
+is reported explicitly. Exact IDs or exact normalized names identify a board;
+duplicate names return choices. Unavailable sources cannot establish a unique match
+or a known empty membership. Nested index reads use the existing call-history observer.
+
+Local and fleet Session rows receive the same current index affiliation as their
+existing board groups. Known unassigned Sessions have an explicit label; absent
+identity, absent member metadata or failed reads suppress that claim. Labels wrap
+onto a separate line and truncate long names inside the row, retaining the full
+name in a tooltip. English and Taiwan Traditional Chinese copy ship together.
+
+Provider-free tests cover fresh Lead transfer, machine-scoped identities, duplicate
+names, archived boards, partial failures, unavailable membership and read-only direct
+and managed call paths. The browser fixture at
+`/tools/fixtures/session-board-affiliation.html?mode=local&lang=zh-Hant` also supports
+`mode=fleet` and `lang=en`. It checks actual Session rows at phone and desktop sizes,
+Lead refresh, long names and unavailable-state rendering. It establishes these local
+surfaces without claiming real voice-model comprehension or device audio acceptance.

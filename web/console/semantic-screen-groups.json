@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13277,
-  "riskKeys": 5724,
-  "nonRiskCount": 7553,
+  "englishContentKeys": 13280,
+  "riskKeys": 5725,
+  "nonRiskCount": 7555,
   "groups": [
     {
       "name": "acp / other",
@@ -4132,7 +4132,7 @@
     },
     {
       "name": "next / other",
-      "count": 1257,
+      "count": 1259,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4449,6 +4449,7 @@
         "next.copilotGoSettings",
         "next.copilotHangup",
         "next.copilotHistoryBackground",
+        "next.copilotHistoryBoards",
         "next.copilotHistoryCached",
         "next.copilotHistoryCachedCount",
         "next.copilotHistoryCounts",
@@ -4967,6 +4968,7 @@
         "next.secretHandoffReplace",
         "next.secretHandoffSending",
         "next.secretHandoffSubmit",
+        "next.sessionBoardAffiliation",
         "next.sessionBoardArchive",
         "next.sessionBoardArchiveAsk",
         "next.sessionBoardArchived",

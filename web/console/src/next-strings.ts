@@ -19,6 +19,8 @@ const words = {
     sessionBoardName: "Name",
     sessionBoardPurpose: "Purpose",
     sessionBoardLead: "Lead",
+    sessionBoardAffiliation: "Board: {name}",
+    sessionBoardUnassigned: "No message board",
     sessionBoardChoose: "Choose a Session",
     sessionBoardUnread: "{count} unread",
     sessionBoardExpand: "Expand",
@@ -127,6 +129,7 @@ const words = {
     copilotHistoryProgress: "Read Session progress",
     copilotHistoryQuestion: "Read Session question",
     copilotHistoryNotes: "Read Session Notes",
+    copilotHistoryBoards: "Read Session message boards",
 
     copilotProgressSaving: "Saving your request",
     copilotProgressReading: "Waiting for a tool response",
@@ -3264,6 +3267,8 @@ const words = {
     sessionBoardName: "名稱",
     sessionBoardPurpose: "目的",
     sessionBoardLead: "Lead",
+    sessionBoardAffiliation: "留言板：{name}",
+    sessionBoardUnassigned: "尚未加入留言板",
     sessionBoardChoose: "選擇 Session",
     sessionBoardUnread: "{count} 則未讀",
     sessionBoardExpand: "放大",
@@ -3358,6 +3363,7 @@ const words = {
     copilotHistoryProgress: "讀取 Session 進度",
     copilotHistoryQuestion: "讀取 Session 問題",
     copilotHistoryNotes: "讀取 Session 便條",
+    copilotHistoryBoards: "讀取 Session 留言板",
 
     copilotProgressSaving: "正在保存你的要求",
     copilotProgressReading: "正在等工具回覆",

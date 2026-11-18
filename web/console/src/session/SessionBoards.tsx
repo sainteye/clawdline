@@ -22,7 +22,7 @@ type Cursor = { board?: string; before?: number; after?: number }
 export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
 type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
-type Entry = { actor?: Actor; render: (grouped: boolean, lead?: boolean) => ReactNode }
+type Entry = { actor?: Actor; render: (grouped: boolean, lead?: boolean, boardName?: string | null) => ReactNode }
 export type SessionBoardSource = {
   key: string
   writable: boolean
@@ -234,11 +234,12 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
     group.push(row)
     grouped.set(board.id, group)
   }
+  const membershipKnown=list.loaded&&!list.problem&&boards.every(board=>board.archived_at||Array.isArray(board.members))
   const shown = new Set<string>()
   return <>
     {rows.map(row => {
       const b = row.actor && assigned.get(row.actor.id)
-      if (!b) return row.render(false)
+      if (!b) return row.render(false,false,row.actor&&membershipKnown?null:undefined)
       if (shown.has(b.id)) return null
       shown.add(b.id)
       const unread = unreadFor(source, b)
@@ -250,7 +251,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
           <strong>{b.name}</strong>
           {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
         </button>
-        <ul className="rows" role="group" aria-label={b.name}>{lead?.render(true, true)}{members.filter(row => row !== lead).map(row => row.render(true))}</ul>
+        <ul className="rows" role="group" aria-label={b.name}>{lead?.render(true, true, membershipKnown?b.name:undefined)}{members.filter(row => row !== lead).map(row => row.render(true, false, membershipKnown?b.name:undefined))}</ul>
       </li>
     })}
     {show !== undefined && createPortal(<BoardDialog source={source} initial={show} {...list}

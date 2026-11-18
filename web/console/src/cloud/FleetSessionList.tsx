@@ -481,7 +481,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   return {
                     actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
                       displayedPresentationStatus(row, presentation)?.sessionId, title),
-                    render: (grouped, lead) => <ProjectedRow boardLead={lead} key={destinationKey(row.destination)}
+                    render: (grouped, lead, boardName) => <ProjectedRow boardLead={lead} boardName={boardName} key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={displayedPresentationStatus(row, presentation)}

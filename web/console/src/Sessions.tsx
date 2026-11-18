@@ -362,7 +362,7 @@ export function SessionsPage({
                   return actor ? [actor] : []
                 })}
                 rows={drawn.map(r => ({ actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id),
-                  render: (grouped, lead) => <Row boardLead={lead}
+                  render: (grouped, lead, boardName) => <Row boardLead={lead} boardName={boardName}
                   key={L.selectionKey(r)}
                   row={r}
                   depth={grouped ? 0 : depths.get(r.id) ?? 0}
