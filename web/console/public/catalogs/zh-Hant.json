@@ -13239,5 +13239,14 @@
   "projectAssistants.settingsNetwork": "網路存取",
   "projectAssistants.settingsRules": "已儲存的權限規則",
   "projectAssistants.settingsLoginManage": "管理登入設定",
-  "projectAssistants.settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}"
+  "projectAssistants.settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}",
+  "projectAssistants.memoryPolicyLabel": "記憶範圍",
+  "projectAssistants.memoryCreateNote": "新增主題筆記",
+  "projectAssistants.memoryEditNote": "編輯主題筆記",
+  "projectAssistants.memoryNoteTitle": "筆記名稱",
+  "projectAssistants.memoryNoteSummary": "索引摘要",
+  "projectAssistants.memoryNoteBody": "筆記正文",
+  "projectAssistants.memoryNoteHint": "名稱和摘要會加入這個 Bot 的記憶索引；正文只在要求閱讀時取用。",
+  "projectAssistants.memoryShortFacts": "記住簡短資訊",
+  "projectAssistants.memoryRefresh": "重新讀取記憶"
 }
