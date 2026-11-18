@@ -43,7 +43,12 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     if(!active||!host)return
     const viewport=window.visualViewport,status=host.querySelector<HTMLElement>(".pa-status-bar"),header=room.current?.querySelector<HTMLElement>(".pa-chat-header"),footer=room.current?.querySelector<HTMLElement>(".pa-chat-footer")
     const measure=()=>{
-      const box=host.getBoundingClientRect(),top=Math.max(box.top,viewport?.offsetTop??0),bottom=Math.min(box.bottom,(viewport?.offsetTop??0)+(viewport?.height??innerHeight))
+      // DOM rectangles and hit testing use client coordinates. iOS can scroll
+      // the document when a focused field opens its keyboard while offsetTop
+      // still includes that pan. Convert the viewport's document position to
+      // the same client origin before intersecting it with the host.
+      const visibleTop=viewport?viewport.pageTop-window.scrollY:0
+      const box=host.getBoundingClientRect(),top=Math.max(box.top,visibleTop),bottom=Math.min(box.bottom,visibleTop+(viewport?.height??innerHeight))
       host.style.setProperty("--pa-room-visible-top",`${Math.max(0,top-box.top)}px`)
       host.style.setProperty("--pa-room-visible-bottom",`${Math.max(0,box.bottom-bottom)}px`)
       host.style.setProperty("--pa-room-visible-height",`${Math.max(0,bottom-top)}px`)
