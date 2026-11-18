@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState, type FormEvent } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { command, errorCode, failure, provablyNotSent } from "./client"
 import type { Words } from "./words"
 
-import {readRoutineIntent,type RoutineIntent as Intent} from "./routine-intent"
-import {cleanRoutineTrigger,isHookTrigger,newRoutineTrigger as blankTrigger,routineEventLimits,routineEventSources,validRoutineTrigger} from "./routine-events"
+import {
+  editableRoutineTrigger, newRoutineTriggerDraft, readRoutineCalendar, readRoutineIntent,
+  routineRepeats, routineTriggerDraft, routineTriggerForSave, updateRoutineCalendar,
+  type RoutineCalendarDraft, type RoutineIntent as Intent, type RoutineTriggerDraft,
+} from "./routine-intent"
+import {isHookTrigger,routineEventLimits,routineEventSources,validRoutineTrigger} from "./routine-events"
 import {performRoutineHook,routineScopeIdentity} from "./routine-hook-intent"
 import {RoutineHook} from "./RoutineHook"
 import {routineWord as tr} from "./routine-words"
+import {currentCatalogTag} from "../catalog"
+import "./routine-schedule.css"
 type Props={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;w:Words;onClose:()=>void;storageKey:string;embedded?:boolean}
 
 export function Routines(props:Props) {
@@ -18,21 +24,148 @@ export function Routines(props:Props) {
 }
 
 function RoutineTriggerSummary({trigger:t,w}:{trigger:W.ProjectAssistantRoutineTrigger;w:Words}) {
+  if(!editableRoutineTrigger(t))return <p>{t.type}</p>
   if(t.type==="event")return <><p>{tr("event")} · {tr("source")}: {t.source} · {tr("eventName")}: {t.event}</p>{!!t.filters?.length&&<div><p>{tr("filters")}</p><dl>{t.filters.map((row,n)=><div key={n}><dt>{row.key}</dt><dd>{row.value}</dd></div>)}</dl></div>}</>
   if(t.type==="webhook")return <p>{tr("webhook")}</p>
   if(t.type==="interval")return <p>{w.routineSeconds}: {t.seconds}</p>
   if(t.type==="once")return <p>{w.routineOnce}: {new Date(t.at).toLocaleString()}</p>
-  if(t.type==="cron")return <p>{w.routineCron}: {t.expression} · {t.timeZone}</p>
-  return <p>{t.type}</p>
+  return <p><RoutineCalendarSummary trigger={t} calendar={readRoutineCalendar(t.expression)}/></p>
+}
+
+const routineMinutes = Array.from({length: 60}, (_, minute) => String(minute).padStart(2, "0"))
+const routineWeekdays = [1, 2, 3, 4, 5, 6, 0]
+const routineZones = [...new Set(["UTC", ...(Intl.supportedValuesOf?.("timeZone") ?? [])])]
+
+function routineWeekday(day: number) {
+  return new Intl.DateTimeFormat(currentCatalogTag(), {weekday: "long", timeZone: "UTC"}).format(Date.UTC(2024, 0, 7 + day))
+}
+
+function RoutineCalendarSummary({trigger, calendar}: {trigger: W.ProjectAssistantRoutineTrigger; calendar: RoutineCalendarDraft}) {
+  const {expression, timeZone} = trigger
+  if (!expression.trim() || !timeZone.trim()) return null
+  if (calendar.repeat === "custom") return <><code>{expression}</code> · {timeZone}</>
+  const text = tr(`${calendar.repeat}Preview`)
+  const values = {zone: timeZone, minute: calendar.time.slice(3), time: calendar.time, day: routineWeekday(calendar.weekday)}
+  return text.replace(/\{(zone|minute|time|day)\}/gu, (_, key: keyof typeof values) => values[key])
+}
+
+function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w}: {
+  trigger: W.ProjectAssistantRoutineTrigger
+  calendar: RoutineCalendarDraft
+  onCalendar: (change: Partial<RoutineCalendarDraft>) => void
+  onZone: (timeZone: string) => void
+  w: Words
+}) {
+  const {repeat, time, weekday} = calendar
+  const zoneList = useId()
+  const cronHelp = useId()
+  const weekdayLabel = useId()
+  const minuteLabel = useId()
+  return <div className="pa-routine-calendar">
+    <div className="pa-routine-repeat" role="group" aria-label={tr("repeat")}>
+      <span className="pa-routine-field-label" aria-hidden="true">{tr("repeat")}</span>
+      <div className="pa-routine-choices">
+        {routineRepeats.map(choice => <button key={choice} type="button" aria-pressed={choice === repeat}
+          onClick={() => { if (choice !== repeat) onCalendar({repeat: choice}) }}>{tr(choice)}</button>)}
+      </div>
+    </div>
+    <div className="pa-routine-fields">
+      {repeat === "weekly" && <label><span id={weekdayLabel}>{tr("weekday")}</span>
+        <select aria-labelledby={weekdayLabel} value={weekday} onChange={event => onCalendar({weekday: Number(event.target.value)})}>
+          {routineWeekdays.map(day => <option key={day} value={day}>{routineWeekday(day)}</option>)}
+        </select>
+      </label>}
+      {repeat === "custom" ? <label>{w.routineExpression}
+        <input value={trigger.expression} placeholder="0 9 * * 1-5" spellCheck={false} autoCapitalize="off" aria-describedby={cronHelp}
+          onChange={event => onCalendar({customExpression: event.target.value})} required/>
+      </label> : repeat === "hourly" ? <label><span id={minuteLabel}>{tr("minute")}</span>
+        <select aria-labelledby={minuteLabel} value={time.slice(3)} onChange={event => onCalendar({time: `${time.slice(0, 2) || "09"}:${event.target.value}`})} required>
+          {!time && <option value="" disabled>—</option>}
+          {routineMinutes.map(minute => <option key={minute} value={minute}>:{minute}</option>)}
+        </select>
+      </label> : <label>{tr("scheduleTime")}
+        <input type="time" value={time} onChange={event => onCalendar({time: event.target.value})} required/>
+      </label>}
+      <label>{tr("timeZone")}
+        <input list={zoneList} value={trigger.timeZone} placeholder="Asia/Taipei" autoCapitalize="off" spellCheck={false}
+          onChange={event => onZone(event.target.value)} required/>
+      </label>
+      <datalist id={zoneList}>{routineZones.map(zone => <option key={zone} value={zone}/>)}</datalist>
+    </div>
+    {repeat === "custom" && <small id={cronHelp}>{tr("cronFields")}</small>}
+    <p className="pa-routine-preview" aria-live="polite"><RoutineCalendarSummary trigger={trigger} calendar={calendar}/></p>
+  </div>
+}
+
+function RoutineTriggerEditor({draft, index, count, events, w, onChange, onRemove}: {
+  draft: RoutineTriggerDraft
+  index: number
+  count: number
+  events: boolean
+  w: Words
+  onChange: (draft: RoutineTriggerDraft) => void
+  onRemove: () => void
+}) {
+  const t = draft.trigger
+  const editable = editableRoutineTrigger(t)
+  const change = (fields: Partial<W.ProjectAssistantRoutineTrigger>) => onChange({...draft, trigger: {...t, ...fields}})
+  return <section className="pa-routine-trigger">
+    {count > 1 && <h5>{w.routineTrigger} {index + 1}</h5>}
+    <label>{w.routineType}
+      <select value={editable ? t.type : ""} onChange={event => onChange(newRoutineTriggerDraft(event.target.value))}>
+        {!editable && <option value="" disabled>{t.type}</option>}
+        <option value="cron">{w.routineCron}</option>
+        <option value="interval">{w.routineInterval}</option>
+        <option value="once">{w.routineOnce}</option>
+        {events && <><option value="event">{tr("event")}</option><option value="webhook">{tr("webhook")}</option></>}
+      </select>
+    </label>
+    {!editable ? <div className="pa-routine-original">
+      <p>{tr("unsupportedTrigger")}</p>
+      <details><summary>{tr("originalTrigger")}</summary><pre>{JSON.stringify(t, null, 2)}</pre></details>
+    </div> : <>
+      {draft.calendar && <RoutineScheduleFields trigger={t} calendar={draft.calendar} w={w}
+        onCalendar={value => onChange(updateRoutineCalendar(draft, value))} onZone={timeZone => change({timeZone})}/>}
+      {t.type === "interval" && <label>{w.routineSeconds}
+        <input type="number" min={1} max={31536000} value={t.seconds} onChange={event => change({seconds: Number(event.target.value)})} required/>
+      </label>}
+      {t.type === "once" && <label>{w.routineAt}
+        <input type="datetime-local" step="0.001" value={t.at > 0 && t.at <= 8640000000000000
+          ? new Date(t.at - new Date(t.at).getTimezoneOffset() * 60000).toISOString().slice(0, -1) : ""}
+          onChange={event => change({at: event.target.value ? new Date(event.target.value).getTime() : 0})} required/>
+      </label>}
+      {t.type === "event" && <>
+        <p>{tr("eventHint")}</p>
+        <label>{tr("source")}<select value={t.source} onChange={event => change({source: event.target.value})}>
+          {t.source !== undefined && !routineEventSources.some(source => source === t.source) && <option value={t.source}>{t.source}</option>}
+          {routineEventSources.map(source => <option key={source} value={source}>{source}</option>)}
+        </select></label>
+        <label>{tr("eventName")}<input required value={t.event ?? ""} onChange={event => change({event: event.target.value})}/></label>
+        <div className="pa-routine-filters" role="group" aria-label={tr("filters")}>
+          <p>{tr("filters")}</p>
+          {t.filters?.map((row, n) => <div className="pa-routine-fields" key={n}>
+            <label>{tr("filterKey")}<input required value={row.key} onChange={event => change({filters: t.filters!.map((r, k) => k === n ? {key: event.target.value, value: r.value} : r)})}/></label>
+            <label>{tr("filterValue")}<input value={row.value} onChange={event => change({filters: t.filters!.map((r, k) => k === n ? {key: r.key, value: event.target.value} : r)})}/></label>
+            <button type="button" onClick={() => change({filters: t.filters!.filter((_, k) => k !== n)})}>{tr("removeFilter")}</button>
+          </div>)}
+          <button type="button" disabled={(t.filters?.length ?? 0) >= routineEventLimits.filters}
+            onClick={() => change({filters: [...(t.filters ?? []), {key: "", value: ""}]})}>{tr("addFilter")}</button>
+        </div>
+      </>}
+    </>}
+    {count > 1 && <button type="button" className="pa-routine-remove" onClick={onRemove}>{w.routineRemoveTrigger}</button>}
+  </section>
 }
 
 function RoutinePanel({source,bot,enabled,w,onClose,storageKey,embedded=false}:Props) {
   const [page,setPage]=useState<W.ProjectAssistantRoutineListResponse|null>(null),[editing,setEditing]=useState<W.ProjectAssistantRoutineDefinition|null|undefined>(undefined)
-  const [name,setName]=useState(""),[instruction,setInstruction]=useState(""),[triggers,setTriggers]=useState<W.ProjectAssistantRoutineTrigger[]>([blankTrigger()]),[timeout,setTimeout]=useState(3600),[active,setActive]=useState(true)
+  const [name,setName]=useState(""),[instruction,setInstruction]=useState(""),[triggers,setTriggers]=useState<RoutineTriggerDraft[]>([]),[timeout,setTimeout]=useState(3600),[active,setActive]=useState(true)
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{id:string;page:W.ProjectAssistantRoutineListResponse}|null>(null),[confirm,setConfirm]=useState<string|null>(null),[held,setHeld]=useState<Intent|null>(null),[journalBlocked,setJournalBlocked]=useState(false)
   const [hookID,setHookID]=useState<string|null>(null)
   const live=useRef(enabled);live.current=enabled
   const panel=useRef<HTMLElement>(null),pending=useRef(false),control=useRef(new AbortController()),mounted=useRef(true)
+  const editorID=useId()
+  const editorTitle=useRef<HTMLHeadingElement>(null), editorOpener=useRef<HTMLButtonElement>(null)
   const durableKey="clawdline:routine-command:"+storageKey
   const supported=!!source.canRoutines?.()&&!!source.routines&&!!source.saveRoutine&&!!source.enableRoutine&&!!source.deleteRoutine&&!!source.testRoutine
   const events=!!source.canRoutineEvents?.()&&!!source.routineHook
@@ -55,7 +188,15 @@ function RoutinePanel({source,bot,enabled,w,onClose,storageKey,embedded=false}:P
     if(supported)void load().catch(e=>{if(mounted.current)setError(errorCode(e))})
     return ()=>{mounted.current=false;control.current.abort()}
   },[])
-  const edit=(d:W.ProjectAssistantRoutineDefinition|null)=>{setEditing(d);setName(d?.name??"");setInstruction(d?.instruction??"");setTriggers(d?.triggers.map(cleanRoutineTrigger)??[blankTrigger()]);setTimeout(d?.timeout_seconds??3600);setActive(d?.enabled??true);setError("")}
+  useEffect(() => {
+    if (editing !== undefined) editorTitle.current?.focus()
+  }, [editing])
+  const edit=(d:W.ProjectAssistantRoutineDefinition|null, opener:HTMLButtonElement)=>{
+    editorOpener.current=opener;setEditing(d);setName(d?.name??"");setInstruction(d?.instruction??"")
+    setTriggers(d?.triggers.map(routineTriggerDraft)??[newRoutineTriggerDraft()])
+    setTimeout(d?.timeout_seconds??3600);setActive(d?.enabled??true);setError("")
+  }
+  const cancelEdit=()=>{setEditing(undefined);setError("");editorOpener.current?.focus()}
   const run=async(intent:Intent,replay=false):Promise<W.ProjectAssistantRoutineHookResponse|null>=>{
     if(pending.current||!live.current||!authority||!supported||journalBlocked||(!replay&&held)||source.current?.()===false)return null
     if(intent.action==="hook"&&!events)return null
@@ -102,18 +243,49 @@ function RoutinePanel({source,bot,enabled,w,onClose,storageKey,embedded=false}:P
     const request={command:command(bot.key,"edit"),fence:page.fence,id:d.id,expected_revision:d.version,...(kind==="enable"?{enabled:!d.enabled}:{})}
     void run({action:kind,request})
   }
+  const save=(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault()
+    if(!page||!writable||busy||editing===undefined)return
+    const wire=triggers.map(routineTriggerForSave)
+    if(!wire.length||!wire.every(trigger=>editableRoutineTrigger(trigger)&&validRoutineTrigger(trigger,events))) {
+      setError("routine_event_fields")
+      return
+    }
+    void run({action:"save",request:{command:command(bot.key,"edit"),fence:page.fence,id:editing?.id??"",expected_revision:editing?.version??0,name,instruction,triggers:wire,timeout_seconds:timeout,enabled:active}})
+  }
   const refresh=async()=>{setBusy(true);try{await load();if(history)await load(history.id);setError("")}catch(e){setError(errorCode(e))}finally{setBusy(false)}}
   return <section ref={panel} className={embedded?"pa-routines pa-routines-embedded":"pa-card pa-routines"} aria-label={w.routines}>
     {!embedded&&<header className="pa-toolbar"><h3 tabIndex={-1}>{w.routines}</h3><button type="button" onClick={onClose}>{w.close}</button></header>}
     <p className="pa-routines-hint">{w.routineHint}</p>
     {!supported?<p role="status">{w.routinesUnsupported}</p>:<>
-      <div className="pa-toolbar pa-routines-actions"><button type="button" disabled={!writable||busy} onClick={()=>edit(null)}>{w.routineNew}</button><button type="button" disabled={busy} onClick={()=>void refresh()}>{w.routineRefresh}</button></div>
+      <div className="pa-toolbar pa-routines-actions"><button type="button" disabled={!writable||busy} onClick={event=>edit(null,event.currentTarget)}>{w.routineNew}</button><button type="button" disabled={busy} onClick={()=>void refresh()}>{w.routineRefresh}</button></div>
       {!page&&!error&&<p role="status">{w.loading}</p>}
+      {editing!==undefined&&<form className="pa-routine-editor" aria-labelledby={editorID} onSubmit={save}>
+        <h4 ref={editorTitle} id={editorID} tabIndex={-1}>{editing?w.routineEdit:w.routineNew}</h4>
+        <fieldset disabled={!writable||busy} aria-labelledby={editorID}>
+          <label>{w.name}<input value={name} onChange={e=>setName(e.target.value)} required/></label>
+          <label>{w.routineInstruction}<textarea value={instruction} onChange={e=>setInstruction(e.target.value)} required/></label>
+          {triggers.length>1&&<p className="pa-routine-or">{w.routineOr}</p>}
+          {triggers.map((draft,i)=><RoutineTriggerEditor key={i} draft={draft} index={i} count={triggers.length} events={events} w={w}
+            onChange={value=>setTriggers(old=>old.map((row,n)=>n===i?value:row))}
+            onRemove={()=>setTriggers(old=>old.filter((_,n)=>n!==i))}/>)}
+          <button type="button" className="pa-routine-add" disabled={triggers.length>=20}
+            onClick={()=>setTriggers(old=>[...old,newRoutineTriggerDraft()])}>{w.routineAddTrigger}</button>
+          <div className="pa-routine-options">
+            <label>{w.routineTimeout}<input type="number" min={1} max={86400} value={timeout} onChange={e=>setTimeout(Number(e.target.value))} required/></label>
+            <label className="pa-routine-enabled"><input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)}/>{w.routineEnabled}</label>
+          </div>
+        </fieldset>
+        <div className="pa-routine-footer">
+          <button type="button" disabled={busy} onClick={cancelEdit}>{w.cancel}</button>
+          <button type="submit" disabled={!writable||busy||triggers.some(({trigger})=>!editableRoutineTrigger(trigger))}>{w.save}</button>
+        </div>
+      </form>}
       {page&&page.definitions.length===0&&<p>{w.routinesEmpty}</p>}
       {page?.definitions.filter(d=>!d.follow_up).map(d=><article className="pa-routine" key={d.id}>
         <h4>{d.name}</h4><p>{d.enabled?w.routineEnabled:w.routinePaused} · {d.next_due?`${w.routineNext}: ${new Date(d.next_due).toLocaleString()}`:d.triggers.some(isHookTrigger)?tr("waitingEvent"):w.routineSpent}</p>
         <p>{d.instruction}</p>{d.triggers.map((trigger,n)=><RoutineTriggerSummary key={n} trigger={trigger} w={w}/>)}
-        <div className="pa-toolbar">{d.triggers.some(isHookTrigger)&&<button type="button" disabled={!authority||busy||!events||!!held||journalBlocked} onClick={()=>setHookID(d.id)}>{tr("manageHook")}</button>}<button type="button" disabled={!writable||busy||(d.triggers.some(isHookTrigger)&&!events)} onClick={()=>edit(d)}>{w.routineEdit}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"enable")}>{d.enabled?w.routinePause:w.routineEnable}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"test")}>{w.routineTest}</button><button type="button" disabled={busy} onClick={()=>void load(d.id).catch(e=>setError(errorCode(e)))}>{w.routineHistory}</button><button type="button" disabled={!writable||busy} onClick={()=>setConfirm(d.id)}>{w.routineDelete}</button></div>
+        <div className="pa-toolbar">{d.triggers.some(isHookTrigger)&&<button type="button" disabled={!authority||busy||!events||!!held||journalBlocked} onClick={()=>setHookID(d.id)}>{tr("manageHook")}</button>}<button type="button" disabled={!writable||busy||(d.triggers.some(isHookTrigger)&&!events)} onClick={event=>edit(d,event.currentTarget)}>{w.routineEdit}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"enable")}>{d.enabled?w.routinePause:w.routineEnable}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"test")}>{w.routineTest}</button><button type="button" disabled={busy} onClick={()=>void load(d.id).catch(e=>setError(errorCode(e)))}>{w.routineHistory}</button><button type="button" disabled={!writable||busy} onClick={()=>setConfirm(d.id)}>{w.routineDelete}</button></div>
         {confirm===d.id&&<div role="alert"><p>{w.routineDeleteConfirm}</p><button type="button" disabled={!writable||busy} onClick={()=>action(d,"delete")}>{w.routineConfirmDelete}</button><button type="button" onClick={()=>setConfirm(null)}>{w.cancel}</button></div>}
       </article>)}
       {!events&&<p role="status">{tr("eventUnsupported")}</p>}
@@ -125,30 +297,6 @@ function RoutinePanel({source,bot,enabled,w,onClose,storageKey,embedded=false}:P
         return run({action:"hook",request:{command:command(bot.key,"edit"),fence:page.fence,id:d.id,expected_revision:d.version,rotate}})
       }}/>}
       {page?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load("",page.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
-      {editing!==undefined&&<form onSubmit={event=>{event.preventDefault();if(!triggers.every(t=>validRoutineTrigger(t,events))){setError("routine_event_fields");return}if(page)void run({action:"save",request:{command:command(bot.key,"edit"),fence:page.fence,id:editing?.id??"",expected_revision:editing?.version??0,name,instruction,triggers:triggers.map(cleanRoutineTrigger),timeout_seconds:timeout,enabled:active}})}}>
-        <fieldset disabled={!writable||busy}>
-          <legend>{editing?w.routineEdit:w.routineNew}</legend>
-          <label>{w.name}<input value={name} onChange={e=>setName(e.target.value)} required/></label>
-          <label>{w.routineInstruction}<textarea value={instruction} onChange={e=>setInstruction(e.target.value)} required/></label>
-          <p>{w.routineOr}</p>
-          {triggers.map((t,i)=>{const change=(value:Partial<W.ProjectAssistantRoutineTrigger>)=>setTriggers(old=>old.map((v,n)=>n===i?cleanRoutineTrigger({...v,...value}):v));return <fieldset className="pa-routine-trigger" key={i}>
-            <legend>{w.routineTrigger} {i+1}</legend><label>{w.routineType}<select value={t.type} onChange={e=>change(blankTrigger(e.target.value))}><option value="interval">{w.routineInterval}</option><option value="once">{w.routineOnce}</option><option value="cron">{w.routineCron}</option>{events&&<><option value="event">{tr("event")}</option><option value="webhook">{tr("webhook")}</option></>}</select></label>
-            {t.type==="interval"&&<label>{w.routineSeconds}<input type="number" min={1} max={31536000} value={t.seconds} onChange={e=>change({seconds:Number(e.target.value)})} required/></label>}
-            {t.type==="once"&&<label>{w.routineAt}<input type="datetime-local" step="0.001" value={t.at?new Date(t.at-new Date(t.at).getTimezoneOffset()*60000).toISOString().slice(0,-1):""} onChange={e=>change({at:e.target.value?new Date(e.target.value).getTime():0})} required/></label>}
-            {t.type==="cron"&&<><label>{w.routineExpression}<input value={t.expression} placeholder="0 9 * * 1-5" onChange={e=>change({expression:e.target.value})} required/></label><label>{w.routineZone}<input value={t.timeZone} placeholder="Asia/Taipei" onChange={e=>change({timeZone:e.target.value})} required/></label></>}
-            {t.type==="event"&&<>
-              <p>{tr("eventHint")}</p><label>{tr("source")}<select value={t.source} onChange={e=>change({source:e.target.value})}>{routineEventSources.map(source=><option key={source} value={source}>{source}</option>)}</select></label>
-              <label>{tr("eventName")}<input required value={t.event??""} onChange={e=>change({event:e.target.value})}/></label>
-              <fieldset><legend>{tr("filters")}</legend>{t.filters?.map((row,n)=><div key={n}><label>{tr("filterKey")}<input required value={row.key} onChange={e=>change({filters:t.filters!.map((r,k)=>k===n?{key:e.target.value,value:r.value}:r)})}/></label><label>{tr("filterValue")}<input value={row.value} onChange={e=>change({filters:t.filters!.map((r,k)=>k===n?{key:r.key,value:e.target.value}:r)})}/></label><button type="button" onClick={()=>change({filters:t.filters!.filter((_,k)=>k!==n)})}>{tr("removeFilter")}</button></div>)}<button type="button" disabled={(t.filters?.length??0)>=routineEventLimits.filters} onClick={()=>change({filters:[...(t.filters??[]),{key:"",value:""}]})}>{tr("addFilter")}</button></fieldset>
-            </>}
-            <button type="button" disabled={triggers.length===1} onClick={()=>setTriggers(old=>old.filter((_,n)=>n!==i))}>{w.routineRemoveTrigger}</button>
-          </fieldset>})}
-          <button type="button" disabled={triggers.length>=20} onClick={()=>setTriggers(old=>[...old,blankTrigger()])}>{w.routineAddTrigger}</button>
-          <label>{w.routineTimeout}<input type="number" min={1} max={86400} value={timeout} onChange={e=>setTimeout(Number(e.target.value))} required/></label>
-          <label><input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)}/>{w.routineEnabled}</label>
-          <button type="submit">{w.save}</button><button type="button" onClick={()=>setEditing(undefined)}>{w.cancel}</button>
-        </fieldset>
-      </form>}
       {journalBlocked&&<p role="alert">{w.routineJournalUnreadable}</p>}
       {held?.action==="hook"&&!hookID&&<button type="button" onClick={()=>setHookID(held.request.id)}>{tr("retryHook")}</button>}
       {held&&held.action!=="hook"&&!journalBlocked&&<div role="alert"><p>{w.routineHeld}</p><button type="button" disabled={busy||!authority||!supported} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div>}

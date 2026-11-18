@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13284,
+  "englishKeys": 13301,
   "counts": {
-    "negation": 3505,
+    "negation": 3506,
     "state": 2243,
     "permission": 812,
-    "deletion": 311,
+    "deletion": 312,
     "uncertainty": 543
   },
-  "unionCount": 5728,
+  "unionCount": 5729,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -121,6 +121,7 @@
       "botRoutineControls.publicHint",
       "botRoutineControls.retryAt",
       "botRoutineControls.unknownRun",
+      "botRoutineControls.unsupportedTrigger",
       "browserPairing.cliMissing",
       "browserPairing.connectFailed",
       "browserPairing.failed",
@@ -6578,6 +6579,7 @@
     ],
     "deletion": [
       "botRoutineControls.removeFilter",
+      "botRoutineControls.unsupportedTrigger",
       "browserPairing.mismatch",
       "builtinSkill.mobile-native.purpose",
       "builtinSkill.performance-optimization.purpose",
@@ -7619,6 +7621,7 @@
     "botRoutineControls.retryAt",
     "botRoutineControls.retryHook",
     "botRoutineControls.unknownRun",
+    "botRoutineControls.unsupportedTrigger",
     "botRoutineControls.waitingEvent",
     "browserPairing.allowInApp",
     "browserPairing.androidOpen",
