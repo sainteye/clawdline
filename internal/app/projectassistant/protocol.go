@@ -49,6 +49,11 @@ type NativeTools interface {
 	EditMemory(context.Context, string, MemoryEdit) error
 }
 
+// MemoryIndexTools returns the CAS revision together with the body-free index.
+type MemoryIndexTools interface {
+	MemoryIndex(context.Context) (MemoryIndex, error)
+}
+
 // MemoryDetailTools is additive; only the current actor can resolve an entry ID.
 type MemoryDetailTools interface {
 	MemoryDetail(context.Context, string) (pa.MemoryDetail, error)

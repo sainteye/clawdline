@@ -201,8 +201,21 @@ native index query does not decode chat history or return note bodies.
 under the captured actor, full Project and current memory revision.
 `search_memory` matches facts and note names/summaries, without searching
 other Projects. Short-fact `edit_memory` does not treat a note summary as an
-editable body. Native note writing and the dedicated note editor are follow-up
-construction, not claims made by this source foundation.
+editable body. The owned `read_memory` index also returns the CAS revision
+from the same SQLite snapshot. `edit_memory` accepts a separate `note` object
+with title, summary, body and `expected_revision`. An `entry_id` selects one
+existing note in this Bot; omission creates a deterministic new ID bound to
+the captured turn and tool key. `forget: true` with an entry ID and revision
+forgets its live body, index and recorded provenance. Short-fact and note
+fields cannot be mixed, and no caller-selected Bot or Project is accepted.
+
+A note edit hashes its literal request before reading current state. An exact
+retry reads the original immutable memory event, including after a later edit
+or forget; a changed payload with the same key conflicts. A revision conflict
+requires a fresh index and a new intentional edit, while an unknown result
+requires the original key and payload. The existing Host lifetime, active-turn,
+current-grant and peer-request restrictions enclose this same tool path.
+The dedicated note editor remains follow-up construction.
 
 Human writes retain the existing authenticated memory route and revision CAS.
 A new client refuses note metadata before transport to a source below API 89;
@@ -226,3 +239,23 @@ pretend to be schema 11. Newer metadata must never be lowered for rollback.
 Focused SQLite, owned MCP and scripted Host tests cover these source rules.
 They do not establish clean installed-native recall, deployed Cloud behavior,
 editor interactions or actual memory forgetting across fresh model dialogs.
+
+The revisioned native writer is covered by
+`TestHostTopicNoteEditsKeepRevisionAndReplayIdentity`: a fixture drops the
+first successful acknowledgement after the real SQLite save, then retries
+the same intent. It checks one entry, payload mismatch, stale revision,
+replacement, provenance-dependent forgetting and original receipt replay
+without resurrection. Owned MCP tests exercise the strict note shape,
+index revision and rejected identity overrides. These are scripted local
+tools, not an installed model's willingness to select them; clean native
+conversation and UI acceptance remain separate work.
+
+
+This writer increment uses the existing API 89 and core/archive schema 12
+shapes already present in its previous source, rather than installing the
+separately isolated additive-topic candidate. It changes no table, schema
+marker or stored entry fields. Actual previous/candidate binary tests must
+still establish that notes written after the update survive rollback to that
+previous schema-12 binary. This does not make schema-11 binaries able to open
+a schema-12 store and does not authorize lowering metadata or restoring a
+pre-update snapshot over newer successful writes.

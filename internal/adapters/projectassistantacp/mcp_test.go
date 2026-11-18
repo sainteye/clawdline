@@ -350,3 +350,43 @@ func TestOwnedMCPTopicMemoryIndexAndExplicitBodyRead(t *testing.T) {
 		t.Fatal("client-selected owner reached note reader", string(body), calls)
 	}
 }
+
+func TestOwnedMCPTopicNoteEditUsesRevisionAndRejectsMixedAuthority(t *testing.T) {
+	var edits []app.MemoryEdit
+	f := newMCPFixture(t, mcpTestTools{edits: &edits})
+	f.initialize(t)
+	note := map[string]any{"title": "Release checklist", "summary": "Readiness", "body": "Full synthetic checklist", "expected_revision": 1}
+	_, body := f.post(t, mcpCall("edit_memory", map[string]any{"idempotency_key": "topic-create", "note": note}), nil)
+	if bytes.Contains(body, []byte(`"isError":true`)) || len(edits) != 1 {
+		t.Fatal("revisioned topic note did not reach its owned tool", string(body), edits)
+	}
+	if edits[0].Note == nil || edits[0].Note.Body != "Full synthetic checklist" || edits[0].Note.ExpectedRevision != 1 {
+		t.Fatal("note edit fields lost", edits)
+	}
+	for name, args := range map[string]map[string]any{
+		"mixed":            {"idempotency_key": "mixed", "note": note, "append": "A short fact"},
+		"owner override":   {"idempotency_key": "foreign", "note": map[string]any{"bot_id": "other", "expected_revision": 1}},
+		"missing revision": {"idempotency_key": "missing", "note": map[string]any{"title": "Title", "summary": "Index", "body": "Body"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, body := f.post(t, mcpCall("edit_memory", args), nil)
+			if !bytes.Contains(body, []byte(`"isError":true`)) || len(edits) != 1 {
+				t.Fatal("invalid edit reached native tool", string(body), edits)
+			}
+		})
+	}
+}
+
+type topicIndexTestTools struct{ mcpTestTools }
+
+func (t topicIndexTestTools) MemoryIndex(context.Context) (app.MemoryIndex, error) {
+	return app.MemoryIndex{Revision: 7, Entries: t.memory}, nil
+}
+func TestOwnedMCPTopicIndexCarriesItsCASRevision(t *testing.T) {
+	f := newMCPFixture(t, topicIndexTestTools{mcpTestTools{memory: []pa.MemoryEntry{{ID: "topic", Kind: pa.TopicMemory, Title: "Checklist", Text: "Readiness"}}}})
+	f.initialize(t)
+	_, body := f.post(t, mcpCall("read_memory", nil), nil)
+	if !bytes.Contains(body, []byte(`\"revision\":7`)) || !bytes.Contains(body, []byte("Checklist")) {
+		t.Fatal("index revision absent", string(body))
+	}
+}

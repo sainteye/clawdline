@@ -836,3 +836,18 @@ completion from transcript gaps or actual phone acceptance from synthetic tests.
 Execution tones now follow running call-owned tasks and admitted action requests;
 queries, saving, planning, queueing and draft review remain silent. Website
 snapshot publication is still separate from refreshing these source receipts.
+
+
+## Revisioned native topic-note writes
+
+The persistent-Bot entry was reviewed in English and Taiwan Traditional
+Chinese for the explicit revisioned note object accepted by edit_memory.
+read_memory returns an index and its revision from one snapshot. Literal
+request digests preserve exact retries after an acknowledgement is lost,
+including after a later forget; replay cannot recreate the forgotten note.
+The current-turn Host, full Project and peer-request restrictions remain in
+force. This increment retains the existing core/archive schema 12 data shape
+and API 89. It does not include the separately isolated additive topic store
+or change metadata. Scripted tool tests are separate from installed-model
+selection, clean-conversation recall, updater qualification and production
+acceptance. The note editor remains follow-up work.

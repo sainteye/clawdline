@@ -20,19 +20,40 @@ type MemoryEdit struct {
 	Old    string
 	New    string
 	Delete bool
+	Note   *MemoryNoteEdit
+}
+
+// MemoryIndex is a revisioned index; named note bodies are never included.
+type MemoryIndex struct {
+	Revision int64
+	Entries  []pa.MemoryEntry
+}
+
+type MemoryNoteEdit struct {
+	EntryID          string `json:"entry_id,omitempty"`
+	Title            string `json:"title,omitempty"`
+	Summary          string `json:"summary,omitempty"`
+	Body             string `json:"body,omitempty"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Forget           bool   `json:"forget,omitempty"`
 }
 
 // MemoryEntries returns a Bot's live entries in a stable order, oldest
 // revision first, for its read_memory and search_memory tools.
 func (r *Engine) MemoryEntries(ctx context.Context, key pa.BotKey) ([]pa.MemoryEntry, error) {
+	index, err := r.MemoryIndex(ctx, key)
+	return index.Entries, err
+}
+
+func (r *Engine) MemoryIndex(ctx context.Context, key pa.BotKey) (MemoryIndex, error) {
 	if reader, ok := r.o.Repository.(interface {
-		MemoryEntries(context.Context, pa.BotKey) ([]pa.MemoryEntry, error)
+		MemoryIndex(context.Context, pa.BotKey) (MemoryIndex, error)
 	}); ok {
-		return reader.MemoryEntries(ctx, key)
+		return reader.MemoryIndex(ctx, key)
 	}
 	x, err := r.o.Repository.Export(ctx, key)
 	if err != nil {
-		return nil, err
+		return MemoryIndex{}, err
 	}
 	out := make([]pa.MemoryEntry, 0, len(x.MemoryEntries))
 	for _, e := range x.MemoryEntries {
@@ -46,7 +67,7 @@ func (r *Engine) MemoryEntries(ctx context.Context, key pa.BotKey) ([]pa.MemoryE
 		}
 		return out[i].ID < out[j].ID
 	})
-	return out, nil
+	return MemoryIndex{Revision: x.Memory.Revision, Entries: out}, nil
 }
 
 // SearchMemory returns the live entries holding every word of query, ignoring
@@ -77,6 +98,12 @@ func SearchMemory(entries []pa.MemoryEntry, query string) (out []pa.MemoryEntry,
 func (r *Engine) EditMemory(ctx context.Context, key pa.BotKey, turnID, callID string, edit MemoryEdit) (pa.MemoryRevision, error) {
 	if turnID == "" || callID == "" {
 		return pa.MemoryRevision{}, runtimeFailure(pa.Invalid, "memory_call")
+	}
+	if edit.Note != nil {
+		if edit.Append != "" || edit.Old != "" || edit.New != "" || edit.Delete {
+			return pa.MemoryRevision{}, runtimeFailure(pa.Invalid, "memory_edit")
+		}
+		return r.editTopicMemory(ctx, key, turnID, callID, *edit.Note)
 	}
 	bot, err := r.o.Repository.Bot(ctx, key)
 	if err != nil {
