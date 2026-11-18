@@ -1,4 +1,4 @@
-import { SessionBoardRows, sessionBoardActor, useLocalSessionBoards, type SessionBoardSource } from "./session/SessionBoards.js"
+import { SessionBoardRows, sessionBoardActor, type SessionBoardSource } from "./session/SessionBoards.js"
 import { SessionStateEmpty } from "./session/SessionStateEmpty.js"
 import { matchesLocalStateFilter, type SessionStateFilter } from "./session/state-filter.js"
 import { stateFilterLabel } from "./session/SessionStateFilter.js"
@@ -230,7 +230,6 @@ export function SessionsPage({
   const readingSaid = offlineAt === "line" ? nextWord("sessionsMachineOfflineLine", {
     machine: machineOffline?.machine ?? "", seen: offlineSeen })
     : sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
-  const localBoards = useLocalSessionBoards(onScreen && live && !terminalMode && !fleetList)
   const depths = visualDepths(drawn, tasks ?? [], L.taskShaping)
   const branches = visualBranches(drawn, depths)
 
@@ -357,7 +356,7 @@ export function SessionsPage({
             {offerAt === "compact" && restore.offer && <RestoreCard offer={restore.offer} onOpen={openRestore} onChanged={restore.refresh} />}
             <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
               {!skeleton && arriving && <StartingRow place={arriving} />}
-              <SessionBoardRows source={sessionBoardSource ?? localBoards}
+              <SessionBoardRows source={sessionBoardSource}
                 candidates={rows.flatMap(r => {
                   const actor = sessionBoardActor(r.assistant, r.sessionId, r.label || r.id)
                   return actor ? [actor] : []

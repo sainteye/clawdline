@@ -1,4 +1,4 @@
-import { cloudSessionBoardSource } from "../session/SessionBoards.js"
+import { cloudSessionBoardSource, sessionBoardActor } from "../session/SessionBoards.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { cloudPluginSources } from "../view-plugins/sources.js"
 import { supportWord } from "../support/words.js"
@@ -1898,6 +1898,17 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       !c.machineDescriptor?.(id)?.machine?.commands?.includes("session-boards.read")) return undefined
     return cloudSessionBoardSource(id, c.account, machine.operationAllowed === true, () => client.current)
   }
+  const boardTargets = fleetScope ? quickMachines.flatMap(machine => {
+    const source = sessionBoardsFor(machine.id)
+    if (!source) return []
+    const candidates = [...fleetPresentations.current.values()].flatMap(row => {
+      if (row.destination.machineID !== machine.id || row.projection?.freshness !== "current") return []
+      const actor = sessionBoardActor(row.assistant ?? row.projection?.assistant, row.status?.sessionId, row.title)
+      return actor ? [actor] : []
+    })
+    return [{ source, label: machine.name || machine.label || machine.id, candidates }]
+  }) : undefined
+
 
   // Which machine this is and whether it answers, in one control: the
   // console's connection light is handed in (`App`'s `aside`) and drawn as the
@@ -2254,6 +2265,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             quotaMachineName={readingRow?.name || readingRow?.label}
             fleetReaderMachine={readerMachine}
             sessionBoardSource={fleetScope ? undefined : sessionBoardsFor(readerMachine ?? chosen.id)}
+            sessionBoardTargets={boardTargets}
             onFleetClose={closeFleetTarget}
             fleetActionIntent={fleetActionIntent}
             onFleetActionIntentHandled={() => setFleetActionIntent(null)}

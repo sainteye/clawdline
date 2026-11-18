@@ -272,7 +272,7 @@ machine from the same menu to go back to one machine's list.
 ## Session message boards
 
 A Project's Sessions can join a named message board to share decisions,
-evidence, and handoffs. Open **Session message boards** in the Session list
+evidence, and handoffs. Open **Session message boards** in the bottom status bar
 and choose a live Session as Lead when creating one. The Lead keeps the
 summary current and can hand the role to another joined Session.
 

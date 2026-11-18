@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom"
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { nextWord as t } from "../next-strings.js"
 import { client, followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
@@ -7,7 +8,8 @@ import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
 
-type Actor = { id: string; label: string }
+export type SessionBoardMember = { id: string; label: string }
+type Actor = SessionBoardMember
 type Board = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
 type Post = { seq: number; author: Actor; text: string; reply_to?: number; at: number }
 type Page = { board: Board; posts: Post[]; more: boolean }
@@ -117,9 +119,10 @@ export function SessionBoardRows({ source, rows, candidates }: {
   return <BoardRows key={source.key} source={source} rows={rows} candidates={candidates} />
 }
 
-function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; rows: Entry[]; candidates?: Actor[] }) {
+const boardChanged = "clawdline:session-board-changed"
+
+function useBoardList(source: SessionBoardSource) {
   const [boards, setBoards] = useState<Board[]>([])
-  const [show, setShow] = useState<string>()
   const [problem, setProblem] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const current = useRef(source)
@@ -137,10 +140,25 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
   useEffect(() => {
     const control = new AbortController()
     const read = () => { if (!document.hidden) void refresh(control.signal) }
+    const changed = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === source.key) read()
+    }
     read()
     window.addEventListener("focus", read)
-    return () => { control.abort(); window.removeEventListener("focus", read) }
-  }, [refresh])
+    window.addEventListener(boardChanged, changed)
+    return () => {
+      control.abort()
+      window.removeEventListener("focus", read)
+      window.removeEventListener(boardChanged, changed)
+    }
+  }, [refresh, source.key])
+  return { boards, problem, loaded, refresh }
+}
+
+function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; rows: Entry[]; candidates?: Actor[] }) {
+  const list = useBoardList(source)
+  const { boards, refresh } = list
+  const [show, setShow] = useState<string>()
   const leadOptions = candidates ?? rows.flatMap(row => row.actor ? [row.actor] : [])
   const assigned = new Map<string, Board>()
   for (const b of boards) {
@@ -157,9 +175,6 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
   }
   const shown = new Set<string>()
   return <>
-    <li className="session-boards-entry" role="presentation">
-      <button type="button" className="chip" onClick={() => { setShow(""); void refresh() }}>{t("sessionBoards")}</button>
-    </li>
     {rows.map(row => {
       const b = row.actor && assigned.get(row.actor.id)
       if (!b) return row.render(false)
@@ -176,9 +191,61 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
         <ul className="rows" role="group" aria-label={b.name}>{grouped.get(b.id)?.map(r => r.render(true))}</ul>
       </li>
     })}
-    {show !== undefined && <BoardDialog source={source} initial={show} boards={boards} loaded={loaded} problem={problem}
-      candidates={leadOptions} refresh={refresh} close={() => { setShow(undefined); void refresh() }} />}
+    {show !== undefined && createPortal(<BoardDialog source={source} initial={show} {...list}
+      candidates={leadOptions} close={() => { setShow(undefined); void refresh() }} />, document.body)}
   </>
+}
+
+export type SessionBoardTarget = { source: SessionBoardSource; label: string; candidates: Actor[] }
+
+export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTarget[] }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const close = () => {
+    if (open) window.dispatchEvent(new CustomEvent(boardChanged, { detail: open }))
+    setOpen(null)
+    button.current?.focus()
+  }
+  const target = targets.find(t => t.source.key === open)
+  useEffect(() => {
+    if (open !== null && open !== "" && !target) setOpen(null)
+  }, [open, target])
+  if (!targets.length) return null
+  return <>
+    <button ref={button} type="button" className="session-board-dock" aria-haspopup="dialog"
+      aria-label={t("sessionBoards")} title={t("sessionBoards")}
+      onClick={() => setOpen(targets.length === 1 ? targets[0].source.key : "")}>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 4h16v12H9l-5 4zM8 8h8m-8 4h5" />
+      </svg>
+    </button>
+    {target && createPortal(<StatusBoardDialog key={target.source.key} target={target} close={close} />, document.body)}
+    {open === "" && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} />, document.body)}
+  </>
+}
+
+function BoardMachinePicker({ targets, choose, close }: {
+  targets: readonly SessionBoardTarget[]; choose: (key: string) => void; close: () => void
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const heading = useId()
+  useEffect(() => { dialog.current?.showModal() }, [])
+  return <dialog ref={dialog} className="session-board-dialog" aria-labelledby={heading} onClose={close}>
+    <header><h2 id={heading}>{t("sessionBoards")}</h2>
+      <button type="button" onClick={() => dialog.current?.close()}>{t("sessionBoardClose")}</button>
+    </header>
+    <div className="session-board-body">
+      <p>{t("cloudMachinesLede")}</p>
+      <ul className="session-board-index">{targets.map(target => <li key={target.source.key}>
+        <button type="button" onClick={() => choose(target.source.key)}>{target.label}</button>
+      </li>)}</ul>
+    </div>
+  </dialog>
+}
+
+function StatusBoardDialog({ target, close }: { target: SessionBoardTarget; close: () => void }) {
+  const list = useBoardList(target.source)
+  return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} {...list} />
 }
 
 function BoardDialog({ source, initial, boards, loaded, problem, candidates, refresh, close }: {
@@ -199,14 +266,14 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
     </header>
     {selected ? <>
       <nav><button type="button" onClick={() => { select(""); void refresh() }}>{t("sessionBoards")}</button></nav>
-      <BoardMessages key={selected} source={source} id={selected} candidates={candidates} changed={refresh} />
+      <BoardMessages key={selected} source={source} id={selected} candidates={candidates} />
     </> : <div className="session-board-body" aria-busy={!loaded}>
       <div className="session-board-actions">
         <button type="button" onClick={() => void refresh()}>{t("sessionBoardRefresh")}</button>
         {source.writable && candidates.length > 0 && <button type="button" onClick={() => create(!creating)}>{t("sessionBoardCreate")}</button>}
       </div>
       {creating && source.writable && <BoardCreate source={source} candidates={candidates} onCreated={id => {
-        create(false); select(id); void refresh()
+        create(false); select(id)
       }} />}
       {problem && <p role="alert">{t("sessionBoardReadError")}</p>}
       {loaded && boards.length === 0 && !problem && <p>{t("sessionBoardsEmpty")}</p>}
@@ -235,6 +302,7 @@ function useBoardChange(source: SessionBoardSource) {
     try {
       const r = await source.change(command, key)
       retry.current = null
+      window.dispatchEvent(new CustomEvent(boardChanged, { detail: source.key }))
       done(r)
     } catch (e) {
       setError(boardErrorCode(e, "session_board_write_unconfirmed"))
@@ -261,7 +329,7 @@ function BoardCreate({ source, candidates, onCreated }: { source: SessionBoardSo
   </form>
 }
 
-function BoardMessages({ source, id, changed, candidates }: { source: SessionBoardSource; id: string; changed: () => Promise<void>; candidates: Actor[] }) {
+function BoardMessages({ source, id, candidates }: { source: SessionBoardSource; id: string; candidates: Actor[] }) {
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
   const [reading, setReading] = useState(false)
@@ -296,7 +364,7 @@ function BoardMessages({ source, id, changed, candidates }: { source: SessionBoa
   const allowed = source.writable && b && !b.archived_at
   const action = (cmd: Command, done?: () => void) => {
     void change.send({ ...cmd, board: id }, () => {
-      done?.(); void load(); void changed()
+      done?.(); void load()
     })
   }
   const post = (e: FormEvent) => {

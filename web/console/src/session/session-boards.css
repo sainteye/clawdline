@@ -1,4 +1,7 @@
-.session-boards-entry { margin: 4px 0 8px; }
+.session-board-dock { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; color: var(--dim); background: transparent; cursor: pointer; }
+.session-board-dock svg { width: 23px; height: 23px; }
+.session-board-dock:hover { color: var(--ink); }
+.session-board-dock:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .session-board-group { border: 1px solid var(--line); border-radius: 12px; margin: 6px 0; overflow: hidden; }
 .session-board-group > button { background: var(--card); color: var(--ink); border: 0; width: 100%; text-align: start; padding: 10px 12px; display: grid; gap: 3px; cursor: pointer; }
 .session-board-group > button span, .session-board-group > button small { color: var(--dim); }

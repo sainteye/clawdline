@@ -1,4 +1,4 @@
-import type { SessionBoardSource } from "./session/SessionBoards.js"
+import { SessionBoardDock, sessionBoardActor, useLocalSessionBoards, type SessionBoardSource, type SessionBoardTarget } from "./session/SessionBoards.js"
 import { ViewPluginIcon } from "./view-plugins/Artwork.js"
 import { useViewPlugins } from "./view-plugins/Host.js"
 import { useLocalPluginSource } from "./view-plugins/local.js"
@@ -243,7 +243,7 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, fleetTarget = null, fleetTargetRow = null,
+export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, sessionBoardTargets, fleetTarget = null, fleetTargetRow = null,
   fleetTargetIdentity = null, fleetReaderMachine = null, executionReadRevision = 0,
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
   fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetActionIntent = null, onFleetActionIntentHandled,
@@ -262,6 +262,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   cloudOperationsAttention?: Attention | null
   cloudPeerAccess?: ReactNode | ((active: boolean) => ReactNode)
   sessionBoardSource?: SessionBoardSource
+  sessionBoardTargets?: readonly SessionBoardTarget[]
   fleetList?: (filter: string, onFilter: (value: string) => void) => ReactNode
   executionReadRevision?: number
   fleetTarget?: SessionDestination | null
@@ -610,6 +611,16 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
 
   const localViewSource = useLocalPluginSource(rows, fleet.live, fleet.loaded, openSession, openId)
   const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en")
+  const localBoards = useLocalSessionBoards(fleet.live)
+  const boardSource = sessionBoardSource ?? localBoards
+  const boardTargets = sessionBoardTargets ?? (boardSource ? [{
+    source: boardSource, label: quotaMachineName ?? "",
+    candidates: rows.flatMap(row => {
+      const actor = sessionBoardActor(row.assistant, row.sessionId, row.label || row.id)
+      return actor ? [actor] : []
+    }),
+  }] : [])
+
 
   const openStarted = (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean): boolean => {
     if (followsRelay() || import.meta.env.VITE_HOSTED_CONSOLE) return false
@@ -1345,7 +1356,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         onStarted={openStarted}
         streamTasks={fleet.tasksLive ? fleet.tasks : null}
         fleetList={fleetList?.(filter, setFilter)}
-        sessionBoardSource={sessionBoardSource}
+        sessionBoardSource={boardSource}
         fleetDetailKey={fleetList && fleetTarget ? JSON.stringify([fleetTarget.machineID, fleetTarget.sessionID,
           fleetTarget.executionGeneration, executionReadRevision]) : undefined}
         fleetCoordinatorBound={!!fleetList && !!fleetTarget && fleetTargetIdentity?.machineScope === true &&
@@ -1366,7 +1377,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
-      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened || plugins.opened ? null : <>{assistants.dock}{plugins.dock}</>} />
+      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened || plugins.opened ? null : <>{assistants.dock}{plugins.dock}<SessionBoardDock targets={boardTargets} /></>} />
       <Overlays />
       {machine ? <MachineDashboard
         key={dashboardSource?.ownerScope ?? "local"}
