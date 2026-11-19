@@ -9700,6 +9700,8 @@
   "next.sessionBoardHidePost": "收合留言",
   "next.sessionBoardsLoading": "正在讀取留言板清單…",
   "next.sessionBoardMessagesLoading": "正在讀取留言…",
+  "next.sessionBoardMembersInList": "{listed} / {total} 在清單",
+  "next.sessionBoardMemberNotListed": "未在 Session 清單",
   "notifications.destinationList": "點擊後開啟清單。",
   "notifications.destinationOptionalSession": "有指定 Session 時開啟它，否則開啟清單。",
   "notifications.destinationSession": "若 Session 還在，點擊後開啟它。",

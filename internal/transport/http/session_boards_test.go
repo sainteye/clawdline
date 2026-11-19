@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/contract"
 
 	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
 )
@@ -145,4 +147,79 @@ func TestPersonCanAddLiveSessionsToBoardWithoutActingAsThem(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || len(page.Board.Members) != 2 || page.Board.Lead != lead {
 		t.Fatalf("member page: %s (%v)", rec.Body, err)
 	}
+}
+
+func TestSessionBoardRosterDistinguishesMembershipFromTheSessionList(t *testing.T) {
+	s, pane, _ := sessionItemServer(t)
+	ctx := t.Context()
+	project := projects.ProjectID(pane.s.CWD)
+	lead := sb.Actor{ID: "claude:present", Label: "Lead"}
+	away := sb.Actor{ID: "claude:away", Label: "Away"}
+	stale := sb.Actor{ID: "claude:stale", Label: "Stale"}
+	left := sb.Actor{ID: "claude:left", Label: "Left"}
+	change := func(actor sb.Actor, cmd sb.Command) sb.Result {
+		t.Helper()
+		result, err := s.store.ChangeSessionBoard(ctx, project, actor, sb.Actor{}, cmd, "setup", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	board := change(lead, sb.Command{Action: "create", Name: "Review", Text: "Coordinate review"}).ID
+	for _, member := range []sb.Actor{away, stale, left} {
+		change(member, sb.Command{Action: "join", Board: board})
+	}
+	change(left, sb.Command{Action: "leave", Board: board})
+
+	var snapshot = sessionsSnapshotWire{Sessions: []sessionRowWire{
+		{SessionRow: contract.SessionRow{Assistant: "claude", SessionID: "present", Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent}}},
+		{SessionRow: contract.SessionRow{Assistant: "claude", SessionID: "stale", Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessStale}}},
+		{SessionRow: contract.SessionRow{Assistant: "claude", SessionID: "left", Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent}}},
+	}}
+	list := &s.lists().sessions
+	list.build = func(context.Context) (sessionsSnapshotWire, error) { return snapshot, nil }
+	type memberWire struct {
+		ID       string `json:"id"`
+		Presence string `json:"presence"`
+	}
+	type boardWire struct {
+		Members []memberWire `json:"members"`
+	}
+	check := func(query string, wantAway string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.sessionBoardsRoute(rec, personWorkV2Request(http.MethodGet, sessionBoardRoute+query, "", ""))
+		var result struct {
+			Board  boardWire   `json:"board"`
+			Boards []boardWire `json:"boards"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); rec.Code != http.StatusOK || err != nil {
+			t.Fatalf("roster status %d: %s (%v)", rec.Code, rec.Body, err)
+		}
+		members := result.Board.Members
+		if len(result.Boards) == 1 {
+			members = result.Boards[0].Members
+		}
+		got := map[string]string{}
+		for _, member := range members {
+			got[member.ID] = member.Presence
+		}
+		if len(got) != 3 || got[lead.ID] != "listed" || got[away.ID] != wantAway || got[stale.ID] != "" {
+			t.Fatalf("roster from %s: %+v", query, got)
+		}
+		if _, found := got[left.ID]; found {
+			t.Fatal("a Session that left the board is still enrolled")
+		}
+	}
+	check("", "")
+	snapshot.Scan.Sources = []contract.ScanSource{{Source: "tmux", Complete: true}, {Source: "iterm", Disabled: "setting"}}
+	list.mu.Lock()
+	list.at = time.Time{}
+	list.mu.Unlock()
+	check("?board="+board, "not_listed")
+	snapshot.Sessions = append(snapshot.Sessions, sessionRowWire{SessionRow: contract.SessionRow{Assistant: "claude"}})
+	list.mu.Lock()
+	list.at = time.Time{}
+	list.mu.Unlock()
+	check("?board="+board, "")
 }

@@ -9700,6 +9700,8 @@
   "next.sessionBoardHidePost": "Collapse message",
   "next.sessionBoardsLoading": "Reading message boards…",
   "next.sessionBoardMessagesLoading": "Reading messages…",
+  "next.sessionBoardMembersInList": "{listed} of {total} in Sessions",
+  "next.sessionBoardMemberNotListed": "Outside the Session list",
   "notifications.destinationList": "Opens the list.",
   "notifications.destinationOptionalSession": "Opens the named Session, or the list if none was named.",
   "notifications.destinationSession": "Opens the Session while it exists.",

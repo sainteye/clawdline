@@ -28,10 +28,20 @@ var (
 	ErrReplay  = errors.New("session_board_key_reused")
 )
 
+// Presence describes the current Session list. It is computed for the roster
+// response and is never stored as membership or attached to a historical post.
+type Presence string
+
+const (
+	Listed    Presence = "listed"
+	NotListed Presence = "not_listed"
+)
+
 type Actor struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Persona string `json:"persona,omitempty"`
+	ID       string   `json:"id"`
+	Label    string   `json:"label"`
+	Persona  string   `json:"persona,omitempty"`
+	Presence Presence `json:"presence,omitempty"`
 }
 
 type Board struct {

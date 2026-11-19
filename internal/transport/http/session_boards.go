@@ -6,11 +6,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
 )
@@ -213,6 +216,9 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 			writeSessionBoardError(w, err)
 			return
 		}
+		if actor == "" {
+			s.markSessionBoardPresence(page.Board)
+		}
 		writeJSON(w, page)
 		return
 	}
@@ -221,9 +227,52 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 		writeSessionBoardError(w, err)
 		return
 	}
+	if actor == "" {
+		s.markSessionBoardPresence(boards...)
+	}
 	writeJSON(w, struct {
 		Boards []sb.Board `json:"boards"`
 	}{boards})
+}
+
+// markSessionBoardPresence uses the same bounded snapshot the Session list
+// serves. Absence from the enabled sources describes the list only. It does
+// not revoke membership or establish that a Session was closed.
+func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
+	if !slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 }) {
+		return
+	}
+	snapshot := s.lists().snapshot()
+	complete := cloudListComplete(snapshot.Scan)
+	present := make(map[string]sb.Presence, len(snapshot.Sessions))
+	unbound := make(map[string]bool)
+	for _, row := range snapshot.Sessions {
+		if row.Assistant == "" {
+			continue
+		}
+		assistant := string(row.Assistant)
+		if row.SessionID == "" {
+			unbound[assistant] = true
+			continue
+		}
+		id := assistant + ":" + row.SessionID
+		if row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+			present[id] = sb.Listed
+		} else if _, known := present[id]; !known {
+			present[id] = ""
+		}
+	}
+	for _, board := range boards {
+		for i := range board.Members {
+			member := &board.Members[i]
+			presence, found := present[member.ID]
+			assistant, _, _ := strings.Cut(member.ID, ":")
+			if !found && complete && !unbound[assistant] {
+				presence = sb.NotListed
+			}
+			member.Presence = presence
+		}
+	}
 }
 
 func writeSessionBoardError(w http.ResponseWriter, err error) {

@@ -160,6 +160,8 @@
 .session-board-members ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .session-board-members li { display: flex; align-items: center; gap: 6px; padding: 7px 0; }
 .session-board-members li strong { min-width: 0; overflow-wrap: anywhere; font-size: .85em; }
+.session-board-members li[data-not-listed] > :not(.session-board-member-presence) { opacity: .58; }
+.session-board-member-presence { color: var(--dim); font-size: .76em; }
 
 .session-board-new { color: var(--session-board-accent); font-size: .84em; margin: 0 0 6px; }
 .session-board-posts { margin-bottom: 9px; }

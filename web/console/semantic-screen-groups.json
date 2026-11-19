@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13309,
+  "englishContentKeys": 13311,
   "riskKeys": 5734,
-  "nonRiskCount": 7575,
+  "nonRiskCount": 7577,
   "groups": [
     {
       "name": "acp / other",
@@ -4148,7 +4148,7 @@
     },
     {
       "name": "next / other",
-      "count": 1258,
+      "count": 1260,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5000,7 +5000,9 @@
         "next.sessionBoardLead",
         "next.sessionBoardManage",
         "next.sessionBoardMemberCount",
+        "next.sessionBoardMemberNotListed",
         "next.sessionBoardMembers",
+        "next.sessionBoardMembersInList",
         "next.sessionBoardMessage",
         "next.sessionBoardMessagesLoading",
         "next.sessionBoardName",

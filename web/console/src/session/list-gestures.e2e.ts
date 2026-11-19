@@ -71,6 +71,8 @@ type ReadingScenario =
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
 let boardFixture = false
+let boardPresenceFixture = false
+let boardPresenceUnverified = false
 const shortBoardPurpose = "Review the Session console"
 let boardPurpose = shortBoardPurpose
 let boardTreeFixture = false
@@ -445,9 +447,12 @@ function daemon(): Server {
         id: "review", project: "fixture", name: "Review board", purpose: boardPurpose, summary: "", latest: boardTreeFixture ? 2 : 1,
         lead: "claude:conversation-" + SAFE,
         members: [
-          { id: "claude:conversation-" + SAFE, label: "Lead" },
+          { id: "claude:conversation-" + SAFE, label: "Lead", ...(boardPresenceFixture ? { presence: "listed" } : {}) },
           { id: "claude:conversation-" + NEEDS_ATTESTATION, label: boardTreeFixture ? "Reviewer" : "Member",
-            ...(boardTreeFixture ? { persona: "test-previous-role" } : {}) },
+            ...(boardTreeFixture ? { persona: "test-previous-role" } : {}),
+            ...(boardPresenceFixture ? { presence: "listed" } : {}) },
+          ...(boardPresenceFixture ? [{ id: "claude:earlier-member", label: "Earlier member",
+            presence: boardPresenceUnverified ? undefined : "not_listed" }] : []),
         ],
       }
       const currentBoard = boardReviewerLeft ? { ...board, members: board.members.slice(0, 1) } : board
@@ -1564,6 +1569,38 @@ test("a Session board keeps child Sessions, role art and the Lead mark inside it
     })
   } finally {
     boardFixture = boardTreeFixture = false
+  }
+})
+
+test("a Session board dims enrolled members outside the current Session list", async () => {
+  boardFixture = boardPresenceFixture = true
+  try {
+    await inTab(async tab => {
+      await tab.go("/")
+      const opener = "#rows .session-board-group > button"
+      const members = ".session-board-dialog .session-board-members"
+      await shortcutUntil(tab, `!!document.querySelector('${opener}')`)
+      await tab.press(opener)
+      await shortcutUntil(tab, `!!document.querySelector('${members} summary')`)
+      await tab.press(`${members} summary`)
+      const roster = () => tab.run(`(() => {
+        const disclosure = document.querySelector('${members}')
+        return { count: disclosure.querySelector('summary span').textContent,
+          rows: Array.from(disclosure.querySelectorAll('li'), row => ({
+            opacity: getComputedStyle(row.querySelector('strong')).opacity,
+            status: row.querySelector('small')?.textContent ?? '',
+          })) }
+      })()`)
+      assert.deepEqual(await roster(), { count: "2 / 3 在清單", rows: [
+        { opacity: "1", status: "" }, { opacity: "1", status: "" }, { opacity: "0.58", status: "未在 Session 清單" },
+      ] })
+      boardPresenceUnverified = true
+      await tab.run(`window.dispatchEvent(new Event('focus'))`)
+      await shortcutUntil(tab, `document.querySelector('${members} summary span').textContent === '3'`)
+      assert.deepEqual(await roster(), { count: "3", rows: Array.from({ length: 3 }, () => ({ opacity: "1", status: "" })) })
+    })
+  } finally {
+    boardFixture = boardPresenceFixture = boardPresenceUnverified = false
   }
 })
 

@@ -16,7 +16,9 @@ import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
 
-export type SessionBoardMember = { id: string; label: string; persona?: string; projectIcon?: Icon }
+export type SessionBoardMember = {
+  id: string; label: string; persona?: string; projectIcon?: Icon; presence?: "listed" | "not_listed"
+}
 type Actor = SessionBoardMember
 export type SessionMessageBoard = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
 type Board = SessionMessageBoard
@@ -590,6 +592,11 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const roster = indexedBoard ?? b
   const lead = roster?.members?.find(member => member.id === roster.lead)
   const members = roster?.members?.filter(member => member.id !== roster.lead) ?? []
+  const rosterMembers = roster?.members ?? []
+  const total = rosterMembers.length
+  const listed = rosterMembers.filter(member => member.presence === "listed").length
+  const count = listed < total && rosterMembers.every(member => member.presence)
+    ? t("sessionBoardMembersInList", { listed, total }) : total
   const roleByActor = new Map(roster?.members?.map(member => [member.id, member.persona]))
   const labelFor = (actor: Actor) => candidates.get(actor.id)?.label ?? actor.label
   const avatar = (actor: Actor) => {
@@ -616,11 +623,12 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
       <div className="session-board-disclosures">
         {b.summary && <details className="session-board-summary"><summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
         {roster?.members && <details className="session-board-members">
-          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{roster.members.length}</span></summary>
-          <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
+          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{count}</span></summary>
+          <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id} data-not-listed={member.presence === "not_listed" || undefined}>
             {avatar(member)}
             <strong>{labelFor(member)}</strong>
             {member.id === roster.lead && <SessionBoardLead />}
+            {member.presence === "not_listed" && <small className="session-board-member-presence">{t("sessionBoardMemberNotListed")}</small>}
           </li>)}</ul>
         </details>}
       </div>
