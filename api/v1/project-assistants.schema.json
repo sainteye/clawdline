@@ -1532,7 +1532,7 @@
       ]
     },
     "ProjectAssistantHandoffRequest": {
-      "description": "API 92. Prepare the source's filtered summary, edit the exact draft revision, or keep the current native conversation.",
+      "description": "API 93. Prepare the source's filtered summary, edit the exact draft revision, or keep the current native conversation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -1560,7 +1560,7 @@
       ]
     },
     "ProjectAssistantHandoffResponse": {
-      "description": "API 92. Current handoff and preparation eligibility on the Bot's source.",
+      "description": "API 93. Current handoff and preparation eligibility on the Bot's source.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -1609,7 +1609,7 @@
         },
         "handoff": {
           "$ref": "#/$defs/ProjectAssistantHandoffRef",
-          "description": "The exact draft version approved for this input on API 92 sources."
+          "description": "The exact draft version approved for this input on API 93 sources."
         },
         "upload_ids": {
           "type": "array",

@@ -6034,7 +6034,7 @@ export interface ProjectAssistantHandoffRef {
 }
 
 /**
- * API 92. Prepare the source's filtered summary, edit the exact draft revision, or
+ * API 93. Prepare the source's filtered summary, edit the exact draft revision, or
  * keep the current native conversation.
  */
 export interface ProjectAssistantHandoffRequest {
@@ -6046,7 +6046,7 @@ export interface ProjectAssistantHandoffRequest {
 }
 
 /**
- * API 92. Current handoff and preparation eligibility on the Bot's source.
+ * API 93. Current handoff and preparation eligibility on the Bot's source.
  */
 export interface ProjectAssistantHandoffResponse {
   can_prepare: boolean
@@ -7241,7 +7241,7 @@ export interface ProjectAssistantSendRequest {
   fence: ProjectAssistantFence
 
   /**
-   * The exact draft version approved for this input on API 92 sources.
+   * The exact draft version approved for this input on API 93 sources.
    */
   handoff?: ProjectAssistantHandoffRef
 

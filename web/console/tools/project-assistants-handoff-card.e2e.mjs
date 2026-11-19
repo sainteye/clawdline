@@ -171,17 +171,22 @@ try {
         await context.close()
       }
     }
-    const start = traffic.length
-    const old = await browser.newPage({viewport: {width: 1100, height: 800}})
-    try {
-      await old.goto(origin + "/?old=1")
-      await old.locator(".pa-composer textarea").waitFor()
-      await old.locator(".pa-chat-identity").click()
-      assert.equal(await old.getByRole("button", {name: "Prepare a fresh conversation", exact: true}).count(), 0)
-      assert.equal(traffic.slice(start).filter(row => row.path === cardPath).length, 0)
-      evidence.push({apiLevel: 90, nativeHistoryVisible: true, handoffRequests: 0})
-    } finally {
-      await old.close()
+    for (const apiLevel of [90, 91, 92]) {
+      const start = traffic.length
+      const old = await browser.newPage({viewport: {width: 1100, height: 800}})
+      try {
+        await old.goto(origin + "/?api=" + apiLevel)
+        await old.locator(".pa-message").getByText("Synthetic first input", {exact: true}).waitFor()
+        const composer = old.locator(".pa-composer textarea")
+        assert.equal(await composer.isEnabled(), true)
+        await old.locator(".pa-chat-identity").click()
+        assert.equal(await old.getByRole("button", {name: "Prepare a fresh conversation", exact: true}).count(), 0)
+        assert.equal(await old.locator(".pa-handoff-card").count(), 0)
+        assert.equal(traffic.slice(start).filter(row => row.path === cardPath).length, 0)
+        evidence.push({apiLevel, nativeHistoryVisible: true, composerEnabled: true, handoffRequests: 0})
+      } finally {
+        await old.close()
+      }
     }
   } finally {
     await browser.close()

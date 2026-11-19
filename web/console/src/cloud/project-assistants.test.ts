@@ -866,13 +866,13 @@ test("topic memory writes require API89 before transport while short facts retai
  await old.saveMemory(plain,signal());assert.equal(writes,2)
 })
 
-test("handoff routes and send versions require the captured API 92 source", async () => {
+test("handoff routes and send versions require the captured API 93 source", async () => {
   const fence = viewWire().head.current_fence
   const ref = {id: "synthetic-card", revision: 2}
   const edit: W.ProjectAssistantHandoffRequest = {command: command(key, "edit", "handoff-edit"), fence, action: "edit", ref, text: "Reviewed summary"}
   const send: W.ProjectAssistantSendRequest = {command: command(key, "send", "handoff-send"), fence, text: "New input", quote_message_id: "", handoff: ref}
   const readPath = "/v1/project-assistants/" + encodeURIComponent(key.bot_id) + "/handoff-card?machine_id=one&conversation_id=chat"
-  for (const apiLevel of [90, 91]) {
+  for (const apiLevel of [90, 91, 92]) {
     const paths: string[] = []
     const {source} = make(async path => {paths.push(path); return Response.json(sourceStatus())}, {...grant(), apiLevel})
     await source.status(signal())
@@ -881,6 +881,8 @@ test("handoff routes and send versions require the captured API 92 source", asyn
     await assert.rejects(source.writeHandoff(edit, signal()), error => errorCode(error) === "pa_unsupported")
     await assert.rejects(source.send(send, signal()), error => errorCode(error) === "pa_unsupported")
     assert.deepEqual(paths, ["/v1/project-assistants/status"])
+    await source.send({...send, handoff: undefined}, signal())
+    assert.deepEqual(paths, ["/v1/project-assistants/status", "/v1/project-assistants/same%2Fid/messages"])
   }
   assert.deepEqual(assistantRelayRequest(readPath), {word: "project-assistants.handoff-card", kind: "read", fields: {...key, conversation_id: "chat"}, id: ""})
   assert.throws(() => assistantRelayRequest(readPath + "&conversation_id=duplicate"), error => errorCode(error) === "pa_invalid")

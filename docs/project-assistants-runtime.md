@@ -313,7 +313,7 @@ The source persists a draft and its edit receipts in source-local SQLite
 tables. Those tables stay outside the portable v12 Bot archive and its
 canonical digest. The draft belongs to the exact Bot, Project, conversation,
 binding generation, memory revision and instruction revision. The HTTP and
-Cloud Pass routes first appear at API 92. Each human send must name the
+Cloud Pass routes first appear at API 93. Each human send must name the
 displayed draft revision while a current draft exists. Input admission,
 the user message, its receipt and adoption commit together. A stale revision
 fails without admitting an input. Source receipts let a client inspect an

@@ -5223,7 +5223,7 @@ type ProjectAssistantHandoffRef struct {
 	Revision int64  `json:"revision"`
 }
 
-// API 92. Prepare the source's filtered summary, edit the exact draft revision,
+// API 93. Prepare the source's filtered summary, edit the exact draft revision,
 // or keep the current native conversation.
 type ProjectAssistantHandoffRequest struct {
 	Action  ProjectAssistantHandoffAction `json:"action"`
@@ -5233,7 +5233,7 @@ type ProjectAssistantHandoffRequest struct {
 	Text    string                        `json:"text"`
 }
 
-// API 92. Current handoff and preparation eligibility on the Bot's source.
+// API 93. Current handoff and preparation eligibility on the Bot's source.
 type ProjectAssistantHandoffResponse struct {
 	CanPrepare      bool                         `json:"can_prepare"`
 	Card            *ProjectAssistantHandoffCard `json:"card,omitempty"`
@@ -6321,7 +6321,7 @@ type ProjectAssistantSendRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
 
-	// The exact draft version approved for this input on API 92 sources.
+	// The exact draft version approved for this input on API 93 sources.
 	Handoff *ProjectAssistantHandoffRef `json:"handoff,omitempty"`
 
 	// Pictures as base64 data: URLs, at most four; each is normalized and stored
