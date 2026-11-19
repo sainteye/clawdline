@@ -9,7 +9,7 @@ import type { Words } from "./words"
 /** Pictures one message may carry; the daemon refuses more. */
 export const MAX_PICTURES = 4
 
-export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabled,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,onFileError}: {text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;onFileError?:(error:string)=>void}) {
+export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,onFileError}: {text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;onFileError?:(error:string)=>void}) {
   const composing=useRef(false),picker=useRef<HTMLInputElement>(null)
   const voiceRow=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null)
   const mine=useRef(false),gone=useRef(false),latest=useRef({text,onText})
@@ -69,8 +69,9 @@ export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabl
       <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={editor} rows={1} aria-label={w.compose} placeholder={w.compose+"…"} value={text} disabled={disabled}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onImages||onFiles?paste:undefined}
         onChange={e=>onText(e.target.value)} onKeyDown={e=>{const decision=composerEnter({...e.nativeEvent,key:e.key,shiftKey:e.shiftKey,altKey:e.altKey},composing.current);if(decision==="send"){e.preventDefault();if(ready)onSend()}}}/></div>
-      <button type={showStop?"button":"submit"} className="pa-send" data-stop={showStop||undefined} aria-label={showStop?w.stop:w.send} title={showStop?w.stop:w.send}
-        disabled={showStop?stopDisabled||busy:!ready} onClick={showStop?onStop:undefined}>{showStop?null:"↑"}</button>
+      <button type={showStop?"button":"submit"} className="pa-send" data-stop={showStop||undefined} data-stop-busy={showStop&&stopBusy||undefined}
+        aria-label={showStop?w.stop:w.send} title={showStop?w.stop:w.send} aria-busy={showStop&&stopBusy||undefined}
+        disabled={showStop?stopDisabled||busy:!ready} onClick={showStop?onStop:undefined}>{showStop?(stopBusy?<span className="pa-send-spinner" aria-hidden="true"/>:null):"↑"}</button>
     </form>
   </div>
 }

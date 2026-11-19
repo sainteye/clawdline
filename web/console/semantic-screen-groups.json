@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13437,
-  "riskKeys": 5782,
-  "nonRiskCount": 7655,
+  "englishContentKeys": 13441,
+  "riskKeys": 5785,
+  "nonRiskCount": 7656,
   "groups": [
     {
       "name": "acp / other",
@@ -6053,7 +6053,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 397,
+      "count": 398,
       "sources": [
         null
       ],
@@ -6416,6 +6416,7 @@
         "projectAssistants.statusOneOk",
         "projectAssistants.statusShow",
         "projectAssistants.stop",
+        "projectAssistants.stopSending",
         "projectAssistants.teamAccept",
         "projectAssistants.teamApplying",
         "projectAssistants.teamApproval",
