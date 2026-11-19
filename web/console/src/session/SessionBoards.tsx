@@ -271,7 +271,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
       const enrolled = new Map(b.members?.map(member => [member.id, member]))
       const icon = boardProjectIcon(b, candidateMap)
       return <li key={b.id} className="session-board-group" role="presentation">
-        <button type="button" onClick={() => setShow(b.id)}>
+        <button type="button" onClick={() => { setShow(b.id); void refresh() }}>
           {icon ? <SessionBoardMark icon={icon} project /> : <BoardGlyph />}
           <strong>{b.name}</strong>
           {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
@@ -374,7 +374,7 @@ function BoardMachinePicker({ targets, choose, close, opener }: {
 }
 
 function StatusBoardDialog({ target, close, opener }: { target: SessionBoardTarget; close: () => void; opener: HTMLElement | null }) {
-  const list = useBoardList(target.source)
+  const list = useBoardList(target.source, true)
   return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} opener={opener} {...list} />
 }
 
@@ -401,12 +401,14 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   })
   const [selected, select] = useState(initial)
   const [opened, setOpened] = useState<Board>()
-  const selectedBoard = opened?.id === selected ? opened : boards.find(board => board.id === selected)
+  const indexedBoard = boards.find(board => board.id === selected)
+  const selectedBoard = opened?.id === selected ? opened : indexedBoard
   const candidateMap = new Map(candidates.map(actor => [actor.id, actor]))
   const projectIcon = selectedBoard && boardProjectIcon(selectedBoard, candidateMap)
   const view = useRef<HTMLDivElement>(null)
   const switchBoard = (id: string) => {
     select(id)
+    void refresh()
     if (view.current) view.current.scrollTop = 0
   }
   const [expanded, expand] = useState(false)
@@ -419,7 +421,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
     <header>
       {selected && <button type="button" className="session-board-icon-button" aria-label={headingAction}
-        title={headingAction} onClick={initial ? dismiss : () => { switchBoard(""); void refresh() }}>
+        title={headingAction} onClick={initial ? dismiss : () => switchBoard("")}>
         <BoardChevron direction={initial ? "down" : "back"} />
       </button>}
       <div className="session-board-heading">
@@ -432,7 +434,8 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
       <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
     </header>
     <div className="session-board-scroll" ref={view}>
-    {selected ? <BoardMessages key={selected} source={source} id={selected} candidates={candidates} onRead={setOpened} />
+    {selected ? <BoardMessages key={selected} source={source} id={selected} indexedBoard={indexedBoard}
+      refreshIndex={refresh} candidates={candidateMap} onRead={setOpened} />
     : <div className="session-board-body">
       <div className="session-board-actions session-board-index-actions">
         {source.writable && candidates.length > 0 && <button type="button" className="session-board-primary"
@@ -508,8 +511,9 @@ function BoardCreate({ source, candidates, onCreated }: { source: SessionBoardSo
   </form>
 }
 
-function BoardMessages({ source, id, candidates, onRead }: {
-  source: SessionBoardSource; id: string; candidates: Actor[]; onRead: (board: Board) => void
+function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onRead }: {
+  source: SessionBoardSource; id: string; indexedBoard?: Board; refreshIndex: () => Promise<void>
+  candidates: ReadonlyMap<string, Actor>; onRead: (board: Board) => void
 }) {
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
@@ -562,14 +566,17 @@ function BoardMessages({ source, id, candidates, onRead }: {
     e.preventDefault()
     if (draft.trim()) action({ action: "post", text: draft, reply_to: reply }, () => { setDraft(""); setReply(undefined) })
   }
-  const lead = b?.members?.find(m => m.id === b.lead)
-  const members = b?.members?.filter(member => member.id !== b.lead) ?? []
-  const roleByActor = new Map(b?.members?.map(member => [member.id, member.persona]))
-  for (const actor of candidates) if (actor.persona) roleByActor.set(actor.id, actor.persona)
+  // The index refreshes even while the reader stays open on an older message page.
+  const roster = indexedBoard ?? b
+  const lead = roster?.members?.find(member => member.id === roster.lead)
+  const members = roster?.members?.filter(member => member.id !== roster.lead) ?? []
+  const roleByActor = new Map(roster?.members?.map(member => [member.id, member.persona]))
+  const labelFor = (actor: Actor) => candidates.get(actor.id)?.label ?? actor.label
   const avatar = (actor: Actor) => {
-    const isLead = actor.id === b?.lead
+    const isLead = actor.id === roster?.lead
+    const persona = candidates.get(actor.id)?.persona || roleByActor.get(actor.id) || actor.persona
     return <SessionBoardMark lead={isLead}
-      icon={sessionBoardAvatar(actor.id, roleByActor.get(actor.id) ?? actor.persona, isLead, personas)} />
+      icon={sessionBoardAvatar(actor.id, persona, isLead, personas)} />
   }
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
@@ -579,21 +586,21 @@ function BoardMessages({ source, id, candidates, onRead }: {
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
       <div className="session-board-overview">
-        {lead && <div className="session-board-lead-strip">{avatar(lead)}<SessionBoardLead /><strong>{lead.label}</strong></div>}
+        {lead && <div className="session-board-lead-strip">{avatar(lead)}<SessionBoardLead /><strong>{labelFor(lead)}</strong></div>}
         <div className="session-board-actions">
-          <BoardRefresh refresh={() => void load()} disabled={reading} />
+          <BoardRefresh refresh={() => { void refreshIndex(); void load() }} disabled={reading} />
           {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
           {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
         </div>
       </div>
       <div className="session-board-disclosures">
         {b.summary && <details className="session-board-summary"><summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
-        {b.members && <details className="session-board-members">
-          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{b.members.length}</span></summary>
+        {roster?.members && <details className="session-board-members">
+          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{roster.members.length}</span></summary>
           <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id}>
             {avatar(member)}
-            <strong>{member.label}</strong>
-            {member.id === b.lead && <SessionBoardLead />}
+            <strong>{labelFor(member)}</strong>
+            {member.id === roster.lead && <SessionBoardLead />}
           </li>)}</ul>
         </details>}
       </div>
@@ -604,7 +611,7 @@ function BoardMessages({ source, id, candidates, onRead }: {
         </form>
         <form onSubmit={e => { e.preventDefault(); action({ action: "transfer", target: String(new FormData(e.currentTarget).get("lead")) }) }}>
           <label>{t("sessionBoardTransfer")}<select name="lead" aria-label={t("sessionBoardTransfer")} required><option value="">{t("sessionBoardChoose")}</option>
-            {b.members?.filter(m => m.id !== b.lead && candidates.some(c => c.id === m.id)).map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            {members.filter(member => candidates.has(member.id)).map(member => <option key={member.id} value={member.id}>{labelFor(member)}</option>)}
           </select></label>
           <button disabled={change.busy}>{t("sessionBoardTransfer")}</button>
         </form>
@@ -619,8 +626,8 @@ function BoardMessages({ source, id, candidates, onRead }: {
       <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p => <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>
         <div className="session-board-post-meta">
           {p.author.id !== "person" && avatar(p.author)}
-          <strong>{p.author.id === "person" ? t("sessionBoardPerson") : p.author.label}</strong>
-          {p.author.id === b.lead && <SessionBoardLead />}
+          <strong>{p.author.id === "person" ? t("sessionBoardPerson") : labelFor(p.author)}</strong>
+          {p.author.id === roster?.lead && <SessionBoardLead />}
           <time dateTime={new Date(p.at * 1000).toISOString()}>
             {new Date(p.at * 1000).toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" })}
           </time>

@@ -1,4 +1,4 @@
-import { SessionBoardRows, sessionBoardActor, type SessionBoardSource } from "../session/SessionBoards.js"
+import { SessionBoardRows, sessionBoardActor, type SessionBoardTarget } from "../session/SessionBoards.js"
 import { SessionStateEmpty } from "../session/SessionStateEmpty.js"
 import { createPortal } from "react-dom"
 import { SessionStateFilterControl } from "../session/SessionStateFilter.js"
@@ -36,10 +36,10 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, titleRevision, confirmedTitles, sessionBoardSource }: {
+  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, titleRevision, confirmedTitles, sessionBoardTargets }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
-  sessionBoardSource?: (machine: string) => SessionBoardSource | undefined
+  sessionBoardTargets?: readonly SessionBoardTarget[]
   titleRevision?: number
   confirmedTitles?: ReadonlyMap<string, string>
   /** Which road this page's reads of that machine take, read as the row is drawn. */
@@ -430,6 +430,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           // retry that never ends ("reading this machine again").
           const offline = machine.freshness === "stale"
           const isCollapsed = collapsed[machine.id] ?? emptyMachine(reading)
+          const boardTarget = sessionBoardTargets?.find(target => target.machine === machine.id)
           return <section key={machine.id} className="cloud-all-group"
           aria-label={`${machine.name} ${machine.id}` + (carrier ? ` · ${nextWord(carrier.word, { machine: machine.name })}` : "")}>
           <h2 className="cloud-all-group-heading">
@@ -471,7 +472,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             {presentationLoading || presentationFailed ? null : rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
               <p>{reading.value.rows.length === 0 ? nextWord(reading.value.complete ? "cloudAllEmptyMachine" : "cloudAllPartialEmpty") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
-                <SessionBoardRows source={isCollapsed ? undefined : sessionBoardSource?.(machine.id)}
+                <SessionBoardRows source={isCollapsed ? undefined : boardTarget?.source} candidates={boardTarget?.candidates}
                   rows={rows.map(({ row, parent, depth, branchThrough, ancestorThrough }) => {
                   const presentation = presentations.current.get(destinationKey(row.destination))
                   const status = displayedPresentationStatus(row, presentation)

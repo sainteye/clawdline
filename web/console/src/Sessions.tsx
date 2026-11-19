@@ -6,6 +6,7 @@ import { catalogWord } from "./catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskList, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
+import { detailSessionName } from "./brand-mark.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
 import { visualBranches, visualDepths, visualParents } from "./session/order.js"
@@ -359,11 +360,11 @@ export function SessionsPage({
               {!skeleton && arriving && <StartingRow place={arriving} />}
               <SessionBoardRows source={sessionBoardSource}
                 candidates={rows.flatMap(r => {
-                  const actor = sessionBoardActor(r.assistant, r.sessionId, r.label || r.id, r.persona, r.icon)
+                  const actor = sessionBoardActor(r.assistant, r.sessionId, detailSessionName(r), r.persona, r.icon)
                   return actor ? [actor] : []
                 })}
                 rows={drawn.map(r => ({ id: r.id, parent: parents.get(r.id),
-                  actor: sessionBoardActor(r.assistant, r.sessionId, r.label || r.id, r.persona, r.icon),
+                  actor: sessionBoardActor(r.assistant, r.sessionId, detailSessionName(r), r.persona, r.icon),
                   render: (board) => <Row boardLead={board?.lead} boardAvatar={board?.avatar}
                   key={L.selectionKey(r)}
                   row={r}

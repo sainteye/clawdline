@@ -72,6 +72,8 @@ let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
 let boardFixture = false
 let boardTreeFixture = false
+let boardReviewerLeft = false
+let boardReviewerTitle = "Reviewer"
 let holdBoardIndex: Promise<void> | undefined
 let holdBoardThread: Promise<void> | undefined
 let failBoardThread = false
@@ -178,7 +180,7 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (boardTreeFixture) return [
-    row(NEEDS_ATTESTATION, "Reviewer", needsAttestationCloseability(), 500, { persona: "clawdline.persona.test-reviewer" }),
+    row(NEEDS_ATTESTATION, boardReviewerTitle, needsAttestationCloseability(), 500, { persona: "clawdline.persona.test-reviewer" }),
     row(SAFE, "Lead", safeCloseability(), 350, { icon: { accent: "#715546", cells: [["#715546"]] } }),
     row(BLOCKED, "Child", blockedCloseability(), 300),
     row(UNKNOWN, "Grandchild", unknownCloseability(), 250, { persona: "missing-role" }),
@@ -446,18 +448,19 @@ function daemon(): Server {
             ...(boardTreeFixture ? { persona: "test-previous-role" } : {}) },
         ],
       }
+      const currentBoard = boardReviewerLeft ? { ...board, members: board.members.slice(0, 1) } : board
       const thread = url.searchParams.has("board")
       const hold = thread ? holdBoardThread : holdBoardIndex
       const send = () => {
         if (res.destroyed) return
         if (thread && failBoardThread) return json(res, 503, { error: "session_board_unavailable" })
         return json(res, 200, thread ? {
-          board, posts: [
+          board: currentBoard, posts: [
             { seq: 1, author: board.members[boardTreeFixture ? 1 : 0], text: "Review complete.", at: 1 },
             ...(boardTreeFixture ? [{ seq: 2, author: { id: "claude:offline", label: "Offline reviewer", persona: "test-previous-role" },
               text: "Archived assignment.", at: 2 }] : []),
           ], more: false,
-        } : { boards: [board] })
+        } : { boards: [currentBoard] })
       }
       if (hold) void hold.then(send)
       else send()
@@ -1559,6 +1562,61 @@ test("a Session board keeps child Sessions, role art and the Lead mark inside it
     })
   } finally {
     boardFixture = boardTreeFixture = false
+  }
+})
+
+test("an open Session board follows Session titles and removes a member who left", async () => {
+  boardFixture = boardTreeFixture = true
+  try {
+    for (const entry of ["group", "dock"]) {
+      boardReviewerLeft = false
+      boardReviewerTitle = "Reviewer"
+      await inTab(async tab => {
+          if (entry === "dock") await tab.desktop()
+          await tab.go("/")
+          const group = "#rows .session-board-group"
+          const members = ".session-board-dialog .session-board-members"
+          const reviewerRow = `[data-id="${NEEDS_ATTESTATION}"]`
+          const reviewerPost = '.session-board-posts li:last-child .session-board-post-meta strong'
+          await shortcutUntil(tab, `!!document.querySelector('${group} ${reviewerRow}')`)
+          if (entry === "group") {
+            await tab.press(`${group} > button`)
+          } else {
+            await tab.press(".session-board-dock")
+            await shortcutUntil(tab, '!!document.querySelector(".session-board-index-card")')
+            await tab.press(".session-board-index-card")
+          }
+          await shortcutUntil(tab, `!!document.querySelector('${members} summary')`)
+          await tab.press(`${members} summary`)
+          boardReviewerTitle = "Review the current build"
+          pushSessions()
+          await shortcutUntil(tab, `document.querySelector('${group} ${reviewerRow} .title .label')?.textContent === "Review the current build"`)
+          const names = (selector: string) => tab.run(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(node => node.textContent)`)
+          const renamed = {
+            members: await names(`${members}[open] strong`),
+            author: await names(reviewerPost),
+            offlineAuthor: await names('.session-board-posts li:first-child .session-board-post-meta strong'),
+          }
+
+          boardReviewerLeft = true
+          await tab.run(`window.dispatchEvent(new Event('focus'))`)
+          await shortcutUntil(tab, `!!document.querySelector('#rows > ${reviewerRow}')`)
+          assert.deepEqual({
+            renamed,
+            remainingMembers: await names(`${members}[open] strong`),
+            memberCount: await names(`${members} summary span`),
+            retainedAuthor: await names(reviewerPost),
+          }, {
+            renamed: { members: ["Lead", "Review the current build"], author: ["Review the current build"], offlineAuthor: ["Offline reviewer"] },
+            remainingMembers: ["Lead"],
+            memberCount: ["1"],
+            retainedAuthor: ["Review the current build"],
+          })
+      })
+    }
+  } finally {
+    boardFixture = boardTreeFixture = boardReviewerLeft = false
+    boardReviewerTitle = "Reviewer"
   }
 })
 

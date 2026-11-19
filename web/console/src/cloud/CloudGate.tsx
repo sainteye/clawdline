@@ -96,7 +96,7 @@ import { CarrierDot } from "./CarrierDot.js"
 import { carrierReading, machineLight, type CarrierReading } from "./carrier-state.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerAccessPage } from "./PeerAccessPage.js"
-import { copilotFleetRows, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey,
+import { copilotFleetRows, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, fleetRowTitle,
   SessionExecutionRecovery, supersedingDestination, type FleetDetailProblem, type MachineListPresentation,
   type MachineSessionProjection, type ProjectedSession, type SessionContent, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource } from "./all-machine-sessions.js"
@@ -1904,7 +1904,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (!source) return []
     const candidates = [...fleetPresentations.current.values()].flatMap(row => {
       if (row.destination.machineID !== machine.id || row.projection?.freshness !== "current") return []
-      const actor = sessionBoardActor(row.assistant ?? row.projection?.assistant, row.status?.sessionId, row.title, row.status?.persona, row.icon)
+      const title = fleetRowTitle(row.projection, row, nextWord("cloudAllUnknown"), confirmedTitles.current.get(destinationKey(row.destination)))
+      const actor = sessionBoardActor(row.assistant ?? row.projection.assistant, row.status?.sessionId, title, row.status?.persona, row.icon)
       return actor ? [actor] : []
     })
     return [{ machine: machine.id, source, label: machine.name || machine.label || machine.id, candidates }]
@@ -2282,7 +2283,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               seenAt: machineIdentityFacts(machine).seenAt,
             }))}
             source={liveSessionSource}
-            sessionBoardSource={sessionBoardsFor}
+            sessionBoardTargets={boardTargets}
             titleRevision={titleRevision}
             confirmedTitles={confirmedTitles.current}
             target={fleetTarget}

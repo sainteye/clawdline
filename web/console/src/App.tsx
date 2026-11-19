@@ -20,7 +20,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client, followsRelay } from "./client.js"
-import { BRAND_IMAGE } from "./brand-mark.js"
+import { BRAND_IMAGE, detailSessionName } from "./brand-mark.js"
 import "./session/first-run.css"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { SetupGuide } from "./setup/SetupGuide.js"
@@ -625,7 +625,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const boardTargets = sessionBoardTargets ?? (boardSource ? [{
     source: boardSource, machine: fleetReaderMachine ?? undefined, label: quotaMachineName ?? "",
     candidates: rows.flatMap(row => {
-      const actor = sessionBoardActor(row.assistant, row.sessionId, row.label || row.id, row.persona, row.icon)
+      const actor = sessionBoardActor(row.assistant, row.sessionId, detailSessionName(row), row.persona, row.icon)
       return actor ? [actor] : []
     }),
   }] : [])
