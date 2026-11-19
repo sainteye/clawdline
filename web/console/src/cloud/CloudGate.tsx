@@ -569,6 +569,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<RecoveringCloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  const readPairHelperQuota = useCallback(async (helper: string) => {
+    const connection = client.current
+    return connection?._machineRequestAs?.(crypto.randomUUID(), helper, "provider-quotas", {}, "read", 30_000)
+  }, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const [assistantRefresh, setAssistantRefresh] = useState(0)
   useEffect(() => onStatusRefresh(() => setAssistantRefresh(n => n + 1)),[])
@@ -2087,7 +2091,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             machine.id !== (pairRequest.mode === "offer" ? pairRequest.machine?.id : "") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-start") &&
             client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("pair-agent-status"),
-          ).map((machine) => ({ id: machine.id, name: machine.name || machine.label || machine.id })),
+          ).map((machine) => ({
+            id: machine.id,
+            name: machine.name || machine.label || machine.id,
+            readsQuota: client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("provider-quotas"),
+          })),
+          readHelperQuota: readPairHelperQuota,
           onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex"): Promise<PairAgentReply> => {
             const request = client.current?._machineRequestAs
             if (!request) return { ok: false, error: "helper_unavailable" }

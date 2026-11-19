@@ -16,6 +16,7 @@
  */
 import type { PairState } from "./pair.js"
 import type { nextWord } from "../next-strings.js"
+import type { ProviderQuotaSnapshot } from "@clawdline/contract"
 
 export const PAIR_AGENT_HANDLER = "clawdlinePairAgent"
 
@@ -25,6 +26,22 @@ export const PAIR_AGENT_HANDLER = "clawdlinePairAgent"
  * `not_recorded`, when a terminal may be asking whether to trust a folder.
  */
 export type PairAssistant = "claude" | "codex"
+
+/** Only an active account-wide limit can change the helper's default. */
+export function defaultPairAssistant(snapshot: unknown, now: number): PairAssistant {
+  const providers = (snapshot as Partial<ProviderQuotaSnapshot> | null)?.providers
+  if (!Array.isArray(providers)) return "claude"
+  const claude = providers.find(row => row?.id === "claude")
+  const codex = providers.find(row => row?.id === "codex")
+  const liveWindows = (row: typeof claude) => row?.stale === false && Array.isArray(row.windows)
+    ? row.windows.filter(w => (w?.name === "5h" || w?.name === "7d") &&
+        Number.isFinite(w.used_percent) && w.used_percent >= 0 && w.used_percent <= 100 &&
+        (w.resets_at === undefined || w.resets_at > now))
+    : []
+  const codexWindows = liveWindows(codex)
+  return liveWindows(claude).some(w => w.used_percent === 100) && !codex?.credits_in_use &&
+    codexWindows.length > 0 && codexWindows.every(w => w.used_percent < 100) ? "codex" : "claude"
+}
 
 export type PairAgentReply =
   | { ok: true; mode: "direct" | "agent"; taskID: string; trust: string }
