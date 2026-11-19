@@ -221,14 +221,14 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 // it is waiting for is the assistant the session was opened with: the two CLIs
 // draw different ones, and asking a Codex session for Claude Code's is waiting
 // for something it never draws.
-func (b *Broker) waitComposer(ctx context.Context, terminalID, assistant string, within time.Duration) error {
+func (b *Broker) waitComposer(ctx context.Context, terminalID, assistant string, within time.Duration) (session.Session, error) {
 	deadline := b.now().Add(within)
 	var last error
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, terminalID); ok && s.IsAssistant() {
 			ready, why := b.composerReady(ctx, terminalID, assistant)
 			if ready {
-				return nil
+				return s, nil
 			}
 			if why != nil {
 				last = why
@@ -236,14 +236,14 @@ func (b *Broker) waitComposer(ctx context.Context, terminalID, assistant string,
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return session.Session{}, ctx.Err()
 		case <-time.After(b.screenReadEvery()):
 		}
 	}
 	if last == nil {
 		last = errors.New("the session did not reach a prompt")
 	}
-	return last
+	return session.Session{}, last
 }
 
 // composerWait is how long a new session has to draw a prompt before the line
@@ -303,9 +303,10 @@ type Handoff struct {
 	FromSession string `json:"from_session"`
 	// BoardItems is the open work owned by the sender in this Project when the
 	// handoff was opened. Later assignments are not part of this handoff.
-	BoardItems []string `json:"board_items,omitempty"`
-	// BoardTransferredAt is set with the item and assignment writes, once the
-	// receiver has a conversation id and has begun reading the handoff.
+	BoardItems    []string              `json:"board_items,omitempty"`
+	SessionBoards *handoffSessionBoards `json:"session_boards,omitempty"`
+	// BoardTransferredAt is set with the ownership writes, once the receiver
+	// has a conversation id and has begun reading the handoff.
 	BoardTransferredAt int64          `json:"board_transferred_at,omitempty"`
 	FromTerm           string         `json:"from_terminal,omitempty"`
 	Plain              bool           `json:"coordinator_plain_handoff"`
@@ -497,6 +498,9 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 		FromSession: from, FromTerm: sender.ID, Plain: true, Assistant: assistant, Model: model, CreatedAt: now.Unix(),
 		Milestone: milestone,
 	}
+	if h.SessionBoards, err = b.captureHandoffSessionBoards(ctx, sender, project); err != nil {
+		return Handoff{}, false, storeError(err)
+	}
 	items, _, err := b.Store.WorkV2ItemsPage(ctx, "", from, "open", "", 0, "", store.WorkV2OpenLimit)
 	if err != nil {
 		return Handoff{}, false, storeError(err)
@@ -549,8 +553,13 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	if milestone {
 		line = MilestoneHandoffLine(dir)
 	}
-	typed := b.typeOnce(ctx, opened.TerminalID, assistant, line, func() error {
-		_, err := b.updateHandoff(ctx, h.ID, "handoff.typing", func(x *Handoff) { x.TypeAttemptedAt = b.now().Unix() })
+	typed := b.typeOnce(ctx, opened.TerminalID, assistant, line, func(receiver session.Session) error {
+		if h.SessionBoards != nil && !b.pinHandoffSessionBoardReceiver(h.SessionBoards, receiver, h.Assistant) {
+			return errors.New("handoff_receiver_unverified")
+		}
+		_, err := b.updateHandoff(ctx, h.ID, "handoff.typing", func(x *Handoff) {
+			x.TypeAttemptedAt, x.SessionBoards = b.now().Unix(), h.SessionBoards
+		})
 		return err
 	})
 	if typed != nil {
@@ -568,11 +577,12 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 
 // typeOnce waits for a composer, records the attempt, then types — the
 // attempt is durable before the keystroke, so it is never made twice.
-func (b *Broker) typeOnce(ctx context.Context, terminalID, assistant, line string, attempt func() error) error {
-	if err := b.waitComposer(ctx, terminalID, assistant, composerWait); err != nil {
+func (b *Broker) typeOnce(ctx context.Context, terminalID, assistant, line string, attempt func(session.Session) error) error {
+	receiver, err := b.waitComposer(ctx, terminalID, assistant, composerWait)
+	if err != nil {
 		return err
 	}
-	if err := attempt(); err != nil {
+	if err := attempt(receiver); err != nil {
 		return err
 	}
 	return b.typeLine(ctx, terminalID, line)

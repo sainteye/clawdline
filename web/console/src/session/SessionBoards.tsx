@@ -426,7 +426,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
       </button>}
       <div className="session-board-heading">
         <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
-        {selectedBoard && <p className="session-board-heading-purpose" key={selectedBoard.id}>{selectedBoard.purpose}</p>}
+        {selectedBoard && <BoardPurpose key={selectedBoard.id} text={selectedBoard.purpose} />}
       </div>
       <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>{t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}</button>
       <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
@@ -466,6 +466,28 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
     </div>}
     </div>
   </dialog>
+}
+
+function BoardPurpose({ text }: { text: string }) {
+  const measure = useRef<HTMLSpanElement>(null)
+  const [clipped, setClipped] = useState(false)
+  useLayoutEffect(() => {
+    const line = measure.current
+    const area = line?.parentElement
+    if (!line || !area) return
+    const check = () => setClipped(text.trim().includes("\n") || line.getBoundingClientRect().width > area.clientWidth)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(area)
+    observer.observe(line)
+    return () => observer.disconnect()
+  }, [text])
+  return <div className="session-board-heading-purpose">
+    <span className="session-board-purpose-measure" aria-hidden="true"><span ref={measure}>{text}</span></span>
+    {clipped ? <details>
+      <summary><span>{text}</span><BoardChevron direction="down" /></summary>
+    </details> : <p>{text}</p>}
+  </div>
 }
 
 function useBoardChange(source: SessionBoardSource) {

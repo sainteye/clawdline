@@ -1708,7 +1708,7 @@ test("Session board header closes a direct open and returns to the index from th
       await tab.run(`document.querySelector('${opener}').focus()`)
       await tab.key("Enter")
       await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && document.querySelector('${dialog}').getAnimations().length === 0`)
-      assert.equal(await tab.run(`document.querySelector('${purpose}')?.textContent`), shortBoardPurpose)
+      assert.equal(await tab.run(`document.querySelector('${purpose} > :not([aria-hidden=true])')?.textContent`), shortBoardPurpose)
       assert.equal(await tab.run(`!!document.querySelector('${purpose} summary, ${purpose} button')`), false)
       assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "down")
       assert.equal(await tab.run(`getComputedStyle(document.querySelector('${headerAction}')).outlineStyle`), "none")
@@ -1724,13 +1724,19 @@ test("Session board header closes a direct open and returns to the index from th
       await tab.press(`${dialog} .session-board-index-card`)
       await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && !!document.querySelector('${headerAction} svg')`)
       assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "back")
+      const disclosure = `${purpose} summary`
+      await shortcutUntil(tab, `!!document.querySelector('${disclosure} svg')`)
+      assert.equal(await tab.run(`!!document.querySelector('${purpose} details[open]')`), false)
+      await tab.press(disclosure)
       const longPurpose = await tab.run(`(() => {
-        const description = document.querySelector('${purpose}')
+        const description = document.querySelector('${purpose} details[open] summary span')
         description.scrollTop = description.scrollHeight
         return { text: description.textContent, scrollable: description.scrollTop > 0,
           fitsWidth: description.scrollWidth === description.clientWidth }
       })()`)
       assert.deepEqual(longPurpose, { text: boardPurpose, scrollable: true, fitsWidth: true })
+      await tab.press(disclosure)
+      assert.equal(await tab.run(`!!document.querySelector('${purpose} details[open]')`), false)
       await tab.press(headerAction)
       await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card') && !document.querySelector('${headerAction}')`)
     })

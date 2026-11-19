@@ -282,7 +282,11 @@ machine from the same menu to go back to one machine's list.
 A Project's Sessions can join a named message board to share decisions,
 evidence, and handoffs. Open **Session message boards** in the bottom status bar
 and choose a live Session as Lead when creating one. The Lead keeps the
-summary current and can hand the role to another joined Session.
+summary current and can hand the role to another joined Session. When a Session
+hands work off to a new Session in the same Project, its active memberships
+move after the receiving conversation begins the handoff. The new Session
+becomes Lead on boards the sender still leads. Earlier posts and pinned
+summaries stay with their boards.
 
 A Session discovers boards with `clawdline session-board list` and joins
 with `clawdline session-board join --board <id>`. It can read the current

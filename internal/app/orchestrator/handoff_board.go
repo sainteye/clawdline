@@ -7,9 +7,89 @@ import (
 	"log"
 	"path/filepath"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
+	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+// handoffSessionBoards records the active memberships captured at admission
+// and the receiver execution observed before the first keystroke.
+type handoffSessionBoards struct {
+	Project      string   `json:"project"`
+	From         string   `json:"from"`
+	Boards       []string `json:"boards"`
+	Conversation string   `json:"conversation,omitempty"`
+	PID          int      `json:"pid,omitempty"`
+	ProcessStart int64    `json:"process_start,omitempty"`
+}
+
+func (b *Broker) captureHandoffSessionBoards(ctx context.Context, sender session.Session, project string) (*handoffSessionBoards, error) {
+	source, ok := projects.ResolveScope(sender.CWD)
+	if !ok {
+		return nil, nil
+	}
+	destination, ok := projects.ResolveScope(project)
+	if !ok || destination.ID != source.ID {
+		return nil, nil
+	}
+	from := string(sender.Assistant) + ":" + sender.ConversationID
+	boards, err := b.Store.ActiveSessionBoardIDs(ctx, source.ID, from)
+	if err != nil || len(boards) == 0 {
+		return nil, err
+	}
+	return &handoffSessionBoards{Project: source.ID, From: from, Boards: boards}, nil
+}
+
+func (b *Broker) pinHandoffSessionBoardReceiver(transfer *handoffSessionBoards, row session.Session, assistant string) bool {
+	if string(row.Assistant) != assistant || !handoffSessionBoardScopeMatches(transfer, row) {
+		return false
+	}
+	transfer.Conversation = row.ConversationID
+	if nativeNoticeTarget(row) {
+		return transfer.Conversation != ""
+	}
+	if b.ProcessStart == nil || row.PID <= 0 {
+		return false
+	}
+	started := b.ProcessStart(row.PID)
+	if started.IsZero() {
+		return false
+	}
+	transfer.PID, transfer.ProcessStart = row.PID, started.UnixNano()
+	return true
+}
+
+func handoffSessionBoardScopeMatches(transfer *handoffSessionBoards, row session.Session) bool {
+	if row.Observation.Freshness != "" && row.Observation.Freshness != session.FreshnessCurrent {
+		return false
+	}
+	scope, ok := projects.ResolveScope(row.CWD)
+	return ok && scope.ID == transfer.Project
+}
+
+func (b *Broker) isHandoffSessionBoardReceiver(h Handoff, row session.Session, rd reading) bool {
+	transfer := h.SessionBoards
+	if string(row.Assistant) != h.Assistant || row.ConversationID == h.FromSession || h.TypeAttemptedAt == 0 ||
+		row.Activity.At.Unix() < h.TypeAttemptedAt || !handoffSessionBoardScopeMatches(transfer, row) ||
+		(transfer.Conversation != "" && row.ConversationID != transfer.Conversation) {
+		return false
+	}
+	for _, other := range rd.sessions {
+		if other.ID != row.ID && other.Assistant == row.Assistant && other.ConversationID == row.ConversationID {
+			return false
+		}
+	}
+	if transfer.PID == 0 {
+		return transfer.Conversation != "" && nativeNoticeTarget(row)
+	}
+	if b.ProcessStart == nil || row.PID <= 0 || row.PID != transfer.PID || transfer.ProcessStart == 0 {
+		return false
+	}
+	started := b.ProcessStart(row.PID)
+	return !started.IsZero() && started.UnixNano() == transfer.ProcessStart
+}
 
 // tendHandoffBoards waits until the receiver has a conversation id. A typed
 // handoff line alone is not evidence that an assistant received it. The
@@ -31,7 +111,7 @@ func (b *Broker) tendHandoffBoards(ctx context.Context, rd reading) int {
 		if !found || !receiver.IsAssistant() || receiver.ConversationID == "" || !receiver.Activity.Known() {
 			continue
 		}
-		if len(h.BoardItems) == 0 || h.BoardTransferredAt != 0 {
+		if (len(h.BoardItems) == 0 && h.SessionBoards == nil) || h.BoardTransferredAt != 0 {
 			// A milestone handoff with no Board items still names its
 			// receiver, so the ledger can join the two Sessions.
 			if h.Milestone && h.Receiver == "" && receiver.ConversationID != h.FromSession {
@@ -43,7 +123,10 @@ func (b *Broker) tendHandoffBoards(ctx context.Context, rd reading) int {
 			}
 			continue
 		}
-		if err := b.transferHandoffBoard(ctx, h, receiver.ConversationID); err != nil {
+		if h.SessionBoards != nil && !b.isHandoffSessionBoardReceiver(h, receiver, rd) {
+			continue
+		}
+		if err := b.transferHandoffBoard(ctx, h, receiver); err != nil {
 			log.Printf("broker: Board transfer for handoff %s: %v", h.ID, err)
 			continue
 		}
@@ -52,7 +135,8 @@ func (b *Broker) tendHandoffBoards(ctx context.Context, rd reading) int {
 	return transferred
 }
 
-func (b *Broker) transferHandoffBoard(ctx context.Context, h Handoff, receiver string) error {
+func (b *Broker) transferHandoffBoard(ctx context.Context, h Handoff, row session.Session) error {
+	receiver := row.ConversationID
 	if receiver == "" || h.Opened == nil || receiver == h.FromSession {
 		return errors.New("handoff receiver is not a distinct bound Session")
 	}
@@ -117,6 +201,16 @@ func (b *Broker) transferHandoffBoard(ctx context.Context, h Handoff, receiver s
 					"from_session": current.FromSession, "to_session": receiver,
 					"assignment_id": nextAssignment.ID})
 				if err := tx.HandOverItem(item, next, "assignment.handed_off", "handoff:"+current.ID, string(payload)); err != nil {
+					return nil, nil, err
+				}
+			}
+			if transfer := current.SessionBoards; transfer != nil {
+				label := row.Label
+				if label == "" {
+					label = string(row.Assistant)
+				}
+				actor := sb.Actor{ID: string(row.Assistant) + ":" + receiver, Label: label, Persona: row.Persona}
+				if err := tx.TransferSessionBoards(transfer.Project, transfer.From, actor, transfer.Boards); err != nil {
 					return nil, nil, err
 				}
 			}

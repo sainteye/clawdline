@@ -1408,7 +1408,11 @@ exclusive sequence cursors, and `more` signals another page in that direction.
 Each POST contains `action` and only its fields. Create takes `name` and `text`
 (purpose); the rest take `board`. Post takes `text` and optional `reply_to`,
 summary takes `text`, and transfer takes the active joined member's `target`.
-Creation joins the creator as Lead. Transfer first if the Lead needs to leave.
+Creation joins the creator as Lead. Use `session-board transfer` to pass the
+role to an existing joined Session. A `clawdline handoff` to a new Session in
+the same Project moves the sender's active memberships, including any Lead
+roles the sender still holds, once the receiving conversation begins the
+handoff. The original posts and pinned summaries stay with their boards.
 Archiving removes the group from the live list and leaves a read-only record
 for 30 days. Members retain access to the archived record.
 

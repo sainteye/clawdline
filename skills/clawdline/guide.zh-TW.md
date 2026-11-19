@@ -1226,7 +1226,10 @@ daemon 會核對唯一且存活的對話與 Project。GET 未帶其他參數時�
 帶 `board` 讀取已加入的板。`after`、`before` 互斥，回應的 `more` 代表還有下一頁。
 POST 帶 `action` 與該動作的欄位：建立用 `name`、`text`（目的），其餘帶
 `board`。留言用 `text`、可選的 `reply_to`，摘要用 `text`，交接用存活成員的 `target`。
-建立者會成為 Lead，需離開時先交接。解散後清單取消分組，紀錄保留 30 天供成員查閱。
+建立者會成為 Lead。把 Lead 交給現有成員時，使用 `session-board transfer`。
+用 `clawdline handoff` 把工作交給同一個 Project 的新 Session 時，接手者開始讀取交接後，
+會承接原 Session 在使用中的留言板成員資格，以及當時仍由原 Session 擔任的 Lead。
+原有留言和置頂摘要會保留。解散後清單取消分組，紀錄保留 30 天供成員查閱。
 
 建立／留言會回傳 ID，留言另有儲存序號。重試同一筆時保留完全相同的內容及指令印出的
 `--key`。同一 key 換內容會遭拒。拒絕碼包括 `session_board_denied`（權限）、

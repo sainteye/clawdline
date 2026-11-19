@@ -83,9 +83,21 @@
   display: flex; align-items: center; gap: 7px;
 }
 .session-board-heading-purpose {
-  margin: .2rem 0 0; color: var(--dim); font-size: .84em;
-  max-height: 5lh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  position: relative; margin-block-start: .2rem; color: var(--dim); font-size: .84em;
 }
+.session-board-purpose-measure {
+  position: absolute; inset: 0; overflow: hidden; visibility: hidden; pointer-events: none;
+}
+.session-board-purpose-measure > span { display: inline-block; white-space: nowrap; }
+.session-board-heading-purpose p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.session-board-heading-purpose summary {
+  display: flex; align-items: center; gap: 4px; cursor: pointer; list-style: none;
+}
+.session-board-heading-purpose summary::-webkit-details-marker { display: none; }
+.session-board-heading-purpose summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-board-heading-purpose details[open] summary > span { max-height: 5lh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.session-board-heading-purpose .session-board-chevron { width: 13px; height: 13px; }
+.session-board-heading-purpose details[open] .session-board-chevron { transform: rotate(-90deg); }
 .session-board-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .session-board-body { padding: 12px 14px 16px; }
 .session-board-dialog button {

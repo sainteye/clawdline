@@ -128,6 +128,55 @@ func (s *Store) SessionBoards(ctx context.Context, project, actor string) ([]sb.
 	return out, tx.Commit()
 }
 
+// ActiveSessionBoardIDs snapshots a member's boards in this Project before a handoff opens.
+func (s *Store) ActiveSessionBoardIDs(ctx context.Context, project, actor string) ([]string, error) {
+	rows, err := s.rd.QueryContext(ctx, `SELECT b.id FROM session_boards b
+		JOIN session_board_members m ON m.board=b.id
+		WHERE b.project=? AND b.archived_at=0 AND m.actor=? ORDER BY b.id`, project, actor)
+	if err != nil {
+		return nil, classify(err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, classify(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, classify(rows.Err())
+}
+
+// TransferSessionBoards moves only still-active memberships captured by the
+// handoff. Deleting first leaves room on a full board. The receiver may already
+// be a member, and only a Lead still held by the sender moves to the receiver.
+func (t *WorkV2Tx) TransferSessionBoards(project, from string, to sb.Actor, ids []string) error {
+	for _, id := range ids {
+		res, err := t.tx.ExecContext(t.ctx, `DELETE FROM session_board_members WHERE board=? AND actor=?
+			AND EXISTS (SELECT 1 FROM session_boards WHERE id=? AND project=? AND archived_at=0)`, id, from, id, project)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			continue
+		}
+		if _, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_board_members(board,actor,label,persona)
+			VALUES(?,?,?,?) ON CONFLICT(board,actor) DO NOTHING`, id, to.ID, to.Label, to.Persona); err != nil {
+			return err
+		}
+		if _, err := t.tx.ExecContext(t.ctx, `UPDATE session_boards SET lead=? WHERE id=? AND lead=?`, to.ID, id, from); err != nil {
+			return err
+		}
+		t.wrote++
+	}
+	return nil
+}
+
 func boardMember(members []sb.Actor, id string) bool {
 	return slices.ContainsFunc(members, func(a sb.Actor) bool { return a.ID == id })
 }
