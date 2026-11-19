@@ -699,6 +699,7 @@ func (c *Client) handle(f frame) error {
 				// A message chunk carries one content block; a tool call
 				// carries an array. Only a chunk's block is decoded below.
 				Content      json.RawMessage `json:"content"`
+				Entries      json.RawMessage `json:"entries,omitempty"`
 				ToolCallID   string          `json:"toolCallId"`
 				Status       string          `json:"status"`
 				Meta         json.RawMessage `json:"_meta"`
@@ -733,7 +734,7 @@ func (c *Client) handle(f frame) error {
 			return c.traceUpdate(raw(p.Update))
 		}
 		if p.Update.SessionUpdate != "agent_message_chunk" {
-			if p.Update.SessionUpdate == "agent_thought_chunk" {
+			if p.Update.SessionUpdate == "agent_thought_chunk" || p.Update.SessionUpdate == "plan" {
 				c.mu.Lock()
 				c.segmentClosed = true
 				c.mu.Unlock()

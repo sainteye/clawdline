@@ -86,7 +86,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     }else if(r.mode==="events"){
       const matching=own.filter(e=>e.seq>r.after_seq);response.items=matching.slice(0,r.page_size).map(event=>({id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:event.seq,event}));response.has_more=matching.length>response.items.length;response.next_seq=response.items.at(-1)?.event?.seq??r.after_seq
     }else if(r.mode==="permissions")paginate(offers.map(permission=>({id:permission.id,kind:"permission_summary",anchor_message_seq:0,observed_event_seq:seq,permission_summary:{id:permission.id,fence:permission.fence,turn_id:permission.turn_id,state:permission.state,expires_at:permission.expires_at,detail_cursor:ref("permission",permission.id)}})),"permissions")
-    else if(r.mode==="traces")paginate(traces.map((trace,i)=>({id:`trace-${trace.turn_id}-${trace.category}`,kind:"trace_summary",anchor_message_seq:0,observed_event_seq:seq,trace_summary:{id:`trace-${trace.turn_id}-${trace.category}`,turn_id:trace.turn_id,category:trace.category,complete:trace.complete,detail_cursor:ref("trace",String(i))}})),"traces")
+    else if(r.mode==="traces")paginate(traces.map((trace,i)=>({id:`trace-${trace.turn_id}-${trace.category}`,kind:"trace_summary" as const,anchor_message_seq:0,observed_event_seq:seq,trace_summary:{id:`trace-${trace.turn_id}-${trace.category}`,turn_id:trace.turn_id,category:trace.category,complete:trace.complete,detail_cursor:ref("trace",String(i))}})).reverse(),"traces")
     else{
       const prefix=`${readEpoch}:${generation}:`,parts=r.cursor.slice(prefix.length).split(":")
       if(!r.cursor.startsWith(prefix))throw failure("pa_cursor_expired")
@@ -268,7 +268,8 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
         ["agent_message_chunk","(pass)"],
         ["agent_thought_chunk","Check the saved work before changing anything."],
         ["tool_call","Inspect the project files\ncompleted\nFound the project definition."],
-        ["plan","Read the project definition\nReview the changes"],
+        ["tool_call_update","Read the missing file\nfailed\nThe source file was absent."],
+        ["plan",JSON.stringify([{content:"Read the project definition",status:"completed"},{content:"Review the changes",status:"pending"}])],
       ]
       for(const [category,text] of rows)push({id:"progress-"+category,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,
         trace:{turn_id:"turn-1",category,text,complete:true}})

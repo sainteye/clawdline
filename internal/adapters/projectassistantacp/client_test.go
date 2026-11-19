@@ -991,3 +991,25 @@ func TestNativeTerminalOutputMetadataStaysWithItsTool(t *testing.T) {
 		t.Fatalf("tool outputs mixed: %+v", other)
 	}
 }
+
+func TestACPPlanUpdatesReplaceOneVisibleStep(t *testing.T) {
+	var updates []pa.Trace
+	c := &Client{sessionID: "plan-session", turnID: "plan-turn", ctx: t.Context(), sink: func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Trace != nil {
+			updates = append(updates, *e.Trace)
+		}
+		return nil
+	}}
+	for _, status := range []string{"in_progress", "completed"} {
+		params := raw(map[string]any{"sessionId": "plan-session", "update": map[string]any{
+			"sessionUpdate": "plan", "entries": []map[string]string{{"status": status, "content": "Read synthetic evidence"}},
+		}})
+		if err := c.handle(frame{Method: "session/update", Params: params}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(updates) != 2 || updates[0].Complete || !updates[1].Complete || updates[0].ID != updates[1].ID || updates[1].Category != "plan" ||
+		!strings.Contains(updates[1].Text, "Read synthetic evidence") {
+		t.Fatal(updates)
+	}
+}

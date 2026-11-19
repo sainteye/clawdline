@@ -24,12 +24,18 @@ type nativeTerminalOutput struct {
 	TerminalID string `json:"terminal_id"`
 }
 
+type nativePlanEntry struct {
+	Content string `json:"content"`
+	Status  string `json:"status"`
+}
+
 type nativeTraceUpdate struct {
-	SessionUpdate string          `json:"sessionUpdate"`
-	ToolCallID    string          `json:"toolCallId"`
-	Title         string          `json:"title"`
-	Status        string          `json:"status"`
-	Content       json.RawMessage `json:"content"`
+	Entries       []nativePlanEntry `json:"entries"`
+	SessionUpdate string            `json:"sessionUpdate"`
+	ToolCallID    string            `json:"toolCallId"`
+	Title         string            `json:"title"`
+	Status        string            `json:"status"`
+	Content       json.RawMessage   `json:"content"`
 	Meta          struct {
 		Delta  *nativeTerminalOutput `json:"terminal_output_delta"`
 		Output *nativeTerminalOutput `json:"terminal_output"`
@@ -60,6 +66,35 @@ func (c *Client) traceUpdate(raw json.RawMessage) error {
 		}
 		trace = c.traceSegment
 		trace.Text = block.Text
+	case "plan":
+		c.traceSegment = pa.Trace{}
+		entries := u.Entries[:0]
+		allComplete := true
+		for _, entry := range u.Entries {
+			entry.Content = strings.TrimSpace(entry.Content)
+			switch entry.Status {
+			case "completed", "in_progress", "pending":
+			default:
+				continue
+			}
+			if entry.Content == "" {
+				continue
+			}
+			entries = append(entries, entry)
+			allComplete = allComplete && entry.Status == "completed"
+		}
+		if len(entries) == 0 {
+			c.mu.Unlock()
+			return nil
+		}
+		// Plan updates replace the step in place. Adjacent narration starts a
+		// separate segment so it cannot move across the plan in the transcript.
+		text, err := json.Marshal(entries)
+		if err != nil {
+			c.mu.Unlock()
+			return err
+		}
+		trace = pa.Trace{ID: "plan", TurnID: e.TurnID, Category: category, Text: string(text), Complete: allComplete}
 	case "tool_call", "tool_call_update":
 		if category == "tool_call" {
 			c.traceSegment = pa.Trace{}

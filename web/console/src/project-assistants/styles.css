@@ -717,3 +717,60 @@
     margin-inline: -18px; padding: 8px 18px;
     background: var(--pa-bg);
 }
+
+/* The active turn is one quiet surface with separately disclosed steps. */
+.project-assistants .pa-working-steps {
+  width:fit-content; max-width:100%; margin:4px 0 8px; border-radius:20px;
+  color:var(--pa-dim); background:color-mix(in srgb,var(--pa-line) 20%,var(--pa-bg));
+}
+.project-assistants .pa-working-steps[open] { width:min(100%, 680px); max-width:none; }
+.project-assistants .pa-working-transition .pa-working {
+  width:100%; min-height:40px; margin:0; padding:8px 12px; border-radius:inherit; box-sizing:border-box; font-size:13px;
+}
+.project-assistants .pa-working-steps > summary:hover { color:var(--pa-ink); }
+.project-assistants .pa-working-steps > summary:focus-visible { outline-offset:-3px; }
+.project-assistants .pa-working-steps[open] .pa-working-chevron,
+.project-assistants .pa-trace-tool[open] > summary > .pa-trace-chevron,
+.project-assistants .pa-trace-thought[open] > summary > .pa-trace-chevron,
+.project-assistants .pa-trace[open] > summary > .pa-trace-chevron { transform:rotate(90deg); }
+.project-assistants .pa-working-time, .project-assistants .pa-working-chevron { flex:none; }
+.project-assistants .pa-working-steps-body { max-height:min(42vh,350px); margin:0; padding:0 12px 12px; }
+.project-assistants .pa-working-steps-body .pa-trace-list { max-width:none; margin-top:0; gap:6px; }
+.project-assistants .pa-trace .pa-trace-summary {
+  display:flex; width:fit-content; align-items:center; gap:7px; padding:4px 8px;
+  background:color-mix(in srgb,var(--pa-line) 18%,var(--pa-bg)); border-radius:9px;
+}
+.project-assistants .pa-trace .pa-trace-summary::before { content:none; }
+.project-assistants .pa-trace-count { font-variant-numeric:tabular-nums; }
+.project-assistants .pa-trace-icon, .project-assistants .pa-trace-chevron { flex:none; color:inherit; }
+.project-assistants .pa-trace-thought > summary, .project-assistants .pa-trace-tool > summary { width:auto; }
+.project-assistants .pa-trace-thought > summary > .pa-trace-chevron,
+.project-assistants .pa-trace-tool > summary > .pa-trace-chevron { margin-left:auto; }
+.project-assistants .pa-trace-line .pa-trace-icon { color:var(--pa-dim); }
+.project-assistants .pa-trace-line .pa-trace-result .pa-trace-icon { color:inherit; }
+.project-assistants .pa-trace-thought > summary { cursor:pointer; list-style:none; font-size:13px; }
+.project-assistants .pa-trace-thought > summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-trace[open] details > summary::before { content:none; }
+.project-assistants .pa-trace .pa-trace-line { width:auto; margin-bottom:0; }
+.project-assistants .pa-trace-narration.pa-markdown { margin:0; }
+.project-assistants .pa-trace-narration.pa-markdown p:last-child { margin-bottom:0; }
+.project-assistants .pa-trace-plan .pa-trace-title,
+.project-assistants .pa-trace-plan li { display:flex; gap:8px; align-items:baseline; }
+.project-assistants .pa-trace-plan ul { display:grid; gap:4px; margin:3px 0 0; padding:0; list-style:none; }
+.project-assistants .pa-trace-plan li[data-plan-state="completed"] { text-decoration:line-through; }
+.project-assistants .pa-trace-plan [data-plan-state="completed"] svg { color:var(--good,#83c498); }
+
+@supports selector(details::details-content) {
+  .project-assistants .pa-flow-disclosure { interpolate-size:allow-keywords; }
+  .project-assistants .pa-flow-disclosure::details-content {
+    block-size:0; opacity:0; overflow:clip;
+    transition:block-size 180ms cubic-bezier(.2,.8,.2,1), opacity 150ms ease-out, content-visibility 180ms allow-discrete;
+  }
+  .project-assistants .pa-flow-disclosure[open]::details-content { block-size:auto; opacity:1; }
+}
+.project-assistants .pa-working-chevron, .project-assistants .pa-trace-chevron { transition:transform 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .project-assistants .pa-flow-disclosure::details-content,
+  .project-assistants .pa-working-chevron, .project-assistants .pa-trace-chevron { transition:none; }
+  .project-assistants .pa-trace[open] > .pa-trace-list { animation:none; }
+}

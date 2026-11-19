@@ -9,6 +9,7 @@ export function WorkingIndicator({turn,activity,steps,stopStatus,w,animated=true
 }) {
   const [now,setNow]=useState(Date.now())
   const [expanded,setExpanded]=useState(false)
+  const [opened,setOpened]=useState(false)
   const scroller=useRef<HTMLDivElement>(null),content=useRef<HTMLDivElement>(null),follow=useRef(true)
   useEffect(()=>{
     const panel=scroller.current,body=content.current
@@ -18,19 +19,27 @@ export function WorkingIndicator({turn,activity,steps,stopStatus,w,animated=true
     observer.observe(body)
     return()=>observer.disconnect()
   },[expanded,turn.id])
-  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[])
+  useEffect(()=>{
+    if(!animated)return
+    const timer=setInterval(()=>setNow(Date.now()),1000)
+    return()=>clearInterval(timer)
+  },[animated])
   const text=stopStatus||(waiting?w.waiting_permission:activity==="writing"?w.writingReply:activity==="thinking"?w.thinking:activity||w.running)
   const time=elapsed(turn.started_at,now)
-  return <details className="pa-working-steps" onToggle={event=>setExpanded(event.currentTarget.open)}>
+  return <details className="pa-working-steps pa-flow-disclosure" onToggle={event=>{
+    const open=event.currentTarget.open
+    if(open)setOpened(true)
+    setExpanded(open)
+  }}>
     <summary className="pa-turn pa-working" data-waiting={waiting||undefined} title={w.trace}>
       <ThinkingOrb state={waiting?"listening":"working"} size={16} color={waiting?"var(--warning,#F0A030)":"var(--pa-dim,#999)"} animated={animated}/>
       <span className="pa-working-text" role="status">{text}</span>
       {time&&<span className="pa-working-time" aria-hidden="true">{time}</span>}
-      <span className="pa-working-chevron" aria-label={w.trace}>⌄</span>
+      <svg className="pa-working-chevron" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg>
     </summary>
     <div ref={scroller} className="pa-working-steps-body" onScroll={event=>{
       const node=event.currentTarget
-      follow.current=node.scrollHeight-node.scrollTop-node.clientHeight<=1
-    }}><div ref={content}>{expanded&&(steps?steps(expanded):<p>{w.workNoSteps}</p>)}</div></div>
+      follow.current=node.scrollHeight-node.scrollTop-node.clientHeight<8
+    }}><div ref={content}>{opened&&(steps?steps(expanded):<p>{w.workNoSteps}</p>)}</div></div>
   </details>
 }

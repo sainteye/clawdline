@@ -992,7 +992,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
-        steps={liveSteps.length?expanded=><Trace inline expanded={!!thread||expanded} summaries={liveSteps} details={details} more={liveTraceTurn===moreTraceTurn} onMore={loadMoreTraces}
+        steps={liveSteps.length?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={liveTraceTurn===moreTraceTurn} onMore={loadMoreTraces}
           onDetail={readTraceDetail} w={w}/>:undefined}/>
       {stopText&&!visibleTurn&&<p className="pa-turn" role="status">{stopText}</p>}
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
