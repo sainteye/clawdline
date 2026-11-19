@@ -835,7 +835,7 @@ test("topic memory writes require API89 before transport while short facts retai
 test("source command rules stay hidden on machines with only native rule support", () => {
  const registry=new ProjectAssistantRegistry("account","trusted-reader")
  const transport=()=>async()=>Response.json(sourceStatus())
- for(const [level,expected] of [[undefined,false],[66,false],[89,false],[90,true],[89,false]] as const){
+ for(const [level,expected] of [[undefined,false],[66,false],[89,false],[90,false],[91,true],[90,false]] as const){
   registry.sync([{...grant(),apiLevel:level}],transport)
   const source=registry.getSnapshot()[0] as ProjectAssistantSourceClient
   assert.equal(source.canSourceRules(),expected)
@@ -846,7 +846,7 @@ test("source command rules stay hidden on machines with only native rule support
 test("known server controls keep source identity and refuse old or foreign sources before transport",async()=>{
   const sent:{path:string;body:unknown}[]=[]
   const transport:AssistantFetch=async(path,init)=>{if(!path.endsWith("/status"))sent.push({path,body:init?.body?JSON.parse(String(init.body)):undefined});return Response.json(path.endsWith("/status")?sourceStatus():{contract_version:"project-assistants.v1",servers:[]})}
-  const local:AssistantGrant={...grant(),accountKey:"local",readerID:"local",apiLevel:90}
+  const local:AssistantGrant={...grant(),accountKey:"local",readerID:"local",apiLevel:91}
   const source=make(transport,local).source
   await source.status(signal())
   const request:W.ProjectAssistantDevServerControlRequest={key,id:"known/id",idempotency_key:"known-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2}
@@ -854,8 +854,11 @@ test("known server controls keep source identity and refuse old or foreign sourc
   await source.devServers(key,signal());await source.devServerLogs(key,request.id,signal());await source.controlDevServer("stop",request,signal())
   assert.equal(sent.length,3);assert.ok(sent[0].path.includes("dev-servers?machine_id=one"));assert.ok(sent[1].path.includes("known%2Fid/logs"));assert.deepEqual(sent[2].body,request)
   let calls=0;const blocked:AssistantFetch=async()=>{calls++;return Response.json({})}
-  const old=make(blocked,{...local,apiLevel:89}).source
-  assert.equal(old.canDevServers(),false);await assert.rejects(old.devServers(key,signal()),e=>errorCode(e)==="pa_unsupported")
+  const old=make(blocked,{...local,apiLevel:90}).source
+  assert.equal(old.canDevServers(),false);assert.equal(old.canSourceRules(),false)
+  await assert.rejects(old.devServers(key,signal()),e=>errorCode(e)==="pa_unsupported")
+  await assert.rejects(old.devServerLogs(key,request.id,signal()),e=>errorCode(e)==="pa_unsupported")
+  await assert.rejects(old.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_unsupported")
   assert.throws(()=>source.devServers({...key,machine_id:"foreign"},signal()),e=>errorCode(e)==="pa_scope_denied")
   assert.throws(()=>assistantRelayRequest(sent[0].path),e=>errorCode(e)==="pa_invalid")
   assert.equal(calls,0)
@@ -867,7 +870,7 @@ test("an invalid server write reply stays unknown without a new application tran
     if(path.endsWith("/status"))return Response.json(sourceStatus())
     calls++;return new Response('{"contract_version":',{headers:{"Content-Type":"application/json"}})
   }
-  const source=make(transport,{...grant(),accountKey:"local",readerID:"local",apiLevel:90}).source
+  const source=make(transport,{...grant(),accountKey:"local",readerID:"local",apiLevel:91}).source
   await source.status(signal())
   await assert.rejects(source.controlDevServer("stop",{key,id:"known",idempotency_key:"synthetic-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2},signal()),e=>errorCode(e)==="pa_outcome_unknown")
   assert.equal(calls,1)

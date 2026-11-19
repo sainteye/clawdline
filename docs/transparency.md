@@ -73,7 +73,7 @@ copy names source-user files/network authority outside the agent sandbox,
 complete command/directory review, no model-supplied identity or human approval,
 unknown cleanup and the remaining Cloud/UI/ports/crash-recovery gaps. Native
 rule scope and the related loading/memory/replay explanations retain their
-existing meaning. Source rule visibility follows API 90 while older sources keep
+existing meaning. Source rule visibility follows API 91 while older sources keep
 their native rule behavior. The inventory includes the private command handler,
 its native descriptor and the per-definition reconciliation boundary. A local
 synthetic process test is not an installed vendor or Cloud acceptance receipt.
@@ -1023,7 +1023,7 @@ receipts do not establish actual-binary qualification or destination acceptance.
 
 
 The generated English and Taiwan Traditional Chinese route inventories now
-report API 90. Only that generated level line changes; generated routes are not
+report API 91. Only that generated level line changes; generated routes are not
 one of the compiled guide's 21 freshness-pinned translation parts. The current
 and fallback translation tests still verify those independent guide pins.
 

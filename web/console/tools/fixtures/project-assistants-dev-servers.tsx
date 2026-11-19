@@ -15,7 +15,7 @@ import "../../src/legacy/tokens.css"
 import "../../src/project-assistants/styles.css"
 const query=new URL(location.href).searchParams,language=query.get("lang")??"en"
 localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json")
-const grant={accountKey:query.has("remote")?"synthetic-cloud":"local",readerID:"synthetic-person",machineID:"synthetic-machine",authorizationRevision:"one",apiLevel:query.has("old")?89:90,paired:true,online:true,writable:!query.has("readonly")}
+const grant={accountKey:query.has("remote")?"synthetic-cloud":"local",readerID:"synthetic-person",machineID:"synthetic-machine",authorizationRevision:"one",apiLevel:query.has("old")?90:91,paired:true,online:true,writable:!query.has("readonly")}
 // Observe this fixture's copy request without changing the person's clipboard.
 Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async(text:string)=>{
  await fetch("/fixture/copy",{method:"POST",body:JSON.stringify({text})})

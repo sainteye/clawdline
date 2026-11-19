@@ -49,8 +49,8 @@ export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
 // Listing and revoking a Claude Bot's standing rules arrived at 66; this machine's own console only.
 export const PROJECT_ASSISTANTS_RULES_API_LEVEL = 66
-// Source-owned server tools and exact rules arrive at 90; earlier sources keep native rules only.
-export const PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL = 90
+// Source-owned server tools and exact rules arrive at 91; earlier sources keep native rules only.
+export const PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL = 91
 // Hiding and deleting a Bot arrived at 67; this machine's own console only, until the Cloud relay carries them.
 export const PROJECT_ASSISTANTS_MANAGE_API_LEVEL = 67
 const base = "/v1/project-assistants"

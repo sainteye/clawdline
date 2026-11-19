@@ -322,7 +322,7 @@ person's next message as before.
 This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
 against the pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 The table tracks subsequent source construction as well as that original
-baseline; its API 90 server row describes the current candidate, not the older
+baseline; its API 91 server row describes the current candidate, not the older
 893 build. It is not a production UI or installed-binary acceptance receipt.
 
 Templates (`project-assistants-templates.md`), message reactions, pinned/Project
@@ -334,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 91 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -354,7 +354,7 @@ No new API level, archive generation or maintenance writer is enabled by this
 audit.
 
 
-### Source-owned development servers (API 90 construction)
+### Source-owned development servers (API 91 construction)
 
 One Host owns a source-local server registry independently of its Engine and
 native executions. Enabling the already opt-in Bot feature explicitly installs
@@ -389,7 +389,7 @@ copy. Ordinary memory saves do not invalidate resources. Model listings and
 logs exclude definitions from a different Forget epoch, and publication checks
 run under the existing memory fence. Historical definitions and exact rules
 remain visible/revocable to the person through the human rules API. The
-console's Codex source-rule entry requires API 90; Claude's separate native
+console's Codex source-rule entry requires API 91; Claude's separate native
 Project rules retain their existing scope. Matching Cloud transport qualification
 remains separate from this source construction.
 
@@ -591,3 +591,13 @@ server rows and title. The chat read-view is scripted while server reads use
 the fixture HTTP transport. These checks use no formal daemon, provider/model
 request or private conversation; they do not qualify a full installed App,
 production Cloud transport, server reachability or crash/reboot recovery.
+
+
+The server candidate's minimum API level is 91 after coordinating publication
+order with the group-reaction owner. API 90 is reserved for that separately
+verified feature. The console must not infer source server tools or exact
+source-command rules merely from a group-capable API 90 machine; all server
+reads, log reads and controls require 91 before transport. Before publication,
+merge the actual API 90 implementation from main and regenerate the shared
+contract outputs. A private higher-level build alone does not establish that
+its lower-level features have been integrated or deployed.
