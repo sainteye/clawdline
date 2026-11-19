@@ -4964,7 +4964,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/realtime/CopilotToolHistory.tsx": "0b94600f61c332fb3e6cdebefbc8963346cd4df31bf7413ecb9a7e90ae30b43b",
-    "web/console/src/realtime/RealtimeCopilotModal.tsx": "44d69fa615069c7fd3369ddfca85f9d03eda7b77f079198ec273045f12555a2e",
+    "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "9ef8f70d0ed11c2600df1ab3aa427d9d52121d986c4e63b76f8f9ff79b53781a",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
     "web/console/src/realtime/copilot-feedback.ts": "af6f7146ebe90f9502d7483873e2c5210ffd03873a8ba54c7b9aa3873a1fc54d",

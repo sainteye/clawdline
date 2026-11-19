@@ -54,6 +54,13 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     return () => clearInterval(timer)
   }, [open, copilotState.status, copilotState.cost?.live])
 
+  const isConnected = copilotState.status === 'connected'
+  const isConnecting = copilotState.status === 'connecting'
+  const backdrop = useModalBackdrop(() => {
+    // A tap beside a live call's sheet shrinks it; the call goes on.
+    if (isConnected || isConnecting) onMinimize?.()
+    else onClose()
+  })
 
   if (!open) return null
 
@@ -67,9 +74,6 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     onClose()
   }
 
-  const isConnected = copilotState.status === 'connected'
-  const isConnecting = copilotState.status === 'connecting'
-
   let stateLabel = nextWord('copilotReady')
   if (isConnecting) stateLabel = nextWord(CONNECTION_WORDS[copilotState.connectionPhase ?? 'settings'])
   else if (isConnected) {
@@ -80,11 +84,6 @@ export const RealtimeCopilotModal: React.FC<Props> = ({ open, onClose, onMinimiz
     else stateLabel = nextWord('copilotConnectedReady')
   }
 
-  const backdrop = useModalBackdrop(() => {
-    // A tap beside a live call's sheet shrinks it; the call goes on.
-    if (isConnected || isConnecting) onMinimize?.()
-    else onClose()
-  })
   return (
     <div className="realtime-modal-backdrop" {...backdrop}>
       <div className={`realtime-modal-sheet${isConnected ? " in-call" : ""}`} style={{ "--copilot-orb-size": `${orbSize}px` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label={nextWord('copilotCallTitle')}>
