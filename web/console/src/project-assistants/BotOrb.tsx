@@ -80,7 +80,7 @@ export function BotOrb({onOpen,language,unread=0,pendingPermissions=0,mood="idle
       <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={20} mood={mood}/>{count>0&&<span key={count} className="pa-dock-badge" aria-hidden="true">{count}</span>}
     </button></span>
   const at=offset??place
-  return <span className="project-assistants pa-entry pa-orb-float" style={{right:at.right,bottom:at.bottom}} data-dragging={offset?true:undefined}>
+  return <span className="project-assistants pa-entry pa-orb-float" style={{right:`min(${at.right}px, max(0px, 100vw - ${ORB}px))`,bottom:`min(${at.bottom}px, max(0px, 100dvh - ${ORB}px))`}} data-dragging={offset?true:undefined}>
     <button type="button" className="pa-orb" data-ringing={ringing||undefined} aria-label={label} {...handlers}>
       <BotAvatar appearance={{shape:"blob",color:"#e39567"}} size={36} mood={mood}/>{count>0&&<span key={count} className="pa-orb-badge" aria-hidden="true">{count}</span>}
     </button></span>

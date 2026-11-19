@@ -91,6 +91,24 @@ try{
   results.push({language,listMode,explicitDenialHidden:true,entryRestored:true,actualRosterOpened:true,quotaPending:zh,disabledRemainsHidden:true,modelRequests:0})
   await browser("close");tab=undefined
  }
+ await browser("open",origin+"/?feature=off&lang=zh-Hant")
+ await browser("viewport","mobile")
+ await until('window.fixtureHost?.log.filter(r=>r.method==="status").length>=2',"initial hidden status missing")
+ await evaluate('window.fixtureHost.offline();window.fixtureHost.holdStatus();window.fixtureHost.enableFeature()')
+ await browser("click","更新額度")
+ await until('window.fixtureHost.log.some(r=>r.method==="status-wait")',"online source did not start")
+ const started=await evaluate('window.fixtureHost.log.filter(r=>r.method==="status-wait").length')
+ await browser("click","更新額度")
+ await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+ assert.equal(await evaluate('window.fixtureHost.log.filter(r=>r.method==="status-wait").length'),started,"refresh restarted an outstanding status read")
+ await evaluate('window.fixtureHost.releaseStatus()')
+ await until('!!document.querySelector(".pa-orb")',"delayed online source failed to restore entry")
+ await evaluate('localStorage.setItem("bots_orb_place",JSON.stringify({right:750,bottom:980,docked:false}));location.replace("/?lang=zh-Hant")')
+ await until('!!document.querySelector(".pa-orb")',"saved orb not mounted")
+ assert.ok(await evaluate('(()=>{const b=document.querySelector(".pa-orb").getBoundingClientRect();return b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight})()'),"restored orb outside phone viewport")
+ await evaluate('document.querySelector(".pa-orb").click()')
+ await until('!!document.querySelector(".pa-window button[data-bot-key]")',"phone entry did not open roster")
+ await browser("close");tab=undefined
  console.log(JSON.stringify(results))
 }finally{
  if(tab&&send)await browser("close").catch(e=>console.error(e.message))
