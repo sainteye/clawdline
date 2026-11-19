@@ -3,6 +3,7 @@ import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 import {command,errorCode,provablyNotSent} from "./client"
 import {sameConversation,canWrite} from "./view-state"
+import type {ReactNode} from "react"
 import {catalogWord} from "../catalog"
 import type {Words} from "./words"
 
@@ -10,7 +11,7 @@ const tr=(key:string)=>catalogWord("projectAssistants",key)
 const known=new Set(["pa_invalid","pa_scope_denied","pa_stale_version","pa_stale_generation","pa_read_only","pa_disabled","pa_unpaired","pa_unsupported","pa_not_found","pa_idempotency_conflict"])
 
 /** A stored intent survives closing the viewer. Only a person's explicit retry sends it again. */
-export function ArtifactRename({source,message,output,w,onRenamed}:{source:SourceClient;message:W.ProjectAssistantMessage;output:W.ProjectAssistantOutput;w:Words;onRenamed:()=>void}) {
+export function ArtifactRename({source,message,output,w,onRenamed,titleIcon}:{titleIcon?:ReactNode;source:SourceClient;message:W.ProjectAssistantMessage;output:W.ProjectAssistantOutput;w:Words;onRenamed:()=>void}) {
   const [editing,setEditing]=useState(false),[draft,setDraft]=useState(output.name),[busy,setBusy]=useState(false),[error,setError]=useState(""),[held,setHeld]=useState<W.ProjectAssistantRenameArtifactRequest|null>(null),[blocked,setBlocked]=useState(false)
   const active=useRef<AbortController|null>(null),live=useRef(true)
   const key="clawdline.artifact-rename."+JSON.stringify([source.intentAccount??"local",message.fence.key.machine_id,message.fence.key.bot_id,message.fence.conversation_id,output.artifact_id])
@@ -51,5 +52,5 @@ export function ArtifactRename({source,message,output,w,onRenamed}:{source:Sourc
     }finally{if(live.current)setBusy(false)}
   }
   if(!output.artifact_id||!source.renameArtifact||source.canRenameArtifact?.()!==true)return null
-  return <div className="pa-artifact-rename">{editing?<form onSubmit={e=>{e.preventDefault();void send()}} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();if(!busy&&!held&&!blocked){setEditing(false);setError("")}}}}><label>{tr("artifactTitle")}<input autoFocus value={draft} disabled={busy||!!held||blocked} onChange={e=>setDraft(e.target.value)}/></label><button disabled={busy||blocked} type="submit">{busy?tr("renamingArtifact"):held?w.retry:w.save}</button>{!held&&!blocked&&<button type="button" disabled={busy} onClick={()=>{setEditing(false);setError("")}}>{tr("libraryCancel")}</button>}</form>:<button type="button" onClick={()=>{setDraft(output.name);setEditing(true)}}>{tr("renameArtifact")}</button>}{error&&<p role="alert">{held||blocked?tr("renameArtifactUnknown"):tr("renameArtifactFailed")} ({error})</p>}</div>
+  return <div className={`pa-artifact-rename${titleIcon?" pa-artifact-title-edit":""}`}>{editing?<form onSubmit={e=>{e.preventDefault();void send()}} onKeyDown={e=>{if(e.key==="Escape"){e.stopPropagation();if(!busy&&!held&&!blocked){setEditing(false);setError("")}}}}><label>{tr("artifactTitle")}<input autoFocus value={draft} disabled={busy||!!held||blocked} onChange={e=>setDraft(e.target.value)}/></label><button disabled={busy||blocked} type="submit">{busy?tr("renamingArtifact"):held?w.retry:w.save}</button>{!held&&!blocked&&<button type="button" disabled={busy} onClick={()=>{setEditing(false);setError("")}}>{tr("libraryCancel")}</button>}</form>:<button type="button" className={titleIcon?"pa-artifact-heading":undefined} aria-label={tr("renameArtifact")} onClick={()=>{setDraft(output.name);setEditing(true)}}>{titleIcon?<>{titleIcon}<span>{output.name}</span></>:tr("renameArtifact")}</button>}{error&&<p role="alert">{held||blocked?tr("renameArtifactUnknown"):tr("renameArtifactFailed")} ({error})</p>}</div>
 }

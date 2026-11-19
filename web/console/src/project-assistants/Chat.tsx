@@ -21,6 +21,7 @@ import { TeamApprovals } from "./Groups"
 import { Routines } from "./Routines"
 import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
+import type {ArtifactComposerAccess} from "./ArtifactWorkspace"
 import { ChatRows } from "./ChatRows"
 import { HandoffCard } from "./HandoffCard"
 import { handoffWords } from "./handoff-card-words"
@@ -417,10 +418,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     view.heldOutcomes.settle(draftKey,held.intent.command.idempotency_key,null)
     setSending(null);setUnknown(false);repaintJournal()
   },[timeline,receipt,view,draftKey])
-  const send=async()=>{
-    if(call.active||busy||unknown||!handoff.ready||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||editingHandoff||handoff.mutating()||handoff.error||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
+  const send=async(artifact?:{message:W.ProjectAssistantMessage;text:string})=>{
+    if(call.active||busy||unknown||!handoff.ready||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||editingHandoff||handoff.mutating()||handoff.error||(!artifact&&!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return false
     const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
-    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
+    if(artifact&&(!artifact.text.trim()||handoffRef||!artifact.message.output?.artifact_id||!sameConversation(artifact.message.fence,scope)))return false
+    const submitted=artifact?.text??text,pictures=artifact?[]:images,selected=artifact?[]:files
+    const intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
@@ -441,12 +444,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // change: an unknown one is shown there, disabled, and never resent. The
     // durable copy is only cleared once the send is accepted.
     const restore=()=>{
+      if(artifact)return
       if(view.draft(draftKey)==="")view.stage(draftKey,submitted)
       if(quoted&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quoted)
       if(!valid())return
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures);setFiles(old=>old.length?old:selected)
     }
-    changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)
+    if(!artifact){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)}
     try{
       const result=await mutate(async(d,s)=>{
         if(selected.length){
@@ -473,14 +477,22 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const owner=land(result.receipt.state==="unknown"||admittedReceipt(result.receipt)?hold(result.receipt):null)
       observation.accept(result.receipt)
       if((result.receipt.state==="unknown"||result.receipt.state==="failed")&&owner==="active")restore()
-      if(!valid())return
+      const accepted=admittedReceipt(result.receipt)
+      if(!valid())return accepted
       setReceipt(result.receipt);setUnknown(uncertain())
-      if(result.receipt.state!=="unknown"&&result.receipt.state!=="failed"){setFiles([]);rememberFiles(false);flush()}
+      if(accepted&&!artifact){setFiles([]);rememberFiles(false);flush()}
       await refresh(true)
+      return accepted
     }catch(e){
       // The source's own receipt outlives a later authority or abort check.
       const kept=answered as W.ProjectAssistantReceiptResponse|null
-      if(kept&&kept.receipt.state!=="unknown"&&kept.receipt.state!=="failed"){if(land(hold(kept.receipt))==="active"){rememberFiles(false);view.flush(draftKey)}observation.accept(kept.receipt);if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());setFiles([]);setError("");await refresh(true)}return}
+      if(kept&&admittedReceipt(kept.receipt)){
+        const owner=land(hold(kept.receipt))
+        if(owner==="active"&&!artifact){rememberFiles(false);view.flush(draftKey)}
+        observation.accept(kept.receipt)
+        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!artifact)setFiles([]);setError("");await refresh(true)}
+        return true
+      }
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
@@ -490,6 +502,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||owner==="active")restore()
       if(valid()){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
+      return false
     }finally{if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
   }
 
@@ -882,6 +895,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   }
   const callView=callObservation()
   const {call,state:callState}=useBotCall({current:callObservation,submit:submitCall})
+  const artifactDraftKey=(id:string)=>JSON.stringify(["artifact",draftKey,id])
+  const artifactComposer:ArtifactComposerAccess|undefined=thread?undefined:{
+    blocked:!enabled||busy||unknown||call.active||legacyBlocked()||!handoff.ready||handoff.card?.state==="draft"||editingHandoff||handoff.busy||!!handoff.error||filesLost,
+    read:id=>view.draft(artifactDraftKey(id)),
+    write:(id,value)=>{const key=artifactDraftKey(id);view.stage(key,value);view.flush(key)},
+    send:(message,text)=>send({message,text})
+  }
   const canCall=!thread&&!!callView?.caughtUp&&!callView.activeTurn&&!busy&&!unknown&&!legacyBlocked()
     &&!view.heldOutcomes.has(draftKey)&&!parts.queued.length&&!head?.unknown_turn_count
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
@@ -987,7 +1007,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     </div>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{!thread&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data&&!canWrite(data.source)&&<p role="status">{w.history_only} · {w[data.source.state]}</p>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows roster={roster} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows roster={roster} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
       {(pendingPermissionCount>0||permissionCards.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{permissionCards.map(({summary:row,offer,identity})=><PermissionCard key={identity} startExpanded={row.state==="pending"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={[machineName||source.machineName||key.machine_id,projectName||bot.project.project_id].join(" · ")} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(()=>{})}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
@@ -1063,7 +1083,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}
         </div>
       </>,
-      library:<OutputLibrary embedded source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
+      library:<OutputLibrary embedded artifactComposer={artifactComposer} source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
       memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={async detail=>{if(!source.memoryView)throw failure("pa_unsupported");return authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail),new AbortController().signal)}} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
       settings:null
     }}/>}

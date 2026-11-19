@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -1428,6 +1429,26 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 	}
 	if source.MemoryRevision > memory.Revision {
 		return nil, runtimeFailure(pa.ContextStale, "quote_memory_revision")
+	}
+	if message.Output != nil && message.Output.ArtifactID != "" {
+		id := message.Output.ArtifactID
+		title := message.Output.Name
+		roomTurns := pa.RoomTurnIDs(export.Turns)
+		for i := len(export.Messages) - 1; i >= 0; i-- {
+			candidate := export.Messages[i]
+			if candidate.Output != nil && candidate.Output.ArtifactID == id && !roomTurns[candidate.TurnID] && sameSessionOwner(candidate.Fence, fence) {
+				title = candidate.Output.Name
+				break
+			}
+		}
+		if renamed, ok := export.ArtifactTitles[id]; ok {
+			title = renamed.Title
+		}
+		text := fmt.Sprintf("The user's message is about your artifact %q (id %q). Use list_artifacts to find its current HTML. When revising it, publish the updated HTML with the same artifact id.", title, id)
+		if err := pa.ValidateMessage(text); err != nil {
+			return nil, err
+		}
+		return &PromptQuote{MessageID: message.ID, Text: text}, nil
 	}
 	text := message.Text
 	if text == "" {

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13535,
-  "riskKeys": 5809,
-  "nonRiskCount": 7726,
+  "englishContentKeys": 13539,
+  "riskKeys": 5810,
+  "nonRiskCount": 7729,
   "groups": [
     {
       "name": "acp / other",
@@ -6093,7 +6093,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 425,
+      "count": 428,
       "sources": [
         null
       ],
@@ -6108,6 +6108,7 @@
         "projectAssistants.approvalActivity",
         "projectAssistants.approveAutomatically",
         "projectAssistants.artifact",
+        "projectAssistants.artifactCompose",
         "projectAssistants.artifactTitle",
         "projectAssistants.ask",
         "projectAssistants.attachFiles",
@@ -6137,6 +6138,7 @@
         "projectAssistants.chooseReaction",
         "projectAssistants.clearSearch",
         "projectAssistants.close",
+        "projectAssistants.closeArtifact",
         "projectAssistants.closeInformation",
         "projectAssistants.collapse",
         "projectAssistants.compose",
@@ -6459,6 +6461,7 @@
         "projectAssistants.shape_tablet",
         "projectAssistants.shape_teardrop",
         "projectAssistants.shape_wedge",
+        "projectAssistants.shareArtifact",
         "projectAssistants.sharedFile",
         "projectAssistants.sourceConnecting",
         "projectAssistants.sourceDetails",

@@ -1,5 +1,6 @@
 import { useModalBackdrop } from "../modal-backdrop.js"
 import type * as W from "@clawdline/contract"
+import {ArtifactIcon,ArtifactWorkspace,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {ArtifactRename} from "./ArtifactRename"
 import {useEffect,useRef,useState} from "react"
 import type {SourceClient} from "./client"
@@ -16,7 +17,7 @@ export function libraryItemName(item:LibraryItem):string {
 }
 
 /** Shared transfer/view UI for chat outputs and every library item. */
-export function OutputViewer({item,source,w,onClose,onRenamed,onResolved}:{item:LibraryItem;source:SourceClient;w:Words;onClose:()=>void;onRenamed?:()=>void;onResolved?:(output:W.ProjectAssistantOutput)=>void}) {
+export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifactComposer}:{artifactComposer?:ArtifactComposerAccess;item:LibraryItem;source:SourceClient;w:Words;onClose:()=>void;onRenamed?:()=>void;onResolved?:(output:W.ProjectAssistantOutput)=>void}) {
   const [value,setValue]=useState<{blob:Blob;name:string;html:string;links:string[];pictureURL:string;pdfURL:string;output?:W.ProjectAssistantOutput}|null>(null),[error,setError]=useState(""),[progress,setProgress]=useState(0),[attempt,setAttempt]=useState(0),[cancelled,setCancelled]=useState(false)
   const panel = useRef<HTMLDivElement>(null)
   const backdrop = useModalBackdrop(() => {
@@ -26,7 +27,7 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved}:{item:
   const name=libraryItemName(item),artifact=item.kind==="output"&&!!item.message.output!.artifact_id
   const pdf=!artifact&&/\.pdf$/i.test(name)
   const kind=item.kind,message=item.message,file=item.kind==="input"?item.file:null,attachment=item.kind==="picture"?item.attachment:null
-  useEffect(()=>{close.current?.focus();const escape=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!e.defaultPrevented&&!(e.target instanceof HTMLElement&&e.target.closest("form"))){e.stopImmediatePropagation();onClose()}};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[onClose])
+  useEffect(()=>{if(artifact)return;close.current?.focus();const escape=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!e.defaultPrevented&&!(e.target instanceof HTMLElement&&e.target.closest("form"))){e.stopImmediatePropagation();onClose()}};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[onClose,artifact])
   useEffect(()=>()=>{tabURLs.current.forEach(url=>URL.revokeObjectURL(url))},[])
   useEffect(()=>{
     const control=new AbortController();active.current=control;setValue(null);setError("");setProgress(0);setCancelled(false)
@@ -48,7 +49,9 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved}:{item:
       const isPDF=pdf&&(await blob.slice(0,5).text())==="%PDF-"
       if(control.signal.aborted||source.current?.()===false)return
       if(output)onResolved?.(output)
-      const doc=new DOMParser().parseFromString(html,"text/html"),links=[...new Set([...doc.querySelectorAll("a[href]")].map(a=>a.getAttribute("href")!).filter(h=>/^(https?:\/\/|mailto:)/i.test(h)))]
+      const inert=document.createElement("template")
+      inert.innerHTML=html
+      const links=[...new Set([...inert.content.querySelectorAll("a[href]")].map(a=>a.getAttribute("href")!).filter(h=>/^(https?:\/\/|mailto:)/i.test(h)))]
       if(attachment)previewURL=URL.createObjectURL(blob)
       else if(isPDF)previewURL=URL.createObjectURL(blob.slice(0,blob.size,"application/pdf"))
       setValue({blob,name:loadedName,html,links,pictureURL:attachment?previewURL:"",pdfURL:isPDF?previewURL:"",output})
@@ -67,9 +70,16 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved}:{item:
     const url=URL.createObjectURL(new Blob(["<!doctype html>"+shell.documentElement.outerHTML],{type:"text/html"}));tabURLs.current.push(url)
     const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener noreferrer";a.click()
   }
-  return <div className="pa-output-scrim" {...backdrop}><div ref={panel} className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={value?.name??name}><header><h3>{value?.name??name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button>{value?.output&&artifact&&<ArtifactRename source={source} message={message} output={value.output} w={w} onRenamed={()=>{setAttempt(n=>n+1);onRenamed?.()}}/>}</header>{!value&&!error&&!cancelled&&<><p role="status">{pdf?w.openingPDF:w.openingOutput}{progress>0&&` ${progress}%`}</p>{!pdf&&<button type="button" onClick={()=>{active.current?.abort();setCancelled(true)}}>{tr("libraryCancel")}</button>}</>}{cancelled&&<p role="status">{tr("libraryCancelled")} <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{error&&<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>}{value&&<><div className="pa-library-actions">
+  const loading=!value&&!error&&!cancelled&&<><p role="status">{pdf?w.openingPDF:w.openingOutput}{progress>0&&` ${progress}%`}</p>{!pdf&&<button type="button" onClick={()=>{active.current?.abort();setCancelled(true)}}>{tr("libraryCancel")}</button>}</>
+  const unavailable=cancelled?<p role="status">{tr("libraryCancelled")} <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>:
+    error?<p role="alert">{w.outputFailed} ({error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></p>:null
+  if(artifact)return <ArtifactWorkspace name={value?.name??name} message={message} html={value?.html} links={value?.links??[]}
+    w={w} access={artifactComposer} onClose={onClose} save={save} openBrowser={openBrowser} refresh={()=>setAttempt(n=>n+1)}
+    rename={value?.output&&source.renameArtifact&&source.canRenameArtifact?.()===true?<ArtifactRename titleIcon={<ArtifactIcon size={17}/>} source={source} message={message} output={value.output} w={w} onRenamed={()=>{setAttempt(n=>n+1);onRenamed?.()}}/>:undefined}
+    state={loading||unavailable}/>
+  return <div className="pa-output-scrim" {...backdrop}><div ref={panel} className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={value?.name??name}><header><h3>{value?.name??name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button></header>{loading}{unavailable}{value&&<><div className="pa-library-actions">
       {value.pdfURL&&<a href={value.pdfURL} target="_blank" rel="noopener noreferrer" onClick={event=>{if(source.current?.()===false)event.preventDefault()}}>{w.openPDF}</a>}
-      {artifact&&<button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.refresh}</button>}<button type="button" onClick={save}>{artifact?w.saveHTML:w.downloadFile}</button>{artifact&&<button type="button" onClick={openBrowser}>{tr("libraryOpenBrowser")}</button>}</div>
+      <button type="button" onClick={save}>{w.downloadFile}</button></div>
       {value.pdfURL&&navigator.pdfViewerEnabled&&<iframe className="pa-pdf-frame" title={value.name} src={value.pdfURL} referrerPolicy="no-referrer"/>}
-      {artifact&&<iframe className="pa-artifact-frame" title={value.name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={artifactFrame(value.html)}/>} {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>}</div></div>
+      {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>}</div></div>
 }

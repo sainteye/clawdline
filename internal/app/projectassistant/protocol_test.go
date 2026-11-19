@@ -51,3 +51,22 @@ func TestQuoteScopeProvenanceAndBoundsFailClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestArtifactQuoteCarriesStableIdentityAndCurrentTitle(t *testing.T) {
+	f := newRuntimeFixture(t)
+	fence := pa.Fence{Key: f.key, Project: f.scope, ConversationID: "chat", BindingID: "old", Generation: 1}
+	m := pa.Message{ID: "artifact-card", Fence: fence, TurnID: "author", Kind: pa.AssistantMessage, Text: "Old report",
+		Output: &pa.Output{ID: "version-one", ArtifactID: "report-stable", Name: "Old report"}}
+	next := m
+	next.ID = "latest-card"
+	next.Output = &pa.Output{ID: "version-two", ArtifactID: "report-stable", Name: "Latest report"}
+	x := Export{Messages: []pa.Message{m, next},
+		Turns:          []pa.Turn{{ID: "author", Fence: fence, MessageID: "original-user", State: pa.TurnSucceeded, MemoryRevision: 1}},
+		ArtifactTitles: map[string]pa.ArtifactDisplayTitle{"report-stable": {Title: "Renamed report", OutputID: "version-two"}},
+	}
+	quote, err := resolvePromptQuote(x, m.ID, fence, f.memory.current)
+	if err != nil || quote.MessageID != m.ID || !strings.Contains(quote.Text, "Renamed report") ||
+		!strings.Contains(quote.Text, "report-stable") || strings.Contains(quote.Text, "Old report") {
+		t.Fatalf("quote=%+v err=%v", quote, err)
+	}
+}

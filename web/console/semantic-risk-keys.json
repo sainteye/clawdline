@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13535,
+  "englishKeys": 13539,
   "counts": {
-    "negation": 3528,
+    "negation": 3529,
     "state": 2291,
     "permission": 818,
     "deletion": 314,
     "uncertainty": 552
   },
-  "unionCount": 5809,
+  "unionCount": 5810,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3053,6 +3053,7 @@
       "playbook.zeroReviewBody",
       "projectAssistants.agentNotInstalled",
       "projectAssistants.agentUnavailable",
+      "projectAssistants.artifactSendFailed",
       "projectAssistants.cannotEdit",
       "projectAssistants.checkDelivered",
       "projectAssistants.checkEarlierDelivered",
@@ -12447,6 +12448,7 @@
     "projectAssistants.approvalAuto",
     "projectAssistants.approvalMode",
     "projectAssistants.artifactLinks",
+    "projectAssistants.artifactSendFailed",
     "projectAssistants.auto_read",
     "projectAssistants.backgroundCompleted",
     "projectAssistants.backgroundQueue",

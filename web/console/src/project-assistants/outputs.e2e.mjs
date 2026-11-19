@@ -13,6 +13,7 @@ await mkdir(artifacts,{recursive:true})
 if(!process.env.PLAYWRIGHT_MODULE)throw new Error("Set PLAYWRIGHT_MODULE to the installed local Playwright module")
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
 const bundle=await build({entryPoints:[fileURLToPath(new URL("./outputs.fixture.tsx",import.meta.url))],bundle:true,write:false,outfile:"outputs.js",format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
+const catalogs=new Map(await Promise.all(["en","zh-Hant"].map(async tag=>[`/catalog/${tag}.json`,await readFile(new URL(`../../public/catalogs/${tag}.json`,import.meta.url))])))
 const content=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents]))
 let reads=0
 const server=createServer(async(req,res)=>{
@@ -29,16 +30,17 @@ const server=createServer(async(req,res)=>{
     }
     const pathname=new URL(req.url,"http://fixture").pathname
     if(pathname==="/fixture.json"){res.setHeader("Content-Type","application/json");res.end(JSON.stringify({machine:process.env.BOTS_MACHINE,bot:process.env.BOTS_BOT}));return}
+    if(catalogs.has(pathname)){res.setHeader("Content-Type","application/json");res.end(catalogs.get(pathname));return}
     if(content.has(pathname)){res.setHeader("Content-Type",pathname.endsWith(".css")?"text/css":"text/javascript");res.end(content.get(pathname));return}
     res.setHeader("Content-Type","text/html");res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}</style><link rel="stylesheet" href="/outputs.css"><div id="app"></div><script type="module" src="/outputs.js"></script>')
   }catch(e){res.writeHead(500);res.end(String(e))}
 })
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
-const origin=`http://127.0.0.1:${server.address().port}`,browser=await chromium.launch({headless:true})
+const origin=`http://127.0.0.1:${server.address().port}`,browser=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:["--disable-features=OmniboxEverywhere"]})
 const evidence=[]
 try{
   for(const [language,width,height] of [["en",1280,900],["zh-Hant",390,844]]){
-    const page=await browser.newPage({viewport:{width,height},acceptDownloads:true}),errors=[],external=[]
+    const page=await browser.newPage({viewport:{width,height},locale:language==="en"?"en-US":"zh-TW",acceptDownloads:true}),errors=[],external=[]
     page.on("pageerror",e=>errors.push(String(e)))
     await page.route("https://**/*",r=>{external.push(r.request().url());return r.abort()})
     await page.goto(origin+"/?lang="+language)
@@ -54,22 +56,58 @@ try{
     const expected=Buffer.alloc(384*1024+4);for(let i=0;i<expected.length;i++)expected[i]=[0,255,3,10][i%4]
     assert.deepEqual(await readFile(saved),expected,"verified bytes save exactly")
     await dialog.getByRole("button",{name:close,exact:true}).click()
+    const chatDraft=page.locator(".pa-chat .pa-composer textarea")
+    await chatDraft.fill("Synthetic main chat draft")
     // Opening the first artifact card follows the newest whole snapshot.
+    await page.locator(".pa-artifact-card").first().scrollIntoViewIfNeeded()
+    const preview=page.locator(".pa-artifact-preview iframe").first()
+    await preview.waitFor({state:"attached"})
+    assert.match(await preview.getAttribute("srcdoc"),/Interactive report/)
+    assert.equal(await preview.evaluate(el=>getComputedStyle(el).pointerEvents),"none")
     await page.locator(".pa-output-card>button").filter({hasText:"Interactive report"}).first().click()
-    await page.frameLocator(".pa-artifact-frame").frameLocator("iframe").getByRole("button",{name:"Try interaction",exact:true}).waitFor()
+    try {
+      await page.frameLocator(".pa-artifact-frame").frameLocator("iframe").getByRole("button",{name:"Try interaction",exact:true}).waitFor({timeout:9000})
+    } catch(error) {
+      await page.screenshot({path:path.join(artifacts,language+"-artifact-failure.png"),fullPage:true})
+      console.log("Artifact workspace diagnosis",await page.locator("dialog,[role=dialog]").allTextContents(),page.frames().map(frame=>frame.url()),errors)
+      throw error
+    }
+    const workspace=page.getByRole("dialog",{name:"Interactive report"})
+    const share=workspace.getByLabel(zh?"分享 Artifact":"Share artifact")
+    assert.equal(await workspace.evaluate(el=>el.offsetWidth),width)
     const inner=page.frameLocator(".pa-artifact-frame").frameLocator("iframe")
     assert.equal(await inner.locator("#isolation").textContent(),"Isolated 2")
     await inner.getByRole("button",{name:"Try interaction",exact:true}).click();await inner.getByRole("button",{name:"Clicked",exact:true}).waitFor()
     assert.equal(await page.locator("body").getAttribute("data-compromised"),null)
     await inner.getByRole("link",{name:"Reference",exact:true}).click();await inner.getByRole("button",{name:"Clicked",exact:true}).waitFor()
     await page.screenshot({path:path.join(artifacts,language+"-artifact.png"),fullPage:true})
-    const htmlDownload=page.waitForEvent("download");await dialog.getByRole("button",{name:zh?"另存 HTML":"Save as HTML",exact:true}).click()
+    await share.click()
+    const htmlDownload=page.waitForEvent("download");await workspace.getByRole("button",{name:zh?"另存 HTML":"Save as HTML",exact:true}).click()
     const htmlSaved=path.join(artifacts,language+"-report.html");await(await htmlDownload).saveAs(htmlSaved);assert.match(await readFile(htmlSaved,"utf8"),/Interactive report/)
     await inner.getByRole("button",{name:"Try blocked navigation",exact:true}).click();await page.waitForTimeout(100)
     assert.deepEqual(external,[],"scripted navigation is blocked by the trusted wrapper before a request")
-    await dialog.getByRole("button",{name:zh?"檢查新訊息":"Check for updates",exact:true}).click()
+    await workspace.getByRole("button",{name:zh?"檢查新訊息":"Check for updates",exact:true}).click()
     await inner.getByRole("button",{name:"Try interaction",exact:true}).waitFor()
-    await dialog.getByRole("button",{name:close,exact:true}).click()
+    const artifactDraft=workspace.locator(".pa-composer textarea")
+    await artifactDraft.fill("Synthetic document change")
+    await artifactDraft.press("Escape")
+    assert.equal(await workspace.isVisible(),true,"Escape in an editor keeps the viewer open")
+    assert.match(await artifactDraft.getAttribute("aria-label"),/Interactive report/)
+    const quoteMessageID=await page.locator(".pa-artifact-card").last().evaluate(card=>card.closest("[data-message-id]").dataset.messageId)
+    let sent
+    await page.route("**/v1/project-assistants/*/messages",async route=>{
+      if(route.request().method()!=="POST")return route.continue()
+      sent=route.request().postDataJSON()
+      await route.fulfill({status:409,json:{contract_version:"project-assistants.v1",error:{code:"pa_stale_version",field:"synthetic_REFUSAL"}}})
+    })
+    await workspace.locator(".pa-send").click()
+    await workspace.getByRole("alert").waitFor()
+    assert.equal(sent.quote_message_id,quoteMessageID)
+    assert.equal(sent.text,"Synthetic document change")
+    assert.equal(await artifactDraft.inputValue(),"Synthetic document change")
+    await workspace.getByRole("button",{name:zh?"關閉 Artifact":"Close artifact",exact:true}).click()
+    await workspace.waitFor({state:"detached"})
+    assert.equal(await chatDraft.inputValue(),"Synthetic main chat draft")
     const before=reads;await page.waitForTimeout(100);assert.equal(reads,before,"closed viewer performs no further reads")
     await page.locator(".pa-chat-identity").click()
     const libraryName=zh?"檔案庫":"Library"
