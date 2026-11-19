@@ -724,7 +724,13 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 			}
 			return err
 		}
-		if next, moved := pa.Landed(st, ticket); moved {
+		next, _ := pa.Landed(st, ticket)
+		replySeq := int64(0)
+		if ok {
+			replySeq = entry.Seq
+		}
+		next = pa.RecordRoomPublication(g, next, ticket, t.ID, replySeq)
+		if next.Revision != st.Revision {
 			if err = writeRoomTx(ctx, tx, next, st.Revision); err != nil {
 				return err
 			}

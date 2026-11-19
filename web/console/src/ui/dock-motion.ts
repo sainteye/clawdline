@@ -6,10 +6,10 @@ export function useDockMotion(ref: RefObject<HTMLElement | null>) {
   const closing = useRef(false)
   const origin = useRef({ x: window.innerWidth, y: window.innerHeight })
   useEffect(() => () => { animation.current?.cancel() }, [])
-  const capture = (opener?: HTMLElement | null) => {
+  const capture = (opener?: HTMLElement | null, fallbackX = window.innerWidth) => {
     const box = opener?.getBoundingClientRect()
-    origin.current = box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
-      : { x: window.innerWidth, y: window.innerHeight }
+    origin.current = box?.width && box.height ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+      : { x: fallbackX, y: window.innerHeight }
   }
   const play = (out: boolean, done?: () => void) => {
     const node = ref.current

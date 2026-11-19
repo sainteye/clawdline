@@ -74,15 +74,23 @@ func (r *Engine) selectAgent(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.Age
 	step, err := r.selectStep(ctx, bot, t)
 	return step.Agent, err
 }
-func (r *Engine) selectStep(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.FallbackStep, error) {
+
+type selectedFallbackStep struct {
+	pa.FallbackStep
+	primaryRestReason string
+}
+
+func (r *Engine) selectStep(ctx context.Context, bot pa.Bot, t pa.Turn) (selectedFallbackStep, error) {
 	primary := pa.FallbackStep{Agent: bot.Agent, LoginProfile: bot.LoginProfile}
+	usePrimary := selectedFallbackStep{FallbackStep: primary}
 	if t.RoutineRunID != "" || len(t.Attempts) == 0 && !pa.HasFallbacks(bot) {
-		return primary, nil
+		return usePrimary, nil
 	}
 	rests, ok := r.o.Repository.(AgentRestRepository)
 	if !ok && pa.HasFallbacks(bot) {
-		return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "agent_rests")
+		return selectedFallbackStep{}, runtimeFailure(pa.Unsupported, "agent_rests")
 	}
+	var primaryRestReason string
 	for _, step := range pa.StepChain(bot) {
 		tried := false
 		for _, f := range t.Attempts {
@@ -97,24 +105,27 @@ func (r *Engine) selectStep(ctx context.Context, bot pa.Bot, t pa.Turn) (pa.Fall
 		if ok {
 			rest, err := loginRest(ctx, rests, bot.Key.MachineID, step.Agent, step.LoginProfile)
 			if err != nil {
-				return pa.FallbackStep{}, err
+				return selectedFallbackStep{}, err
 			}
 			if rest != nil && r.o.Clock().Before(rest.Until) {
+				if step == primary && knownFallbackReason(ProviderFailureReason(rest.Reason)) {
+					primaryRestReason = rest.Reason
+				}
 				continue
 			}
 		}
 		if step.Agent != bot.Agent && bot.Mode != "" && bot.Mode != pa.AutoMode {
 			if len(t.Attempts) == 0 {
-				return primary, nil
+				return usePrimary, nil
 			}
-			return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "fallback_mode")
+			return selectedFallbackStep{}, runtimeFailure(pa.Unsupported, "fallback_mode")
 		}
-		return step, nil
+		return selectedFallbackStep{FallbackStep: step, primaryRestReason: primaryRestReason}, nil
 	}
 	if len(t.Attempts) == 0 {
-		return primary, nil
+		return usePrimary, nil
 	}
-	return pa.FallbackStep{}, runtimeFailure(pa.Unsupported, "agents_resting_or_attempted")
+	return selectedFallbackStep{}, runtimeFailure(pa.Unsupported, "agents_resting_or_attempted")
 }
 
 func (r *Engine) appendAttempt(ctx context.Context, a *runtimeActor, t *pa.Turn, stage pa.AttemptStage, binding *pa.ExecutionBinding, rest *pa.AgentRest) error {

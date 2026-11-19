@@ -141,6 +141,22 @@ func paWireGroup(g pa.Group) contract.ProjectAssistantGroup {
 func paWireRoom(st pa.RoomState) contract.ProjectAssistantRoomState {
 	return contract.ProjectAssistantRoomState{Revision: st.Revision, Epoch: st.Epoch, Running: st.Running, Pending: st.Pending, StoppedAt: st.StoppedAt}
 }
+
+func paWireRoomMemberOutcome(v pa.RoomMemberOutcome) contract.ProjectAssistantRoomMemberOutcome {
+	out := contract.ProjectAssistantRoomMemberOutcome{
+		Member: paWireBotKey(v.Member), Name: v.Name, TurnID: v.TurnID,
+		State: contract.ProjectAssistantTurnState(v.State), Disposition: v.Disposition, ReplySeq: v.ReplySeq,
+		Late: v.Late, FailureCode: string(v.FailureCode), FailureField: v.FailureField,
+	}
+	for _, attempt := range v.Attempts {
+		out.Attempts = append(out.Attempts, contract.ProjectAssistantRoomAttempt{
+			Ordinal: int64(attempt.Ordinal), Agent: contract.ProjectAssistantAgent(attempt.Agent), Stage: string(attempt.Stage),
+			Reason: attempt.Reason, Fallback: attempt.Fallback, PrimaryRestReason: attempt.PrimaryRestReason,
+		})
+	}
+	return out
+}
+
 func paWireRoomEntry(e pa.RoomEntry) contract.ProjectAssistantRoomEntry {
 	out := contract.ProjectAssistantRoomEntry{Seq: e.Seq, Kind: string(e.Kind), Text: e.Text, At: paRoutineTime(e.At)}
 	if e.Author != (pa.BotKey{}) {
@@ -311,6 +327,9 @@ func (h *projectAssistantHTTP) readGroups(r *http.Request, route paHTTPRoute) (a
 	}
 	for _, activity := range page.Activity {
 		out.Activity = append(out.Activity, contract.ProjectAssistantRoomActivity{Member: paWireBotKey(activity.Member), TurnID: activity.TurnID, State: contract.ProjectAssistantTurnState(activity.State)})
+	}
+	for _, outcome := range page.MemberOutcomes {
+		out.MemberOutcomes = append(out.MemberOutcomes, paWireRoomMemberOutcome(outcome))
 	}
 	if len(page.Lines) == int(size) {
 		out.HasMore = true

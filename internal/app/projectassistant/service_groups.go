@@ -40,10 +40,11 @@ type GroupHistoryQuery struct {
 }
 
 type GroupHistoryPage struct {
-	Group    pa.Group
-	Room     pa.RoomState
-	Lines    []pa.RoomEntry
-	Activity []pa.RoomActivity
+	Group          pa.Group
+	Room           pa.RoomState
+	Lines          []pa.RoomEntry
+	Activity       []pa.RoomActivity
+	MemberOutcomes []pa.RoomMemberOutcome
 }
 
 func (s *Service) groups() (*GroupRooms, *RoomDriver, error) {

@@ -123,6 +123,9 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 	if err != nil || len(page.Activity) != 2 || page.Activity[0].Member != a.Key || page.Activity[0].State != pa.TurnRunning || page.Activity[1].Member != b.Key || page.Activity[1].State != pa.TurnQueued || len(page.Lines) != 1 || page.Room.Epoch != room.Epoch {
 		t.Fatalf("activity does not describe the actual stored turns: %+v %v", page, err)
 	}
+	if len(page.MemberOutcomes) != 2 || page.MemberOutcomes[0].Name != a.Name || page.MemberOutcomes[1].Name != b.Name {
+		t.Fatalf("current turns do not have scoped member names: %+v", page.MemberOutcomes)
+	}
 	// Removing and rejoining a member invalidates its previous ticket even
 	// though its original Bot turn remains queued in storage.
 	for i, members := range [][]pa.BotKey{{a.Key}, {a.Key, b.Key}} {
@@ -131,8 +134,9 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 		}
 	}
 	page, err = groups.History(testContext, key, 0, 100)
-	if err != nil || len(page.Activity) != 1 || page.Activity[0].Member != a.Key {
-		t.Fatalf("a removed/rejoined member claimed stale work: %+v %v", page.Activity, err)
+	if err != nil || len(page.Activity) != 1 || page.Activity[0].Member != a.Key ||
+		len(page.MemberOutcomes) != 1 || page.MemberOutcomes[0].Member != a.Key {
+		t.Fatalf("a removed/rejoined member claimed stale work: %+v %v", page, err)
 	}
 	if _, err = groups.UpdateRoom(testContext, key, room.Revision, func(_ pa.Group, state pa.RoomState) (pa.RoomState, error) {
 		next, _, err := pa.StopRoom(state, groupLimits)
@@ -141,8 +145,64 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err = groups.History(testContext, key, 0, 100)
-	if err != nil || len(page.Activity) != 0 {
-		t.Fatalf("a stopped room still claimed member work: %+v %v", page.Activity, err)
+	if err != nil || len(page.Activity) != 0 || len(page.MemberOutcomes) != 0 {
+		t.Fatalf("a stopped room still claimed member work: %+v %v", page, err)
+	}
+}
+
+func TestRoomOutcomeDoesNotRevealForeignOrUnverifiedCompletion(t *testing.T) {
+	_, store, groups, _ := groupDB(t)
+	scope := pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}
+	a := seedIn(t, store, "a", scope, false)
+	key := gk("room")
+	draft := pa.GroupDraft{Key: key, Project: scope, ConversationID: "room/chat", Name: "Room", Members: []pa.BotKey{a.Key}}
+	if _, err := groups.CreateGroup(testContext, groupCmd(key, pa.CreateOperation, "create", ""), draft, groupLimits, groupTime); err != nil {
+		t.Fatal(err)
+	}
+	_, room, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "first"), 0, "hello", pa.BotKey{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := groups.Group(testContext, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := pa.TicketFor(group, room, a.Key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	private := finishing(t, store, a, ticket, "direct")
+	private.Turn.Room = nil
+	private.Turn.Origin = pa.UserOrigin
+	private.Turn.State = pa.TurnUnknown
+	private.Turn.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "private diagnostics"}
+	private.Messages[0].Kind = pa.UserMessage
+	private.Messages[0].Text = "private direct message"
+	if _, err = store.Commit(testContext, private); err != nil {
+		t.Fatal(err)
+	}
+	foreign := ticket
+	foreign.Group = gk("other-room")
+	if _, err = store.Commit(testContext, finishing(t, store, a, foreign, "foreign")); err != nil {
+		t.Fatal(err)
+	}
+	// A legacy terminal turn has no publication receipt. The room cannot
+	// decide whether the model passed or a room line was withheld.
+	if _, err = store.Commit(testContext, finishing(t, store, a, ticket, "legacy")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := groups.History(testContext, key, 0, 100)
+	if err != nil || len(page.MemberOutcomes) != 1 || page.MemberOutcomes[0].TurnID != "legacy" ||
+		page.MemberOutcomes[0].State != pa.TurnSucceeded || page.MemberOutcomes[0].Disposition != "" ||
+		len(page.Lines) != 1 || strings.Contains(page.Lines[0].Text, "private") {
+		t.Fatalf("wrong room evidence: %+v %v", page, err)
+	}
+	if _, _, _, err = groups.PersonWrote(testContext, command(key, pa.SendOperation, "second"), room.Revision, "new round", pa.BotKey{}); err != nil {
+		t.Fatal(err)
+	}
+	page, err = groups.History(testContext, key, 0, 100)
+	if err != nil || len(page.MemberOutcomes) != 0 {
+		t.Fatalf("previous round's turn was published again: %+v %v", page, err)
 	}
 }
 

@@ -1002,7 +1002,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		ordinal = t.Attempts[len(t.Attempts)-1].Ordinal + 1
 	}
 	if pa.HasFallbacks(bot) {
-		t.Attempts = append(slices.Clone(t.Attempts), pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, LoginProfile: effectiveBot.LoginProfile, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter})
+		attempt := pa.AttemptFact{Ordinal: ordinal, Agent: effectiveAgent, LoginProfile: effectiveBot.LoginProfile, Fence: t.Fence, Stage: pa.AttemptOpening, Effect: "unknown", ResumeBindingID: resumedFrom, CarryKind: carryKind, CarryAfterSeq: carryAfter}
+		if t.Room != nil {
+			attempt.Fallback = effectiveAgent != bot.Agent || effectiveBot.LoginProfile != bot.LoginProfile
+			attempt.PrimaryRestReason = effectiveStep.primaryRestReason
+		}
+		t.Attempts = append(slices.Clone(t.Attempts), attempt)
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-start-"+t.ID+"-"+binding.Fence.BindingID, t)
 	if routineRun != nil {

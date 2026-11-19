@@ -1783,6 +1783,49 @@ test("Session board header closes a direct open and returns to the index from th
   }
 })
 
+test("a Session board closes toward the Status Line from both entry points", async () => {
+  boardFixture = true
+  try {
+    for (const entry of ["group", "dock"]) {
+      await inTab(async tab => {
+        if (entry === "dock") await tab.desktop()
+        await tab.go("/")
+        const group = "#rows .session-board-group > button"
+        const dock = ".session-board-dock"
+        const dialog = ".session-board-reader[open]"
+        await shortcutUntil(tab, `!!document.querySelector('${group}') && !!document.querySelector('${dock}')`)
+        await tab.press(entry === "group" ? group : dock)
+        if (entry === "dock") {
+          await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+          await tab.press(`${dialog} .session-board-index-card`)
+        }
+        await shortcutUntil(tab, `document.querySelector('${dialog}').getAnimations().length === 0`)
+        const motion = await tab.run(`(() => {
+          const node = document.querySelector('${dialog}')
+          const center = (element) => {
+            const box = element.getBoundingClientRect()
+            return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+          }
+          const target = center(document.querySelector('${dock}'))
+          const open = center(node)
+          node.querySelector('header > button:last-child').click()
+          const animation = node.getAnimations()[0]
+          animation.pause()
+          animation.currentTime = animation.effect.getComputedTiming().duration - 1
+          const folded = center(node)
+          const distance = (point) => Math.hypot(point.x - target.x, point.y - target.y)
+          animation.finish()
+          return { left: folded.x < open.x, down: folded.y > open.y, nearDock: distance(folded) < distance(open) * 0.1 }
+        })()`)
+        assert.deepEqual(motion, { left: true, down: true, nearDock: true }, entry)
+        await shortcutUntil(tab, `!document.querySelector('${dialog}')`)
+      })
+    }
+  } finally {
+    boardFixture = false
+  }
+})
+
 test("a click on the Session board backdrop closes the dialog and returns focus", async () => {
   boardFixture = true
   try {

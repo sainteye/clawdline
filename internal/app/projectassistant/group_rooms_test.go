@@ -24,7 +24,21 @@ var roomAt = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 // This tests the host/provider boundary, not an installed model's compliance.
 type responsibleRoomPeer struct {
 	*roomPeer
-	pass, fail map[string]bool
+	pass, fail, quota, refuse map[string]bool
+	probes                    map[string]int
+}
+
+func (p *responsibleRoomPeer) Capabilities(ctx context.Context, b pa.Bot) (pa.Capabilities, error) {
+	if p.refuse[b.Key.BotID] {
+		p.mu.Lock()
+		p.probes[b.Key.BotID]++
+		executionProbe := p.probes[b.Key.BotID] > 1
+		p.mu.Unlock()
+		if executionProbe {
+			return pa.Capabilities{}, &pa.Failure{Code: pa.ScopeDenied, Field: "synthetic_execution"}
+		}
+	}
+	return p.roomPeer.Capabilities(ctx, b)
 }
 
 func (p *responsibleRoomPeer) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
@@ -48,6 +62,9 @@ func (s *responsibleRoomSession) Send(ctx context.Context, q app.PromptRequest) 
 }
 
 func (s *responsibleRoomSession) Wait(context.Context) (app.PromptResult, error) {
+	if s.owner.quota[s.bot] {
+		return app.PromptResult{}, &app.ProviderFailure{Reason: app.ProviderUsageExhausted, Cause: &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "synthetic_quota_after_send"}}
+	}
 	if s.owner.fail[s.bot] {
 		return app.PromptResult{}, fmt.Errorf("synthetic provider unavailable")
 	}
@@ -59,13 +76,15 @@ func (s *responsibleRoomSession) Wait(context.Context) (app.PromptResult, error)
 
 func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 	for _, tc := range []struct {
-		name, text, answer string
-		pass, fail         map[string]bool
+		name, text, answer        string
+		pass, fail, quota, refuse map[string]bool
 	}{
 		{name: "greeting", text: "嗨", answer: "a"},
 		{name: "question", text: "可以幫我看看嗎？", answer: "a"},
 		{name: "first explicitly passes", text: "嗨", pass: map[string]bool{"a": true}, answer: "b"},
 		{name: "first fails", text: "嗨", fail: map[string]bool{"a": true}, answer: "b"},
+		{name: "known quota with unknown effect", text: "嗨", quota: map[string]bool{"a": true}, answer: "b"},
+		{name: "execution refused before sending", text: "嗨", refuse: map[string]bool{"a": true}, answer: "b"},
 		{name: "targeted", text: "@Bob 嗨", answer: "b"},
 		{name: "everyone explicitly passes", text: "嗨", pass: map[string]bool{"a": true, "b": true}},
 	} {
@@ -77,7 +96,8 @@ func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 				return pa.FeatureState{Enabled: true}, roomSource(k.MachineID), nil
 			}
 			var err error
-			h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, Provider: &responsibleRoomPeer{roomPeer: h.peer, pass: tc.pass, fail: tc.fail}, ProjectResolver: roomResolver{h.scope}, Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+			provider := &responsibleRoomPeer{roomPeer: h.peer, pass: tc.pass, fail: tc.fail, quota: tc.quota, refuse: tc.refuse, probes: map[string]int{}}
+			h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, Provider: provider, ProjectResolver: roomResolver{h.scope}, Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,6 +127,37 @@ func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 			}
 			if tc.text == "@Bob 嗨" && len(h.peer.asked("a")) != 0 {
 				t.Fatal("explicit target widened to another participant")
+			}
+			page, err := h.groups.History(roomCtx, g, 0, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantMembers := 2
+			if tc.text == "@Bob 嗨" {
+				wantMembers = 1
+			}
+			if len(page.MemberOutcomes) != wantMembers || len(page.Activity) != 0 {
+				t.Fatalf("terminal room outcomes: %+v", page)
+			}
+			for _, got := range page.MemberOutcomes {
+				switch id := got.Member.BotID; {
+				case tc.refuse[id]:
+					if got.State != pa.TurnFailed || got.FailureCode != pa.ScopeDenied || got.Disposition != "" || len(h.peer.asked(id)) != 0 {
+						t.Fatalf("pre-send refusal was not preserved: %+v", got)
+					}
+				case tc.fail[id] || tc.quota[id]:
+					if got.State != pa.TurnUnknown || got.Disposition != "" || (got.FailureField == "provider_usage_limit") != tc.quota[id] {
+						t.Fatalf("room outcome lost its actual diagnosis: %+v", got)
+					}
+				case id == tc.answer:
+					if got.State != pa.TurnSucceeded || got.Disposition != "published" || got.ReplySeq != lines[1].Seq {
+						t.Fatalf("room outcome lost its published line: %+v", got)
+					}
+				default:
+					if got.State != pa.TurnSucceeded || got.Disposition != "quiet" || got.ReplySeq != 0 || got.FailureField != "" {
+						t.Fatalf("room outcome mislabeled a quiet turn: %+v", got)
+					}
+				}
 			}
 		})
 	}

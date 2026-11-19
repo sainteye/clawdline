@@ -395,7 +395,10 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const heading = useId()
   const title = useRef<HTMLHeadingElement>(null)
   const motion = useDockMotion(dialog)
-  const dismiss = () => motion.close(() => dialog.current?.close())
+  const dismiss = () => {
+    motion.capture(opener ?? document.querySelector<HTMLButtonElement>(".session-board-dock"), 0)
+    motion.close(() => dialog.current?.close())
+  }
   const backdrop = useBoardBackdrop(() => {
     const fields = dialog.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("form input[name=name], form textarea")
     const changed = Array.from(fields ?? []).some(field => field.name === "summary" ? field.value !== field.defaultValue : !!field.value)

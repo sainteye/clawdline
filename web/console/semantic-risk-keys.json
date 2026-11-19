@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13311,
+  "englishKeys": 13320,
   "counts": {
-    "negation": 3508,
-    "state": 2246,
+    "negation": 3509,
+    "state": 2248,
     "permission": 813,
     "deletion": 312,
-    "uncertainty": 543
+    "uncertainty": 545
   },
-  "unionCount": 5734,
+  "unionCount": 5739,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3107,6 +3107,7 @@
       "projectAssistants.reactionsUnavailable",
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
+      "projectAssistants.roomOutcomeQuiet",
       "projectAssistants.rosterUnsaved",
       "projectAssistants.routineHeld",
       "projectAssistants.routineJournalUnreadable",
@@ -5485,6 +5486,8 @@
       "projectAssistants.outputFailed",
       "projectAssistants.reactionFailed",
       "projectAssistants.resumedNotice",
+      "projectAssistants.roomAttemptFinished",
+      "projectAssistants.roomOutcomeRefused",
       "projectAssistants.rosterSortDone",
       "projectAssistants.rosterUnsaved",
       "projectAssistants.routineDeleteConfirm",
@@ -7378,6 +7381,8 @@
       "projectAssistants.pictureUnavailable",
       "projectAssistants.reactionUnknown",
       "projectAssistants.renameArtifactUnknown",
+      "projectAssistants.roomOutcomeUnavailable",
+      "projectAssistants.roomOutcomeUnknown",
       "projectAssistants.sourceOffline",
       "projectAssistants.unavailable",
       "projectAssistants.unknown",
@@ -12476,6 +12481,11 @@
     "projectAssistants.renameArtifactUnknown",
     "projectAssistants.resumedNotice",
     "projectAssistants.revoked",
+    "projectAssistants.roomAttemptFinished",
+    "projectAssistants.roomOutcomeQuiet",
+    "projectAssistants.roomOutcomeRefused",
+    "projectAssistants.roomOutcomeUnavailable",
+    "projectAssistants.roomOutcomeUnknown",
     "projectAssistants.rosterSortDone",
     "projectAssistants.rosterUnsaved",
     "projectAssistants.routineConfirmDelete",

@@ -13,6 +13,7 @@ import { currentCatalogTag } from "../catalog"
 import { EventRefreshMs } from "./Chat"
 import { followSnapshotRoster, serialSnapshotRefresh } from "./snapshot-roster"
 import { groupMentionOptions, withGroupMention } from "./group-mentions"
+import { GroupMemberOutcome, showGroupMemberOutcome } from "./GroupMemberOutcome"
 import { useMessageArrivals } from "./message-arrivals"
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
@@ -137,7 +138,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       const gap=!before&&previous.length>0&&answer.lines.length>0&&answer.lines[0].seq>last+1
       const next=gap?answer.lines:merge(previous,answer.lines)
       restore.current=capturePosition();linesRef.current=next
-      setPage(answer);setGroup(old=>answer.group.version>=old.version?answer.group:old);setLines(next)
+      setPage(old=>old&&old.room.revision>answer.room.revision?old:answer);setGroup(old=>answer.group.version>=old.version?answer.group:old);setLines(next)
       if(before||!moreRef.current||gap)rememberMore({before:answer.next_before_seq,hasMore:answer.has_more})
       setError("")
       if(answer.group.deleted)changedRef.current(answer.group)
@@ -214,7 +215,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       position.current.following=true;restore.current={top:0,following:true}
       const next=merge(linesRef.current,[answer.entry]);linesRef.current=next;setLines(next)
       setSending(null)
-      setPage(old=>old&&answer.room.revision>=old.room.revision?{...old,room:answer.room}:old)
+      setPage(old=>old&&answer.room.revision>=old.room.revision?{...old,room:answer.room,activity:[],member_outcomes:[]}:old)
       return answer
     })
     if(pending.current===request)setText(request.text)
@@ -224,9 +225,8 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const working=!!page?.room.running||activity.length>0
   const stopRoom=()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))
   const showStop=working&&!text.trim()&&!!source.stopGroup
-  // The room snapshot has active tickets, not terminal member outcomes. Do
-  // not label an absent publication as a pass or manufacture a Bot message.
-  const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&lines.at(-1)?.kind==="person"
+  const outcomes=readable&&page.group.version>=group.version?page.member_outcomes?.filter(showGroupMemberOutcome)??[]:[]
+  const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&outcomes.length===0&&lines.at(-1)?.kind==="person"
   const openEditor=(opener:HTMLElement|null,mode:"edit"|"add"="edit")=>{opener?.focus({preventScroll:true});setEditing(mode)}
   const body=<section ref={room} hidden={!active} className={`pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-label={group.name}
     onFocusCapture={event=>{if(event.target instanceof HTMLElement)lastFocus.current=event.target}}
@@ -252,6 +252,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
         <div className="pa-room-bubble">{line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}<p>{line.text}</p></div>
         {canQuote&&(line.kind==="member"||person)&&<button className="pa-room-reply" type="button" aria-label={`${groupWord("groupReply")} · ${author(line.author)}`} disabled={!writable||busy||unknown} title={groupWord("groupReply")} onClick={()=>replyTo(line)}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 5-6 6 6 6M3 11h9a8 8 0 0 1 8 8"/></svg></button>}
       </article>})}
+      {outcomes.map(outcome=><GroupMemberOutcome key={outcome.turn_id} outcome={outcome} w={w}/>)}
       {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
       {sending&&<article key={sending.command.idempotency_key} data-local-entrance className="pa-room-message pa-room-person pa-sending" aria-live="polite">
         {!lines.some(line=>line.kind==="person"&&line.seq>sentAfter.current&&line.text===sending.text)&&<div className="pa-room-bubble">{sending.text}</div>}
