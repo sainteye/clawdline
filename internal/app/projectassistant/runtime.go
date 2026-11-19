@@ -81,6 +81,8 @@ type runtimeActor struct {
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
 	steering map[string]bool
+
+	maintenance bool // immutable: owns the actor without a chat turn
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -140,6 +142,9 @@ func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
 	a := r.actors[key]
 	if a != nil && a.retained {
 		return nil, runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup")
+	}
+	if a != nil && a.maintenance {
+		return nil, runtimeFailure(pa.CapacityFull, "native_maintenance_busy")
 	}
 	if a == nil {
 		if len(r.actors) >= r.o.Limits.MaxBots {
