@@ -9,7 +9,7 @@ import type { Words } from "./words"
 /** Pictures one message may carry; the daemon refuses more. */
 export const MAX_PICTURES = 4
 
-export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabled,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,onFileError}: {text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;onFileError?:(error:string)=>void}) {
+export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabled,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,onFileError}: {text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;onFileError?:(error:string)=>void}) {
   const composing=useRef(false),picker=useRef<HTMLInputElement>(null)
   const voiceRow=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null)
   const mine=useRef(false),gone=useRef(false),latest=useRef({text,onText})
@@ -38,7 +38,7 @@ export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabl
   }
   const empty=!text.trim()&&!images.length&&!files.length
   const showStop=!!onStop&&empty&&!voiceBusy
-  const ready=!disabled&&!busy&&!sendBlocked&&!voiceBusy&&!empty
+  const ready=!disabled&&!busy&&!sendBlocked&&!callActive&&!voiceBusy&&!empty
   const take=(selected:readonly File[])=>{
     if(disabled||busy)return false
     const pictures=selected.filter(f=>f.type.startsWith("image/")),regular=selected.filter(f=>!f.type.startsWith("image/"))
@@ -63,7 +63,7 @@ export function Composer({text,onText,onSend,onStop,disabled,stopDisabled=disabl
     <form className="pa-composer" onSubmit={e=>{e.preventDefault();if(ready&&!composing.current)onSend()}} onDragOver={e=>{if(onImages||onFiles)e.preventDefault()}} onDrop={drop}>
       {(onImages||onFiles)&&<><button type="button" className="pa-attach" aria-label={onFiles?w.attachFiles:w.attachPicture} title={onFiles?w.attachFiles:w.attachPicture} disabled={disabled||busy} onMouseDown={e=>e.preventDefault()} onClick={()=>picker.current?.click()}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
         <input ref={picker} type="file" accept={onFiles?undefined:"image/png,image/jpeg,image/gif,image/webp"} multiple hidden onChange={e=>{take([...(e.target.files??[])]);e.target.value=""}}/></>}
-      <button type="button" className="pa-mic" aria-label={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} title={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} aria-pressed={recording} disabled={recording?false:disabled||busy||voiceBusy} onMouseDown={e=>e.preventDefault()} onClick={pressVoice}>
+      <button type="button" className="pa-mic" aria-label={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} title={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} aria-pressed={recording} disabled={recording?false:disabled||busy||voiceBusy||callActive} onMouseDown={e=>e.preventDefault()} onClick={pressVoice}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{recording?<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>:<><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.75 11.75v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18.5V21"/></>}</svg>
       </button>
       <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={editor} rows={1} aria-label={w.compose} placeholder={w.compose+"…"} value={text} disabled={disabled}

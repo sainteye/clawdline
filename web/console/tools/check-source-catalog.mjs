@@ -73,7 +73,9 @@ const survey = table("src/onboarding/words.ts", "export { surveyEn as en, survey
 const viewPlugins = table("src/view-plugins/words.ts", "export { en as sourceEn, zh as sourceZh }", "en", ["en", "zh"])
 const pluginTable = words => Object.fromEntries(Object.entries(words).flatMap(([key,value]) => typeof value === "string" ? [[key,value]] : Object.entries(value).map(([code,text]) => [`error_${code}`,text])))
 const botExchange = table("src/project-assistants/exchange-words.ts", "export { en as sourceEn, zhHant as sourceZh }", "en", ["en", "zhHant"])
+const botCall = table("src/project-assistants/bot-call-words.ts", "export { en as sourceEn, zhHant as sourceZh }", "en", ["en", "zhHant"])
 const domains = [
+  { name: "botCall", en: botCall.sourceEn, zh: botCall.sourceZh, english: true },
   { name: "botExchange", en: botExchange.sourceEn, zh: botExchange.sourceZh, english: true },
   { name: "botRoutineControls", en: botRoutineControls.sourceEn, zh: botRoutineControls.sourceZh, english: true },
   { name: "viewPlugins", en: pluginTable(viewPlugins.sourceEn), zh: pluginTable(viewPlugins.sourceZh), english: true },
