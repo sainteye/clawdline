@@ -9,6 +9,7 @@ import { PairScanner } from "./PairScanner.js"
 import {
   agentOutcome,
   agentSaid,
+  defaultPairAssistant,
   elapsedSaid,
   handPairToAgent,
   listenPairAgent,
@@ -56,7 +57,8 @@ export function PairPanel(props: {
   onAgain: () => void
   onClose: () => void
   onPaired: () => void
-  helpers?: { id: string; name: string }[]
+  helpers?: { id: string; name: string; readsQuota?: boolean }[]
+  readHelperQuota?: (helper: string) => Promise<unknown>
   onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }, assistant: PairAssistant) => Promise<PairAgentReply>
   onAgentStatus?: (helper: string, task: string) => Promise<PairAgentProgress>
   /** Which device this is: the Home Screen app and a phone browser scan the machine's QR here; a computer copies a code. */
@@ -86,11 +88,12 @@ export function PairPanel(props: {
   const [now, setNow] = useState(() => Date.now())
   // Other methods stay folded during assisted pairing; an explicit manual start opens them.
   const [manualOpen, setManualOpen] = useState(false)
-  const [assistant, setAssistant] = useState<PairAssistant>("claude")
+  const [assistantOverride, setAssistantOverride] = useState<PairAssistant | null>(null)
+  const [quotaRead, setQuotaRead] = useState<{ helper: string; snapshot: unknown } | null>(null)
   const [helperFlow, setHelperFlow] = useState(false)
   const [helperID, setHelperID] = useState("")
   const [runningHelper, setRunningHelper] = useState("")
-  const autoHelper = useRef("")
+  const autoHelper = useRef<{ id: string; assistant: PairAssistant } | null>(null)
   const [agentExpected, setAgentExpected] = useState<{ machineID: string; offerDigest: string; expiresAt: number } | null>(null)
   const attempt = useRef(0)
   const completed = useRef(false)
@@ -181,7 +184,21 @@ export function PairPanel(props: {
   }, [running])
 
   const selectedHelper = props.onAgentStart ? props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0] : undefined
-  function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }) {
+  const quotaHelper = !sameMac && asked && selectedHelper?.readsQuota ? selectedHelper.id : null
+  const readQuota = props.readHelperQuota
+  const quotaPending = !assistantOverride && !!(quotaHelper && readQuota) && quotaRead?.helper !== quotaHelper
+  const assistant = assistantOverride ?? defaultPairAssistant(
+    quotaRead?.helper === quotaHelper ? quotaRead.snapshot : null, Math.floor(Date.now() / 1000),
+  )
+  useEffect(() => {
+    if (!quotaHelper || !readQuota) return
+    let active = true
+    const settle = (snapshot: unknown) => { if (active) setQuotaRead({ helper: quotaHelper, snapshot }) }
+    void readQuota(quotaHelper).then(settle, () => settle(null))
+    return () => { active = false }
+  }, [quotaHelper, readQuota])
+
+  function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }, choice: PairAssistant) {
     const generation = ++attempt.current
     const fragment = state.phase === "waiting" ? state.fragment : ""
     const expiresAt = state.phase === "waiting" ? state.expiresAt : Date.now()
@@ -194,7 +211,7 @@ export function PairPanel(props: {
     setProgress(null)
     setRunningHelper(helper?.id ?? "")
     const started = helper && props.onAgentStart
-      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target, assistant)
+      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target, choice)
       : handPairToAgent({ offer: state.phase === "waiting" ? state.fragment : "", machineID: target.id, machineName: target.name })
     void started.then((reply) => {
       if (attempt.current !== generation) return
@@ -205,10 +222,11 @@ export function PairPanel(props: {
     })
   }
   useEffect(() => {
-    if (state.phase !== "waiting" || !asked || !autoHelper.current) return
-    const helper = props.helpers?.find((machine) => machine.id === autoHelper.current)
-    autoHelper.current = ""
-    if (helper) startAgent(helper, asked)
+    const queued = autoHelper.current
+    if (state.phase !== "waiting" || !asked || !queued) return
+    const helper = props.helpers?.find((machine) => machine.id === queued.id)
+    autoHelper.current = null
+    if (helper) startAgent(helper, asked, queued.assistant)
   }, [state.phase, state.phase === "waiting" ? state.fragment : "", asked?.id])
   useEffect(() => {
     let active = true
@@ -316,7 +334,7 @@ export function PairPanel(props: {
             ? ["cloudPairStepCopy", "cloudPairStepPaste", "cloudPairStepCompare"] as const
             : ["cloudPairStepOpen", "cloudPairStepScanApp", "cloudPairStepCompare"] as const
           const begin = () => {
-            autoHelper.current = ""
+            autoHelper.current = null
             setHelperFlow(false)
             onBegin()
           }
@@ -343,13 +361,14 @@ export function PairPanel(props: {
                     className="go cloud-pair-primary"
                     type="button"
                     id="cloud-pair-helper-go"
+                    disabled={quotaPending}
                     onClick={() => {
                       setHelperFlow(true)
-                      autoHelper.current = selectedHelper.id
+                      autoHelper.current = { id: selectedHelper.id, assistant }
                       onBegin()
                     }}
                   >
-                    {nextWord("cloudPairHelperStart")}
+                    {nextWord(quotaPending ? "quotaLoading" : "cloudPairHelperStart")}
                   </button>
                 </div>
               )}
@@ -421,7 +440,7 @@ export function PairPanel(props: {
         const helper = props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0]
         const cloudHandOff = offer && asked && helper && props.onAgentStart ? helper : null
         const handOff = offer && asked && (cloudHandOff || pairAgentAvailable()) ? asked : null
-        const send = () => { if (handOff) startAgent(cloudHandOff || null, handOff) }
+        const send = () => { if (handOff && (!cloudHandOff || !quotaPending)) startAgent(cloudHandOff || null, handOff, assistant) }
         // The complete offer is the direct path; an agent hand-off is optional.
         const manual = (
           <>
@@ -502,10 +521,10 @@ export function PairPanel(props: {
                           className="go cloud-pair-primary"
                           type="button"
                           id="cloud-pair-agent"
-                          disabled={agent !== null && agent.ok}
+                          disabled={agent !== null && agent.ok || !!cloudHandOff && quotaPending}
                           onClick={send}
                         >
-                          {cloudHandOff ? nextWord("cloudPairHelperStart") : nextWord("cloudPairAgentHand")}
+                          {nextWord(cloudHandOff ? quotaPending ? "quotaLoading" : "cloudPairHelperStart" : "cloudPairAgentHand")}
                         </button>
                         <p className="fine">{cloudHandOff
                           ? nextWord("cloudPairCloudHandWhen", { helper: cloudHandOff.name, machine: handOff.name })
@@ -662,8 +681,8 @@ export function PairPanel(props: {
   function assistantPicker() {
     return <label className="cloud-pair-helper">
       {nextWord("cloudPairHelperAssistant")}
-      <select value={assistant} onChange={(event) => setAssistant(event.target.value as PairAssistant)}>
-        <option value="claude">Claude</option>
+      <select value={assistant} onChange={(event) => setAssistantOverride(event.target.value as PairAssistant)}>
+        <option value="claude">Claude Code</option>
         <option value="codex">Codex</option>
       </select>
     </label>

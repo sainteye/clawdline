@@ -12,7 +12,26 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { pairAgentMatches, pairingOfferDigest, readPairAgentComparison, PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, localPairing, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
+import { defaultPairAssistant, pairAgentMatches, pairingOfferDigest, readPairAgentComparison, PAIR_AGENT_EVENT, PAIR_AGENT_HANDLER, agentOutcome, agentSaid, elapsedSaid, handPairToAgent, localPairing, listenPairAgent, pairAgentAvailable, progressSaid, readPairAgentEvent, type PairAgentReply } from "./pair-agent.ts"
+
+test("pairing defaults to Codex only when the helper has a spent Claude window and usable Codex quota", () => {
+  const at = 1000
+  const window = (used_percent: number, resets_at = at + 100, name = "5h") => ({ name, used_percent, resets_at })
+  const claude = { id: "claude", stale: false, windows: [window(100)] }
+  const codex = { id: "codex", stale: false, windows: [window(88)] }
+  const choose = (...providers: unknown[]) => defaultPairAssistant({ providers }, at)
+  assert.equal(choose(claude, codex), "codex")
+  assert.equal(choose({ ...claude, windows: [window(50), window(100, at + 100, "7d")] }, codex), "codex")
+  assert.equal(choose({ ...claude, windows: [window(99.8)] }, codex), "claude")
+  assert.equal(choose({ ...claude, stale: true }, codex), "claude")
+  assert.equal(choose({ ...claude, windows: [window(100, at)] }, codex), "claude")
+  assert.equal(choose({ ...claude, windows: [window(100, at + 100, "Sonnet 7d")] }, codex), "claude")
+  assert.equal(choose({ ...claude, windows: null }, codex), "claude")
+  assert.equal(choose(claude), "claude")
+  assert.equal(choose(claude, { ...codex, stale: true }), "claude")
+  assert.equal(choose(claude, { ...codex, windows: [window(88), window(100, at + 100, "7d")] }), "claude")
+  assert.equal(choose(claude, { ...codex, credits_in_use: true }), "claude")
+})
 
 function host(answer: (body: unknown) => Promise<unknown>) {
   const sent: unknown[] = []
