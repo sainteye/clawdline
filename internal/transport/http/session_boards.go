@@ -175,6 +175,9 @@ func validSessionBoardCommand(c sb.Command) bool {
 	if len(c.Members) > sb.MaxMembers || (len(c.Members) > 0 && c.Action != "create" && c.Action != "add-members") {
 		return false
 	}
+	if c.Source != "" && c.Action != "move-members" {
+		return false
+	}
 	if c.Action == "create" {
 		return c.Board == "" && c.ReplyTo == 0 && sb.ValidText(c.Name, sb.MaxName) && sb.ValidText(c.Text, sb.MaxText)
 	}
@@ -190,6 +193,8 @@ func validSessionBoardCommand(c sb.Command) bool {
 		return c.Text == "" && c.ReplyTo == 0 && c.Target != ""
 	case "add-members":
 		return c.Text == "" && c.ReplyTo == 0 && c.Target == "" && len(c.Members) > 0
+	case "move-members":
+		return c.Text == "" && c.ReplyTo == 0 && c.Target == "" && c.Source != c.Board && sb.ValidText(c.Source, sha256.Size*2)
 	case "archive", "join", "leave":
 		return c.Text == "" && c.ReplyTo == 0 && c.Target == ""
 	default:

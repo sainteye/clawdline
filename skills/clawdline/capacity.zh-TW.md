@@ -749,7 +749,7 @@
 | `session.message_board_archive_seconds` | 2592000 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `session.message_board_boards` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.message_board_key_bytes` | 128 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `session.message_board_members` | 24 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `session.message_board_members` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.message_board_name_bytes` | 120 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.message_board_page` | 24 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `session.message_board_posts` | 512 | `rows` | `evict_oldest` | `diagnostics` | — |

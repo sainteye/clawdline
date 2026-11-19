@@ -378,3 +378,45 @@ func TestSessionBoardNamesReuseThePublishedListForEveryPost(t *testing.T) {
 		t.Fatal("ambiguous identity replaced a saved title")
 	}
 }
+
+func TestSessionBoardRosterMoveCrossesTheDeviceWriteGate(t *testing.T) {
+	f := projectCloudStandIn(t)
+	now := time.Now()
+	lead := sb.Actor{ID: "codex:previous", Label: "Previous Lead"}
+	receiver := sb.Actor{ID: "claude:next", Label: "Next Lead"}
+	create := func(actor sb.Actor, project, key string) string {
+		t.Helper()
+		out, err := f.server.store.ChangeSessionBoard(t.Context(), project, actor, sb.Actor{},
+			sb.Command{Action: "create", Name: "Review", Text: "Purpose"}, key, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ID
+	}
+	old := create(lead, f.place, "old")
+	next := create(receiver, f.place, "new")
+	foreign := create(sb.Actor{ID: "codex:foreign"}, "other-project", "foreign")
+	move := func(seq uint64, source string) int {
+		t.Helper()
+		answer, _ := f.ask(t, seq, map[string]any{
+			"type": "session-boards.change", "session": cloudops.MachineReplySession,
+			"request": fmt.Sprint(seq), "command": map[string]any{"action": "move-members", "source": source, "board": next},
+		})
+		return answer.Status
+	}
+	f.bridge.AllowCommands = func() bool { return false }
+	if status := move(10, old); status != http.StatusForbidden {
+		t.Fatalf("read-only device: status %d", status)
+	}
+	f.bridge.AllowCommands = func() bool { return true }
+	if status := move(11, foreign); status != http.StatusForbidden {
+		t.Fatalf("cross-project move: status %d", status)
+	}
+	if status := move(12, old); status != http.StatusOK {
+		t.Fatalf("paired device move: status %d", status)
+	}
+	page, err := f.server.store.SessionBoardPage(t.Context(), f.place, lead.ID, next, 0, 0)
+	if err != nil || page.Board.Lead != receiver.ID || len(page.Board.Members) != 2 {
+		t.Fatalf("destination after paired move: %+v, %v", page.Board, err)
+	}
+}

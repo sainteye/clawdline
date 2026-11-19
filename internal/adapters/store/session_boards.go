@@ -66,7 +66,7 @@ func openSessionBoards(db *sql.DB) error {
 		}
 	}
 	hasReplyActor, err := hasColumn(db, "session_board_posts", "reply_actor")
-	if err != nil || hasReplyActor {
+	if err != nil {
 		return err
 	}
 	tx, err := db.Begin()
@@ -74,13 +74,35 @@ func openSessionBoards(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("ALTER TABLE session_board_posts ADD COLUMN reply_actor TEXT NOT NULL DEFAULT ''"); err != nil {
+	if !hasReplyActor {
+		if _, err := tx.Exec("ALTER TABLE session_board_posts ADD COLUMN reply_actor TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		// Preserve the Inbox recipient when an older post is later dropped.
+		if _, err := tx.Exec(`UPDATE session_board_posts AS reply SET reply_actor=original.actor
+			FROM session_board_posts AS original
+			WHERE original.board=reply.board AND original.seq=reply.reply_to`); err != nil {
+			return err
+		}
+	}
+	// Legacy rosters have no join timestamps. Keep the newest active board
+	// each Session already joined, falling back to insertion order.
+	if _, err := tx.Exec(`WITH ranked AS (
+		SELECT m.board, m.actor, row_number() OVER (
+			PARTITION BY m.actor ORDER BY b.created_at DESC, b.rowid DESC
+		) AS position
+		FROM session_board_members m JOIN session_boards b ON b.id=m.board
+		WHERE b.archived_at=0
+	)
+	DELETE FROM session_board_members WHERE (board, actor) IN (
+		SELECT board, actor FROM ranked WHERE position>1
+	)`); err != nil {
 		return err
 	}
-	// Preserve the Inbox recipient when an older post is later dropped.
-	if _, err := tx.Exec(`UPDATE session_board_posts AS reply SET reply_actor=original.actor
-		FROM session_board_posts AS original
-		WHERE original.board=reply.board AND original.seq=reply.reply_to`); err != nil {
+	if _, err := tx.Exec(`UPDATE session_boards SET lead=''
+		WHERE archived_at=0 AND lead<>'' AND NOT EXISTS (
+			SELECT 1 FROM session_board_members m WHERE m.board=session_boards.id AND m.actor=session_boards.lead
+		)`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -204,7 +226,7 @@ func (s *Store) ArchiveInactiveSessionBoard(ctx context.Context, board sb.Board,
 	})
 }
 
-// ActiveSessionBoardIDs snapshots a member's boards in this Project before a handoff opens.
+// ActiveSessionBoardIDs snapshots the current membership in this Project before a handoff opens.
 func (s *Store) ActiveSessionBoardIDs(ctx context.Context, project, actor string) ([]string, error) {
 	rows, err := s.rd.QueryContext(ctx, `SELECT b.id FROM session_boards b
 		JOIN session_board_members m ON m.board=b.id
@@ -224,9 +246,9 @@ func (s *Store) ActiveSessionBoardIDs(ctx context.Context, project, actor string
 	return ids, classify(rows.Err())
 }
 
-// TransferSessionBoards moves only still-active memberships captured by the
-// handoff. Deleting first leaves room on a full board. The receiver may already
-// be a member, and only a Lead still held by the sender moves to the receiver.
+// TransferSessionBoards moves the still-active membership captured by the
+// handoff. Old handoff records may list multiple boards. Deleting the sender
+// first leaves room on a full board.
 func (t *WorkV2Tx) TransferSessionBoards(project, from string, to sb.Actor, ids []string) error {
 	for _, id := range ids {
 		res, err := t.tx.ExecContext(t.ctx, `DELETE FROM session_board_members WHERE board=? AND actor=?
@@ -241,8 +263,11 @@ func (t *WorkV2Tx) TransferSessionBoards(project, from string, to sb.Actor, ids 
 		if n == 0 {
 			continue
 		}
-		if _, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_board_members(board,actor,label,persona)
-			VALUES(?,?,?,?) ON CONFLICT(board,actor) DO NOTHING`, id, to.ID, to.Label, to.Persona); err != nil {
+		members, err := sessionBoardMembers(t.ctx, t.tx, id)
+		if err != nil {
+			return err
+		}
+		if err := insertSessionBoardMembers(t.ctx, t.tx, id, members, []sb.Actor{to}); err != nil {
 			return err
 		}
 		if _, err := t.tx.ExecContext(t.ctx, `UPDATE session_boards SET lead=? WHERE id=? AND lead=?`, to.ID, id, from); err != nil {
@@ -476,6 +501,11 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 	}
 
 	switch c.Action {
+	case "move-members":
+		if !person {
+			return result, sb.ErrDenied
+		}
+		err = moveSessionBoardRoster(ctx, tx, c.Source, b, members)
 	case "add-members":
 		if !person || b.Project != project {
 			return result, sb.ErrDenied
@@ -564,12 +594,48 @@ func insertSessionBoardMembers(ctx context.Context, tx *sql.Tx, board string, cu
 		if len(current) >= sb.MaxMembers {
 			return sb.ErrFull
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE session_boards SET lead=''
+			WHERE id<>? AND archived_at=0 AND lead=?`, board, actor.ID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM session_board_members WHERE actor=? AND board IN (
+			SELECT id FROM session_boards WHERE id<>? AND archived_at=0
+		)`, actor.ID, board); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO session_board_members(board,actor,label,persona) VALUES(?,?,?,?)", board, actor.ID, actor.Label, actor.Persona); err != nil {
 			return err
 		}
 		current = append(current, actor)
 	}
 	return nil
+}
+
+// moveSessionBoardRoster carries saved members even if their Sessions are
+// offline. Posts and their author identities stay on the source board.
+func moveSessionBoardRoster(ctx context.Context, tx *sql.Tx, sourceID string, target sb.Board, current []sb.Actor) error {
+	if sourceID == target.ID {
+		return sb.ErrInvalid
+	}
+	source, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", sourceID))
+	if err != nil {
+		return err
+	}
+	if source.Project != target.Project {
+		return sb.ErrDenied
+	}
+	members, err := sessionBoardMembers(ctx, tx, source.ID)
+	if err != nil || len(members) == 0 {
+		return err
+	}
+	if err := insertSessionBoardMembers(ctx, tx, target.ID, current, members); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM session_board_members WHERE board=?", source.ID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE session_boards SET lead='' WHERE id=?", source.ID)
+	return err
 }
 
 func (s *Store) pruneSessionBoards(ctx context.Context, now time.Time) error {

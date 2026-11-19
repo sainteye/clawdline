@@ -11,7 +11,7 @@ import (
 
 const (
 	MaxBoards      = 32
-	MaxMembers     = 24
+	MaxMembers     = 32
 	MaxPosts       = 512 // retained posts per board
 	MaxPageRows    = 24
 	MaxName        = 120
@@ -85,6 +85,7 @@ type Inbox struct {
 type Command struct {
 	Action  string   `json:"action"`
 	Board   string   `json:"board,omitempty"`
+	Source  string   `json:"source,omitempty"`
 	Name    string   `json:"name,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	Target  string   `json:"target,omitempty"`

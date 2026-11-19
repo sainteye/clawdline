@@ -12860,7 +12860,7 @@
   "transparency.card.voice-session-boards.condition": "使用者在 Realtime 或 GPT-Live 通話中要求建立 Session 留言板，或加入指定的存活 Session。",
   "transparency.card.voice-session-boards.summary": "語音工具收集板名、目的、Lead 和成員，將這次變更保留在瀏覽器，供 Copilot 唸回確認。",
   "transparency.card.voice-session-boards.how": "工具讀取既有 Session 清單。加入成員時，也會讀取指定機器的留言板索引。此次提案中的名稱提供給目前的語音模型唸回。瀏覽器收到後續的「確認留言板」語句才會送出原提案。機器會驗證裝置權限、存活 Session 身分和 Project 範圍。",
-  "transparency.card.voice-session-boards.effect": "準備提案會讀取既有紀錄。確認可以在同一台機器和同一個 Project 建板或加入成員。語音模型會收到留言板服務的結果。加入成員不會啟動該 Session 的回合。留言板會在成員和留言作者資料中保留已指派的 Squad 角色識別碼，以便在 Session 名稱旁顯示對應圖示。",
+  "transparency.card.voice-session-boards.effect": "準備提案會讀取既有紀錄。確認可以在同一台機器和同一個 Project 建板或加入成員。語音模型會收到留言板服務的結果。Session 加入新留言板時，會離開原本使用中的留言板。加入成員不會啟動該 Session 的回合。留言板會在成員和留言作者資料中保留已指派的 Squad 角色識別碼，以便在 Session 名稱旁顯示對應圖示。",
   "transparency.card.voice-question-menu.title": "語音通話中的常用問法",
   "transparency.card.voice-question-menu.condition": "僅在通話已接通且工具準備好後，由本人點選「常用問法」中的問題時送出。開啟選單只讀 Session 清單。",
   "transparency.card.voice-question-menu.summary": "把選好的完整問題送進目前通話。深入問題會共用小模型分析最近原文；也能直接用自然語言提出相同目的。",

@@ -1229,10 +1229,15 @@ daemon 會核對唯一且存活的對話與 Project。GET 未帶其他參數時�
 帶 `board` 讀取已加入的板。`after`、`before` 互斥，回應的 `more` 代表還有下一頁。
 POST 帶 `action` 與該動作的欄位：建立用 `name`、`text`（目的），其餘帶
 `board`。留言用 `text`、可選的 `reply_to`，摘要用 `text`，交接用存活成員的 `target`。
-建立者會成為 Lead。把 Lead 交給現有成員時，使用 `session-board transfer`。
+建立者會成為 Lead。每個 Session 只能加入一塊使用中的留言板。自行加入、建立另一塊留言板，
+或由使用者加入另一塊留言板時，成員資格會一併移轉。Lead 移轉後，原板暫時沒有 Lead，
+也可在移轉前用 `session-board transfer` 把角色交給現有成員。
 用 `clawdline handoff` 把工作交給同一個 Project 的新 Session 時，接手者開始讀取交接後，
-會承接原 Session 在使用中的留言板成員資格，以及當時仍由原 Session 擔任的 Lead。
-原有留言和置頂摘要會保留。解散後清單取消分組，紀錄保留 30 天供成員查閱。
+會承接原 Session 的使用中留言板成員資格和 Lead 角色。
+有寫入權限的使用者可在同一個 Project 內用
+`{"action":"move-members","source":"<舊板 ID>","board":"<新板 ID>"}` 移轉整份名單。
+新板維持使用中，也保留原本的 Lead。留言和置頂摘要各自留在原板。
+解散後清單取消分組，紀錄保留 30 天供成員查閱。
 
 從 API 91 起，使用中留言板的現任 Lead 可以關閉同一 Project、同一留言板中已完成工作的 Session。
 先執行 `clawdline session close --dry-run --terminal <終端 ID>` 稽核。

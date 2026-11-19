@@ -4921,7 +4921,7 @@
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
     "internal/transport/http/project_memory.go": "4a5224a0440efac099d232ee64607e0cacf10316b2b650adcd23a465e04c494b",
     "internal/transport/http/session_auto_title.go": "dfc0782eb60a8572f8e44734d3b15024ea059d0e3465722a13774cbdcce1f3c7",
-    "internal/transport/http/session_boards.go": "9cb4cfb4a4d4a314391334258fd7e04767ea282e5adaf405f0726124e7125e0f",
+    "internal/transport/http/session_boards.go": "8bede194f5d5f5cdfe64f756f16938346f7932ffbac4cc343ae92244b9143f92",
     "internal/transport/http/session_handoff_title.go": "b7e73b436265c3ed427bc950e40d29b2cd494ee2590acb71b6722fcd59c641af",
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
@@ -4933,8 +4933,8 @@
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
     "skills/clawdline/SKILL.md": "183b9bdf039ab028fb9f9b958c5461608e1a864442f667252a8fd6d63d43dfaf",
-    "skills/clawdline/guide.md": "526b3f656ae3a2e909bc417ae754075687cfe557da3a0a8b9a0429432770d9ee",
-    "skills/clawdline/guide.zh-TW.md": "c73a46f35536991c45cd171f07369d1337bf788d9cd40348013ff8047fa69d72",
+    "skills/clawdline/guide.md": "59c81700663e6a9dde552b41edec84d657df0048cb53f3cb317831ff328adce2",
+    "skills/clawdline/guide.zh-TW.md": "ac37dc805305855291fd6b088d4c92a42d2d61594b2fed0c4b8696130f4d06dd",
     "skills/evidence-debugging/SKILL.md": "12bf03169a4af65212d4d84c69c56174c38046a398f240348ba6065c8caaceab",
     "skills/evidence-review/SKILL.md": "fd4c584fae5ba58d03250faad1e1219894548343502ca43fb360d313262ea5f6",
     "skills/poteto-workflow.md": "0ed861c8e030cbb8ce36d266d67b62310696d01e0717959ee4439931e9c3f8cd",
@@ -4997,7 +4997,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "010978eb85a3e659aad4feddf21990d8792e5cfee4b5acf75fa29333d1c26f07",
-    "zh-Hant": "1278ed68eabe431ece4dcaa361e91d3c89286517c1b66263ff9982aba71a710d"
+    "en": "bda0ea3bb1cb60777df8a8d9fa70c1115a71577d39a7d425f7fcf52ef7c5c93b",
+    "zh-Hant": "fed39e2a51f1e22342a2892282403acc287a75fba0e0808aba43693aaff123b4"
   }
 }

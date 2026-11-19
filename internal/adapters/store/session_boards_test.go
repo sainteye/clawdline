@@ -319,19 +319,19 @@ func TestSessionBoardInboxPagesOnlyOtherAuthorsDirectReplies(t *testing.T) {
 		}
 		return out
 	}
-	board := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Review", Text: "Topic"}, "create").ID
-	other := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Other", Text: "Other topic"}, "other").ID
-	change(member, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
 	post := func(actor sb.Actor, id string, replyTo int64, text string) int64 {
 		return change(actor, sb.Actor{}, sb.Command{Action: "post", Board: id, Text: text, ReplyTo: replyTo}, text).Seq
 	}
+	other := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Other", Text: "Other topic"}, "other").ID
+	otherOriginal := post(lead, other, 0, "Other board original")
+	board := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Review", Text: "Topic"}, "create").ID
+	change(member, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
 	mine := post(lead, board, 0, "Mine")
 	theirs := post(member, board, 0, "Theirs")
 	post(lead, board, mine, "Self-reply")
 	first := post(person, board, mine, "Person reply")
 	post(person, board, theirs, "Someone else's reply")
-	post(lead, other, 0, "Other board original")
-	post(person, other, mine, "Other board reply")
+	post(person, other, otherOriginal, "Other board reply")
 	last := first
 	for i := range sb.MaxPageRows {
 		last = post(member, board, mine, fmt.Sprintf("Reply %d", i))
@@ -373,21 +373,22 @@ func TestSessionBoardsShowRecentActivityBeforeArchives(t *testing.T) {
 	defer st.Close()
 	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
 	now := time.Unix(1000, 0)
-	change := func(cmd sb.Command, key string, delta time.Duration) string {
+	change := func(actor sb.Actor, cmd sb.Command, key string, delta time.Duration) string {
 		t.Helper()
-		out, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, cmd, key, now.Add(delta))
+		out, err := st.ChangeSessionBoard(ctx, "project", actor, sb.Actor{}, cmd, key, now.Add(delta))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return out.ID
 	}
-	old := change(sb.Command{Action: "create", Name: "Alpha", Text: "Old board"}, "old", 0)
-	newer := change(sb.Command{Action: "create", Name: "Zulu", Text: "New board"}, "newer", time.Second)
-	archive := change(sb.Command{Action: "create", Name: "Latest", Text: "Archived board"}, "archive", 2*time.Second)
-	change(sb.Command{Action: "archive", Board: archive}, "", 3*time.Second)
+	old := change(lead, sb.Command{Action: "create", Name: "Alpha", Text: "Old board"}, "old", 0)
+	newer := change(sb.Actor{ID: "codex:new"}, sb.Command{Action: "create", Name: "Zulu", Text: "New board"}, "newer", time.Second)
+	archivedLead := sb.Actor{ID: "codex:archive"}
+	archive := change(archivedLead, sb.Command{Action: "create", Name: "Latest", Text: "Archived board"}, "archive", 2*time.Second)
+	change(archivedLead, sb.Command{Action: "archive", Board: archive}, "", 3*time.Second)
 	check := func(want []string) {
 		t.Helper()
-		boards, err := st.SessionBoards(ctx, "project", lead.ID)
+		boards, err := st.SessionBoards(ctx, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -400,7 +401,7 @@ func TestSessionBoardsShowRecentActivityBeforeArchives(t *testing.T) {
 		}
 	}
 	check([]string{newer, old, archive})
-	change(sb.Command{Action: "post", Board: old, Text: "Recent work"}, "post", 4*time.Second)
+	change(lead, sb.Command{Action: "post", Board: old, Text: "Recent work"}, "post", 4*time.Second)
 	check([]string{old, newer, archive})
 }
 
@@ -460,4 +461,156 @@ func TestArchiveInactiveSessionBoardRechecksTheRosterAndHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	tryArchive(witness, true)
+}
+
+func TestSessionBoardJoiningMovesTheMembership(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	member := sb.Actor{ID: "claude:member", Label: "Member"}
+	other := sb.Actor{ID: "codex:other", Label: "Other"}
+	change := func(actor, target sb.Actor, command sb.Command, key string, additions ...sb.Actor) string {
+		t.Helper()
+		result, err := st.ChangeSessionBoard(ctx, "project", actor, target, command, key, time.Unix(1000, 0), additions...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.ID
+	}
+	old := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Old", Text: "Purpose"}, "old")
+	next := change(other, sb.Actor{}, sb.Command{Action: "create", Name: "New", Text: "Purpose"}, "new")
+	change(member, sb.Actor{}, sb.Command{Action: "join", Board: old}, "")
+	change(lead, sb.Actor{}, sb.Command{Action: "post", Board: old, Text: "Earlier discussion"}, "original")
+	change(member, sb.Actor{}, sb.Command{Action: "join", Board: next}, "")
+	change(sb.Actor{}, sb.Actor{}, sb.Command{Action: "add-members", Board: next}, "", lead)
+
+	for _, actor := range []sb.Actor{member, lead} {
+		ids, err := st.ActiveSessionBoardIDs(ctx, "project", actor.ID)
+		if err != nil || !slices.Equal(ids, []string{next}) {
+			t.Fatalf("%s belongs to %v, want only %s: %v", actor.ID, ids, next, err)
+		}
+	}
+	page, err := st.SessionBoardPage(ctx, "", "", old, 0, 0)
+	if err != nil || page.Board.Lead != "" || len(page.Board.Members) != 0 || len(page.Posts) != 1 {
+		t.Fatalf("old board after move: %+v, %v", page, err)
+	}
+	// A replay of the old create's receipt must leave its creator on the new board.
+	change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Old", Text: "Purpose"}, "old")
+	if _, err := st.SessionBoardPage(ctx, "project", lead.ID, old, 0, 0); !errors.Is(err, sb.ErrDenied) {
+		t.Fatalf("former Lead regained access: %v", err)
+	}
+}
+
+func TestSessionBoardLegacyRosterMovesWithoutLosingPosts(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	newOnly := sb.Actor{ID: "claude:new", Label: "New member"}
+	change := func(actor, target sb.Actor, command sb.Command, key string, additions ...sb.Actor) string {
+		t.Helper()
+		result, err := st.ChangeSessionBoard(ctx, "project", actor, target, command, key, time.Unix(1000, 0), additions...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.ID
+	}
+	old := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Old", Text: "Purpose"}, "old")
+	change(lead, sb.Actor{}, sb.Command{Action: "post", Board: old, Text: "Earlier discussion"}, "post")
+	next := change(sb.Actor{}, newOnly, sb.Command{Action: "create", Name: "New", Text: "Purpose"}, "new")
+	// Reproduce the pre-upgrade database: creation time wasn't recorded and
+	// seven actors, including the old Lead, were enrolled on both boards.
+	if _, err := st.db.Exec(`UPDATE session_boards SET created_at=0;
+		INSERT INTO session_board_members(board,actor,label) VALUES(?,?,'Lead');`, next, lead.ID); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 23 {
+		member := sb.Actor{ID: fmt.Sprintf("codex:old-%02d", i), Label: "Old member", Persona: "architect"}
+		if _, err := st.db.Exec(`INSERT INTO session_board_members(board,actor,label,persona) VALUES(?,?,?,?)`,
+			old, member.ID, member.Label, member.Persona); err != nil {
+			t.Fatal(err)
+		}
+		if i < 6 {
+			if _, err := st.db.Exec(`INSERT INTO session_board_members(board,actor,label) VALUES(?,?,?)`,
+				next, member.ID, member.Label); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := st.ActiveSessionBoardIDs(ctx, "project", lead.ID)
+	if err != nil || !slices.Equal(ids, []string{next}) {
+		t.Fatalf("upgraded Lead membership: %v, %v", ids, err)
+	}
+	source, err := st.SessionBoardPage(ctx, "", "", old, 0, 0)
+	if err != nil || source.Board.Lead != "" || len(source.Board.Members) != 17 {
+		t.Fatalf("upgraded source: %+v, %v", source.Board, err)
+	}
+	change(sb.Actor{}, sb.Actor{}, sb.Command{Action: "archive", Board: old}, "")
+	for range 2 {
+		change(sb.Actor{}, sb.Actor{}, sb.Command{Action: "move-members", Source: old, Board: next}, "")
+	}
+	source, err = st.SessionBoardPage(ctx, "", "", old, 0, 0)
+	if err != nil || len(source.Board.Members) != 0 || !slices.Equal(source.Posts,
+		[]sb.Post{{Seq: 1, Author: lead, Text: "Earlier discussion", At: 1000}}) {
+		t.Fatalf("source after roster move: %+v, %v", source, err)
+	}
+	destination, err := st.SessionBoardPage(ctx, "", "", next, 0, 0)
+	if err != nil || destination.Board.Lead != newOnly.ID || len(destination.Board.Members) != 25 ||
+		!slices.Contains(destination.Board.Members, sb.Actor{ID: "codex:old-22", Label: "Old member", Persona: "architect"}) {
+		t.Fatalf("destination after roster move: %+v, %v", destination, err)
+	}
+}
+
+func TestSessionBoardFullDestinationRollsBackRosterMove(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(1000, 0)
+	create := sb.Command{Action: "create", Name: "Board", Text: "Purpose"}
+	sourceLead := sb.Actor{ID: "codex:a"}
+	sourceMember := sb.Actor{ID: "codex:z"}
+	nextLead := sb.Actor{ID: "claude:lead"}
+	old, err := st.ChangeSessionBoard(ctx, "project", sb.Actor{}, sourceLead, create, "old", now, sourceMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var additions []sb.Actor
+	for i := range sb.MaxMembers - 2 {
+		additions = append(additions, sb.Actor{ID: fmt.Sprintf("claude:%d", i)})
+	}
+	next, err := st.ChangeSessionBoard(ctx, "project", sb.Actor{}, nextLead, create, "next", now, additions...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.ChangeSessionBoard(ctx, "", sb.Actor{}, sb.Actor{},
+		sb.Command{Action: "move-members", Board: next.ID, Source: old.ID}, "", now)
+	if !errors.Is(err, sb.ErrFull) {
+		t.Fatalf("move to nearly full board: %v", err)
+	}
+	source, err := st.SessionBoardPage(ctx, "", "", old.ID, 0, 0)
+	if err != nil || source.Board.Lead != sourceLead.ID || len(source.Board.Members) != 2 {
+		t.Fatalf("source changed after refusal: %+v, %v", source.Board, err)
+	}
+	dest, err := st.SessionBoardPage(ctx, "", "", next.ID, 0, 0)
+	if err != nil || len(dest.Board.Members) != sb.MaxMembers-1 {
+		t.Fatalf("destination changed after refusal: %+v, %v", dest.Board, err)
+	}
 }

@@ -282,11 +282,13 @@ machine from the same menu to go back to one machine's list.
 A Project's Sessions can join a named message board to share decisions,
 evidence, and handoffs. Open **Session message boards** in the bottom status bar
 and choose a live Session as Lead when creating one. The Lead keeps the
-summary current and can hand the role to another joined Session. When a Session
-hands work off to a new Session in the same Project, its active memberships
-move after the receiving conversation begins the handoff. The new Session
-becomes Lead on boards the sender still leads. Earlier posts and pinned
-summaries stay with their boards.
+summary current and can hand the role to another joined Session. A Session
+can belong to one active message board at a time. Joining or creating a
+different board, or being added to it, moves the Session there. When a Lead
+moves, the previous board's Lead role becomes vacant until a person assigns
+it to an existing member. A same-Project handoff moves the sender's membership
+and Lead role once the receiving Session begins the handoff. Earlier posts
+and pinned summaries stay with their boards.
 
 A Session discovers boards with `clawdline session-board list` and joins
 with `clawdline session-board join --board <id>`. It can read the current
@@ -317,9 +319,8 @@ closing. The close cannot be forced.
 
 
 The live Session list frames visible members together. Open the frame to
-read or reply. A Session that joins multiple boards appears under the first
-active board in name order, and all its boards are available from the board
-picker. The picker puts the boards with the newest messages first. A new
+read or reply. Each board can hold up to 32 members. The board picker puts
+the boards with the newest messages first. A new
 board with no messages uses its creation time. On a phone the discussion
 opens full screen.
 

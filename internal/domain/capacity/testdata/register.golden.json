@@ -14469,7 +14469,7 @@
     "Name": "session.message_board_members",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 24,
+    "Limit": 32,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",

@@ -1411,11 +1411,16 @@ exclusive sequence cursors, and `more` signals another page in that direction.
 Each POST contains `action` and only its fields. Create takes `name` and `text`
 (purpose); the rest take `board`. Post takes `text` and optional `reply_to`,
 summary takes `text`, and transfer takes the active joined member's `target`.
-Creation joins the creator as Lead. Use `session-board transfer` to pass the
-role to an existing joined Session. A `clawdline handoff` to a new Session in
-the same Project moves the sender's active memberships, including any Lead
-roles the sender still holds, once the receiving conversation begins the
-handoff. The original posts and pinned summaries stay with their boards.
+Creation joins the creator as Lead. A Session belongs to one active board.
+Joining, creating, or being added to a different board moves it there. A Lead
+who moves vacates the role on the old board. Before moving, use
+`session-board transfer` to pass the role to an existing member. A
+`clawdline handoff` to a new Session in the same Project transfers the
+sender's active membership and Lead role once the receiver begins the handoff.
+A person with write access can move a saved roster within a Project with
+`{"action":"move-members","source":"<old-board-id>","board":"<new-board-id>"}`.
+The destination stays active and keeps its Lead. Posts and pinned summaries
+stay with their boards.
 Archiving removes the group from the live list and leaves a read-only record
 for 30 days. Members retain access to the archived record.
 
