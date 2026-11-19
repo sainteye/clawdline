@@ -286,15 +286,24 @@ export class UnverifiedDrafts {
     const draft: UnverifiedDraft = { scope: { key: { ...scope.key }, project: { ...scope.project }, conversation_id: scope.conversation_id }, text, quote, continued: false }
     const rows = [...this.load(key), draft]; this.records.set(key, rows); this.save(key, rows)
   }
-  /** Preserve first, clear the old plain slot, then publish permission to start empty. */
-  writeNew(key: string, scope: UnverifiedDraft["scope"]) {
+  /** Preserve first, clear only the matching plain draft, then publish the archived state. */
+  moveAside(key: string, scope: UnverifiedDraft["scope"]) {
     const rows = this.load(key), active = this.active(key, scope)
-    if (!active || !this.save(key, rows)) return false
-    try { this.storage!.removeItem(key) } catch { this.problems.set(key, "unsaved"); return false }
+    if (!active || !this.save(key, rows)) return
+    let remaining: string
+    try {
+      const persisted = this.storage!.getItem(key)
+      remaining = persisted ?? ""
+      if (persisted === active.text) {
+        this.storage!.removeItem(key)
+        remaining = ""
+      }
+    } catch { this.problems.set(key, "unsaved"); return }
     const next = rows.map(d => d === active ? { ...d, continued: true } : d)
     // A failed final write leaves the durable active record and lock intact.
-    if (!this.save(key, next)) return false
-    this.records.set(key, next); return true
+    if (!this.save(key, next)) return
+    this.records.set(key, next)
+    return { draft: active, remaining }
   }
 }
 /** Owned by the feature host so destination remounts keep drafts and reading positions. */
@@ -310,6 +319,16 @@ export function createViewState(storage?: Store) {
       return drafts.get(key) ?? ""
     },
     stage(key: string, text: string) { drafts.set(key, text) },
+    archiveUnverifiedDraft(key: string, scope: UnverifiedDraft["scope"]) {
+      const moved = unverifiedDrafts.moveAside(key, scope)
+      if (!moved) return
+      const staged = drafts.get(key)
+      if (!staged || staged === moved.draft.text) {
+        drafts.set(key, moved.remaining)
+        if (quotes.get(key) === moved.draft.quote) quotes.delete(key)
+      }
+      return { text: drafts.get(key) ?? "", quote: quotes.get(key) ?? "" }
+    },
     flush(key: string) {
       try { if(!storage)return false;const text = drafts.get(key); if (text) storage.setItem(key,text); else storage.removeItem(key); return true } catch { return false }
     },
