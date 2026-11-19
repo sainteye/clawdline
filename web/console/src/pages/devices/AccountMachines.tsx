@@ -136,7 +136,7 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
         <span aria-hidden="true">+</span> {nextWord("msSetupCloud")}
       </button>}
       {shown && cloudSetup && manager && !manager.invited?.() && createPortal(<CloudMachineSetup apiOrigin={manager.apiOrigin} machines={rows ?? []} refresh={load}
-        pair={id => { setCloudSetup(false); manager.pair(id) }} close={() => setCloudSetup(false)} />, document.body)}
+        pair={(id, name) => { setCloudSetup(false); manager.pair(id, name) }} close={() => setCloudSetup(false)} />, document.body)}
       {accessSource && (
         <MachineAccess source={accessSource} picker={paired.length > 1 ? (
           <div className="access-chips" role="radiogroup" aria-label={nextWord("accessMachineLabel")}>

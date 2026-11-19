@@ -15,17 +15,20 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }:
   apiOrigin: string
   machines: readonly CloudMachine[]
   refresh: () => Promise<boolean>
-  pair: (id: string) => void
+  pair: (id: string, approvedName?: string) => void
   close: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [provider, setProvider] = useState<Provider | null>(null)
   const [machineID, setMachineID] = useState("")
+  const [approved, setApproved] = useState<{ id: string; name: string } | null>(null)
   const [checkState, setCheckState] = useState<"idle" | "checking" | "failed">("idle")
   const [copied, setCopied] = useState<"ok" | "failed" | null>(null)
   const linux = machines.filter(machine => machine.kind === "linux" || machine.kind === "linux_aws")
-  const machine = linux.find(candidate => candidate.id === machineID)
+  const targetID = approved?.id ?? machineID
+  const machine = linux.find(candidate => candidate.id === targetID)
   const ready = machine?.freshness === "current" && machine.pairing === "paired"
+  const canPair = approved ? machine?.pairing !== "paired" : machine?.pairing === "not_paired"
   const offer = provider && offers[provider]
   useEffect(() => { dialog.current?.showModal() }, [])
 
@@ -52,7 +55,7 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }:
           </button>)}
       </fieldset> : <>
         <div className="am-cloud-setup-actions">
-          <button className="am-ghost" type="button" onClick={() => { setProvider(null); setCopied(null); setMachineID(""); setCheckState("idle") }}>{nextWord("msSetupChange")}</button>
+          <button className="am-ghost" type="button" onClick={() => { setProvider(null); setCopied(null); setApproved(null); setMachineID(""); setCheckState("idle") }}>{nextWord("msSetupChange")}</button>
           <a href={offer.pricing} target="_blank" rel="noopener noreferrer">{nextWord("msSetupPricing")}</a>
         </div>
         <ol className="am-cloud-setup-steps">
@@ -70,23 +73,23 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }:
             {copied && <span role="status">{nextWord(copied === "ok" ? "msSetupCopied" : "msSetupCopyFailed")}</span>}
             <p>{nextWord("msSetupLoginHelp")}</p>
             <pre><code>clawdline --lang en cloud login | sed '/^approve at /d'</code></pre>
-            <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={id=>{setMachineID(id);void check()}} />
+            <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={(id, name) => { setApproved({ id, name }); void check() }} />
             <pre><code>clawdline cloud on</code></pre>
             <p>{nextWord("msSetupHealthHelp")}</p>
             <pre><code>{'systemctl --user is-active clawdline-next.service\nclawdline update --json'}</code></pre>
           </li>
           <li>
             <h3>{nextWord("msSetupPair")}</h3>
-            <label>
+            {approved ? <p>{nextWord("msSetupMachineLabel")} <strong>{approved.name}</strong></p> : <label>
               {nextWord("msSetupMachineLabel")}
               <select value={machineID} onChange={event => setMachineID(event.currentTarget.value)}>
                 <option value="">{nextWord("msSetupMachinePlaceholder")}</option>
                 {linux.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name || candidate.label}</option>)}
               </select>
-            </label>
+            </label>}
             <div className="am-cloud-setup-actions">
               <button type="button" className="am-ghost" onClick={() => void check()} disabled={checkState === "checking"}>{nextWord("msSetupRefresh")}</button>
-              {machine?.pairing === "not_paired" && <button type="button" className="am-primary" onClick={() => pair(machine.id)}>{nextWord("msPair")}</button>}
+              {canPair && <button type="button" className="am-primary" onClick={() => pair(targetID, approved?.name)}>{nextWord("msPair")}</button>}
             </div>
             <p role="status">{nextWord(checkState === "checking" ? "msSetupChecking" : checkState === "failed" ? "msSetupRefreshFailed" : ready ? "msSetupConnected" : "msSetupWaiting")}</p>
           </li>
@@ -100,7 +103,7 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }:
 type MachineReview = { name: string; fingerprint: string; review_digest: string }
 const deviceCode = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/
 
-function CloudMachineEnrollment({apiOrigin,onRegistered}:{apiOrigin:string;onRegistered:(id:string)=>void}) {
+function CloudMachineEnrollment({apiOrigin,onRegistered}:{apiOrigin:string;onRegistered:(id:string,name:string)=>void}) {
   const [code,setCode]=useState("")
   const [review,setReview]=useState<MachineReview|null>(null)
   const [state,setState]=useState<"idle"|"busy"|"unavailable"|"approved">("idle")
@@ -119,7 +122,7 @@ function CloudMachineEnrollment({apiOrigin,onRegistered}:{apiOrigin:string;onReg
       const result=await response.json()
       if(review){
         if(typeof result.machine_id!=="string"||!result.machine_id||result.machine_name!==review.name)throw new Error("Unrecognized approval receipt")
-        setCode("");setReview(null);setState("approved");onRegistered(result.machine_id)
+        setCode("");setReview(null);setState("approved");onRegistered(result.machine_id, review.name)
       }else{
         if(result.kind!=="machine"||typeof result.name!=="string"||!result.name||
           typeof result.fingerprint!=="string"||!result.fingerprint||
