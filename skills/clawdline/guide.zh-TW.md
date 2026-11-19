@@ -925,6 +925,10 @@ clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch 
 
 `clawdline resources list [--after ID]` 只讀取一頁（最多 64 筆）。`allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log` 建立新的受管目錄，並回傳分開的成果路徑；不能接管既有路徑。明確配置 Root 資料時，先把成果保存至回傳的成果路徑，留下可持續查核的 Session 交付收據，再安全關閉該 Root 的實際執行者；缺少完成或保存證據就保留。長期執行的 Root 應使用命令範圍的 callback 快取，避免同一份快取一直存活到 Root 關閉。此介面不會刪除既有 Root 指派目錄或 Git worktree。
 
+從 API 94 起，`clawdline resources use-go CALLBACK_UUID` 讓已啟動的 callback 附掛來源已核對的 Project Go 共用快取，並輸出路徑。已安裝 CLI 支援此能力時，`tools/check.sh` 會自動替 callback 的預設快取使用此機制。明確指定的快取及 `CLAWDLINE_GO_CACHE_ISOLATED=1` 仍維持隔離；一般測試仍不取得編譯租約。單純等待的命令不會附掛共用使用者。
+
+編譯請求可能回覆 `queued` 與 `storage_preparing`。daemon 在短 HTTP 請求之外準備儲存空間，持久化的候位者保留同一身分。重複查詢合併處理；取消不會在稍後取得租約；重新啟動須重新取得服務證據。準備完成證據最多有效 60 秒，資源／政策變更或核發租約後即失效。只有 `granted` 才能開始編譯；未確認的請求不代表可執行。來源完成會觸發受管資料的安全回收，與較慢的舊工作樹整理分開。保留期限與成果保護不變。
+
 `resources publish UUID` 只封存已發布且來源可核對的成果，不能宣告任務完成。`resources pin UUID` 加上保護；解除時須明確使用 `--value=false` 並具機器權限。先核對精確資料身分，再套用：
 
 `clawdline resources plan <resource UUID> > /path/to/reviewed-plan.json`
@@ -2097,7 +2101,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 取得 `daemon_restart` 前先完成建置。不要把 `clawdline dev install` 或其他會要求 `heavy_compile` 的指令包進此 wrapper：重新啟動租約會擋住編譯名額。安排好維護時段後直接執行 `clawdline dev install`；它會先建置再切換。`clawdline update --apply` 也直接執行，由更新程序自行下載、切換、檢查與回復。此 wrapper 只用於不會建置的獨立重新啟動指令。
 
-**只有應用程式建置與原生編譯才使用 `clawdline heavy -- <指令>`。** Go build/install、Swift build、Objective-C／C 編譯及 Xcode 建置會排隊。Python、一般測試（含 Go／Swift test）、前端建置與型別檢查直接執行，不依 CPU 用量判斷。無法辨識的指令也直接執行，不等待記憶體或建立 callback。只有包含應用程式／原生編譯的腳本才用 `--compile`（或 `tools/heavy.sh --compile`）明確標記，不可把整套檢查或測試標記為編譯。`--no-slot` 仍可明確要求只等待記憶體。原生編譯會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+**只有應用程式建置與原生編譯才使用 `clawdline heavy -- <指令>`。** Go build/install、Swift build、Objective-C／C 編譯及 Xcode 建置會排隊。Python、一般測試（含 Go／Swift test）、前端建置與型別檢查直接執行，不依 CPU 用量判斷。無法辨識的指令也直接執行，不等待記憶體或建立 callback。只有包含應用程式／原生編譯的腳本才用 `--compile`（或 `tools/heavy.sh --compile`）明確標記，不可把整套檢查或測試標記為編譯。`--no-slot` 仍可明確要求只等待記憶體。原生編譯會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。選定 broker 後，明確拒絕或回應不確定時都不執行指令；保留請求身分並核對收據，連線失敗不代表獲准編譯。未選定 broker 的獨立使用方式仍保留。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
 
 Root 的 `heavy` 預設在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。一般 `tools/check.sh` 不排隊；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
 

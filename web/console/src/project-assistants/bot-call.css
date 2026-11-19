@@ -1,0 +1,26 @@
+.pa-bot-call,
+.pa-bot-call-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.pa-bot-call-start {
+  justify-content: flex-end;
+}
+.pa-bot-call-start button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.pa-bot-call {
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border, #333);
+  border-radius: 12px;
+}
+.pa-bot-call-status {
+  flex: 1 1 10rem;
+}
+.pa-bot-call .pa-bot-call-end {
+  color: var(--danger, #f0a7a7);
+}

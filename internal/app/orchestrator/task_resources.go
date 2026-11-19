@@ -22,6 +22,7 @@ import (
 // leaves the service unavailable and new heavy work fenced, not silently unmanaged.
 func (b *Broker) EnableTaskResources() error {
 	b.ResourceServiceRequired = true
+	b.managedCleanup.pending = true
 	root, err := resourcefs.Open(filepath.Join(b.Dir, "task-resources-v1"))
 	if err != nil {
 		return err

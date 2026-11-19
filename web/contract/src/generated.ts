@@ -5463,6 +5463,54 @@ export interface ProjectAssistantDeleteRequest {
   command: ProjectAssistantCommand
 }
 
+export interface ProjectAssistantDevServer {
+  attempt: string
+  command: string
+  failure?: string
+  fingerprint: string
+  folder: string
+  id: string
+  name: string
+  ports: ProjectAssistantDevServerPort[]
+  ports_known: boolean
+  revision: number
+  state: string
+}
+
+/**
+ * API90 human controls name an existing server, exact fingerprint and observed
+ * attempt/revision. No command, folder, environment or PID is accepted. Keys are
+ * scoped to the principal, server and action; unknown outcomes require explicit
+ * inspection.
+ */
+export interface ProjectAssistantDevServerControlRequest {
+  attempt: string
+  fingerprint: string
+  id: string
+  idempotency_key: string
+  key: ProjectAssistantBotKey
+  revision: number
+}
+
+export interface ProjectAssistantDevServerLog {
+  text: string
+  truncated: boolean
+}
+
+export interface ProjectAssistantDevServerPort {
+  bind: string
+  local: string
+  port: number
+  remote: string[]
+}
+
+export interface ProjectAssistantDevServersResponse {
+  contract_version: string
+  log?: ProjectAssistantDevServerLog
+  server?: ProjectAssistantDevServer
+  servers: ProjectAssistantDevServer[]
+}
+
 export interface ProjectAssistantEditRequest {
   command: ProjectAssistantCommand
   settings: ProjectAssistantEditSettings
@@ -5996,6 +6044,63 @@ export interface ProjectAssistantGroupStopResponse {
   contract_version: string
   room: ProjectAssistantRoomState
   stopped: boolean
+}
+
+export type ProjectAssistantHandoffAction =
+    "prepare"
+  | "edit"
+  | "keep"
+
+export const ProjectAssistantHandoffActionValues: readonly ProjectAssistantHandoffAction[] = ["prepare", "edit", "keep"] as const
+
+/**
+ * Source-local handoff. Summary text is available while the draft is current. An
+ * adoption identifies the input's turn and is not execution evidence.
+ */
+export interface ProjectAssistantHandoffCard {
+  bookmark_message_id?: string
+  ref: ProjectAssistantHandoffRef
+  state: ProjectAssistantHandoffCardState
+  text?: string
+  turn_id?: string
+}
+
+export type ProjectAssistantHandoffCardState =
+    "draft"
+  | "kept"
+  | "adopted"
+  | "withdrawn"
+
+export const ProjectAssistantHandoffCardStateValues: readonly ProjectAssistantHandoffCardState[] = ["draft", "kept", "adopted", "withdrawn"] as const
+
+/**
+ * The exact source-owned handoff card version displayed before a send.
+ */
+export interface ProjectAssistantHandoffRef {
+  id: string
+  revision: number
+}
+
+/**
+ * API 93. Prepare the source's filtered summary, edit the exact draft revision, or
+ * keep the current native conversation.
+ */
+export interface ProjectAssistantHandoffRequest {
+  action: ProjectAssistantHandoffAction
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  ref?: ProjectAssistantHandoffRef
+  text: string
+}
+
+/**
+ * API 93. Current handoff and preparation eligibility on the Bot's source.
+ */
+export interface ProjectAssistantHandoffResponse {
+  can_prepare: boolean
+  card?: ProjectAssistantHandoffCard
+  contract_version: string
+  fence: ProjectAssistantFence
 }
 
 /**
@@ -7158,7 +7263,8 @@ export interface ProjectAssistantRuleRemoveRequest {
 }
 
 /**
- * The Bot's Project standing rules; only Claude Code Bots have them (API level 66).
+ * Claude native Project rules at API66; exact source-owned server rules for either
+ * Agent at API90. Listing a rule is not approval or execution.
  */
 export interface ProjectAssistantRulesResponse {
   contract_version: string
@@ -7182,6 +7288,11 @@ export interface ProjectAssistantSendNowRequest {
 export interface ProjectAssistantSendRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
+
+  /**
+   * The exact draft version approved for this input on API 93 sources.
+   */
+  handoff?: ProjectAssistantHandoffRef
 
   /**
    * Pictures as base64 data: URLs, at most four; each is normalized and stored
@@ -7237,6 +7348,12 @@ export const ProjectAssistantSourceStateValues: readonly ProjectAssistantSourceS
 export interface ProjectAssistantSourceStatus {
   access: ProjectAssistantAccess
   capabilities: ProjectAssistantCapabilities[]
+
+  /**
+   * Optional explicit source support for source-owned server tools and exact
+   * command rules. Missing or false is unsupported; it is not an authority grant.
+   */
+  dev_servers_supported?: boolean
   fresh: boolean
   machine_id: string
   observed_at: string

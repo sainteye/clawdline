@@ -235,3 +235,45 @@ The diagnostic does not alter storage limits, the advancing-page admission
 policy, output sealing or cleanup authority. A failed lookup never grants
 permission to allocate over it, delete a directory, or rerun a command whose
 outcome is unknown.
+
+## Short compile requests and managed preparation
+
+Production compile admission persists a normal bounded lease waiter and returns
+`queued/storage_preparing` while one coalesced broker worker prepares storage.
+The existing reclamation deadline bounds that work, independently of the short
+lease HTTP context. A durable result binds the waiter identity, source policy,
+service incarnation and resource revision; the registered 60-second readiness
+window bounds reuse. Cancellation is terminal for that request identity. A ready
+result neither holds the compile slot nor starts a command. A grant consumes its
+proof, rechecks the filesystem reserve and invalidates other readiness. A restart
+or managed allocation/cache-use change requires another preparation. Existing holders renew without
+repeating storage work; explicit refusals and unconfirmed requests never start
+the requested native command.
+
+Read-only usage accounting verifies the managed root and counts entries by their
+own metadata without following links. It does not apply deletion-only protected
+name rules or issue a deletion grant. Inspect/plan/apply still require complete
+ownership, publication, identity and absent-use evidence, including the final
+pre-unlink check. Unknown accounting still refuses admission.
+
+Trusted Root check tooling can attach a running callback to its canonical Project
+Go cache with `resources use-go`. This uses the existing shared consumer fence;
+scheduling intent no longer forces ordinary checks to retain a private compiler
+cache. Explicit overrides and isolated verification remain private. Pure wait
+callbacks do not attach, and no arbitrary cache path can be adopted.
+
+Settled sources notify a separate coalesced managed-resource worker. It advances
+through existing pages, yielding admission serialization between pages, and uses
+the same publication and plan/apply service as an authorized Bot. A daemon start
+also schedules a catch-up pass. Legacy worktree scans retain their own schedule
+and cannot delay this notification. Completion alone is not idle proof, and all
+retention, unknown-owner, active-consumer and retained-output rules remain intact.
+
+Admission waits can be cancelled without waiting for another inspection to
+finish; their diagnostics name `admission.wait` separately from filesystem
+measurement. Shared-cache attachment reconciles an interrupted trim's original
+receipt and owned filesystem identity under the existing mutation fence. It
+preserves the bytes, does not repeat the trim, and does not take over another
+live process's pending execution. An unverified identity stays blocked. Bot and
+daemon adapters share this same Service and Store handle rather than creating
+parallel executors with separate mutation fences.

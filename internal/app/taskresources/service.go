@@ -55,12 +55,15 @@ type Service struct {
 	OtherUsage func(context.Context) (taskresource.Usage, error)
 	Clock      func() time.Time
 	// Fault is a test-only failure injection point, never configured by a caller.
-	Fault      func(string, string) error
-	mu         sync.Mutex
-	admitMu    sync.Mutex
-	statsMu    sync.Mutex
-	stats      taskresource.Usage
-	admitAfter string // protected by statsMu; cleanup uses the existing resource page bound.
+	Fault             func(string, string) error
+	mu                sync.Mutex
+	admitOnce         sync.Once
+	admitGate         chan struct{}
+	statsMu           sync.Mutex
+	stats             taskresource.Usage
+	admissionInstance string
+	admissionRevision uint64
+	admitAfter        string // protected by statsMu; cleanup uses the existing resource page bound.
 }
 
 func (s *Service) now() time.Time {
@@ -122,6 +125,7 @@ func (s *Service) Allocate(ctx context.Context, scope Scope, kind, id string, cl
 	}
 	s.statsMu.Lock()
 	s.stats.Known = false
+	s.admissionRevision++
 	s.statsMu.Unlock()
 	return Allocation{r, filepath.Join(s.FS.Path(), r.ID), owner.OutputRoot}, nil
 }
@@ -544,6 +548,7 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 	completed = true
 	s.statsMu.Lock()
 	s.stats.Known = false
+	s.admissionRevision++
 	s.statsMu.Unlock()
 	return out, nil
 }
@@ -576,6 +581,8 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	}
 	s.statsMu.Lock()
 	s.stats.Known = false
+	s.admissionRevision++
+	revision := s.admissionRevision
 	s.statsMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.begin", "")
@@ -598,7 +605,7 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 			if r.Class == taskresource.Artifact || r.Class == taskresource.Evidence {
 				continue
 			}
-			snapshot, err := s.FS.Snapshot(ctx, r)
+			snapshot, err := s.FS.Measure(ctx, r)
 			if err != nil {
 				return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.resource", r.ID)
 			}
@@ -629,6 +636,10 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 	}
 	u.Available = free
 	s.statsMu.Lock()
+	if revision != s.admissionRevision {
+		s.statsMu.Unlock()
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", resourcefs.ErrChanged).WithContext(ctx, "measure.revision", "")
+	}
 	s.stats = u
 	s.statsMu.Unlock()
 	return u, nil
@@ -682,8 +693,10 @@ func (s *Service) Admit(ctx context.Context) error {
 	if !s.ready() {
 		return fail("resource_service_unavailable")
 	}
-	s.admitMu.Lock()
-	defer s.admitMu.Unlock()
+	if err := s.lockAdmission(ctx); err != nil {
+		return measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "admission.wait", "")
+	}
+	defer s.unlockAdmission()
 	u, err := s.Measure(ctx)
 	if err != nil {
 		return err
@@ -729,53 +742,62 @@ func (s *Service) recoverPage(ctx context.Context, after string) error {
 		return err
 	}
 	for _, r := range rows {
-		if r.LastOutcome != "removing" || r.LastActor == "" || r.LastExecution == "" || r.LastPlan == "" {
-			continue
+		if err := s.recoverResourceLocked(ctx, r); err != nil {
+			return err
 		}
-		key := store.ReceiptKey{Scope: "resources.cleanup", Actor: r.LastActor, Key: r.LastExecution}
-		claim, err := s.Store.LookupReceipt(ctx, key)
+	}
+	return nil
+}
+
+// recoverResourceLocked reconciles only a previous execution. Its caller owns
+// mu, so it cannot race this handle's live executor or repeat its deletion.
+func (s *Service) recoverResourceLocked(ctx context.Context, r taskresource.Resource) error {
+	if r.LastOutcome != "removing" || r.LastActor == "" || r.LastExecution == "" || r.LastPlan == "" {
+		return nil
+	}
+	key := store.ReceiptKey{Scope: "resources.cleanup", Actor: r.LastActor, Key: r.LastExecution}
+	claim, err := s.Store.LookupReceipt(ctx, key)
+	if err != nil {
+		return err
+	}
+	if claim.Outcome == store.ReceiptPending {
+		unknown := Result{Execution: r.LastExecution, Plan: r.LastPlan, OutcomeUnknown: true, Items: []Receipt{}}
+		ids := strings.Split(r.LastTargets, ",")
+		if len(ids) > taskresource.PageRowsLimit {
+			return nil
+		}
+		for _, id := range ids {
+			unknown.Items = append(unknown.Items, Receipt{Resource: id, Outcome: "unknown", Reason: "interrupted_execution"})
+		}
+		body, _ := json.Marshal(unknown)
+		if err := s.Store.CompleteReceipt(ctx, key, store.ReceiptAnswer{Status: 200, Body: body}); err != nil {
+			return nil
+		}
+		claim, err = s.Store.LookupReceipt(ctx, key)
 		if err != nil {
 			return err
 		}
-		if claim.Outcome == store.ReceiptPending {
-			unknown := Result{Execution: r.LastExecution, Plan: r.LastPlan, OutcomeUnknown: true, Items: []Receipt{}}
-			ids := strings.Split(r.LastTargets, ",")
-			if len(ids) > taskresource.PageRowsLimit {
-				continue
-			}
-			for _, id := range ids {
-				unknown.Items = append(unknown.Items, Receipt{Resource: id, Outcome: "unknown", Reason: "interrupted_execution"})
-			}
-			body, _ := json.Marshal(unknown)
-			if err := s.Store.CompleteReceipt(ctx, key, store.ReceiptAnswer{Status: 200, Body: body}); err != nil {
-				continue
-			}
-			claim, err = s.Store.LookupReceipt(ctx, key)
-			if err != nil {
-				return err
-			}
-		}
-		permitted := claim.Outcome == store.ReceiptOrphaned
-		if claim.Outcome == store.ReceiptReplay {
-			var result Result
-			permitted = json.Unmarshal(claim.Answer.Body, &result) == nil && result.Plan == r.LastPlan && result.OutcomeUnknown
-		}
-		if !permitted {
-			continue
-		}
-		absent, err := s.FS.Absent(r)
-		if err != nil {
-			continue
-		}
-		outcome, reason := "kept", "interrupted_cleanup"
-		if absent {
-			outcome, reason = "removed", "missing_after_recorded_intent"
-		} else if err := s.FS.Verify(r); err != nil {
-			continue
-		}
-		if _, err := s.mark(ctx, r, r.LastExecution, r.LastActor, outcome, reason); err != nil {
-			return err
-		}
+	}
+	permitted := claim.Outcome == store.ReceiptOrphaned
+	if claim.Outcome == store.ReceiptReplay {
+		var result Result
+		permitted = json.Unmarshal(claim.Answer.Body, &result) == nil && result.Plan == r.LastPlan && result.OutcomeUnknown
+	}
+	if !permitted {
+		return nil
+	}
+	absent, err := s.FS.Absent(r)
+	if err != nil {
+		return nil
+	}
+	outcome, reason := "kept", "interrupted_cleanup"
+	if absent {
+		outcome, reason = "removed", "missing_after_recorded_intent"
+	} else if err := s.FS.Verify(r); err != nil {
+		return nil
+	}
+	if _, err := s.mark(ctx, r, r.LastExecution, r.LastActor, outcome, reason); err != nil {
+		return err
 	}
 	return nil
 }

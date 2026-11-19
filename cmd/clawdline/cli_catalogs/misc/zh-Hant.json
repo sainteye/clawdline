@@ -292,6 +292,9 @@
   "project_assistants.switch_on": "Bots 已開啟。打開 console，在 Session 清單選「所有 Bots」。\n",
   "project_assistants.switch_off": "Bots 已關閉。已儲存的 Bot 與對話都會保留。\n",
   "project_assistants.setup_usage": "用法：clawdline project-assistants enable | disable | status | setup-claude | setup-codex | archive restore | archive export\n",
-  "resources.usage": "用法：clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit",
-  "project_assistants.archive_usage": "用法：clawdline project-assistants archive restore|export --database FILE --machine ID --bot ID --project ID --canonical ID --kind repository|place [--input ARCHIVE]\n"
+  "resources.usage": "用法：clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit | use-go CALLBACK_UUID",
+  "project_assistants.archive_usage": "用法：clawdline project-assistants archive restore|export --database FILE --machine ID --bot ID --project ID --canonical ID --kind repository|place [--input ARCHIVE]\n",
+  "heavy.admission_unconfirmed": "無法確認編譯請求（%v）；未執行指令",
+  "heavy.storage_preparing": "正在準備受管儲存空間；尚未開始編譯",
+  "resources.go_cache_missing": "資源回覆缺少 Go 快取路徑。"
 }

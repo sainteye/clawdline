@@ -20,6 +20,10 @@ func TestManagedResourceCannotFollowSymlinkOrReplacement(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root.Path(), r.ID, "link")); err != nil {
 		t.Fatal(err)
 	}
+	accounting, err := root.Measure(context.Background(), r)
+	if err != nil || accounting.Files != 3 {
+		t.Fatal("accounting followed the foreign target or rejected the link metadata", accounting, err)
+	}
 	if _, err := root.Snapshot(context.Background(), r); !errors.Is(err, ErrUnsafe) {
 		t.Fatal("symlink accepted", err)
 	}

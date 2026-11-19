@@ -52,6 +52,8 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 	for _, statement := range []string{
 		networkSettingsSchema,
 		reactionsSchema,
+		handoffCardSchema,
+		handoffReceiptSchema,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_holds(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,scope TEXT NOT NULL,revision INTEGER NOT NULL,id TEXT NOT NULL,PRIMARY KEY(source,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_credentials(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,id TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(source,bot,connector))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_login_kinds (source TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(source,id))`,

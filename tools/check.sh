@@ -61,6 +61,17 @@ for arg in "$@"; do
   esac
 done
 
+# A Root callback's default private Go cache is replaceable by a source-owned
+# Project cache. Explicit cache overrides and isolated verification stay private.
+# Older installed CLIs have no use-go capability; do not guess their routes.
+if [ "$plan_only" != yes ] && [ -n "${CLAWDLINE_CALLBACK_TASK_ID:-}" ] && [ "${CLAWDLINE_GO_CACHE_ISOLATED:-}" != 1 ] &&
+   [ -n "${GOCACHE:-}" ] && [ "${GOCACHE}" = "${XDG_CACHE_HOME:-}" ] && command -v clawdline >/dev/null 2>&1; then
+  if clawdline guide callback 2>/dev/null | grep -F 'resources use-go' >/dev/null; then
+    check_go_cache=$(clawdline resources use-go "$CLAWDLINE_CALLBACK_TASK_ID") || exit 2
+    export GOCACHE="$check_go_cache"
+  fi
+fi
+
 if [ "$quick" = yes ]; then
   if [ "${#packages[@]}" -eq 0 ] || [ "$full" != no ] || [ "$web" != auto ] || [ "$profile" != no ] || [ "$plan_only" != no ] || [ "$callers" != no ]; then
     echo '--quick requires explicit ./package paths and cannot be combined with gate options' >&2; exit 2

@@ -95,6 +95,19 @@ func (s *Server) taskResourcesRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch strings.TrimPrefix(path, "/v1/orchestrator/resources/") {
+	case "use-go":
+		var body struct {
+			Callback string `json:"callback_task_id"`
+		}
+		if !decodeClosed(w, r, &body, "callback_task_id") {
+			return
+		}
+		out, err := s.broker.UseCallbackGoCache(r.Context(), body.Callback)
+		if _, ok := err.(orchestrator.Refusal); ok {
+			writeBrokerError(w, err)
+			return
+		}
+		respond(out, err)
 	case "allocate":
 		var body struct {
 			Kind  string             `json:"owner_kind"`
@@ -177,7 +190,7 @@ func (s *Server) taskResourcesRoute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CloseTaskResources() error {
 	if s.broker != nil && s.broker.Resources != nil {
-		return s.broker.Resources.FS.Close()
+		return s.broker.CloseTaskResources()
 	}
 	return nil
 }

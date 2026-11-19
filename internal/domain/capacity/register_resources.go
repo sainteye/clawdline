@@ -5,6 +5,7 @@ import "github.com/sainteye/clawdline/internal/domain/taskresource"
 // resourceBounds registers retention, accounting and admission for disposable data.
 func resourceBounds() []Entry {
 	return []Entry{
+		{Name: "resources.ready_seconds", Class: Cache, Unit: Seconds, Limit: taskresource.PreparationReadySecondsLimit, AtLimit: Expire, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.PreparationReadySecondsLimit"}},
 		{Name: "resources.scan_files", Class: Buffer, Unit: Rows, Limit: taskresource.FilesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.FilesLimit"}},
 		{Name: "resources.scratch_seconds", Class: Work, Unit: Seconds, Limit: taskresource.ScratchRetentionSecondsLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.ScratchRetentionSecondsLimit"}},
 		{Name: "resources.log_seconds", Class: DiagnosticLog, Unit: Seconds, Limit: taskresource.LogRetentionSecondsLimit, AtLimit: Rotate, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.LogRetentionSecondsLimit"}},

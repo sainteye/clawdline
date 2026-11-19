@@ -252,6 +252,13 @@ func (b *Broker) runEffect(ctx context.Context, id int64) (res effectResult, err
 	if err != nil {
 		return effectResult{err: err}, err
 	}
+	if e.Kind == EffectCallbackStart && b.Resources != nil {
+		// The command has not started while its managed resources are prepared.
+		// Keep the durable effect alive for the existing reclamation window.
+		var preparationCancel context.CancelFunc
+		run, preparationCancel = context.WithTimeout(context.WithoutCancel(run), reclaimDeadline)
+		defer preparationCancel()
+	}
 	h, ok := effectHandlers[e.Kind]
 	if !ok {
 		res := effectResult{state: store.EffectFailed, outcome: "no handler for effect kind " + e.Kind}

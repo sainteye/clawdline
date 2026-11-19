@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -493,4 +494,136 @@ func TestCacheTargetAdmissionDoesNotWaitForOptionalOwnerInspection(t *testing.T)
 		t.Fatalf("optional cache maintenance consumed admission deadline: err=%v owners=%d measurements=%d", err, ownerCalls, measurements)
 	}
 	preserved(t, f)
+}
+
+func TestUsageAccountingDoesNotGrantDeletionOfProtectedContents(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	if err := os.WriteFile(filepath.Join(f.allocation.Path, "result.json"), []byte("protected test fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	u, err := f.s.Measure(context.Background())
+	if err != nil || !u.Known || u.ScratchTotal == 0 {
+		t.Fatal("a protected test name made all storage unknown", u, err)
+	}
+	if _, err := f.s.Seal(context.Background(), f.scope, f.allocation.Resource.ID); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := f.s.Plan(context.Background(), f.scope, []string{f.allocation.Resource.ID})
+	if err != nil || len(plan.Items) != 1 || plan.Items[0].Decision.Outcome != "kept" || plan.Items[0].Decision.Reason != "resource_tree_unverified" {
+		t.Fatal("accounting weakened deletion verification", plan, err)
+	}
+	preserved(t, f)
+}
+
+func TestAdmissionProofInvalidatesOnUsePolicyAndIncarnation(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	ctx := context.Background()
+	if _, err := f.s.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ticket := f.s.AdmissionTicket()
+	if ticket.Instance == "" || !f.s.ConsumeAdmission(ticket) || f.s.ConsumeAdmission(ticket) {
+		t.Fatal("proof reused after grant")
+	}
+	if _, err := f.s.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ticket = f.s.AdmissionTicket()
+	p := taskresource.DefaultPolicy()
+	p.DiskReserve++
+	f.s.Policy = func() taskresource.Policy { return p }
+	if f.s.ConsumeAdmission(ticket) {
+		t.Fatal("changed policy accepted old proof")
+	}
+	f.s.Policy = nil
+	if _, err := f.s.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ticket = f.s.AdmissionTicket()
+	other := &Service{Store: f.s.Store, FS: f.s.FS, Owner: f.s.Owner, FreeSpace: f.s.FreeSpace}
+	if _, err := other.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_ = other.AdmissionTicket()
+	if other.ConsumeAdmission(ticket) {
+		t.Fatal("another service accepted old proof")
+	}
+}
+
+func TestMeasurementCannotOverwriteAnAllocationInvalidation(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	ctx := context.Background()
+	f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
+		f.owner.Complete = false
+		_, err := f.s.Allocate(ctx, f.scope, "task", f.owner.Owner.ID, taskresource.Scratch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return taskresource.Usage{Known: true}, nil
+	}
+	if _, err := f.s.Measure(ctx); err == nil || f.s.Usage().Known || f.s.AdmissionTicket().Instance != "" {
+		t.Fatal("concurrent mutation became a verified admission proof", err)
+	}
+}
+
+func TestAdmissionProofRechecksReserveAndRootWithoutWaitingForMutation(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	ctx := context.Background()
+	if _, err := f.s.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ticket := f.s.AdmissionTicket()
+	f.s.mu.Lock()
+	ready := f.s.ConsumeAdmission(ticket)
+	f.s.mu.Unlock()
+	if ready {
+		t.Fatal("busy mutation was accepted")
+	}
+	free := f.s.FreeSpace
+	f.s.FreeSpace = func() (int64, error) { return 1, nil }
+	if f.s.ConsumeAdmission(ticket) {
+		t.Fatal("old reserve authorized a grant")
+	}
+	f.s.FreeSpace = free
+	if err := os.WriteFile(filepath.Join(f.fs, ".owner"), []byte("changed boundary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if f.s.ConsumeAdmission(ticket) {
+		t.Fatal("changed managed root accepted")
+	}
+}
+
+func TestCancelledAdmissionDoesNotWaitForUnrelatedMaintenance(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	ctx := context.Background()
+	if _, err := f.s.Measure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entered, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		_ = f.s.Maintenance(ctx, func() error { close(entered); <-release; return nil })
+	}()
+	stop := sync.OnceFunc(func() { close(release); <-finished })
+	defer stop()
+	<-entered
+	wait, cancel := context.WithCancel(ctx)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- f.s.Admit(wait) }()
+	cancel()
+	select {
+	case err := <-result:
+		var failure Failure
+		if !errors.As(err, &failure) || failure.Diagnostic().Phase != "admission.wait" || !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+		if !f.s.Usage().Known {
+			t.Fatal("a cancelled waiter invalidated current accounting")
+		}
+	case <-time.After(200 * time.Millisecond):
+		stop()
+		<-result
+		t.Fatal("cancelled admission waited for unrelated maintenance")
+	}
 }

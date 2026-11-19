@@ -853,6 +853,36 @@
     "Note": true
   },
   {
+    "Name": "bots.server_caller_receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_definitions",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_log_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_probe_readers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_processes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_spec_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.skill_asset_files",
     "Known": true,
     "Note": true
@@ -3514,6 +3544,12 @@
     "Name": "resources.page_rows",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "resources.ready_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
   },
   {
     "Name": "resources.scan_files",

@@ -60,6 +60,12 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	serverAvailable func(context.Context) error
+	servers         func(context.Context, app.DevServerRequest) (app.DevServerResult, error)
+	serverPublish   func(context.Context, func() error) error
+	// Source command handlers may use the existing card path. This function
+	// is private and is never exposed as an approval tool to the model.
+	approveSource func(context.Context, pa.PermissionAction, []pa.PermissionOption) (pa.PermissionOption, error)
 	react         func(context.Context, string, string) (pa.Receipt, error)
 	network       func(context.Context, app.NetworkToolRequest) (network.Response, error)
 	extension     func(context.Context, pa.ExtensionRef) error
@@ -80,6 +86,26 @@ type NativeWork struct {
 
 	browserStatus  func(context.Context) (app.BrowserStatus, error)
 	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
+}
+
+func (w NativeWork) DevServersAvailable(ctx context.Context) error {
+	if w.serverAvailable == nil {
+		return failure(pa.Unsupported, "server_tools")
+	}
+	return w.serverAvailable(ctx)
+}
+
+func (w NativeWork) PublishDevServers(ctx context.Context, publish func() error) error {
+	if w.serverPublish == nil {
+		return failure(pa.Unsupported, "server_publication")
+	}
+	return w.serverPublish(ctx, publish)
+}
+func (w NativeWork) DevServers(ctx context.Context, q app.DevServerRequest) (app.DevServerResult, error) {
+	if w.servers == nil {
+		return app.DevServerResult{}, failure(pa.Unsupported, "server_tools")
+	}
+	return w.servers(ctx, q)
 }
 
 func (w NativeWork) React(ctx context.Context, emoji, to string) (pa.Receipt, error) {
@@ -460,6 +486,22 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
+	tools.approveSource = func(ctx context.Context, action pa.PermissionAction, options []pa.PermissionOption) (pa.PermissionOption, error) {
+		ctx, done, err := bound(ctx)
+		if err != nil {
+			return pa.PermissionOption{}, err
+		}
+		stop := context.AfterFunc(life.sealed, done)
+		defer func() { stop(); done() }()
+		if err := journal(ctx, "source-approval"); err != nil {
+			return pa.PermissionOption{}, err
+		}
+		return r.RequestSourcePermission(ctx, app.SourcePermissionRequest{Fence: q.Binding.Fence, TurnID: turnID, MemoryRevision: q.Binding.MemoryRevision, Action: action, Options: options})
+	}
+	if err := h.bindServerTools(q, life, &tools, bound, journal); err != nil {
+		life.invalidate()
+		return nil, NativeWork{}, err
+	}
 	tools.react = func(ctx context.Context, emoji, to string) (pa.Receipt, error) {
 		if (turn.Origin != pa.UserOrigin && turn.Origin != "") || turn.Room != nil || turn.Network != nil || to != "" {
 			return pa.Receipt{}, failure(pa.ScopeDenied, "reaction_origin")

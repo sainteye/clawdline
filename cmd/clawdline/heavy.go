@@ -54,12 +54,10 @@ func heavyConversation(getenv func(string) string) string {
 //     pressure-stall average below a ceiling (machineusage, the same reading
 //     the dashboard draws).
 //
-// **It fails open, on purpose.** docs/records/machine-resource-scheduling-2026-09.md records a
-// lease that twice stopped a build from reaching its compiler — on the path
-// taken when the broker was not answering, which is the path after a crash,
-// exactly when somebody needs to rebuild. So a daemon that does not answer, or
-// a refusal this command does not understand, runs the command anyway and says
-// so. Waiting is the point; refusing to build never is.
+// Once a broker is selected, only its confirmed grant starts compilation.
+// Transport uncertainty and typed refusals preserve that boundary; a missing
+// response is not permission to run alongside an existing holder. Standalone
+// use without a selected broker remains available.
 //
 // A wait longer than --max-wait is different: the machine is answering, and
 // busy. Running beside the holder anyway is the overlap this command exists
@@ -365,9 +363,9 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 	for {
 		a, err := s.b.request("POST", "/v1/orchestrator/leases", nil, req, "")
 		if err != nil {
-			s.say(cliCopy("misc", "heavy.daemon_unanswered", "the daemon did not answer (%v); running without the compile slot"), err)
-			s.b = nil
-			return 0
+			s.say(cliCopy("misc", "heavy.admission_unconfirmed", "the compile request could not be confirmed (%v); the command was not run"), err)
+			s.cancel()
+			return 1
 		}
 		var reply contract.LeaseReply
 		_ = json.Unmarshal(a.Body, &reply)
@@ -405,6 +403,9 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 			}
 		default:
 			code, message := a.refusal()
+			if queued {
+				s.cancel()
+			}
 			s.say(cliCopy("misc", "heavy.slot_refused_stop", "the compile slot was refused (%d %s: %s); the command was not run"), a.Status, code, message)
 			return 1
 		}
@@ -489,6 +490,9 @@ func (s *heavySlot) owner(phase string) contract.LeaseOwnerRequest {
 }
 
 func queueSentence(r contract.LeaseReply) string {
+	if r.HoldReason == "storage_preparing" {
+		return cliCopy("misc", "heavy.storage_preparing", "preparing managed storage; compilation has not started")
+	}
 	who := ""
 	if h := r.Lease.Holder; h != nil && h.Holder != "" {
 		who = cliCopy("misc", "heavy.held_by", ", held by ") + h.Holder

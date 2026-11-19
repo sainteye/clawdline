@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/sainteye/clawdline/internal/app/taskresources"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
@@ -26,7 +27,7 @@ func resourcesCommand(args []string) {
 // back. Apply needs the exact plan file and a caller-retained execution UUID.
 func runResources(stdout, stderr io.Writer, b *broker, args []string) int {
 	usage := func() int {
-		fmt.Fprintln(stderr, cliCopy("misc", "resources.usage", "usage: clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit"))
+		fmt.Fprintln(stderr, cliCopy("misc", "resources.usage", "usage: clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit | use-go CALLBACK_UUID"))
 		return 2
 	}
 	if len(args) == 0 {
@@ -57,6 +58,11 @@ func runResources(stdout, stderr io.Writer, b *broker, args []string) int {
 		method = http.MethodGet
 		path = "/v1/orchestrator/resources"
 		query.Set("after", after)
+	case "use-go":
+		if len(rest) != 1 {
+			return usage()
+		}
+		body = map[string]string{"callback_task_id": rest[0]}
 	case "allocate":
 		if len(rest) > 0 || (kind != "task" && kind != "root") || owner == "" || (class != "cache" && class != "scratch" && class != "execution_log") {
 			return usage()
@@ -113,6 +119,15 @@ func runResources(stdout, stderr io.Writer, b *broker, args []string) int {
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	if args[0] == "use-go" && answer.ok() {
+		var allocation contract.TaskResourceAllocation
+		if json.Unmarshal(answer.Body, &allocation) != nil || allocation.Path == "" {
+			fmt.Fprintln(stderr, cliCopy("misc", "resources.go_cache_missing", "Resource response has no Go cache path."))
+			return 1
+		}
+		fmt.Fprintln(stdout, allocation.Path)
+		return 0
 	}
 	return report(stdout, stderr, "resources", answer)
 }

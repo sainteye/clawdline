@@ -178,6 +178,12 @@
 | `bots.rpc_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.rules_file_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.send_body_bytes` | 25165824 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_caller_receipts` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_definitions` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_log_bytes` | 65536 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `bots.server_probe_readers` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
@@ -721,6 +727,7 @@
 | `resources.disk_reserve_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `resources.log_seconds` | 604800 | `seconds` | `rotate` | `diagnostics, sender` | — |
 | `resources.page_rows` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `resources.ready_seconds` | 60 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `resources.scan_files` | 262144 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.scratch_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |

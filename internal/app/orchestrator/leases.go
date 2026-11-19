@@ -287,6 +287,11 @@ func sessionIsTerminal(value string) Refusal {
 // id: the holder asking again is a renewal, a waiter asking again keeps its
 // place and proves it is still there.
 func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, error) {
+	if b.AsyncResourceAdmission && req.Resource == ResourceCompile {
+		b.resourcePreparation.moveMu.Lock()
+		defer b.resourcePreparation.moveMu.Unlock()
+	}
+
 	if err := validLeaseRequest(req); err != nil {
 		return LeaseAnswer{}, err
 	}
@@ -301,10 +306,18 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 	}
 	var answer LeaseAnswer
 	callbackMoved := false
+	var preparing *store.LeaseRow
+	ownsPreparedGrant := false
+	defer func() {
+		if ownsPreparedGrant {
+			b.finishResourceGrant(req.RequestID)
+		}
+	}()
 	admitted := req.Resource != ResourceCompile || (b.Resources == nil && !b.ResourceServiceRequired)
 	needsStorageAdmission := errors.New("storage_admission_required")
 	for {
 		callbackMoved = false
+		preparing = nil
 		err = b.Store.DecideLease(ctx, req.Resource, key, func(st store.LeaseState) (store.LeaseChange, error) {
 			var change store.LeaseChange
 			ev := func(kind string, body map[string]any) {
@@ -381,6 +394,13 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 				// Never scan or reclaim inside a write transaction. Only a prospective
 				// grant requests preflight; queue polls and holder renewals remain cheap.
 				if !admitted {
+					if b.AsyncResourceAdmission {
+						w := waiters[mine]
+						preparing = &w
+						change.PutWaiters = append(change.PutWaiters, w)
+						answer = LeaseAnswer{State: "queued", Position: position, HoldReason: "storage_preparing", RetryAfter: leaseRetry}
+						return change, nil
+					}
 					return store.LeaseChange{}, needsStorageAdmission
 				}
 				w := waiters[mine]
@@ -413,6 +433,24 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 			answer = LeaseAnswer{State: "queued", Position: position, HoldReason: why, RetryAfter: leaseRetry}
 			return change, nil
 		})
+		if err == nil && preparing != nil {
+			ready, prepErr := b.preparedResourceLease(ctx, req, *preparing)
+			if prepErr != nil {
+				_, _ = b.moveOwnerLease(ctx, LeaseOwner{Resource: req.Resource, RequestID: req.RequestID}, "refused")
+				return LeaseAnswer{}, prepErr
+			}
+			if !ready {
+				break
+			}
+			admitted = true
+			ownsPreparedGrant = true
+			now = b.now()
+			proofs, err = b.leaseProofs(ctx, req.Resource, key, now)
+			if err != nil {
+				return LeaseAnswer{}, err
+			}
+			continue
+		}
 		if !errors.Is(err, needsStorageAdmission) {
 			break
 		}
@@ -484,6 +522,14 @@ func (b *Broker) Cancel(ctx context.Context, o LeaseOwner) (LeaseAnswer, error) 
 }
 
 func (b *Broker) ownerMove(ctx context.Context, o LeaseOwner, move string) (LeaseAnswer, error) {
+	if b.AsyncResourceAdmission && o.Resource == ResourceCompile {
+		b.resourcePreparation.moveMu.Lock()
+		defer b.resourcePreparation.moveMu.Unlock()
+	}
+	return b.moveOwnerLease(ctx, o, move)
+}
+
+func (b *Broker) moveOwnerLease(ctx context.Context, o LeaseOwner, move string) (LeaseAnswer, error) {
 	if !isLowercaseUUID(o.RequestID) {
 		return LeaseAnswer{}, refuse(http.StatusBadRequest, "bad_lease", "request_id must be the lowercase UUID the lease was asked with.")
 	}
@@ -500,6 +546,12 @@ func (b *Broker) ownerMove(ctx context.Context, o LeaseOwner, move string) (Leas
 			body["resource"], body["key"], body["request"] = o.Resource, key, o.RequestID
 			payload, _ := json.Marshal(body)
 			change.Events = append(change.Events, store.Event{Kind: kind, Subject: o.Resource + ":" + key, Payload: payload})
+			if kind == "lease.cancelled" && b.AsyncResourceAdmission && o.Resource == ResourceCompile {
+				change.Events = append(change.Events, store.Event{Kind: "resource.preparation.cancelled", Subject: o.RequestID, Payload: payload})
+			}
+			if kind == "lease.released" && b.AsyncResourceAdmission && o.Resource == ResourceCompile {
+				change.Events = append(change.Events, store.Event{Kind: "resource.preparation.completed", Subject: o.RequestID, Payload: payload})
+			}
 		}
 		h := st.Holder
 		switch move {
@@ -537,12 +589,12 @@ func (b *Broker) ownerMove(ctx context.Context, o LeaseOwner, move string) (Leas
 			change.ClearHolder = true
 			answer.LeaseID = h.LeaseID
 			ev("lease.released", map[string]any{"held_seconds": int(now.Sub(h.AcquiredAt) / time.Second)})
-		case "cancelled":
+		case "cancelled", "refused":
 			for _, w := range st.Waiters {
 				if w.RequestID == o.RequestID {
 					callbackMoved = w.CallbackTaskID != ""
 					change.DropWaiters = []string{w.RequestID}
-					ev("lease.cancelled", map[string]any{})
+					ev("lease."+move, map[string]any{})
 					return change, nil
 				}
 			}
@@ -552,6 +604,9 @@ func (b *Broker) ownerMove(ctx context.Context, o LeaseOwner, move string) (Leas
 	})
 	if err != nil {
 		return LeaseAnswer{}, leaseStoreError(err)
+	}
+	if o.Resource == ResourceCompile && move != "renewed" {
+		b.cancelResourcePreparation(o.RequestID)
 	}
 	if callbackMoved {
 		b.taskListChanged()

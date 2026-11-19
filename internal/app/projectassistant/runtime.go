@@ -11,11 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 type RuntimeOptions struct {
 	NetworkCheck    func(context.Context, pa.Turn) error
+	NativeHistory   NativeMaintenanceHistory
 	Repository      Repository
 	Memory          Memory
 	WorkBridge      WorkBridge
@@ -77,10 +79,15 @@ type runtimeActor struct {
 	turnID     string
 	// Includes only pending offers durably committed for this active turn.
 	pendingPermissions int
+	permissionFence    pa.Fence
+	sourcePermissions  map[string]*sourcePermission
 	stopped            bool
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
-	steering map[string]bool
+	steering         map[string]bool
+	handoffAuthority handoffInputAuthority
+
+	maintenance bool // immutable: owns the actor without a chat turn
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -106,7 +113,9 @@ func (r *Engine) Usage() RuntimeUsage {
 			}
 			if a.session != nil {
 				if s, ok := a.session.(interface{ Usage() SessionUsage }); ok {
-					usage.Sessions = append(usage.Sessions, s.Usage())
+					reading := s.Usage()
+					reading.PendingPermissions = max(reading.PendingPermissions, a.pendingPermissions)
+					usage.Sessions = append(usage.Sessions, reading)
 				} else {
 					usage.Known = false
 				}
@@ -140,6 +149,9 @@ func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
 	a := r.actors[key]
 	if a != nil && a.retained {
 		return nil, runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup")
+	}
+	if a != nil && a.maintenance {
+		return nil, runtimeFailure(pa.CapacityFull, "native_maintenance_busy")
 	}
 	if a == nil {
 		if len(r.actors) >= r.o.Limits.MaxBots {
@@ -265,6 +277,14 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	if err := pa.ValidateInputSend(s.Message.Text, s.Message.Attachments, s.Message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
+	}
+	if s.Message.Handoff != nil {
+		if err := pa.ValidateHandoffRef(*s.Message.Handoff); err != nil {
+			return pa.Receipt{}, err
+		}
+		if s.Notice || s.Network != nil || s.Room != nil || s.AuthorityCheck == nil {
+			return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "handoff_input")
+		}
 	}
 	if s.Network != nil && (!s.Notice || s.Room != nil || len(s.Message.Attachments) > 0 || len(s.Message.UploadIDs) > 0 || s.Message.QuoteMessageID != "") {
 		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "network_submission")
@@ -473,9 +493,12 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		turn.Room = &ticket
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
-	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
+	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
 	if err != nil {
 		return pa.Receipt{}, err
+	}
+	if s.Message.Handoff != nil && receipt.ResourceID == turn.ID {
+		a.handoffAuthority = handoffInputAuthority{TurnID: turn.ID, Check: afterRequest(ctx, s.AuthorityCheck)}
 	}
 	r.setProject(a, bot.Project)
 	if !a.working {
@@ -513,6 +536,11 @@ func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
 		if len(t.Attempts) > 0 {
 			continue
 		}
+		if card, e := r.handoffForTurn(ctx, t); e != nil {
+			return e
+		} else if card != nil {
+			continue
+		}
 		_ = r.resumeInterrupted(ctx, key, t)
 	}
 	return nil
@@ -530,6 +558,18 @@ func (r *Engine) resumeInterrupted(ctx context.Context, key pa.BotKey, t pa.Turn
 	c, err := r.o.Repository.Conversation(ctx, key, bot.ConversationID)
 	if err != nil {
 		return err
+	}
+	// Preserve the original interrupted turn when its native history is
+	// fenced. Even accepting a restart notice would acknowledge the old
+	// turn before the worker could refuse to load it.
+	if r.o.NativeHistory != nil && t.Fence.BindingID != "" {
+		binding, err := r.o.Repository.Binding(ctx, key, t.Fence.BindingID)
+		if err != nil {
+			return err
+		}
+		if err = r.checkNativeHistory(ctx, binding); err != nil {
+			return err
+		}
 	}
 	_, err = r.Submit(ctx, Submission{Command: r.command(key, pa.SendOperation, "runtime-resume-"+t.ID, t.ID),
 		Message: pa.SendMessage{Fence: currentFence(bot, c), Text: resumePrompt}, Feature: feature, Source: source, Notice: true})
@@ -711,6 +751,9 @@ func (r *Engine) work(a *runtimeActor) {
 		r.wakeExchangeReply(*turn)
 		a.mu.Lock()
 		a.cancel = nil
+		if a.handoffAuthority.TurnID == turn.ID {
+			a.handoffAuthority = handoffInputAuthority{}
+		}
 		a.turnID = ""
 		// Only an already completed routine awaiting its terminal commit keeps
 		// that success in memory. Unknown Open/Close still persists TurnUnknown.
@@ -778,6 +821,19 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
+	handoffCard, err := r.handoffForTurn(ctx, t)
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	var handoffCheck func(context.Context) error
+	if handoffCard != nil {
+		if a.handoffAuthority.TurnID != t.ID || a.handoffAuthority.Check == nil {
+			a.mu.Unlock()
+			return runtimeFailure(pa.Revoked, "handoff_authority")
+		}
+		handoffCheck = a.handoffAuthority.Check
+	}
 	preparedBot := bot
 	if original != nil && !sameExecutionConfig(bot, *original) {
 		a.mu.Unlock()
@@ -842,6 +898,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	if handoffCard != nil {
+		if err = checkHandoffExecution(*handoffCard, t, bot, currentFence(bot, c), current, original == nil); err == nil {
+			err = handoffCheck(ctx)
+		}
+		if err != nil {
+			a.mu.Unlock()
+			return err
+		}
 	}
 	snapshot, err := r.o.Memory.Snapshot(ctx, a.key)
 	if err != nil {
@@ -924,7 +989,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Each configured identity keeps its own native conversation. A switch
 	// chooses only its newest confirmed-clean binding, never the active
 	// alternate's history. All execution authority is minted afresh below.
-	if !isolatedRoutine && pa.HasFallbacks(bot) && (binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile) {
+	if handoffCard == nil && !isolatedRoutine && pa.HasFallbacks(bot) && (binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile) {
 		carryKind = "recap"
 		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent, effectiveBot.LoginProfile); ok {
 			binding = parked
@@ -938,6 +1003,16 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		binding.NativeSessionID = ""
 		binding.Revoked = false
 	}
+	// Check the selected history, including a parked fallback, before an
+	// adapter can attempt a load or fall back to a fresh open in the same
+	// history directory. Isolated routines, Forget and changed instructions
+	// use separate history partitions through the existing filtered-start path.
+	if !isolatedRoutine && binding.InstructionRevision == bot.Instructions.Revision && binding.ForgottenThrough == current.ForgottenThrough {
+		if err = r.checkNativeHistory(ctx, binding); err != nil {
+			a.mu.Unlock()
+			return err
+		}
+	}
 	decision, err := pa.DecideResume(binding, current, snapshot, caps)
 	if err != nil {
 		a.mu.Unlock()
@@ -945,7 +1020,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
-	resume := (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	resume := handoffCard == nil && (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
 	if resumedFrom != "" && resume {
 		carryKind = "catch_up"
 	} else {
@@ -1032,7 +1107,14 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	a.mu.Lock()
 	a.opening = true
 	a.mu.Unlock()
-	if err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); err != nil {
+	err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true)
+	if err == nil && handoffCheck != nil {
+		err = handoffCheck(ctx)
+	}
+	if err == nil && resume {
+		err = r.checkNativeHistory(ctx, binding)
+	}
+	if err != nil {
 		a.mu.Lock()
 		a.opening = false
 		a.mu.Unlock()
@@ -1198,6 +1280,22 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		// Recheck the exact authority at the external write boundary.
 		if e = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, false); e != nil {
 			return e
+		}
+		if handoffCard != nil {
+			if handoff == nil {
+				return runtimeFailure(pa.ContextStale, "handoff_native_opening")
+			}
+			if e = handoffCheck(ctx); e != nil {
+				return e
+			}
+			text, claimErr := r.o.Repository.(HandoffRepository).ClaimHandoffText(ctx, *handoffCard)
+			if claimErr != nil {
+				return claimErr
+			}
+			if e = handoffCheck(ctx); e != nil {
+				return e
+			}
+			handoff.editedSummary = &text
 		}
 		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
 		return e
@@ -1583,6 +1681,12 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if e.Permission != nil {
 		count++
 		p := *e.Permission
+		if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) || strings.HasPrefix(p.ID, sourcePermissionPrefix) {
+			return runtimeFailure(pa.ScopeDenied, "source_permission_namespace")
+		}
+		if a.pendingPermissions >= capacity.MaximumBotPermissions {
+			return runtimeFailure(pa.CapacityFull, "pending_permissions")
+		}
 		if a.closing {
 			return runtimeFailure(pa.StaleGeneration, "permission_session")
 		}
@@ -1610,6 +1714,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	}
 	if e.Permission != nil {
 		a.pendingPermissions++
+		a.permissionFence = e.Fence
 	}
 	// As Codync's "Approve automatically", an Approve Bot allows each request
 	// with the agent's allow-once option; AutoRead allows only read-only ones.
@@ -1785,6 +1890,9 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	}
 	if q.Command.Key != q.Answer.Fence.Key || a.turnID != p.TurnID || a.session == nil || a.stopped || a.closing {
 		return pa.Receipt{}, runtimeFailure(pa.StaleGeneration, "permission_session")
+	}
+	if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) {
+		return r.answerSourcePermission(ctx, a, bot, p, q)
 	}
 	// Persist unknown before the external write. A crash here is inspectable,
 	// never an automatic repeat of a native permission response.

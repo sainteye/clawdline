@@ -292,6 +292,9 @@
   "project_assistants.switch_on": "Bots are on. Open the console and choose All Bots in the Session list.\n",
   "project_assistants.switch_off": "Bots are off. Saved Bots and conversations are kept.\n",
   "project_assistants.setup_usage": "Usage: clawdline project-assistants enable | disable | status | setup-claude | setup-codex | archive restore | archive export\n",
-  "resources.usage": "usage: clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit",
-  "project_assistants.archive_usage": "Usage: clawdline project-assistants archive restore|export --database FILE --machine ID --bot ID --project ID --canonical ID --kind repository|place [--input ARCHIVE]\n"
+  "resources.usage": "usage: clawdline resources list [--after ID] | allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log | plan UUID... | apply --plan FILE --execution UUID | publish UUID | pin --value=true|false UUID | measure | admit | use-go CALLBACK_UUID",
+  "project_assistants.archive_usage": "Usage: clawdline project-assistants archive restore|export --database FILE --machine ID --bot ID --project ID --canonical ID --kind repository|place [--input ARCHIVE]\n",
+  "heavy.admission_unconfirmed": "the compile request could not be confirmed (%v); the command was not run",
+  "heavy.storage_preparing": "preparing managed storage; compilation has not started",
+  "resources.go_cache_missing": "Resource response has no Go cache path."
 }

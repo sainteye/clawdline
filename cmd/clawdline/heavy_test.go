@@ -159,17 +159,17 @@ func stderrLines(h *heavyHarness) []string {
 	return strings.Split(strings.TrimSuffix(h.stderr.String(), "\n"), "\n")
 }
 
-// A daemon that does not answer is no reason not to build: the command runs,
-// and says it ran without the slot.
-func TestAHeavyCommandRunsWhenTheDaemonDoesNotAnswer(t *testing.T) {
+// Once a broker is selected, a lost answer is an unknown admission outcome,
+// not permission to run the native command without a confirmed lease.
+func TestAHeavyCommandDoesNotRunWithUnconfirmedAdmission(t *testing.T) {
 	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, "" })
 	b.base = "http://127.0.0.1:1" // nothing listens here
 	b.client.Timeout = 2 * time.Second
 	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"clang", "source.c"}, h.deps(b, nil)); code != 1 || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
-	if !strings.Contains(h.stderr.String(), "running without the compile slot") {
+	if !strings.Contains(h.stderr.String(), "the command was not run") {
 		t.Fatalf("stderr %q", h.stderr.String())
 	}
 }

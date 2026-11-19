@@ -1471,6 +1471,9 @@ func (b *Broker) settleWith(ctx context.Context, id string, state State, why str
 	if err == nil && b.WorkUnitEdge != nil && r.Callback == nil {
 		b.WorkUnitEdge(id, "end", string(state), r.FinishedAt)
 	}
+	if err == nil {
+		b.requestManagedResourceCleanup(ctx)
+	}
 	return r, ids, err
 }
 

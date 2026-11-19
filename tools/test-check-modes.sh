@@ -26,6 +26,7 @@ printf '#!/bin/sh\nprintf "dmg-install-harness\\n" >> "$CALLS"\n' > "$scratch/re
 cat > "$scratch/bin/go" <<'MOCK'
 #!/bin/bash
 printf 'go %s\n' "$*" >> "$CALLS"
+if [ "${CHECK_CACHE_LOG:-0}" = 1 ]; then printf 'cache %s\n' "${GOCACHE:-}" >> "$CALLS"; fi
 if [ "$1" = list ]; then root=$(pwd -P); printf '{"Dir":"%s/internal/example","ImportPath":"fixture/example"}\n{"Dir":"%s/internal/caller","ImportPath":"fixture/caller","Imports":["fixture/example"]}\n' "$root" "$root"; exit 0; fi
 if [ "${FAIL_TESTS:-0}" = 1 ] && [ "$1" = test ]; then exit 7; fi
 if [ "$1 $2" = 'test -json' ]; then
@@ -88,7 +89,7 @@ MOCK
 printf '#!/bin/sh\nexit 0\n' > "$scratch/bin/gofmt"
 chmod +x "$scratch/bin/"*
 export PATH="$scratch/bin:$PATH" TMPDIR="$scratch" CALLS="$scratch/calls" REAL_NODE="$real_node" REAL_PYTHON="$real_python" CLAWDLINE_CHECK_WRAPPED=1
-unset CLAWDLINE_HEAVY
+unset CLAWDLINE_HEAVY CLAWDLINE_GO_CACHE_ISOLATED
 cd "$scratch/repo"
 git init -q -b main
 git config user.name Test
@@ -112,6 +113,41 @@ bash tools/check.sh > "$scratch/module.log"
 grep -Fxq 'go test fixture/example' "$CALLS"
 ! grep -Fxq 'go test ./...' "$CALLS"
 ! grep -Fxq 'go test -run=^$ fixture/caller' "$CALLS"
+# Ordinary callback checks attach only the broker-assigned default cache, after
+# capability discovery. Custom/isolated caches and plan reads remain private.
+cat > "$scratch/bin/clawdline" <<'MOCK'
+#!/bin/bash
+case "$1 $2" in
+  'guide callback') [ "${CACHE_CAPABILITY:-1}" = 1 ] || exit 1; echo 'resources use-go';;
+  'resources use-go')
+    printf 'attach %s\n' "$3" >> "$CALLS"
+    [ "${FAIL_CACHE_ATTACH:-0}" != 1 ] || exit 1
+    printf '%s/shared/go-build\n' "$TMPDIR";;
+  *) exit 2;;
+esac
+MOCK
+chmod +x "$scratch/bin/clawdline"
+export CLAWDLINE_CALLBACK_TASK_ID=30000000-0000-4000-8000-000000000001 CHECK_CACHE_LOG=1
+export GOCACHE="$scratch/private" XDG_CACHE_HOME="$scratch/private"
+: > "$CALLS"
+bash tools/check.sh --quick ./internal/example > "$scratch/shared-cache.log"
+grep -Fxq "attach $CLAWDLINE_CALLBACK_TASK_ID" "$CALLS"
+grep -Fxq "cache $scratch/shared/go-build" "$CALLS"
+for mode in unsupported isolated custom plan refused; do
+  : > "$CALLS"
+  case "$mode" in
+    unsupported) CACHE_CAPABILITY=0 bash tools/check.sh --quick ./internal/example > "$scratch/cache-$mode.log";;
+    isolated) CLAWDLINE_GO_CACHE_ISOLATED=1 bash tools/check.sh --quick ./internal/example > "$scratch/cache-$mode.log";;
+    custom) GOCACHE="$scratch/explicit" bash tools/check.sh --quick ./internal/example > "$scratch/cache-$mode.log";;
+    plan) bash tools/check.sh --plan > "$scratch/cache-$mode.log";;
+    refused)
+      if FAIL_CACHE_ATTACH=1 bash tools/check.sh --quick ./internal/example > "$scratch/cache-$mode.log" 2>&1; then echo 'unverified cache attachment continued' >&2; exit 1; fi
+      ! grep -q '^go ' "$CALLS"
+      continue;;
+  esac
+  ! grep -q '^attach ' "$CALLS"
+done
+unset CLAWDLINE_CALLBACK_TASK_ID CHECK_CACHE_LOG GOCACHE XDG_CACHE_HOME
 : > "$CALLS"
 bash tools/check.sh --callers > "$scratch/callers.log"
 grep -Fxq 'go test -run=^$ fixture/caller' "$CALLS"
