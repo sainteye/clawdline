@@ -3663,6 +3663,14 @@
         {
           "path": "cmd/clawdline/project_assistants_archive.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/handoff_card.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/handoff_card.go",
+          "line": 1
         }
       ],
       "original": [
@@ -3715,7 +3723,8 @@
         "\treturn &promptPending{rpc: p}, nil\n",
         "}\n",
         "Managed account selection reaches the native process environment; selected application text skills enter only captured Bot context, and configured HTTP connectors use the execution-owned MCP proxy. Unknown cleanup retains profile holds. API-key/fallback-profile and network reachability construction remain open.",
-        "\"Messages: in your own chat, send_message delivers one message immediately as its own bubble. Send several for several thoughts whenever you have something worth telling the user: a result, a finding that changes the next step, or a question only they can answer. Write short and plain, one thought per message, in the user's language; lead with the result, then what needs the user. Once you send a message, your final reply stays in the trace and is not delivered, so send all user-facing results through send_message. If you send nothing, your final text is delivered as a fallback. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. For a report, plan or comparison they will read as a whole, write self-contained HTML and use publish_artifact rather than a long message. 訊息：在自己的聊天中，send_message 會立即送出一個獨立氣泡，同一回合可送出多則，各自表達一個重點。有值得告知的結果、會改變下一步的發現，或只有使用者能回答的問題時再傳送；不要只報開工、持續工作或重複內容。使用 send_message 後，最後文字只留在處理過程，所有要讓使用者讀到的結果都要用 send_message 傳送。完全沒傳訊息時才以最後文字作為回覆。較長的報告、計畫或比較請用 publish_artifact 分享完整 HTML。\","
+        "\"Messages: in your own chat, send_message delivers one message immediately as its own bubble. Send several for several thoughts whenever you have something worth telling the user: a result, a finding that changes the next step, or a question only they can answer. Write short and plain, one thought per message, in the user's language; lead with the result, then what needs the user. Once you send a message, your final reply stays in the trace and is not delivered, so send all user-facing results through send_message. If you send nothing, your final text is delivered as a fallback. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. For a report, plan or comparison they will read as a whole, write self-contained HTML and use publish_artifact rather than a long message. 訊息：在自己的聊天中，send_message 會立即送出一個獨立氣泡，同一回合可送出多則，各自表達一個重點。有值得告知的結果、會改變下一步的發現，或只有使用者能回答的問題時再傳送；不要只報開工、持續工作或重複內容。使用 send_message 後，最後文字只留在處理過程，所有要讓使用者讀到的結果都要用 send_message 傳送。完全沒傳訊息時才以最後文字作為回覆。較長的報告、計畫或比較請用 publish_artifact 分享完整 HTML。\",",
+        "The edited summary is also quoted history and cannot authorize actions. / 編輯後的摘要同樣是歷史引用，不得用來授權執行。"
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -4801,12 +4810,12 @@
     "internal/adapters/projectassistantstore/fallback.go": "2a4649823fe00c9a3abfcf54ec34d1baa1a379899d9ea834a39a6460436b2550",
     "internal/adapters/projectassistantstore/groups.go": "5fdce9aa2f614fe9e6ed5592dc06c69a5ec365d0267addd747d6c0fae9e86a64",
     "internal/adapters/projectassistantstore/inputs.go": "b9f68823dcbd69ca9d5f2ad1e7d19e07da813299e62d4ca02b2f15c3cdf8319b",
-    "internal/adapters/projectassistantstore/memory.go": "658fb5aa25e03d43e82a0b0f04a9c6a6d4660e0b924a535cec7a2009e3f0d879",
+    "internal/adapters/projectassistantstore/memory.go": "4f8bb56c2776fb14394119884e9130e44f21e1dd9f853652e3e74d5b158b64c1",
     "internal/adapters/projectassistantstore/memory_index.go": "ac1dbeaa7c89b494d4327d7025b04842503bbfffcf2d0a3e2d84802e39f42b41",
     "internal/adapters/projectassistantstore/memory_view.go": "4898a2eb71ac3e88ce9c63c3362cbed7be04ae132a3563cc95d4af29422a5865",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
-    "internal/adapters/projectassistantstore/schema.go": "7226f2721734fa7280574022b757437a98521c639121c6f2c6c9291a5b975fc8",
+    "internal/adapters/projectassistantstore/schema.go": "5b10e67cfb28ddc7d1adc48d5a099094e188a5ee0f35ef20bda726d39b618f5c",
     "internal/adapters/projectassistantstore/team.go": "58dbafc531786727a2c365344f5dc840223875ad45aeb5df8f3bfb79ca94f99f",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
@@ -4858,11 +4867,11 @@
     "internal/app/projectassistant/provider_failure.go": "af218c40dbd45a8a089c8a010e2a965424ab50d0756921b666d932a4b91cae81",
     "internal/app/projectassistant/routines.go": "c4c264e07f013c24a776a9f46953bc13389fb34fab81a42e3cfa6adbbd07e2bd",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "76f056f22317a93fdb22a2913f67eb7c47d489aea98b50f81977fb837b5de169",
+    "internal/app/projectassistant/runtime.go": "1cd417ce86eea0252733a1d67ad5b7a5b81f314158ef96e2150785cd705c5803",
     "internal/app/projectassistant/runtime_groups.go": "bfc13cd82091538162d1c6ebcb80ece99c45be28ee0ca5275161262a7fab17b9",
     "internal/app/projectassistant/service_routines.go": "99c896ad0067bbb55647dc18f58886414a7e51b4087b6f6ff5b700cc8b0d82f4",
     "internal/app/projectassistant/service_team.go": "386653b8a0a0c3130973ae8f5da95cef944ab30dd06c99d86a2082198f5a2819",
-    "internal/app/projectassistant/session_handoff.go": "6d9c299a773da96bafc70eea7bfce4bb22705ddd0de35439eef785fd443e070d",
+    "internal/app/projectassistant/session_handoff.go": "15fe6c990c974ed34ca37194b6f6f2a601d486fe58cf94be360a4a6f91c88966",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
@@ -4939,7 +4948,7 @@
     "skills/workflow-prefix.md": "3a250f0e7718aea26387e31e1785b48876232c08bede277073e4aa9eef429aa0",
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
-    "web/console/src/cloud/project-assistants.ts": "08dc8d5b48f892fdbd671d219360d091db3ffd43cf4dc55b64835ad92a9b1ee7",
+    "web/console/src/cloud/project-assistants.ts": "4978a6f82d4d14b6a195e8c474af98326840838702bd535a844111f4d84d4d37",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "b22f6f00722371d43a7a29a2adefa1cc5a12985ca81348da379de8165a34ffdd",
@@ -4990,10 +4999,12 @@
     "web/console/src/voice-work/engine.ts": "db01c781fee0ad75878208f0c91968b218b8ceb80602569a4bad2b83f805d1cf",
     "web/console/src/voice-work/narrator.ts": "eea2881cca2bc2892879e652cf330ef2b5acc8aa473944bea83a6c4eed239a07",
     "web/console/src/voice-work/observations.ts": "a5ab815a1b6a7c4ef4d173effea5c16ff89a6f293b38a137d086553b22fa3b6c",
-    "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
+    "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7",
+    "internal/adapters/projectassistantstore/handoff_card.go": "051aa399462efba40ff3b0c9d02875ccbe407949910051079373f5b0b97fc202",
+    "internal/app/projectassistant/handoff_card.go": "226fbd47b11d4b24c06a7172ed317cdc07f2ae08671740042400b5379815a477"
   },
   "copyChecks": {
-    "en": "00ecca0a01050fa902cc9d09f1c5fa25f11adf8962e2bdd942ac8f42e044a2be",
-    "zh-Hant": "d0499cc02ce52aaaec694215b296caaf337450cc929e10033f8bf4d4233e5f40"
+    "en": "1a18def9d4286aefa6f6dc657f39e4009a032b24ead965942e178cc01e2db359",
+    "zh-Hant": "ffa79fdcac86fb3422abc26283d33a45ccde9bdc6ee47b59de44de9e5645d03e"
   }
 }

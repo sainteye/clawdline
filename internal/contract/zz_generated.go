@@ -5184,6 +5184,63 @@ type ProjectAssistantGroupStopResponse struct {
 	Stopped         bool                      `json:"stopped"`
 }
 
+type ProjectAssistantHandoffAction string
+
+const (
+	ProjectAssistantHandoffActionPrepare ProjectAssistantHandoffAction = "prepare"
+	ProjectAssistantHandoffActionEdit    ProjectAssistantHandoffAction = "edit"
+	ProjectAssistantHandoffActionKeep    ProjectAssistantHandoffAction = "keep"
+)
+
+// ProjectAssistantHandoffActionValues is every value the contract allows, in contract order.
+var ProjectAssistantHandoffActionValues = []ProjectAssistantHandoffAction{ProjectAssistantHandoffActionPrepare, ProjectAssistantHandoffActionEdit, ProjectAssistantHandoffActionKeep}
+
+// Source-local handoff. Summary text is available while the draft is current.
+// An adoption identifies the input's turn and is not execution evidence.
+type ProjectAssistantHandoffCard struct {
+	BookmarkMessageID string                           `json:"bookmark_message_id,omitempty"`
+	Ref               ProjectAssistantHandoffRef       `json:"ref"`
+	State             ProjectAssistantHandoffCardState `json:"state"`
+	Text              string                           `json:"text,omitempty"`
+	TurnID            string                           `json:"turn_id,omitempty"`
+}
+
+type ProjectAssistantHandoffCardState string
+
+const (
+	ProjectAssistantHandoffCardStateDraft     ProjectAssistantHandoffCardState = "draft"
+	ProjectAssistantHandoffCardStateKept      ProjectAssistantHandoffCardState = "kept"
+	ProjectAssistantHandoffCardStateAdopted   ProjectAssistantHandoffCardState = "adopted"
+	ProjectAssistantHandoffCardStateWithdrawn ProjectAssistantHandoffCardState = "withdrawn"
+)
+
+// ProjectAssistantHandoffCardStateValues is every value the contract allows, in contract order.
+var ProjectAssistantHandoffCardStateValues = []ProjectAssistantHandoffCardState{ProjectAssistantHandoffCardStateDraft, ProjectAssistantHandoffCardStateKept, ProjectAssistantHandoffCardStateAdopted, ProjectAssistantHandoffCardStateWithdrawn}
+
+// The exact source-owned handoff card version displayed before a send.
+type ProjectAssistantHandoffRef struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+}
+
+// API 92. Prepare the source's filtered summary, edit the exact draft revision,
+// or keep the current native conversation.
+type ProjectAssistantHandoffRequest struct {
+	Action  ProjectAssistantHandoffAction `json:"action"`
+	Command ProjectAssistantCommand       `json:"command"`
+	Fence   ProjectAssistantFence         `json:"fence"`
+	Ref     *ProjectAssistantHandoffRef   `json:"ref,omitempty"`
+	Text    string                        `json:"text"`
+}
+
+// API 92. Current handoff and preparation eligibility on the Bot's source.
+type ProjectAssistantHandoffResponse struct {
+	CanPrepare      bool                         `json:"can_prepare"`
+	Card            *ProjectAssistantHandoffCard `json:"card,omitempty"`
+	ContractVersion string                       `json:"contract_version"`
+	Fence           ProjectAssistantFence        `json:"fence"`
+}
+
 // before_seq=0 starts from latest. Items are ascending within a page. Page size
 // 1..100.
 type ProjectAssistantHistoryRequest struct {
@@ -6263,6 +6320,9 @@ type ProjectAssistantSendNowRequest struct {
 type ProjectAssistantSendRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
+
+	// The exact draft version approved for this input on API 92 sources.
+	Handoff *ProjectAssistantHandoffRef `json:"handoff,omitempty"`
 
 	// Pictures as base64 data: URLs, at most four; each is normalized and stored
 	// before the message is accepted. A daemon below API level 62 refuses this field.

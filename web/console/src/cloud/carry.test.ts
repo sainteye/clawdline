@@ -405,6 +405,8 @@ test("one word, one list, and every route names a word the table carries", () =>
     "project-assistants.list": "captured Bot source GET /v1/project-assistants",
     "project-assistants.create": "captured Bot source POST /v1/project-assistants",
     "project-assistants.get": "captured Bot source GET /v1/project-assistants/{bot_id}",
+    "project-assistants.handoff-card": "captured Bot source GET /v1/project-assistants/{bot_id}/handoff-card",
+    "project-assistants.handoff-card-write": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/handoff-card",
     "project-assistants.edit": "captured Bot source PATCH /v1/project-assistants/{command.key.bot_id}",
     "project-assistants.history": "captured Bot source GET /v1/project-assistants/{key.bot_id}/messages",
     "project-assistants.send": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
@@ -442,7 +444,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.read"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 302)
+  assert.equal(Object.keys(CARRIED).length, 304)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

@@ -73,6 +73,9 @@ export interface SourceClient {
   history(request: W.ProjectAssistantHistoryRequest, signal: AbortSignal): Promise<W.ProjectAssistantHistoryResponse>
   view(request: W.ProjectAssistantReadViewRequest, signal: AbortSignal): Promise<W.ProjectAssistantReadViewResponse>
   send(request: W.ProjectAssistantSendRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  canHandoff?(): boolean
+  handoff?(key: W.ProjectAssistantBotKey, conversation: string, signal: AbortSignal): Promise<W.ProjectAssistantHandoffResponse>
+  writeHandoff?(request: W.ProjectAssistantHandoffRequest, signal: AbortSignal): Promise<W.ProjectAssistantHandoffResponse>
   stop(request: W.ProjectAssistantStopRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   answer(request: W.ProjectAssistantPermissionAnswerRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   markRead(request: W.ProjectAssistantReadRequest, signal: AbortSignal): Promise<W.ProjectAssistantReadResponse>

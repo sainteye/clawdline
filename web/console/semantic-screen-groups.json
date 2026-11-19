@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13333,
-  "riskKeys": 5741,
-  "nonRiskCount": 7592,
+  "englishContentKeys": 13352,
+  "riskKeys": 5744,
+  "nonRiskCount": 7608,
   "groups": [
     {
       "name": "acp / other",
@@ -403,6 +403,31 @@
         "botExchange.sent",
         "botExchange.state",
         "botExchange.title"
+      ]
+    },
+    {
+      "name": "botHandoff / other",
+      "count": 16,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "botHandoff.cancel",
+        "botHandoff.changed",
+        "botHandoff.draft",
+        "botHandoff.edit",
+        "botHandoff.hide",
+        "botHandoff.history",
+        "botHandoff.keep",
+        "botHandoff.kept",
+        "botHandoff.limit",
+        "botHandoff.load",
+        "botHandoff.open",
+        "botHandoff.prepare",
+        "botHandoff.save",
+        "botHandoff.summary",
+        "botHandoff.title",
+        "botHandoff.withdrawn"
       ]
     },
     {

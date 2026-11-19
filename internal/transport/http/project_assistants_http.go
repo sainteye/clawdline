@@ -97,6 +97,24 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		_, _ = w.Write(result.body)
 		return
 	}
+	if result, ok := payload.(paEncodedHandoff); ok {
+		if h.options.BeforeViewPublish != nil {
+			h.options.BeforeViewPublish()
+		}
+		if _, err = h.status(r.Context(), true); err == nil {
+			err = result.check(r.Context())
+		}
+		if err != nil {
+			if result.write {
+				err = paHTTPFailure(pa.OutcomeUnknown, "handoff_publication")
+			}
+			paWriteHTTPFailure(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result.body)
+		return
+	}
 	if view, ok := payload.(paEncodedReadView); ok {
 		if h.options.BeforeViewPublish != nil {
 			h.options.BeforeViewPublish()
@@ -226,7 +244,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions", "network-settings":
+					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions", "network-settings", "handoff-card":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -234,7 +252,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react":
+					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react", "handoff-card":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -371,6 +389,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 				return nil, err
 			}
 		}
+	}
+	if route.action == "handoff-card" {
+		return h.handoffCard(w, r, route)
 	}
 	if route.action == "react" {
 		return h.react(w, r, route)
@@ -634,7 +655,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID, Attachments: attachments, UploadIDs: request.UploadIds}))
+		return paHTTPReceipt(s.Send(ctx, command, pa.SendMessage{Fence: fence, Text: request.Text, QuoteMessageID: request.QuoteMessageID, Attachments: attachments, UploadIDs: request.UploadIds, Handoff: paDomainHandoffRef(request.Handoff)}))
 	case "stop":
 		request, err := paDecodeHTTP[contract.ProjectAssistantStopRequest](w, r)
 		if err != nil {

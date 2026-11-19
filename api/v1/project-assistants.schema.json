@@ -1471,6 +1471,118 @@
         "has_more"
       ]
     },
+    "ProjectAssistantHandoffRef": {
+      "description": "The exact source-owned handoff card version displayed before a send.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "revision"
+      ]
+    },
+    "ProjectAssistantHandoffCardState": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "kept",
+        "adopted",
+        "withdrawn"
+      ]
+    },
+    "ProjectAssistantHandoffAction": {
+      "type": "string",
+      "enum": [
+        "prepare",
+        "edit",
+        "keep"
+      ]
+    },
+    "ProjectAssistantHandoffCard": {
+      "description": "Source-local handoff. Summary text is available while the draft is current. An adoption identifies the input's turn and is not execution evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ProjectAssistantHandoffRef"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantHandoffCardState"
+        },
+        "text": {
+          "type": "string"
+        },
+        "bookmark_message_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "state"
+      ]
+    },
+    "ProjectAssistantHandoffRequest": {
+      "description": "API 92. Prepare the source's filtered summary, edit the exact draft revision, or keep the current native conversation.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "action": {
+          "$ref": "#/$defs/ProjectAssistantHandoffAction"
+        },
+        "ref": {
+          "$ref": "#/$defs/ProjectAssistantHandoffRef"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "action",
+        "text"
+      ]
+    },
+    "ProjectAssistantHandoffResponse": {
+      "description": "API 92. Current handoff and preparation eligibility on the Bot's source.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "can_prepare": {
+          "type": "boolean"
+        },
+        "card": {
+          "$ref": "#/$defs/ProjectAssistantHandoffCard"
+        }
+      },
+      "required": [
+        "contract_version",
+        "fence",
+        "can_prepare"
+      ]
+    },
     "ProjectAssistantSendRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -1494,6 +1606,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "handoff": {
+          "$ref": "#/$defs/ProjectAssistantHandoffRef",
+          "description": "The exact draft version approved for this input on API 92 sources."
         },
         "upload_ids": {
           "type": "array",

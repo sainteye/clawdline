@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13333,
+  "englishKeys": 13352,
   "counts": {
-    "negation": 3511,
-    "state": 2248,
+    "negation": 3513,
+    "state": 2249,
     "permission": 813,
     "deletion": 312,
     "uncertainty": 545
   },
-  "unionCount": 5741,
+  "unionCount": 5744,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -114,6 +114,8 @@
       "botExchange.deliveryNote",
       "botExchange.delivery_unknown",
       "botExchange.noReply",
+      "botHandoff.empty",
+      "botHandoff.unavailable",
       "botRoutineControls.eventHint",
       "botRoutineControls.followUpCancelUnavailable",
       "botRoutineControls.hookHeld",
@@ -3569,6 +3571,7 @@
       "botExchange.delivery_dropped",
       "botExchange.delivery_waiting",
       "botExchange.failed",
+      "botHandoff.adopted",
       "botRoutineControls.followUps",
       "botRoutineControls.hookHeld",
       "botRoutineControls.publicHint",
@@ -7621,6 +7624,9 @@
     "botExchange.noReply",
     "botExchange.unavailable",
     "botExchange.unknown",
+    "botHandoff.adopted",
+    "botHandoff.empty",
+    "botHandoff.unavailable",
     "botRoutineControls.eventHint",
     "botRoutineControls.followUpCancelUnavailable",
     "botRoutineControls.followUps",

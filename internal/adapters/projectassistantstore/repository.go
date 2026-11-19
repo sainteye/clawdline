@@ -297,6 +297,9 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if err = applyAgentRest(ctx, tx, a, m); err != nil {
 		return pa.Receipt{}, err
 	}
+	if err = settleHandoffInput(ctx, tx, m.Turn); err != nil {
+		return pa.Receipt{}, err
+	}
 	if err = validateAggregate(a); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -1041,7 +1044,7 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return failure(pa.NotFound, "bot")
 	}
-	for _, table := range []string{"project_assistant_reactions", "project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
+	for _, table := range []string{"project_assistant_handoff_cards", "project_assistant_handoff_receipts", "project_assistant_reactions", "project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
 			return err
 		}

@@ -33,6 +33,7 @@ export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
 export const PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL = 88
 export const PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL = 90
+export const PROJECT_ASSISTANTS_HANDOFF_API_LEVEL = 92
 export const PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL = 75
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
@@ -359,7 +360,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.access=answer.source.access;this.lastStatus=answer.source
     return answer
   }
-  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.handoff?PROJECT_ASSISTANTS_HANDOFF_API_LEVEL:r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
   canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
   upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
   input(r:W.ProjectAssistantInputRequest,s:AbortSignal) { this.key(r.key);const {key,...fields}=r;return this.request<W.ProjectAssistantInputResponse>(endpoint(key,"/input")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
@@ -424,6 +425,23 @@ export class ProjectAssistantSourceClient implements SourceClient {
   // Hide and delete are carried over Cloud too, so a phone can remove a Bot.
   canManage() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
   canRules() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
+  canHandoff() {
+    try {
+      this.check(new AbortController().signal,true,true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+      return true
+    } catch { return false }
+  }
+  async handoff(key: W.ProjectAssistantBotKey, conversation: string, signal: AbortSignal) {
+    this.key(key)
+    this.check(signal,true,true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+    return this.request<W.ProjectAssistantHandoffResponse>(
+      endpoint(key,"/handoff-card")+query({machine_id:this.machineID,conversation_id:conversation}),
+      signal,undefined,"GET",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+  }
+  writeHandoff(r: W.ProjectAssistantHandoffRequest, signal: AbortSignal) {
+    return this.request<W.ProjectAssistantHandoffResponse>(
+      endpoint(r.command.key,"/handoff-card"),signal,r,"POST",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+  }
   canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
@@ -527,6 +545,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}
     const key = {machine_id:q.machine_id,bot_id:bot}
+    if(tail==="/handoff-card") {
+      if(init?.body!=null||url.searchParams.size!==2||!q.machine_id||!q.conversation_id)throw failure("pa_invalid")
+      return {word:"project-assistants.handoff-card",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id},id:""}
+    }
     if(tail==="/team-plans") {
       if(init?.body!=null||url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid")
       return {word:"project-assistants.team-plans",kind:"read" as const,fields:{key},id:""}
@@ -575,6 +597,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const command = fields.command
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
+  if(tail==="/handoff-card") {
+    if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
+    return {word:"project-assistants.handoff-card-write",kind:"action" as const,fields,id:command.idempotency_key}
+  }
   if(tail==="/team-answer"||tail==="/team-settings") {
     if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
     return {word:"project-assistants."+(tail==="/team-answer"?"team-answer":"team-settings"),kind:"action" as const,fields,id:command.idempotency_key}
