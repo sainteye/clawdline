@@ -22,10 +22,9 @@ func (r *Engine) checkAttemptBoundary(ctx context.Context, a *runtimeActor, bot 
 			return e
 		}
 	}
-	a.mu.Lock()
-	stopped := a.stopped
-	a.mu.Unlock()
-	if stopped || ctx.Err() != nil {
+	// Send holds the Store's memory guard here. Tool events can hold the
+	// actor lock while committing through that same Store lock.
+	if a.stopped.Load() || ctx.Err() != nil {
 		return runtimeFailure(pa.ExecutionEffectUnknown, "stopped_before_attempt")
 	}
 	if err := r.authorized(ctx, a.key, bot.Project); err != nil {

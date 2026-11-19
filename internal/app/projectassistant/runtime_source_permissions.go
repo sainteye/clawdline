@@ -41,7 +41,7 @@ func (r *Engine) sourcePermissionCurrent(ctx context.Context, a *runtimeActor, q
 	if err := ctx.Err(); err != nil {
 		return pa.Bot{}, pa.Turn{}, err
 	}
-	if a.stopped || a.closing || a.session == nil || q.TurnID == "" || a.turnID != q.TurnID {
+	if a.stopped.Load() || a.closing || a.session == nil || q.TurnID == "" || a.turnID != q.TurnID {
 		return pa.Bot{}, pa.Turn{}, runtimeFailure(pa.StaleGeneration, "source_permission_turn")
 	}
 	bot, err := r.o.Repository.Bot(ctx, a.key)

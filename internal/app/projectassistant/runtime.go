@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -81,7 +82,7 @@ type runtimeActor struct {
 	pendingPermissions int
 	permissionFence    pa.Fence
 	sourcePermissions  map[string]*sourcePermission
-	stopped            bool
+	stopped            atomic.Bool
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
 	steering         map[string]bool
@@ -726,7 +727,7 @@ func (r *Engine) work(a *runtimeActor) {
 		a.cancel = cancel
 		a.turnID = turn.ID
 		a.pendingPermissions = 0
-		a.stopped = false
+		a.stopped.Store(false)
 		a.mu.Unlock()
 		// Waiting for a process slot remains cancellable and does not launch IO.
 		select {
@@ -808,7 +809,7 @@ func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error 
 
 func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn, original *pa.Bot) (resultErr error) {
 	a.mu.Lock()
-	if a.stopped || ctx.Err() != nil {
+	if a.stopped.Load() || ctx.Err() != nil {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ExecutionEffectUnknown, "cancelled_before_start")
 	}
@@ -1205,7 +1206,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		return r.executeAttempt(ctx, a, t, &preparedBot)
 	}
 	a.mu.Lock()
-	if a.stopped || ctx.Err() != nil {
+	if a.stopped.Load() || ctx.Err() != nil {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ExecutionEffectUnknown, "stopped_before_send")
 	}
@@ -1331,7 +1332,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.stopped {
+	if a.stopped.Load() {
 		return runtimeFailure(pa.ExecutionEffectUnknown, "cancelled")
 	}
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
@@ -1623,7 +1624,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 			a.mu.Unlock()
 		}
 	}()
-	if a.stopped || e.ID == "" || e.TurnID != a.turnID {
+	if a.stopped.Load() || e.ID == "" || e.TurnID != a.turnID {
 		return runtimeFailure(pa.StaleGeneration, "incoming_turn")
 	}
 	bot, err := r.o.Repository.Bot(ctx, a.key)
@@ -1779,7 +1780,7 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 		return pa.WorkLink{}, err
 	}
 	fence := currentFence(bot, c)
-	if a.stopped || q.TurnID != c.ActiveTurnID || q.TurnID == "" {
+	if a.stopped.Load() || q.TurnID != c.ActiveTurnID || q.TurnID == "" {
 		a.mu.Unlock()
 		return pa.WorkLink{}, runtimeFailure(pa.StaleVersion, "work_turn")
 	}
@@ -1892,7 +1893,7 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	if err = r.recheckRoomCard(ctx, p); err != nil {
 		return pa.Receipt{}, err
 	}
-	if q.Command.Key != q.Answer.Fence.Key || a.turnID != p.TurnID || a.session == nil || a.stopped || a.closing {
+	if q.Command.Key != q.Answer.Fence.Key || a.turnID != p.TurnID || a.session == nil || a.stopped.Load() || a.closing {
 		return pa.Receipt{}, runtimeFailure(pa.StaleGeneration, "permission_session")
 	}
 	if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) {
@@ -1971,7 +1972,7 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, e
 	if q.TurnID != "" && c.ActiveTurnID != q.TurnID {
 		return r.unqueueLocked(ctx, a, bot, q)
 	}
-	a.stopped = true
+	a.stopped.Store(true)
 	if a.cancel != nil {
 		a.cancel()
 	}

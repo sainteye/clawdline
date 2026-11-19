@@ -49,7 +49,7 @@ func (r *Engine) closeSession(a *runtimeActor, session ProviderSession) error {
 }
 
 func (r *Engine) stopPendingLocked(ctx context.Context, a *runtimeActor) error {
-	a.stopped = true
+	a.stopped.Store(true)
 	if a.cancel != nil {
 		a.cancel()
 	}
