@@ -131,6 +131,9 @@ func (n NetworkHost) Submit(ctx context.Context, h wire.BotHeader, text string) 
 	if e != nil {
 		return "", e
 	}
+	if e = checkNewNetworkCapture(h.Target, current.Fence); e != nil {
+		return "", e
+	}
 	f, s, e := host.background(ctx, key, true)
 	if e != nil {
 		return "", e
@@ -145,6 +148,19 @@ func (n NetworkHost) Submit(ctx context.Context, h wire.BotHeader, text string) 
 	receipt, e := r.Submit(ctx, app.Submission{Command: command, Feature: f, Source: s, Notice: true, Network: &pa.NetworkWork{Header: h}, AuthorityCheck: func(ctx context.Context) error { return host.checkNetworkHeader(ctx, h) }, Message: pa.SendMessage{Fence: current.Fence, Text: text}})
 	return receipt.ResourceID, e
 }
+
+// Historical captures can still identify an admitted effect and its reply.
+// A new turn must use the actual conversation and generation at submission.
+func checkNewNetworkCapture(target wire.BotEndpoint, current pa.Fence) error {
+	if target.ProjectID != current.Project.ProjectID || target.ConversationID != current.ConversationID {
+		return failure(pa.ScopeDenied, "network_capture")
+	}
+	if target.Generation != current.Generation {
+		return failure(pa.StaleGeneration, "network_capture")
+	}
+	return nil
+}
+
 func (n NetworkHost) Result(ctx context.Context, r network.Receipt) (network.Receipt, error) {
 	if e := n.Check(ctx, r.Header.Target, false); e != nil {
 		return r, e

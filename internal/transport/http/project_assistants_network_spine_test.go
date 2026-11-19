@@ -465,6 +465,11 @@ func testBotCloudNormalSourceSpine(t *testing.T, reverse bool) {
 	if occupancy.Used == nil || *occupancy.Used != 8 {
 		t.Fatal("HTTP capacity lost durable transport facts", occupancy)
 	}
+	stale := call
+	stale.RequestID = "stale-target-new-message"
+	if refused, err := n.network.Call(ctx, stale, rail); err != nil || refused.Receipt == nil || refused.Receipt.State != "refused" || refused.Receipt.TurnID != "" || refused.Receipt.Failure == nil || refused.Receipt.Failure.Code != pa.StaleGeneration {
+		t.Fatalf("new work reused a prior target generation: %+v %v", refused.Receipt, err)
+	}
 	// Local preference revocation is independent of the API's current allow.
 	targetStore := featurestore.New(target.s.store.ProjectAssistantDatabase())
 	scope := pa.NetworkScope{AccountID: target.identity.AccountID, Key: target.key, Project: stored.Bot.Project}

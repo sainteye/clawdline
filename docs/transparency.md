@@ -797,6 +797,13 @@ that this corrects signature verification without broadening grants, scopes or
 injected instructions. Both native source orientations have focused local
 evidence; private Cloud wiring and destination acceptance remain pending.
 
+The Bot-network explanation in both languages still applies when the source
+verifies assistant consent before target lookup and requires the current
+target generation for newly submitted messages. The same admitted request
+can recover its receipt and correlated reply after the target binding changes.
+The source receipts cover those changes without changing the recipient prompt,
+native permission choices or the scope of external assistant consent.
+
 The owned Bot main-chat reaction tool and its current unsupported room boundary are documented in [Message reactions](project-assistants-reactions.md). It accepts only an emoji; Host captures the actual running actor and answered message.
 
 ## Older library artifact titles

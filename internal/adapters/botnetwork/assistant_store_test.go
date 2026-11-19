@@ -298,3 +298,19 @@ func TestAssistantHTTPUnavailableAndHumanPolicyVersionAreIndependent(t *testing.
 		t.Fatalf("nil service: %d %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestAssistantHTTPVerifiesConsentBeforeInspectingTheHost(t *testing.T) {
+	f := newAssistantFixture(t)
+	unsigned := f.call
+	unsigned.Signature = ""
+	status, _, data := f.post(t, unsigned, f.body)
+	if status != http.StatusForbidden || !strings.Contains(data, string(wire.AssistantUnverified)) || f.host.checks != 0 {
+		t.Fatalf("unsigned call reached target checks: %d %s checks=%d", status, data, f.host.checks)
+	}
+	outside := f.call
+	outside.Target.ProjectID = "another-project"
+	status, _, data = f.post(t, f.sign(t, outside, f.body), f.body)
+	if status != http.StatusForbidden || !strings.Contains(data, string(wire.AssistantDenied)) || f.host.checks != 0 {
+		t.Fatalf("out-of-scope call reached target checks: %d %s checks=%d", status, data, f.host.checks)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,7 +103,7 @@ func testAssistantSignedHTTPNativeACP(t *testing.T, closeFault bool) {
 	// signed body bytes instead of reconstructing a different JSON encoding.
 	body := []byte("{ \"text\" : \"Synthetic external assistant review\" }")
 	call := wire.AssistantCall{Version: wire.BotWireVersion, RequestID: "assistant-native-request", Kind: "message", Target: wire.BotEndpoint{AccountID: grant.AccountID, MachineID: grant.MachineID, ProjectID: grant.ProjectID, BotID: bot.Key.BotID, ConversationID: bot.ConversationID, Generation: c.Generation}, GrantID: grant.ID, GrantEpoch: grant.Epoch, KeyID: grant.KeyID, BodyDigest: network.Digest(body), IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix()}
-	post := func(q wire.AssistantCall, b []byte) network.AssistantResponse {
+	send := func(q wire.AssistantCall, b []byte) (int, []byte) {
 		t.Helper()
 		q.BodyDigest = network.Digest(b)
 		signed, e := wire.SignAssistantCall(q, key)
@@ -119,11 +120,16 @@ func testAssistantSignedHTTPNativeACP(t *testing.T, closeFault bool) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if r.StatusCode != http.StatusOK {
-			t.Fatalf("assistant HTTP status=%d body=%s", r.StatusCode, raw)
+		return r.StatusCode, raw
+	}
+	post := func(q wire.AssistantCall, b []byte) network.AssistantResponse {
+		t.Helper()
+		status, raw := send(q, b)
+		if status != http.StatusOK {
+			t.Fatalf("assistant %s %s HTTP status=%d body=%s", q.Kind, q.RequestID, status, raw)
 		}
 		var out network.AssistantResponse
-		if e = json.Unmarshal(raw, &out); e != nil {
+		if e := json.Unmarshal(raw, &out); e != nil {
 			t.Fatal(e)
 		}
 		return out
@@ -156,12 +162,28 @@ func testAssistantSignedHTTPNativeACP(t *testing.T, closeFault bool) {
 		phase, _ := os.ReadFile(diagnostics + ".b.phase")
 		t.Fatalf("native reply %+v turn=%+v phase=%s lifecycle=%v", final.Receipt, turn, phase, lifecycle.snapshot())
 	}
+	if turn.Fence.Generation <= call.Target.Generation {
+		t.Fatal("native generation did not advance")
+	}
+	replay = post(call, body)
+	if replay.Receipt == nil || replay.Receipt.TurnID != accepted.Receipt.TurnID {
+		t.Fatalf("exact message did not recover the original receipt: %+v", replay)
+	}
+	stale := call
+	stale.RequestID = "assistant-stale-target-new-message"
+	if status, raw := send(stale, body); status != http.StatusForbidden || !strings.Contains(string(raw), string(pa.StaleGeneration)) {
+		t.Fatalf("old target generation admitted new assistant message: %d %s", status, raw)
+	}
+	refused := post(stale, body)
+	if refused.Receipt == nil || refused.Receipt.State != "refused" || refused.Receipt.TurnID != "" || refused.Receipt.Failure == nil || refused.Receipt.Failure.Code != pa.StaleGeneration {
+		t.Fatalf("new assistant work reused a prior target generation: %+v", refused)
+	}
 	x, err := f.h.store.Export(ctx, bot.Key)
 	if err != nil || len(x.Turns) != 1 || x.Turns[0].Origin != pa.NetworkRequestOrigin || x.Turns[0].Network == nil || x.Turns[0].Network.Assistant == nil || x.Turns[0].Network.Assistant.PrincipalID != grant.PrincipalID || x.Turns[0].Network.Assistant.Body != string(body) {
 		t.Fatalf("native principal/capture %+v %v", x.Turns, err)
 	}
 	grants, receipts, err := store.AssistantUsage(ctx)
-	if err != nil || grants != 1 || receipts != 1 {
+	if err != nil || grants != 1 || receipts != 2 {
 		t.Fatalf("durable assistant usage %d %d %v", grants, receipts, err)
 	}
 	t.Logf("request=%s principal=%s native_turn=%s reply_state=%s read=%t native_executions=1 retained_receipts=%d external_requests=0", call.RequestID, grant.PrincipalID, final.Receipt.TurnID, final.Receipt.State, final.Receipt.Read, receipts)
