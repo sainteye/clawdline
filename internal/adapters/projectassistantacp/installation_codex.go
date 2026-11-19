@@ -149,6 +149,12 @@ func (p *installedCodex) Open(ctx context.Context, q app.OpenRequest, sink func(
 }
 
 func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, pa.Capabilities, func(), error) {
+	return p.prepareWithAdapter(ctx, b, ensureAdapter)
+}
+
+type codexAdapterLoader func(context.Context, string, adapterSpec) (ClaudeInstallation, error)
+
+func (p *installedCodex) prepareWithAdapter(ctx context.Context, b pa.Bot, load codexAdapterLoader) (Configuration, pa.Capabilities, func(), error) {
 	none := func() {}
 	caps := pa.Capabilities{Key: b.Key, Project: b.Project, Agent: b.Agent, NativeMemory: pa.NativeMemoryUnknown}
 	if b.Agent != pa.Codex {
@@ -164,7 +170,7 @@ func (p *installedCodex) prepare(ctx context.Context, b pa.Bot) (Configuration, 
 			release()
 		}
 	}()
-	i, e := ensureAdapter(ctx, p.state, codexSpec)
+	i, e := load(ctx, p.state, codexSpec)
 	if e != nil {
 		return Configuration{}, caps, none, e
 	}
