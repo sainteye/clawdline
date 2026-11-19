@@ -1,45 +1,22 @@
 import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../../next-strings.js"
+import { InstaBoxKey } from "./InstaBoxWake.js"
 import type { CloudMachine } from "../../cloud/copied.js"
 
-const offers = {
-  instabox: { name: "InstaBox", dashboard: "https://dashboard.instabox.sh/", pricing: "https://instabox.sh/pricing", detail: "msSetupInstaBox", template: "msSetupTemplateInstaBox" },
-  digitalocean: { name: "DigitalOcean", dashboard: "https://cloud.digitalocean.com/", pricing: "https://www.digitalocean.com/pricing/droplets", detail: "msSetupDigitalOcean", template: "msSetupTemplateDigitalOcean" },
-} as const
-type Provider = keyof typeof offers
-
-// The provider account owns checkout. Opening either provider never submits an order.
-const install = `bash -o pipefail -c 'curl -fsSL https://clawdline.com/install.sh | sh -s -- --headless --no-app | sed "/^[[:space:]]*http:\\/\\/127\\.0\\.0\\.1:/d"'`
-
-export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }: {
+export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, start, close }: {
   apiOrigin: string
   machines: readonly CloudMachine[]
   refresh: () => Promise<boolean>
   pair: (id: string, approvedName?: string) => void
+  start: () => boolean
   close: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const [provider, setProvider] = useState<Provider | null>(null)
-  const [machineID, setMachineID] = useState("")
+  const [started, setStarted] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [approved, setApproved] = useState<{ id: string; name: string } | null>(null)
-  const [checkState, setCheckState] = useState<"idle" | "checking" | "failed">("idle")
-  const [copied, setCopied] = useState<"ok" | "failed" | null>(null)
-  const linux = machines.filter(machine => machine.kind === "linux" || machine.kind === "linux_aws")
-  const targetID = approved?.id ?? machineID
-  const machine = linux.find(candidate => candidate.id === targetID)
-  const ready = machine?.freshness === "current" && machine.pairing === "paired"
-  const canPair = approved ? machine?.pairing !== "paired" : machine?.pairing === "not_paired"
-  const offer = provider && offers[provider]
+  const paired = approved && machines.some(row => row.id === approved.id && row.pairing === "paired")
   useEffect(() => { dialog.current?.showModal() }, [])
-
-  const check = async () => {
-    setCheckState("checking")
-    setCheckState(await refresh() ? "idle" : "failed")
-  }
-  const copyInstall = async () => {
-    try { await navigator.clipboard.writeText(install); setCopied("ok") }
-    catch { setCopied("failed") }
-  }
 
   return <dialog ref={dialog} className="am-cloud-setup" aria-labelledby="am-cloud-setup-title" onClose={close}>
     <header className="am-cloud-setup-head">
@@ -47,58 +24,38 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }:
       <button className="am-ghost" type="button" onClick={() => dialog.current?.close()}>{nextWord("msSetupClose")}</button>
     </header>
     <div className="am-cloud-setup-body">
-      {!offer ? <fieldset className="am-cloud-providers">
-        <legend>{nextWord("msSetupChoose")}</legend>
-        {(Object.entries(offers) as [Provider, typeof offers[Provider]][]).map(([id, option]) =>
-          <button className="am-cloud-provider" type="button" key={id} onClick={() => setProvider(id)}>
-            <strong>{option.name}</strong><span>{nextWord(option.detail)}</span>
-          </button>)}
-      </fieldset> : <>
-        <div className="am-cloud-setup-actions">
-          <button className="am-ghost" type="button" onClick={() => { setProvider(null); setCopied(null); setApproved(null); setMachineID(""); setCheckState("idle") }}>{nextWord("msSetupChange")}</button>
-          <a href={offer.pricing} target="_blank" rel="noopener noreferrer">{nextWord("msSetupPricing")}</a>
+      <article className="am-cloud-offer">
+        <div className="am-cloud-offer-head">
+          <span className="am-cloud-offer-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 15a4 4 0 0 1 4-4h.2a5 5 0 0 1 9.7 1A3.5 3.5 0 0 1 17 19H8a4 4 0 0 1-4-4Z"/>
+              <path d="m12 13 0 4m-2-2 4 0"/>
+            </svg>
+          </span>
+          <div><h3>InstaBox</h3><p>{nextWord("msInstaFreeSummary")}</p></div>
+          <a href="https://instabox.sh/pricing" target="_blank" rel="noopener noreferrer">{nextWord("msSetupPricing")}</a>
         </div>
-        <ol className="am-cloud-setup-steps">
-          <li>
-            <h3>{nextWord("msSetupProviderStep", { provider: offer.name })}</h3>
-            <p>{nextWord("msSetupExisting")}</p>
-            <p>{nextWord(offer.template)}</p>
-            <a href={offer.dashboard} target="_blank" rel="noopener noreferrer">{nextWord("msSetupDashboard", { provider: offer.name })}</a>
-          </li>
-          <li>
-            <h3>{nextWord("msSetupInstall")}</h3>
-            <p>{nextWord("msSetupInstallHelp")}</p>
-            <pre><code>{install}</code></pre>
-            <button className="am-ghost" type="button" onClick={() => void copyInstall()}>{nextWord("msSetupCopy")}</button>
-            {copied && <span role="status">{nextWord(copied === "ok" ? "msSetupCopied" : "msSetupCopyFailed")}</span>}
-            <p>{nextWord("msSetupLoginHelp")}</p>
-            <pre><code>clawdline --lang en cloud login | sed '/^approve at /d'</code></pre>
-            <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={(id, name) => { setApproved({ id, name }); void check() }} />
-            <pre><code>clawdline cloud on</code></pre>
-            <p>{nextWord("msSetupHealthHelp")}</p>
-            <pre><code>{'systemctl --user is-active clawdline-next.service\nclawdline update --json'}</code></pre>
-          </li>
-          <li>
-            <h3>{nextWord("msSetupPair")}</h3>
-            {approved ? <p>{nextWord("msSetupMachineLabel")} <strong>{approved.name}</strong></p> : <label>
-              {nextWord("msSetupMachineLabel")}
-              <select value={machineID} onChange={event => setMachineID(event.currentTarget.value)}>
-                <option value="">{nextWord("msSetupMachinePlaceholder")}</option>
-                {linux.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name || candidate.label}</option>)}
-              </select>
-            </label>}
-            <div className="am-cloud-setup-actions">
-              <button type="button" className="am-ghost" onClick={() => void check()} disabled={checkState === "checking"}>{nextWord("msSetupRefresh")}</button>
-              {canPair && <button type="button" className="am-primary" onClick={() => pair(targetID, approved?.name)}>{nextWord("msPair")}</button>}
-            </div>
-            <p role="status">{nextWord(checkState === "checking" ? "msSetupChecking" : checkState === "failed" ? "msSetupRefreshFailed" : ready ? "msSetupConnected" : "msSetupWaiting")}</p>
-          </li>
-        </ol>
-      </>}
+        <p>{nextWord("msInstaSessionHelp")}</p>
+      </article>
+      <InstaBoxKey origin={apiOrigin} />
+      <details className="am-cloud-option">
+        <summary>{nextWord("msInstaApproval")}</summary>
+        <div className="am-stack">
+          <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={(id, name) => { setApproved({ id, name }); void refresh() }} />
+          {approved && <p className="am-say"><strong>{approved.name}</strong></p>}
+          {approved && !paired && <button type="button" className="am-ghost" onClick={() => pair(approved.id, approved.name)}>{nextWord("msPair")}</button>}
+        </div>
+      </details>
+      {failed && <p className="am-say" role="alert">{nextWord("msInstaNoHelper")}</p>}
     </div>
+    <footer className="am-cloud-setup-foot">
+      <button type="button" className="am-accent" disabled={started} onClick={() => {
+        if (start()) { setStarted(true); dialog.current?.close() }
+        else setFailed(true)
+      }}>{nextWord("msInstaLaunch")}</button>
+    </footer>
   </dialog>
 }
-
 
 type MachineReview = { name: string; fingerprint: string; review_digest: string }
 const deviceCode = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/

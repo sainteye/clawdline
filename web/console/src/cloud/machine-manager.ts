@@ -26,6 +26,8 @@ export interface MachineManager {
   forget(machine: CloudMachine): Promise<ForgetOutcome>
   /** Opens pairing for a named machine, or the target picker when null. */
   pair(machine: string | null, approvedName?: string): void
+  /** Starts the prepared InstaBox instructions on an available paired machine. */
+  startCloudInstall?(): boolean
   /** Whether that machine's descriptor serves a Cloud word (an older daemon may not). */
   serves?(machine: string, word: string): boolean
   /** One Cloud word to that machine, answered or thrown with its refusal code. */

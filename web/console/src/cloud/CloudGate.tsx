@@ -569,6 +569,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<RecoveringCloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  const startCloudInstallRef = useRef<() => boolean>(() => false)
   const readPairHelperQuota = useCallback(async (helper: string) => {
     const connection = client.current
     return connection?._machineRequestAs?.(crypto.randomUUID(), helper, "provider-quotas", {}, "read", 30_000)
@@ -1249,6 +1250,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         const named = known ? withAccountNames([known], namesRef.current, present)[0] : null
         openPairingRef.current({ id, name: approvedName || named?.name || named?.label || id })
       },
+      startCloudInstall: () => startCloudInstallRef.current(),
     })
     // The owner-diagnostics reader's authority, read from the session at each call: the account
     // and device, this device's signing key, and the epochs its last device token was minted
@@ -1800,6 +1802,15 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (!machine) return
     setPendingTool({ machineID, machineName: machine.name || machine.label || machine.id, action, at: Date.now() })
     if (toolMovesConsole(action)) switchMachine(machine)
+  }
+  startCloudInstallRef.current = () => {
+    const ready = quickMachines.filter((machine) => machine.freshness === "current" &&
+      machine.pairing === "paired" && machine.operationAllowed !== false &&
+      client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("start"))
+    const target = ready.find((machine) => machine.kind === "macos") ?? ready[0]
+    if (!target) return false
+    runMachineTool(target.id, "cloud_setup")
+    return true
   }
 
   const openAllSessions = () => {
