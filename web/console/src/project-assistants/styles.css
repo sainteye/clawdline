@@ -715,7 +715,7 @@
   .project-assistants .pa-room-layout .pa-chat-footer { padding-bottom:16px; }
 }
 
-.project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 5; background: #000a; }
+.project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 20; background: #000a; }
 .project-assistants .pa-form-scrim > .pa-form-panel { box-shadow: none; }
 .project-assistants .pa-form-panel > .pa-toolbar {
     position: sticky; top: 0; z-index: 3;

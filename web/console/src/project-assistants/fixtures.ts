@@ -31,6 +31,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   let createGate:Promise<void>|null=null,releaseCreate:(()=>void)|null=null
   let statusGate:Promise<void>|null=null,releaseStatus:(()=>void)|null=null
   const created=new Set<string>()
+  let lostCreateReply=false
   const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:false,resume:false,send_message:false,native_memory:"unknown",native_memory_verified:false,evidence:"synthetic metadata; no native provider admitted",unavailable:failure("adapter_not_found").error})
   const status=():W.ProjectAssistantSourceStatus=>({machine_id:machineID,state,access,readable:state!=="revoked"&&state!=="unpaired",writable:state==="online"&&access==="interactive",fresh:state==="online",observed_at:at,capabilities:bots.map(capabilities)})
   const check=(method:string,request:unknown,signal:AbortSignal,write=false)=>{
@@ -113,7 +114,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     async list(r,s){check("list",r,s);const matches=bots.filter(b=>!r.query||`${b.name} Clawdline ${summary(b).latest_message}`.toLowerCase().includes(r.query.toLowerCase()));const offset=Number(r.cursor||0);const items=matches.slice(offset,offset+3);return{contract_version:contractVersion,items:items.map(summary),sources:[status()],next_cursor:offset+3<matches.length?String(offset+3):""}},
     async get(r,s){if(legacyForbidden)throw new Error("legacy GET forbidden");if(getGate)await getGate;check("get",r,s);const bot=find(r);return{contract_version:contractVersion,bot,conversation:conversation(bot),source:status()}},
-    async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
+    async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}if(lostCreateReply)throw failure("pa_outcome_unknown");return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async edit(r,s){check("edit",r,s,true);const bot=find(r.command.key);if(bot.version!==r.settings.expected_version)throw failure("pa_stale_version");Object.assign(bot,{name:r.settings.name,appearance:r.settings.appearance,instructions:{...bot.instructions,text:r.settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1});return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async history(r,s){if(legacyForbidden)throw new Error("legacy history forbidden");check("history",r,s);const bot=find(r.key),all=(messages.get(r.key.bot_id)??[]).filter(m=>!r.before_seq||m.seq<r.before_seq),items=all.slice(-r.page_size);return{contract_version:contractVersion,conversation:conversation(bot),items,has_more:all.length>items.length,next_before_seq:items[0]?.seq??0}},
     async view(r,s){
@@ -186,6 +187,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       api.saveRoutine=refuse;api.enableRoutine=refuse;api.deleteRoutine=refuse;api.testRoutine=refuse
     },
     holdProjects(){projectGate=new Promise(resolve=>{releaseProjects=resolve})},releaseProjects(){releaseProjects?.();projectGate=null;releaseProjects=null},unknownCreate(value:boolean){unknownCreate=value},
+    loseCreateReply(){lostCreateReply=true},
     holdStatus(){statusGate=new Promise(resolve=>{releaseStatus=resolve})},releaseStatus(){releaseStatus?.();statusGate=null;releaseStatus=null},
     holdCreate(){createGate=new Promise(resolve=>{releaseCreate=resolve})},releaseCreate(){releaseCreate?.();createGate=null;releaseCreate=null},
     setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
