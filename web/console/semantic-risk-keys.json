@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13441,
+  "englishKeys": 13446,
   "counts": {
     "negation": 3526,
-    "state": 2276,
+    "state": 2278,
     "permission": 813,
     "deletion": 314,
     "uncertainty": 551
   },
-  "unionCount": 5785,
+  "unionCount": 5787,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5546,6 +5546,8 @@
       "projectAssistants.teamApprovalHint",
       "projectAssistants.templateClipboardError",
       "projectAssistants.templateUnavailable",
+      "projectAssistants.traceToolCompleted",
+      "projectAssistants.traceToolFailed",
       "projectAssistants.turnUnknownNext",
       "projectAssistants.unverifiedExplanation",
       "projectAssistants.waiting_for_person",
@@ -12621,6 +12623,8 @@
     "projectAssistants.templateCoverage",
     "projectAssistants.templateUnavailable",
     "projectAssistants.traceNoReply",
+    "projectAssistants.traceToolCompleted",
+    "projectAssistants.traceToolFailed",
     "projectAssistants.turnUnknownNext",
     "projectAssistants.unavailable",
     "projectAssistants.unknown",

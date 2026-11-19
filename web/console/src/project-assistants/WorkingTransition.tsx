@@ -9,10 +9,10 @@ import {WorkingIndicator} from "./WorkingIndicator"
 
 /** Keep the last activity and its space until exit finishes; a quick restart
  * reverses the same transition. The initial snapshot has no entrance motion. */
-export function WorkingTransition({turn,activity,steps,stopStatus,waiting,live,ready,w}:{turn?:W.ProjectAssistantReadTurnSummary;activity:string;steps?:ReactNode;stopStatus?:string;waiting:boolean;live:boolean;ready:boolean;w:Words}) {
+export function WorkingTransition({turn,activity,steps,stopStatus,waiting,live,ready,w}:{turn?:W.ProjectAssistantReadTurnSummary;activity:string;steps?:(expanded:boolean)=>ReactNode;stopStatus?:string;waiting:boolean;live:boolean;ready:boolean;w:Words}) {
   const active=!!turn&&live,reduce=useReduceMotion()
   const [mounted,setMounted]=useState(active),[shown,setShown]=useState(active)
-  const initialized=useRef(ready),last=useRef<{turn:W.ProjectAssistantReadTurnSummary;activity:string;steps?:ReactNode;stopStatus?:string;waiting:boolean}|null>(null)
+  const initialized=useRef(ready),last=useRef<{turn:W.ProjectAssistantReadTurnSummary;activity:string;steps?:(expanded:boolean)=>ReactNode;stopStatus?:string;waiting:boolean}|null>(null)
   const indicator=active?{turn,activity,steps,stopStatus,waiting}:last.current
   useLayoutEffect(()=>{if(active)last.current={turn,activity,steps,stopStatus,waiting}},[active,turn,activity,steps,stopStatus,waiting])
   useLayoutEffect(()=>{

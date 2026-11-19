@@ -100,8 +100,9 @@ test("101 permission and trace summaries remain separate from complete detail an
   const detail=await source.view({...base,mode:"detail",source_epoch:snapshot.source_epoch,cursor:summary.detail_cursor,page_size:1},signal)
   assert.equal(detail.items[0].permission.options.length,101)
   const traces=await source.view({...base,mode:"traces",source_epoch:snapshot.source_epoch},signal)
-  const traceHTML=render(Trace,{summaries:traces.items.map(row=>row.trace_summary),total:snapshot.head.trace_category_count,more:true,w:words("zh-Hant")})
-  assert.match(traceHTML,/101/);assert.match(traceHTML,/查看詳細內容/);assert.doesNotMatch(traceHTML,/Complete trace/)
+  const traceHTML=render(Trace,{summaries:traces.items.map(row=>row.trace_summary),details:{},incomplete:true,more:true,
+    onDetail:()=>assert.fail("closed trace requested a detail"),w:words("zh-Hant")})
+  assert.match(traceHTML,/100\+/);assert.match(traceHTML,/查看處理過程/);assert.doesNotMatch(traceHTML,/Complete trace|查看詳細內容/)
 })
 test("a late second permission preflight refusal latches only its current scope and never enters the answer effect",async()=>{
   for(const code of ["pa_cursor_expired","pa_stale_generation","pa_capacity_full"])for(const current of [true,false]){
@@ -183,10 +184,15 @@ test("a Bot row names its Project with its mark and says nothing internal",async
   assert.ok(!html.includes(item.bot.project.project_id),"the Project ID stays out of the row and its label")
 })
 test("the process trace says what each step is, never its turn ID or provider category",()=>{
-  const summaries=[{id:"t1",turn_id:"5ba44472905d8854d481db30b022c77f",category:"agent_message_chunk",complete:true,detail_cursor:"c"},{id:"t2",turn_id:"5ba44472905d8854d481db30b022c77f",category:"something_new",complete:true,detail_cursor:"c"}]
-  const html=render(Trace,{summaries,total:2,w:words("zh-Hant")})
-  assert.match(html,/回覆內容/);assert.match(html,/處理步驟/)
-  assert.doesNotMatch(html,/5ba44472|agent_message_chunk|something_new/)
+  const turn_id="5ba44472905d8854d481db30b022c77f"
+  const details={
+    t1:{turn_id,category:"agent_message_chunk",text:"Checking the saved work.",complete:true},
+    t2:{turn_id,category:"tool_activity",text:"host-aa-teamAvailable",complete:true},
+  }
+  const summaries=Object.entries(details).map(([id,row])=>({id,turn_id,category:row.category,complete:true,detail_cursor:id}))
+  const html=render(Trace,{summaries,details,inline:true,expanded:true,onDetail:()=>assert.fail("render requested a detail"),w:words("zh-Hant")})
+  assert.match(html,/進度更新/);assert.match(html,/Checking the saved work/)
+  assert.doesNotMatch(html,/5ba44472|agent_message_chunk|host-aa-teamAvailable|查看詳細內容/)
 })
 test("a Bots drop-down reads as one, with its value and a chevron, and no platform select",()=>{
   const html=render(PaSelect,{label:"Project",value:"",placeholder:"選擇 Project",options:[{value:"a",label:"clawdline"}],onChange:()=>{}})

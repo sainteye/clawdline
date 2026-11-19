@@ -52,7 +52,7 @@ try{
     await page.waitForFunction(()=>[...document.querySelectorAll('.pa-window')].every(n=>n.getAnimations().every(a=>a.playState==='finished')))
     assert.equal(await page.locator('.pa-trace-row').count(),0);assert.equal(scenario.traceRequested,true)
     const before=await page.evaluate(()=>{window.__probe.marks.push({name:'before-trace',t:performance.now()});return window.__measure()})
-    await page.screenshot({path:path.join(artifacts,tag+'-before-trace.png')});releaseTrace();await page.locator('.pa-trace-row').first().waitFor({state:'attached'});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+    await page.screenshot({path:path.join(artifacts,tag+'-before-trace.png')});releaseTrace();await page.locator('.pa-trace > summary').first().waitFor({state:'attached'});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
     const after=await page.evaluate(()=>{window.__probe.marks.push({name:'after-trace',t:performance.now()});return window.__measure()});await page.screenshot({path:path.join(artifacts,tag+'-after-trace.png')})
     const point={x:before.trigger.x+before.trigger.width/2,y:before.trigger.y+before.trigger.height/2},hit=await page.evaluate(({x,y})=>{const n=document.elementFromPoint(x,y);return {class:n?.closest('button')?.className??n?.className,seq:n?.closest('[data-message-seq]')?.getAttribute('data-message-seq')}},point)
     assert.ok(Math.abs(after.bubble.y-before.bubble.y)<0.5 && Math.abs(after.trigger.y-before.trigger.y)<0.5,

@@ -261,6 +261,18 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     seedWork(state:W.ProjectAssistantWorkState){const bot=bots[0],f={...fence(bot),generation:0};push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"work_updated",fence:f,work:{id:"late-work",fence:f,turn_id:"history-turn-1",board_item_id:"item",task_id:"task",state,landing_commit:state==="landed"?"newer-work-observation":"",result_message_id:""}})},
     holdStop(){stopReply=new Promise(resolve=>{releaseStop=resolve})},
     releaseStop(state:W.ProjectAssistantEffectState){releaseStop?.(state);releaseStop=undefined;stopReply=undefined},
+    seedWorkDetails(){
+      const bot=bots[0],f=fence(bot)
+      const rows=[
+        ["tool_activity","host-aa-teamAvailable"],
+        ["agent_message_chunk","(pass)"],
+        ["agent_thought_chunk","Check the saved work before changing anything."],
+        ["tool_call","Inspect the project files\ncompleted\nFound the project definition."],
+        ["plan","Read the project definition\nReview the changes"],
+      ]
+      for(const [category,text] of rows)push({id:"progress-"+category,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,
+        trace:{turn_id:"turn-1",category,text,complete:true}})
+    },
     workTurn(state:W.ProjectAssistantTurnState){
       const bot=bots[0],f=fence(bot)
       const turn:W.ProjectAssistantTurn={id:"turn-1",fence:f,message_id:"bot-0-user",state,started_at:at,

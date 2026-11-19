@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13441,
-  "riskKeys": 5785,
-  "nonRiskCount": 7656,
+  "englishContentKeys": 13446,
+  "riskKeys": 5787,
+  "nonRiskCount": 7659,
   "groups": [
     {
       "name": "acp / other",
@@ -6053,7 +6053,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 398,
+      "count": 401,
       "sources": [
         null
       ],
@@ -6438,8 +6438,11 @@
         "projectAssistants.thisMachine",
         "projectAssistants.total",
         "projectAssistants.trace",
+        "projectAssistants.traceLoading",
+        "projectAssistants.traceNarration",
         "projectAssistants.tracePlan",
         "projectAssistants.traceReply",
+        "projectAssistants.traceRetry",
         "projectAssistants.traceStep",
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",

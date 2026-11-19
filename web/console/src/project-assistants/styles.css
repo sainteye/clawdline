@@ -137,8 +137,9 @@
 .project-assistants .pa-working-steps > summary { width:fit-content;max-width:100%;list-style:none;cursor:pointer; }
 .project-assistants .pa-working-steps > summary::-webkit-details-marker { display:none; }
 .project-assistants .pa-working-chevron { color:var(--pa-dim); }
+.project-assistants .pa-working-steps[open] { max-width:540px; width:100%; }
 .project-assistants .pa-working-steps[open] .pa-working-chevron { transform:rotate(180deg); }
-.project-assistants .pa-working-steps-body { min-width:0;max-height:280px;overflow:auto;margin:0 0 8px;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-working-steps-body { min-width:0;max-height:280px;overflow:auto;overscroll-behavior:contain;margin:0 0 8px;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-working-transition { --pa-working-duration:420ms;display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows var(--pa-working-duration) cubic-bezier(.2,.8,.2,1),opacity var(--pa-working-duration) ease-out; }
 .project-assistants .pa-working-transition[data-shown] { grid-template-rows:1fr;opacity:1; }
 .project-assistants .pa-working-clip { min-height:0;overflow:hidden; }
@@ -537,50 +538,42 @@
   margin-top: 0;
 }
 
-/* Codync-aligned compact trace list */
+/* Processing steps stay readable in the chat without individual card borders. */
 .project-assistants .pa-trace-list {
-  display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-width: 540px;
+  display:flex; flex-direction:column; gap:9px; margin-top:8px; max-width:540px;
 }
-.project-assistants .pa-trace-turn {
-  display: flex; flex-direction: column; gap: 4px;
+.project-assistants .pa-trace-row { min-width:0; color:var(--pa-dim); font-size:13px; line-height:1.45; }
+.project-assistants .pa-trace-line {
+  display:flex; align-items:center; gap:8px; min-height:27px; padding:2px 0; text-align:left;
 }
-.project-assistants .pa-trace-row {
-  display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.4; color: var(--pa-dim);
-  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 4px; transition: background 0.2s ease;
+.project-assistants .pa-trace-tool > summary { list-style:none; cursor:pointer; }
+.project-assistants .pa-trace-tool > summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-trace-tool > summary:hover { color:var(--pa-ink); }
+.project-assistants .pa-trace-chevron { width:13px; text-align:center; flex:none; color:var(--pa-dim); }
+.project-assistants .pa-trace-tool[open] .pa-trace-chevron { transform:rotate(90deg); }
+.project-assistants .pa-trace-icon { font-size:11px; flex:none; opacity:.8; }
+.project-assistants .pa-trace-title { font-size:12px; font-weight:500; color:var(--pa-dim); }
+.project-assistants .pa-trace-tool-title {
+  min-width:0; flex:1; color:var(--pa-ink); overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
 }
-.project-assistants .pa-trace-row:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
-.project-assistants .pa-trace-line, .project-assistants .pa-trace-toggle {
-  display: flex; align-items: center; gap: 7px; padding: 3px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
-}
-.project-assistants .pa-trace-toggle {
-  cursor: pointer;
-}
-.project-assistants .pa-trace-toggle:hover {
-  color: #fafafa;
-}
-.project-assistants .pa-trace-chevron {
-  font-size: 10px; width: 10px; color: #71717a; flex-shrink: 0;
-}
-.project-assistants .pa-trace-icon {
-  font-size: 11px; flex-shrink: 0; opacity: 0.85;
-}
-.project-assistants .pa-trace-title {
-  font-size: 12px; font-weight: 500; color: #8e8e93; flex-shrink: 0;
-}
-.project-assistants .pa-trace-desc {
-  font-size: 12px; color: #d1d1d6; word-break: break-all;
-}
+.project-assistants .pa-trace-result { color:var(--good,#83c498); flex:none; }
+.project-assistants .pa-trace-result[data-failed] { color:var(--bad,#ed9999); }
+.project-assistants .pa-trace-narration { margin:3px 0 0 19px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.project-assistants .pa-trace-narration.pa-markdown { white-space:normal; color:var(--pa-ink); }
 .project-assistants .pa-trace-body {
-  margin: 2px 0 4px 18px; padding: 2px 8px; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #aaa; background: transparent; border-left: 2px solid rgba(255,255,255,0.12); white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto;
+  margin:3px 0 0 19px; padding:8px 10px; background:var(--pa-card); border-radius:7px;
+  font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--pa-ink);
+  max-height:180px; white-space:pre; overflow:auto; overscroll-behavior:contain;
+}
+.project-assistants .pa-trace-state {
+  display:flex; align-items:center; gap:7px; margin:0; color:var(--pa-dim); font-size:12px;
 }
 .project-assistants .pa-trace-more-btn {
-  align-self: flex-start; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #aaa; font-size: 11px; cursor: pointer;
+  align-self:flex-start; padding:2px 8px; border-radius:4px; border:1px solid var(--pa-line);
+  background:transparent; color:var(--pa-dim); font-size:12px; cursor:pointer;
 }
-.project-assistants .pa-trace-more-btn:hover {
-  color: #fff; background: rgba(255,255,255,0.1);
-}
+.project-assistants .pa-trace-more-btn:hover { color:var(--pa-ink); }
 
 /* Conversation inspectors share the existing scoped editors and BR-06 identity. */
 .project-assistants .pa-chat-layout,.project-assistants .pa-room-layout { display:grid;grid-template-columns:minmax(0,1fr);height:100%;min-height:0;position:relative;overflow:hidden; }
