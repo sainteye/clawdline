@@ -1026,3 +1026,11 @@ The generated English and Taiwan Traditional Chinese route inventories now
 report API 90. Only that generated level line changes; generated routes are not
 one of the compiled guide's 21 freshness-pinned translation parts. The current
 and fallback translation tests still verify those independent guide pins.
+
+
+The Bot server title and details now share a source/grant/Bot/Project-bound
+observation driven by the existing visible-chat refresh. Both language
+explanations distinguish selected-chat observation from a Host background
+stream, preserve stale and uncertain outcomes, and keep installed/Cloud
+acceptance separate. The controller, hook and Chat mount are included in the
+reviewed source receipts; the native Bot instructions themselves are unchanged.

@@ -5,6 +5,10 @@ import type * as W from "@clawdline/contract"
 import {ProjectAssistantSourceClient} from "../../src/cloud/project-assistants"
 import {DevServers} from "../../src/project-assistants/DevServers"
 import {BotDetailsPanel} from "../../src/project-assistants/BotDetailsPanel"
+import {Chat} from "../../src/project-assistants/Chat"
+import {FallbackSourceScope} from "../../src/project-assistants/FallbackSettings"
+import {fixtureSource} from "../../src/project-assistants/fixtures"
+import {createViewState} from "../../src/project-assistants/view-state"
 import {words} from "../../src/project-assistants/words"
 import {bootCatalog} from "../../src/catalog"
 import "../../src/legacy/tokens.css"
@@ -33,4 +37,24 @@ function Fixture(){
   <DevServers key={selected} source={source} bot={current} enabled={live&&grant.writable} active={active} frontier={frontier} w={w}/><BotDetailsPanel bot={current} projectName="Synthetic Project" machineName="Synthetic computer" onSettings={()=>{}} onRoutines={()=>{}} w={w}/>
  </main></div>
 }
-createRoot(document.getElementById("app")!).render(<Fixture/> )
+const base=fixtureSource(grant.machineID)
+const view=base.view!.bind(base)
+const chatSource=Object.assign(base,{
+ authorizationRevision:source.authorizationRevision,
+ current:()=>source.current(),browserRemote:source.browserRemote,
+ canDevServers:()=>source.canDevServers(),devServers:source.devServers.bind(source),devServerLogs:source.devServerLogs.bind(source),controlDevServer:source.controlDevServer.bind(source),
+ view:async(...args:Parameters<typeof view>)=>{const result=await view(...args);void fetch("/fixture/chat-observed",{method:"POST",body:JSON.stringify({mode:args[0].mode,event_frontier:result.head.event_frontier})});return result},
+})
+const page=await chatSource.list({machine_id:grant.machineID,cursor:"",query:"",page_size:100},new AbortController().signal)
+const chatView=createViewState(localStorage)
+function FullChatFixture(){
+ const [selected,setSelected]=useState(0),[revision,setRevision]=useState(0),summary=page.items[selected],w=words(language)
+ return <div className="pa-server-chat-container"><nav aria-label="Synthetic chat controls">
+  <button onClick={()=>void fetch("/fixture/add-server?bot="+summary.bot.key.bot_id,{method:"POST"})}>Add background server</button>
+  <button onClick={()=>void fetch("/fixture/hold-read",{method:"POST"})}>Hold server read</button>
+  <button onClick={()=>void fetch("/fixture/release-read",{method:"POST"})}>Release server read</button>
+  <button onClick={()=>setSelected(n=>n?0:1)}>Switch Chat Bot</button>
+  <button onClick={()=>{revoked=true;setRevision(n=>n+1)}}>Revoke source</button>
+ </nav><main className="project-assistants pa-server-chat-fixture" data-fixture-revision={revision}><FallbackSourceScope source={chatSource}><Chat key={summary.bot.key.bot_id} summary={summary} source={chatSource} current={()=>[chatSource]} accountKey={grant.accountKey} readerID={grant.readerID} view={chatView} w={w} language={language} onBack={()=>{}} onBotChanged={()=>{}} projectName="Synthetic project" machineName="Synthetic computer"/></FallbackSourceScope></main></div>
+}
+createRoot(document.getElementById("app")!).render(<React.StrictMode>{query.has("chat")?<FullChatFixture/>:<Fixture/>}</React.StrictMode>)

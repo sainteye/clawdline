@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -322,5 +322,24 @@ test("clipboard refusals retain their category without exposing arbitrary messag
     assert.equal(format(new DOMException("synthetic unavailable detail","NotSupportedError"),w),w.serverCopyFailed+" (NotSupportedError)")
     assert.equal(format({code:"clipboard_denied",message:"synthetic sensitive detail"},w),w.serverCopyFailed+" (clipboard_denied)")
     for(const error of [null,{message:"synthetic sensitive detail"},{name:"unexpected words with details"}])assert.equal(format(error,w),w.serverCopyFailed)
+  }
+})
+
+test("the title counts running servers and prefers a confirmed port over a watch name",()=>{
+  const watch={id:"watch",name:"Watch build",state:"running",ports_known:true,ports:[]}
+  const port={id:"port",name:"Web",state:"running",ports_known:true,ports:[{port:43123},{port:43124}]}
+  const later={...watch,id:"later",name:"Another build"}
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),state={rows:[watch,port,later],pending:false,fresh:true,inspect:false,error:""},title=compiled.exports.serverTitle
+    assert.equal(title(state,w),":43123 +2")
+    assert.equal(title({...state,rows:[watch]},w),"Watch build")
+    assert.equal(title({...state,rows:[{...port,ports_known:false}]},w),"Web")
+    assert.equal(title({...state,rows:[{state:"accepted"}]},w),w.serverStarting)
+    assert.equal(title({...state,rows:[{state:"unknown"}]},w),w.serverUnknown)
+    assert.equal(title({...state,rows:[{state:"future-active"}]},w),w.serverUnknown)
+    assert.equal(title({...state,rows:[{state:"failed"},{state:"stopped"}]},w),w.serverFailed)
+    assert.equal(title({...state,rows:[{state:"stopped"}]},w),"")
+    for(const mask of [{fresh:false},{inspect:true},{error:"pa_offline"}])assert.equal(title({...state,...mask},w),"")
+    assert.equal(title({...state,pending:true},w),":43123 +2","a pending read does not flicker a previously fresh title")
   }
 })

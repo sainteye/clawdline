@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useRef,useState} from "react"
+import {useEffect,useRef,useState} from "react"
 import {createPortal} from "react-dom"
 import type * as W from "@clawdline/contract"
 import {showModalWithoutChoice} from "../modal-focus"
@@ -6,6 +6,8 @@ import {parenthesized} from "../punctuation"
 import {errorCode,type SourceClient} from "./client"
 import {MessageMenu} from "./MessageMenu"
 import type {Words} from "./words"
+import {useDevServerObservation,serverObservationScope,type DevServerObservation} from "./useDevServerObservation"
+import type {ServerObservationState} from "./dev-server-observation"
 import "./dev-servers.css"
 import "./message-reactions.css"
 
@@ -64,48 +66,57 @@ export function serverCopyFailure(error:unknown,w:Words):string {
   return w.serverCopyFailed+(/^[A-Za-z][A-Za-z0-9_]*$/.test(category)?parenthesized(category):"")
 }
 
+type ServerViewProps={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;active?:boolean;frontier?:unknown;w:Words;observation?:DevServerObservation}
+
 /** This source-bound details view never accepts or constructs an executable command. */
-export function DevServers({source,bot,enabled,active=true,frontier,w}:{source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;active?:boolean;frontier?:number;w:Words}){
-  const [rows,setRows]=useState<Server[]|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[inspect,setInspect]=useState(false),[selected,setSelected]=useState<Server|null>(null)
-  const pending=useRef<AbortController|null>(null),mounted=useRef(true),writable=useRef(enabled),readAgain=useRef(false),visible=useRef(active)
-  writable.current=enabled;visible.current=active
-  const supported=source.canDevServers?.()===true&&!!source.devServers&&!!source.devServerLogs
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;pending.current?.abort()}},[])
-  useEffect(()=>{if(!enabled&&pending.current){pending.current.abort();setInspect(true)}},[enabled])
-  useEffect(()=>{if(!active)setSelected(null)},[active])
-  const read=useCallback(async():Promise<void>=>{
-    if(pending.current){readAgain.current=true;return}
-    if(!source.devServers)return
-    readAgain.current=false
-    const control=new AbortController();pending.current=control;setBusy(true)
-    try{
-      const result=await source.devServers(bot.key,control.signal)
-      if(mounted.current&&!control.signal.aborted){setRows(result.servers);setInspect(false);setError("")}
-    }catch(e){if(mounted.current)setError(errorCode(e))}
-    finally{
-      if(pending.current===control)pending.current=null
-      if(mounted.current){setBusy(false);if(readAgain.current&&visible.current)void read()}
-    }
-  },[source,bot.key.machine_id,bot.key.bot_id])
-  useEffect(()=>{if(active&&supported)void read()},[active,supported,frontier,read])
-  const control=async(action:Action,server:Server)=>{
-    if(pending.current||inspect||!writable.current||!source.controlDevServer||!active||source.current?.()!==true)return
-    const request=serverControlRequest(bot.key,server,crypto.randomUUID())
-    const abort=new AbortController();pending.current=abort;setBusy(true);setError("");setInspect(true)
-    try{
-      await source.controlDevServer(action,request,abort.signal)
-      if(mounted.current&&!abort.signal.aborted){pending.current=null;await read()}
-    }catch(e){if(mounted.current){setError(errorCode(e));setInspect(true)}}
-    finally{if(pending.current===abort)pending.current=null;if(mounted.current)setBusy(false)}
+export function DevServers(props:ServerViewProps){
+  if(props.source.canDevServers?.()!==true||!props.source.devServers||!props.source.devServerLogs)return null
+  if(props.observation){
+    if(props.observation.source!==props.source||props.observation.scope!==serverObservationScope(props.source,props.bot))return null
+    return <ServerView {...props} observation={props.observation}/>
   }
-  if(!supported||source.current?.()===false||!error&&(rows===null||rows.length===0))return null
+  return <LocalServerView {...props}/>
+}
+function LocalServerView(props:ServerViewProps){
+  const observation=useDevServerObservation({source:props.source,bot:props.bot,enabled:props.enabled,active:props.active,pulse:props.frontier})
+  return <ServerView {...props} observation={observation}/>
+}
+function ServerView({source,bot,enabled,active=true,w,observation}:{source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;active?:boolean;w:Words;observation:DevServerObservation}){
+  const [selected,setSelected]=useState<{server:Server;source:SourceClient;scope:string}|null>(null)
+  const {rows,pending:busy,error,inspect,fresh}=observation.state
+  useEffect(()=>{if(!active)setSelected(null)},[active])
+  const control=(action:Action,server:Server)=>{
+    if(!enabled||!active||!source.controlDevServer||source.current?.()!==true)return
+    observation.mutate(signal=>source.controlDevServer!(action,serverControlRequest(bot.key,server,crypto.randomUUID()),signal))
+  }
+  if(!observation.supported||source.current?.()===false||!error&&(rows===null||rows.length===0))return null
+  const log=selected&&selected.source===source&&selected.scope===observation.scope?selected.server:null
   return <section className="pa-dev-servers" aria-label={w.serversTitle}>
-    <header><h3>{w.serversTitle}</h3><button type="button" disabled={busy} onClick={()=>void read()}>{w.serverRefresh}</button></header>
-    {busy&&<p role="status">{w.loading}</p>}
+    <header><h3>{w.serversTitle}</h3><button type="button" disabled={busy||!observation.active} onClick={observation.refresh}>{w.serverRefresh}</button></header>
+    {busy&&rows===null&&<p role="status">{w.loading}</p>}
     {error&&<p role="alert">{inspect?w.serverInspect:w.unavailable} ({error})</p>}
-    {rows&&<ul>{rows.map(server=><ServerRow key={server.id} server={server} w={w} active={active} localSource={localServerSource(source,location.href)} canRead={()=>source.current?.()===true} addressesAvailable={!busy&&!inspect&&active} disabled={busy||inspect||!enabled||!active} onLogs={()=>setSelected(server)} onControl={action=>void control(action,server)}/>)}</ul>}
-    {selected&&active&&<ServerLogs source={source} bot={bot} server={selected} w={w} onClose={()=>setSelected(null)}/>}
+    {rows&&<ul>{rows.map(server=><ServerRow key={server.id} server={server} w={w} active={active} localSource={localServerSource(source,location.href)} canRead={()=>source.current?.()===true} addressesAvailable={!busy&&!inspect&&fresh&&active} disabled={busy||inspect||!fresh||!enabled||!active} onLogs={()=>setSelected({server,source,scope:observation.scope})} onControl={action=>control(action,server)}/>)}</ul>}
+    {log&&active&&<ServerLogs source={source} bot={bot} server={log} w={w} onClose={()=>setSelected(null)}/>}
   </section>
+}
+
+/** Match the pinned title policy: +n counts other running servers, not ports. */
+export function serverTitle(state:ServerObservationState,w:Words):string {
+  if(!state.fresh||state.inspect||state.error||!state.rows)return ""
+  const running=state.rows.filter(row=>row.state==="running")
+  const withPort=(row:Server)=>row.ports_known===true&&Array.isArray(row.ports)?row.ports.find(port=>port&&listenerPort(port.port)):undefined
+  const first=running.find(row=>!!withPort(row))??running[0]
+  if(first){const port=withPort(first),label=port?":"+port.port:first.name||w.serverRunning;return label+(running.length>1?" +"+(running.length-1):"")}
+  if(state.rows.some(row=>row.state==="accepted"))return w.serverStarting
+  if(state.rows.some(row=>row.state==="stopping"))return w.serverStopping
+  if(state.rows.some(row=>!["stopped","failed", ""].includes(row.state)))return w.serverUnknown
+  if(state.rows.some(row=>row.state==="failed"))return w.serverFailed
+  return ""
+}
+export function DevServerTitle({observation,w}:{observation:DevServerObservation;w:Words}){
+  const label=serverTitle(observation.state,w)
+  const failed=observation.state.rows?.some(row=>row.state==="failed")&&observation.state.rows.every(row=>["stopped","failed", ""].includes(row.state))
+  return label?<span className="pa-dev-server-title" data-failed={failed||undefined}>{label}</span>:null
 }
 
 export function ServerRow({server,w,active,localSource,canRead,addressesAvailable,disabled,onLogs,onControl}:{server:Server;w:Words;active:boolean;localSource:boolean;canRead:()=>boolean;addressesAvailable:boolean;disabled:boolean;onLogs:()=>void;onControl:(action:Action)=>void}){

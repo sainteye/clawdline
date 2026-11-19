@@ -24,3 +24,7 @@
 
 .project-assistants.pa-message-menu-root .pa-server-address-choice>button { min-height:44px;width:100%;border:0;border-radius:8px;background:transparent;text-align:start;padding:8px 12px;font-size:14px; }
 .project-assistants.pa-message-menu-root .pa-server-address-choice>button:hover { background:#ffffff12; }
+
+.project-assistants .pa-chat-server-heading { display:flex;align-items:baseline;gap:6px;min-width:0; }
+.project-assistants .pa-dev-server-title { flex:none;color:var(--pa-dim);font-size:12px;font-weight:400;white-space:nowrap; }
+.project-assistants .pa-dev-server-title[data-failed] { color:var(--danger,#f87171); }

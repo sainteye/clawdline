@@ -334,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, background/title refresh, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -494,8 +494,9 @@ an unrelated listener, exec without losing ownership and port closure on cleanup
 Linux implementation and tests still require their platform CI; a Darwin test
 is not Linux runtime evidence.
 
-This optional observer is not yet carried by the Host's server-list response,
-ports/title UI, Cloud bridge or a background change stream. Ordinary ACP peers
+The later source-response and selected-chat sections below carry this optional
+observer through server lists and title/details. Cloud carriage and a Host
+background change stream remain separate. Ordinary ACP peers
 retain no observer. It does not replace the existing cleanup supervisor, persist
 kernel facts, adopt an escaped/crashed owner or authorize kill/restart by PID.
 Physical crash/boot recovery and durable clean-restart intent remain separate
@@ -523,8 +524,9 @@ These are local synthetic checks with zero vendor/model requests. They do not
 qualify an installed vendor, production Cloud/UI, physical recovery after Host
 crash, machine reboot or updater rollback. The details component has isolated
 desktop/mobile browser evidence, not installed or production Cloud acceptance.
-New-control Cloud carriage, owned ports and durable clean-restart intent still
-require construction.
+The later port-response and selected-chat sections implement owned port reads.
+New-control Cloud carriage and durable clean-restart intent still require
+construction.
 
 Source list/start/stop responses now carry `ports_known` and `ports`, bound to
 that exact definition, attempt and receipt revision. The optional process
@@ -550,6 +552,42 @@ also use the local transport, so its account key alone does not prove the
 browser is on the source machine. Cloud, LAN and unknown origins use only
 remote candidates. Unknown write results lock navigation/copy as well as process
 changes until a fresh read; logs remain available. Clipboard failures are shown
-without claiming a successful copy. Background observation and chat-title
-summaries remain separate, and this source change does not establish Cloud
+without claiming a successful copy. The selected-chat observation below shares
+these readings with the title; this source change does not establish Cloud
 carriage or installed UI acceptance.
+
+
+### Selected-chat server observation
+
+The selected visible chat now owns one observation shared by its title and
+details. It reuses the existing chat read pulse, including a new read-view head
+with the same conversation frontier; server changes need not create a chat
+message. Opening details explicitly refreshes that same owner rather than
+creating a second poller. There is no new timer, global observer map or Host
+change stream. A quiet title prefers the first running server with a known
+port, otherwise its name; `+n` counts the other running servers, not listeners.
+Starting, stopping, failed and unknown readings remain distinct. Stale or
+unconfirmed readings do not supply a title.
+
+One request slot serializes reads and controls, retaining at most one following
+read demand. An abort does not release a non-cooperative request's slot until
+its promise settles. Hidden pages pause; resuming requests a new source read.
+The owner is bound to the source object, machine, grant revision and full
+Bot/Project scope. Scope changes or revocation discard old bodies before they
+can enter the new title, list or log dialog. Read failures retain stale rows
+rather than imply an empty authoritative set. Unknown controls retain an
+inspection lock until an explicit read; neither refresh pulses nor visibility
+changes replay a write. Request keys are created only after local admission.
+
+Controlled-promise tests cover coalescing, read/write exclusion, non-cooperative
+abort, unknown outcomes, read-only authority and late results after revocation
+or closure. Removing the post-read authority check produced a failing private-row
+disclosure counterexample; restoring it passes. Isolated desktop English and
+mobile Taiwan Traditional Chinese browsers exercise the actual Chat and details
+components against a synthetic source: details-closed changes update the title
+while the chat frontier remains unchanged, a held read does not fan out under
+chat refresh, switching Bots excludes its late body, and revocation hides the
+server rows and title. The chat read-view is scripted while server reads use
+the fixture HTTP transport. These checks use no formal daemon, provider/model
+request or private conversation; they do not qualify a full installed App,
+production Cloud transport, server reachability or crash/reboot recovery.

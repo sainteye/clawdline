@@ -12,7 +12,8 @@ import { BotAvatar } from "./BotAvatar"
 import "./chat-presentation.css"
 import {BotSidePanel,type BotInfoTab} from "./BotSidePanel"
 import {BotDetailsPanel} from "./BotDetailsPanel"
-import {DevServers} from "./DevServers"
+import {DevServers,DevServerTitle,serverTitle} from "./DevServers"
+import {useDevServerObservation} from "./useDevServerObservation"
 import { BotSettings } from "./BotSettings"
 import { BotTemplate } from "./BotTemplate"
 import { TeamApprovals } from "./Groups"
@@ -83,7 +84,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [infoTab,setInfoTab]=useState<BotInfoTab|null>(null),[settingsRevision,setSettingsRevision]=useState(0)
   const setSettings=(open:boolean)=>setInfoTab(open?"settings":null)
-  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
+  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);if(tab==="details")servers.refresh();if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
   const identityButton=useRef<HTMLButtonElement>(null)
   const [templateOpener,setTemplateOpener]=useState<HTMLButtonElement|null>(null)
   const [browserOpener,setBrowserOpener]=useState<HTMLButtonElement|null>(null)
@@ -742,13 +743,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const sendingAdmitted=sendingAccepted?admittedMessage(pendingSend!.intent as W.ProjectAssistantSendRequest,pendingSend!.receipt,messages):isSendingAdmitted(sending,messages,sendBaselineSeq.current)
   const browserAvailable=botBrowserSupported(source)
   const canReadActions=!!data&&!recoveryRequired&&source.current?.()!==false&&canMarkConversationRead(data.source)
+  const servers=useDevServerObservation({source,bot,enabled,active:canReadActions&&!browserOpener&&!templateOpener,pulse:head})
+  const serverLabel=serverTitle(servers.state,w)
   return <section className={`pa-chat-layout pa-chat-surface${infoTab?" pa-info-open":""}`} aria-label={bot.name}><div className="pa-chat" inert={!!browserOpener}>
     <header className="pa-chat-header">
       <button className="pa-circle pa-chat-back" data-show-back={showBack||undefined} onClick={()=>{flush();onBack()}} aria-label={backLabel??w.back} title={backLabel??w.back}>‹</button>
       <h2 className="pa-chat-heading">
-        <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}`} aria-expanded={!!infoTab} onClick={()=>infoTab?setInfoTab(null):openInfo("details")}>
+        <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}${serverLabel?" · "+serverLabel:""}`} aria-expanded={!!infoTab} onClick={()=>infoTab?setInfoTab(null):openInfo("details")}>
           <BotAvatar appearance={bot.appearance} size={28} mood={mood}/>
-          <span className="pa-chat-identity-text"><strong>{bot.name}</strong><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
+          <span className="pa-chat-identity-text"><span className="pa-chat-server-heading"><strong>{bot.name}</strong><DevServerTitle observation={servers} w={w}/></span><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
           <span className="pa-chat-identity-chevron" aria-hidden="true">⌄</span>
         </button>
       </h2>
@@ -784,7 +787,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
 
     {templateOpener&&<BotTemplate opener={templateOpener} source={source} current={current} scope={scope} available={()=>valid()&&!recovery.current&&!!currentData.current&&canRead(currentData.current.source)&&sameConversation({key:currentData.current.bot.key,project:currentData.current.bot.project,conversation_id:currentData.current.conversation.id},scope)} w={w} onClose={()=>setTemplateOpener(null)}/>}
     <BotSidePanel inactive={!!browserOpener||!!templateOpener} opener={identityButton} bot={bot} tab={infoTab} onTab={openInfo} onClose={()=>setInfoTab(null)} w={w} detailsActions={
-        <><DevServers key={JSON.stringify([accountKey,readerID,source.authorizationRevision,bot.key,bot.project])} source={source} bot={bot} enabled={enabled} active={infoTab==="details"&&!browserOpener&&!templateOpener} frontier={head?.event_frontier} w={w}/><div className="pa-info-actions">
+        <><DevServers key={JSON.stringify([accountKey,readerID,source.authorizationRevision,bot.key,bot.project])} source={source} bot={bot} enabled={enabled} active={infoTab==="details"&&!browserOpener&&!templateOpener} observation={servers} w={w}/><div className="pa-info-actions">
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
           <button type="button" className="pa-pill" disabled={checkingUpdates} aria-busy={checkingUpdates||undefined} onClick={()=>void checkForUpdates()}>{w.refresh}</button>
         </div></>
