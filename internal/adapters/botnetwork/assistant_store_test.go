@@ -211,6 +211,28 @@ func TestAssistantHTTPUsesStoredDedicatedAuthorityAndDurableCorrelatedReceipts(t
 	}
 }
 
+func TestAssistantHTTPReissuedSignatureRetainsTheOriginalSubmission(t *testing.T) {
+	f := newAssistantFixture(t)
+	status, initial, raw := f.post(t, f.call, f.body)
+	if status != http.StatusOK || initial.Receipt == nil || f.host.effects != 1 {
+		t.Fatalf("original submission: %d %s effects=%d", status, raw, f.host.effects)
+	}
+	reissued := f.call
+	reissued.IssuedAt++
+	reissued.ExpiresAt++
+	reissued = f.sign(t, reissued, f.body)
+	status, replay, raw := f.post(t, reissued, f.body)
+	if status != http.StatusOK || replay.Receipt == nil || replay.Receipt.Call != initial.Receipt.Call ||
+		replay.Receipt.Digest != initial.Receipt.Digest || f.host.effects != 1 {
+		t.Fatalf("reissued submission: %d %s effects=%d", status, raw, f.host.effects)
+	}
+	changedBody := []byte(`{"text":"different synthetic work"}`)
+	status, _, raw = f.post(t, f.sign(t, reissued, changedBody), changedBody)
+	if status != http.StatusForbidden || !strings.Contains(raw, string(pa.IdempotencyConflict)) || f.host.effects != 1 {
+		t.Fatalf("reissued request changed the body: %d %s effects=%d", status, raw, f.host.effects)
+	}
+}
+
 func TestAssistantHTTPRevocationBeforeEffectAndPublicationWithholdsReply(t *testing.T) {
 	for _, stage := range []string{"before-effect", "after-effect", "policy-off-before-effect", "policy-off-after-effect"} {
 		t.Run(stage, func(t *testing.T) {

@@ -170,7 +170,13 @@ func (s *AssistantStore) ClaimAssistant(ctx context.Context, call wire.Assistant
 		if err = json.Unmarshal(data, &receipt); err != nil {
 			return receipt, false, err
 		}
-		if receipt.Digest != digest {
+		retainedActor, retainedID, retainedDigest := app.AssistantReceiptIdentity(receipt.Call, receipt.PrincipalID)
+		// A gateway may sign the same submission again within current consent.
+		// Keep the original receipt and its digest, and compare the effect inputs
+		// after matching only the new signature's authentication metadata.
+		retainedCall := receipt.Call
+		retainedCall.IssuedAt, retainedCall.ExpiresAt, retainedCall.Signature = call.IssuedAt, call.ExpiresAt, call.Signature
+		if retainedActor != actor || retainedID != id || retainedDigest != receipt.Digest || retainedCall != call {
 			return receipt, false, refuse(pa.IdempotencyConflict, "assistant_request")
 		}
 		return receipt, false, nil
