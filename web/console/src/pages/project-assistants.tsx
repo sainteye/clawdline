@@ -40,13 +40,6 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const origin = useRef<{hash:string;href:string;state:unknown;scrolls:[HTMLElement,number,number][];x:number;y:number} | null>(null)
   useEffect(() => {if (opened && typeof history.state?.paView === "string") ownedHistory.current=history.state.paView},[opened,entry])
   // The orb's count follows new replies while Bots is closed, so it can ring.
-  const [badgeTick,setBadgeTick] = useState(0)
-  useEffect(() => onStatusRefresh(() => setBadgeTick(n => n + 1)),[])
-  useEffect(() => {
-    if (opened || sources.every(source=>source.canRoster?.()&&source.subscribeRoster)) return
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") setBadgeTick(n => n+1) }, BADGE_REFRESH_MS)
-    return () => clearInterval(timer)
-  },[opened,sources])
   const completion=useRef(createCompletionTracker()),sound=useRef<ReturnType<typeof startBotCompletionSound>|null>(null)
   useEffect(()=>{sound.current=startBotCompletionSound();return()=>{sound.current?.stop();sound.current=null}},[])
   const completionScope=useCallback((source: typeof sources[number])=>JSON.stringify([registry.accountKey,source.machineID,source.authorizationRevision]),[registry.accountKey])
@@ -73,11 +66,18 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     return () => control.abort()
   },[cloud,supplied,apiLevel,local])
   useEffect(() => {
-    const control = new AbortController()
-    for (const source of sources) void (async () => {
-      if(!opened&&source.canRoster?.()&&source.subscribeRoster)return
+    const requests=new Map<typeof sources[number],{control:AbortController;statusPending:boolean}>()
+    const refreshSource=async(source:typeof sources[number])=>{
+      const prior=requests.get(source)
+      // A refresh can replace a badge read, but must let the first authority response arrive.
+      if(prior?.statusPending)return
+      prior?.control.abort()
+      const control=new AbortController(),request={control,statusPending:true}
+      requests.set(source,request)
       try {
         const status = await source.status(control.signal)
+        if(control.signal.aborted)return
+        request.statusPending=false
         const readable = status.sources.some(canRead)
         // Entry availability comes from source authority, independently of the
         // paged badge read. A slow or failed list must not hide the way to retry.
@@ -104,10 +104,22 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
         // closes it. Cached work must stop animating after either failed read.
         const denied=["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(errorCode(error))
         if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,readable:!denied&&previous.readable,items:denied?[]:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
+      } finally {
+        if(requests.get(source)===request)requests.delete(source)
       }
-    })()
-    return () => control.abort()
-  },[sources,opened,badgeTick,observeSource])
+    }
+    const refresh=()=>{
+      for(const source of sources)if(opened||!source.canRoster?.()||!source.subscribeRoster)void refreshSource(source)
+    }
+    refresh()
+    const unsubscribe=onStatusRefresh(refresh)
+    const timer=!opened&&sources.some(source=>!source.canRoster?.()||!source.subscribeRoster)
+      ?window.setInterval(()=>{if(document.visibilityState==="visible")refresh()},BADGE_REFRESH_MS):undefined
+    return ()=>{
+      unsubscribe();window.clearInterval(timer)
+      for(const request of requests.values())request.control.abort()
+    }
+  },[sources,opened,observeSource])
   useEffect(()=>{
     if(opened)return
     const control=new AbortController()

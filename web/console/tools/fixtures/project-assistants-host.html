@@ -44,6 +44,7 @@ const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic
   created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
 const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,name:source.machineName,
   authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:PROJECT_ASSISTANTS_VIEW_API_LEVEL,paired:true,online:true,writable:true}))
+let statusWaiters = [], holdingStatus = false
 let listMode = new URLSearchParams(location.search).get("list") || "ready", releaseLists = []
 const transport = grant => async (path,init) => {
   const source = grant.machineID === "studio" ? a : b
@@ -53,6 +54,11 @@ const transport = grant => async (path,init) => {
   const method = {read:"markRead",observed:"observe",memory:"saveMemory"}[name] || name
   if (method === "status" && !feature) log.push({method:"status",machine:grant.machineID,request:null})
   try {
+    if (method === "status" && holdingStatus) {
+      log.push({method:"status-wait",machine:grant.machineID})
+      await new Promise(resolve => statusWaiters.push(resolve))
+      signal.throwIfAborted()
+    }
     if (method === "list" && listMode !== "ready") {
       log.push({method:"list-unavailable",machine:grant.machineID,request:request.fields})
       if (listMode === "denied") return Response.json({contract_version:"project-assistants.v1",error:{code:"pa_scope_denied",field:"",retry_after_seconds:0}},{status:403})
@@ -114,6 +120,8 @@ const workOpened = token => {if(pendingWork?.token === token){pendingWork=null;p
 const paint = () => root.render(<React.StrictMode><App key={appKey} projectAssistants={registry} fleetReaderMachine={active}
   onOpenAssistantWork={openWork} assistantWorkIntent={pendingWork} onAssistantWorkOpened={workOpened}/></React.StrictMode>)
 const fixture = {a,b,registry,requests,log,paint,
+  holdStatus(){holdingStatus=true},
+  releaseStatus(){holdingStatus=false;for(const resolve of statusWaiters.splice(0))resolve()},
   enableFeature(){feature=true},
   listMode(mode){listMode=mode;for(const release of releaseLists.splice(0))release()},
   quota(mode){quotaMode=mode;releaseQuota?.();releaseQuota=null},
