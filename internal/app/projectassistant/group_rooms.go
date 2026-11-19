@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -256,4 +257,64 @@ func (r *GroupRooms) Publish(ctx context.Context, t pa.RoomTicket, seq int64, te
 		return pa.RoomEntry{}, false, err
 	}
 	return pa.PublishRoomAnswer(g, st, t, seq, text)
+}
+
+// ProjectRoomMemberOutcome exposes only allowlisted execution diagnostics
+// for a turn whose room and member fences the history store already checked.
+func ProjectRoomMemberOutcome(room pa.RoomState, name string, t pa.Turn) pa.RoomMemberOutcome {
+	out := pa.RoomMemberOutcome{Member: t.Room.Member, Name: name, TurnID: t.ID, State: t.State, Late: room.RoomTicketIsLate(*t.Room)}
+	if t.State == pa.TurnSucceeded {
+		if publication, ok := room.PublicationFor(*t.Room, t.ID); ok {
+			out.Disposition = "quiet"
+			if publication.ReplySeq != 0 {
+				out.Disposition = "published"
+				out.ReplySeq = publication.ReplySeq
+			}
+		}
+	}
+	if t.Failure != nil {
+		switch t.Failure.Code {
+		case pa.Offline, pa.ScopeDenied, pa.Revoked, pa.CapacityFull, pa.Unsupported, pa.OutcomeUnknown, pa.ExecutionEffectUnknown:
+			out.FailureCode = t.Failure.Code
+		}
+		switch t.Failure.Field {
+		case "prompt_timeout", "prompt_stopped", "acp_eof", "prompt_result", "prompt_max_tokens", "prompt_max_turn_requests",
+			"owned_cleanup", "restart", "acknowledged":
+			out.FailureField = t.Failure.Field
+		default:
+			if reason, ok := strings.CutPrefix(t.Failure.Field, "provider_"); ok && knownFallbackReason(ProviderFailureReason(reason)) {
+				out.FailureField = t.Failure.Field
+			}
+		}
+	}
+	// The append-only ledger contains snapshots of each attempt. Keep the
+	// latest state per ordinal, with no login, session or carry data.
+	for _, f := range t.Attempts {
+		if f.Ordinal < 1 || f.Ordinal > 1+pa.MaxFallbackAgents ||
+			f.Fence.Key != t.Fence.Key || f.Fence.Project != t.Fence.Project ||
+			f.Fence.ConversationID != t.Fence.ConversationID || f.Fence.Generation > t.Fence.Generation {
+			continue
+		}
+		attempt := pa.RoomAttempt{Ordinal: f.Ordinal, Agent: f.Agent, Stage: f.Stage, Fallback: f.Fallback || f.Ordinal > 1}
+		if knownFallbackReason(ProviderFailureReason(f.Reason)) {
+			attempt.Reason = f.Reason
+		}
+		if attempt.Fallback && knownFallbackReason(ProviderFailureReason(f.PrimaryRestReason)) {
+			attempt.PrimaryRestReason = f.PrimaryRestReason
+		}
+		switch f.Stage {
+		case pa.AttemptOpening, pa.AttemptOpened, pa.AttemptRefused, pa.AttemptSending, pa.AttemptSent, pa.AttemptAnswered, pa.AttemptClosed, pa.AttemptHeld:
+		default:
+			continue
+		}
+		if f.Agent != pa.ClaudeCode && f.Agent != pa.Codex {
+			continue
+		}
+		if n := len(out.Attempts); n > 0 && out.Attempts[n-1].Ordinal == attempt.Ordinal {
+			out.Attempts[n-1] = attempt
+		} else if n == 0 || out.Attempts[n-1].Ordinal < attempt.Ordinal {
+			out.Attempts = append(out.Attempts, attempt)
+		}
+	}
+	return out
 }

@@ -33,16 +33,21 @@ const (
 // AttemptFact is append-only. Opening and Sending deliberately mean unknown
 // after a crash; a reason alone never authorizes another attempt.
 type AttemptFact struct {
-	LoginProfile     string       `json:"login_profile,omitempty"`
-	Ordinal          int          `json:"ordinal"`
-	Agent            Agent        `json:"agent"`
-	Fence            Fence        `json:"fence"`
-	Stage            AttemptStage `json:"stage"`
-	SendStarted      bool         `json:"send_started"`
-	Effect           string       `json:"effect"`
-	CleanupConfirmed bool         `json:"cleanup_confirmed"`
-	Reason           string       `json:"reason,omitempty"`
-	Opened           bool         `json:"opened,omitempty"`
+	LoginProfile string `json:"login_profile,omitempty"`
+	Ordinal      int    `json:"ordinal"`
+	Agent        Agent  `json:"agent"`
+	// Fallback records the selected identity relative to the configured
+	// primary at execution time, including a resting primary skipped on
+	// the first attempt. Old receipts may omit it.
+	Fallback          bool         `json:"fallback,omitempty"`
+	PrimaryRestReason string       `json:"primary_rest_reason,omitempty"`
+	Fence             Fence        `json:"fence"`
+	Stage             AttemptStage `json:"stage"`
+	SendStarted       bool         `json:"send_started"`
+	Effect            string       `json:"effect"`
+	CleanupConfirmed  bool         `json:"cleanup_confirmed"`
+	Reason            string       `json:"reason,omitempty"`
+	Opened            bool         `json:"opened,omitempty"`
 	// SendReturned means Send returned a pending handle, not that a remote
 	// model acknowledged, executed or completed the prompt.
 	SendReturned   bool `json:"send_returned,omitempty"`

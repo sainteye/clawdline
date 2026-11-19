@@ -385,7 +385,7 @@ func TestGroupNoReplyVisibleBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_GROUP_NO_REPLY_ARTIFACTS and PLAYWRIGHT_MODULE")
 	}
-	for _, outcome := range []string{"pass", "failed", "offline", "denied"} {
+	for _, outcome := range []string{"pass", "failed", "offline", "denied", "quota", "fallback"} {
 		t.Run(outcome, func(t *testing.T) { runGroupComposerViewportBrowser(t, filepath.Join(dir, outcome), outcome) })
 	}
 }
@@ -425,16 +425,27 @@ func (p *noReplyRoomPrompt) Wait(context.Context) (app.PromptResult, error) {
 	if p.outcome == "failed" {
 		return app.PromptResult{}, fmt.Errorf("synthetic connection lost after send")
 	}
+	if p.outcome == "quota" {
+		return app.PromptResult{}, &app.ProviderFailure{
+			Reason: app.ProviderUsageExhausted,
+			Cause:  &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "synthetic_quota_after_send"},
+		}
+	}
 	return app.PromptResult{FinalText: pa.RoomPass}, nil
 }
 
 func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
 	t.Helper()
 	var providers []app.Provider
-	if outcome != "" {
+	if outcome == "fallback" {
+		providers = append(providers, &roomFallbackProvider{routineHumanProvider: &routineHumanProvider{}})
+	} else if outcome != "" {
 		providers = append(providers, &noReplyRoomProvider{routineHumanProvider: &routineHumanProvider{}, outcome: outcome})
 	}
 	f := newGroupHTTPFixture(t, providers...)
+	if outcome == "fallback" {
+		enableRoomFixtureFallback(t, f)
+	}
 	f.create(t)
 	if outcome == "" {
 		command := f.command(pa.CreateOperation, "alternate-layout-room")
@@ -467,7 +478,7 @@ func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
 	cmd.Dir = "../../../web"
 	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+f.server.URL, "BOTS_ARTIFACTS="+dir)
 	if outcome != "" {
-		cmd.Env = append(cmd.Env, "BOTS_EXPECT_NO_REPLY=1")
+		cmd.Env = append(cmd.Env, "BOTS_EXPECT_ROOM_OUTCOME="+outcome)
 	}
 	out, err := cmd.CombinedOutput()
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -478,7 +489,7 @@ func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
 		t.Fatalf("group composer viewport: %v\n%s", err, out)
 	}
 	t.Log(string(out))
-	if outcome != "" {
+	if outcome != "" && outcome != "fallback" {
 		f.rooms.Idle()
 		var diagnostics []map[string]string
 		for _, bot := range f.bots[:2] {
@@ -490,7 +501,7 @@ func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
 				t.Fatal("fixture produced no member turns")
 			}
 			foundDiagnosis := false
-			wantCode := map[string]pa.ErrorCode{"failed": pa.OutcomeUnknown, "offline": pa.Offline, "denied": pa.ScopeDenied}[outcome]
+			wantCode := map[string]pa.ErrorCode{"failed": pa.OutcomeUnknown, "offline": pa.Offline, "denied": pa.ScopeDenied, "quota": pa.ExecutionEffectUnknown}[outcome]
 			for _, turn := range exported.Turns {
 				var code pa.ErrorCode
 				if turn.Failure != nil {
@@ -654,7 +665,22 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await click(firstRow)
    const room=page.locator('.pa-room-layout'),text=room.locator('textarea'),send=room.locator('.pa-send')
    await room.locator('[data-room-seq]').last().waitFor()
-   if(process.env.BOTS_EXPECT_NO_REPLY){await room.locator('.pa-room-unanswered').waitFor();assert.match(await room.locator('.pa-room-unanswered').innerText(),/目前沒有成員回覆/);assert.equal(await room.locator('.pa-room-author').count(),0);assert.equal(await room.locator('.pa-room-unanswered').getAttribute('role'),'status')}
+   const outcome=process.env.BOTS_EXPECT_ROOM_OUTCOME
+   if(outcome){
+    const row=room.locator('[data-room-member-outcome]').filter({hasText:'Alice'})
+    await row.waitFor()
+    const expected={pass:/未發布回覆/,failed:/結果未知/,offline:/成員目前無法執行/,denied:/執行遭到拒絕/,quota:/可用額度已用完/,fallback:/已發布回覆/}[outcome]
+    assert.match(await row.innerText(),expected)
+    assert.equal(await row.getAttribute('role'),'status')
+    assert.equal(await room.locator('.pa-room-unanswered').count(),0)
+    if(outcome==='fallback'){
+     await click(row.locator('summary'))
+     assert.match(await row.innerText(),/備援嘗試.*Claude Code/s)
+     assert.match(await row.innerText(),/用量已達上限/)
+     assert.equal(await room.locator('.pa-room-author').count()>0,true)
+    }else assert.equal(await room.locator('.pa-room-author').count(),0)
+    assert.doesNotMatch(await room.innerText(),/\(pass\)|重設|fixture diagnostic/)
+   }
    await page.waitForFunction(()=>document.querySelector('.pa-window').getAnimations().every(a=>a.playState==='finished'))
    if(!baseline){
     const spacing=await room.locator('[data-room-seq]').evaluateAll(rows=>rows.slice(1).map((row,index)=>{
@@ -705,7 +731,7 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    const draft=await text.inputValue();await click(room.locator('.pa-room-identity'));await page.waitForFunction(()=>document.querySelector('.pa-room-members')?.contains(document.activeElement));const motion=await room.locator('.pa-room-members').evaluate(n=>({duration:getComputedStyle(n).transitionDuration.split(',')[0],property:getComputedStyle(n).transitionProperty.split(',')[0]}));assert.equal(motion.duration,width===320?'0s':'0.3s');results.push({tag,state:'member-motion',...motion});await page.keyboard.press('Escape');await room.locator('.pa-room-members').waitFor({state:'hidden'});assert.equal(await text.inputValue(),draft)
    await click(send);await page.waitForFunction(()=>!document.querySelector('.pa-room-layout textarea').value);const quoted=room.locator('[data-quote-seq]').last();await quoted.waitFor();assert.match(await quoted.innerText(),/👍|Synthetic|Alice|Bob/)
    assert.equal(writes.at(-1).body.text,'Synthetic reply 👍');assert.ok(writes.at(-1).body.quote.seq>0)
-   if(width>700&&!process.env.BOTS_EXPECT_NO_REPLY)await checkDesktopConversationNavigation(page,width,room,firstRow,tag)
+   if(width>700&&!outcome)await checkDesktopConversationNavigation(page,width,room,firstRow,tag)
    assert.deepEqual(errors,[])
   }catch(e){await page.screenshot({path:path.join(artifacts,tag+'-failure.png')});throw e}finally{await context.close()}
  }}finally{await browser.close()}

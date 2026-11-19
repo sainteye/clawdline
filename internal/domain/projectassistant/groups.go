@@ -309,6 +309,31 @@ type RoomState struct {
 	// MEMBER_TIMEOUT): their answers still land, as late ones. At most one
 	// per member: asking it again replaces its entry.
 	Overdue []RoomTicket `json:"overdue,omitempty"`
+	// Publications are the current round's successful room publication
+	// receipts, one per member. A zero sequence means completion was quiet.
+	Publications []RoomMemberPublication `json:"publications,omitempty"`
+}
+
+type RoomMemberPublication struct {
+	Member         BotKey `json:"member"`
+	JoinedRevision int64  `json:"joined_revision"`
+	TurnID         string `json:"turn_id"`
+	ReplySeq       int64  `json:"reply_seq,omitempty"`
+}
+
+// RecordRoomPublication is called only after the terminal transaction checks
+// the ticket and determines whether it will write a room line.
+func RecordRoomPublication(g Group, s RoomState, t RoomTicket, turnID string, replySeq int64) RoomState {
+	if t.Epoch != s.Epoch {
+		return s
+	}
+	out := slices.DeleteFunc(slices.Clone(s.Publications), func(p RoomMemberPublication) bool {
+		member, ok := g.Member(p.Member)
+		return !ok || member.JoinedRevision != p.JoinedRevision || t.Member == p.Member
+	})
+	s.Publications = append(out, RoomMemberPublication{Member: t.Member, JoinedRevision: t.JoinedRevision, TurnID: turnID, ReplySeq: replySeq})
+	s.Revision++
+	return s
 }
 
 // MarkOverdue: the room stops waiting for t; its answer may still land.
@@ -349,6 +374,7 @@ type RoomTurn struct {
 func (s RoomState) begin(late int64) (RoomState, RoomTurn) {
 	s.Epoch++
 	s.Running = s.Epoch
+	s.Publications = nil
 	s.Revision++
 	return s, RoomTurn{Epoch: s.Epoch, Late: late}
 }
@@ -430,6 +456,7 @@ func StopRoom(s RoomState, l GroupLimits) (RoomState, bool, error) {
 	s.StoppedAt = s.Epoch
 	s.Pending = 0
 	s.Overdue = nil
+	s.Publications = nil
 	s.LateTurns = l.MaxLateTurns
 	s.Revision++
 	return s, true, nil
@@ -549,6 +576,46 @@ type RoomActivity struct {
 	Member BotKey    `json:"member"`
 	TurnID string    `json:"turn_id"`
 	State  TurnState `json:"state"`
+}
+
+type RoomMemberOutcome struct {
+	Member       BotKey        `json:"member"`
+	Name         string        `json:"name"`
+	TurnID       string        `json:"turn_id"`
+	State        TurnState     `json:"state"`
+	Disposition  string        `json:"disposition,omitempty"`
+	ReplySeq     int64         `json:"reply_seq,omitempty"`
+	Late         bool          `json:"late,omitempty"`
+	FailureCode  ErrorCode     `json:"failure_code,omitempty"`
+	FailureField string        `json:"failure_field,omitempty"`
+	Attempts     []RoomAttempt `json:"attempts,omitempty"`
+}
+
+type RoomAttempt struct {
+	Ordinal           int          `json:"ordinal"`
+	Agent             Agent        `json:"agent"`
+	Stage             AttemptStage `json:"stage"`
+	Reason            string       `json:"reason,omitempty"`
+	Fallback          bool         `json:"fallback,omitempty"`
+	PrimaryRestReason string       `json:"primary_rest_reason,omitempty"`
+}
+
+// RoomTicketIsLate describes when the room stopped waiting, independently
+// of whether the member can still publish a reply.
+func (s RoomState) RoomTicketIsLate(t RoomTicket) bool {
+	_, overdue := s.overdue(t)
+	return t.Late || overdue
+}
+
+func (s RoomState) PublicationFor(t RoomTicket, turnID string) (RoomMemberPublication, bool) {
+	if s.Epoch == t.Epoch {
+		for _, p := range s.Publications {
+			if p.Member == t.Member && p.JoinedRevision == t.JoinedRevision && p.TurnID == turnID {
+				return p, true
+			}
+		}
+	}
+	return RoomMemberPublication{}, false
 }
 
 // RoomSpeaker is a member as the room names it: its key and current name,

@@ -268,6 +268,121 @@ func TestGroupHTTPUsesSQLiteAndPublishesScriptedMemberAuthors(t *testing.T) {
 		}
 	}
 }
+
+type roomFallbackProvider struct {
+	*routineHumanProvider
+	held *groupUIHeldProvider
+}
+
+func (p *roomFallbackProvider) Open(ctx context.Context, q app.OpenRequest, sink func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	if (q.Bot.Key.BotID != "alice" || q.Bot.Agent != pa.Codex) && p.held != nil {
+		return p.held.Open(ctx, q, sink)
+	}
+	session, err := p.routineHumanProvider.Open(ctx, q, sink)
+	if err != nil || q.Bot.Key.BotID != "alice" || q.Bot.Agent != pa.Codex {
+		return session, err
+	}
+	return session, &app.PreSendRefusal{Failure: &app.ProviderFailure{
+		Reason: app.ProviderUsageExhausted,
+		Cause:  &pa.Failure{Code: pa.Unsupported, Field: "fixture diagnostic must stay private"},
+	}}
+}
+
+func enableRoomFixtureFallback(t *testing.T, f *groupHTTPFixture) {
+	t.Helper()
+	bot := f.bots[0]
+	chain := []pa.Agent{pa.ClaudeCode}
+	_, _, err := f.service.Edit(t.Context(),
+		pa.Command{Key: bot.Key, Operation: pa.EditOperation, IdempotencyKey: "fixture-fallback"},
+		pa.EditBot{ExpectedVersion: bot.Version, Name: bot.Name, Appearance: bot.Appearance, FallbackAgents: &chain})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGroupHistoryPublishesOnlyVerifiedFallbackAndRoomResults(t *testing.T) {
+	native := &routineHumanProvider{}
+	held := &groupUIHeldProvider{Provider: native}
+	provider := &roomFallbackProvider{routineHumanProvider: native, held: held}
+	f := newGroupHTTPFixture(t, provider)
+	enableRoomFixtureFallback(t, f)
+	f.create(t)
+	const path = "/v1/project-assistants/rooms/groups/room?machine_id=machine&before_seq=0&page_size=100"
+	held.block()
+	defer held.release()
+	for i := range 2 {
+		status, body := f.request(t, http.MethodPost, "/v1/project-assistants/rooms/groups/room/messages", "person",
+			contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, fmt.Sprintf("fallback-%d", i)), Text: "@Alice review"})
+		if status != http.StatusOK {
+			t.Fatal(status, string(body))
+		}
+		if i == 0 {
+			var live contract.ProjectAssistantGroupHistoryResponse
+			seen := false
+			for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+				status, body = f.request(t, http.MethodGet, path, "reader", nil)
+				if err := json.Unmarshal(body, &live); err != nil || status != http.StatusOK {
+					t.Fatal(status, string(body), err)
+				}
+				if len(live.MemberOutcomes) == 1 && len(live.MemberOutcomes[0].Attempts) == 2 {
+					fallback := live.MemberOutcomes[0].Attempts[1]
+					if fallback.Stage == "sent" {
+						seen = fallback.Fallback && live.MemberOutcomes[0].Name == "Alice" &&
+							live.MemberOutcomes[0].Disposition == "" && len(live.Activity) == 1 && len(live.Lines) == 1
+						break
+					}
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if !seen {
+				t.Fatalf("in-flight fallback or unpublished room boundary was lost: %s", body)
+			}
+			held.release()
+		}
+		f.rooms.Idle()
+		status, body = f.request(t, http.MethodGet, path, "reader", nil)
+		var page contract.ProjectAssistantGroupHistoryResponse
+		if err := json.Unmarshal(body, &page); err != nil || status != http.StatusOK {
+			t.Fatal(status, string(body), err)
+		}
+		if len(page.MemberOutcomes) != 1 || len(page.Activity) != 0 || len(page.Lines) != 2*(i+1) {
+			t.Fatalf("unexpected room snapshot: %s", body)
+		}
+		got := page.MemberOutcomes[0]
+		if got.Name != "Alice" || got.Member.BotID != "alice" || got.State != "succeeded" || got.Disposition != "published" ||
+			got.ReplySeq != page.Lines[len(page.Lines)-1].Seq || len(got.Attempts) != 2-i {
+			t.Fatalf("unexpected publication evidence: %s", body)
+		}
+		alt := got.Attempts[len(got.Attempts)-1]
+		if alt.Agent != "claude" || !alt.Fallback || alt.Stage != "closed" {
+			t.Fatalf("alternate execution was not attributed: %+v", alt)
+		}
+		if i == 0 {
+			primary := got.Attempts[0]
+			if primary.Agent != "codex" || primary.Fallback || primary.Reason != "usage_limit" || primary.Stage != "closed" || alt.PrimaryRestReason != "" {
+				t.Fatalf("first pass did not preserve the refusal: %+v", got.Attempts)
+			}
+		} else if alt.PrimaryRestReason != "usage_limit" || alt.Ordinal != 1 {
+			t.Fatalf("resting primary was mistaken for a sent attempt: %+v", got.Attempts)
+		}
+		for _, private := range []string{"fixture diagnostic", "native_session_id", "login_profile", "carry_after_seq", "binding_id", "reset_at", "Your full toolkit"} {
+			if bytes.Contains(body, []byte(private)) {
+				t.Fatalf("room read disclosed %q: %s", private, body)
+			}
+		}
+	}
+	provider.mu.Lock()
+	if len(provider.sends) != 2 || len(provider.opens) != 3 {
+		t.Errorf("expected one actual send per room turn, got %d opens and %d sends", len(provider.opens), len(provider.sends))
+	}
+	provider.mu.Unlock()
+	f.beforePublish = func() { f.mu.Lock(); f.revision = "grant-two"; f.mu.Unlock() }
+	status, body := f.request(t, http.MethodGet, path, "reader", nil)
+	if status < 400 || bytes.Contains(body, []byte("member_outcomes")) || !bytes.Contains(body, []byte(string(pa.StaleVersion))) {
+		t.Fatal(status, string(body))
+	}
+}
+
 func TestGroupHTTPRefusesOtherProjectsReadOnlyAndRevokedGrants(t *testing.T) {
 	f := newGroupHTTPFixture(t)
 	g := f.create(t)

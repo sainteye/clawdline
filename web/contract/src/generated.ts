@@ -5928,6 +5928,12 @@ export interface ProjectAssistantGroupHistoryResponse {
   group: ProjectAssistantGroup
   has_more: boolean
   lines: ProjectAssistantRoomEntry[]
+
+  /**
+   * Latest authorized turn of each asked member in the current room round. No
+   * private conversation data is included.
+   */
+  member_outcomes?: ProjectAssistantRoomMemberOutcome[]
   next_before_seq: number
   room: ProjectAssistantRoomState
   source: ProjectAssistantSourceStatus
@@ -6871,6 +6877,24 @@ export interface ProjectAssistantRoomActivity {
   turn_id: string
 }
 
+export interface ProjectAssistantRoomAttempt {
+  agent: ProjectAssistantAgent
+
+  /**
+   * The source selected a different execution identity from the primary.
+   */
+  fallback?: boolean
+  ordinal: number
+
+  /**
+   * Observed reason for skipping the resting primary identity. This is not a reset
+   * time.
+   */
+  primary_rest_reason?: string
+  reason?: string
+  stage: string
+}
+
 export interface ProjectAssistantRoomEntry {
   /**
    * Source timestamp for new entries; old undated entries omit it.
@@ -6882,6 +6906,27 @@ export interface ProjectAssistantRoomEntry {
   reply_to_author?: ProjectAssistantBotKey
   seq: number
   text: string
+}
+
+export interface ProjectAssistantRoomMemberOutcome {
+  attempts?: ProjectAssistantRoomAttempt[]
+
+  /**
+   * Room publication receipt. Absent when the source cannot prove either result.
+   */
+  disposition?: string
+  failure_code?: string
+  failure_field?: string
+  late?: boolean
+  member: ProjectAssistantBotKey
+  name: string
+
+  /**
+   * Sequence of a published room reply. Absent for quiet or unverified completion.
+   */
+  reply_seq?: number
+  state: ProjectAssistantTurnState
+  turn_id: string
 }
 
 export interface ProjectAssistantRoomQuote {

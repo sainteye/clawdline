@@ -5118,9 +5118,13 @@ type ProjectAssistantGroupHistoryResponse struct {
 	Group           ProjectAssistantGroup          `json:"group"`
 	HasMore         bool                           `json:"has_more"`
 	Lines           []ProjectAssistantRoomEntry    `json:"lines"`
-	NextBeforeSeq   int64                          `json:"next_before_seq"`
-	Room            ProjectAssistantRoomState      `json:"room"`
-	Source          ProjectAssistantSourceStatus   `json:"source"`
+
+	// Latest authorized turn of each asked member in the current room round. No
+	// private conversation data is included.
+	MemberOutcomes []ProjectAssistantRoomMemberOutcome `json:"member_outcomes,omitempty"`
+	NextBeforeSeq  int64                               `json:"next_before_seq"`
+	Room           ProjectAssistantRoomState           `json:"room"`
+	Source         ProjectAssistantSourceStatus        `json:"source"`
 }
 
 type ProjectAssistantGroupListRequest struct {
@@ -5976,6 +5980,20 @@ type ProjectAssistantRoomActivity struct {
 	TurnID string                    `json:"turn_id"`
 }
 
+type ProjectAssistantRoomAttempt struct {
+	Agent ProjectAssistantAgent `json:"agent"`
+
+	// The source selected a different execution identity from the primary.
+	Fallback bool  `json:"fallback,omitempty"`
+	Ordinal  int64 `json:"ordinal"`
+
+	// Observed reason for skipping the resting primary identity. This is not a reset
+	// time.
+	PrimaryRestReason string `json:"primary_rest_reason,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	Stage             string `json:"stage"`
+}
+
 type ProjectAssistantRoomEntry struct {
 	// Source timestamp for new entries; old undated entries omit it.
 	At            string                     `json:"at,omitempty"`
@@ -5985,6 +6003,23 @@ type ProjectAssistantRoomEntry struct {
 	ReplyToAuthor *ProjectAssistantBotKey    `json:"reply_to_author,omitempty"`
 	Seq           int64                      `json:"seq"`
 	Text          string                     `json:"text"`
+}
+
+type ProjectAssistantRoomMemberOutcome struct {
+	Attempts []ProjectAssistantRoomAttempt `json:"attempts,omitempty"`
+
+	// Room publication receipt. Absent when the source cannot prove either result.
+	Disposition  string                 `json:"disposition,omitempty"`
+	FailureCode  string                 `json:"failure_code,omitempty"`
+	FailureField string                 `json:"failure_field,omitempty"`
+	Late         bool                   `json:"late,omitempty"`
+	Member       ProjectAssistantBotKey `json:"member"`
+	Name         string                 `json:"name"`
+
+	// Sequence of a published room reply. Absent for quiet or unverified completion.
+	ReplySeq int64                     `json:"reply_seq,omitempty"`
+	State    ProjectAssistantTurnState `json:"state"`
+	TurnID   string                    `json:"turn_id"`
 }
 
 type ProjectAssistantRoomQuote struct {

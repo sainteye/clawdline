@@ -231,6 +231,13 @@
             "$ref": "#/$defs/ProjectAssistantRoomActivity"
           },
           "description": "Current room tickets under actual member execution fences, from the same read snapshot."
+        },
+        "member_outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoomMemberOutcome"
+          },
+          "description": "Latest authorized turn of each asked member in the current room round. No private conversation data is included."
         }
       },
       "required": [
@@ -680,6 +687,76 @@
         "state"
       ],
       "additionalProperties": false
+    },
+    "ProjectAssistantRoomMemberOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "member": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "name": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantTurnState"
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["published", "quiet"],
+          "description": "Room publication receipt. Absent when the source cannot prove either result."
+        },
+        "reply_seq": {
+          "type": "integer",
+          "description": "Sequence of a published room reply. Absent for quiet or unverified completion."
+        },
+        "late": {
+          "type": "boolean"
+        },
+        "failure_code": {
+          "type": "string"
+        },
+        "failure_field": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoomAttempt"
+          }
+        }
+      },
+      "required": ["member", "name", "turn_id", "state"]
+    },
+    "ProjectAssistantRoomAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "type": "integer"
+        },
+        "agent": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantAgent"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "boolean",
+          "description": "The source selected a different execution identity from the primary."
+        },
+        "primary_rest_reason": {
+          "type": "string",
+          "description": "Observed reason for skipping the resting primary identity. This is not a reset time."
+        }
+      },
+      "required": ["ordinal", "agent", "stage"]
     },
     "ProjectAssistantRoomQuoteReference": {
       "type": "object",
