@@ -31,6 +31,7 @@ type DispatchPolicy struct {
 type Options struct {
 	// ServerLaunch is an optional owned-process fixture; production uses the source launcher.
 	ServerLaunch        func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
+	NativeHistory       app.NativeMaintenanceHistory
 	Assistants          *network.AssistantService
 	Network             *network.Service
 	NetworkTransport    func(context.Context, string) (network.Transport, error)
@@ -401,6 +402,10 @@ func (h *Host) Enable(ctx context.Context) error {
 			return failure(pa.ExecutionEffectUnknown, "owned_cleanup")
 		}
 	}
+	// Establish the read barrier before enabling any automatic restart work.
+	if err := h.nativeHistoryReady(ctx); err != nil {
+		return err
+	}
 	if pending || recoverPermissions {
 		cleanup, cancel := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
 		var err error
@@ -639,7 +644,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, NativeHistory: h.o.NativeHistory, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e
