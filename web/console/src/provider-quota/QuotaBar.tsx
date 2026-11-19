@@ -64,22 +64,23 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   const version = useMachineVersion()
   const [revision, setRevision] = useState(0)
   useEffect(() => onMachineChanged(() => setRevision((n) => n + 1)), [])
-  const showQuotas = (mobile ? preference.mobile && mobileListShown : preference.desktop) &&
+  const shown = (mobile ? preference.mobile && mobileListShown : preference.desktop) &&
     (version.apiLevel === undefined || version.apiLevel >= 28)
   const footer = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     const el = footer.current
-    if (!el) return
+    if (!shown || !el) return
     const measure = () => document.documentElement.style.setProperty("--quota-footer-height", `${el.getBoundingClientRect().height}px`)
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--quota-footer-height") }
-  }, [])
+  }, [shown])
 
+  if (!shown) return null
   return <footer ref={footer} className="provider-quota-bar" inert={inert}>
     {accessory}
-    {showQuotas && <QuotaReading key={JSON.stringify([quotaScope, revision])} machineName={machineName} offline={offline} mobile={mobile} />}
+    <QuotaReading key={JSON.stringify([quotaScope, revision])} machineName={machineName} offline={offline} mobile={mobile} />
   </footer>
 }
 
