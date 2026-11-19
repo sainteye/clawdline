@@ -63,7 +63,7 @@ func establishedHandoffJournal(t *testing.T, state string) *store.NativeMaintena
 }
 
 func TestHandoffHistoryGateBeforeFreshOpen(t *testing.T) {
-	for _, state := range []string{"clean", "pending", "unknown"} {
+	for _, state := range []string{"clean", "pending", "unknown", "failed", "cancelled", "completed"} {
 		t.Run(state, func(t *testing.T) {
 			ctx := context.Background()
 			f, probe := newHandoffSource(t)
@@ -81,19 +81,19 @@ func TestHandoffHistoryGateBeforeFreshOpen(t *testing.T) {
 				PrincipalID: "synthetic-person", ReaderID: "synthetic-reader", AuthorizationRevision: "synthetic-grant",
 				CLIVersion: "fixture", AdapterVersion: "fixture", Evidence: "isolated-http"}
 			if state != "clean" {
-				if _, added, err := journal.Reserve(ctx, intent); err != nil || !added {
+				// A different native ID may share the selected ACP partition.
+				intent.Binding.NativeSessionID = "previous-native-id"
+				if _, added, err := journal.Reserve(ctx, intent); !added || err != nil {
 					t.Fatal("could not reserve protected native history", added, err)
 				}
-				if state == "unknown" {
-					if _, err = journal.Resolve(ctx, app.NativeMaintenanceRecord{Intent: intent, State: app.NativeCompactionUnknown}); err != nil {
-						t.Fatal(err)
+				if state != "pending" {
+					terminal := app.NativeMaintenanceRecord{Intent: intent, State: app.NativeCompactionState(state)}
+					if terminal.State != app.NativeCompactionUnknown {
+						terminal.NativeID = "matched-terminal"
 					}
-				}
-				newGeneration := binding
-				newGeneration.Fence.BindingID = "another-binding"
-				newGeneration.Fence.Generation++
-				if err := store.NewNativeMaintenanceHistoryReader(f.s.cfg.Dir).CheckNativeHistory(ctx, newGeneration); pa.Code(err) != pa.ExecutionEffectUnknown {
-					t.Fatal("new execution generation lost the same-history barrier", err)
+					if got, err := journal.Resolve(ctx, terminal); err != nil || got != terminal {
+						t.Fatal("terminal evidence changed", got, err)
+					}
 				}
 			}
 			card := handoffPrepare(t, f, "prepare-history")
@@ -112,7 +112,7 @@ func TestHandoffHistoryGateBeforeFreshOpen(t *testing.T) {
 			}
 			probe.mu.Lock()
 			defer probe.mu.Unlock()
-			if state == "clean" {
+			if state == "clean" || state == "completed" {
 				if turn.State != pa.TurnSucceeded || len(probe.opens) != 2 || probe.opens[1] || len(probe.opening) != 2 || probe.opening[1] == "" {
 					t.Fatal("clean handoff did not open fresh with quoted history", turn, probe.opens, probe.opening)
 				}
