@@ -17,7 +17,7 @@ const sessionBoardSchema = `
 CREATE TABLE IF NOT EXISTS session_boards (
  id TEXT PRIMARY KEY, project TEXT NOT NULL, name TEXT NOT NULL, purpose TEXT NOT NULL,
  lead TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', archived_at INTEGER NOT NULL DEFAULT 0,
- latest INTEGER NOT NULL DEFAULT 0, create_digest TEXT NOT NULL
+ latest INTEGER NOT NULL DEFAULT 0, create_digest TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS session_board_members (
  board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
@@ -39,6 +39,15 @@ type sessionBoardQuery interface {
 func openSessionBoards(db *sql.DB) error {
 	if _, err := db.Exec(sessionBoardSchema); err != nil {
 		return err
+	}
+	hasCreatedAt, err := hasColumn(db, "session_boards", "created_at")
+	if err != nil {
+		return err
+	}
+	if !hasCreatedAt {
+		if _, err := db.Exec("ALTER TABLE session_boards ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
 	}
 	for _, table := range []string{"session_board_members", "session_board_posts"} {
 		has, err := hasColumn(db, table, "persona")
@@ -96,7 +105,12 @@ func (s *Store) SessionBoards(ctx context.Context, project, actor string) ([]sb.
 		query += " WHERE project=? AND (archived_at=0 OR EXISTS (SELECT 1 FROM session_board_members m WHERE m.board=session_boards.id AND m.actor=?))"
 		args = append(args, project, actor)
 	}
-	rows, err := tx.QueryContext(ctx, query+" ORDER BY archived_at ASC, name, id", args...)
+	// Old boards have no creation timestamp. Their newest post still supplies
+	// activity, and rowid preserves insertion order when neither has a date.
+	rows, err := tx.QueryContext(ctx, query+` ORDER BY archived_at>0,
+		CASE WHEN archived_at>0 THEN archived_at ELSE max(created_at,COALESCE((
+			SELECT at FROM session_board_posts WHERE board=session_boards.id AND seq=session_boards.latest
+		),0)) END DESC, rowid DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +140,45 @@ func (s *Store) SessionBoards(ctx context.Context, project, actor string) ([]sb.
 		}
 	}
 	return out, tx.Commit()
+}
+
+// ArchiveInactiveSessionBoard confirms the two witnessed scans still name
+// the same roster and message frontier before closing the board. Keep a
+// captured handoff intact while the broker resolves its receiving Session.
+func (s *Store) ArchiveInactiveSessionBoard(ctx context.Context, board sb.Board, now time.Time) error {
+	return s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		current, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", board.ID))
+		if errors.Is(err, sb.ErrMissing) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if current.ArchivedAt > 0 || current.Latest != board.Latest {
+			return 0, nil
+		}
+		members, err := sessionBoardMembers(ctx, tx, board.ID)
+		if err != nil {
+			return 0, err
+		}
+		if !sb.SameMembers(members, board.Members) {
+			return 0, nil
+		}
+
+		var pending bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM broker_handoffs h
+			WHERE h.state IN ('opening','delivered') AND CASE WHEN json_valid(h.record) THEN
+				COALESCE(json_extract(h.record,'$.board_transferred_at'),0)=0
+				AND EXISTS (SELECT 1 FROM json_each(h.record,'$.session_boards.boards') WHERE value=?)
+			ELSE 1 END
+		)`, board.ID).Scan(&pending)
+		if err != nil || pending {
+			return 0, err
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE session_boards SET archived_at=? WHERE id=?", now.Unix(), board.ID)
+		return 1, err
+	})
 }
 
 // ActiveSessionBoardIDs snapshots a member's boards in this Project before a handoff opens.
@@ -344,8 +397,8 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		if n >= sb.MaxBoards {
 			return sb.Result{}, sb.ErrFull
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO session_boards(id,project,name,purpose,lead,create_digest) VALUES(?,?,?,?,?,?)",
-			id, project, c.Name, c.Text, lead.ID, digest); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO session_boards(id,project,name,purpose,lead,create_digest,created_at) VALUES(?,?,?,?,?,?,?)",
+			id, project, c.Name, c.Text, lead.ID, digest, now.Unix()); err != nil {
 			return sb.Result{}, err
 		}
 		err = insertSessionBoardMembers(ctx, tx, id, nil, append([]sb.Actor{lead}, additions...))

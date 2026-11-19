@@ -266,3 +266,52 @@ func TestSessionBoardRosterDistinguishesMembershipFromTheSessionList(t *testing.
 	list.mu.Unlock()
 	check("?board="+board, "")
 }
+
+func TestSessionBoardArchivesOnlyAfterTwoCompleteReadingsWithoutListedMembers(t *testing.T) {
+	s, pane, _ := sessionItemServer(t)
+	ctx := t.Context()
+	project := projects.ProjectID(pane.s.CWD)
+	lead := sb.Actor{ID: "claude:lead", Label: "Lead"}
+	now := time.Now()
+	created, err := s.store.ChangeSessionBoard(ctx, project, lead, sb.Actor{},
+		sb.Command{Action: "create", Name: "Review", Text: "Historical work"}, "setup", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var previous map[string]sb.Board
+	check := func(wire sessionsSnapshotWire, wantArchived bool) {
+		t.Helper()
+		boards, err := s.store.SessionBoards(ctx, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous, err = s.archiveInactiveSessionBoards(ctx, previous, boards, wire, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := s.store.SessionBoardPage(ctx, "", "", created.ID, 0, 0)
+		if err != nil || (page.Board.ArchivedAt != 0) != wantArchived {
+			t.Fatalf("archived_at = %d, want archived %t, error %v", page.Board.ArchivedAt, wantArchived, err)
+		}
+	}
+	empty := sessionsSnapshotWire{Scan: contract.Scan{EmptyAuthoritative: true, Complete: true}}
+	present := sessionsSnapshotWire{Scan: empty.Scan, Sessions: []sessionRowWire{{SessionRow: contract.SessionRow{
+		SessionID: "lead", Assistant: "claude", State: "idle",
+		Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent},
+	}}}}
+	check(present, false)
+	check(present, false)
+	check(empty, false)
+	check(sessionsSnapshotWire{}, false)
+	check(empty, false)
+	check(sessionsSnapshotWire{Scan: contract.Scan{Sources: []contract.ScanSource{
+		{Source: "tmux", Complete: true}, {Source: "iterm", Disabled: "setting"},
+	}}}, false)
+	check(empty, false)
+	unknown := present
+	unknown.Sessions[0].SessionID = ""
+	unknown.Sessions[0].Identity = contract.IdentityBindingUnreadable
+	check(unknown, false)
+	check(empty, false)
+	check(empty, true)
+}

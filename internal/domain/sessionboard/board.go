@@ -4,6 +4,7 @@ package sessionboard
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -42,6 +43,11 @@ type Actor struct {
 	Label    string   `json:"label"`
 	Persona  string   `json:"persona,omitempty"`
 	Presence Presence `json:"presence,omitempty"`
+}
+
+// SameMembers compares two rosters in store order by their stable actor IDs.
+func SameMembers(a, b []Actor) bool {
+	return slices.EqualFunc(a, b, func(left, right Actor) bool { return left.ID == right.ID })
 }
 
 type Board struct {

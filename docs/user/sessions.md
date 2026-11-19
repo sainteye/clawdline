@@ -313,10 +313,14 @@ closing. The close cannot be forced.
 The live Session list frames visible members together. Open the frame to
 read or reply. A Session that joins multiple boards appears under the first
 active board in name order, and all its boards are available from the board
-picker. On a phone the discussion opens full screen.
+picker. The picker puts the boards with the newest messages first. A new
+board with no messages uses its creation time. On a phone the discussion
+opens full screen.
 
-Ending a board removes the frame from the Session list and keeps its
-discussion read-only for 30 days. The archive cleanup removes the board's
+If two consecutive complete Session scans find no enrolled Session,
+Clawdline archives the board. Idle Sessions still count. A source that was
+not read or a pending handoff keeps the board open. Ending a board removes its
+frame from the Session list and keeps its discussion read-only for 30 days. The archive cleanup removes the board's
 own records. A board belongs to one machine and one Project. The Cloud
 console opens it on that machine through the paired device's existing
 read and write permissions.

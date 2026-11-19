@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -294,7 +295,10 @@ func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
 	if !slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 }) {
 		return
 	}
-	snapshot := s.lists().snapshot()
+	setSessionBoardPresence(s.lists().snapshot(), boards)
+}
+
+func setSessionBoardPresence(snapshot sessionsSnapshotWire, boards []sb.Board) {
 	complete := cloudListComplete(snapshot.Scan)
 	present := make(map[string]sb.Presence, len(snapshot.Sessions))
 	unbound := make(map[string]bool)
@@ -329,6 +333,64 @@ func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
 			member.Presence = presence
 		}
 	}
+}
+
+// Use the scheduler cadence and the authoritative Session list producer. Two
+// distinct complete readings keep a brief terminal transition from archiving
+// a board. An intervening inconclusive reading clears the previous evidence.
+func (s *Server) maintainSessionBoardActivity(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	var previous map[string]sb.Board
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			next, err := s.checkInactiveSessionBoards(ctx, previous, now)
+			if err != nil && ctx.Err() == nil {
+				log.Printf("session boards: pre-archive activity check failed: %v", err)
+			}
+			previous = next
+		}
+	}
+}
+
+func (s *Server) checkInactiveSessionBoards(ctx context.Context, previous map[string]sb.Board, now time.Time) (map[string]sb.Board, error) {
+	boards, err := s.store.SessionBoards(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	boards = slices.DeleteFunc(boards, func(b sb.Board) bool { return b.ArchivedAt > 0 })
+	if len(boards) == 0 {
+		return nil, nil
+	}
+	snapshot, err := s.lists().sessions.since(time.Now())
+	if err != nil || ctx.Err() != nil {
+		return nil, errors.Join(err, ctx.Err())
+	}
+	return s.archiveInactiveSessionBoards(ctx, previous, boards, snapshot, now)
+}
+
+func (s *Server) archiveInactiveSessionBoards(ctx context.Context, previous map[string]sb.Board, boards []sb.Board, snapshot sessionsSnapshotWire, now time.Time) (map[string]sb.Board, error) {
+	// A disabled or unreadable source can still hold a board member. Only
+	// the complete inventory authorizes an archive.
+	if !snapshot.Scan.Complete {
+		return nil, nil
+	}
+	setSessionBoardPresence(snapshot, boards)
+	absent := make(map[string]sb.Board)
+	var failures error
+	for _, board := range boards {
+		if slices.ContainsFunc(board.Members, func(member sb.Actor) bool { return member.Presence != sb.NotListed }) {
+			continue
+		}
+		absent[board.ID] = board
+		if before, ok := previous[board.ID]; ok && before.Latest == board.Latest && sb.SameMembers(before.Members, board.Members) {
+			failures = errors.Join(failures, s.store.ArchiveInactiveSessionBoard(ctx, board, now))
+		}
+	}
+	return absent, failures
 }
 
 func writeSessionBoardError(w http.ResponseWriter, err error) {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -240,4 +241,102 @@ func TestSessionBoardInboxPagesOnlyOtherAuthorsDirectReplies(t *testing.T) {
 	if _, err := st.SessionBoardInbox(ctx, project, lead.ID, board, 0, 0); !errors.Is(err, sb.ErrDenied) {
 		t.Fatalf("left member still has an inbox: %v", err)
 	}
+}
+
+func TestSessionBoardsShowRecentActivityBeforeArchives(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	now := time.Unix(1000, 0)
+	change := func(cmd sb.Command, key string, delta time.Duration) string {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, cmd, key, now.Add(delta))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ID
+	}
+	old := change(sb.Command{Action: "create", Name: "Alpha", Text: "Old board"}, "old", 0)
+	newer := change(sb.Command{Action: "create", Name: "Zulu", Text: "New board"}, "newer", time.Second)
+	archive := change(sb.Command{Action: "create", Name: "Latest", Text: "Archived board"}, "archive", 2*time.Second)
+	change(sb.Command{Action: "archive", Board: archive}, "", 3*time.Second)
+	check := func(want []string) {
+		t.Helper()
+		boards, err := st.SessionBoards(ctx, "project", lead.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, board := range boards {
+			got = append(got, board.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("board order = %v, want %v", got, want)
+		}
+	}
+	check([]string{newer, old, archive})
+	change(sb.Command{Action: "post", Board: old, Text: "Recent work"}, "post", 4*time.Second)
+	check([]string{old, newer, archive})
+}
+
+func TestArchiveInactiveSessionBoardRechecksTheRosterAndHandoff(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(1000, 0)
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	newMember := sb.Actor{ID: "claude:joined", Label: "New member"}
+	change := func(actor sb.Actor, cmd sb.Command) string {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, "project", actor, sb.Actor{}, cmd, "test", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ID
+	}
+	id := change(lead, sb.Command{Action: "create", Name: "Stale", Text: "Shared work"})
+	read := func() sb.Board {
+		t.Helper()
+		page, err := st.SessionBoardPage(ctx, "", "", id, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page.Board
+	}
+	tryArchive := func(witness sb.Board, archived bool) {
+		t.Helper()
+		if err := st.ArchiveInactiveSessionBoard(ctx, witness, now); err != nil {
+			t.Fatal(err)
+		}
+		if got := read().ArchivedAt > 0; got != archived {
+			t.Fatalf("board archived = %t, want %t", got, archived)
+		}
+	}
+	original := read()
+	change(newMember, sb.Command{Action: "join", Board: id})
+	tryArchive(original, false)
+	beforePost := read()
+	change(lead, sb.Command{Action: "post", Board: id, Text: "Do not race this post"})
+	tryArchive(beforePost, false)
+	const handoffID = "00000000-0000-4000-8000-000000000001"
+	record := json.RawMessage(`{"session_boards":{"boards":["` + id + `"]}}`)
+	if err := st.CreateOpened(ctx, TableHandoffs, Opened{ID: handoffID, State: "delivered", Record: record, CreatedAt: now, UpdatedAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	witness := read()
+	tryArchive(witness, false)
+	if _, err := st.UpdateOpened(ctx, TableHandoffs, handoffID, func(h Opened) (*Opened, []Event, error) {
+		h.Record = json.RawMessage(`{"board_transferred_at":1000,"session_boards":{"boards":["` + id + `"]}}`)
+		return &h, nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tryArchive(witness, true)
 }

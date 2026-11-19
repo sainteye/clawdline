@@ -256,7 +256,10 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
   const candidateMap = new Map(leadOptions.map(actor => [actor.id, actor]))
   const personas = usePersonas(source.machine)
   const assigned = new Map<string, Board>()
-  for (const b of boards) {
+  // Only the picker follows recent activity. Keep a multiply enrolled Session
+  // under the same first board in name order as new messages arrive.
+  const byName = [...boards].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.id.localeCompare(b.id))
+  for (const b of byName) {
     if (b.archived_at) continue
     for (const member of b.members ?? []) if (!assigned.has(member.id)) assigned.set(member.id, b)
   }

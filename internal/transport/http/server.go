@@ -921,6 +921,7 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	// Reference-image files no row names: swept at Open, then on this clock.
 	// Events past their retention: pruned now, then on the same clock.
 	go s.store.MaintainEvery(ctx, store.ReferenceImageSweepIntervalLimit)
+	go s.maintainSessionBoardActivity(ctx, tick)
 	// Whether this machine trails the cloud's latest build: read now and on
 	// its own clock, so GET /v1/update never waits on the network.
 	go s.runUpdateCheck(ctx)
