@@ -43,6 +43,7 @@ type GroupHistoryPage struct {
 	Group          pa.Group
 	Room           pa.RoomState
 	Lines          []pa.RoomEntry
+	Reactions      map[int64][]pa.ReactionActor
 	Activity       []pa.RoomActivity
 	MemberOutcomes []pa.RoomMemberOutcome
 }
@@ -193,7 +194,8 @@ func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupH
 	if err != nil {
 		return GroupHistoryPage{}, err
 	}
-	if _, err = s.authorize(ctx, q.Key, false); err != nil {
+	a, err := s.authorize(ctx, q.Key, false)
+	if err != nil {
 		return GroupHistoryPage{}, err
 	}
 	if err = pa.CheckPage(q.PageSize, false); err != nil {
@@ -202,7 +204,18 @@ func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupH
 	if q.BeforeSeq < 0 {
 		return GroupHistoryPage{}, serviceFailure(pa.Invalid, "before_seq")
 	}
-	return rooms.store.History(ctx, q.Key, q.BeforeSeq, q.PageSize)
+	page, err := rooms.store.History(ctx, q.Key, q.BeforeSeq, q.PageSize)
+	if err != nil {
+		return GroupHistoryPage{}, err
+	}
+	reader := pa.HumanReactionID(a.ReaderID)
+	for _, reactions := range page.Reactions {
+		for j := range reactions {
+			reaction := &reactions[j]
+			reaction.Own = reaction.Kind == "human" && reaction.ID == reader
+		}
+	}
+	return page, nil
 }
 
 func (s *Service) GroupPreviews(ctx context.Context, machine string, byteBudget int) ([]pa.GroupPreview, error) {

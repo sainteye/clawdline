@@ -134,7 +134,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 58 {
+	if len(out) != 59 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -331,7 +331,7 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				changed["command"].(map[string]any)["credential"] = "forged"
 				mutations = append(mutations, changed)
 			}
-			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq"} {
+			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version"} {
 				if _, present := base.genLookup(path); !present {
 					continue
 				}

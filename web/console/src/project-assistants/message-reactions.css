@@ -22,3 +22,24 @@
  .project-assistants.pa-message-menu-root .pa-message-menu>button{min-height:36px;padding:6px 10px}
  .project-assistants.pa-message-menu-root .pa-reaction-palette button{min-height:32px;font-size:20px}
 }
+
+.project-assistants .pa-room-message>.pa-message-controls{position:absolute;inset-inline-start:calc(100% + 4px);top:0;opacity:0;transition:opacity 120ms ease}
+.project-assistants .pa-room-person>.pa-message-controls{inset-inline-start:auto;inset-inline-end:calc(100% + 4px)}
+.project-assistants .pa-room-message>.pa-message-controls button{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:12px;background:transparent;color:var(--pa-dim)}
+.project-assistants .pa-room-message>.pa-message-controls button:hover{background:var(--pa-card)}
+.project-assistants .pa-room-message>.pa-message-controls:has(button:focus-visible),
+.project-assistants .pa-room-message:focus-visible>.pa-message-controls{opacity:1}
+.project-assistants .pa-room-person>.pa-reactions{justify-content:flex-end}
+@media(hover:hover) and (pointer:fine){
+ .project-assistants .pa-room-message:hover>.pa-message-controls,
+ .project-assistants .pa-room-message>.pa-message-controls:has([aria-expanded=true]){opacity:1}
+ .project-assistants .pa-room-message>.pa-message-controls::before{content:"";position:absolute;inset-inline-end:100%;top:0;width:4px;height:100%}
+ .project-assistants .pa-room-person>.pa-message-controls::before{inset-inline-end:auto;inset-inline-start:100%}
+ .project-assistants .pa-room-message>.pa-message-controls button{width:32px;height:32px}
+}
+@media(pointer:coarse){
+ .project-assistants .pa-room-bubble{touch-action:pan-y pinch-zoom;-webkit-touch-callout:none;user-select:none}
+}
+@media(prefers-reduced-motion:reduce){
+ .project-assistants .pa-room-message>.pa-message-controls{transition:none}
+}

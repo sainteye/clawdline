@@ -77,7 +77,11 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 		}
 		token, _ := ctx.Value(groupPersonContext{}).(string)
 		source := pa.SourceStatus{MachineID: key.MachineID, State: pa.SourceOnline, Fresh: true, Readable: true, Writable: token != "reader", Access: pa.Interactive}
-		return app.Authority{PrincipalID: "person", ReaderID: "person", AuthorizationRevision: revision, Source: source, Feature: pa.FeatureState{Enabled: true}}, nil
+		actor := "person"
+		if token == "other-person" {
+			actor = token
+		}
+		return app.Authority{PrincipalID: actor, ReaderID: actor, AuthorizationRevision: revision, Source: source, Feature: pa.FeatureState{Enabled: true}}, nil
 	}
 	background := func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		a, e := authorize(ctx, key, true)
@@ -122,7 +126,7 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 	}})
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if token != "person" && token != "reader" {
+		if token != "person" && token != "reader" && token != "other-person" {
 			paWriteHTTPFailure(w, paHTTPFailure(pa.Unpaired, "device"))
 			return
 		}
@@ -463,5 +467,100 @@ func TestGroupHistoryPacksWholeRecentLinesWithAnExactContinuation(t *testing.T) 
 	page.Lines = []contract.ProjectAssistantRoomEntry{{Seq: 1, Kind: "member", Text: strings.Repeat(text, 20)}}
 	if _, err = paPackGroupHistory(page, func(context.Context) error { return nil }); pa.Code(err) != pa.CapacityFull {
 		t.Fatal("oversized single line was not refused", err)
+	}
+}
+
+func TestGroupReactionsKeepReaderIdentityAndRecoverLostPublication(t *testing.T) {
+	f := newGroupHTTPFixture(t)
+	group := f.create(t)
+	const room = "/v1/project-assistants/rooms/groups/room"
+	send := contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, "reaction-topic"), Text: "A group message"}
+	if status, raw := f.request(t, http.MethodPost, room+"/messages", "person", send); status != http.StatusOK {
+		t.Fatalf("send: %d %s", status, raw)
+	}
+	f.rooms.Idle()
+
+	read := func(token string) contract.ProjectAssistantGroupHistoryResponse {
+		t.Helper()
+		status, raw := f.request(t, http.MethodGet, room+"?machine_id=machine&before_seq=2&page_size=1", token, nil)
+		var page contract.ProjectAssistantGroupHistoryResponse
+		if err := json.Unmarshal(raw, &page); status != http.StatusOK || err != nil || len(page.Lines) != 1 {
+			t.Fatalf("history: %d %s (%v)", status, raw, err)
+		}
+		return page
+	}
+	before := read("person")
+	q := contract.ProjectAssistantGroupReactRequest{
+		Command: f.command(pa.ReactOperation, "first-reaction"), ConversationID: group.ConversationID,
+		GroupVersion: group.Version, MessageSeq: 1, Emoji: "👍", Present: true,
+	}
+	react := func(token string, request contract.ProjectAssistantGroupReactRequest, want string) []byte {
+		t.Helper()
+		status, raw := f.request(t, http.MethodPost, room+"/reactions", token, request)
+		if want == "" {
+			if status != http.StatusOK {
+				t.Fatalf("reaction: %d %s", status, raw)
+			}
+		} else if status < 400 || !bytes.Contains(raw, []byte(`"code":"`+want+`"`)) {
+			t.Fatalf("wanted %s: %d %s", want, status, raw)
+		}
+		return raw
+	}
+	react("reader", q, "pa_read_only")
+	wrong := q
+	wrong.ConversationID = "other-room"
+	react("person", wrong, "pa_scope_denied")
+	wrong = q
+	wrong.GroupVersion++
+	react("person", wrong, "pa_stale_version")
+	wrong = q
+	wrong.MessageSeq = 1000
+	react("person", wrong, "pa_not_found")
+
+	f.beforePublish = func() {
+		f.mu.Lock()
+		f.revoked = true
+		f.mu.Unlock()
+	}
+	react("person", q, "pa_outcome_unknown")
+	react("person", q, "pa_revoked")
+	f.beforePublish = nil
+	f.mu.Lock()
+	f.revoked = false
+	f.revision = "grant-after-repair"
+	f.mu.Unlock()
+	receipt := react("person", q, "")
+	if !bytes.Equal(receipt, react("person", q, "")) {
+		t.Fatal("recovered operation changed receipt")
+	}
+	other := q
+	other.Command = f.command(pa.ReactOperation, "second-actor")
+	other.Emoji = "🎉"
+	react("other-person", other, "")
+	after := read("person")
+	reactions := after.Lines[0].Reactions
+	if len(reactions) != 2 || after.Room != before.Room || after.Group.Version != before.Group.Version || after.Lines[0].Text != before.Lines[0].Text {
+		t.Fatalf("reaction changed content or room state: %+v", after)
+	}
+	for _, v := range reactions {
+		if v.Revision != 1 || len(v.Emojis) != 1 || v.Own != (v.Emojis[0] == "👍") {
+			t.Fatalf("reader projection: %+v", reactions)
+		}
+	}
+	for _, v := range read("other-person").Lines[0].Reactions {
+		if v.Own != (v.Emojis[0] == "🎉") {
+			t.Fatalf("other reader projection: %+v", v)
+		}
+	}
+	q.Present = false
+	react("person", q, "pa_idempotency_conflict")
+	q.Command = f.command(pa.ReactOperation, "remove-reaction")
+	react("person", q, "pa_stale_version")
+	q.ExpectedRevision = 1
+	react("person", q, "")
+	for _, v := range read("person").Lines[0].Reactions {
+		if v.Own && (v.Revision != 2 || len(v.Emojis) != 0) {
+			t.Fatalf("removal reset the actor revision: %+v", v)
+		}
 	}
 }

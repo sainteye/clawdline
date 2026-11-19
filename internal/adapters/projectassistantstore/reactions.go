@@ -7,7 +7,6 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	"slices"
 	"time"
 )
 
@@ -75,7 +74,7 @@ func (s *Store) React(ctx context.Context, w app.ReactionWrite) (pa.Receipt, err
 	if target == nil {
 		return pa.Receipt{}, failure(pa.NotFound, "reaction_message")
 	}
-	if !pa.Reactable(*target) {
+	if !pa.Reactable(*target) || withdrawnTurn(a.Turns[target.TurnID]) {
 		return pa.Receipt{}, failure(pa.Invalid, "reaction_message")
 	}
 	if w.Actor.ID == "" || (w.Actor.Kind != "human" && w.Actor.Kind != "bot") {
@@ -112,27 +111,15 @@ func (s *Store) React(ctx context.Context, w app.ReactionWrite) (pa.Receipt, err
 			break
 		}
 	}
-	if w.NativeTurnID == "" && actor.Revision != w.ExpectedRevision {
-		return pa.Receipt{}, failure(pa.StaleVersion, "reaction_revision")
-	}
 	if actor.Kind == "bot" {
 		actor.Name = a.Bot.Name
 		appearance := a.Bot.Appearance
 		actor.Appearance = &appearance
 		actor.Emojis = []string{emoji}
-	} else {
-		at := slices.Index(actor.Emojis, emoji)
-		if w.Present && at < 0 {
-			if len(actor.Emojis) >= pa.MaxHumanReactions {
-				return pa.Receipt{}, failure(pa.CapacityFull, "human_reactions")
-			}
-			actor.Emojis = append(actor.Emojis, emoji)
-		}
-		if !w.Present && at >= 0 {
-			actor.Emojis = slices.Delete(actor.Emojis, at, at+1)
-		}
+		actor.Revision++
+	} else if actor, err = pa.ApplyHumanReaction(actor, emoji, w.Present, w.ExpectedRevision); err != nil {
+		return pa.Receipt{}, err
 	}
-	actor.Revision++
 	actor.Own = false
 	raw, err := json.Marshal(actor)
 	if err != nil {

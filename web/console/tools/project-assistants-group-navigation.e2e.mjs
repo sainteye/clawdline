@@ -37,6 +37,99 @@ const settle=locator=>locator.evaluate(async el=>{
  await Promise.allSettled(el.getAnimations().map(animation=>animation.finished))
 })
 
+async function openRoomActions(page,row) {
+ await row.focus()
+ await row.press("Shift+F10")
+ const menu=page.locator(".pa-message-menu:not([data-closing])")
+ await menu.waitFor()
+ return menu
+}
+
+async function verifyRoomReactions({page,room,row,context,mode,engine,width,language,click,name,roomName}) {
+ const zh=language!=="en", reply=zh?"回覆":"Reply"
+ const seq=await row.getAttribute("data-room-seq")
+ const picker=menu=>menu.locator(".pa-reaction-palette button").first()
+ const chip=currentRoom=>currentRoom.locator(`[data-room-seq="${seq}"] .pa-reaction-own`)
+ if(mode==="old"||mode==="read"){
+  const menu=await openRoomActions(page,row)
+  assert.equal(await picker(menu).count(),0)
+  assert.equal(await menu.getByRole("menuitem",{name:reply,exact:true}).count(),0)
+  await page.keyboard.press("Escape")
+  return {writes:false}
+ }
+ if(width===390&&engine==="chromium"){
+  const bubble=row.locator(".pa-room-bubble")
+  await bubble.scrollIntoViewIfNeeded()
+  const cdp=await context.newCDPSession(page)
+  const touch=(type,x,y)=>cdp.send("Input.dispatchTouchEvent",{type,touchPoints:type==="touchEnd"?[]:[{x,y}]})
+  let box=await bubble.boundingBox(),x=Math.floor(box.x+box.width/2),y=Math.floor(box.y+box.height/2)
+  const scroll=room.locator(".pa-chat-scroll")
+  const top=await scroll.evaluate(el=>el.scrollTop)
+  const delta=top>80?78:-78
+  await touch("touchStart",x,y)
+  for(const step of [0.25,0.5,0.75,1])await touch("touchMove",x,y+delta*step)
+  await touch("touchEnd")
+  await page.waitForFunction(before=>Math.abs(document.querySelector(".pa-room-layout .pa-chat-scroll").scrollTop-before)>8,top)
+  await page.waitForTimeout(475)
+  assert.equal(await page.locator(".pa-message-menu:not([data-closing])").count(),0,"scroll opened message actions")
+  await bubble.scrollIntoViewIfNeeded()
+  box=await bubble.boundingBox()
+  x=Math.floor(box.x+box.width/2);y=Math.floor(box.y+box.height/2)
+  assert.equal(await row.locator(".pa-message-controls").evaluate(el=>getComputedStyle(el).opacity),"0")
+  await touch("touchStart",x,y)
+  await page.locator(".pa-message-menu:not([data-closing])").waitFor()
+  await touch("touchEnd")
+  await cdp.detach()
+ }else if(width>390){
+  const bubble=row.locator(".pa-room-bubble")
+  await bubble.hover()
+  await page.waitForFunction(seq=>getComputedStyle(document.querySelector(`[data-room-seq="${seq}"] .pa-message-controls`)).opacity==="1",seq)
+  await bubble.click({button:"right"})
+ }else await openRoomActions(page,row)
+ let menu=page.locator(".pa-message-menu:not([data-closing])")
+ await menu.waitFor()
+ assert.equal(await menu.locator(":scope > :first-child").getAttribute("class"),"pa-reaction-palette")
+ await page.keyboard.press("Escape")
+ await page.waitForFunction(seq=>document.activeElement===document.querySelector(`[data-room-seq="${seq}"] .pa-message-more`),seq)
+ menu=await openRoomActions(page,row)
+ const first=picker(menu),firstLabel=await first.getAttribute("aria-label")
+ await page.waitForFunction(label=>document.activeElement?.getAttribute("aria-label")===label,firstLabel)
+ await page.keyboard.press("ArrowRight")
+ assert.equal(await page.evaluate(()=>document.activeElement.textContent),"❤️")
+ await page.screenshot({path:path.join(artifacts,name+"-room-message-actions.png")})
+ await click(first)
+ await row.locator('.pa-reactions[data-reaction-state="confirmed"]').waitFor()
+ assert.equal(await chip(room).count(),1)
+ const second=await context.newPage()
+ try{
+  await second.goto(page.url())
+  const entry=second.locator("[data-group-key]").filter({has:second.getByText(roomName,{exact:true})})
+  await (width===390?entry.tap():entry.click())
+  const reopened=second.locator(".pa-room-layout")
+  await chip(reopened).waitFor()
+  await (width===390?chip(reopened).tap():chip(reopened).click())
+  await chip(reopened).waitFor({state:"detached"})
+  await second.reload()
+  const again=second.locator("[data-group-key]").filter({has:second.getByText(roomName,{exact:true})})
+  await (width===390?again.tap():again.click())
+  await reopened.locator(`[data-room-seq="${seq}"]`).waitFor()
+  assert.equal(await chip(reopened).count(),0,"reaction returned after removal and reload")
+  const onRevoke=await openRoomActions(second,reopened.locator(`[data-room-seq="${seq}"]`))
+  const revokedPicker=picker(onRevoke)
+  await revokedPicker.waitFor()
+  const calls=traffic.length
+  await revokedPicker.evaluate(button=>{
+   window.navigationFixture.revoke()
+   button.click()
+  })
+  assert.equal(traffic.slice(calls).filter(r=>r.word==="project-assistants.group-react"||r.path.endsWith("/reactions")).length,0)
+ }finally{await second.close()}
+ // Refresh the original tab to observe the other tab's confirmed removal.
+ await page.evaluate(()=>window.dispatchEvent(new Event("focus")))
+ await chip(room).waitFor({state:"detached"})
+ return {savedAndRemoved:true,revoked:false,keyboard:true,touchHold:width===390&&engine==="chromium"}
+}
+
 async function verifyInspectorMotion(page,trigger,panel,close,kind){
  const originalTrigger=await trigger.elementHandle()
  const snapshot=async(open,reduce)=>originalTrigger.evaluate(async(button,{kind,open,reduce})=>{
@@ -235,9 +328,16 @@ try{
      const text=room.locator('textarea'),quote=mode!=='read'&&mode!=='old'
      const memberToggle=baseline?room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}):room.locator('.pa-room-identity')
      const membersPanel=room.locator('.pa-room-members'),closeMembers=membersPanel.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true})
-     if(mode==='old')assert.equal(await room.locator('.pa-room-reply').count(),0,'API87 source exposed API88 quote actions')
-     if(mode==='read')assert.equal(await room.locator('.pa-room-reply').first().isDisabled(),true)
-     if(quote){await room.locator('[data-room-seq="6"] .pa-room-reply').click();await room.locator('.pa-room-draft-quote').waitFor()}
+     const message=room.locator('[data-room-seq="6"]')
+     const messageActions=baseline?null:await verifyRoomReactions({page,room,row:message,context,mode,engine,width,language,click,name,roomName:"Review room"})
+     if(quote){
+      if(baseline)await room.locator('[data-room-seq="6"] .pa-room-reply').click()
+      else {
+       const menu=await openRoomActions(page,message)
+       await click(menu.getByRole("menuitem",{name:language==="en"?"Reply":"回覆",exact:true}))
+      }
+      await room.locator('.pa-room-draft-quote').waitFor()
+     }
      if(mode!=='read')await text.fill('Retained room draft for '+name)
      else assert.equal(await text.isDisabled(),true)
      await room.locator('.pa-chat-scroll').evaluate(el=>{el.scrollTop=Math.floor((el.scrollHeight-el.clientHeight)/3)})
@@ -269,7 +369,7 @@ try{
        const exposed=await cancel.evaluate(button=>button.contains(document.elementFromPoint(32,42)))
        assert.equal(exposed,true,'the actual Cancel is still covered after closing the panel')
        await page.touchscreen.tap(32,42)
-       recovery={closed:await editor.count()===0,groupWrites:traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)).length}
+       recovery={closed:await editor.count()===0,groupWrites:traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)&&!r.path.endsWith('/reactions')).length}
        assert.equal(recovery.closed,true);assert.equal(recovery.groupWrites,0)
       }
       await writeFile(path.join(artifacts,name+'-editor-cancel.json'),JSON.stringify({point,hit,closed,recovery},null,2)+'\n')
@@ -310,7 +410,7 @@ try{
       assert.equal(await more.evaluate(button=>document.activeElement===button),true,'header edit did not return to its menu trigger')
       await click(memberToggle)
       await settle(membersPanel)
-      const groupWrites=traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path))
+      const groupWrites=traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)&&!r.path.endsWith('/reactions'))
       assert.equal(groupWrites.length,0,'leaving the group form mutated group data')
       await writeFile(path.join(artifacts,name+'-editor-exits.json'),JSON.stringify({coordinate:point,exits,headerEscape:true,groupWrites:0,returnsToMemberPanel:true,focusRestored:true},null,2)+'\n')
      }else assert.equal(await room.getByRole('button',{name:language==='en'?'Edit group':'編輯群組',exact:true}).isDisabled(),true)
@@ -335,13 +435,13 @@ try{
      await room.waitFor({state:'detached'});await page.waitForFunction(()=>document.activeElement?.matches('[data-group-key]'))
      assert.equal(await row.evaluate(el=>document.activeElement===el),true)
      assert.equal(await page.locator('.pa-roster-scroll').evaluate(el=>el.scrollTop),originTop)
-     assert.equal(traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)).length,0,'a cancelled form wrote group data')
+     assert.equal(traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path)&&!r.path.endsWith('/reactions')).length,0,'a cancelled form wrote group data')
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
      assert.equal(traffic.slice(start).filter(record=>record.word==='project-assistants.send'||record.word==='project-assistants.group-send'||/\/messages$/.test(record.path)).length,0,'navigation sent a prompt')
      assert.deepEqual(errors,[])
      await page.screenshot({path:path.join(artifacts,name+'-returned-list.png')})
      const created=baseline||mode!=='local'?null:await verifyGroupCreate(page,click,language,name,traffic.length)
-     evidence.push({engine,mode,language,width,height,baseline:baseline??null,creation,details,inspector,created,createWrites:writes.length,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,frontendPrompts:0,sourceAPI:mode==='old'?87:88,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
+     evidence.push({messageActions,engine,mode,language,width,height,baseline:baseline??null,creation,details,inspector,created,createWrites:writes.length,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,frontendPrompts:0,sourceAPI:mode==='old'?87:91,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
     }catch(error){await page.screenshot({path:path.join(artifacts,name+'-failure.png')});await writeFile(path.join(artifacts,name+'-failure.json'),JSON.stringify({error:String(error),focus:await page.evaluate(()=>document.activeElement?.outerHTML),rooms:await page.locator('.pa-room-layout').evaluateAll(rooms=>rooms.map(room=>({hidden:room.hidden,connected:room.isConnected}))),text:await page.locator('body').innerText(),errors},null,2));throw error}
     finally{await context.close()}
    }

@@ -49,12 +49,14 @@ func (h *projectAssistantGroupsHTTP) ServeHTTP(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var encoded []byte
+	outcomeUnknown := false
 	if output, ok := payload.(paEncodedOutput); ok {
 		if h.options.BeforeViewPublish != nil {
 			h.options.BeforeViewPublish()
 		}
 		err = output.check(r.Context())
 		encoded = output.body
+		outcomeUnknown = output.outcomeUnknown
 	} else {
 		encoded, err = json.Marshal(payload)
 	}
@@ -62,6 +64,9 @@ func (h *projectAssistantGroupsHTTP) ServeHTTP(w http.ResponseWriter, r *http.Re
 		_, err = h.status(r.Context(), true)
 	}
 	if err != nil {
+		if outcomeUnknown {
+			err = paHTTPFailure(pa.OutcomeUnknown, "reaction_publication")
+		}
 		paWriteHTTPFailure(w, err)
 		return
 	}
@@ -117,6 +122,9 @@ func paGroupRoute(r *http.Request) (paHTTPRoute, bool) {
 		if len(parts) == 3 && r.Method == http.MethodPost {
 			if parts[2] == "messages" {
 				out.action = "group-send"
+			}
+			if parts[2] == "reactions" {
+				out.action = "group-react"
 			}
 			if parts[2] == "stop" {
 				out.action = "group-stop"
@@ -323,7 +331,9 @@ func (h *projectAssistantHTTP) readGroups(r *http.Request, route paHTTPRoute) (a
 	}
 	out := contract.ProjectAssistantGroupHistoryResponse{ContractVersion: pa.ContractVersion, Source: wire, Group: paWireGroup(page.Group), Room: paWireRoom(page.Room), Lines: []contract.ProjectAssistantRoomEntry{}}
 	for _, e := range page.Lines {
-		out.Lines = append(out.Lines, paWireRoomEntry(e))
+		line := paWireRoomEntry(e)
+		line.Reactions = paWireReactions(page.Reactions[e.Seq])
+		out.Lines = append(out.Lines, line)
 	}
 	for _, activity := range page.Activity {
 		out.Activity = append(out.Activity, contract.ProjectAssistantRoomActivity{Member: paWireBotKey(activity.Member), TurnID: activity.TurnID, State: contract.ProjectAssistantTurnState(activity.State)})
@@ -433,6 +443,8 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 			return nil, err
 		}
 		return contract.ProjectAssistantGroupStopResponse{ContractVersion: pa.ContractVersion, Room: paWireRoom(st.State), Stopped: st.Stopped}, nil
+	case "group-react":
+		return h.reactToGroupLine(w, r, route)
 	case "group-send":
 		v, err := paDecodeHTTP[contract.ProjectAssistantGroupSendRequest](w, r)
 		if err != nil {

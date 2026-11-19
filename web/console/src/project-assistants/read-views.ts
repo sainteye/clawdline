@@ -165,6 +165,9 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
   let next=[...rows]
   for(const row of events){
     const e=row.event;if(!e)continue
+    if(e.turn?.state==="cancelled"&&!e.turn.failure&&!e.turn.started_at){
+      next=next.filter(r=>r.message?.id!==e.turn!.message_id)
+    }
     if(e.kind==="reactions_changed"&&e.message){
       // A metadata event cannot introduce unloaded content or overwrite a title.
       next=next.map(r=>r.message?.id===e.message!.id&&e.seq>=r.observed_event_seq?{...r,observed_event_seq:e.seq,message:{...r.message,reactions:e.message!.reactions}}:r)

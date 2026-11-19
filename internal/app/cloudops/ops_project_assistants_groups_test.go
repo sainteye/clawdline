@@ -10,7 +10,7 @@ import (
 )
 
 var groupCloudWords = map[string]string{
-	"groups": "GET", "group-history": "GET", "group-create": "POST", "group-edit": "PATCH", "group-delete": "DELETE", "group-stop": "POST", "group-send": "POST", "team-plans": "GET", "team-answer": "POST", "team-settings": "POST",
+	"groups": "GET", "group-history": "GET", "group-create": "POST", "group-edit": "PATCH", "group-delete": "DELETE", "group-stop": "POST", "group-send": "POST", "group-react": "POST", "team-plans": "GET", "team-answer": "POST", "team-settings": "POST",
 }
 
 func projectAssistantGroupOperationCases() []operationCase {
@@ -42,6 +42,8 @@ func projectAssistantGroupOperationCases() []operationCase {
 			path += "/room-one/stop"
 		case "group-send":
 			path += "/room-one/messages"
+		case "group-react":
+			path += "/room-one/reactions"
 		case "team-plans":
 			path = "/v1/project-assistants/manager-one/team-plans"
 			q["machine_id"] = "source-one"

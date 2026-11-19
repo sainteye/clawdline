@@ -216,6 +216,7 @@ export const CARRIED = {
   "project-assistants.group-delete": "captured Bot source DELETE /v1/project-assistants/rooms/groups/{command.key.bot_id}",
   "project-assistants.group-edit": "captured Bot source PATCH /v1/project-assistants/rooms/groups/{command.key.bot_id}",
   "project-assistants.group-history": "captured Bot source GET /v1/project-assistants/rooms/groups/{key.bot_id}",
+  "project-assistants.group-react": "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions",
   "project-assistants.group-send": "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/messages",
   "project-assistants.group-stop": "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/stop",
   "project-assistants.groups": "captured Bot source GET /v1/project-assistants/rooms/groups",

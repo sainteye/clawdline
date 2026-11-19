@@ -5954,6 +5954,16 @@ export interface ProjectAssistantGroupMember {
   key: ProjectAssistantBotKey
 }
 
+export interface ProjectAssistantGroupReactRequest {
+  command: ProjectAssistantCommand
+  conversation_id: string
+  emoji: string
+  expected_revision: number
+  group_version: number
+  message_seq: number
+  present: boolean
+}
+
 export interface ProjectAssistantGroupResponse {
   contract_version: string
   group: ProjectAssistantGroup
@@ -6903,6 +6913,7 @@ export interface ProjectAssistantRoomEntry {
   author?: ProjectAssistantBotKey
   kind: string
   quote?: ProjectAssistantRoomQuote
+  reactions?: ProjectAssistantReactionActor[]
   reply_to_author?: ProjectAssistantBotKey
   seq: number
   text: string

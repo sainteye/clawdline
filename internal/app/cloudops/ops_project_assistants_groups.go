@@ -4,7 +4,7 @@ func init() {
 	for _, word := range []string{"groups", "group-history", "team-plans"} {
 		register(op{name: "project-assistants." + word, read: true, shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
-	for _, word := range []string{"group-create", "group-edit", "group-delete", "group-stop", "group-send", "team-settings", "team-answer"} {
+	for _, word := range []string{"group-create", "group-edit", "group-delete", "group-stop", "group-send", "group-react", "team-settings", "team-answer"} {
 		register(op{name: "project-assistants." + word, guard: projectAssistantGroupGuard, shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
 }

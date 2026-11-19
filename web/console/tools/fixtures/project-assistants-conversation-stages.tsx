@@ -20,12 +20,18 @@ type Fact={kind:"message";id:string;author:W.ProjectAssistantMessageKind;text:st
 const data=JSON.parse(sessionStorage.getItem(storageKey)??'{"facts":[],"sends":[],"answers":[],"stops":[]}') as {
   facts:Fact[];sends:W.ProjectAssistantSendRequest[];answers:W.ProjectAssistantPermissionAnswerRequest[];stops:W.ProjectAssistantStopRequest[]
 }
+const queueActions:W.ProjectAssistantStopRequest[]=[]
+let releaseQueue:(()=>void)|undefined
 const persist=()=>sessionStorage.setItem(storageKey,JSON.stringify(data))
 const apply=(fact:Fact)=>fact.kind==="message"?source.scriptMessage(bot,fact.id,fact.author,fact.text,fact.turn):source.push(fact.event)
 for(const fact of data.facts)apply(fact)
 const originalView=source.view!
 source.view=async(request,signal)=>{
   const page=await originalView({...request,cursor:request.cursor.split("!")[0]},signal)
+  if(request.mode==="snapshot"||request.mode==="history"){
+    const withdrawn=new Set(data.facts.flatMap(fact=>fact.kind==="event"&&fact.event.turn?.state==="cancelled"&&!fact.event.turn.failure?[fact.event.turn.message_id]:[]))
+    page.items=page.items.filter(row=>!row.message||!withdrawn.has(row.message.id))
+  }
   if(request.mode==="traces")for(const row of page.items){
     const summary=row.trace_summary
     if(summary?.category!=="agent_message_chunk")continue
@@ -40,9 +46,9 @@ const emit=(kind:W.ProjectAssistantEventKind,value:Partial<W.ProjectAssistantEve
 const author=(turn:string,id:string,kind:W.ProjectAssistantMessageKind,text:string)=>add({kind:"message",turn,id,author:kind,text})
 const activeTurns=new Map<string,W.ProjectAssistantTurnState>()
 for(const fact of data.facts)if(fact.kind==="event"&&fact.event.turn)activeTurns.set(fact.event.turn.id,fact.event.turn.state)
-const turn=(id:string,state:W.ProjectAssistantTurnState)=>{
+const turn=(id:string,state:W.ProjectAssistantTurnState,joined_turn_id?:string)=>{
   activeTurns.set(id,state)
-  emit("turn_updated",{turn:{id,fence,message_id:"person-"+id,state,started_at:new Date().toISOString(),
+  emit("turn_updated",{turn:{id,fence,message_id:"person-"+id,state,started_at:state==="running"?new Date().toISOString():undefined,joined_turn_id,
     idempotency_key:data.sends.at(-1)?.command.idempotency_key??"fixture",memory_revision:1,instructions:bot.instructions}})
 }
 const receipt=(command:W.ProjectAssistantCommand,id:string,state:W.ProjectAssistantEffectState):W.ProjectAssistantReceiptResponse=>
@@ -67,6 +73,21 @@ source.stop=async request=>{
     else if(state==="queued")turn(id,"cancelled")
   }
   return receipt(request.command,request.turn_id,"accepted")
+}
+source.canSendNow=()=>true
+source.canUnqueue=()=>true
+source.sendNow=async request=>{
+  queueActions.push(request)
+  const active=[...activeTurns].find(([,state])=>state==="running")?.[0]
+  await new Promise<void>(resolve=>{releaseQueue=resolve})
+  turn(request.turn_id,"succeeded",active)
+  return receipt(request.command,request.turn_id,"delivered")
+}
+source.unqueue=async request=>{
+  queueActions.push(request)
+  await new Promise<void>(resolve=>{releaseQueue=resolve})
+  turn(request.turn_id,"cancelled")
+  return receipt(request.command,request.turn_id,"delivered")
 }
 let offer:W.ProjectAssistantPermissionOffer|undefined
 for(const fact of data.facts)if(fact.kind==="event"&&fact.event.permission)offer=fact.event.permission
@@ -105,7 +126,8 @@ const fixture={
         {id:"native-deny",kind:"reject_once",label:"Reject once",allow:false,read_only:false}]}
     emit("permission_offered",{permission:offer})
   },
-  data,animations,
+  releaseQueueAction:()=>{const done=releaseQueue;releaseQueue=undefined;done?.()},
+  data,animations,queueActions,
 }
 Object.assign(window,{stages:fixture})
 const summary=(await source.list({machine_id:bot.key.machine_id,cursor:"",query:"",page_size:100},signal)).items[0]
