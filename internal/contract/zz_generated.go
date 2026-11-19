@@ -10898,6 +10898,10 @@ type TranscriptEntry struct {
 	// Which assistant sent a Clawdline session message.
 	SourceAssistant string `json:"sourceAssistant,omitempty"`
 
+	// Durable conversation id of a Clawdline message sender on this machine. Absent
+	// when the message only recorded a terminal coordinate.
+	SourceConversation string `json:"sourceConversation,omitempty"`
+
 	// How a peer or message row arrived: the peer's own mode, or `clawdline`.
 	SourceMode string `json:"sourceMode,omitempty"`
 	Text       string `json:"text"`

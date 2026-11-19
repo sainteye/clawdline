@@ -826,6 +826,20 @@ handling, local ending deadline and provider-free hangup cue. Neither mechanism
 grants terminal writes or background task approval. Both source excerpts and
 language copies were reviewed; the website must import this delivered revision.
 
+## Session report phrasing and call controls (2026-11-19)
+
+The bilingual briefing and recap instructions report progress and blockers. They mention an
+owner decision when the evidence shows one and introduce each new Project by name. A direct
+farewell in the transcript closes the call locally. A typed delivery receipt and a confirmed
+Session switch trigger distinct Web Audio cues on the call's audio context.
+
+## Voice playback and natural report controls (2026-11-19)
+
+The client recognizes natural variations of closing and continuing a report. Realtime report
+progress follows completed audio for the prepared batch. Reference evidence used to resolve a
+later action still comes from the spoken transcript and current Session identity. The reviewed
+English and Traditional Chinese guidance and source receipts reflect these boundaries.
+
 ## Managed task resources (2026-11-17)
 
 Managed-resource instructions now distinguish retained deliverables from temporary

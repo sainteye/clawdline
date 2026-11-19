@@ -9,10 +9,14 @@
 .project-assistants .pa-avatar { flex-shrink:0; overflow:visible; }
 .project-assistants .pa-group-avatars { position:relative;display:grid;flex:none;align-content:center; }
 .project-assistants .pa-group-avatars > span { display:flex;align-items:center;justify-content:center; }
-.project-assistants .pa-group-avatars > span:only-child { grid-column:1 / -1;justify-self:center; }
+.project-assistants .pa-group-avatars > span:only-child,
+.project-assistants .pa-group-avatars > .pa-group-avatar-empty { grid-column:1 / -1;justify-self:center; }
 .project-assistants .pa-group-avatar-empty { color:var(--pa-dim); }
-.project-assistants .pa-group-unknown { color:var(--pa-dim);font-size:15px; }
 .project-assistants .pa-group-avatars > .pa-group-more { position:absolute;right:-4px;bottom:-4px;width:auto;min-width:20px;height:16px;background:var(--pa-panel,#18181b);border-radius:5px;color:var(--pa-text);font-size:10px; }
+.project-assistants .pa-gmail-link { width:min(320px,calc(100% - 32px));box-sizing:border-box;padding:14px;border:1px solid var(--pa-line);border-radius:16px;background:var(--pa-panel,#18181b);color:var(--pa-text); }
+.project-assistants .pa-gmail-link[open] { display:grid;gap:8px; }
+.project-assistants .pa-gmail-link::backdrop { background:#0009; }
+.project-assistants .pa-gmail-link .pa-pill { display:grid;place-items:center;min-height:44px;text-align:center;text-decoration:none; }
 .project-assistants .pa-orb { width:60px;height:60px;border-radius:50%;display:grid;place-items:center;background:#1d1d1f;border-color:#6b6965;position:relative;padding:0;box-shadow:0 4px 8px #0006; }
 .project-assistants .pa-orb-badge { position:absolute;right:-5px;top:-5px;min-width:21px;height:21px;border-radius:12px;background:#e39567;color:#080808;font-size:11px;display:grid;place-items:center;border:2px solid #080808; }
 .project-assistants.pa-entry { display:inline-flex; }
@@ -442,7 +446,7 @@
 }
 .pa-output-overlay h3{margin:0;overflow-wrap:anywhere}
 .pa-output-overlay>button{align-self:flex-start}
-.pa-artifact-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
+.pa-artifact-frame,.pa-pdf-frame{flex:1;min-height:50vh;width:100%;border:0;background:white}
 .pa-output-overlay a{overflow-wrap:anywhere}
 .pa-library-group{margin-bottom:1.5rem}
 .pa-library-group>h3{font-size:.9rem;opacity:.75}
@@ -715,7 +719,7 @@
   .project-assistants .pa-room-layout .pa-chat-footer { padding-bottom:16px; }
 }
 
-.project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 5; background: #000a; }
+.project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 20; background: #000a; }
 .project-assistants .pa-form-scrim > .pa-form-panel { box-shadow: none; }
 .project-assistants .pa-form-panel > .pa-toolbar {
     position: sticky; top: 0; z-index: 3;

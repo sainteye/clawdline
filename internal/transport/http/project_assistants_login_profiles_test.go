@@ -70,6 +70,20 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 		os.Exit(7)
 	}
 	skillSeen := false
+	state := os.Getenv("CLAWDLINE_LOGIN_PEER_STATE")
+	_, modelErr := os.Stat(filepath.Join(state, "synthetic-model-catalog"))
+	withModels := state != "" && modelErr == nil
+	agent := os.Getenv("CLAWDLINE_LOGIN_PEER_AGENT")
+	model := agent + "-default"
+	catalog := func() []any {
+		if !withModels {
+			return []any{}
+		}
+		return []any{map[string]any{
+			"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": model,
+			"options": []map[string]string{{"value": agent + "-default", "name": agent + " source default"}, {"value": agent + "-explicit", "name": agent + " source explicit"}},
+		}}
+	}
 	var connectorURL, connectorBearer string
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1024), 1<<20)
@@ -108,8 +122,37 @@ func TestLoginCapabilitiesPeer(t *testing.T) {
 					}
 				}
 			}
-			result = map[string]any{"sessionId": "synthetic-login-session", "configOptions": []any{}}
+			result = map[string]any{"sessionId": "synthetic-login-session", "configOptions": catalog()}
+		case "session/set_config_option":
+			if !withModels || json.Unmarshal(f.Params["value"], &model) != nil {
+				os.Exit(9)
+			}
+			result = map[string]any{"configOptions": catalog()}
 		case "session/prompt":
+			if withModels {
+				log, e := os.OpenFile(filepath.Join(state, "synthetic-model-prompts"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if e != nil {
+					os.Exit(10)
+				}
+				_, _ = fmt.Fprintln(log, model)
+				_ = log.Close()
+			}
+			if state := os.Getenv("CLAWDLINE_LOGIN_PEER_STATE"); state != "" {
+				if _, err := os.Stat(filepath.Join(state, "synthetic-late-invalid")); err == nil {
+					log, e := os.OpenFile(filepath.Join(state, "synthetic-late-prompts"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+					if e != nil {
+						os.Exit(8)
+					}
+					_, _ = fmt.Fprintln(log, os.Getenv("CLAWDLINE_LOGIN_PEER_AGENT"))
+					_ = log.Close()
+					if os.Getenv("CLAWDLINE_LOGIN_PEER_AGENT") == "claude" {
+						// A valid tool observation reaches the runtime before an
+						// invalid subsequent ACP notification interrupts Wait.
+						fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"synthetic-login-session","update":{"sessionUpdate":"tool_call","toolCallId":"fixture-tool","title":"Synthetic tool","status":"completed"}}}`)
+						fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"synthetic-login-session","update":{"sessionUpdate":"tool_call_update","toolCallId":"fixture-tool","content":"invalid tool content"}}}`)
+					}
+				}
+			}
 			if state := os.Getenv("CLAWDLINE_LOGIN_PEER_STATE"); state != "" {
 				hold := filepath.Join(state, "synthetic-native-hold")
 				if _, e := os.Stat(hold); e == nil {
@@ -212,6 +255,24 @@ func (p loginFixtureProvider) Open(ctx context.Context, q app.OpenRequest, sink 
 	return loginFixtureSession{s, release}, e
 }
 func (p loginFixtureProvider) Configuration(ctx context.Context, b pa.Bot, dir, model string) (pa.ConfigurationCatalog, error) {
+	hold := filepath.Join(p.state, "synthetic-probe-hold")
+	if _, err := os.Stat(hold); err == nil {
+		if err := os.WriteFile(filepath.Join(p.state, "synthetic-probe-ready"), nil, 0600); err != nil {
+			return pa.ConfigurationCatalog{}, err
+		}
+		tick := time.NewTicker(10 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			if _, err := os.Stat(hold); os.IsNotExist(err) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return pa.ConfigurationCatalog{}, ctx.Err()
+			case <-tick.C:
+			}
+		}
+	}
 	v, release, e := p.provider(ctx, b)
 	defer release()
 	if e != nil {
@@ -401,6 +462,78 @@ func TestLoginProfilesStoredHTTPAndNativeIsolation(t *testing.T) {
 	w = f.request(t, "PATCH", "/v1/project-assistants/"+f.key.BotID, f.local, bad)
 	if w.Code < 400 || f.get(t, f.local).Bot.Version != g.Bot.Version {
 		t.Fatal("unknown profile mutated Bot")
+	}
+}
+
+func TestClaudeInvalidUpdateAfterToolActivityKeepsOneUnknownAttempt(t *testing.T) {
+	f, _ := loginCapabilitiesFixture(t)
+	g := f.get(t, f.local)
+	edit := contract.ProjectAssistantEditRequest{
+		Command: f.command(pa.EditOperation, "synthetic-late-invalid-settings"),
+		Settings: contract.ProjectAssistantEditSettings{
+			ExpectedVersion: g.Bot.Version, Name: g.Bot.Name, Appearance: g.Bot.Appearance, Instructions: g.Bot.Instructions.Text,
+			Agent:         contract.ProjectAssistantAgentClaude,
+			FallbackSteps: []contract.ProjectAssistantFallbackStep{{Agent: contract.ProjectAssistantAgentCodex}},
+		},
+	}
+	paServerOK(t, f.request(t, "PATCH", "/v1/project-assistants/"+f.key.BotID, f.local, edit))
+	if err := os.WriteFile(filepath.Join(f.s.cfg.Dir, "synthetic-late-invalid"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := f.send(t, f.local, "synthetic-late-invalid")
+	paServerOK(t, response)
+	id := paHTTPDecode[contract.ProjectAssistantReceiptResponse](t, response).Receipt.ResourceID
+	x := fallbackHTTPWait(t, f)
+	for _, turn := range x.Turns {
+		if turn.ID != id {
+			continue
+		}
+		log, err := os.ReadFile(filepath.Join(f.s.cfg.Dir, "synthetic-late-prompts"))
+		if err != nil || string(log) != "claude\n" {
+			t.Fatalf("expected exactly one prompt on Claude Code: %q, %v", log, err)
+		}
+		last := turn.Attempts[len(turn.Attempts)-1]
+		if turn.State != pa.TurnUnknown || turn.Failure == nil || turn.Failure.Code != pa.Invalid ||
+			last.Agent != pa.ClaudeCode || last.Ordinal != 1 || !last.SendStarted || !last.NativeActivity || !last.ToolActivity ||
+			last.Stage != pa.AttemptHeld || last.Effect != "unknown" || !last.CleanupConfirmed {
+			t.Fatalf("expected a held attempt with effects unknown: %+v, %+v", turn.Failure, last)
+		}
+		if turn.Failure.Field != "native_update" {
+			t.Fatalf("native protocol refusal lost its diagnostic category: %+v", turn.Failure)
+		}
+		return
+	}
+	t.Fatal("accepted turn not found")
+}
+
+func TestBotModelCatalogBrowser(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_MODEL_CATALOG_BROWSER_DIR")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_MODEL_CATALOG_BROWSER_DIR for owned synthetic browser")
+	}
+	f, _ := loginCapabilitiesFixture(t)
+	state := f.s.cfg.Dir
+	if err := os.WriteFile(filepath.Join(state, "synthetic-model-catalog"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(f.h)
+	defer server.Close()
+	cmd := exec.Command("node", "../../../web/console/tools/project-assistants-login-capabilities.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_READ_TOKEN="+f.readonly,
+		"BOTS_MACHINE="+f.key.MachineID, "BOTS_BOT="+f.key.BotID, "BOTS_ARTIFACTS="+dir, "BOTS_MODEL_STATE="+state)
+	output, err := cmd.CombinedOutput()
+	_ = os.MkdirAll(dir, 0700)
+	_ = os.WriteFile(filepath.Join(dir, "browser.log"), output, 0600)
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, output)
+	}
+	x := fallbackHTTPWait(t, f)
+	if len(x.Turns) != 2 || len(x.Bot.FallbackSteps.Steps()) != 1 || x.Bot.Agent != pa.ClaudeCode || x.Bot.RuntimeSettings.Model != "" {
+		t.Fatalf("expected two turns and stored default with the configured alternate: %+v", x.Bot)
+	}
+	log, err := os.ReadFile(filepath.Join(state, "synthetic-model-prompts"))
+	if err != nil || string(log) != "claude-explicit\nclaude-default\n" {
+		t.Fatalf("explicit and default model did not reach the next native turns: %q, %v", log, err)
 	}
 }
 

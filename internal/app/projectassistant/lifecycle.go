@@ -353,7 +353,7 @@ func (r *Engine) retryCleanup(a *runtimeActor) {
 		if err == nil {
 			a.completion = nil
 		}
-	} else {
+	} else if !a.maintenance {
 		err = r.stopPendingLocked(ctx, a)
 	}
 	a.mu.Unlock()

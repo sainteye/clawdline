@@ -58,6 +58,7 @@ function row(id: string, label: string, backend: string, sessionId: string) {
     work_state: "ready",
     evidence: "process",
     isClaude: true,
+    assistant: "claude",
     sessionId,
     cwd: "/tmp/fixture",
     closeability: {
@@ -164,6 +165,8 @@ let smartTitleNamedBy = ""
 let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
 let untrustedContent = ""
+let senderCardCount = 0
+let senderCardReads: string[] = []
 let refusedCatalog: string | null = null
 let failPlacesOnRequest = 0
 // The machine's persona catalog, as many roles as the daemon compiles in and
@@ -289,6 +292,7 @@ function daemon(): Server {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
     requestedPaths.push(`${req.method} ${path}`)
+    if (senderCardCount) senderCardReads.push(url.pathname + url.search)
     if (path === "/v1/usage/overview") {
       usagePickerQueries.push(url.searchParams)
       const totals = { tokens: 1200, dispatches: 2, duration_samples: 1, duration_median_seconds: 60,
@@ -651,6 +655,15 @@ function daemon(): Server {
     if (rotationScenario && path.startsWith("/v1/work/v2/session-todos/")) return json(res,200,{ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
     if (rotationScenario && path.startsWith("/v1/work/v2/human-interventions/")) return json(res,200,{ok:true,rows:[],pruned_resolved:0})
     if (path === "/v1/transcript") {
+      const session = url.searchParams.get("session")
+      if (senderCardCount && session === TMUX) {
+        const sender = { role: "message", sourceAssistant: "claude", sourceMode: "clawdline", source: "Name at send" }
+        const entries = [{ ...sender, text: "Legacy message", at: 1 },
+          ...Array.from({ length: senderCardCount }, (_, i) => ({
+            ...sender, sourceConversation: ROWS[1].sessionId, text: "Message " + i, at: i + 2,
+          }))]
+        return json(res, 200, { entries, evidence: "transcript", id: session, signature: "sender-cards" })
+      }
       if (rotationScenario) {
         const receiver = url.searchParams.get("session") === TTY
         const text = receiver
@@ -781,11 +794,12 @@ const PROBE = `(() => {
     open: open ? open.dataset.id : null,
     view: app ? app.dataset.view : null,
     rows: document.querySelectorAll("#rows > li.row").length,
+    senderButtons: document.querySelectorAll(".message-source button").length,
     toast: toast && !toast.hidden ? toast.textContent : null,
   }
 })()`
 
-type Seen = { console: boolean; hash: string; open: string | null; view: string | null; rows: number; toast: string | null }
+type Seen = { console: boolean; hash: string; open: string | null; view: string | null; rows: number; senderButtons: number; toast: string | null }
 
 class Tab {
   private b: Browser
@@ -1995,6 +2009,31 @@ test("phone: a tap puts the session in the address, and the back gesture returns
     await tab.run("history.forward()")
     await tab.until("forward is the detail again", (s) => s.view === "detail" && s.open === TMUX)
   }))
+
+test("phone: sender cards reuse the list and open the exact sender by current name", async () => {
+  for (const count of [1, 80]) {
+    senderCardCount = count
+    senderCardReads = []
+    try {
+      await inTab(PHONE, async (tab) => {
+        await tab.go("/" + FRAGMENT[TMUX])
+        await tab.until("the recipient opens", (s) => s.view === "detail" && s.open === TMUX)
+        await tab.until("the sender names appear", (s) => s.senderButtons === count)
+        const names = await tab.run(`Array.from(document.querySelectorAll(".message-source button"), el => el.textContent)`)
+        assert.deepEqual(names, Array(count).fill(ROWS[1].label))
+        assert.equal(await tab.run(`[...document.querySelectorAll(".message-source")].find(el => el.textContent.includes("Name at send"))?.querySelector("button") == null`), true)
+        assert.equal(senderCardReads.filter(raw => raw.startsWith("/v1/transcript?")).length, 1)
+        assert.equal(senderCardReads.filter(raw => raw.includes("session=" + encodeURIComponent(TTY)) ||
+          raw.includes("look=" + encodeURIComponent(TTY)) || raw.startsWith("/v1/sessions/" + encodeURIComponent(TTY))).length, 0)
+        await tab.run(`document.querySelector(".message-source button").focus()`)
+        await tab.press("Enter")
+        await tab.until("the sender opens", (s) => s.view === "detail" && s.open === TTY && s.hash === FRAGMENT[TTY])
+      })
+    } finally {
+      senderCardCount = 0
+    }
+  }
+})
 
 test("phone: the Session reading surface allows horizontal browser navigation and contains vertical overscroll", () =>
   inTab(PHONE, async (tab) => {

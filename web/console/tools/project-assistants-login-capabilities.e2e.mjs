@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url"
 import path from "node:path"
 import {build} from "esbuild"
 
-const {BOTS_ORIGIN:upstream,BOTS_TOKEN:token,BOTS_READ_TOKEN:readToken,BOTS_MACHINE:machine,BOTS_BOT:bot,BOTS_ARTIFACTS:artifacts}=process.env
+const {BOTS_ORIGIN:upstream,BOTS_TOKEN:token,BOTS_READ_TOKEN:readToken,BOTS_MACHINE:machine,BOTS_BOT:bot,BOTS_ARTIFACTS:artifacts,BOTS_MODEL_STATE:modelState}=process.env
 assert.ok(upstream&&token&&readToken&&machine&&bot&&artifacts)
 await mkdir(artifacts,{recursive:true})
 const root=fileURLToPath(new URL("..",import.meta.url)),requests=[],operations=[]
@@ -18,13 +18,15 @@ import React,{useState} from "react";import {createRoot} from "react-dom/client"
 import {BotSettings} from "./src/project-assistants/BotSettings";import {FallbackSourceScope} from "./src/project-assistants/FallbackSettings";
 import {ProjectAssistantSourceClient} from "./src/cloud/project-assistants";import {command} from "./src/project-assistants/client";import {words} from "./src/project-assistants/words";import {bootCatalog} from "./src/catalog";import "./src/project-assistants/styles.css";
 const q=new URL(location.href).searchParams,language=q.get("lang"),read=q.has("read");localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json");
-let live={accountKey:"synthetic-account",readerID:read?"read-only":"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:81,paired:true,online:true,writable:!read};
+let live={accountKey:"synthetic-account",readerID:read?"read-only":"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:${modelState?91:81},paired:true,online:true,writable:!read};
 const source=new ProjectAssistantSourceClient(live,(input,init)=>fetch(input+(read?(input.includes("?")?"&":"?")+"fixture_read=1":""),init),()=>live);
 const key={machine_id:live.machineID,bot_id:${JSON.stringify(bot)}},got=await source.get(key,new AbortController().signal),w=words(language);
 window.fixtureRead=()=>source.loginProfiles(key,got.conversation.id,"codex",new AbortController().signal).then(()=>"unexpected publication",e=>e.error?.code);
+window.fixtureProbe=()=>source.configuration(key,got.conversation.id,"codex","",new AbortController().signal).then(()=>true);
+window.fixtureOnline=online=>{live={...live,online}};
 window.fixtureRevoke=()=>{live={...live,authorizationRevision:"revoked-grant"}};
 window.fixtureDowngrade=async()=>{live={...live,apiLevel:80};try{await source.edit({command:command(key,"edit"),settings:{name:got.bot.name,appearance:got.bot.appearance,instructions:got.bot.instructions.text,expected_version:got.bot.version,login_profile:{id:""}}},new AbortController().signal);return "unexpected write"}catch(e){return e.error?.code}finally{live={...live,apiLevel:81}}};
-function Fixture(){const [bot,setBot]=useState(got.bot),[screen,setScreen]=useState("home"),[message,setMessage]=useState("");return <FallbackSourceScope source={source}><main className="project-assistants" style={{maxWidth:900,margin:"0 auto"}}><nav><button onClick={()=>setScreen("settings")}>{w.settings}</button><button disabled={read} onClick={async()=>{const fresh=await source.get(key,new AbortController().signal);const c=fresh.conversation;await source.send({command:command(key,"send"),fence:{key,project:fresh.bot.project,conversation_id:c.id,binding_id:c.binding_id,generation:c.generation},text:"Synthetic selected account input",quote_message_id:""},new AbortController().signal);setMessage("Scripted input accepted")}}>Send scripted input</button></nav>{screen==="settings"&&<BotSettings bot={bot} enabled={!read} teamAvailable={true} w={w} onClose={()=>setScreen("home")} onSave={async settings=>{const saved=await source.edit({command:command(key,"edit"),settings},new AbortController().signal);setBot(saved.bot);setScreen("home");setMessage("Settings saved")}}/>}<p role="status">{message}</p></main></FallbackSourceScope>};createRoot(document.getElementById("app")).render(<Fixture/>);
+function Fixture(){const [bot,setBot]=useState(got.bot),[screen,setScreen]=useState("home"),[message,setMessage]=useState("");return <FallbackSourceScope source={source}><main className="project-assistants" style={{maxWidth:900,margin:"0 auto"}}><nav><button onClick={()=>setScreen("settings")}>{w.settings}</button><button disabled={read} onClick={async()=>{const fresh=await source.get(key,new AbortController().signal);const c=fresh.conversation;await source.send({command:command(key,"send"),fence:{key,project:fresh.bot.project,conversation_id:c.id,binding_id:c.binding_id,generation:c.generation},text:"Synthetic selected account input",quote_message_id:""},new AbortController().signal);setMessage("Scripted input accepted")}}>Send scripted input</button></nav>{screen==="settings"&&<BotSettings bot={bot} enabled={!read} reason={read?w.readOnlySource:""} teamAvailable={true} w={w} onClose={()=>setScreen("home")} onSave={async settings=>{const saved=await source.edit({command:command(key,"edit"),settings},new AbortController().signal);setBot(saved.bot);setScreen("home");setMessage("Settings saved")}}/>}<p role="status">{message}</p></main></FallbackSourceScope>};createRoot(document.getElementById("app")).render(<Fixture/>);
 `,resolveDir:root,loader:"tsx"},bundle:true,write:false,outfile:"login-capabilities.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents]))
 let tab,holdNext=false,releaseHeld,held
@@ -69,8 +71,103 @@ async function browser(op,...args){
 async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=await browser("read");if(last.text?.includes(text)===present)return last;await new Promise(r=>setTimeout(r,100))}throw Error(`Text ${text} present=${present}: ${JSON.stringify(last)}`)}
 async function select(label,value){await evaluate(`(()=>{const el=[...document.querySelectorAll("select")].find(e=>(e.getAttribute("aria-label")??e.closest("label")?.firstChild.textContent)===${JSON.stringify(label)});if(!el)throw Error("Missing select: "+${JSON.stringify(label)});el.value=${JSON.stringify(value)};el.dispatchEvent(new Event("change",{bubbles:true}))})()`)}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
+async function disclose(label){
+  assert.equal(await evaluate(`(()=>{const row=[...document.querySelectorAll("summary")].find(el=>el.querySelector("strong")?.textContent===${JSON.stringify(label)});if(!row)return false;row.click();return row.parentElement.open})()`),true)
+}
+async function waitFile(file){
+  for(let n=0;n<100;n++){
+    if(await access(file).then(()=>true,()=>false))return
+    await new Promise(r=>setTimeout(r,30))
+  }
+  throw Error("Synthetic source did not reach "+path.basename(file))
+}
+async function modelMatrix(){
+  const hold=path.join(modelState,"synthetic-probe-hold"),ready=path.join(modelState,"synthetic-probe-ready")
+  try{
+    for(const [language,read] of [["en",true],["en",false],["zh-Hant",false]]){
+      const zh=language==="zh-Hant",settings=zh?"Bot 設定":"Bot settings",primary=zh?"主要 Agent":"Primary Agent",model=zh?"模型":"Model",save=zh?"儲存":"Save",retry=zh?"重新讀取模型清單":"Retry model list"
+      const field=label=>`document.querySelector('select[aria-label="'+${JSON.stringify(label)}+'"]')`
+      const open=async()=>{await browser("click",settings);await disclose(primary)}
+      await browser("open",origin+"/?lang="+language+(read?"&read=1":""))
+      await browser("viewport",zh?"mobile":"desktop")
+      await waitText(settings)
+      if(read){
+        const before=requests.length
+        await open()
+        await waitText("this machine has operation from Clawdline Cloud turned off")
+        assert.equal((await browser("click",save)).disabled,true)
+        assert.equal(await evaluate(field(primary)+".matches(':disabled')"),true)
+        assert.equal(requests.slice(before).filter(r=>r.method!=="GET"||r.path.endsWith("/configuration")).length,0)
+      }else{
+        if(!zh){
+          await writeFile(hold,"")
+          await evaluate("window.fixtureHeldProbe=window.fixtureProbe();undefined")
+          await waitFile(ready)
+          await open()
+          await waitText("The source is already checking Agent models.")
+          assert.ok(requests.some(r=>r.path.endsWith("/configuration")&&r.status===429))
+          await rm(hold);assert.equal(await evaluate("window.fixtureHeldProbe"),true);await rm(ready)
+          await evaluate("window.fixtureOnline(false)")
+          await browser("click",retry)
+          await waitText("Can't reach that machine")
+          await evaluate("window.fixtureOnline(true)")
+          await browser("click",retry)
+          await waitText("codex source explicit")
+          assert.equal(await evaluate(field(model)+".value"),"")
+          // Change Agent while an occupied model probe is still returning.
+          await writeFile(hold,"")
+          await select(primary,"claude")
+          await waitFile(ready)
+          await waitText("Reading Agent configuration")
+          await select(primary,"codex")
+          await rm(hold);await rm(ready)
+          await waitText("codex source explicit")
+          assert.equal(requests.filter(r=>r.path.endsWith("/configuration")&&r.status===429).length,1)
+          await select(primary,"claude")
+          await waitText("claude source explicit")
+          await writeFile(hold,"")
+          await select(model,"claude-explicit")
+          await waitFile(ready)
+          assert.equal((await browser("click",save)).disabled,true)
+          await rm(hold);await rm(ready)
+          await waitText("Saved Agent and model changes apply")
+          await disclose("Alternate Agents")
+          await browser("click","Add alternate Agent")
+          assert.equal(await evaluate(`(()=>{const option=[...document.querySelectorAll('[role=option]')].find(el=>el.textContent==="Codex · Default login profile");if(!option)return false;option.click();return true})()`),true)
+        }else{
+          await open();await waitText("claude source explicit")
+          assert.equal(await evaluate(field(model)+".value"),"claude-explicit")
+          await select(primary,"codex");await waitText("codex source explicit")
+          await browser("click","取消")
+          await open();await waitText("claude source explicit")
+          assert.equal(await evaluate(field(model)+".value"),"claude-explicit")
+          await disclose("替代 Agent");await waitText("Codex · 預設登入設定")
+          await select(model,"");await waitText("儲存的 Agent 與模型變更")
+        }
+        assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true)
+        await browser("screenshot","--out",path.join(artifacts,language+"-models.jpg"))
+        assert.equal((await browser("click",save)).disabled,false)
+        await waitText("Settings saved")
+        await open();await waitText("claude source explicit")
+        assert.equal(await evaluate(field(model)+".value"),zh?"":"claude-explicit")
+        await browser("click","Send scripted input");await waitText("Scripted input accepted")
+      }
+      await browser("close");tab=undefined
+    }
+    const writes=requests.filter(r=>r.method!=="GET")
+    assert.deepEqual(writes.map(r=>[r.method,r.status]),[["PATCH",200],["POST",200],["PATCH",200],["POST",200]])
+    assert.deepEqual(writes[0].body.settings.fallback_steps,[{agent:"codex"}])
+    assert.equal(writes[2].body.settings.fallback_steps,undefined)
+    console.log("Production Bot settings and SourceClient crossed HTTP, SQLite and a scripted ACP peer at 1280px and 390px. Capacity retry, offline recovery, read-only, model default and explicit, alternate selection, cancel and reopen passed. External/model API requests=0.")
+  }finally{
+    await rm(hold,{force:true})
+  }
+}
 try{
   await connect()
+  if(modelState){
+    await modelMatrix()
+  }else{
   for(const [language,readonly] of [["en",true],["en",false],["zh-Hant",false]]){
     const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save",label=zh?"登入設定":"Login profile",name=zh?"登入設定名稱":"Login profile name",create=zh?"新增獨立帳號登入":"Add account login profile",start=zh?"開啟原生登入":"Open native sign-in",refresh=zh?"檢查新訊息":"Check for updates";
     await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"預設登入設定":"Default login profile");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
@@ -90,6 +187,7 @@ try{
   holdNext=true;held=false;await evaluate("window.fixtureAttempt=window.fixtureRead();undefined");await waitHeld();await evaluate("window.fixtureRevoke()");releaseHeld();assert.equal(await evaluate("window.fixtureAttempt"),"pa_revoked");await browser("close");tab=undefined;
   const writes=requests.filter(r=>r.method!=="GET");assert.equal(writes.filter(r=>r.method==="PATCH").length,2);assert.equal(writes.filter(r=>r.path.endsWith("/messages")).length,2);assert.equal(writes.filter(r=>r.path.endsWith("/login-profile")).length,4);assert.ok(writes.every(r=>r.status===200));
   console.log("Production bilingual UI and SourceClient crossed authenticated HTTP/Host/SQLite, created and signed in two managed native fixture accounts, saved each selection and sent actual scripted ACP turns. Read-only, API downgrade and late source rejection passed. External/model API requests=0.");
+  }
 }finally{
   releaseHeld?.()
   if(tab&&send)await browser("close").catch(error=>console.error("Owned tab cleanup:",error.message))

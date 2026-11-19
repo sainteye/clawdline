@@ -490,14 +490,15 @@ func transcriptEntry(e transcript.Entry) contract.TranscriptEntry {
 		role = transcript.KindTool
 	}
 	out := contract.TranscriptEntry{
-		Role:            role,
-		Text:            e.Text,
-		Tool:            e.Tool,
-		At:              e.At,
-		ImageCount:      int64(e.ImageCount),
-		Source:          e.Source,
-		SourceMode:      e.SourceMode,
-		SourceAssistant: e.SourceAssistant,
+		Role:               role,
+		Text:               e.Text,
+		Tool:               e.Tool,
+		At:                 e.At,
+		ImageCount:         int64(e.ImageCount),
+		Source:             e.Source,
+		SourceMode:         e.SourceMode,
+		SourceAssistant:    e.SourceAssistant,
+		SourceConversation: e.SourceConversation,
 	}
 	if e.Kind == transcript.KindToolResult {
 		out.Tool = ""

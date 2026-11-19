@@ -122,7 +122,8 @@ test('resuming an active report is idempotent and confirmed items survive interr
 
 
 test('complete requests for other Sessions advance presentation; continuation and unrelated speech do not',()=>{
- for(const words of ['請介紹其他 Session 的進度','請你去介紹一下其他 Session','請說明剩下的 Sessions 現在在做什麼','Please describe the remaining sessions']){assert.equal(nextReport(words),true,words);assert.equal(continueReport(words),true,words)}
- for(const words of ['繼續報告','請講快一點','不要介紹其他 Session','其他 Session 要不要刪除','Do not describe the other sessions','What did the other session say?'])assert.equal(nextReport(words),false,words)
+ for(const words of ['請介紹其他 Session 的進度','請你去介紹一下其他 Session','請說明剩下的 Sessions 現在在做什麼','Please describe the remaining sessions','把還沒講到的專案進度也帶一下','Can you walk me through the rest of the projects?']){assert.equal(nextReport(words),true,words);assert.equal(continueReport(words),true,words)}
+ for(const words of ['繼續報告','請講快一點','不要介紹其他 Session','其他 Session 要不要刪除','Do not describe the other sessions','What did the other session say?','Please close the other Session after you report','先別講剩下的專案進度'])assert.equal(nextReport(words),false,words)
  assert.equal(continueReport('繼續報告'),true)
+ for (const words of ['那，接著講吧','從剛才沒說完的地方繼續','Pick up where you left off please']) assert.equal(continueReport(words),true,words)
 })

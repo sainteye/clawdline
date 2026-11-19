@@ -31,6 +31,8 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   let createGate:Promise<void>|null=null,releaseCreate:(()=>void)|null=null
   let statusGate:Promise<void>|null=null,releaseStatus:(()=>void)|null=null
   const created=new Set<string>()
+  let lostCreateReply=false
+  let sharedFile:{output:W.ProjectAssistantOutput;bytes:Uint8Array;message:W.ProjectAssistantMessage}|undefined
   const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:false,resume:false,send_message:false,native_memory:"unknown",native_memory_verified:false,evidence:"synthetic metadata; no native provider admitted",unavailable:failure("adapter_not_found").error})
   const status=():W.ProjectAssistantSourceStatus=>({machine_id:machineID,state,access,readable:state!=="revoked"&&state!=="unpaired",writable:state==="online"&&access==="interactive",fresh:state==="online",observed_at:at,capabilities:bots.map(capabilities)})
   const check=(method:string,request:unknown,signal:AbortSignal,write=false)=>{
@@ -112,8 +114,16 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       return answer
     },
     async list(r,s){check("list",r,s);const matches=bots.filter(b=>!r.query||`${b.name} Clawdline ${summary(b).latest_message}`.toLowerCase().includes(r.query.toLowerCase()));const offset=Number(r.cursor||0);const items=matches.slice(offset,offset+3);return{contract_version:contractVersion,items:items.map(summary),sources:[status()],next_cursor:offset+3<matches.length?String(offset+3):""}},
+    async output(r,s){
+      check("output",r,s)
+      const file=sharedFile
+      if(!file||r.id!==file.output.id||r.message_id!==file.message.id||!sameBot(r.key,file.message.fence.key))throw failure("pa_not_found")
+      let raw=""
+      for(const byte of file.bytes.slice(r.offset,r.offset+384*1024))raw+=String.fromCharCode(byte)
+      return {contract_version:contractVersion,key:r.key,conversation_id:r.conversation_id,message_id:r.message_id,output:file.output,source:status(),offset:r.offset,data:btoa(raw)}
+    },
     async get(r,s){if(legacyForbidden)throw new Error("legacy GET forbidden");if(getGate)await getGate;check("get",r,s);const bot=find(r);return{contract_version:contractVersion,bot,conversation:conversation(bot),source:status()}},
-    async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
+    async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}if(lostCreateReply)throw failure("pa_outcome_unknown");return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async edit(r,s){check("edit",r,s,true);const bot=find(r.command.key);if(bot.version!==r.settings.expected_version)throw failure("pa_stale_version");Object.assign(bot,{name:r.settings.name,appearance:r.settings.appearance,instructions:{...bot.instructions,text:r.settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1});return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async history(r,s){if(legacyForbidden)throw new Error("legacy history forbidden");check("history",r,s);const bot=find(r.key),all=(messages.get(r.key.bot_id)??[]).filter(m=>!r.before_seq||m.seq<r.before_seq),items=all.slice(-r.page_size);return{contract_version:contractVersion,conversation:conversation(bot),items,has_more:all.length>items.length,next_before_seq:items[0]?.seq??0}},
     async view(r,s){
@@ -186,6 +196,15 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       api.saveRoutine=refuse;api.enableRoutine=refuse;api.deleteRoutine=refuse;api.testRoutine=refuse
     },
     holdProjects(){projectGate=new Promise(resolve=>{releaseProjects=resolve})},releaseProjects(){releaseProjects?.();projectGate=null;releaseProjects=null},unknownCreate(value:boolean){unknownCreate=value},
+    loseCreateReply(){lostCreateReply=true},
+    async shareFixtureFile(name:string,text:string){
+      const bot=bots[0],rows=messages.get(bot.key.bot_id)??[],bytes=new TextEncoder().encode(text)
+      const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))
+      const output={id:"synthetic-file",name,artifact_id:"",bytes:bytes.length,sha256:[...hash].map(n=>n.toString(16).padStart(2,"0")).join("")}
+      const message:W.ProjectAssistantMessage={id:"shared-file",seq:rows.length+1,at,fence:fence(bot),kind:"assistant",text:"",turn_id:"file-turn",quote_message_id:"",output}
+      sharedFile={output,bytes,message}
+      messages.set(bot.key.bot_id,[...rows,message])
+    },
     holdStatus(){statusGate=new Promise(resolve=>{releaseStatus=resolve})},releaseStatus(){releaseStatus?.();statusGate=null;releaseStatus=null},
     holdCreate(){createGate=new Promise(resolve=>{releaseCreate=resolve})},releaseCreate(){releaseCreate?.();createGate=null;releaseCreate=null},
     setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
@@ -225,11 +244,11 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       for(const message of rows)push({id:`journal-${message.id}`,seq:0,at,version:contractVersion,kind:"message_created",fence:message.fence,message})
       for(const message of messages.get(bots[2].key.bot_id)??[])push({id:`other-${message.id}`,seq:0,at,version:contractVersion,kind:"message_created",fence:message.fence,message})
     },
-    seedCollections(count:number){
+    seedCollections(count:number,withPermissions=true){
       const bot=bots[0],f=fence(bot)
       for(let i=events.length-1;i>=0;i--)if(events[i].trace&&sameBot(events[i].fence.key,bot.key))events.splice(i,1)
       for(let i=0;i<count;i++){
-        push({id:`offer-${i}`,seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:`offer-${i}`,fence:f,turn_id:"collection-turn-0",native_request_id:`request-${i}`,state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options:Array.from({length:101},(_,j)=>({id:`option-${j}`,kind:j?"reject_once":"allow_once",label:`stored ${j}`,allow:j===0,read_only:true}))}})
+        if(withPermissions)push({id:`offer-${i}`,seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:`offer-${i}`,fence:f,turn_id:"collection-turn-0",native_request_id:`request-${i}`,state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options:Array.from({length:101},(_,j)=>({id:`option-${j}`,kind:j?"reject_once":"allow_once",label:`stored ${j}`,allow:j===0,read_only:true}))}})
         push({id:`trace-${i}`,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,trace:{turn_id:`collection-turn-${i}`,category:"read",complete:true,text:`Complete trace ${i}`}})
       }
     },

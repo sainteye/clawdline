@@ -71,6 +71,8 @@ type Broker struct {
 	// which terminal is this conversation, is the root still there — is about
 	// now and is wrong if it is a second old.
 	Live func(ctx context.Context) []session.Session
+	// MessageSourceLabel reuses a published Session title when one is available.
+	MessageSourceLabel func(session.Session) string
 	// Reading is the same reading with its completeness attached, for the
 	// beat: one per pass, shared by every task the pass looks at, because a
 	// verdict about a child's executor may be drawn only from a reading that

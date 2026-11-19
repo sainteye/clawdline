@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -139,6 +140,46 @@ func TestSessionBoardAddsRolesToAnExistingStore(t *testing.T) {
 	}
 }
 
+func TestSessionBoardMigratesReplyRecipients(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	now := time.Now()
+	change := func(actor sb.Actor, cmd sb.Command, key string) sb.Result {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, "project", actor, sb.Actor{}, cmd, key, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	board := change(lead, sb.Command{Action: "create", Name: "Review", Text: "Topic"}, "create").ID
+	original := change(lead, sb.Command{Action: "post", Board: board, Text: "Original"}, "original")
+	reply := change(sb.Actor{}, sb.Command{Action: "post", Board: board, Text: "Reply", ReplyTo: original.Seq}, "reply")
+	if _, err := st.db.Exec("ALTER TABLE session_board_posts DROP COLUMN reply_actor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec("DELETE FROM session_board_posts WHERE board=? AND seq=?", board, original.Seq); err != nil {
+		t.Fatal(err)
+	}
+	inbox, err := st.SessionBoardInbox(ctx, "project", lead.ID, board, 0, 0)
+	if err != nil || len(inbox.Posts) != 1 || inbox.Posts[0].Seq != reply.Seq {
+		t.Fatalf("migrated inbox: %+v, %v", inbox, err)
+	}
+}
+
 func TestSessionBoardConcurrentPostAndArchive(t *testing.T) {
 	st, err := Open(t.TempDir())
 	if err != nil {
@@ -174,6 +215,87 @@ func TestSessionBoardConcurrentPostAndArchive(t *testing.T) {
 	}
 	if _, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, post, "new-key", now); !errors.Is(err, sb.ErrClosed) {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionBoardRetainsOnlyNewestPostsAndKeepsCounting(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	const project = "project"
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	member := sb.Actor{ID: "claude:member", Label: "Member"}
+	now := time.Now()
+	change := func(actor sb.Actor, cmd sb.Command, key string, want error) sb.Result {
+		t.Helper()
+		result, err := st.ChangeSessionBoard(ctx, project, actor, sb.Actor{}, cmd, key, now)
+		if !errors.Is(err, want) {
+			t.Fatalf("change %q (%s): got %v, want %v", key, cmd.Action, err, want)
+		}
+		return result
+	}
+	board := change(lead, sb.Command{Action: "create", Name: "Review", Text: "Topic"}, "create", nil).ID
+	change(member, sb.Command{Action: "join", Board: board}, "", nil)
+	post := sb.Command{Action: "post", Board: board, Text: "Discussion"}
+	for seq := int64(1); seq <= sb.MaxPosts; seq++ {
+		if got := change(lead, post, fmt.Sprint(seq), nil).Seq; got != seq {
+			t.Fatalf("first window sequence = %d, want %d", got, seq)
+		}
+	}
+	reply := sb.Command{Action: "post", Board: board, Text: "Reply while the oldest post is still visible", ReplyTo: 1}
+	replySeq := change(member, reply, "reply", nil).Seq
+	if replySeq != sb.MaxPosts+1 {
+		t.Fatalf("first new sequence = %d", replySeq)
+	}
+	if got := change(member, reply, "reply", nil).Seq; got != replySeq {
+		t.Fatalf("retry after original was removed = %d, want %d", got, replySeq)
+	}
+	reply.Text = "Changed retry"
+	change(member, reply, "reply", sb.ErrReplay)
+	change(member, reply, "late-reply", sb.ErrInvalid)
+	change(lead, post, "1", sb.ErrPostExpired)
+
+	var group sync.WaitGroup
+	for _, key := range []string{"next-a", "next-b"} {
+		group.Go(func() {
+			if _, err := st.ChangeSessionBoard(ctx, project, lead, sb.Actor{}, post, key, now); err != nil {
+				t.Errorf("concurrent post %s: %v", key, err)
+			}
+		})
+	}
+	group.Wait()
+	var seqs []int64
+	cursor := int64(1) // An evicted post is still a valid pagination boundary.
+	for {
+		page, err := st.SessionBoardPage(ctx, project, lead.ID, board, cursor, 0)
+		if err != nil || page.Board.Latest != replySeq+2 || (page.More && len(page.Posts) == 0) {
+			t.Fatalf("thread after %d: %+v, %v", cursor, page, err)
+		}
+		for _, p := range page.Posts {
+			seqs = append(seqs, p.Seq)
+		}
+		if !page.More {
+			break
+		}
+		cursor = seqs[len(seqs)-1]
+	}
+	if len(seqs) != sb.MaxPosts {
+		t.Fatalf("retained %d posts", len(seqs))
+	}
+	for i, seq := range seqs {
+		if seq != int64(i+4) {
+			t.Fatalf("retained post %d has sequence %d", i, seq)
+		}
+	}
+	if n, err := st.SessionBoardOccupancy(ctx, "posts"); err != nil || n != sb.MaxPosts {
+		t.Fatalf("retention occupancy = %d, %v", n, err)
+	}
+	inbox, err := st.SessionBoardInbox(ctx, project, lead.ID, board, sb.MaxPosts, 0)
+	if err != nil || len(inbox.Posts) != 1 || inbox.Posts[0].Seq != replySeq || inbox.Posts[0].ReplyTo != 1 {
+		t.Fatalf("retained reply to removed original: %+v, %v", inbox, err)
 	}
 }
 
@@ -240,4 +362,102 @@ func TestSessionBoardInboxPagesOnlyOtherAuthorsDirectReplies(t *testing.T) {
 	if _, err := st.SessionBoardInbox(ctx, project, lead.ID, board, 0, 0); !errors.Is(err, sb.ErrDenied) {
 		t.Fatalf("left member still has an inbox: %v", err)
 	}
+}
+
+func TestSessionBoardsShowRecentActivityBeforeArchives(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	now := time.Unix(1000, 0)
+	change := func(cmd sb.Command, key string, delta time.Duration) string {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, cmd, key, now.Add(delta))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ID
+	}
+	old := change(sb.Command{Action: "create", Name: "Alpha", Text: "Old board"}, "old", 0)
+	newer := change(sb.Command{Action: "create", Name: "Zulu", Text: "New board"}, "newer", time.Second)
+	archive := change(sb.Command{Action: "create", Name: "Latest", Text: "Archived board"}, "archive", 2*time.Second)
+	change(sb.Command{Action: "archive", Board: archive}, "", 3*time.Second)
+	check := func(want []string) {
+		t.Helper()
+		boards, err := st.SessionBoards(ctx, "project", lead.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, board := range boards {
+			got = append(got, board.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("board order = %v, want %v", got, want)
+		}
+	}
+	check([]string{newer, old, archive})
+	change(sb.Command{Action: "post", Board: old, Text: "Recent work"}, "post", 4*time.Second)
+	check([]string{old, newer, archive})
+}
+
+func TestArchiveInactiveSessionBoardRechecksTheRosterAndHandoff(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(1000, 0)
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	newMember := sb.Actor{ID: "claude:joined", Label: "New member"}
+	change := func(actor sb.Actor, cmd sb.Command) string {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, "project", actor, sb.Actor{}, cmd, "test", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ID
+	}
+	id := change(lead, sb.Command{Action: "create", Name: "Stale", Text: "Shared work"})
+	read := func() sb.Board {
+		t.Helper()
+		page, err := st.SessionBoardPage(ctx, "", "", id, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page.Board
+	}
+	tryArchive := func(witness sb.Board, archived bool) {
+		t.Helper()
+		if err := st.ArchiveInactiveSessionBoard(ctx, witness, now); err != nil {
+			t.Fatal(err)
+		}
+		if got := read().ArchivedAt > 0; got != archived {
+			t.Fatalf("board archived = %t, want %t", got, archived)
+		}
+	}
+	original := read()
+	change(newMember, sb.Command{Action: "join", Board: id})
+	tryArchive(original, false)
+	beforePost := read()
+	change(lead, sb.Command{Action: "post", Board: id, Text: "Do not race this post"})
+	tryArchive(beforePost, false)
+	const handoffID = "00000000-0000-4000-8000-000000000001"
+	record := json.RawMessage(`{"session_boards":{"boards":["` + id + `"]}}`)
+	if err := st.CreateOpened(ctx, TableHandoffs, Opened{ID: handoffID, State: "delivered", Record: record, CreatedAt: now, UpdatedAt: now}, nil); err != nil {
+		t.Fatal(err)
+	}
+	witness := read()
+	tryArchive(witness, false)
+	if _, err := st.UpdateOpened(ctx, TableHandoffs, handoffID, func(h Opened) (*Opened, []Event, error) {
+		h.Record = json.RawMessage(`{"board_transferred_at":1000,"session_boards":{"boards":["` + id + `"]}}`)
+		return &h, nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tryArchive(witness, true)
 }

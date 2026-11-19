@@ -1,3 +1,4 @@
+import { messageSender, type MessageSenderView } from "./message-source.js"
 import { useBrowserActivity } from "./BrowserActivity.js"
 import { playbookCardText } from "./playbook-run.js"
 import { LazyEntryBody } from "./LazyEntryBody.js"
@@ -143,7 +144,7 @@ interface EarlierPages {
   pages: TranscriptPage[]
 }
 
-interface TranscriptProps {
+interface TranscriptProps extends MessageSenderView {
   id: string
   row?: SessionRow
   agentId?: string
@@ -164,7 +165,7 @@ function TranscriptFrame(props: TranscriptProps) {
   </div>
 }
 
-function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
+function TranscriptOf({ id, row, agentId, onAgent, onFilling, ...senderView }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
   // The page last read, and whether the pane is on its fast pace: the read
   // asks only for what was appended to it unless this is the safety read of
   // the whole page (`transcript-follow.ts`).
@@ -721,6 +722,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling }: TranscriptProps 
     assistant: session?.assistant,
     agents: session?.agents ?? [],
     onAgent,
+    ...senderView,
     icons,
     slots: new Map(),
   }
@@ -1184,7 +1186,7 @@ function cutNote(page: TranscriptPage | null | undefined): ReactElement | null {
   )
 }
 
-interface View {
+interface View extends MessageSenderView {
   sessionID?: string
   who: Record<string, string>
   expanded: Record<string, boolean>
@@ -1510,9 +1512,11 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
     const meta = assistant
       ? L.assistantLogoHTML(assistant) + "<span>" + esc(assistant === "antigravity" ? assistantLabel(assistant) : L.assistantDisplayName(assistant)) + "</span>"
       : ""
+    const sender = messageSender(e, v)
+    const label = esc(sender.label)
     const card =
       '<div class="message-card"><div class="message-source"><span>' +
-      esc(String(e.source || "session")) +
+      (sender.open ? '<button type="button">' + label + "</button>" : label) +
       "</span>" +
       meta +
       "</div><div>" +
@@ -1526,7 +1530,13 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
         <div
           className="body"
           key={artifactsKey(e.artifacts)}
-          onClick={copyFrom}
+          onClick={(event) => {
+            if (sender.open && event.target === event.currentTarget.querySelector(":scope > .message-card > .message-source > span:first-child > button")) {
+              sender.open()
+              return
+            }
+            copyFrom(event)
+          }}
           dangerouslySetInnerHTML={{ __html: card }}
         />
       </div>

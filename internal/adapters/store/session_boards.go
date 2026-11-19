@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"slices"
 	"time"
 
@@ -17,7 +18,7 @@ const sessionBoardSchema = `
 CREATE TABLE IF NOT EXISTS session_boards (
  id TEXT PRIMARY KEY, project TEXT NOT NULL, name TEXT NOT NULL, purpose TEXT NOT NULL,
  lead TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', archived_at INTEGER NOT NULL DEFAULT 0,
- latest INTEGER NOT NULL DEFAULT 0, create_digest TEXT NOT NULL
+ latest INTEGER NOT NULL DEFAULT 0, create_digest TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS session_board_members (
  board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
@@ -26,9 +27,13 @@ CREATE TABLE IF NOT EXISTS session_board_members (
 CREATE TABLE IF NOT EXISTS session_board_posts (
  board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
  seq INTEGER NOT NULL, actor TEXT NOT NULL, label TEXT NOT NULL, persona TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
- reply_to INTEGER NOT NULL, at INTEGER NOT NULL, request_key TEXT NOT NULL,
+ reply_to INTEGER NOT NULL, reply_actor TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, request_key TEXT NOT NULL,
  PRIMARY KEY (board, seq), UNIQUE (board, actor, request_key)
 );
+CREATE TABLE IF NOT EXISTS session_board_post_keys (
+ board TEXT NOT NULL REFERENCES session_boards(id) ON DELETE CASCADE,
+ actor TEXT NOT NULL, request_key TEXT NOT NULL, PRIMARY KEY (board, actor, request_key)
+) WITHOUT ROWID;
 `
 
 type sessionBoardQuery interface {
@@ -39,6 +44,15 @@ type sessionBoardQuery interface {
 func openSessionBoards(db *sql.DB) error {
 	if _, err := db.Exec(sessionBoardSchema); err != nil {
 		return err
+	}
+	hasCreatedAt, err := hasColumn(db, "session_boards", "created_at")
+	if err != nil {
+		return err
+	}
+	if !hasCreatedAt {
+		if _, err := db.Exec("ALTER TABLE session_boards ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
 	}
 	for _, table := range []string{"session_board_members", "session_board_posts"} {
 		has, err := hasColumn(db, table, "persona")
@@ -51,7 +65,25 @@ func openSessionBoards(db *sql.DB) error {
 			}
 		}
 	}
-	return nil
+	hasReplyActor, err := hasColumn(db, "session_board_posts", "reply_actor")
+	if err != nil || hasReplyActor {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("ALTER TABLE session_board_posts ADD COLUMN reply_actor TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Preserve the Inbox recipient when an older post is later dropped.
+	if _, err := tx.Exec(`UPDATE session_board_posts AS reply SET reply_actor=original.actor
+		FROM session_board_posts AS original
+		WHERE original.board=reply.board AND original.seq=reply.reply_to`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 const boardColumns = "id,project,name,purpose,lead,summary,archived_at,latest"
@@ -96,7 +128,12 @@ func (s *Store) SessionBoards(ctx context.Context, project, actor string) ([]sb.
 		query += " WHERE project=? AND (archived_at=0 OR EXISTS (SELECT 1 FROM session_board_members m WHERE m.board=session_boards.id AND m.actor=?))"
 		args = append(args, project, actor)
 	}
-	rows, err := tx.QueryContext(ctx, query+" ORDER BY archived_at ASC, name, id", args...)
+	// Old boards have no creation timestamp. Their newest post still supplies
+	// activity, and rowid preserves insertion order when neither has a date.
+	rows, err := tx.QueryContext(ctx, query+` ORDER BY archived_at>0,
+		CASE WHEN archived_at>0 THEN archived_at ELSE max(created_at,COALESCE((
+			SELECT at FROM session_board_posts WHERE board=session_boards.id AND seq=session_boards.latest
+		),0)) END DESC, rowid DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +163,45 @@ func (s *Store) SessionBoards(ctx context.Context, project, actor string) ([]sb.
 		}
 	}
 	return out, tx.Commit()
+}
+
+// ArchiveInactiveSessionBoard confirms the two witnessed scans still name
+// the same roster and message frontier before closing the board. Keep a
+// captured handoff intact while the broker resolves its receiving Session.
+func (s *Store) ArchiveInactiveSessionBoard(ctx context.Context, board sb.Board, now time.Time) error {
+	return s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		current, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", board.ID))
+		if errors.Is(err, sb.ErrMissing) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if current.ArchivedAt > 0 || current.Latest != board.Latest {
+			return 0, nil
+		}
+		members, err := sessionBoardMembers(ctx, tx, board.ID)
+		if err != nil {
+			return 0, err
+		}
+		if !sb.SameMembers(members, board.Members) {
+			return 0, nil
+		}
+
+		var pending bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM broker_handoffs h
+			WHERE h.state IN ('opening','delivered') AND CASE WHEN json_valid(h.record) THEN
+				COALESCE(json_extract(h.record,'$.board_transferred_at'),0)=0
+				AND EXISTS (SELECT 1 FROM json_each(h.record,'$.session_boards.boards') WHERE value=?)
+			ELSE 1 END
+		)`, board.ID).Scan(&pending)
+		if err != nil || pending {
+			return 0, err
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE session_boards SET archived_at=? WHERE id=?", now.Unix(), board.ID)
+		return 1, err
+	})
 }
 
 // ActiveSessionBoardIDs snapshots a member's boards in this Project before a handoff opens.
@@ -250,9 +326,8 @@ func (s *Store) SessionBoardInbox(ctx context.Context, project, actor, id string
 	}
 
 	query := `SELECT p.seq,p.actor,p.label,p.persona,p.text,p.reply_to,p.at
-		FROM session_board_posts p JOIN session_board_posts original
-		ON original.board=p.board AND original.seq=p.reply_to
-		WHERE p.board=? AND original.actor=? AND p.actor<>original.actor`
+		FROM session_board_posts p
+		WHERE p.board=? AND p.reply_actor=? AND p.actor<>p.reply_actor`
 	posts, more, err := querySessionBoardPosts(ctx, tx, query, []any{id, actor}, after, before)
 	if err != nil {
 		return sb.Inbox{}, err
@@ -344,8 +419,8 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		if n >= sb.MaxBoards {
 			return sb.Result{}, sb.ErrFull
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO session_boards(id,project,name,purpose,lead,create_digest) VALUES(?,?,?,?,?,?)",
-			id, project, c.Name, c.Text, lead.ID, digest); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO session_boards(id,project,name,purpose,lead,create_digest,created_at) VALUES(?,?,?,?,?,?,?)",
+			id, project, c.Name, c.Text, lead.ID, digest, now.Unix()); err != nil {
 			return sb.Result{}, err
 		}
 		err = insertSessionBoardMembers(ctx, tx, id, nil, append([]sb.Actor{lead}, additions...))
@@ -383,6 +458,15 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return result, err
 		}
+		var expired bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM session_board_post_keys WHERE board=? AND actor=? AND request_key=?
+		)`, b.ID, postActor, key).Scan(&expired); err != nil {
+			return result, err
+		}
+		if expired {
+			return result, sb.ErrPostExpired
+		}
 	}
 	if c.Action == "archive" && lead && b.ArchivedAt != 0 {
 		return result, nil
@@ -412,17 +496,38 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		if !person && !member {
 			return result, sb.ErrDenied
 		}
-		if b.Latest >= sb.MaxPosts {
+		if b.Latest == math.MaxInt64 {
 			return result, sb.ErrFull
 		}
-		if c.ReplyTo < 0 || c.ReplyTo > b.Latest {
+		if c.ReplyTo < 0 {
 			return result, sb.ErrInvalid
 		}
+		var recipient string
+		if c.ReplyTo > 0 {
+			err := tx.QueryRowContext(ctx, "SELECT actor FROM session_board_posts WHERE board=? AND seq=?", b.ID, c.ReplyTo).Scan(&recipient)
+			if errors.Is(err, sql.ErrNoRows) {
+				return result, sb.ErrInvalid
+			}
+			if err != nil {
+				return result, err
+			}
+		}
 		result.Seq = b.Latest + 1
-		_, err = tx.ExecContext(ctx, "INSERT INTO session_board_posts(board,seq,actor,label,persona,text,reply_to,at,request_key) VALUES(?,?,?,?,?,?,?,?,?)",
-			b.ID, result.Seq, postActor, actor.Label, actor.Persona, c.Text, c.ReplyTo, now.Unix(), key)
-		if err == nil {
-			_, err = tx.ExecContext(ctx, "UPDATE session_boards SET latest=? WHERE id=?", result.Seq, b.ID)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO session_board_posts
+			(board,seq,actor,label,persona,text,reply_to,reply_actor,at,request_key) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			b.ID, result.Seq, postActor, actor.Label, actor.Persona, c.Text, c.ReplyTo, recipient, now.Unix(), key); err != nil {
+			return result, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE session_boards SET latest=? WHERE id=?", result.Seq, b.ID); err != nil {
+			return result, err
+		}
+		if cutoff := result.Seq - sb.MaxPosts; cutoff > 0 {
+			// The request identity survives without retaining the post or replaying it.
+			if _, err := tx.ExecContext(ctx, `INSERT INTO session_board_post_keys(board,actor,request_key)
+				SELECT board,actor,request_key FROM session_board_posts WHERE board=? AND seq<=?`, b.ID, cutoff); err != nil {
+				return result, err
+			}
+			_, err = tx.ExecContext(ctx, "DELETE FROM session_board_posts WHERE board=? AND seq<=?", b.ID, cutoff)
 		}
 	case "summary":
 		if !lead {
@@ -480,7 +585,7 @@ func (s *Store) SessionBoardOccupancy(ctx context.Context, kind string) (int64, 
 	case "members":
 		query = "SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM session_board_members GROUP BY board)"
 	case "posts":
-		query = "SELECT coalesce(max(latest),0) FROM session_boards"
+		query = "SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM session_board_posts GROUP BY board)"
 	default:
 		return 0, sb.ErrInvalid
 	}

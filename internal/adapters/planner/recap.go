@@ -62,10 +62,10 @@ const RecapPrompt = recapStop +
 	"and if something is unknown, say so in a few words inside the answer. " +
 	"Answer in two parts separated by a line containing only ---. " +
 	"Part one: one or two short sentences (at most 60 words) for someone coming back to it, who is not reading the code: " +
-	"what this session is working on, where it got to, and whose move it is now (what the person needs to decide or do, if anything). " +
+	"what this session is working on, where it got to, and any decision or action that actually needs the person. " +
 	"Part two is for a voice assistant the owner asks two things: \"what has it finished so far and what do I need to decide\" and \"give me its summary\". " +
 	"Write three to eight plain sentences (at most 200 words): the goal; the main things finished since the conversation began, not only the last step; " +
-	"what is in progress or stuck; and every decision or action it needs from the owner, each with the choices it offered, or say plainly that nothing is needed. " +
+	"what is in progress or stuck; and every decision or action it needs from the owner, each with the choices it offered. If there is none, finish with the progress or blocker. " +
 	"Use plain words a person would say out loud: no file names, commit hashes, function names, test counts or command lines. " +
 	"Plain prose, no headings, no lists, no markdown."
 

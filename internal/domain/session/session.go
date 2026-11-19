@@ -341,3 +341,7 @@ func (i Inventory) Assistants() []Session {
 	}
 	return out
 }
+
+// MessageConversationPrefix distinguishes a durable sender identity from the
+// terminal coordinates carried by older Clawdline messages.
+const MessageConversationPrefix = "conversation:"

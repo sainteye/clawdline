@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const { outputFiles } = await build({
-  stdin:{contents:'export {RealtimeCopilotClient} from "./realtime-copilot.ts"; export {voiceWork,useCallWorkTools} from "../voice-work/runtime.ts"',resolveDir:process.env.COPILOT_SOURCE_DIR??fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},
+  stdin:{contents:'export {RealtimeCopilotClient} from "./realtime-copilot.ts"; export {CallMeter} from "./copilot-meter.ts"; export {voiceWork,useCallWorkTools} from "../voice-work/runtime.ts"',resolveDir:process.env.COPILOT_SOURCE_DIR??fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},
   bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false,
 })
 const compiled = { exports: {} }
 new Function('require', 'module', 'exports', outputFiles[0].text)(createRequire(import.meta.url), compiled, compiled.exports)
-const { RealtimeCopilotClient,voiceWork,useCallWorkTools } = compiled.exports
+const { RealtimeCopilotClient,CallMeter,voiceWork,useCallWorkTools } = compiled.exports
 const origin = { id: '%7', label: 'Prepare screenshots' }
 const row = { ...origin, assistant: 'codex', state: 'idle', sessionId: 'conversation-seven' }
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -526,7 +526,7 @@ test('a Session report goes one Project at a time and names the Project before i
   const answer=JSON.parse(f.sent.find(e=>e.item?.type==='function_call_output').item.output)
   assert.equal(answer.project,'alpha')
   assert.deepEqual(answer.sessions.map(s=>s.session_id),['%1','%3'],'the newest Project starts with at most two Sessions')
-  assert.match(answer.reporting_rule,/which Project these Sessions belong to/)
+  assert.match(answer.reporting_rule,/announce each new Project by name before its first Session/)
   await tick()
   assert.deepEqual(reads,['%1','%3','%5'],'the remaining Session of the same Project is prepared first')
  })
@@ -1460,4 +1460,145 @@ for(const live of [false,true])for(const managed of [false,true])test(`Session-b
  const output=live?await f.c.runLiveTool('board-query','get_session_board',args):await f.c.handleToolCall({call_id:'board-query',name:'get_session_board',arguments:args})
  const answer=JSON.parse(output);assert.equal(answer.board.lead.session_id,row.id);assert.equal(answer.board.lead.label,row.label)
  assert.equal(voiceWork.state?.tasks?.some(task=>task.tool==='get_session_board')??false,false)
+})
+
+for (const live of [false, true]) test(`a natural farewell closes the call without a model response (live=${live})`, async () => {
+  const f = fixture(false, null)
+  f.c.live = live
+  f.c.liveQuietMs = 10
+  f.c.state.status = 'connected'
+  let closes = 0
+  f.c.disconnect = () => { closes++; f.c.state.status = 'disconnected' }
+  const farewell = '謝謝，今天的安排都確認好了，就這樣囉，掰掰'
+  if (live) {
+    f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:farewell.slice(0, -1)})
+    assert.equal(closes, 0)
+    f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:farewell.at(-1)})
+    for (let i = 0; i < 30 && closes === 0; i++) await new Promise(resolve => setTimeout(resolve, 5))
+  } else {
+    await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',transcript:farewell})
+  }
+  assert.equal(closes, 1)
+  assert.equal(f.responses().length, 0)
+})
+
+test('a screen navigation cues the Session switch once after its identity resolves', async () => {
+  const f = fixture(false)
+  const old = location.hash
+  f.c.state.status = 'connected'
+  let switches = 0
+  f.c.meter = {sessionChanged: () => switches++}
+  try {
+    location.hash = '#session=%258'
+    await f.c.followScreen()
+    assert.equal(f.c.focus, '%8')
+    assert.equal(switches, 1)
+    await f.c.followScreen()
+    assert.equal(switches, 1)
+  } finally { location.hash = old }
+})
+
+for (const live of [false, true]) test(`only a typed delivery starts the send melody (live=${live})`, async () => {
+  const f = fixture(false)
+  f.c.live = live
+  f.c.state.status = 'connected'
+  const cues = []
+  f.c.meter = {chime: () => cues.push('send'), sessionChanged: () => cues.push('switch')}
+  let reply
+  let entered
+  f.c.toolDeps = () => ({
+    fetch: async path => {
+      if (path === '/v1/sessions') return Response.json({sessions:[row]})
+      assert.match(path, /\/send$/)
+      return new Promise(resolve => { reply = resolve; entered() })
+    },
+  })
+  const args = JSON.stringify({session_id:row.id, session_label:row.label, message:'Check the cue.'})
+  for (const action of ['accepted', 'failed', 'typed']) {
+    const waiting = new Promise(resolve => { entered = resolve })
+    const send = live
+      ? f.c.runLiveTool(action, 'send_message_to_session', args)
+      : f.c.handleToolCall({call_id:action, name:'send_message_to_session', arguments:args})
+    await waiting
+    assert.deepEqual(cues, [])
+    reply(action === 'failed' ? Response.json({error:'failed'}, {status:409}) : Response.json({ok:true, action}))
+    await send
+    assert.deepEqual(cues, action === 'typed' ? ['send'] : [])
+  }
+})
+
+test('the original call audio context resumes before playing either cue', async () => {
+  const oldWindow = globalThis.window
+  const tones = []
+  let finishResume
+  class AudioFixture extends EventTarget {
+    state = 'running'
+    destination = {}
+    currentTime = 10
+    resume() {
+      if (this.state === 'running') return Promise.resolve()
+      return new Promise(resolve => { finishResume = () => { this.state = 'running'; resolve() } })
+    }
+    close() { return Promise.resolve() }
+    createGain() { return { gain:{setValueAtTime(){}, linearRampToValueAtTime(){}}, connect(){}, disconnect(){} } }
+    createOscillator() {
+      return {frequency:{value:0}, connect(){}, start(at){tones.push([this.frequency.value, at])}, stop(){}, disconnect(){}}
+    }
+  }
+  const context = new AudioFixture()
+  globalThis.window = {...oldWindow, AudioContext: class {constructor(){return context}}}
+  const meter = new CallMeter()
+  try {
+    assert.equal(meter.open(), null)
+    for (const [cue, expected] of [['chime', [880, 1320]], ['sessionChanged', [660, 880, 660]]]) {
+      context.state = 'suspended'
+      meter[cue]()
+      assert.deepEqual(tones, [])
+      finishResume()
+      await tick()
+      assert.deepEqual(tones.map(([hz]) => hz), expected)
+      assert.ok(tones[1][1] > tones[0][1])
+      tones.length = 0
+    }
+    context.state = 'suspended'
+    meter.chime()
+    meter.close()
+    finishResume()
+    await tick()
+    assert.deepEqual(tones, [], 'a closed call cannot replay a pending cue')
+  } finally { globalThis.window = oldWindow }
+})
+
+test('Live announces each new Project before narrating its first Session', async () => {
+  const f = fixture(false,null)
+  f.c.live = true
+  f.c.state.status = 'connected'
+  f.c.liveQuietMs = 1
+  f.c.livePollMs = 1
+  f.c.dc.send = text => {
+    const event = JSON.parse(text)
+    f.sent.push(event)
+    if (event.type === 'session.commentary.append') queueMicrotask(() => f.c.handleLiveEvent({type:'session.output_transcript.delta', delta:'Progress report.'}))
+  }
+  const rows = ['Maple', 'Maple', 'Cedar'].map((project,i) => ({session_id:String(i), label:`Task ${i}`, project, latest:'The next build is blocked by a failing test.'}))
+  for (const row of rows) await f.c.presentLiveReport({sessions:[row]}, () => true)
+  const notes = f.sent.filter(e => e.type === 'session.commentary.append').map(e=>e.content)
+  assert.match(notes[0], /Project name "Maple".*"Task 0"/)
+  assert.doesNotMatch(notes[1], /Project name/)
+  assert.match(notes[2], /Project name "Cedar".*"Task 2"/)
+})
+
+test('completed report audio advances a paraphrased batch without proving a reference for writes', async () => {
+  const f = fixture(false, null)
+  const row = {session_id:'report-1',label:'The exact repository title'}
+  f.c.sessionReports.start({sessions:[row]}, async () => assert.fail('no further read'), page => f.c.presentSessionReport(page, () => true))
+  f.c.sessionReports.resume()
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'report-response'}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.started',response_id:'report-response'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'The checkout report is ready.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'report-response',status:'completed',output:[{type:'message'}]}})
+  assert.equal(f.c.sessionReports.hasPending(), true)
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped',response_id:'report-response'})
+  assert.equal(f.c.sessionReports.hasPending(), false)
+  assert.deepEqual(f.c.spokenSessions.heardIDs(), [])
 })

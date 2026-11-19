@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -170,6 +171,27 @@ func TestAMessageWhoseTypingWasInterruptedIsNeverTypedTwice(t *testing.T) {
 	}
 	if n := typedLines(t, dir); n != 0 {
 		t.Fatalf("a resend typed it: %d lines", n)
+	}
+}
+
+func TestRelayCarriesTheConversationAndPublishedTitle(t *testing.T) {
+	b, _ := w2Broker(t, t.TempDir())
+	b.MessageSourceLabel = func(source session.Session) string {
+		if source.ID != w2Source {
+			t.Fatalf("resolved the target as sender: %q", source.ID)
+		}
+		return "Current sender title"
+	}
+	b.Type = func(_ context.Context, terminal, text string) error {
+		message, ok := transcript.SessionMessage(text, 1)
+		if !ok || terminal != w2Target || message.SourceConversation != rootConversation ||
+			message.Source != "Current sender title" || message.SourceAssistant != "claude" {
+			return fmt.Errorf("unexpected sender or target: %v %q %+v", ok, terminal, message)
+		}
+		return nil
+	}
+	if _, err := b.Relay(t.Context(), Message{From: w2Source, To: w2Target, Text: "ready"}, "k"); err != nil {
+		t.Fatal(err)
 	}
 }
 

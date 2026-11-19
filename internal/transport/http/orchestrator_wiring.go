@@ -136,7 +136,8 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Reading: func(ctx context.Context) session.Inventory {
 			return s.freshReading(ctx)
 		},
-		Fault: beatFault(),
+		MessageSourceLabel: s.publishedSessionLabel,
+		Fault:              beatFault(),
 		// Every line the broker types — a briefing, a completion notice, a
 		// relayed message — goes through the same Actions.Send a person's send
 		// does, and so through that terminal's one lane (D22): the broker and a

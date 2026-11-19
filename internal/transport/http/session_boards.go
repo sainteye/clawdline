@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -201,7 +202,7 @@ func sessionBoardCursor(q url.Values, field string) (int64, bool) {
 		return 0, true
 	}
 	n, err := strconv.ParseInt(q.Get(field), 10, 64)
-	return n, err == nil && n > 0 && n <= sb.MaxPosts+1
+	return n, err == nil && n > 0
 }
 
 func (s *Server) sessionBoardInbox(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +250,7 @@ func (s *Server) sessionBoardInbox(w http.ResponseWriter, r *http.Request) {
 		writeSessionBoardError(w, err)
 		return
 	}
+	s.projectSessionBoardNames(false, nil, inbox.Posts)
 	writeJSON(w, inbox)
 }
 
@@ -268,9 +270,9 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 			writeSessionBoardError(w, err)
 			return
 		}
-		if actor == "" {
-			s.markSessionBoardPresence(page.Board)
-		}
+		board := []sb.Board{page.Board}
+		s.projectSessionBoardNames(actor == "", board, page.Posts)
+		page.Board = board[0]
 		writeJSON(w, page)
 		return
 	}
@@ -279,22 +281,56 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 		writeSessionBoardError(w, err)
 		return
 	}
-	if actor == "" {
-		s.markSessionBoardPresence(boards...)
-	}
+	s.projectSessionBoardNames(actor == "", boards, nil)
 	writeJSON(w, struct {
 		Boards []sb.Board `json:"boards"`
 	}{boards})
 }
 
-// markSessionBoardPresence uses the same bounded snapshot the Session list
-// serves. Absence from the enabled sources describes the list only. It does
-// not revoke membership or establish that a Session was closed.
-func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
-	if !slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 }) {
+// Project display names from one shared list snapshot. Only the paired roster
+// read that already needed presence can request a list build. Inbox and native
+// reads use the published snapshot, when present, without waiting for a build.
+func (s *Server) projectSessionBoardNames(presence bool, boards []sb.Board, posts []sb.Post) {
+	hasMembers := slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 })
+	if !hasMembers && len(posts) == 0 {
 		return
 	}
-	snapshot := s.lists().snapshot()
+	lists := s.lists()
+	var snapshot sessionsSnapshotWire
+	if presence && hasMembers {
+		snapshot = lists.snapshot()
+		setSessionBoardPresence(snapshot, boards)
+	} else {
+		snapshot, _ = lists.sessions.peek()
+	}
+	labels := make(map[string]string, len(snapshot.Sessions))
+	for _, row := range snapshot.Sessions {
+		if row.Assistant == "" || row.SessionID == "" {
+			continue
+		}
+		id := string(row.Assistant) + ":" + row.SessionID
+		_, duplicate := labels[id]
+		labels[id] = ""
+		if !duplicate && row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+			labels[id] = row.Label
+		}
+	}
+	apply := func(actor *sb.Actor) {
+		if label := labels[actor.ID]; label != "" {
+			actor.Label = label
+		}
+	}
+	for _, board := range boards {
+		for i := range board.Members {
+			apply(&board.Members[i])
+		}
+	}
+	for i := range posts {
+		apply(&posts[i].Author)
+	}
+}
+
+func setSessionBoardPresence(snapshot sessionsSnapshotWire, boards []sb.Board) {
 	complete := cloudListComplete(snapshot.Scan)
 	present := make(map[string]sb.Presence, len(snapshot.Sessions))
 	unbound := make(map[string]bool)
@@ -331,6 +367,64 @@ func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
 	}
 }
 
+// Use the scheduler cadence and the authoritative Session list producer. Two
+// distinct complete readings keep a brief terminal transition from archiving
+// a board. An intervening inconclusive reading clears the previous evidence.
+func (s *Server) maintainSessionBoardActivity(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	var previous map[string]sb.Board
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			next, err := s.checkInactiveSessionBoards(ctx, previous, now)
+			if err != nil && ctx.Err() == nil {
+				log.Printf("session boards: pre-archive activity check failed: %v", err)
+			}
+			previous = next
+		}
+	}
+}
+
+func (s *Server) checkInactiveSessionBoards(ctx context.Context, previous map[string]sb.Board, now time.Time) (map[string]sb.Board, error) {
+	boards, err := s.store.SessionBoards(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	boards = slices.DeleteFunc(boards, func(b sb.Board) bool { return b.ArchivedAt > 0 })
+	if len(boards) == 0 {
+		return nil, nil
+	}
+	snapshot, err := s.lists().sessions.since(time.Now())
+	if err != nil || ctx.Err() != nil {
+		return nil, errors.Join(err, ctx.Err())
+	}
+	return s.archiveInactiveSessionBoards(ctx, previous, boards, snapshot, now)
+}
+
+func (s *Server) archiveInactiveSessionBoards(ctx context.Context, previous map[string]sb.Board, boards []sb.Board, snapshot sessionsSnapshotWire, now time.Time) (map[string]sb.Board, error) {
+	// A disabled or unreadable source can still hold a board member. Only
+	// the complete inventory authorizes an archive.
+	if !snapshot.Scan.Complete {
+		return nil, nil
+	}
+	setSessionBoardPresence(snapshot, boards)
+	absent := make(map[string]sb.Board)
+	var failures error
+	for _, board := range boards {
+		if slices.ContainsFunc(board.Members, func(member sb.Actor) bool { return member.Presence != sb.NotListed }) {
+			continue
+		}
+		absent[board.ID] = board
+		if before, ok := previous[board.ID]; ok && before.Latest == board.Latest && sb.SameMembers(before.Members, board.Members) {
+			failures = errors.Join(failures, s.store.ArchiveInactiveSessionBoard(ctx, board, now))
+		}
+	}
+	return absent, failures
+}
+
 func writeSessionBoardError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sb.ErrInvalid):
@@ -343,6 +437,8 @@ func writeSessionBoardError(w http.ResponseWriter, err error) {
 		writeRefusal(w, http.StatusConflict, sb.ErrClosed.Error(), "This message board is archived.")
 	case errors.Is(err, sb.ErrFull):
 		writeRefusal(w, http.StatusConflict, sb.ErrFull.Error(), "The message board reached its storage limit.")
+	case errors.Is(err, sb.ErrPostExpired):
+		writeRefusal(w, http.StatusConflict, sb.ErrPostExpired.Error(), "The post for this request is outside the message board’s retention window.")
 	case errors.Is(err, sb.ErrReplay):
 		writeRefusal(w, http.StatusConflict, sb.ErrReplay.Error(), "This request key already belongs to different content.")
 	case errors.Is(err, store.ErrBusy):

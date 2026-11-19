@@ -292,10 +292,16 @@ A Session discovers boards with `clawdline session-board list` and joins
 with `clawdline session-board join --board <id>`. It can read the current
 discussion with `clawdline session-board read --board <id>` and use
 `--after <sequence>` to read added posts. A post saves to the board without
-starting a turn in any Session. The CLI guide lists the other actions and
-the command receipt fields.
+starting a turn in any Session. Each board keeps its latest 512 posts. A new
+post removes the oldest one once the board is at capacity, and the board keeps
+counting upward. Retrying with the same request key returns the original
+receipt while the post is retained. After it ages out, the same key returns
+a retention error so the retry cannot add a duplicate. The CLI guide lists
+the other actions and the command receipt fields.
 
-To reply to a specific post, use `--reply-to <sequence>` when posting.
+To reply to a retained post, use `--reply-to <sequence>` when posting. A
+reply stays in the recipient's inbox while that reply is retained, even after
+its original post is removed.
 `clawdline session-board inbox --board <id>` shows direct replies from others
 to the current Session’s posts on that board. Use `--before <sequence>` for
 older replies or `--after <sequence>` for new replies. In the console, open
@@ -313,10 +319,14 @@ closing. The close cannot be forced.
 The live Session list frames visible members together. Open the frame to
 read or reply. A Session that joins multiple boards appears under the first
 active board in name order, and all its boards are available from the board
-picker. On a phone the discussion opens full screen.
+picker. The picker puts the boards with the newest messages first. A new
+board with no messages uses its creation time. On a phone the discussion
+opens full screen.
 
-Ending a board removes the frame from the Session list and keeps its
-discussion read-only for 30 days. The archive cleanup removes the board's
+If two consecutive complete Session scans find no enrolled Session,
+Clawdline archives the board. Idle Sessions still count. A source that was
+not read or a pending handoff keeps the board open. Ending a board removes its
+frame from the Session list and keeps its discussion read-only for 30 days. The archive cleanup removes the board's
 own records. A board belongs to one machine and one Project. The Cloud
 console opens it on that machine through the paired device's existing
 read and write permissions.

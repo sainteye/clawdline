@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -107,6 +108,12 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	if !ok || len(posts) != 1 {
 		t.Fatalf("duplicated or missing comments: %v", p)
 	}
+	for seq := 2; seq <= sb.MaxPosts+1; seq++ {
+		if _, err := f.server.store.ChangeSessionBoard(t.Context(), f.place, lead, sb.Actor{},
+			sb.Command{Action: "post", Board: result.ID, Text: "Earlier discussion"}, fmt.Sprintf("earlier-%d", seq), now); err != nil {
+			t.Fatalf("seed post %d: %v", seq, err)
+		}
+	}
 	original, err := f.server.store.ChangeSessionBoard(t.Context(), f.place, lead, sb.Actor{},
 		sb.Command{Action: "post", Board: result.ID, Text: "From the Session"}, "lead-post", now)
 	if err != nil {
@@ -114,14 +121,14 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	}
 	post["request"] = "board-reply"
 	post["command"] = map[string]any{"action": "post", "board": result.ID, "text": "Reply from the browser", "reply_to": original.Seq}
-	answer, _ = f.ask(t, 13, post)
-	if !answer.OK() {
+	answer, p = f.ask(t, 13, post)
+	if !answer.OK() || bodyOf(t, p)["seq"] != float64(original.Seq+1) {
 		t.Fatalf("reply: %d %s", answer.Status, answer.Payload)
 	}
 	f.bridge.AllowCommands = func() bool { return false }
 	answer, p = f.ask(t, 14, map[string]any{
 		"type": "session-boards.inbox", "session": cloudops.MachineReplySession, "request": "inbox",
-		"board": result.ID, "member": lead.ID,
+		"board": result.ID, "member": lead.ID, "before": original.Seq + 2,
 	})
 	if !answer.OK() {
 		t.Fatalf("read-only inbox: %d %s", answer.Status, answer.Payload)
@@ -134,6 +141,17 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	answer, _ = f.ask(t, 15, post)
 	if answer.OK() {
 		t.Fatal("disabled Cloud write admitted a post")
+	}
+	answer, p = f.ask(t, 16, map[string]any{
+		"type": "session-boards.read", "session": cloudops.MachineReplySession,
+		"request": "board-tail", "board": result.ID, "after": original.Seq,
+	})
+	if !answer.OK() {
+		t.Fatalf("read after #%d: %d %s", original.Seq, answer.Status, answer.Payload)
+	}
+	posts, ok = bodyOf(t, p)["posts"].([]any)
+	if !ok || len(posts) != 1 || posts[0].(map[string]any)["seq"] != float64(original.Seq+1) {
+		t.Fatalf("wrong board tail: %v", p)
 	}
 }
 
@@ -265,4 +283,98 @@ func TestSessionBoardRosterDistinguishesMembershipFromTheSessionList(t *testing.
 	list.at = time.Time{}
 	list.mu.Unlock()
 	check("?board="+board, "")
+}
+
+func TestSessionBoardArchivesOnlyAfterTwoCompleteReadingsWithoutListedMembers(t *testing.T) {
+	s, pane, _ := sessionItemServer(t)
+	ctx := t.Context()
+	project := projects.ProjectID(pane.s.CWD)
+	lead := sb.Actor{ID: "claude:lead", Label: "Lead"}
+	now := time.Now()
+	created, err := s.store.ChangeSessionBoard(ctx, project, lead, sb.Actor{},
+		sb.Command{Action: "create", Name: "Review", Text: "Historical work"}, "setup", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var previous map[string]sb.Board
+	check := func(wire sessionsSnapshotWire, wantArchived bool) {
+		t.Helper()
+		boards, err := s.store.SessionBoards(ctx, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous, err = s.archiveInactiveSessionBoards(ctx, previous, boards, wire, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := s.store.SessionBoardPage(ctx, "", "", created.ID, 0, 0)
+		if err != nil || (page.Board.ArchivedAt != 0) != wantArchived {
+			t.Fatalf("archived_at = %d, want archived %t, error %v", page.Board.ArchivedAt, wantArchived, err)
+		}
+	}
+	empty := sessionsSnapshotWire{Scan: contract.Scan{EmptyAuthoritative: true, Complete: true}}
+	present := sessionsSnapshotWire{Scan: empty.Scan, Sessions: []sessionRowWire{{SessionRow: contract.SessionRow{
+		SessionID: "lead", Assistant: "claude", State: "idle",
+		Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent},
+	}}}}
+	check(present, false)
+	check(present, false)
+	check(empty, false)
+	check(sessionsSnapshotWire{}, false)
+	check(empty, false)
+	check(sessionsSnapshotWire{Scan: contract.Scan{Sources: []contract.ScanSource{
+		{Source: "tmux", Complete: true}, {Source: "iterm", Disabled: "setting"},
+	}}}, false)
+	check(empty, false)
+	unknown := present
+	unknown.Sessions[0].SessionID = ""
+	unknown.Sessions[0].Identity = contract.IdentityBindingUnreadable
+	check(unknown, false)
+	check(empty, false)
+	check(empty, true)
+}
+
+func TestSessionBoardNamesReuseThePublishedListForEveryPost(t *testing.T) {
+	s := &Server{}
+	const id = "known-conversation"
+	rows := []sessionRowWire{{SessionRow: contract.SessionRow{
+		ID: "first", Assistant: "codex", SessionID: id, Label: "Current title",
+		Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent},
+	}}}
+	lists := s.lists()
+	lists.sessions.build = func(context.Context) (sessionsSnapshotWire, error) {
+		return sessionsSnapshotWire{Sessions: rows}, nil
+	}
+	if _, err := lists.sessions.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	actor := sb.Actor{ID: "codex:" + id, Label: "Saved title"}
+	boards := []sb.Board{{Members: []sb.Actor{actor}}}
+	posts := make([]sb.Post, sb.MaxPosts)
+	for i := range posts {
+		posts[i].Author = actor
+	}
+	s.projectSessionBoardNames(false, boards, posts)
+	if got := boards[0].Members[0].Label; got != "Current title" {
+		t.Fatalf("roster title: %q", got)
+	}
+	for _, post := range posts {
+		if post.Author.Label != "Current title" {
+			t.Fatalf("author title: %q", post.Author.Label)
+		}
+	}
+	if builds := lists.sessions.builds.Load(); builds != 1 {
+		t.Fatalf("projecting %d posts rebuilt the Session list: %d builds", len(posts), builds)
+	}
+	second := rows[0]
+	second.ID, second.Label = "second", "Duplicate title"
+	rows = append(rows, second)
+	if _, err := lists.sessions.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	boards[0].Members[0], posts[0].Author = actor, actor
+	s.projectSessionBoardNames(false, boards, posts[:1])
+	if boards[0].Members[0] != actor || posts[0].Author != actor {
+		t.Fatal("ambiguous identity replaced a saved title")
+	}
 }

@@ -9,13 +9,21 @@ import {FallbackSettings,SelectedFallbackSettings,useFallbackSource,useSettingsS
 import {agentName,fallbackEdit} from "./fallback-settings"
 import {ExtensionSettings} from "./ExtensionSettings"
 import {LoginProfiles} from "./LoginProfiles"
-import {RuntimeSettings} from "./RuntimeSettings"
+import {configurationError,RuntimeSettings,useModelCatalog} from "./RuntimeSettings"
 import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
+import {botFailureText} from "./source-errors"
 import "./bot-settings.css"
 
 export type BotSettingsPart="all"|"often"|"rarely"
+
+function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):string {
+  if(code==="pa_outcome_unknown")return w.fallbackSaveUnknown
+  if(code==="pa_stale_generation"||code==="pa_stale_version")return w.fallbackSaveStale
+  const detail=code==="pa_capacity_full"?configurationError(code,w,field):botFailureText(code,w)
+  return `${detail} (${code})`
+}
 
 /** One mounted editor owns the draft across the Details and Settings tabs. */
 export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",rules,manage,teamAvailable=false,embedded=false,part="all"}:{bot:W.ProjectAssistantBot;onSave:(settings:W.ProjectAssistantEditSettings)=>Promise<void>;onClose:()=>void;onFrequent?:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;teamAvailable?:boolean;embedded?:boolean;part?:BotSettingsPart}) {
@@ -23,7 +31,7 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
   const instructionsField=useRef<HTMLTextAreaElement>(null),focusInstructions=useRef(false)
   useEffect(()=>{if(part!=="rarely"&&focusInstructions.current){focusInstructions.current=false;instructionsField.current?.focus()}},[part])
   const editFrequent=()=>{focusInstructions.current=true;onFrequent?.()}
-  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
+  const [busy,setBusy]=useState(false),[error,setError]=useState<{code:string;field?:string}>(),[unknown,setUnknown]=useState(false)
   const [approval,setApproval]=useState<{permission_policy:W.ProjectAssistantPermissionPolicy;mode?:string}>(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})
   const [original]=useState(()=>({version:bot.version,fallbacks:bot.fallback_agents,steps:bot.fallback_steps??(bot.fallback_agents??[]).map(agent=>({agent}))}))
   const available=useFallbackSource(),source=useSettingsSource(),modern=source?.canMemorySettings?.()===true
@@ -33,30 +41,41 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
   const [extensions,setExtensions]=useState<W.ProjectAssistantExtensionSelection>(bot.extensions??{skills:[],connectors:[]})
   const [loginProfile,setLoginProfile]=useState(bot.login_profile??""),[loginState,setLoginState]=useState("")
   const selectedFallbacks=source?.canFallbackProfiles?.()===true,frequent=part!=="rarely",rare=part!=="often"
+  const [modelsVisited,setModelsVisited]=useState(false)
+  const discovery=useModelCatalog(source,bot,agent,runtime.model,loginProfile,loginState,modelsVisited&&enabled)
+  const runtimeChanged=JSON.stringify(runtime)!==JSON.stringify(bot.runtime_settings??{model:"",options:{}})
+  const awaitingModel=runtimeChanged&&discovery.pending
+  const validFallbacks=fallbacks.filter(step=>step!==agent)
+  const validSteps=fallbackSteps.filter(step=>step.agent!==agent||(step.login_profile??"")!==loginProfile)
   const fallbackFields=()=>{
-    if(!selectedFallbacks)return fallbackEdit(original.fallbacks,fallbacks,available)
-    if(JSON.stringify(original.steps)===JSON.stringify(fallbackSteps))return {}
-    return {fallback_steps:fallbackSteps,...(fallbackSteps.length===0?{fallback_agents:[]}: {})}
+    if(!selectedFallbacks)return fallbackEdit(agent===bot.agent?original.fallbacks:[],validFallbacks,available)
+    if(agent===bot.agent&&JSON.stringify(original.steps)===JSON.stringify(validSteps))return {}
+    return {fallback_steps:validSteps,...(validSteps.length===0?{fallback_agents:[]}: {})}
   }
   const save=async()=>{
-    if(!enabled||busy||unknown||!name.trim())return
-    setBusy(true);setError("")
+    if(!enabled||busy||unknown||awaitingModel||!name.trim())return
+    setBusy(true);setError(undefined)
     try{
       await onSave({name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
         ...(manageTeam!==(bot.manage_team??false)?{manage_team:manageTeam}:{})})
-    }catch(e){const code=errorCode(e);setError(code);if(code==="pa_outcome_unknown")setUnknown(true)}
+    }catch(e){
+      const code=errorCode(e),field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
+      setError({code,field})
+      if(code==="pa_outcome_unknown")setUnknown(true)
+    }
     finally{setBusy(false)}
   }
   const chooseAgent=(next:W.ProjectAssistantAgent)=>{
     setAgent(next);setLoginProfile("");setExtensions({skills:extensions.skills,connectors:[]})
-    setRuntime({model:"",options:{}});setFallbacks([]);setFallbackSteps([]);setApproval({permission_policy:approval.permission_policy})
+    setRuntime({model:"",options:{}})
+    setApproval({permission_policy:approval.permission_policy})
   }
-  const dirty=name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||JSON.stringify(runtime)!==JSON.stringify(bot.runtime_settings??{model:"",options:{}})||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
-  const chain=selectedFallbacks?fallbackSteps.map(step=>step.agent):fallbacks
+  const dirty=name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
+  const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
   return <section className={`${embedded?"pa-embedded-form":"pa-form-panel"} pa-settings-editor`} role={embedded?undefined:"dialog"} aria-modal={embedded?undefined:true} aria-label={w.settings}>
-    <header className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}><button type="button" onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" disabled={!enabled||busy||unknown||!name.trim()} onClick={()=>void save()}>{w.save}</button></header>
+    <header className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}><button type="button" onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" disabled={!enabled||busy||unknown||awaitingModel||!name.trim()} onClick={()=>void save()}>{w.save}</button></header>
     <div className="pa-form-body">
       {part==="rarely"&&<button type="button" className="pa-settings-often-link" onClick={editFrequent}>{w.settingsFrequent}</button>}
       <fieldset disabled={!enabled||busy||unknown}>
@@ -64,13 +83,13 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
           <section className="pa-settings-instruction-section"><h3>{w.settingsInstructionsHeading}</h3><div className="pa-settings-instruction-card"><label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea ref={instructionsField} value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label></div></section>
           {dirty&&<p className="pa-settings-hint">{w.settingsDraftHint}</p>}
           <section className="pa-settings-agent-section"><h3>{w.settingsAgentHeading}</h3><div className="pa-settings-agent-card"><div className="pa-settings-primary">
-          <SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`}>
+          <SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`} onOpen={()=>setModelsVisited(true)}>
             <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
-            <RuntimeSettings source={source} bot={bot} agent={agent} loginProfile={loginProfile} loginState={loginState} value={runtime} onChange={setRuntime} w={w}/>
+            <RuntimeSettings discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
           </SettingsDisclosure>
-          </div><LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={id=>{setLoginProfile(id);setFallbackSteps(steps=>steps.filter(step=>step.agent!==agent||(step.login_profile??"")!==id))}} onStatusChange={setLoginState} w={w}/>
+          </div><LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
-            {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={fallbackSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={fallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}
+            {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={validSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={validFallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}
           </SettingsDisclosure></div></section>
         </div>
         <div className="pa-settings-part" hidden={!rare}>
@@ -94,7 +113,7 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
       </div>
       {!enabled&&reason&&<p role="status" className="pa-warning">{w.cannotEdit}: {reason}</p>}
       <p className="pa-settings-hint">{w.nextIdle}</p>
-      {error&&<p role="alert">{error==="pa_outcome_unknown"?w.fallbackSaveUnknown:error==="pa_stale_generation"||error==="pa_stale_version"?w.fallbackSaveStale:<>{w.unavailable} ({error})</>}</p>}
+      {error&&<p role="alert">{settingsSaveFailure(error,w)}</p>}
     </div>
   </section>
 }

@@ -10476,7 +10476,7 @@
         {"body":["before","board","member","request","session"],"path":"/v1/orchestrator/session-boards/inbox","query":["before","board","member"]},
         {"body":["after","board","member","request","session"],"path":"/v1/orchestrator/session-boards/inbox","query":["after","board","member"]}
       ],
-      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"member":{"type":"string","non_empty":true,"max_bytes":128},"after":{"type":"integer","min":1,"max":513},"before":{"type":"integer","min":1,"max":513}},"route":{"path":"/v1/orchestrator/session-boards/inbox","query":{"board":{"from":"board"},"member":{"from":"member"},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
+      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"member":{"type":"string","non_empty":true,"max_bytes":128},"after":{"type":"integer","min":1},"before":{"type":"integer","min":1}},"route":{"path":"/v1/orchestrator/session-boards/inbox","query":{"board":{"from":"board"},"member":{"from":"member"},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
     },
     {
       "op": "session-boards.read", "kind": "read", "write_gate": false, "console": "carried",
@@ -10484,7 +10484,7 @@
       "local": {"method":"GET","device":true},
       "example": {"after":1,"before":2,"board":"board-one","request":"req-session-board","session":"__clawdline_machine__"},
       "shapes": [{"body":["request","session"],"path":"/v1/orchestrator/session-boards"},{"body":["board","request","session"],"path":"/v1/orchestrator/session-boards","query":["board"]},{"body":["before","board","request","session"],"path":"/v1/orchestrator/session-boards","query":["before","board"]},{"body":["after","board","request","session"],"path":"/v1/orchestrator/session-boards","query":["after","board"]}],
-      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"after":{"type":"integer","min":1,"max":513},"before":{"type":"integer","min":1,"max":513}},"route":{"path":"/v1/orchestrator/session-boards","query":{"board":{"from":"board","omit_empty":true},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
+      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"after":{"type":"integer","min":1},"before":{"type":"integer","min":1}},"route":{"path":"/v1/orchestrator/session-boards","query":{"board":{"from":"board","omit_empty":true},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
     },
     {
       "op": "session-codegraph",

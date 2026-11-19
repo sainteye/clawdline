@@ -61,13 +61,16 @@ Text-only messages keep the literal version-1 wire already stored in transcripts
 receives one physical terminal line:
 
 ```text
-<clawdline-message>{"body":"…","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"claude","id":"A093…","label":"clawdline-fa"},"version":1}</clawdline-message>
+<clawdline-message>{"body":"…","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"claude","id":"conversation:10000000-0000-4000-8000-000000000001","label":"clawdline-fa"},"version":1}</clawdline-message>
 ```
 
 The JSON string may contain escaped newlines while the wrapper itself contains no LF or CR. App
 and Web discard the wrapper after strict decoding, restore the body's Markdown and paragraphs, and
-show the source as `Clawdline ↔ clawdline-fa · Claude`. The source id is protocol evidence, not a
-UI action or link.
+show the source as `Clawdline ↔ clawdline-fa · Claude`. A source id starting with
+`conversation:` identifies the assistant's conversation on this machine. The console uses its
+existing Session list to display the current name and open the conversation when there is one
+current, unambiguous match. Older sources carry a terminal coordinate and display the recorded
+label because a terminal can be reused.
 
 Version 1 has one kind, `session_message`, and exactly the fields shown above. Unknown versions,
 unknown or missing fields, partial wrappers, prose around a wrapper, and quoted lookalikes are not

@@ -70,6 +70,7 @@
         "role": { "description": "user, assistant, error (a provider failure that ended a turn), peer (another Claude Code session), message (another session through Clawdline), notice (Clawdline about a task) or tool.", "type": "string" },
         "source": { "description": "The human-facing name of the session a peer or message row came from.", "type": "string" },
         "sourceAssistant": { "description": "Which assistant sent a Clawdline session message.", "type": "string" },
+        "sourceConversation": { "description": "Durable conversation id of a Clawdline message sender on this machine. Absent when the message only recorded a terminal coordinate.", "type": "string" },
         "sourceMode": { "description": "How a peer or message row arrived: the peer's own mode, or `clawdline`.", "type": "string" },
         "text": { "type": "string" },
         "tool": { "description": "The tool a call used. Absent on a tool's result and on prose.", "type": "string" }

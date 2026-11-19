@@ -17,6 +17,7 @@ import (
 
 type RuntimeOptions struct {
 	NetworkCheck    func(context.Context, pa.Turn) error
+	NativeHistory   NativeMaintenanceHistory
 	Repository      Repository
 	Memory          Memory
 	WorkBridge      WorkBridge
@@ -85,6 +86,8 @@ type runtimeActor struct {
 	// answers; the worker does not start one meanwhile (actor.mu).
 	steering         map[string]bool
 	handoffAuthority handoffInputAuthority
+
+	maintenance bool // immutable: owns the actor without a chat turn
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -146,6 +149,9 @@ func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
 	a := r.actors[key]
 	if a != nil && a.retained {
 		return nil, runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup")
+	}
+	if a != nil && a.maintenance {
+		return nil, runtimeFailure(pa.CapacityFull, "native_maintenance_busy")
 	}
 	if a == nil {
 		if len(r.actors) >= r.o.Limits.MaxBots {
@@ -552,6 +558,18 @@ func (r *Engine) resumeInterrupted(ctx context.Context, key pa.BotKey, t pa.Turn
 	c, err := r.o.Repository.Conversation(ctx, key, bot.ConversationID)
 	if err != nil {
 		return err
+	}
+	// Preserve the original interrupted turn when its native history is
+	// fenced. Even accepting a restart notice would acknowledge the old
+	// turn before the worker could refuse to load it.
+	if r.o.NativeHistory != nil && t.Fence.BindingID != "" {
+		binding, err := r.o.Repository.Binding(ctx, key, t.Fence.BindingID)
+		if err != nil {
+			return err
+		}
+		if err = r.checkNativeHistory(ctx, binding); err != nil {
+			return err
+		}
 	}
 	_, err = r.Submit(ctx, Submission{Command: r.command(key, pa.SendOperation, "runtime-resume-"+t.ID, t.ID),
 		Message: pa.SendMessage{Fence: currentFence(bot, c), Text: resumePrompt}, Feature: feature, Source: source, Notice: true})
@@ -985,6 +1003,16 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		binding.NativeSessionID = ""
 		binding.Revoked = false
 	}
+	// Check the selected history, including a parked fallback, before an
+	// adapter can attempt a load or fall back to a fresh open in the same
+	// history directory. Isolated routines, Forget and changed instructions
+	// use separate history partitions through the existing filtered-start path.
+	if !isolatedRoutine && binding.InstructionRevision == bot.Instructions.Revision && binding.ForgottenThrough == current.ForgottenThrough {
+		if err = r.checkNativeHistory(ctx, binding); err != nil {
+			a.mu.Unlock()
+			return err
+		}
+	}
 	decision, err := pa.DecideResume(binding, current, snapshot, caps)
 	if err != nil {
 		a.mu.Unlock()
@@ -1079,8 +1107,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	a.mu.Lock()
 	a.opening = true
 	a.mu.Unlock()
-	if err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); err == nil && handoffCheck != nil {
+	err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true)
+	if err == nil && handoffCheck != nil {
 		err = handoffCheck(ctx)
+	}
+	if err == nil && resume {
+		err = r.checkNativeHistory(ctx, binding)
 	}
 	if err != nil {
 		a.mu.Lock()

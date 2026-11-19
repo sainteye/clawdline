@@ -870,11 +870,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   for(const message of messages){
     if(!queuedIDs.has(message.id)&&(message.kind==="user"||message.kind==="assistant"&&!turnAnchors.has(message.turn_id)))turnAnchors.set(message.turn_id,message.id)
   }
+  const moreTraceTurn=traceMore?traceSummaries.at(-1)?.turn_id:undefined
+  const moreOrphanTraces=!!moreTraceTurn&&!turnAnchors.has(moreTraceTurn)
+  const loadMoreTraces=()=>void collection("traces",traceMore).catch(()=>{})
   const afterMessage=(message:W.ProjectAssistantMessage)=>{
     const rows=traceGroups.get(message.turn_id)
     if(!rows?.length||turnAnchors.get(message.turn_id)!==message.id)return
-    return <div className="pa-turn-trace" data-trace-turn={message.turn_id}><Trace summaries={rows} total={rows.length} incomplete={!!traceMore}
-      details={details} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/></div>
+    const more=message.turn_id===moreTraceTurn
+    return <div className="pa-turn-trace" data-trace-turn={message.turn_id}><Trace summaries={rows} total={rows.length} incomplete={more}
+      details={details} more={more} onMore={loadMoreTraces} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/></div>
   }
   const orphanTraces=traceSummaries.filter(row=>!turnAnchors.has(row.turn_id))
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
@@ -906,8 +910,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={visibleTurn?activity[visibleTurn.id]??"":""} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}/>
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
-      {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} total={orphanTraces.length} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>}
-      {!!traceMore&&<button className="pa-pill pa-trace-more-btn" type="button" aria-label={`${w.trace} · ${w.more}`} onClick={()=>void collection("traces",traceMore).catch(()=>{})}>{w.more}</button>}
+      {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} total={orphanTraces.length} incomplete={moreOrphanTraces} more={moreOrphanTraces} onMore={loadMoreTraces} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>}
       {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
         onEdit={(ref,text)=>handoff.update("edit",ref,text)} onKeep={ref=>void handoff.update("keep",ref)}
         onHistory={viewHandoffHistory} onRefresh={()=>void handoff.refresh()} onEditing={setEditingHandoff}/>}

@@ -114,7 +114,9 @@ export function Detail({
   row,
   readerMachine,
   tasks: _tasks,
-  onOpenSession: _onOpenSession,
+  messageSenders,
+  onOpenMessageSender,
+  messageSenderNeedsGeneration,
   onBack,
   onDid,
   onSent,
@@ -128,7 +130,9 @@ export function Detail({
   row: SessionRow | null
   readerMachine?: string | null
   tasks: TaskRow[] | null
-  onOpenSession: (id: string) => void
+  messageSenders: ReadonlyMap<string, SessionRow>
+  onOpenMessageSender?: (row: SessionRow) => void
+  messageSenderNeedsGeneration: boolean
   onBack: () => void
   onDid: () => void
   /**
@@ -508,7 +512,9 @@ export function Detail({
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} row={row} agentId={selectedAgent?.id} onAgent={chooseAgent} /> :
+          {row ? <Transcript id={row.id} row={row} agentId={selectedAgent?.id} onAgent={chooseAgent}
+            messageSenders={messageSenders} onOpenMessageSender={onOpenMessageSender}
+            messageSenderNeedsGeneration={messageSenderNeedsGeneration} /> :
             emptyProblem ? <div className="cloud-detail-problem" role="status">
               <p>{emptyProblem.text}</p>
               {emptyProblem.action && <button type="button" className="cloud-detail-act"

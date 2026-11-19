@@ -476,14 +476,22 @@ of its words are new against the kept recap and everything the live model has sa
 **The call itself.** Both systems have two tools about the call, added on 2026-11-16 at the
 person's request. `get_call_status` reads the call's own state (`callStatus` in `ToolDeps`): the
 system, seconds since it connected (`connectedAt`) and the dollars on its cost line, so the copilot
-answers from the figures instead of guessing. `end_call` hangs up after a goodbye, and only when
-the person's own transcribed words ask to end the call (`asksToEndCall`): hanging up, closing, or
-ending with the call or conversation named; closing a Session never counts, and a refusal is
-`voice_end_not_asked`. The client then waits until the copilot has spoken since the request and
-its voice has been quiet (`endQuietMs`: Realtime's end of playback, 0.8 s; GPT-Live's transcript,
-2.5 s, since it has no end-of-speech event) with no tool running, and disconnects; a goodbye
-that never comes ends the call after 6 s, and none waits past `endGoodbyeMaxMs` (15 s). In a
-managed call both are immediate: they change nothing on the machine.
+answers from the figures instead of guessing. Report continuation can use natural language and the
+voice tool's structured continuation or next-item choice. Realtime advances a prepared report only
+after generation and audio playback finish. Spoken Session references used for actions still carry
+independent identity evidence.
+
+The call requests a duplex audio route when the browser supports it. A ring starts when its
+Web Audio context runs, restarts on recovery during setup, and stops when the call becomes ready,
+fails or closes. The local journal records the graph state separately from connection phases.
+
+The client recognizes a direct hangup request
+or conversational goodbye in the person's transcript and disconnects with a local tone without
+waiting for the model. Realtime uses the completed transcription. GPT-Live uses a quiet window
+for streaming input or the start of the next response. Closing a terminal Session, quoted words
+and messages for someone else do not count. If the `end_call` tool receives the request first,
+it uses the same intent check and waits briefly for a spoken goodbye, with a local deadline. In a
+managed call both tools are immediate and do not change anything on the machine.
 
 **Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
 per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds

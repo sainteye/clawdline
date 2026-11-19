@@ -5,13 +5,14 @@ import {botIdentity} from "./view-state"
 
 export function GroupAvatar({keys,bots,size}:{keys:readonly W.ProjectAssistantBotKey[];bots:readonly W.ProjectAssistantBot[];size:number}) {
   const {members,more}=groupPreviewMembers(keys)
+  const portraits=members.flatMap(key=>{
+    const bot=bots.find(bot=>botIdentity(bot.key)===botIdentity(key))
+    return bot?[bot]:[]
+  })
   const tile=size/2
   return <span className="pa-group-avatars" style={{width:size,height:size,gridTemplateColumns:`repeat(2,${tile}px)`}} aria-hidden="true">
-    {members.length===0&&<span className="pa-group-avatar-empty" style={{width:size,height:size}}><GroupActionIcon group size={tile}/></span>}
-    {members.map(key=>{
-      const bot=bots.find(bot=>botIdentity(bot.key)===botIdentity(key))
-      return <span key={botIdentity(key)} style={{width:tile,height:tile}}>{bot?<BotAvatar appearance={bot.appearance} size={tile}/>:<span className="pa-group-unknown">?</span>}</span>
-    })}
+    {portraits.length===0&&<span className="pa-group-avatar-empty" style={{width:size,height:size}}><GroupActionIcon group size={tile}/></span>}
+    {portraits.map(bot=><span key={botIdentity(bot.key)} style={{width:tile,height:tile}}><BotAvatar appearance={bot.appearance} size={tile}/></span>)}
     {more>0&&<span className="pa-group-more">+{more}</span>}
   </span>
 }

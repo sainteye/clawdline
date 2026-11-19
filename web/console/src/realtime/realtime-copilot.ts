@@ -191,6 +191,7 @@ export class RealtimeCopilotClient {
   private reportAbort?:AbortController
   private reportListOpening=false
   private reportAdvanceTurn=-1
+  private realtimeReport?: { refs: SessionReference[]; response?: string; audio?: boolean; completed?: boolean; played?: boolean }
   private reportPlaybackEnded=false
   private reportInterrupted=false
   private lastRead?:{focus:{id:string;conversation?:string;machine?:string};output:string;at:number;input:string;spoken?:string}
@@ -213,6 +214,7 @@ export class RealtimeCopilotClient {
   private toolCueTasks=new Set<string>()
   private sessionCueID=''
   private sessionCueRefs:SessionReference[]=[]
+  private liveReportProject?: string
   private announceSession(id:string){if(id===this.sessionCueID)return;this.sessionCueID=id;if(this.state.status==='connected'&&getProgressSounds())this.meter.sessionChanged?.()}
   private observeSessionNames(text:string){
     const named=this.sessionCueRefs.map(ref=>({ref,at:sessionNamePosition(text,spokenName(ref.label))})).filter(row=>row.at>=0).sort((a,b)=>a.at-b.at).at(-1)
@@ -295,6 +297,7 @@ export class RealtimeCopilotClient {
   private connectedAt = 0
   /** Whether this call has read the screen once (`followScreen`). */
   private screenLooked = false
+  private screenSessionID?: string
   /** When a Realtime call's voice was last playing (an audio delta, or its playback stopping). */
   private spokeAt = 0
   /** When the copilot was asked to hang up after its goodbye (`end_call`); 0 when it was not. */
@@ -338,12 +341,15 @@ export class RealtimeCopilotClient {
     const looked = this.screenLooked
     this.screenLooked = true
     const wanted = sessionsInFragment(location.hash)
-    if (!wanted) return
+    if (!wanted) { this.screenSessionID = undefined; return }
     const attempt = this.attempt, hash = location.hash
     // On every machine's list the address also names the machine.
     const row = await this.captureFocus(wanted, destinationFromFragment(location.hash)?.machineID)
     if (attempt !== this.attempt || hash !== location.hash) return
-    if (!row || row.id === this.focus) return
+    if (!row) return
+    const movedOnScreen = looked || !!this.screenSessionID || (!!this.focus && this.focus !== row.id)
+    this.setScreenSession(row.id, movedOnScreen)
+    if (row.id === this.focus) return
     this.cancelOpening()
     // The first Session a call finds on screen is only where it starts; a move
     // from one to another is a switch (a call from the desktop list opened on
@@ -360,6 +366,15 @@ export class RealtimeCopilotClient {
       }
       else this.dc.send(JSON.stringify(screenFocusEvent(row)))
       this.addLog('info', nextWord('copilotLogFocus', { name: row.label || row.id }))
+    }
+  }
+  private setScreenSession(id: string, moved = true) {
+    if (id === this.screenSessionID) return
+    this.screenSessionID = id
+    if (moved) {
+      this.sessionCueRefs = []
+      this.sessionCueID = id
+      if (this.state.status === 'connected' && getProgressSounds()) this.meter.sessionChanged?.()
     }
   }
   private boardVoice = new CopilotSessionBoards()
@@ -397,7 +412,12 @@ export class RealtimeCopilotClient {
       tasks: () => fetch('/v1/orchestrator/tasks'),
       briefing: () => this.briefing,
       recapMode: () => this.recapMode,
-      openSession: async(id,machine)=>{const opened=await openOnThisPage(id,machine);if(opened){this.sessionCueRefs=[];this.announceSession(id)};return opened},
+      openSession: async (id, machine, reference = id) => {
+        const attempt = this.attempt
+        const opened = await openOnThisPage(id, machine)
+        if (opened && attempt === this.attempt) this.setScreenSession(reference)
+        return opened
+      },
       titleSaved: (id, machine, title) => titleSavedOnThisPage(id, machine, title),
       snippets: (id, request, machine) => openSnippetsOnThisPage(id, request, machine),
       fleet: () => fleetOnThisPage(),
@@ -665,26 +685,40 @@ export class RealtimeCopilotClient {
     }
   }
 
+  private confirmedAction(tool: string, output: string) {
+    const done = actionNotice(tool, output)
+    if (!done) return
+    this.doneSinceHeard.add(NOTICE_KIND[done.key])
+    this.meter.chime()
+    this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
+    this.journal('notice', nextWord(done.key, done.params))
+  }
+
   private observeEndIntent(text:string,complete=true){
     const ending=this.endIntent.user(text,complete)
     if(!ending)this.endingAt=0
     return ending
   }
-  private executeEndIntent(){if(!this.endIntent.requested)return;this.resetSessionReports();void this.endAfterGoodbye()}
+  private executeEndIntent() {
+    if (!this.endIntent.requested || this.state.status !== 'connected') return
+    this.journal('notice', 'end_call: explicit transcript ended the call')
+    this.disconnect()
+  }
   private consumeLiveInput(){
     clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined
     const heard=this.liveHeard.take()
     if(heard){this.observeEndIntent(heard);this.journal('heard',heard);this.doneSinceHeard.clear();this.updateState({})}
     return heard||this.heardNow
   }
-  continueSessionReport(request?:string){
+  continueSessionReport(request?:string, skipInterrupted=false){
     if(this.endIntent.requested){this.executeEndIntent();return false}
     const heard=this.live?this.consumeLiveInput():request??''
+    if (this.endIntent.requested) { this.executeEndIntent(); return false }
     const words=request??heard
     const item=this.liveReportItem
     const ref=this.live?item?.interrupted?item.ref:undefined:this.sessionReports.current()
     // Passing an item is presentation control, never proof of heard words.
-    if(ref&&nextReport(words)&&this.reportAdvanceTurn!==this.questionSerial){
+    if(ref&&(skipInterrupted||nextReport(words))&&this.reportAdvanceTurn!==this.questionSerial){
       this.reportAdvanceTurn=this.questionSerial
       if(this.live){this.liveReportRevision++;this.liveReportItem=undefined}
       this.sessionReports.skip(ref)
@@ -778,8 +812,6 @@ export class RealtimeCopilotClient {
     const meterRefused = this.meter.open()
     this.updateState({status:'connecting',connectionReady:false})
     this.toolCueTasks.clear();this.sessionCueID='';this.sessionCueRefs=[]
-    // The call rings until it connects, fails or is hung up (`updateState`).
-    this.stopRing = this.meter.ring()
     // A hang-up while it rings ends this attempt: `disconnect` moves `attempt`
     // on, and every step below checks it before the call goes any further.
     const attempt = ++this.attempt
@@ -802,7 +834,7 @@ export class RealtimeCopilotClient {
     this.boardVoice = new CopilotSessionBoards(); this.boardVoiceTurn = 0
     this.liveOutputAt=0;this.liveInputAt=0;this.executingEffects.clear();this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;
     this.personSpoke = false
-    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.endIntent.reset();this.screenLooked=false
+    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.endIntent.reset();this.screenLooked=false;this.screenSessionID=undefined
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveFinalized=false;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.historyCall=this.journalCall;this.operations.reset(this.journalCall);this.callObserving=true;this.updateState({logs:[]})
@@ -814,6 +846,8 @@ export class RealtimeCopilotClient {
     window.addEventListener('hashchange', this.onScreenChange)
     window.addEventListener(SESSION_ADDRESS, this.onScreenChange)
     this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
+    // Record local graph state separately from WebRTC readiness.
+    this.stopRing = this.meter.ring(state => this.journal('notice', 'ringback_audio', {state}))
     // Read the Sessions now, beside the microphone and WebRTC setup, so the
     // first question can be answered from them without a tool call.
     // The settings of the machine that will hold the call (a Mac when there is one), not the page's (`voice-call.ts`).
@@ -1082,9 +1116,11 @@ export class RealtimeCopilotClient {
     this.cancelOpening()
     this.resetSessionReports()
     this.call.options = { ...this.call.options, origin }
+    const changed = this.focus !== origin.id
     this.focus = origin.id
     if (!this.dc || this.dc.readyState !== 'open') return
     if (this.live) {
+      if (changed) this.announceSession(origin.id)
       // GPT-Live keeps talking; it is told which Session is meant now and asked about it on the next turn.
       this.sendLiveContext()
       this.dc.send(JSON.stringify(liveNote('thinking', `The person turned the call to the Session "${origin.label || origin.id}"; "it" and "this" now mean that one.`)))
@@ -1131,8 +1167,27 @@ export class RealtimeCopilotClient {
 
   // Both spellings of the output events are handled: GA names them
   // `response.output_audio*`, the beta `response.audio*`.
+  private armRealtimeReport(page: SessionReportPage) {
+    const refs = (page.sessions ?? []).map(row => ({ id: row.session_id, label: row.label }))
+    this.realtimeReport = refs.length ? { refs } : undefined
+  }
+
+  private finishRealtimeReportPlayback() {
+    const spoken = this.spokenSessions.played()
+    const report = this.realtimeReport
+    if (report?.audio && report.completed && report.played) {
+      this.realtimeReport = undefined
+      // The application supplied this report batch. Playback can advance it
+      // without turning an unfamiliar paraphrase into a write target.
+      this.sessionReports.played(report.refs)
+    } else {
+      this.sessionReports.played(spoken)
+    }
+  }
+
   private async handleRealtimeEvent(event: any) {
     if(event.type==='input_audio_buffer.speech_started'){
+      this.realtimeReport = undefined
       this.spokenSessions.interrupted(this.playing);this.reportInterrupted=this.playing||this.awaitingResponse;this.sessionReports.interrupt();this.narrator.discard('session-report')
       if(this.batchProposal?.announced&&!this.playing)this.batchAtSpeech.set(String(event.item_id||'current'),structuredClone(this.batchProposal))
       if(this.batchProposal)this.batchProposal.announced=false
@@ -1140,10 +1195,14 @@ export class RealtimeCopilotClient {
       this.hearing=true
     }
     if(event.type==='input_audio_buffer.speech_stopped')this.hearing=false
-    if(['response.output_audio.delta','response.audio.delta','output_audio_buffer.started'].includes(event.type))this.playing=true
+    if(['response.output_audio.delta','response.audio.delta','output_audio_buffer.started'].includes(event.type)) {
+      this.playing = true
+      if (this.realtimeReport?.response && (!event.response_id || this.realtimeReport.response === event.response_id)) this.realtimeReport.audio = true
+    }
     if(['output_audio_buffer.stopped','output_audio_buffer.cleared'].includes(event.type)){
       this.reportPlaybackEnded=event.type==='output_audio_buffer.stopped'
-      if(this.reportPlaybackEnded)this.sessionReports.played(this.spokenSessions.played());else{this.spokenSessions.interrupted(this.playing);this.sessionReports.interrupt();this.narrator.discard('session-report')}
+      if (this.reportPlaybackEnded && this.realtimeReport?.response && (!event.response_id || this.realtimeReport.response === event.response_id)) this.realtimeReport.played = true
+      if(this.reportPlaybackEnded)this.finishRealtimeReportPlayback();else{this.realtimeReport=undefined;this.spokenSessions.interrupted(this.playing);this.sessionReports.interrupt();this.narrator.discard('session-report')}
       this.playing=false
       if(event.type==='output_audio_buffer.stopped'&&this.batchProposal&&this.batchCandidate===this.batchProposal)this.batchProposal.announced=true
       this.batchCandidate=undefined
@@ -1193,6 +1252,7 @@ export class RealtimeCopilotClient {
         this.updateState({ speakingState: 'thinking' })
         break
       case 'response.created':
+        if (this.realtimeReport && !this.realtimeReport.response) this.realtimeReport.response = event.response?.id
         this.reportPlaybackEnded=false;this.reportInterrupted=false
         if(this.batchProposal)this.batchProposal.announced=false
         if(event.response?.id && this.activeConversationInput)this.responseInputs.set(event.response.id,this.activeConversationInput)
@@ -1227,7 +1287,10 @@ export class RealtimeCopilotClient {
           this.heardNow = event.transcript
           this.boardVoiceTurn++
           this.boardVoice.heard(this.heardNow, this.boardVoiceTurn)
-          if(this.observeEndIntent(event.transcript))this.executeEndIntent()
+          if (this.observeEndIntent(event.transcript) && this.state.status === 'connected') {
+            this.executeEndIntent()
+            return
+          }
           this.updateState({ lastTranscript: event.transcript })
           if(this.call.options.workEnabled) {
             const attempt=this.attempt,dc=this.dc,call=this.journalCall
@@ -1277,8 +1340,14 @@ export class RealtimeCopilotClient {
           if(this.activeConversationInput===input)this.activeConversationInput=''
         }
         const spoken = this.state.lastAssistantSpeech
-        this.spokenSessions.generated(spoken??'',event.response?.status==='completed'&&!this.reportInterrupted)
-        if(this.reportPlaybackEnded)this.sessionReports.played(this.spokenSessions.played())
+        const report = this.realtimeReport
+        const completed = event.response?.status === 'completed' && !this.reportInterrupted
+        if (report?.response && event.response?.id === report.response) {
+          if (completed) report.completed = true
+          else this.realtimeReport = undefined
+        }
+        this.spokenSessions.generated(spoken??'',completed)
+        if(this.reportPlaybackEnded)this.finishRealtimeReportPlayback()
         if(event.response?.status==='completed'&&this.batchProposal&&spoken&&batchSpoken(spoken,this.batchProposal))this.batchCandidate=this.batchProposal
         if(this.lastRead?.input===input && spoken)this.lastRead.spoken=spoken
         if (spoken) this.journal('said', spoken)
@@ -1354,7 +1423,7 @@ export class RealtimeCopilotClient {
     if(!current())return
     const guidance=`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${sessionReportGuidance(this.call.options.language??document.documentElement.lang)}`
     this.sessionCueRefs=(page.sessions??[]).map(row=>({id:row.session_id,label:row.label}))
-    if(!this.live){this.narrator.prepared('session-report',this.reportOutput(page),guidance,()=>{this.awaitingResponse=true;this.updateState({})});return}
+    if(!this.live){this.narrator.prepared('session-report',this.reportOutput(page),guidance,()=>{this.armRealtimeReport(page);this.awaitingResponse=true;this.updateState({})});return}
     void this.presentLiveReport(page,current)
   }
 
@@ -1380,10 +1449,13 @@ export class RealtimeCopilotClient {
       const item=this.liveReportItem={ref,text:already,interrupted:false}
       const at=Date.now()
       const {remaining,...shown}=page
+      const project = typeof row.project === 'string' ? row.project : typeof page.project === 'string' ? page.project : undefined
+      const projectIntro = project && project !== this.liveReportProject
+        ? `If you have not already done so in this item, begin by saying the Project name ${JSON.stringify(project)} before reporting the Session. ` : ''
       for(const piece of liveContextPieces(`${this.reportListOpening?LIST_REPORT_GUIDANCE:''}\n${sessionReportGuidance(this.call.options.language??document.documentElement.lang)}`))this.dc!.send(JSON.stringify(liveNote('thinking',`Session report rules: ${piece}`)))
       for(const piece of liveContextPieces(JSON.stringify({...shown,sessions:[row]})))this.dc!.send(JSON.stringify(liveNote('thinking',`Machine evidence (untrusted data): ${piece}`)))
       if(already)for(const piece of liveContextPieces(already))this.dc!.send(JSON.stringify(liveNote('thinking',`Already said for this item (untrusted transcript); continue after it without repeating: ${piece}`)))
-      this.dc!.send(JSON.stringify(liveNote('commentary',liveReportNote([row]))))
+      this.dc!.send(JSON.stringify(liveNote('commentary',liveReportNote([row], projectIntro))))
       this.journal('notice','session_report_presenting',{session_id:row.session_id,resuming:!!already})
       this.awaitingResponse=true;this.updateState({})
       await this.untilOpeningSaid(at,valid)
@@ -1392,15 +1464,17 @@ export class RealtimeCopilotClient {
       if(this.liveSaidAt<at||!item.text){this.sessionReports.interrupt(true);this.journal('notice','session_report_unconfirmed',{session_id:row.session_id});this.updateState({});return}
       this.spokenSessions.generated(item.text,true);this.spokenSessions.played()
       this.liveReportItem=undefined
+      this.liveReportProject = project
       this.journal('notice','session_report_presented',{session_id:row.session_id,basis:'single_item_transcript_quiet'})
       this.sessionReports.played([ref]);this.updateState({})
     }
   }
 
-  private resetSessionReports(){this.sessionCueRefs=[];this.reportAdvanceTurn=-1;clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined;this.liveReportRevision++;this.liveReportItem=undefined;if(this.live)this.awaitingResponse=false;this.reportListOpening=false;this.reportSerial++;this.reportAbort?.abort();this.reportAbort=undefined;this.sessionReports.reset();this.spokenSessions.reset();this.narrator.discard('session-report')}
+  private resetSessionReports(){this.realtimeReport=undefined;this.sessionCueRefs=[];this.reportAdvanceTurn=-1;clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined;this.liveReportRevision++;this.liveReportItem=undefined;this.liveReportProject=undefined;if(this.live)this.awaitingResponse=false;this.reportListOpening=false;this.reportSerial++;this.reportAbort?.abort();this.reportAbort=undefined;this.sessionReports.reset();this.spokenSessions.reset();this.narrator.discard('session-report')}
   private reportOutput(page:SessionReportPage){const {remaining,...shown}=page;return JSON.stringify({...shown,reporting_rule:sessionReportGuidance(this.call.options.language??document.documentElement.lang)})}
   private startSessionReport(page:SessionReportPage,args:Record<string,unknown>,deps:ToolDeps,attempt:number,dc:RTCDataChannel|null,listOpening=false){
     this.reportListOpening=listOpening
+    this.liveReportProject = undefined
     const serial=++this.reportSerial
     this.reportAbort?.abort();this.reportAbort=new AbortController();const signal=this.reportAbort.signal
     this.narrator.discard('session-report')
@@ -1486,7 +1560,7 @@ export class RealtimeCopilotClient {
     let output:string,logs:{level:'info'|'tool'|'error';text:string}[]=[],reportResumed=false
     const steps:string[]=[]
     if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
-      reportResumed=this.continueSessionReport(utterance);output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
+      reportResumed=this.continueSessionReport(utterance, args.next_report === true);output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
     } else if (event.name === 'prepare_session_board' || event.name === 'confirm_session_board') {
       output = JSON.stringify(await this.boardTool(event.name, args))
     } else if(managed && ['get_voice_work','queue_voice_work','retry_voice_work'].includes(event.name)) {
@@ -1499,7 +1573,12 @@ export class RealtimeCopilotClient {
       const result=await runCopilotTool(event.name,event.arguments,reading);output=result.output;logs=result.logs
       if(event.name==='get_sessions_summary'&&attempt===this.attempt&&this.dc===dc){
         const page=JSON.parse(output) as SessionReportPage
-        if(!page.error){this.startSessionReport(page,args,reading,attempt,dc);output=this.reportOutput(page)}
+        if (!page.error) {
+          this.startSessionReport(page, args, reading, attempt, dc)
+          this.sessionCueRefs = (page.sessions ?? []).map(row => ({ id: row.session_id, label: row.label }))
+          reported.push(() => this.armRealtimeReport(page))
+          output = this.reportOutput(page)
+        }
       }
       const focus=voiceWork.state?.inputs.find(i=>i.id===input)?.focus
       try {const body=JSON.parse(output);if(focus && body.session_id===focus.id && !body.error)this.lastRead={focus,output:shortResult(output),at:Date.now(),input}}catch { /* refusal-ok: unreadable output cannot become context for another request. */ }
@@ -1511,15 +1590,7 @@ export class RealtimeCopilotClient {
     this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
-    // Only what the machine confirmed is shown and chimed, never what the
-    // copilot says it did.
-    const done = actionNotice(event.name, output)
-    if (done) {
-      this.doneSinceHeard.add(NOTICE_KIND[done.key])
-      this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
-      this.journal('notice', nextWord(done.key, done.params))
-      this.meter.chime()
-    }
+    this.confirmedAction(event.name, output)
 
     if (this.dc && this.dc.readyState === 'open') {
       this.dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:this.spokenSessions.context()}]}}))
@@ -1696,14 +1767,27 @@ export class RealtimeCopilotClient {
         clearTimeout(this.liveContinueTimer)
         if(this.sessionReports.hasPending()||this.endIntent.requested){
           const attempt=this.attempt,dc=this.dc
-          this.liveContinueTimer=setTimeout(()=>{if(this.attempt!==attempt||this.dc!==dc)return;if(this.endIntent.requested)this.executeEndIntent();else if(continueReport(this.liveHeard.peek()))this.continueSessionReport()},this.liveQuietMs)
+          this.liveContinueTimer=setTimeout(()=>{if(this.attempt!==attempt||this.dc!==dc)return;if (this.endIntent.requested) {
+            const farewell = this.liveHeard.take()
+            if (farewell) this.journal('heard', farewell)
+            this.executeEndIntent()
+          } else if(continueReport(this.liveHeard.peek()))this.continueSessionReport()},this.liveQuietMs)
         }
         this.updateState({ speakingState: 'listening', lastTranscript: this.heardNow })
         return
       }
       case 'session.output_transcript.delta': {
         const heard = this.liveHeard.take()
-        if (heard) { this.boardVoice.heard(heard, this.boardVoiceTurn); this.observeEndIntent(heard); this.journal('heard', heard); this.doneSinceHeard.clear(); this.updateState({}) }
+        if (heard) {
+          this.journal('heard', heard)
+          if (this.observeEndIntent(heard) && this.state.status === 'connected') {
+            this.executeEndIntent()
+            return
+          }
+          this.boardVoice.heard(heard, this.boardVoiceTurn)
+          this.doneSinceHeard.clear()
+          this.updateState({})
+        }
         this.liveSaid.add(event.delta)
         this.endIntent.assistant(this.liveSaid.peek())
         if(this.liveReportItem&&!this.liveReportItem.interrupted&&typeof event.delta==='string')this.liveReportItem.text+=event.delta
@@ -1773,7 +1857,7 @@ export class RealtimeCopilotClient {
         const quiet = Date.now() - this.liveInputAt >= this.liveQuietMs
         if(!quiet)throw new Error('session_board_confirmation_required')
       }
-      if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
+      if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(undefined, requested.next_report === true),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
       else if (name === 'prepare_session_board' || name === 'confirm_session_board') output = JSON.stringify(await this.boardTool(name, requested))
       else {const result = await runCopilotTool(name, args, timedDeps(this.directToolDeps({...this.toolDeps(),operationParent:parent}), steps));output = result.output; logs = result.logs}
     } catch (error) {
@@ -1786,13 +1870,7 @@ export class RealtimeCopilotClient {
     this.updateState({toolCallLog:undefined})
     this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
-    const done = actionNotice(name, output)
-    if (done) {
-      this.doneSinceHeard.add(NOTICE_KIND[done.key])
-      this.updateState({ notice: { text: nextWord(done.key, done.params), at: Date.now() } })
-      this.journal('notice', nextWord(done.key, done.params))
-      this.meter.chime()
-    }
+    this.confirmedAction(name, output)
     // Each Session read is spoken at once while the backend goes on (`LIVE_BACKEND_FLOW`).
     // The note is session-wide: Live takes a delegation id only for a client
     // delegation and refused this Responses one ("Unknown client or Decision

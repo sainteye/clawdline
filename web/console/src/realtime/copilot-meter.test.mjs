@@ -9,8 +9,9 @@ const {CallMeter}=module.exports
 function context(){
  const tones=[],gains=[],events=new EventTarget()
  const audio={state:'running',currentTime:1,destination:{},tones,gains,
+  resume:async()=>{},
   addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events),dispatchEvent:events.dispatchEvent.bind(events),
-  createGain(){const events=[];const node={events,disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{setValueAtTime(value,at){events.push(['set',value,at])},linearRampToValueAtTime(value,at){events.push(['ramp',value,at])}}};gains.push(node);return node},
+  createGain(){const events=[];const node={events,disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{cancelScheduledValues(at){events.push(['cancel',at])},setValueAtTime(value,at){events.push(['set',value,at])},linearRampToValueAtTime(value,at){events.push(['ramp',value,at])}}};gains.push(node);return node},
   createOscillator(){return {type:'sine',frequency:{value:0},onended:undefined,disconnected:false,connect(){},disconnect(){this.disconnected=true},start(at){this.record={hz:this.frequency.value,type:this.type,at};tones.push(this.record)},stop(at){if(this.record)this.record.stoppedAt=at;this.onended?.()}}},
  }
  return audio
@@ -59,4 +60,33 @@ test('background processing is one lower triangle note, distinct from the active
  assert.equal(audio.tones[0].stoppedAt-audio.tones[0].at, audio.tones[1].stoppedAt-audio.tones[1].at)
  assert.deepEqual(audio.gains[0].events,audio.gains[1].events,'the duration and loudness envelope remain unchanged')
  audio.state='suspended';meter.pending('background');assert.equal(audio.tones.length,2)
+})
+
+test('ringback starts on audio resume and stops on the call boundary', t => {
+  t.mock.timers.enable({apis:['setInterval']})
+  const meter = new CallMeter(), audio = context(), states = []
+  meter.context = audio
+  audio.state = 'suspended'
+  const stop = meter.ring(state => states.push(state))
+  t.mock.timers.tick(5000)
+  assert.deepEqual(audio.tones, [])
+  audio.state = 'running'
+  audio.dispatchEvent(new Event('statechange'))
+  assert.deepEqual(audio.tones.map(tone => tone.hz), [440, 480])
+  assert.ok(audio.gains[0].events.some(([event, level]) => event === 'ramp' && level > 0))
+  audio.state = 'suspended'
+  audio.dispatchEvent(new Event('statechange'))
+  const paused = audio.gains[0].events.length
+  t.mock.timers.tick(5000)
+  assert.equal(audio.gains[0].events.length, paused)
+  audio.state = 'running'
+  audio.dispatchEvent(new Event('statechange'))
+  assert.ok(audio.gains[0].events.length > paused, 'recovery starts a fresh ring immediately')
+  stop()
+  const finished = audio.gains[0].events.length
+  audio.dispatchEvent(new Event('statechange'))
+  t.mock.timers.tick(5000)
+  assert.equal(audio.gains[0].events.length, finished)
+  assert.deepEqual(states, ['suspended', 'running', 'suspended', 'running'])
+  assert.ok(audio.gains[0].disconnected)
 })

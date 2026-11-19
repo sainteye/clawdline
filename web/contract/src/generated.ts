@@ -12913,6 +12913,12 @@ export interface TranscriptEntry {
   sourceAssistant?: string
 
   /**
+   * Durable conversation id of a Clawdline message sender on this machine. Absent
+   * when the message only recorded a terminal coordinate.
+   */
+  sourceConversation?: string
+
+  /**
    * How a peer or message row arrived: the peer's own mode, or `clawdline`.
    */
   sourceMode?: string

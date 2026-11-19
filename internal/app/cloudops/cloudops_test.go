@@ -1553,15 +1553,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "session-boards.inbox",
 		body: map[string]any{"type": "session-boards.inbox", "session": machine, "request": "req-session-board-inbox",
-			"board": "board-one", "member": "codex:conversation", "before": 4},
+			"board": "board-one", "member": "codex:conversation", "before": 514},
 		session: machine, name: "read:req-session-board-inbox", method: "GET", path: "/v1/orchestrator/session-boards/inbox",
-		query: map[string]string{"board": "board-one", "member": "codex:conversation", "before": "4"},
+		query: map[string]string{"board": "board-one", "member": "codex:conversation", "before": "514"},
 	}, {
 		word: "session-boards.read",
 		body: map[string]any{"type": "session-boards.read", "session": machine, "request": "req-session-board-read",
-			"board": "board-one", "after": 4},
+			"board": "board-one", "after": 514},
 		session: machine, name: "read:req-session-board-read", method: "GET", path: "/v1/orchestrator/session-boards",
-		query: map[string]string{"board": "board-one", "after": "4"},
+		query: map[string]string{"board": "board-one", "after": "514"},
 	}, {
 		word: "session-boards.change",
 		body: map[string]any{"type": "session-boards.change", "session": machine, "request": "req-session-board-post",

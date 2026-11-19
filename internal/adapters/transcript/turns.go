@@ -74,10 +74,11 @@ type Entry struct {
 	// Source identifies the background agent, peer or Clawdline session that
 	// spoke. SourceMode belongs to peer and message entries; SourceAssistant
 	// says which assistant sent a Clawdline message.
-	Source          string
-	SourceMode      string
-	SourceAssistant string
-	Notice          *Notice
+	Source             string
+	SourceMode         string
+	SourceAssistant    string
+	SourceConversation string
+	Notice             *Notice
 	// ArtifactIDs are the pictures an assistant turn showed with
 	// `<clawdline-image id="…">`, in order. Ids only: what each one is — a
 	// picture, an expired one, an unknown one — is asked of the image stores
@@ -1934,8 +1935,12 @@ func SessionMessage(raw string, at int64) (Entry, bool) {
 	default:
 		return Entry{}, false
 	}
-	return Entry{Kind: KindMessage, Text: body, At: at,
-		Source: label, SourceMode: "clawdline", SourceAssistant: assistant, Artifacts: refs}, true
+	conversation, qualified := strings.CutPrefix(id, session.MessageConversationPrefix)
+	if !qualified {
+		conversation = ""
+	}
+	return Entry{Kind: KindMessage, Text: body, At: at, Source: label, SourceMode: "clawdline",
+		SourceAssistant: assistant, SourceConversation: conversation, Artifacts: refs}, true
 }
 
 // ImageRef is one picture a version-2 session message described.

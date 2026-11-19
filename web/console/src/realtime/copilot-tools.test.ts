@@ -89,7 +89,7 @@ test("list_sessions returns states and deliveries without reading transcripts", 
   assert.equal(out.working[0].working_for, "10 分鐘")
   assert.equal(out.working[0].latest, undefined)
   assert.equal(out.working[1].latest, undefined, "an unreadable transcript leaves the row without a latest line")
-  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", message_board_status: "unavailable", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
+  assert.deepEqual(out.idle, [{ id: "%2", label: "Prepare screenshots", assistant: "codex", project: "y", message_board_status: "unavailable", delivered: "Captured six feature screenshots; abc123 is on main.", last_active: "5 分鐘前" }])
   const reads = calls.filter((c) => c.path.startsWith("/v1/transcript?"))
   assert.equal(reads.length, 0)
   for (const c of reads) assert.equal((c.init?.headers as Record<string, string>)["X-Clawdline-Unopened-Read"], "1")
@@ -919,7 +919,7 @@ test("an opened Session comes with what it did and what is left, for the copilot
   assert.equal(out.status.label, "Prepare screenshots")
   assert.deepEqual(out.status.requests, ["Take the six feature screenshots."])
   assert.match(out.status.last_reply, /dark-mode pair is left/)
-  assert.match(COPILOT_INSTRUCTIONS, /還有什麼沒完成/)
+  assert.match(COPILOT_INSTRUCTIONS, /進度和卡點/)
 })
 
 const SNIPPETS = [
@@ -2166,8 +2166,8 @@ test("a Cloud carried question is answered from its returned row without polling
 })
 
 test('ending this conversation and standalone goodbyes end the call in either language',()=>{
- for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.'])assert.equal(asksToEndCall(text),true,text)
- for(const text of ['不要掛斷電話','先不要拜拜','Tell that Session goodbye','請你跟那個 Session 說拜拜','How do I hang up?','我們先不要結束通話','Please fix the end call button','請修正掛斷電話的問題'])assert.equal(asksToEndCall(text),false,text)
+ for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.','這樣就足夠了，那就這樣吧，拜拜','I have what I need, talk to you later, goodbye.','其他 Session 等下次再聊，掰掰','Let’s wrap up this call now.'])assert.equal(asksToEndCall(text),true,text)
+ for(const text of ['不要掛斷電話','先不要拜拜','Tell that Session goodbye','請你跟那個 Session 說拜拜','How do I hang up?','我們先不要結束通話','Please fix the end call button','請修正掛斷電話的問題','她說「那就這樣，掰掰」','The test Session said, that’s all, goodbye.'])assert.equal(asksToEndCall(text),false,text)
 })
 
 test('a current hangup question accepts yes in both languages and loses stale confirmation',()=>{

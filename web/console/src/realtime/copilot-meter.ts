@@ -3,7 +3,7 @@
 // when the orb asks and keeps nothing.
 
 import { QUIET, levelFromSamples, type OrbLevels } from "./copilot-orb.js"
-import { CHIME_NOTE_S, playChime } from "./chime.js"
+import { borrowAudioSession, CHIME_NOTE_S, playChime } from "./chime.js"
 
 type Side = { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; samples: Uint8Array<ArrayBuffer> }
 
@@ -31,6 +31,7 @@ export function releaseCallPlayback(audio: HTMLMediaElement): void {
 
 export class CallMeter {
   private context: AudioContext | null = null
+  private releaseAudio?: () => void
   private input: Side | null = null
   private output: Side | null = null
 
@@ -45,7 +46,7 @@ export class CallMeter {
    * a user activation, such as the hold's lift.
    */
   wake() {
-    if (this.context && this.context.state === "suspended") void this.context.resume().catch(() => undefined)
+    if (this.context && this.context.state !== "running" && this.context.state !== "closed") void this.context.resume().catch(() => undefined)
   }
 
   open(): string | null {
@@ -53,12 +54,16 @@ export class CallMeter {
     const Ctor = typeof window === "undefined" ? undefined
       : (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
     if (!Ctor) return "this browser has no Web Audio"
+    const release = borrowAudioSession("play-and-record")
     try {
       this.context = new Ctor()
+      this.releaseAudio = release
       void this.context.resume().catch(() => undefined)
       return null
     } catch (err) {
       this.context = null
+      this.releaseAudio = undefined
+      release()
       return err instanceof Error ? err.message : String(err)
     }
   }
@@ -93,62 +98,102 @@ export class CallMeter {
    * called. It plays on the context `open` made in the tap, so iOS lets it
    * sound; with no context it is silent.
    */
-  ring(): () => void {
+  ring(observe: (state: AudioContextState | 'unavailable') => void = () => {}): () => void {
     const context = this.context
-    if (!context) return () => undefined
-    let gain: GainNode
-    let tones: OscillatorNode[]
-    try {
-      gain = context.createGain()
-      gain.gain.value = 0
-      gain.connect(context.destination)
-      tones = [440, 480].map((hz) => {
-        const tone = context.createOscillator()
-        tone.frequency.value = hz
-        tone.connect(gain)
-        tone.start()
-        return tone
-      })
-    } catch {
-      return () => undefined
+    if (!context) { observe('unavailable'); return () => {} }
+    let timer: ReturnType<typeof setInterval> | undefined
+    let gain: GainNode | undefined
+    const tones: OscillatorNode[] = []
+    let stopped = false
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      clearInterval(timer)
+      context.removeEventListener('statechange', sync)
+      for (const tone of tones) {
+        try { tone.stop(); tone.disconnect() } catch { /* refusal-ok: a stopped tone is already silent. */ }
+      }
+      gain?.disconnect()
     }
     const cycle = () => {
+      if (!gain || context.state !== 'running') return
       const at = context.currentTime + 0.02
+      gain.gain.cancelScheduledValues(at)
       gain.gain.setValueAtTime(0, at)
       gain.gain.linearRampToValueAtTime(RING_LEVEL, at + 0.02)
       gain.gain.setValueAtTime(RING_LEVEL, at + RING_ON_S - 0.02)
       gain.gain.linearRampToValueAtTime(0, at + RING_ON_S)
     }
-    cycle()
-    const timer = setInterval(cycle, RING_PERIOD_MS)
-    let stopped = false
-    return () => {
-      if (stopped) return
-      stopped = true
+    let prior: AudioContextState | undefined
+    const sync = () => {
+      if (stopped || context.state === prior) return
+      prior = context.state
       clearInterval(timer)
-      for (const tone of tones) {
-        try { tone.stop() } catch { /* refusal-ok: a tone that has stopped stops again silently. */ }
+      try {
+        if (prior === 'running') {
+          if (!gain) {
+            gain = context.createGain()
+            gain.gain.value = 0
+            gain.connect(context.destination)
+            for (const hz of [440, 480]) {
+              const tone = context.createOscillator()
+              tones.push(tone)
+              tone.frequency.value = hz
+              tone.connect(gain)
+              tone.start()
+            }
+          }
+          cycle()
+          timer = setInterval(cycle, RING_PERIOD_MS)
+        }
+        observe(prior)
+      } catch {
+        stop()
+        observe('unavailable')
       }
-      try { gain.disconnect() } catch { /* refusal-ok: an already disconnected node is fine. */ }
     }
+    context.addEventListener('statechange', sync)
+    sync()
+    return stop
   }
 
   /** Distinct local cues for connection readiness and entering a Session. */
-  connected():void{this.notes([480,660])}
-  sessionChanged():void{this.notes([660,880,660])}
-  private notes(frequencies:readonly number[]):void{
-    const context=this.context
-    if(!context||context.state!=='running')return
-    try{
-      const gain=context.createGain();gain.connect(context.destination)
-      for(const [index,hz] of frequencies.entries()){
-        const tone=context.createOscillator(),at=context.currentTime+index*CHIME_NOTE_S
-        tone.connect(gain);tone.frequency.value=hz
-        gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(RING_LEVEL/4,at+0.01);gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
-        tone.onended=()=>{tone.disconnect();if(index===frequencies.length-1)gain.disconnect()}
-        tone.start(at);tone.stop(at+CHIME_NOTE_S)
-      }
-    }catch{/* refusal-ok: the visible state remains when local audio is unavailable. */}
+  connected(): void { this.notes([480, 660], RING_LEVEL / 4) }
+  sessionChanged(): void { this.notes([660, 880, 660], RING_LEVEL) }
+
+  private withRunningContext(play: (context: AudioContext) => void): void {
+    const context = this.context
+    if (!context || context.state === 'closed') return
+    if (context.state === 'running') {
+      play(context)
+      return
+    }
+    // The call's original, tap-activated context can be interrupted by the
+    // browser's mic or output routing. Never play on a replacement call.
+    void context.resume().then(() => {
+      if (this.context === context && context.state === 'running') play(context)
+    }).catch(() => undefined)
+  }
+
+  private notes(frequencies: readonly number[], volume: number): void {
+    this.withRunningContext(context => {
+      try {
+        const onset = context.currentTime + 0.01
+        for (const [index, hz] of frequencies.entries()) {
+          const gain = context.createGain(), tone = context.createOscillator()
+          const at = onset + index * CHIME_NOTE_S
+          gain.connect(context.destination)
+          tone.connect(gain)
+          tone.frequency.value = hz
+          gain.gain.setValueAtTime(0, at)
+          gain.gain.linearRampToValueAtTime(volume, at + 0.01)
+          gain.gain.linearRampToValueAtTime(0, at + CHIME_NOTE_S)
+          tone.onended = () => { tone.disconnect(); gain.disconnect() }
+          tone.start(at)
+          tone.stop(at + CHIME_NOTE_S)
+        }
+      } catch { /* refusal-ok: the visible state remains when local audio is unavailable. */ }
+    })
   }
 
   /** One start note: background work is lower and warmer than an active tool. No loop. */
@@ -173,7 +218,7 @@ export class CallMeter {
    * on the machine (`actionNotice`), on the context the call's tap opened.
    */
   chime(): void {
-    if (this.context) playChime(this.context)
+    this.withRunningContext(playChime)
   }
 
   close(ended=false): void {
@@ -182,8 +227,10 @@ export class CallMeter {
     this.input = null
     this.output = null
     const context = this.context
+    const releaseAudio = this.releaseAudio
     this.context = null
-    if (!context)return
+    this.releaseAudio = undefined
+    if (!context) { releaseAudio?.(); return }
     let closed=false
     const interrupted=()=>{if(context.state!=='running')close()}
     const close=()=>{
