@@ -122,6 +122,41 @@ test("exact group quotes require API88 without disabling plain groups on API76",
   await legacy.status(signal());await legacy.sendGroup(plain,signal())
   assert.deepEqual(sent[1].body,plain)
 })
+test("group reactions begin at API90 with current write authority",async()=>{
+  const sent:{path:string;init?:RequestInit}[]=[]
+  const transport:AssistantFetch=async(path,init)=>{
+    if(init?.method!=="GET")sent.push({path,init})
+    return Response.json(path.endsWith("/status")?sourceStatus():{})
+  }
+  const request:W.ProjectAssistantGroupReactRequest={
+    command:command(key,"react","stable-room-react"),conversation_id:"room-chat",
+    group_version:1,message_seq:3,emoji:"👍",present:true,expected_revision:0,
+  }
+  const old=make(transport,{...grant(),apiLevel:89}).source
+  await old.status(signal())
+  assert.equal(old.canGroupContext(),true)
+  assert.equal(old.canGroupReactions(),false)
+  await assert.rejects(old.groupReact(request,signal()),e=>errorCode(e)==="pa_unsupported")
+  const read=make(transport,{...grant(),apiLevel:90,writable:false}).source
+  await read.status(signal())
+  assert.equal(read.canGroupReactions(),false)
+  await assert.rejects(read.groupReact(request,signal()),e=>errorCode(e)==="pa_read_only")
+  assert.equal(sent.length,0)
+
+  const current=make(transport,{...grant(),apiLevel:90})
+  await current.source.status(signal())
+  assert.equal(current.source.canGroupReactions(),true)
+  await current.source.groupReact(request,signal())
+  assert.equal(sent.length,1)
+  const carried=assistantRelayRequest(sent[0].path,sent[0].init)
+  assert.equal(carried.word,"project-assistants.group-react")
+  assert.equal(carried.id,request.command.idempotency_key)
+  assert.deepEqual(carried.fields,request)
+  current.setGrant({...grant(),apiLevel:90,authorizationRevision:"revoked"})
+  assert.equal(current.source.canGroupReactions(),false)
+  await assert.rejects(current.source.groupReact(request,signal()),e=>errorCode(e)==="pa_revoked")
+  assert.equal(sent.length,1)
+})
 test("view rejects raw truthy Source flags before a captured writable grant can coerce them",async()=>{
   for(const writable of [true,false])for(const field of ["readable","writable","fresh"]){
     const source=sourceStatus().sources[0]
@@ -350,7 +385,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)

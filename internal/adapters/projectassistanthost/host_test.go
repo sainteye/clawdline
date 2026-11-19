@@ -1234,6 +1234,16 @@ func TestHostStoppingAQueuedTurnRemovesOnlyThatMessage(t *testing.T) {
 	if e != nil || view.View.Snapshot == nil {
 		t.Fatal(e)
 	}
+	for _, row := range view.View.Items {
+		if row.Message != nil && row.Message.TurnID == second.ResourceID {
+			t.Fatalf("the taken-back message reappeared in chat: %+v", row.Message)
+		}
+	}
+	for _, msg := range view.View.Snapshot.QueuedMessages {
+		if msg.TurnID == second.ResourceID {
+			t.Fatalf("the taken-back message remained queued: %+v", msg)
+		}
+	}
 	started := ""
 	for _, turn := range view.View.Snapshot.PendingTurns {
 		if turn.ID == first.ResourceID {

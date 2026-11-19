@@ -166,6 +166,19 @@ func TestGroupCloudDecoderReachesRealHTTPAndSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := page.Lines[len(page.Lines)-1]
+	reaction := map[string]any{
+		"command": f.command(pa.ReactOperation, "cloud-room-react"), "conversation_id": group.Group.ConversationID,
+		"group_version": group.Group.Version, "message_seq": original.Seq, "emoji": "👍", "present": true, "expected_revision": 0,
+	}
+	first := call("group-react", reaction)
+	if repeated := call("group-react", reaction); !bytes.Equal(first, repeated) {
+		t.Fatalf("replayed reaction changed its receipt: %s / %s", first, repeated)
+	}
+	history = call("group-history", map[string]any{"key": group.Group.Key, "before_seq": original.Seq + 1, "page_size": 1})
+	var reacted contract.ProjectAssistantGroupHistoryResponse
+	if err := json.Unmarshal(history, &reacted); err != nil || len(reacted.Lines) != 1 || len(reacted.Lines[0].Reactions) != 1 || !reacted.Lines[0].Reactions[0].Own || reacted.Lines[0].Reactions[0].Emojis[0] != "👍" {
+		t.Fatalf("paged source did not publish the reaction: %s %v", history, err)
+	}
 	var previews contract.ProjectAssistantGroupListResponse
 	if err := json.Unmarshal(call("groups", map[string]any{"machine_id": "machine"}), &previews); err != nil || len(previews.Groups) != 1 || previews.Groups[0].LastEntry == nil || previews.Groups[0].LastEntry.Seq != original.Seq || previews.Groups[0].LastEntry.At == "" || previews.Groups[0].Room == nil {
 		t.Fatalf("Cloud list did not retain its real latest line: %+v %v", previews, err)

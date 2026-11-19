@@ -209,7 +209,7 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
 	}
 	// Missing joins must be an error, not missing rows in an apparently
 	// complete timeline. Materialized scalar projections stay inside SQLite.
-	statement = strings.TrimSuffix(viewAggregateSQL, " ") + viewTimelineCTE + `SELECT
+	statement = strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + viewTimelineCTE + `SELECT
  (SELECT count(*) FROM messages)=(SELECT count(DISTINCT id) FROM messages)
  AND (SELECT count(*) FROM messages)=(SELECT count(DISTINCT anchor) FROM messages)
  AND (SELECT count(*) FROM messages)=(SELECT json_extract(j,'$.Conversation.last_message_seq') FROM a)
@@ -247,9 +247,9 @@ const viewTimelineCTE = `, messages AS MATERIALIZED (
 ) `
 
 func viewTimelineSQL() string {
-	return strings.TrimSuffix(viewAggregateSQL, " ") + viewTimelineCTE + `, candidates AS MATERIALIZED (
+	return strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + viewTimelineCTE + `, candidates AS MATERIALIZED (
  SELECT anchor,kind,id,timeline.j,length(CAST(timeline.j AS BLOB)) n FROM a,timeline
- WHERE ` + ownChatTurnSQL("json_extract(timeline.j,'$.turn_id')") + ` AND (?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY))
+ WHERE ` + ownChatMessageSQL("json_extract(timeline.j,'$.turn_id')") + ` AND (?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY))
  ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?
 ), budget AS (
  SELECT *,sum(n) OVER(ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC) spent FROM candidates

@@ -104,6 +104,12 @@
           "type": "string",
           "description": "Source timestamp for new entries; old undated entries omit it."
         },
+        "reactions": {
+          "type": "array",
+          "items": {
+            "$ref": "project-assistants.v1#/$defs/ProjectAssistantReactionActor"
+          }
+        },
         "quote": {
           "$ref": "#/$defs/ProjectAssistantRoomQuote"
         }
@@ -195,6 +201,42 @@
         "key",
         "before_seq",
         "page_size"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantGroupReactRequest": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantCommand"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "group_version": {
+          "type": "integer"
+        },
+        "message_seq": {
+          "type": "integer"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "command",
+        "conversation_id",
+        "group_version",
+        "message_seq",
+        "emoji",
+        "present",
+        "expected_revision"
       ],
       "additionalProperties": false
     },

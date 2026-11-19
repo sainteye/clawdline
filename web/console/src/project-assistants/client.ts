@@ -35,6 +35,8 @@ export interface SourceClient {
   readonly intentAccount?: string
   canGroups?(): boolean
   canGroupContext?(): boolean
+  canGroupReactions?(): boolean
+  groupReact?(request:W.ProjectAssistantGroupReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
   groups?(request:W.ProjectAssistantGroupListRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupListResponse>
   groupHistory?(request:W.ProjectAssistantGroupHistoryRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupHistoryResponse>
   createGroup?(request:W.ProjectAssistantGroupCreateRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupResponse>

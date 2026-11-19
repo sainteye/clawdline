@@ -39,6 +39,22 @@ const roomTurnsCTE = `, room_turns AS MATERIALIZED (
  SELECT t.key id FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object' AND json_type(t.value,'$.room')='object'
 ) `
 
+// Unqueue is the intentional cancellation of a turn that never started and
+// has no execution failure. Keep its original facts and receipt for auditing.
+func withdrawnTurn(t pa.Turn) bool {
+	return t.State == pa.TurnCancelled && t.Failure == nil && t.StartedAt == nil
+}
+
+func ownChatMessageSQL(id string) string {
+	return ownChatTurnSQL(id) + ` AND NOT EXISTS(SELECT 1 FROM withdrawn_turns WHERE withdrawn_turns.id=` + id + `)`
+}
+
+const withdrawnTurnsCTE = `, withdrawn_turns AS MATERIALIZED (
+ SELECT t.key id FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
+ AND json_extract(t.value,'$.state')='cancelled' AND json_extract(t.value,'$.failure') IS NULL
+ AND json_extract(t.value,'$.started_at') IS NULL
+) `
+
 func ownChatEventSQL(event string) string {
 	// Permissions remain visible: a member's single execution can require a
 	// decision or cancellation even while the person is in its own chat.

@@ -14,6 +14,7 @@ import { EventRefreshMs } from "./Chat"
 import { followSnapshotRoster, serialSnapshotRefresh } from "./snapshot-roster"
 import { groupMentionOptions, withGroupMention } from "./group-mentions"
 import { GroupMemberOutcome, showGroupMemberOutcome } from "./GroupMemberOutcome"
+import { GroupMessageRow } from "./GroupMessageRow"
 import { useMessageArrivals } from "./message-arrivals"
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
@@ -246,12 +247,16 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       {lines.map((line,index)=>{
         const previous=lines[index-1],member=botFor(line.author),person=line.kind==="person"
         const continued=previous?.kind===line.kind&&(person||!!line.author&&!!previous.author&&identity(previous.author)===identity(line.author))
-        return <article data-continued={continued||undefined} aria-label={continued&&!person?author(line.author):undefined} key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}
-        data-arrival={motion.arrivals.has(String(line.seq))||undefined} onAnimationEnd={event=>{if(event.animationName==="pa-bubble-enter")motion.finish(String(line.seq))}}>
-        {!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{author(line.author)}</strong></div>}
-        <div className="pa-room-bubble">{line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}<p>{line.text}</p></div>
-        {canQuote&&(line.kind==="member"||person)&&<button className="pa-room-reply" type="button" aria-label={`${groupWord("groupReply")} · ${author(line.author)}`} disabled={!writable||busy||unknown} title={groupWord("groupReply")} onClick={()=>replyTo(line)}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 5-6 6 6 6M3 11h9a8 8 0 0 1 8 8"/></svg></button>}
-      </article>})}
+        const shownAuthor=author(line.author),canReply=canQuote&&writable&&!busy&&!unknown
+        return <GroupMessageRow key={line.seq} line={line} group={group} source={source} author={shownAuthor}
+          continued={continued} arriving={motion.arrivals.has(String(line.seq))} onArrivalEnd={()=>motion.finish(String(line.seq))}
+          readable={readable} writable={writable} dismissKey={JSON.stringify([active,readable,membersOpen,editing,deleting])}
+          replyLabel={groupWord("groupReply")} onReply={canReply?()=>replyTo(line):undefined} onReactionChanged={()=>void refresh.current()}
+          header={!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{shownAuthor}</strong></div>}>
+          {line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}
+          <p>{line.text}</p>
+        </GroupMessageRow>
+      })}
       {outcomes.map(outcome=><GroupMemberOutcome key={outcome.turn_id} outcome={outcome} w={w}/>)}
       {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
       {sending&&<article key={sending.command.idempotency_key} data-local-entrance className="pa-room-message pa-room-person pa-sending" aria-live="polite">

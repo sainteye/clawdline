@@ -212,10 +212,10 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 // snapshot for seconds. Stored bytes and returned projections remain JSON.
 var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  SELECT jsonb(CAST(data AS TEXT)) j FROM project_assistant_bots WHERE machine=? AND bot=?
-) ` + roomTurnsCTE + `, turns AS MATERIALIZED (
+) ` + roomTurnsCTE + withdrawnTurnsCTE + `, turns AS MATERIALIZED (
  SELECT t.key,t.value FROM a,json_each(j,'$.Turns') t
 ), own_messages AS MATERIALIZED (
- SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE ` + ownChatTurnSQL("json_extract(m.value,'$.turn_id')") + `
+ SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE ` + ownChatMessageSQL("json_extract(m.value,'$.turn_id')") + `
 ), admissions AS MATERIALIZED (
  SELECT m.key,m.value FROM own_messages m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
 ), u AS MATERIALIZED (

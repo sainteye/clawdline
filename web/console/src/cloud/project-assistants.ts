@@ -32,6 +32,7 @@ export const PROJECT_ASSISTANTS_RENAME_API_LEVEL = 78
 export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
 export const PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL = 88
+export const PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL = 90
 export const PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL = 75
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
@@ -93,6 +94,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly machineName?: string
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
+  canGroupReactions() { try { this.check(new AbortController().signal,true,true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL);return true } catch { return false } }
+  groupReact(r:W.ProjectAssistantGroupReactRequest,s:AbortSignal) {
+    return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/reactions",s,r,"POST",true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL)
+  }
   groups(r:W.ProjectAssistantGroupListRequest,s:AbortSignal) { if(r.machine_id!==this.machineID)throw notSent(failure("pa_scope_denied"));return this.request<W.ProjectAssistantGroupListResponse>(base+"/rooms/groups"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   groupHistory(r:W.ProjectAssistantGroupHistoryRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantGroupHistoryResponse>(base+"/rooms/groups/"+encodeURIComponent(r.key.bot_id)+query({machine_id:this.machineID,before_seq:r.before_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
@@ -498,7 +503,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   }
   const work = /^\/v1\/work\/v2\/items\/([^/]+)$/.exec(url.pathname)
   if (work && method === "GET") return {word:"work.v2.item",kind:"read" as const,fields:{id:decodeURIComponent(work[1])},id:""}
-  const group=/^\/v1\/project-assistants\/rooms\/groups(?:\/([^/]+)(?:\/(messages|stop))?)?$/.exec(url.pathname)
+  const group=/^\/v1\/project-assistants\/rooms\/groups(?:\/([^/]+)(?:\/(messages|stop|reactions))?)?$/.exec(url.pathname)
   if(group) {
     const id=group[1]?decodeURIComponent(group[1]):"",q=Object.fromEntries(url.searchParams)
     if(method==="GET") {
@@ -510,7 +515,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     }
     if(url.search||typeof init?.body!=="string")throw failure("pa_invalid")
     const fields=JSON.parse(init.body),cmd=fields.command
-    const action=!id&&method==="POST"?"create":id&&!group[2]&&method==="PATCH"?"edit":id&&!group[2]&&method==="DELETE"?"delete":id&&method==="POST"&&group[2]==="messages"?"send":id&&method==="POST"&&group[2]==="stop"?"stop":""
+    const action=!id&&method==="POST"?"create":id&&!group[2]&&method==="PATCH"?"edit":id&&!group[2]&&method==="DELETE"?"delete":id&&method==="POST"&&group[2]==="messages"?"send":id&&method==="POST"&&group[2]==="stop"?"stop":id&&method==="POST"&&group[2]==="reactions"?"react":""
     if(!action||!cmd?.key?.machine_id||!cmd.key.bot_id||id&&cmd.key.bot_id!==id||cmd.operation!==action||!cmd.idempotency_key||new Headers(init.headers).get("Idempotency-Key")!==cmd.idempotency_key)throw failure("pa_invalid")
     return {word:"project-assistants.group-"+action,kind:"action" as const,fields:fields as Record<string,unknown>,id:cmd.idempotency_key as string}
   }

@@ -67,6 +67,7 @@ func (GroupInstaller) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS project_assistant_group_member_bot ON project_assistant_group_members(machine,bot)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_rooms (machine TEXT NOT NULL, grp TEXT NOT NULL, revision INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,grp))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_lines (machine TEXT NOT NULL, grp TEXT NOT NULL, seq INTEGER NOT NULL CHECK(seq>0), data BLOB NOT NULL, PRIMARY KEY(machine,grp,seq))`,
+		groupReactionsSchema,
 		`CREATE TABLE IF NOT EXISTS project_assistant_group_receipts (machine TEXT NOT NULL, grp TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,grp,operation,command_key))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {

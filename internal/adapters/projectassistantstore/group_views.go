@@ -30,6 +30,9 @@ func (s *GroupStore) History(ctx context.Context, key pa.BotKey, before int64, l
 	if out.Lines, err = linesBefore(ctx, tx, key, before, limit); err != nil {
 		return out, err
 	}
+	if out.Reactions, err = projectGroupReactions(ctx, tx, key, out.Lines); err != nil {
+		return out, err
+	}
 	if out.Activity, out.MemberOutcomes, err = roomTurnObservations(ctx, tx, out.Group, out.Room); err != nil {
 		return out, err
 	}

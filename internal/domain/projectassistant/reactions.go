@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -51,3 +52,22 @@ func ReactionEmoji(value string) (string, error) {
 }
 
 func Reactable(m Message) bool { return m.Kind == UserMessage || m.Kind == AssistantMessage }
+
+// ApplyHumanReaction advances only the authenticated reader's revision.
+func ApplyHumanReaction(actor ReactionActor, emoji string, present bool, revision int64) (ReactionActor, error) {
+	if actor.Revision != revision {
+		return actor, fail(StaleVersion, "reaction_revision")
+	}
+	at := slices.Index(actor.Emojis, emoji)
+	if present && at < 0 {
+		if len(actor.Emojis) >= MaxHumanReactions {
+			return actor, fail(CapacityFull, "human_reactions")
+		}
+		actor.Emojis = append(actor.Emojis, emoji)
+	}
+	if !present && at >= 0 {
+		actor.Emojis = slices.Delete(actor.Emojis, at, at+1)
+	}
+	actor.Revision++
+	return actor, nil
+}

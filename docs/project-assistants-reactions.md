@@ -46,18 +46,30 @@ replaces its previous emoji on that target. Retained successful reaction evidenc
 allows a reaction-only result without fabricated assistant text or an empty-reply
 notice. Peer/network work, room turns and other unsupported origins are refused.
 
-## Remaining construction
+## Human reactions in group rooms
 
-This is a partial construction unit, not completion of the parent chat step.
-Group-room reactions are deliberately unsupported: selecting from the actual
-24 shown messages, current membership/revision fencing and the six-message
-sparse-reaction rule still need an atomic room implementation and focused
-failure-injection coverage. Room chips and grouped Bot-avatar rendering need
-that same source-owned projection. The room stopped/cancelled/revoked/late matrix and the remaining UI source-switch
-and IME cases still need coverage. Main-chat source/Project/turn/generation/Stop
-refusals, independent authenticated HTTP readers, late revoked replies and narrow
-touch actions have focused coverage. The main-chat checks
-do not establish these destinations or private Cloud Relay composition.
+Group history includes reactions on published room lines and identifies the
+current reader's own reactions. API 90 accepts a group reaction by room
+conversation ID and line sequence. The write checks the group version and the
+reader's own reaction revision, and commits the reaction with the existing
+group command receipt. Its replay still checks the current authority and room
+identity. Taking back an emoji retains that reader's revision. Reactions leave
+the room sequence, member turn, quote and original line intact. The table is
+additive on installed databases. Group history and the opaque Cloud transport
+keep their existing byte limits. Older daemons and read-only grants still open
+group history and expose the actions they support.
+
+The room reuses the main-chat message menu, palette and same-key recovery.
+Desktop displays the action button beside the bubble on hover or keyboard
+focus, and the context menu opens the same actions. Touch opens that menu
+after a stationary hold. A scrolling gesture cancels the hold. Reply
+continues to quote the original line from the room store. Group Bot tool
+reactions, including target selection from shown messages and spacing,
+remain outside the human controls.
+
+The main-chat coverage includes source, Project, turn and generation fences,
+Stop, independent authenticated HTTP readers, late revoked replies and narrow
+touch actions.
 
 The owned task artifacts contain rerunnable commands, real HTTP/SQLite tests,
 production bilingual browser evidence, an owned synthetic ACP/MCP test and the

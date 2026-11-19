@@ -5142,6 +5142,16 @@ type ProjectAssistantGroupMember struct {
 	Key            ProjectAssistantBotKey `json:"key"`
 }
 
+type ProjectAssistantGroupReactRequest struct {
+	Command          ProjectAssistantCommand `json:"command"`
+	ConversationID   string                  `json:"conversation_id"`
+	Emoji            string                  `json:"emoji"`
+	ExpectedRevision int64                   `json:"expected_revision"`
+	GroupVersion     int64                   `json:"group_version"`
+	MessageSeq       int64                   `json:"message_seq"`
+	Present          bool                    `json:"present"`
+}
+
 type ProjectAssistantGroupResponse struct {
 	ContractVersion string                  `json:"contract_version"`
 	Group           ProjectAssistantGroup   `json:"group"`
@@ -6013,13 +6023,14 @@ type ProjectAssistantRoomAttempt struct {
 
 type ProjectAssistantRoomEntry struct {
 	// Source timestamp for new entries; old undated entries omit it.
-	At            string                     `json:"at,omitempty"`
-	Author        *ProjectAssistantBotKey    `json:"author,omitempty"`
-	Kind          string                     `json:"kind"`
-	Quote         *ProjectAssistantRoomQuote `json:"quote,omitempty"`
-	ReplyToAuthor *ProjectAssistantBotKey    `json:"reply_to_author,omitempty"`
-	Seq           int64                      `json:"seq"`
-	Text          string                     `json:"text"`
+	At            string                          `json:"at,omitempty"`
+	Author        *ProjectAssistantBotKey         `json:"author,omitempty"`
+	Kind          string                          `json:"kind"`
+	Quote         *ProjectAssistantRoomQuote      `json:"quote,omitempty"`
+	Reactions     []ProjectAssistantReactionActor `json:"reactions,omitempty"`
+	ReplyToAuthor *ProjectAssistantBotKey         `json:"reply_to_author,omitempty"`
+	Seq           int64                           `json:"seq"`
+	Text          string                          `json:"text"`
 }
 
 type ProjectAssistantRoomMemberOutcome struct {
