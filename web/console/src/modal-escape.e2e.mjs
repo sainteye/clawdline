@@ -27,6 +27,7 @@ import {CompleteWorkDialog} from './src/pages/work/CompleteWorkDialog';
 import {WorkV2Page} from './src/pages/work/WorkV2';
 import {openNewWorkItem} from './src/pages/work/new-item';
 import {BotCreate} from './src/project-assistants/BotCreate';
+import {CopilotDockView} from './src/realtime/CopilotDockView';
 import {fixtureSource} from './src/project-assistants/fixtures';
 import {words as projectAssistantWords} from './src/project-assistants/words';
 import './src/project-assistants/styles.css';
@@ -49,6 +50,7 @@ const [paste,setPaste]=React.useState(false);
 const [complete,setComplete]=React.useState(false);
 const [bot,setBot]=React.useState(false);
 return <>
+<CopilotDockView/>
 <button id="native-open" onClick={()=>document.getElementById('native').showModal()}>Native</button>
 <dialog id="native"><input id="native-input"/><button id="nested-open" onClick={()=>{document.getElementById('nested').hidden=false}}>Picker</button>
 <div id="nested" hidden onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();e.currentTarget.hidden=true;document.getElementById('nested-open').focus()}}}><button id="nested-choice">Choice</button></div></dialog>
@@ -87,8 +89,40 @@ createRoot(document.getElementById('root')).render(<Examples/>);
         const errors = []
         page.on("pageerror", error => errors.push(String(error)))
         await page.route("**/v1/**", route => route.fulfill({ json: {} }))
+        await page.addInitScript(() => {
+          Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+            value: async () => { throw new DOMException("Fixture microphone unavailable", "NotAllowedError") },
+          })
+        })
+        let finishSettings
+        const releaseSettings = new Promise(resolve => { finishSettings = resolve })
+        await page.route("**/v1/settings/copilot", async route => {
+          await releaseSettings
+          await route.fulfill({ status: 503, json: {} })
+        })
         await page.goto(origin + "/modal-escape-fixture.html?lang=" + lang + (process.env.CLAWDLINE_MODAL_ESCAPE_CONTROL ? '&control=1' : ''))
         await page.locator('#start-go').waitFor()
+        const voiceCall = page.locator(".realtime-modal-sheet")
+        const callButton = page.locator("#copilot-call")
+        await callButton.click()
+        try {
+          await voiceCall.waitFor({ state: "visible", timeout: 3000 })
+          await voiceCall.locator(".realtime-hangup-btn").waitFor()
+          await page.mouse.click(4, 4)
+          await voiceCall.waitFor({ state: "detached" })
+          await page.locator(".copilot-bubble-body").press("Enter")
+          await voiceCall.locator(".realtime-hangup-btn").waitFor()
+          finishSettings()
+          await voiceCall.getByRole("alert").waitFor()
+          await page.mouse.click(4, 4)
+          await voiceCall.waitFor({ state: "detached" })
+          assert.equal(await callButton.isVisible(), true)
+        } catch (error) {
+          assert.deepEqual(errors, [], "opening or closing the voice call must preserve the React tree")
+          throw error
+        } finally {
+          finishSettings()
+        }
         const canceled = () => page.evaluate(() => window.lastKey.defaultPrevented)
         await page.locator('#outside').press('Escape')
         assert.equal(await canceled(), false, 'Escape outside a modal keeps its native behavior')
