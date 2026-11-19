@@ -426,7 +426,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
                 { label: W.settingsAuto, value: "auto" },
                 { label: "iTerm2", value: "iterm" },
                 { label: W.settingsITermNative, value: "iterm_native" },
-                { label: "tmux", value: "tmux" },
+                { label: catalogWord("workflowSettings", "terminalOption_tmux"), value: "tmux" },
               ]}
               onPick={pick("terminal")}
             />

@@ -14976,6 +14976,11 @@ export interface WorkflowSettingsRequest {
    * boundary once its own work is done.
    */
   session_todo_auto_take: boolean | null
+
+  /**
+   * Terminal preference for new Sessions on the selected machine.
+   */
+  terminal: string | null
 }
 
 export interface WorkflowSettingsSnapshot {
@@ -15007,6 +15012,11 @@ export interface WorkflowSettingsSnapshot {
    * take). False by default; a daemon before this setting omits the field.
    */
   session_todo_auto_take: boolean | null
+
+  /**
+   * Terminal preference for new Sessions. Older daemons omit this field.
+   */
+  terminal: string | null
 }
 
 export interface WorkflowStage {

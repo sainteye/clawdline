@@ -690,6 +690,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "terminal": { "type": "string", "enum": ["auto", "iterm", "iterm_native", "tmux"], "nullable": true, "description": "Terminal preference for new Sessions. Older daemons omit this field." },
         "dispatch_full_permission": {
           "type": "boolean",
           "default": true
@@ -725,6 +726,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "terminal": { "type": "string", "enum": ["auto", "iterm", "iterm_native", "tmux"], "nullable": true, "description": "Terminal preference for new Sessions on the selected machine." },
         "dispatch_full_permission": {
           "type": "boolean",
           "nullable": true

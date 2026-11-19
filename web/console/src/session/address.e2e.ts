@@ -146,7 +146,7 @@ let machineSettings: Record<string, unknown> = {
     ],
   },
 }
-let workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
+let workflowSettings: { dispatch_full_permission: boolean; session_auto_discovery: boolean; iterm_integration?: boolean; terminal?: string } = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
 let integrationSettings: { workflow_profile?: string; space_saving_images?: boolean; workflow_skills_enabled: boolean; codegraph_enabled: boolean } = { workflow_skills_enabled: false, codegraph_enabled: false }
 let integrationWrites: Record<string, unknown>[] = []
@@ -3403,10 +3403,10 @@ for (const [name, size, tag, legacy] of [
   } finally { usageAgentLegacy = false }
 })
 
-test("workflow settings explain both switches and persist independent changes on desktop and phone", async () => {
+test("workflow settings explain integration and save the terminal and independent switches on desktop and phone", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
     for (const tag of ["en", "zh-Hant"]) {
-      workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true }
+      workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true, iterm_integration: true, terminal: "auto" }
       await inTab(size, async tab => {
         await tab.go("/")
         await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
@@ -3431,11 +3431,18 @@ test("workflow settings explain both switches and persist independent changes on
         assert.ok(await tab.run(`document.getElementById('workflow-dispatch_full_permission-help').textContent.includes(${JSON.stringify(tag === "en" ? "Running tasks" : "執行中的任務")})`))
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: true })
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: true, iterm_integration: true, terminal: "auto" })
         await tab.run(`document.querySelectorAll('.workflow-info')[1].click()`)
         await tab.run(`document.querySelectorAll('${switches}')[1].click()`)
         await waitFor(`document.querySelectorAll('${switches}')[1].getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false })
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "auto" })
+        const picker = "document.getElementById('workflow-terminal-select')"
+        assert.equal(await tab.run(`${picker}.value`), "auto")
+        assert.ok(await tab.run(`document.getElementById('workflow-terminal-help').textContent.includes(${JSON.stringify(tag === "en" ? "Want to keep iTerm2 integration" : "想保留 iTerm2 整合")})`))
+        assert.ok(await tab.run(`${picker}.querySelector('[value="tmux"]').textContent.includes(${JSON.stringify(tag === "en" ? "no iTerm2 tab" : "不開 iTerm2 分頁")})`))
+        await tab.run(`${picker}.value = "tmux"; ${picker}.dispatchEvent(new Event("change", { bubbles: true }))`)
+        await waitFor(`${picker}.value === "tmux" && !${picker}.disabled`)
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "tmux" })
         const bounds = await tab.run(`({ width: innerWidth, page: document.documentElement.scrollWidth })`)
         assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} workflow overflow: ${JSON.stringify(bounds)}`)
         if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-workflow-settings`) }
@@ -3444,10 +3451,20 @@ test("workflow settings explain both switches and persist independent changes on
         await tab.run(`document.getElementById("settings-tab-3").click()`)
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
+        assert.equal(await tab.run(`${picker}.value`), "tmux")
         refuseWorkflowWrite = true
-        await tab.run(`document.querySelector('${switches}').click()`)
-        await waitFor(`!document.querySelector('${switches}').disabled && !!document.querySelector('.settings-workflow .said').textContent`)
-        assert.equal(await tab.run(`document.querySelector('${switches}').getAttribute('aria-checked')`), "false")
+        await tab.run(`${picker}.value = "auto"; ${picker}.dispatchEvent(new Event("change", { bubbles: true }))`)
+        await waitFor(`${picker}.value === "tmux" && !${picker}.disabled && !!document.querySelector('.settings-workflow .said').textContent`)
+        assert.equal(workflowSettings.terminal, "tmux")
+
+        if (sizeName === "phone" && tag === "zh-Hant") {
+          workflowSettings = { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true }
+          await tab.reload()
+          await waitFor(`!!document.getElementById("settings-tab-3")`)
+          await tab.run(`document.getElementById("settings-tab-3").click()`)
+          await waitFor(`document.querySelector('.workflow-terminal-row [role="status"]')?.textContent.includes("請更新")`)
+          assert.equal(await tab.run(`!!${picker}`), false)
+        }
       })
     }
   }

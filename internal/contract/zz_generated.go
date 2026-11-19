@@ -12674,6 +12674,9 @@ type WorkflowSettingsRequest struct {
 	// Whether a root Session takes the person's oldest unsent to-do at its turn
 	// boundary once its own work is done.
 	SessionTodoAutoTake *bool `json:"session_todo_auto_take"`
+
+	// Terminal preference for new Sessions on the selected machine.
+	Terminal *string `json:"terminal"`
 }
 
 type WorkflowSettingsSnapshot struct {
@@ -12697,6 +12700,9 @@ type WorkflowSettingsSnapshot struct {
 	// takes the person's oldest unsent to-do at its turn boundary (clawdline todo
 	// take). False by default; a daemon before this setting omits the field.
 	SessionTodoAutoTake *bool `json:"session_todo_auto_take"`
+
+	// Terminal preference for new Sessions. Older daemons omit this field.
+	Terminal *string `json:"terminal"`
 }
 
 type WorkflowStage struct {

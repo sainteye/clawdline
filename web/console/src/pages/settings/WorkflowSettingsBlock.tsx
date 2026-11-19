@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import type { WorkflowSettingsSnapshot } from "@clawdline/contract"
+import { useEffect, useRef, useState } from "react"
+import type { WorkflowSettingsRequest, WorkflowSettingsSnapshot } from "@clawdline/contract"
 import { catalogFormat, catalogWord } from "../../catalog.js"
 import * as L from "../../legacy/bridge.js"
 import { readWorkflowSettings, writeWorkflowSettings } from "./api.js"
@@ -7,7 +7,8 @@ import { Switch } from "./Switch.js"
 import "./workflow-settings.css"
 import { ToolSuggestionsSetting } from "../../tool-library/ToolSuggestionsSetting.js"
 
-type Key = keyof WorkflowSettingsSnapshot
+type Key = Exclude<keyof WorkflowSettingsSnapshot, "terminal">
+const terminals = ["auto", "iterm", "iterm_native", "tmux"] as const
 const word = (key: string) => catalogWord("workflowSettings", key)
 
 export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
@@ -16,6 +17,7 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
   const [said, setSaid] = useState("")
   const [open, setOpen] = useState<Key | null>(null)
   const [retry, setRetry] = useState(0)
+  const generation = useRef(0)
   useEffect(() => {
     if (!shown) return
     let live = true
@@ -26,18 +28,25 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
       value => { if (live) { setSnapshot(value); setBusy(false) } },
       error => { if (live) { setSaid(L.failureSentence(error, word("readFailed"))); setBusy(false) } },
     )
-    return () => { live = false }
+    return () => { live = false; generation.current++ }
   }, [shown, retry])
 
-  const toggle = async (key: Key) => {
+  const save = async (change: Partial<WorkflowSettingsRequest>) => {
     if (!snapshot || busy) return
+    const started = generation.current
     setBusy(true)
     setSaid("")
     try {
-      setSnapshot(await writeWorkflowSettings({ [key]: !snapshot[key] }))
-      setSaid(word("saved"))
-    } catch (error) { setSaid(L.failureSentence(error, word("saveFailed"))) }
-    finally { setBusy(false) }
+      const saved = await writeWorkflowSettings(change)
+      if (started === generation.current) {
+        setSnapshot(saved)
+        setSaid(word("saved"))
+      }
+    } catch (error) {
+      if (started === generation.current) setSaid(L.failureSentence(error, word("saveFailed")))
+    } finally {
+      if (started === generation.current) setBusy(false)
+    }
   }
 
   return <div className="block settings-workflow" aria-busy={busy}>
@@ -61,13 +70,29 @@ export function WorkflowSettingsBlock({ shown }: { shown: boolean }) {
           {unsupported ? <span className="say" role="status">{word(key === "iterm_integration" ? "itermUpdateRequired" : key + "UpdateRequired")}</span> : <Switch labelledBy={id + "-title"} describedBy={expanded ? id + "-help" : undefined}
             on={snapshot?.[key] === true} disabled={!snapshot || busy}
             stateText={snapshot ? word(snapshot[key] ? "on" : "off") : word("loading")}
-            onToggle={() => void toggle(key)} />}
+            onToggle={() => void save({ [key]: !snapshot?.[key] })} />}
         </div>
         <div id={id + "-help"} className="workflow-setting-help" hidden={!expanded}>
           <p><strong>{word("whenOn")}</strong> {word(key + "On")}</p>
           <p><strong>{word("whenOff")}</strong> {word(key + "Off")}</p>
           <p>{word(key + "Scope")}</p>
         </div>
+        {key === "iterm_integration" && <>
+          <p className="say" id="workflow-terminal-help">{word("terminalKeepIntegration")}</p>
+          <div className="workflow-setting-row workflow-terminal-row">
+            <label htmlFor="workflow-terminal-select">{word("terminalTitle")}</label>
+            {snapshot?.terminal ? <span className="workflow-profile-picker">
+              <select id="workflow-terminal-select" aria-describedby="workflow-terminal-help" disabled={busy}
+                value={snapshot.terminal} onChange={event => {
+                  const choice = terminals.find(value => value === event.target.value)
+                  if (choice) void save({ terminal: choice })
+                }}>
+                {terminals.map(value => <option key={value} value={value}>{word("terminalOption_" + value)}</option>)}
+              </select>
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" /></svg>
+            </span> : snapshot && <span className="say" role="status">{word("terminalUpdateRequired")}</span>}
+          </div>
+        </>}
       </div>
     })}
     {shown && <ToolSuggestionsSetting />}

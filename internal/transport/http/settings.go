@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
@@ -291,7 +292,7 @@ func (s *Server) workGateSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// workflowSettingsRoute exposes only workflow defaults, discovery and iTerm2 consent.
+// workflowSettingsRoute exposes workflow defaults, discovery and new-Session terminal settings.
 func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	f := s.settingsFile()
 	read := func() (contract.WorkflowSettingsSnapshot, error) {
@@ -303,7 +304,10 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		integration, _ := v.Bool("iterm_integration")
 		autoTake := v.SessionTodoAutoTake()
 		grokFull := v.GrokFullPermission()
+		choice, _ := v.String("terminal")
+		terminalChoice := string(projects.ParseTerminalChoice(choice))
 		return contract.WorkflowSettingsSnapshot{
+			Terminal:               &terminalChoice,
 			ItermIntegration:       &integration,
 			DispatchFullPermission: v.DispatchPermission() == "full",
 			SessionAutoDiscovery:   v.SessionAutoDiscovery(),
@@ -333,7 +337,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" {
+			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" && name != "terminal" {
 				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a workflow setting key: "+name)
 				return
 			}

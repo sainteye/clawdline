@@ -1,6 +1,8 @@
 .settings-workflow { max-width: 780px; }
 .workflow-setting { padding: 12px 0; border-top: 1px solid var(--line); }
 .workflow-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.workflow-terminal-row { flex-wrap: wrap; }
+.workflow-terminal-row .workflow-profile-picker { max-width: 100%; }
 .workflow-setting-label { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workflow-info { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 20px; cursor: pointer; }
 .workflow-info:hover, .workflow-info[aria-expanded="true"] { color: var(--accent); }

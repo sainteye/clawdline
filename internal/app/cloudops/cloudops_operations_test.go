@@ -2104,14 +2104,14 @@ func TestWorkflowSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 	r = &router{}
 	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "workflow-settings-update", "session": MachineReplySession, "request": "req-write",
-		"changes": map[string]any{"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false},
+		"changes": map[string]any{"dispatch_full_permission": false, "session_auto_discovery": true, "iterm_integration": false, "terminal": "tmux"},
 	}))
 	if answer.Status != 200 || len(r.seen) != 1 {
 		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
 	}
 	got := r.last()
 	if got.Method != "POST" || got.Path != "/v1/settings/workflow" ||
-		string(got.Body) != `{"dispatch_full_permission":false,"iterm_integration":false,"session_auto_discovery":true}` ||
+		string(got.Body) != `{"dispatch_full_permission":false,"iterm_integration":false,"session_auto_discovery":true,"terminal":"tmux"}` ||
 		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-write" {
 		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
 	}
@@ -2120,6 +2120,8 @@ func TestWorkflowSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		map[string]any{"remote": true},
 		map[string]any{"iterm_scan": true},
 		map[string]any{"iterm_integration": "on"},
+		map[string]any{"terminal": "ghostty"},
+		map[string]any{"terminal": true},
 		map[string]any{"dispatch_full_permission": "on"},
 		map[string]any{"dispatch_full_permission": true, "session_auto_discovery": false, "remote": nil},
 		[]any{true},

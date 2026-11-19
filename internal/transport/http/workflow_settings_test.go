@@ -3,14 +3,16 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/sainteye/clawdline/internal/adapters/terminal"
-	"github.com/sainteye/clawdline/internal/config"
-	"github.com/sainteye/clawdline/internal/contract"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) {
@@ -39,6 +41,9 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 	if got.ItermIntegration == nil || *got.ItermIntegration {
 		t.Fatalf("default consent: %+v", got)
 	}
+	if got.Terminal == nil || *got.Terminal != "auto" {
+		t.Fatalf("default terminal: %+v", got)
+	}
 	for _, on := range []bool{true, false} {
 		got = call("POST", fmt.Sprintf(`{"iterm_integration":%t}`, on))
 		if got.ItermIntegration == nil || *got.ItermIntegration != on || terminal.ITermIntegration() != on || !got.DispatchFullPermission || !got.SessionAutoDiscovery || !got.GeminiStepExplanations {
@@ -46,6 +51,19 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 		}
 		if got = call("GET", ""); got.ItermIntegration == nil || *got.ItermIntegration != on {
 			t.Fatalf("consent not persisted: %+v", got)
+		}
+	}
+	got = call("POST", `{"iterm_integration":true}`)
+	for _, choice := range projects.TerminalChoices {
+		got = call("POST", fmt.Sprintf(`{"terminal":%q}`, choice))
+		if got.Terminal == nil || *got.Terminal != choice || got.ItermIntegration == nil || !*got.ItermIntegration {
+			t.Fatalf("terminal %q changed consent or was not saved: %+v", choice, got)
+		}
+		if got = call("GET", ""); got.Terminal == nil || *got.Terminal != choice {
+			t.Fatalf("terminal %q did not persist: %+v", choice, got)
+		}
+		if actual := s.starter(startReading{}).Terminal(); string(actual) != choice {
+			t.Fatalf("new Session reads %q after saving %q", actual, choice)
 		}
 	}
 	got = call("POST", `{"gemini_step_explanations":false}`)
@@ -84,7 +102,7 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 
 func TestWorkflowSettingsRejectUnrelatedOrMalformedChanges(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
-	for _, body := range []string{`{"remote":true}`, `{"iterm_scan":true}`, `{"iterm_integration":"on"}`, `{"session_auto_discovery":"off"}`, `{"dispatch_full_permission":"off"}`} {
+	for _, body := range []string{`{"remote":true}`, `{"iterm_scan":true}`, `{"terminal":"ghostty"}`, `{"terminal":true}`, `{"iterm_integration":"on"}`, `{"session_auto_discovery":"off"}`, `{"dispatch_full_permission":"off"}`} {
 		r := httptest.NewRequest(http.MethodPost, "/v1/settings/workflow", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

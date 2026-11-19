@@ -197,7 +197,9 @@ decision about what Clawdline is willing to assume rather than a missing line of
 
 ## Which terminal a session opens in
 
-**Settings → New sessions open in**, and it is a different question from the row above it. Until
+**Settings → Sessions and access → New Sessions open in** sets the terminal for new sessions on
+the selected machine, in both the local console and Clawdline Cloud. The local console also
+shows this choice under **General**. Until
 2026-09-02 it was the same value: `scope_app` said where <kbd>⌥</kbd><kbd>Space</kbd> is live *and*
 which backend a session was started with, so somebody who wanted the chord bound to iTerm2 had no
 way to ask for sessions in tmux, and somebody who changed it for the terminal lost the binding they
@@ -205,7 +207,7 @@ had. Two questions, one answer, and no spelling for half the combinations.
 
 | | what a start does |
 | --- | --- |
-| **Auto** | iTerm2 while it is open; tmux while it is not; and with neither, an ask to open iTerm2. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. With tmux installed, "iTerm2" is a viewer tab on a tmux session — the section below. |
+| **Auto** | iTerm2 when integration is enabled and iTerm2 is open, otherwise tmux when available. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. With tmux installed, "iTerm2" is a viewer tab on a tmux session — the section below. |
 | **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. With tmux installed, the tab is a viewer on a tmux session, as for auto. |
 | **iTerm2 (native tab)** | `iterm_native`: the session runs in the iTerm2 tab itself, read and typed into through iTerm2's Apple Events — what **iTerm2** meant before 2026-10-02, kept as the way back. Refused like **iTerm2** when iTerm2 is shut. |
 | **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`. That refusal has no application to name — tmux is not one — so unlike `terminal_closed` the phone does not write a sentence around a name; it draws a sentence of its own saying that Settings asks for tmux, that this Mac has none, and that the answers are to install it or to choose another terminal here. |
@@ -282,7 +284,8 @@ requests marked `ports.Asked`. Turning it off leaves existing tabs open; remote
 iTerm2 operations stop. An already executing Apple Event may still complete.
 Clawdline does not revoke an existing macOS permission grant.
 
-New Sessions and dispatch use tmux when available. An explicit iTerm2 terminal
+To keep iTerm2 integration without opening iTerm2 tabs for new Sessions, set **New Sessions open in**
+to **tmux**. This does not change iTerm2 consent. An explicit iTerm2 terminal
 choice remains unavailable until integration is enabled; missing tmux produces
 the existing capability explanation rather than controlling another terminal.
 The first machine workspace can start from a complete enabled-source inventory;

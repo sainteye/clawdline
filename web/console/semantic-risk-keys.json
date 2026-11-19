@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13301,
+  "englishKeys": 13308,
   "counts": {
-    "negation": 3506,
-    "state": 2243,
+    "negation": 3508,
+    "state": 2246,
     "permission": 812,
     "deletion": 312,
     "uncertainty": 543
   },
-  "unionCount": 5729,
+  "unionCount": 5733,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3509,6 +3509,8 @@
       "workflowSettings.session_auto_discoveryScope",
       "workflowSettings.session_todo_auto_takeOn",
       "workflowSettings.session_todo_auto_takeScope",
+      "workflowSettings.terminalKeepIntegration",
+      "workflowSettings.terminalOption_tmux",
       "worktree.inventoryNotObserved",
       "worktree.noBranch",
       "worktree.noWorktrees",
@@ -5756,6 +5758,9 @@
       "workflowSettings.iterm_integrationScope",
       "workflowSettings.saved",
       "workflowSettings.session_todo_auto_takeOn",
+      "workflowSettings.terminalKeepIntegration",
+      "workflowSettings.terminalTitle",
+      "workflowSettings.terminalUpdateRequired",
       "worktree.cleanupUnavailable",
       "worktree.failed",
       "worktree.inventoryNotObserved",
@@ -13149,6 +13154,10 @@
     "workflowSettings.session_todo_auto_takeOn",
     "workflowSettings.session_todo_auto_takeScope",
     "workflowSettings.tab",
+    "workflowSettings.terminalKeepIntegration",
+    "workflowSettings.terminalOption_tmux",
+    "workflowSettings.terminalTitle",
+    "workflowSettings.terminalUpdateRequired",
     "worktree.cleanupEligible",
     "worktree.cleanupUnavailable",
     "worktree.countUnknown",

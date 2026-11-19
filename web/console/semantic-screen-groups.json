@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13301,
-  "riskKeys": 5729,
-  "nonRiskCount": 7572,
+  "englishContentKeys": 13308,
+  "riskKeys": 5733,
+  "nonRiskCount": 7575,
   "groups": [
     {
       "name": "acp / other",
@@ -8559,7 +8559,7 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 19,
+      "count": 22,
       "sources": [
         null
       ],
@@ -8581,6 +8581,9 @@
         "workflowSettings.session_todo_auto_takeOff",
         "workflowSettings.session_todo_auto_takeTitle",
         "workflowSettings.session_todo_auto_takeUpdateRequired",
+        "workflowSettings.terminalOption_auto",
+        "workflowSettings.terminalOption_iterm",
+        "workflowSettings.terminalOption_iterm_native",
         "workflowSettings.whenOff",
         "workflowSettings.whenOn"
       ]
