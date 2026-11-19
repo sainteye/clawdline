@@ -49,39 +49,39 @@ func (d hostDevServers) Read(ctx context.Context, key pa.BotKey, project pa.Proj
 	if err != nil {
 		return app.DevServerResult{}, err
 	}
+	d.h.mu.Lock()
+	r := d.h.serverRegistry
+	d.h.mu.Unlock()
 	out := app.DevServerResult{Servers: []app.DevServerInfo{}}
 	for _, saved := range rows {
 		if id == "" {
-			out.Servers = append(out.Servers, serverInfo(saved))
+			out.Servers = append(out.Servers, d.h.observedServerInfo(ctx, r, saved))
 			continue
 		}
 		if saved.ID != id {
 			continue
 		}
-		info := serverInfo(saved)
+		info := d.h.observedServerInfo(ctx, r, saved)
 		out.Server = &info
-		d.h.mu.Lock()
-		r := d.h.serverRegistry
-		d.h.mu.Unlock()
 		if r == nil {
 			out.Log = &app.DevServerLog{Truncated: true}
-			return out, nil
+			return boundedServerResult(out)
 		}
 		if saved.Attempt.Identity.AttemptID == "" {
 			out.Log = &app.DevServerLog{}
-			return out, nil
+			return boundedServerResult(out)
 		}
 		log, err := r.ReadHumanLog(ctx, key, project, id, saved.Attempt.Identity.AttemptID)
 		if err != nil {
 			return app.DevServerResult{}, err
 		}
 		out.Log = &app.DevServerLog{Text: log.Text, Truncated: log.Truncated}
-		return out, nil
+		return boundedServerResult(out)
 	}
 	if id != "" {
 		return app.DevServerResult{}, failure(pa.NotFound, "server")
 	}
-	return out, nil
+	return boundedServerResult(out)
 }
 
 func (d hostDevServers) Control(ctx context.Context, key pa.BotKey, project pa.ProjectScope, authority app.HumanServerAuthority, q app.DevServerControl) (result app.DevServerResult, err error) {
@@ -167,8 +167,8 @@ func (d hostDevServers) Control(ctx context.Context, key pa.BotKey, project pa.P
 		if err != nil {
 			return app.DevServerResult{}, err
 		}
-		info := serverInfo(saved)
-		return app.DevServerResult{Servers: []app.DevServerInfo{}, Server: &info}, nil
+		info := d.h.observedServerInfo(ctx, r, saved)
+		return boundedServerResult(app.DevServerResult{Servers: []app.DevServerInfo{}, Server: &info})
 	case "stop":
 		if expected.Attempt.Version > 0 {
 			if err := r.StopExpected(ctx, expected); err != nil {

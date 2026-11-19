@@ -4672,15 +4672,17 @@ type ProjectAssistantDeleteRequest struct {
 }
 
 type ProjectAssistantDevServer struct {
-	Attempt     string `json:"attempt"`
-	Command     string `json:"command"`
-	Failure     string `json:"failure,omitempty"`
-	Fingerprint string `json:"fingerprint"`
-	Folder      string `json:"folder"`
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Revision    int64  `json:"revision"`
-	State       string `json:"state"`
+	Attempt     string                          `json:"attempt"`
+	Command     string                          `json:"command"`
+	Failure     string                          `json:"failure,omitempty"`
+	Fingerprint string                          `json:"fingerprint"`
+	Folder      string                          `json:"folder"`
+	ID          string                          `json:"id"`
+	Name        string                          `json:"name"`
+	Ports       []ProjectAssistantDevServerPort `json:"ports"`
+	PortsKnown  bool                            `json:"ports_known"`
+	Revision    int64                           `json:"revision"`
+	State       string                          `json:"state"`
 }
 
 // API90 human controls name an existing server, exact fingerprint and observed
@@ -4699,6 +4701,13 @@ type ProjectAssistantDevServerControlRequest struct {
 type ProjectAssistantDevServerLog struct {
 	Text      string `json:"text"`
 	Truncated bool   `json:"truncated"`
+}
+
+type ProjectAssistantDevServerPort struct {
+	Bind   string   `json:"bind"`
+	Local  string   `json:"local"`
+	Port   int64    `json:"port"`
+	Remote []string `json:"remote"`
 }
 
 type ProjectAssistantDevServersResponse struct {

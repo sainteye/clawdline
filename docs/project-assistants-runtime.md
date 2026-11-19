@@ -334,7 +334,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, owned-listener discovery, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 90 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, listener-address UI/background refresh, clean-restart intent and physical crash/boot recovery remain pending. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -426,7 +426,7 @@ The full source/principal/Bot/Project key remounts this view when its owner chan
 Current chat event frontiers trigger reads, with demand during a slow read
 coalesced into another read rather than cancelling the first. Closing details
 removes its portalled menu and log sheet. No address is guessed from log text;
-owned-listener discovery remains separate construction.
+listener-address UI and background refresh remain separate construction.
 
 The existing rules/remove client already has Cloud relay and vocabulary entries;
 its request flag means content access, not local-only transport. The new server
@@ -524,3 +524,24 @@ crash, machine reboot or updater rollback. The details component has isolated
 desktop/mobile browser evidence, not installed or production Cloud acceptance.
 New-control Cloud carriage, owned ports and durable clean-restart intent still
 require construction.
+
+Source list/start/stop responses now carry `ports_known` and `ports`, bound to
+that exact definition, attempt and receipt revision. The optional process
+observer reads current owned TCP listeners; a second Owner/Registry check
+rejects a result if stop, restart, removal or owner replacement occurred during
+the OS read. No registry or memory lock spans that read. Known stopped/failed
+attempts report an empty set; unsupported, lost, denied or changing ownership
+remains unknown. These observations are point-in-time reads, not durable
+process ownership or restart authority.
+
+Each source-derived port includes its literal bind, a local HTTP candidate and
+remote HTTP candidates. Loopback has no remote candidate. Wildcard binds use
+current source interface addresses of the same address family, excluding
+loopback and link-local addresses; clients supply neither hosts nor URLs. IPv6
+literals use brackets. These are TCP observations, not HTTP probes or a promise
+of another device's reachability. Remote clients must not open the local-only
+candidate. Source responses retain every server identity; if optional listener
+details exceed the existing native-frame budget, all port observations become
+unknown rather than a partial list being described as complete. The console
+has not yet connected address opening, copying, title summaries or a background
+observer, and this source change does not establish Cloud carriage.

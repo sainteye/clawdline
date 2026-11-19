@@ -20,6 +20,14 @@ type hostServerProcess struct {
 	once     sync.Once
 	closed   atomic.Bool
 	closeErr error
+	observe  func(context.Context) ([]servers.Listener, error)
+}
+
+func (p *hostServerProcess) TCPListeners(ctx context.Context) ([]servers.Listener, error) {
+	if p.observe == nil {
+		return nil, failure(pa.Unsupported, "synthetic_observer")
+	}
+	return p.observe(ctx)
 }
 
 func TestHostServerRevocationKeepsUnknownCleanupOwnedAndBlocksReplacement(t *testing.T) {
@@ -69,7 +77,7 @@ func (p *hostServerProcess) Close(context.Context) error {
 	return p.closeErr
 }
 
-func newServerHostFixture(t *testing.T) (*hostFixture, *atomic.Int32, chan *hostServerProcess) {
+func newServerHostFixture(t *testing.T, observers ...func(context.Context) ([]servers.Listener, error)) (*hostFixture, *atomic.Int32, chan *hostServerProcess) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("source launcher is unavailable on Windows")
@@ -83,6 +91,9 @@ func newServerHostFixture(t *testing.T) (*hostFixture, *atomic.Int32, chan *host
 		}
 		count.Add(1)
 		p := &hostServerProcess{exit: make(chan struct{})}
+		if len(observers) > 0 {
+			p.observe = observers[0]
+		}
 		started <- p
 		return p, nil
 	}

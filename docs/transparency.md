@@ -12,6 +12,18 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The source listener response binds each OS observation to the complete current
+server attempt and revision before and after the read. Reviewed English and
+Taiwan Traditional Chinese persistent-bots explanations for literal source
+addresses, loopback-only access, unknown reads and the distinction between a
+TCP listener and HTTP/reachability acceptance. No model instruction, tool,
+approval choice or process mutation is added. Optional observations share the
+existing native-frame budget and become wholly unknown on overflow. The
+source-only response does not establish address UI/background refresh, Cloud
+carriage, installed UI or physical recovery. Register the Host address mapper
+and retain prior failed-gate and destination boundaries.
+
+
 The optional source TCP observer adds no model instruction, native tool or
 human control. Reviewed the existing English and Taiwan Chinese explanations:
 owned-port display and physical recovery still remain unqualified. Its kernel

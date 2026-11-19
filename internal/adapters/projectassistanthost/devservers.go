@@ -133,7 +133,7 @@ func serverInfo(saved servers.SavedServer) app.DevServerInfo {
 		state = string(servers.Stopped)
 	}
 	fingerprint, _ := saved.Spec.Fingerprint()
-	return app.DevServerInfo{Fingerprint: fingerprint, Revision: saved.Attempt.Version, ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure}
+	return app.DevServerInfo{Fingerprint: fingerprint, Revision: saved.Attempt.Version, ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure, Ports: []app.DevServerPort{}}
 }
 
 func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *NativeWork, bound func(context.Context) (context.Context, context.CancelFunc, error), journal func(context.Context, string) error) error {
@@ -258,7 +258,7 @@ func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *Nat
 				if err != nil {
 					return nil, err
 				}
-				info := serverInfo(saved)
+				info := h.observedServerInfo(ctx, r, saved)
 				result.Server = &info
 			case "stop":
 				if request.ID == "" || request.Command != "" || request.Name != "" || request.Folder != "" || request.Lines != 0 {
@@ -280,7 +280,7 @@ func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *Nat
 				if err != nil {
 					return nil, err
 				}
-				info := serverInfo(saved)
+				info := h.observedServerInfo(ctx, r, saved)
 				result.Server = &info
 			case "list":
 				if request.ID != "" || request.Key != "" || request.Command != "" || request.Name != "" || request.Folder != "" || request.Lines != 0 {
@@ -295,7 +295,7 @@ func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *Nat
 				}
 				result.Servers = []app.DevServerInfo{}
 				for _, saved := range rows {
-					result.Servers = append(result.Servers, serverInfo(saved))
+					result.Servers = append(result.Servers, h.observedServerInfo(ctx, r, saved))
 				}
 			case "logs":
 				if request.ID == "" || request.Key != "" || request.Command != "" || request.Name != "" || request.Folder != "" || request.Lines < 0 {
@@ -331,8 +331,12 @@ func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *Nat
 			default:
 				return nil, failure(pa.Unsupported, "server_action")
 			}
+			result, err := boundedServerResult(result)
+			if err != nil {
+				return nil, err
+			}
 			var out json.RawMessage
-			err := h.serverMemory(ctx, servers.Spec{Key: q.Bot.Key, Project: q.Bot.Project, ForgottenThrough: q.Binding.ForgottenThrough}, func() error { var err error; out, err = json.Marshal(result); return err })
+			err = h.serverMemory(ctx, servers.Spec{Key: q.Bot.Key, Project: q.Bot.Project, ForgottenThrough: q.Binding.ForgottenThrough}, func() error { var err error; out, err = json.Marshal(result); return err })
 			return out, err
 		}
 		var raw json.RawMessage

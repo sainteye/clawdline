@@ -43,6 +43,9 @@ func TestHumanServerHTTPAcceptsOnlyKnownIDsAndPreservesReadOnlyDeviceAuthority(t
 		t.Fatal(list, err)
 	}
 	info := list.Servers[0]
+	if !info.PortsKnown || info.Ports == nil || len(info.Ports) != 0 {
+		t.Fatal("dormant server did not encode a known empty port array", info)
+	}
 	request := contract.ProjectAssistantDevServerControlRequest{Key: paWireBotKey(f.key), ID: info.ID, Fingerprint: info.Fingerprint, Attempt: info.Attempt, Revision: info.Revision, IdempotencyKey: "remove-known"}
 	if denied := f.request(t, "POST", base+"/"+info.ID+"/remove", f.readonly, request); denied.Code == 200 {
 		t.Fatal("read-only device changed a source resource")

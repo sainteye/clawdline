@@ -3743,6 +3743,10 @@
         {
           "path": "internal/app/botdevserver/listeners.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/devservers_ports.go",
+          "line": 1
         }
       ],
       "original": [
@@ -4882,8 +4886,9 @@
     "internal/adapters/projectassistantacp/tcp_unix.go": "10a87b9755be433ba220358efefce186323b08f061dc162d6f856a8080290557",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projectassistantacp/trace.go": "44a1caf9239cb9b02009cc47879b974dd87132d80734bebf42ab09ebcd4bb137",
-    "internal/adapters/projectassistanthost/devservers.go": "4add1ef9bb6537d82b4a7c89ffcd67809a1df7c5ae13487e3647f9df95f59d5f",
-    "internal/adapters/projectassistanthost/devservers_human.go": "ff51d12f1a285e80aa7ad1af768eb2729d614e82774edf438b8ac987a832b95b",
+    "internal/adapters/projectassistanthost/devservers.go": "5f386bf0794388df8b7d579266912b5a91534e98471f3d60d69addeca603cb61",
+    "internal/adapters/projectassistanthost/devservers_human.go": "6d64c119af05d1787d04217d0eea2a9110d060909b0386ffdb62737065acfc0b",
+    "internal/adapters/projectassistanthost/devservers_ports.go": "371bc4e39137e097aa4ff0e2cc7856e7527a203bc90aa2be363bdd6fe2a4f96a",
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",
     "internal/adapters/projectassistanthost/network.go": "710ae6e9a487130ff1a961f4d95aea9d219c9f6b7ba19b9af6881999c70dc521",
     "internal/adapters/projectassistanthost/network_assistant.go": "8b1be9f55b376a8751d6c914ef4bd7a1f78cadf1c493c71567e4ef391513c097",
@@ -4914,7 +4919,7 @@
     "internal/adapters/transcript/antigravity_context.go": "10ac3182e3edbbdcaff82f905c93153c554210e11b17fcd8b422f656514baf2c",
     "internal/adapters/workflowlaunch/launch.go": "3758f2ceed371f4e869d904a0a22f1aaab3f877b46f5e277fe7494a1ac0681b5",
     "internal/app/botdevserver/approval.go": "4073788d665fe31fadb794cf2bd99d2d391933e9b441d3a6fad6f628df8d91a7",
-    "internal/app/botdevserver/listeners.go": "58b8d494695a7d431dcc96f52531f94733306fa80ec98c109d712bbc449e26b4",
+    "internal/app/botdevserver/listeners.go": "29b729f845657476fedf07788cb763a39eeb0e3dc06cba4e084dc18c1624fdb0",
     "internal/app/botdevserver/revoke.go": "49102d77d9634ac5fd394bbb287543a5e3e669a9820f2e2f6575b1fe0e30ec83",
     "internal/app/botdevserver/spec.go": "6616b8a6c09a6525514573403d88367bcc7dea81f94bdeb06ba0b901897bc3e1",
     "internal/app/botnetwork/assistant.go": "46e79bd575f62e4c476ae4fe0c6300fcd09ab182cf6e05a8f22c825a7a1877ea",
@@ -4941,7 +4946,7 @@
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
     "internal/app/projectassistant/collaboration.go": "c7367f929f287d3b8052abbacde10f85034108e8c59be962f647574f5f2af3ad",
     "internal/app/projectassistant/configuration.go": "d9c4057274edf057084c29c105b838333c2865a527a610752d329314eb9fa419",
-    "internal/app/projectassistant/devservers.go": "b401cbf56f60a138d72da2799f8e01c611937af6f84b8173337757c3ae1c0361",
+    "internal/app/projectassistant/devservers.go": "f5103c3342c67a09cc26f5dfbfd3eedf013bc9008edd4477c2f536f398f4a8f0",
     "internal/app/projectassistant/extensions.go": "ade658b4d4fc1e821879449ccd2c2b2734b61f190875f6e8c4e2c43e7f095c4c",
     "internal/app/projectassistant/fallback.go": "1b69a91cf921648eee68432592cfaf02fe64bbc6936c8947f02e1325c62a0156",
     "internal/app/projectassistant/fallback_ledger.go": "cb9f9c74df2301746c19505087db8ed97e9ab8703fbdd436cf597e48eba3828c",
@@ -5093,7 +5098,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "f9c53605a7bc38921108d5c647af45e79c83d4629946c2fe222607a343c7159d",
-    "zh-Hant": "5d60609e47f9aa4670d65985bc50a1ec7be2d213f9ee84176a43b629146e6d22"
+    "en": "2b89722ff1addb5cfe297a67445020022bf81e5f489fcc1bc3984a01f0c39d19",
+    "zh-Hant": "e8829bf03f4c81ec9bba33946b35aa9f40203bac274aad9aa0b22a5650dcc298"
   }
 }

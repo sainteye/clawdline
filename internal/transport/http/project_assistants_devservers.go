@@ -34,7 +34,14 @@ func paDevServerRoute(r *http.Request) (paHTTPRoute, bool) {
 }
 
 func paWireDevServer(info app.DevServerInfo) contract.ProjectAssistantDevServer {
-	return contract.ProjectAssistantDevServer{ID: info.ID, Name: info.Name, Command: info.Command, Folder: info.Folder, Attempt: info.Attempt, State: info.State, Failure: info.Failure, Fingerprint: info.Fingerprint, Revision: info.Revision}
+	out := contract.ProjectAssistantDevServer{ID: info.ID, Name: info.Name, Command: info.Command, Folder: info.Folder, Attempt: info.Attempt, State: info.State, Failure: info.Failure, Fingerprint: info.Fingerprint, Revision: info.Revision, PortsKnown: info.PortsKnown, Ports: []contract.ProjectAssistantDevServerPort{}}
+	if info.PortsKnown {
+		for _, port := range info.Ports {
+			remote := append([]string{}, port.Remote...)
+			out.Ports = append(out.Ports, contract.ProjectAssistantDevServerPort{Port: int64(port.Port), Bind: port.Bind, Local: port.Local, Remote: remote})
+		}
+	}
+	return out
 }
 
 func (h *projectAssistantHTTP) devServerHTTP(w http.ResponseWriter, r *http.Request, route paHTTPRoute) (any, error) {

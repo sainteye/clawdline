@@ -5471,6 +5471,8 @@ export interface ProjectAssistantDevServer {
   folder: string
   id: string
   name: string
+  ports: ProjectAssistantDevServerPort[]
+  ports_known: boolean
   revision: number
   state: string
 }
@@ -5493,6 +5495,13 @@ export interface ProjectAssistantDevServerControlRequest {
 export interface ProjectAssistantDevServerLog {
   text: string
   truncated: boolean
+}
+
+export interface ProjectAssistantDevServerPort {
+  bind: string
+  local: string
+  port: number
+  remote: string[]
 }
 
 export interface ProjectAssistantDevServersResponse {

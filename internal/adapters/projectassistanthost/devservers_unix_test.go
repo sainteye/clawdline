@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -85,10 +86,22 @@ func TestHostRealSourceProcessSurvivesNativeTurnAndClosesItsHTTPPort(t *testing.
 	if got := read(); got != "synthetic source response" {
 		t.Fatal(got)
 	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		fixtureEventually(t, func() bool {
+			out, err := tools.DevServers(context.Background(), app.DevServerRequest{Action: "list"})
+			return err == nil && len(out.Servers) == 1 && out.Servers[0].PortsKnown && len(out.Servers[0].Ports) == 1 && out.Servers[0].Ports[0].Local == "http://"+address && len(out.Servers[0].Ports[0].Remote) == 0
+		})
+	}
 	session.reply <- app.PromptResult{FinalText: "Source is serving"}
 	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 	if got := read(); got != "synthetic source response" {
 		t.Fatal("native close killed the independent source process", got)
+	}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		out, err := service.DevServers(context.Background(), bot.Key, "")
+		if err != nil || len(out.Servers) != 1 || !out.Servers[0].PortsKnown || len(out.Servers[0].Ports) != 1 || out.Servers[0].Ports[0].Local != "http://"+address || len(out.Servers[0].Ports[0].Remote) != 0 {
+			t.Fatal("human read lost the source listener after the native turn", out, err)
+		}
 	}
 	if err := f.h.Disable(context.Background()); err != nil {
 		t.Fatal(err)

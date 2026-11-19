@@ -4591,6 +4591,15 @@
         "revision": {
           "type": "integer",
           "minimum": 0
+        },
+        "ports_known": {
+          "type": "boolean"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantDevServerPort"
+          }
         }
       },
       "required": [
@@ -4601,7 +4610,9 @@
         "attempt",
         "state",
         "fingerprint",
-        "revision"
+        "revision",
+        "ports_known",
+        "ports"
       ]
     },
     "ProjectAssistantDevServerLog": {
@@ -4678,6 +4689,35 @@
         "revision"
       ],
       "description": "API90 human controls name an existing server, exact fingerprint and observed attempt/revision. No command, folder, environment or PID is accepted. Keys are scoped to the principal, server and action; unknown outcomes require explicit inspection."
+    },
+    "ProjectAssistantDevServerPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "bind": {
+          "type": "string"
+        },
+        "local": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "port",
+        "bind",
+        "local",
+        "remote"
+      ]
     }
   }
 }

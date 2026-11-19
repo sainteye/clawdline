@@ -26,15 +26,24 @@ type DevServerRequest struct {
 }
 
 type DevServerInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Command     string `json:"command"`
-	Folder      string `json:"folder"`
-	Attempt     string `json:"attempt"`
-	State       string `json:"state"`
-	Failure     string `json:"failure,omitempty"`
-	Fingerprint string `json:"fingerprint"`
-	Revision    int64  `json:"revision"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Command     string          `json:"command"`
+	Folder      string          `json:"folder"`
+	Attempt     string          `json:"attempt"`
+	State       string          `json:"state"`
+	Failure     string          `json:"failure,omitempty"`
+	Fingerprint string          `json:"fingerprint"`
+	Revision    int64           `json:"revision"`
+	PortsKnown  bool            `json:"ports_known"`
+	Ports       []DevServerPort `json:"ports"`
+}
+
+type DevServerPort struct {
+	Port   int      `json:"port"`
+	Bind   string   `json:"bind"`
+	Local  string   `json:"local"`
+	Remote []string `json:"remote"`
 }
 
 // Human controls resolve only a previously displayed ID. There is no command,
