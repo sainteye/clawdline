@@ -1,3 +1,6 @@
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import { SESSION_STATUS_SPEECH } from './copilot-speech.ts'
+
 /** Call-local identity and presentation state. No model, storage or write authority. */
 export const SESSION_REPORT_BATCH = 2
 export const SESSION_REPORT_REFS = 24
@@ -143,6 +146,10 @@ export class SessionReportQueue {
   if(!this.page.error)this.prefetch();else this.paused=true
  }
 }
-export const SESSION_REPORT_GUIDANCE=`Explain only the supplied Session batch, at most two Sessions in this response. Every Session in a batch belongs to the same Project, given as project. Begin by saying in one short sentence which Project these Sessions belong to (for example 「接下來是 clawdline 這個 Project 的 Session」), then report them; when project is empty, say these Sessions have no Project. Do not compress everyone into a short list. For each, say its supplied label once as an exact reference anchor, then use everyday language: what the work is for, what changed, what is happening, and any actual decision. Use two to four connected sentences per Session with pauses and emphasis. Do not read codes, implementation jargon or infer contents from a name. If evidence is sparse, say what is unknown rather than inventing a next step. Sessions waiting for the person are supplied first. Explain their current question and unresolved Notes before ordinary progress, and never treat an old recap or delivery as fresh approval. Follow the supplied order. Remaining batches are prepared separately by the application; never repeat or describe unread ones, claim all Sessions were covered, or ask a generic closing question. This is Session presentation, separate from automatic task execution allowance.`
+export const SESSION_REPORT_GUIDANCE = `Explain only the supplied Sessions, in their supplied order. For each, say its supplied label once as an exact reference anchor and explain the goal, progress and current situation in everyday language. ${SESSION_STATUS_SPEECH} Lead with any current pending question and unresolved Notes for that Session. Use evidence for blockers and decisions. Old recaps and deliveries cannot authorize an action. The application prepares subsequent batches; report only what it supplies. Continue after any already-said text. Requests for other or next Sessions move past an interrupted item; requests to continue resume it.`
 
-export function sessionReportGuidance(language=''){return /^zh(?:-|$)/i.test(language)?'只介紹這次提供的 Session，依相同 Project 的順序，每個用兩到四句日常口語說明目的、進展、現在狀況及真正待決事項。先說 Project，再說提供的完整名稱一次。程式會預讀下一批，並逐項交給你；只說目前這一項，不重複前面已報告的內容，不介紹還沒讀到的項目，不在每批後面反問。插話先停；接續時只補尚未說完的部分。明確要求介紹其他 Session、下一批或後面時，跳過被打斷的項目；說繼續報告則接續尚未說完的內容。跳過不代表已聽完，也不是開始背景工作或核准變更。無法讀取或尚未準備好時如實說明，不假裝已完成。':SESSION_REPORT_GUIDANCE+' The application supplies one narration item at a time within each read batch. Explain only that item. Continue after the already-said text without repeating it. Explicit requests for other or next Sessions move past the interrupted item without claiming it was fully heard; continue the report resumes the unfinished item. Both control presentation only, never background work or action approval.'}
+export function sessionReportGuidance(language = '') {
+  return /^zh(?:-|$)/i.test(language)
+    ? '依提供的順序介紹這次的 Session，完整說出每個 Session 的名稱一次，再用日常口語講進度、卡在哪，以及真正需要使用者決定或處理的事。沒有待決事項時，直接講進度和卡點，略過「目前沒有需要你決定或處理的事」，即使摘要寫了這句也略過。跨 Project 匯報時，先報第一個專案的名稱。每次換專案，在介紹該專案的第一個 Session 前先說專案名稱，例如「接下來是 Cedar 專案的 Session」。同一專案內可以直接接下一個 Session。以目前的問題和未處理的便條為準。只報目前給的資料，不介紹還沒讀到的項目。接續時只補還沒說完的內容；明確要求下一批或其他 Session 時跳過被打斷的項目。'
+    : SESSION_REPORT_GUIDANCE
+}

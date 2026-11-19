@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -65,6 +66,7 @@ type copilotBriefingAnswer struct {
 // copilotBriefingSession is what the assistant is told about one Session.
 type copilotBriefingSession struct {
 	Name       string   `json:"name"`
+	Project    string   `json:"project,omitempty"`
 	Assistant  string   `json:"assistant,omitempty"`
 	State      string   `json:"state"`
 	WorkState  string   `json:"work_state,omitempty"`
@@ -152,6 +154,8 @@ func copilotOwnRead(ctx context.Context, handler http.HandlerFunc, target string
 type copilotRow struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
+	ProjectKey  string `json:"project_key"`
+	CWD         string `json:"cwd"`
 	Assistant   string `json:"assistant"`
 	State       string `json:"state"`
 	WorkState   string `json:"work_state"`
@@ -227,6 +231,13 @@ func copilotBriefingFrom(read func(target string, into any) bool) ([]copilotBrie
 	out := make([]copilotBriefingSession, 0, len(rows))
 	for _, r := range rows {
 		b := copilotBriefingSession{Name: r.Label, Assistant: r.Assistant, State: r.State, WorkState: r.WorkState, id: r.ID}
+		projectDir := r.ProjectKey
+		if projectDir == "" {
+			projectDir = r.CWD
+		}
+		if dir := strings.TrimRight(strings.ReplaceAll(projectDir, "\\", "/"), "/"); dir != "" {
+			b.Project = path.Base(dir)
+		}
 		if b.Name == "" {
 			b.Name = r.ID
 		}

@@ -134,21 +134,42 @@ export class CallMeter {
   }
 
   /** Distinct local cues for connection readiness and entering a Session. */
-  connected():void{this.notes([480,660])}
-  sessionChanged():void{this.notes([660,880,660])}
-  private notes(frequencies:readonly number[]):void{
-    const context=this.context
-    if(!context||context.state!=='running')return
-    try{
-      const gain=context.createGain();gain.connect(context.destination)
-      for(const [index,hz] of frequencies.entries()){
-        const tone=context.createOscillator(),at=context.currentTime+index*CHIME_NOTE_S
-        tone.connect(gain);tone.frequency.value=hz
-        gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(RING_LEVEL/4,at+0.01);gain.gain.linearRampToValueAtTime(0,at+CHIME_NOTE_S)
-        tone.onended=()=>{tone.disconnect();if(index===frequencies.length-1)gain.disconnect()}
-        tone.start(at);tone.stop(at+CHIME_NOTE_S)
-      }
-    }catch{/* refusal-ok: the visible state remains when local audio is unavailable. */}
+  connected(): void { this.notes([480, 660], RING_LEVEL / 4) }
+  sessionChanged(): void { this.notes([660, 880, 660], RING_LEVEL) }
+
+  private withRunningContext(play: (context: AudioContext) => void): void {
+    const context = this.context
+    if (!context || context.state === 'closed') return
+    if (context.state === 'running') {
+      play(context)
+      return
+    }
+    // The call's original, tap-activated context can be interrupted by the
+    // browser's mic or output routing. Never play on a replacement call.
+    void context.resume().then(() => {
+      if (this.context === context && context.state === 'running') play(context)
+    }).catch(() => undefined)
+  }
+
+  private notes(frequencies: readonly number[], volume: number): void {
+    this.withRunningContext(context => {
+      try {
+        const onset = context.currentTime + 0.01
+        for (const [index, hz] of frequencies.entries()) {
+          const gain = context.createGain(), tone = context.createOscillator()
+          const at = onset + index * CHIME_NOTE_S
+          gain.connect(context.destination)
+          tone.connect(gain)
+          tone.frequency.value = hz
+          gain.gain.setValueAtTime(0, at)
+          gain.gain.linearRampToValueAtTime(volume, at + 0.01)
+          gain.gain.linearRampToValueAtTime(0, at + CHIME_NOTE_S)
+          tone.onended = () => { tone.disconnect(); gain.disconnect() }
+          tone.start(at)
+          tone.stop(at + CHIME_NOTE_S)
+        }
+      } catch { /* refusal-ok: the visible state remains when local audio is unavailable. */ }
+    })
   }
 
   /** One start note: background work is lower and warmer than an active tool. No loop. */
@@ -173,7 +194,7 @@ export class CallMeter {
    * on the machine (`actionNotice`), on the context the call's tap opened.
    */
   chime(): void {
-    if (this.context) playChime(this.context)
+    this.withRunningContext(playChime)
   }
 
   close(ended=false): void {

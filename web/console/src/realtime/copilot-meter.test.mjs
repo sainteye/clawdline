@@ -9,6 +9,7 @@ const {CallMeter}=module.exports
 function context(){
  const tones=[],gains=[],events=new EventTarget()
  const audio={state:'running',currentTime:1,destination:{},tones,gains,
+  resume:async()=>{},
   addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events),dispatchEvent:events.dispatchEvent.bind(events),
   createGain(){const events=[];const node={events,disconnected:false,connect(){},disconnect(){this.disconnected=true},gain:{setValueAtTime(value,at){events.push(['set',value,at])},linearRampToValueAtTime(value,at){events.push(['ramp',value,at])}}};gains.push(node);return node},
   createOscillator(){return {type:'sine',frequency:{value:0},onended:undefined,disconnected:false,connect(){},disconnect(){this.disconnected=true},start(at){this.record={hz:this.frequency.value,type:this.type,at};tones.push(this.record)},stop(at){if(this.record)this.record.stoppedAt=at;this.onended?.()}}},

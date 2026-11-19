@@ -34,8 +34,8 @@ func fakeBriefingReads(t *testing.T, list string, pages map[string]string) func(
 }
 
 const briefingList = `{"sessions":[
- {"id":"%2","label":"Prepare screenshots","assistant":"codex","state":"idle","work_state":"unknown"},
- {"id":"%7","label":"Fix the flaky test","assistant":"claude","state":"waiting","work_state":"waiting",
+ {"id":"%2","label":"Prepare screenshots","cwd":"C:\\projects\\Cedar\\","assistant":"codex","state":"idle","work_state":"unknown"},
+ {"id":"%7","label":"Fix the flaky test","project_key":"/workspace/Maple","cwd":"/workspace/Maple/.worktrees/fix","assistant":"claude","state":"waiting","work_state":"waiting",
   "menu":{"question":"Push to main?","options":[{"label":"Yes"},{"label":"No"}]}},
  {"id":"%9","label":"Wardrobe images","assistant":"claude","state":"working","work_state":"working",
   "disposition":{"title":"Two product images are ready for review."}}]}`
@@ -59,6 +59,9 @@ func TestABriefingIsGivenTheSessionsMostUrgentFirstWithWhatWasAskedAndDelivered(
 	}
 	if strings.Join(names, ",") != "Fix the flaky test,Wardrobe images,Prepare screenshots" {
 		t.Fatalf("order: %v", names)
+	}
+	if got[0].Project != "Maple" || got[1].Project != "" || got[2].Project != "Cedar" {
+		t.Fatalf("spoken project names: %q, %q, %q", got[0].Project, got[1].Project, got[2].Project)
 	}
 	waiting := got[0]
 	if waiting.Waiting != "Push to main?" || strings.Join(waiting.Options, "/") != "Yes/No" {

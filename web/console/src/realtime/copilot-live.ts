@@ -1,4 +1,6 @@
 // @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import { SESSION_STATUS_SPEECH } from './copilot-speech.ts'
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
 import {callControlGuidance} from './copilot-call-control.ts'
 /**
  * The voice copilot over GPT-Live (docs/voice.md, "GPT-Live calls").
@@ -71,6 +73,7 @@ Message review: Before calling a message send tool, say the entire recipient and
 Backchannel policy: Use moderate, brief and varied backchannels while the person is speaking.
 Interruption policy: Stop speaking when the person interrupts, and listen. Answer what they just said; do not go back to finish the old explanation.
 Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話、調整並保存語速，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
+    SESSION_STATUS_SPEECH,
     languageRule(options.language ?? ''),
     callControlGuidance(options.language),
     extraSection(options.extra ?? ''),
@@ -199,6 +202,7 @@ export function liveReadNotes(tool: string, output: string): string[] {
   const rows = tool === 'get_sessions_summary' ? (body as { sessions?: unknown })?.sessions : [body]
   if (!Array.isArray(rows)) return []
   const notes: string[] = []
+  let previousProject: string | undefined
   for (const row of rows) {
     const r = (row ?? {}) as Record<string, unknown>
     if (typeof r.error === 'string') continue
@@ -207,7 +211,15 @@ export function liveReadNotes(tool: string, output: string): string[] {
     if (!label || !said) continue
     const age = typeof r.recap_written === 'string' && r.recap === said ? ` (written ${r.recap_written})` : ''
     const text = clipRecap(said)
-    notes.push(`Tell the person about this Session now, in one or two everyday sentences in their language, then continue with the next when it comes. Session "${label}"${age}: ${text}`)
+    const project = typeof r.project === 'string' ? r.project : undefined
+    let introduction = ''
+    if (project && tool === 'get_session_summary') {
+      introduction = `This Session belongs to ${JSON.stringify(project)}. If this continues a report from another Project, say this Project's name first. `
+    } else if (project && project !== previousProject) {
+      introduction = `Begin by announcing the Project named ${JSON.stringify(project)}. `
+    }
+    previousProject = project
+    notes.push(`${introduction}Tell the person about this Session now, in one or two everyday sentences in their language, then continue with the next when it comes. Session "${label}"${age}: ${text}`)
   }
   return notes
 }
@@ -302,15 +314,15 @@ export function liveContextPieces(text: string, max = LIVE_APPEND_TOKENS): strin
  * one append. The rules and the whole evidence go before it as thinking
  * (`liveContextPieces`).
  */
-export function liveReportNote(sessions: { label: string; [key: string]: unknown }[]): string {
+export function liveReportNote(sessions: { label: string; [key: string]: unknown }[], introduction = ''): string {
   // The fields get_sessions_summary gives a row, most telling first.
   const say = (row: Record<string, unknown>) => {
     const text = [row.recap, row.delivered, row.question, row.latest, row.goal].find((v): v is string => typeof v === 'string' && v.trim() !== '')
     return text ?? (Array.isArray(row.recent) ? row.recent.filter((v) => typeof v === 'string').join(' ') : '')
   }
-  const share = Math.max(60, Math.floor((LIVE_NOTE_CHARS - 80) / Math.max(1, sessions.length)))
+  const share = Math.max(60, Math.floor((LIVE_NOTE_CHARS - 80 - introduction.length) / Math.max(1, sessions.length)))
   const lines = sessions.map((row) => `"${row.label}": ${clipRecap(say(row), share)}`)
-  const note = `Report this Session batch now, following the Session report rules and the machine evidence just added as context, in this order: ${lines.join(' / ')}`
+  const note = `${introduction}Report this Session batch now, following the Session report rules and the machine evidence just added as context, in this order: ${lines.join(' / ')}`
   return liveContextPieces(note)[0] ?? note
 }
 
