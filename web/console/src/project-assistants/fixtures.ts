@@ -21,6 +21,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   let state:W.ProjectAssistantSourceState="online",access:W.ProjectAssistantAccess="interactive",seq=0
   const events:W.ProjectAssistantEvent[]=[],messages=new Map<string,W.ProjectAssistantMessage[]>(),receipts=new Map<string,W.ProjectAssistantReceipt>(),readSequences=new Map<string,number>()
   let getGate:Promise<void>|null=null,releaseGet:(()=>void)|null=null
+  let releaseStop:((state:W.ProjectAssistantEffectState)=>void)|undefined,stopReply:Promise<W.ProjectAssistantEffectState>|undefined
   let generation=1,expiredCursor=false,exportFailure:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full"="ok"
   let eventGate:Promise<void>|null=null,exportGate:Promise<void>|null=null,releaseEvents:(()=>void)|null=null,releaseExport:(()=>void)|null=null
   const conversation=(bot:W.ProjectAssistantBot):W.ProjectAssistantConversation=>({id:bot.conversation_id,key:bot.key,binding_id:"fixture-binding",generation,active_turn_id:"",last_message_seq:messages.get(bot.key.bot_id)?.length??0,memory_revision:1,version:1})
@@ -154,7 +155,12 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     async send(r,s){check("send",r,s,true);if(created.has(r.command.key.bot_id))throw failure("adapter_not_found");const bot=find(r.command.key);const receipt=receive(r.command);if(r.text==="unknown"){receipt.state="unknown";return{contract_version:contractVersion,receipt}}
       const rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:receipt.id,seq:rows.length+1,at,fence:fence(bot),kind:"user",text:r.text,quote_message_id:r.quote_message_id,turn_id:receipt.id};if(!rows.some(m=>m.id===message.id)){messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})}return{contract_version:contractVersion,receipt}},
-    async stop(r,s){check("stop",r,s,true);return{contract_version:contractVersion,receipt:receive(r.command)}},
+    async stop(r,s){
+      check("stop",r,s,true)
+      const receipt=receive(r.command)
+      if(stopReply)receipt.state=await stopReply
+      return {contract_version:contractVersion,receipt}
+    },
     async answer(r,s){check("answer",r,s,true);return{contract_version:contractVersion,receipt:receive(r.command)}},
     async markRead(r,s){
       check("markRead",r,s)
@@ -253,6 +259,27 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       }
     },
     seedWork(state:W.ProjectAssistantWorkState){const bot=bots[0],f={...fence(bot),generation:0};push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"work_updated",fence:f,work:{id:"late-work",fence:f,turn_id:"history-turn-1",board_item_id:"item",task_id:"task",state,landing_commit:state==="landed"?"newer-work-observation":"",result_message_id:""}})},
+    holdStop(){stopReply=new Promise(resolve=>{releaseStop=resolve})},
+    releaseStop(state:W.ProjectAssistantEffectState){releaseStop?.(state);releaseStop=undefined;stopReply=undefined},
+    seedWorkDetails(){
+      const bot=bots[0],f=fence(bot)
+      const rows=[
+        ["tool_activity","host-aa-teamAvailable"],
+        ["agent_message_chunk","(pass)"],
+        ["agent_thought_chunk","Check the saved work before changing anything."],
+        ["tool_call","Inspect the project files\ncompleted\nFound the project definition."],
+        ["plan","Read the project definition\nReview the changes"],
+      ]
+      for(const [category,text] of rows)push({id:"progress-"+category,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,
+        trace:{turn_id:"turn-1",category,text,complete:true}})
+    },
+    workTurn(state:W.ProjectAssistantTurnState){
+      const bot=bots[0],f=fence(bot)
+      const turn:W.ProjectAssistantTurn={id:"turn-1",fence:f,message_id:"bot-0-user",state,started_at:at,
+        idempotency_key:"fixture-work",memory_revision:1,
+        instructions:{revision:1,role_snapshot_ref:"",text:""}}
+      push({id:"fixture-work-"+state,seq:0,at,version:contractVersion,kind:"turn_updated",fence:f,turn})
+    },
     seedPending(queuedCount:number,unknownCount:number){
       const bot=bots[0],rows=messages.get(bot.key.bot_id)??[]
       for(let i=0;i<queuedCount+unknownCount;i++){

@@ -303,9 +303,9 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await noLegacy();await shot("live-history-work-race")
 
   await fresh(()=>{window.botsFixture.a.seedCollections(101);window.botsFixture.a.configureViews({forbidLegacy:true});window.botsFixture.a.holdView("detail")});await open();await ready()
-  await page.waitForFunction(()=>document.querySelectorAll("[data-permission-id]").length===100&&document.querySelectorAll("[data-trace-id]").length===100)
+  await page.waitForFunction(()=>document.querySelectorAll("[data-permission-id]").length===100&&document.querySelector("[data-trace-count='100']"))
   assert.equal(await chat.locator("[data-permission-id]").count(),100)
-  assert.equal(await chat.locator("[data-trace-id]").count(),100)
+  assert.equal(await chat.locator("[data-trace-count='100']").count(),1)
   assert.equal(await page.getByRole("button",{name:w.allow,exact:true}).count(),0,"summaries provide no answer control")
   assert.equal((await views("permissions")).every(r=>!r.request.cursor),true)
   assert.equal((await views("traces")).every(r=>!r.request.cursor),true)
@@ -313,8 +313,8 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await chat.locator(".pa-permissions").getByRole("button",{name:w.more,exact:true}).click()
   await page.waitForFunction(()=>document.querySelectorAll("[data-permission-id]").length===101)
   await chat.locator(".pa-trace > summary").click()
-  await chat.locator(".pa-chat-content > .pa-trace-more-btn").click()
-  await page.waitForFunction(()=>document.querySelectorAll("[data-trace-id]").length===101)
+  await chat.locator(".pa-trace .pa-trace-more-btn").click()
+  await chat.locator("[data-trace-count='101']").waitFor()
   const permission=chat.locator('[data-permission-id="offer-0"]')
   await permission.getByRole("button",{name:w.allow,exact:true}).waitFor()
   await permission.getByRole("button",{name:w.allow,exact:true}).click()
@@ -322,11 +322,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   const answers=(await log()).filter(r=>r.method==="answer");assert.equal(answers[0].request.offer_id,"offer-0")
   assert.equal(answers[0].request.option_id,"option-0")
   const trace=chat.locator('[data-trace-id="trace-collection-turn-0-read"]')
-  await page.evaluate(()=>window.botsFixture.a.configureViews({oversizedDetail:true}))
-  await trace.getByRole("button",{name:w.details,exact:true}).click();await alert("pa_capacity_full")
-  assert.equal(await trace.locator("pre").count(),0,"an oversized indivisible detail is never truncated into success")
-  await page.evaluate(()=>window.botsFixture.a.configureViews({oversizedDetail:false}))
-  await trace.getByRole("button",{name:w.details,exact:true}).click();await trace.getByText("Complete trace 0",{exact:true}).waitFor()
+  await trace.getByText("Complete trace 0",{exact:true}).waitFor()
   await noLegacy();await shot("manual-101-summary-detail")
 
   // A detail response may ignore its aborted signal while generation changes.
@@ -466,6 +462,83 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await controlledRaces()
   all.push(...await log());return ["work admission order after Send, live completion and delayed history","600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","validated entry or manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
 }
+async function workProgressChecks(page,origin,language,shot,log) {
+  const w=language==="en"
+    ?{send:"Send message",stop:"Stop active and queued work",sending:"Sending the stop request",unknown:"The machine has not confirmed the stop request",accepted:"Stop request received. Waiting for the turn to end"}
+    :{send:"傳送訊息",stop:"停止目前與待送工作",sending:"正在送出停止指令",unknown:"機器尚未確認停止結果",accepted:"機器已收到停止指令，等待回合結束"}
+  const open=async()=>{
+    await page.goto(origin+"/?lang="+language)
+    await page.evaluate(()=>window.botsFixture.open())
+    await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
+  }
+  const chat=page.locator(".pa-chat")
+  const measure=()=>chat.locator(".pa-composer").evaluate(form=>({
+    height:form.getBoundingClientRect().height,
+    button:form.querySelector(".pa-send").getBoundingClientRect().height,
+  }))
+  const pill=chat.locator(".pa-working-steps")
+  const step=pill.locator("[data-trace-id]").first()
+  const stop=chat.getByRole("button",{name:w.stop,exact:true})
+  const commands=async()=>(await log()).filter(row=>row.method==="stop")
+  for(const state of ["accepted","unknown"]) {
+    await open()
+    await chat.getByRole("button",{name:w.send,exact:true}).waitFor()
+    const idle=await measure()
+    await page.evaluate(()=>{
+      window.botsFixture.a.seedWorkDetails()
+      window.botsFixture.a.workTurn("running")
+      window.botsFixture.a.holdView("detail")
+      window.botsFixture.a.holdStop()
+    })
+    await stop.waitFor()
+    await pill.locator("summary").waitFor()
+    assert.deepEqual(await measure(),idle,"Stop must not enlarge the composer")
+    assert.equal(await step.isVisible(),false,"current work is collapsed initially")
+    assert.equal(await chat.locator("[data-trace-turn='turn-1']").count(),0,"live transcript has one place for this turn's details")
+    await pill.locator("summary").click()
+    const loading=pill.getByRole("status").filter({hasText:language==="en"?"Loading processing steps…":"正在載入處理步驟…"})
+    await loading.waitFor()
+    assert.equal(await pill.locator("[data-trace-id]").count(),0,"the loading indicator replaces placeholder rows")
+    if(state==="unknown"){
+      await page.evaluate(()=>window.botsFixture.a.configureViews({oversizedDetail:true}))
+    }
+    await page.evaluate(()=>window.botsFixture.a.releaseView())
+    await loading.waitFor({state:"hidden"})
+    if(state==="unknown"){
+      const retry=pill.getByRole("button",{name:language==="en"?"Retry loading processing steps":"重試載入處理步驟"})
+      await retry.waitFor()
+      assert.equal(await pill.locator("pre").count(),0,"refused details are never presented as output")
+      await page.evaluate(()=>window.botsFixture.a.configureViews({oversizedDetail:false}))
+      await retry.click()
+      await retry.waitFor({state:"hidden"})
+    }
+    await pill.getByText("Check the saved work before changing anything.",{exact:true}).waitFor()
+    const tool=pill.locator(".pa-trace-tool")
+    await tool.getByText("Inspect the project files",{exact:true}).waitFor()
+    assert.equal(await tool.locator("pre").isVisible(),false)
+    await tool.locator("summary").click()
+    assert.equal(await tool.locator("pre").innerText(),"Found the project definition.")
+    await pill.getByText("Read the project definition",{exact:false}).waitFor()
+    assert.equal(await pill.getByText("(pass)",{exact:true}).count(),0)
+    assert.equal(await pill.getByText("host-aa-teamAvailable",{exact:false}).count(),0)
+    await stop.click()
+    await pill.getByRole("status").filter({hasText:w.sending}).waitFor()
+    await page.waitForFunction(()=>window.botsFixture.log.filter(row=>row.method==="stop").length===1)
+    assert.equal(await stop.isDisabled(),true)
+    assert.equal(await stop.getAttribute("aria-busy"),"true")
+    assert.equal((await commands())[0].request.turn_id,"turn-1")
+    assert.deepEqual(await measure(),idle)
+    await page.evaluate(state=>window.botsFixture.a.releaseStop(state),state)
+    await pill.getByRole("status").filter({hasText:w[state]}).waitFor()
+    assert.equal(await stop.isDisabled(),true)
+    await shot("work-progress-stop-"+state)
+    await page.evaluate(()=>window.botsFixture.a.workTurn("cancelled"))
+    await chat.getByRole("button",{name:w.send,exact:true}).waitFor()
+    await chat.locator("[data-trace-turn='turn-1'] summary").waitFor()
+    assert.equal((await commands()).length,1)
+  }
+  return ["collapsed live steps and historical details","same composer height","one fenced Stop with pending, acknowledged, and unconfirmed results"]
+}
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
@@ -474,8 +547,8 @@ const failures=[]
 try {
   for(const engine of [chromium,webkit].filter(e=>!process.env.BOTS_ENGINE||e.name()===process.env.BOTS_ENGINE))for(const width of (process.env.BOTS_WIDTH?[Number(process.env.BOTS_WIDTH)]:[390,1440]))for(const language of (process.env.BOTS_LANGUAGE?[process.env.BOTS_LANGUAGE]:["zh-Hant","en"])) {
     const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
-    const browser=await engine.launch({headless:true}),name=`${engine.name()}-${width}-${language}`
-    const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce"})
+    const browser=await engine.launch({headless:true,...(engine.name()==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})}),name=`${engine.name()}-${width}-${language}`
+    const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce",hasTouch:!!process.env.BOTS_WORK_PROGRESS_ONLY&&width<701})
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
     const shot=async code=>page.screenshot({path:path.join(artifacts,`${code}-${name}.png`),fullPage:true})
@@ -489,7 +562,7 @@ try {
         await writeFile(path.join(artifacts,`interactions-${name}.json`),JSON.stringify({log:page.catalogRequests,consoleErrors,checks,modelInvocations:0},null,2))
         results.push({engine:engine.name(),width,language,status:"pass",checks});continue
       }
-      const checks=await boundedChecks(page,origin,language,width,shot,log)
+      const checks=process.env.BOTS_WORK_PROGRESS_ONLY?await workProgressChecks(page,origin,language,shot,log):await boundedChecks(page,origin,language,width,shot,log)
       assert.deepEqual(consoleErrors,[])
       await writeFile(path.join(artifacts,`interactions-${name}.json`),JSON.stringify({log:page.boundedRequests,consoleErrors,checks,modelInvocations:0},null,2))
       results.push({engine:engine.name(),width,language,status:"pass",checks})
