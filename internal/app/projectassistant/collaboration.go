@@ -52,7 +52,7 @@ func (r *Engine) admitBotLocked(ctx context.Context, a *runtimeActor, p Collabor
 	if err != nil {
 		return pa.Exchange{}, err
 	}
-	if a.stopped || a.turnID != turnID || c.ActiveTurnID != turnID || t.Fence != fence || currentFence(bot, c) != fence || t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
+	if a.stopped.Load() || a.turnID != turnID || c.ActiveTurnID != turnID || t.Fence != fence || currentFence(bot, c) != fence || t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 		return pa.Exchange{}, runtimeFailure(pa.StaleGeneration, "collaboration_turn")
 	}
 	if err = pa.CheckCollaborationRequest(q, t.Origin, t.Hops); err != nil {

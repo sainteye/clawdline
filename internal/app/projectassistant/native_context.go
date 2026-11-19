@@ -80,7 +80,7 @@ func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fenc
 	r.mu.Lock()
 	unavailable := r.closed || a.retained || r.disabled[pa.ProjectSelection{MachineID: fence.Project.MachineID, ProjectID: fence.Project.ProjectID}]
 	r.mu.Unlock()
-	if unavailable || a.opening || a.closing || a.stopped || a.lifetime.Err() != nil || a.session == nil || a.turnID == "" {
+	if unavailable || a.opening || a.closing || a.stopped.Load() || a.lifetime.Err() != nil || a.session == nil || a.turnID == "" {
 		return empty, false, nil
 	}
 	bot, err := r.o.Repository.Bot(ctx, fence.Key)

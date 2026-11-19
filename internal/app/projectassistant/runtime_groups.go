@@ -119,7 +119,7 @@ func (r *Engine) CancelRoomTurns(ctx context.Context, group, member pa.BotKey, a
 			continue
 		}
 		if active && a.turnID == t.ID {
-			a.stopped = true
+			a.stopped.Store(true)
 			if a.cancel != nil {
 				a.cancel()
 			}
