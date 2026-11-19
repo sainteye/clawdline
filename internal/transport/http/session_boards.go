@@ -251,12 +251,16 @@ func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
 			continue
 		}
 		assistant := string(row.Assistant)
+		current := row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent
 		if row.SessionID == "" {
-			unbound[assistant] = true
+			// An observed new Session with no conversation record cannot be an enrolled identity.
+			if !current || row.Identity != contract.IdentityBindingNoRecord {
+				unbound[assistant] = true
+			}
 			continue
 		}
 		id := assistant + ":" + row.SessionID
-		if row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+		if current {
 			present[id] = sb.Listed
 		} else if _, known := present[id]; !known {
 			present[id] = ""

@@ -217,7 +217,15 @@ func TestSessionBoardRosterDistinguishesMembershipFromTheSessionList(t *testing.
 	list.at = time.Time{}
 	list.mu.Unlock()
 	check("?board="+board, "not_listed")
-	snapshot.Sessions = append(snapshot.Sessions, sessionRowWire{SessionRow: contract.SessionRow{Assistant: "claude"}})
+	snapshot.Sessions = append(snapshot.Sessions, sessionRowWire{SessionRow: contract.SessionRow{
+		Assistant: "claude", Identity: contract.IdentityBindingNoRecord,
+		Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent},
+	}})
+	list.mu.Lock()
+	list.at = time.Time{}
+	list.mu.Unlock()
+	check("?board="+board, "not_listed")
+	snapshot.Sessions[len(snapshot.Sessions)-1].Identity = contract.IdentityBindingUnreadable
 	list.mu.Lock()
 	list.at = time.Time{}
 	list.mu.Unlock()
