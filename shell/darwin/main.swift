@@ -497,7 +497,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // when its character is pressed (NotchIsland.swift).
         NotchIsland.shared.attach(
             to: content,
-            open: { [weak self] in self?.showHome() },
+            open: { [weak self] in self?.showSessions() },
             selectSession: { [weak self] id in self?.goToSession(id) }
         )
         config.userContentController = content
@@ -1077,6 +1077,18 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
     }
 
+    /// The notch's character and "All Sessions" return to the Session list.
+    /// The menu's Home action opens Settings and is not this destination.
+    private func showSessions() {
+        showConsole()
+        if showingCloud { showTab(cloud: false) }
+        web.evaluateJavaScript("window.location.hash = 'page=sessions'") { [weak self] _, error in
+            if error != nil {
+                self?.web.load(URLRequest(url: URL(string: "\(home.absoluteString)#page=sessions")!))
+            }
+        }
+    }
+
     /// Launch at login, through SMAppService and ServiceMode, off until somebody turns it on.
     /// Registering changes the person's login items; nothing here does it on
     /// its own.
@@ -1361,7 +1373,8 @@ extension Shell {
     /// Ask the console to open a session the way its own address does. Before the
     /// console has loaded, the request waits for it.
     func goToSession(_ id: String) {
-        showHome()
+        showConsole()
+        if showingCloud { showTab(cloud: false) }
         guard pageLoaded else {
             pendingSession = id
             return
