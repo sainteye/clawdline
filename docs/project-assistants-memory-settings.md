@@ -132,12 +132,13 @@ Read-only reference: CodyNC `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 
 ## Compatibility, capacity and verification
 
-Feature schema 12 protects named topic-note metadata against older writers;
-schema 6 originally introduced the runtime settings protection. The repeatable
-migration accepts schemas 1–11 and changes feature metadata transactionally;
-old Bot JSON is not rewritten. New optional zero fields are omitted, preserving
-old archive hashes. Exports identify schema 12; restore still accepts supported
-older archives. Older binaries refuse schema 12 before rewriting it. Rollback
+Feature schema 13 protects terminal quota-attempt facts against older writers;
+schema 12 added named topic-note protection and schema 6 introduced runtime
+settings protection. The repeatable migration accepts schemas 1–12 and changes
+feature metadata transactionally; old Bot JSON is not rewritten. New optional
+zero fields are omitted, preserving
+old archive hashes. Exports identify schema 13; restore still accepts supported
+older archives. Pre-13 binaries refuse schema 13 before rewriting it. Rollback
 therefore requires a compatible binary or an intentional backup procedure;
 deleting data or lowering metadata is not a rollback step.
 
@@ -503,7 +504,7 @@ as live state. A recovered database contains only the feature's schema and is
 for isolated recovery inspection; replacing a live database with it is not a
 supported installation procedure.
 
-The reader admits archive generations 1 through 12 independently of the Store's
+The reader admits archive generations 1 through 13 independently of the Store's
 default export generation. The input is capped at 32 MiB (`bots.archive_bytes`);
 larger files, trailing JSON, unknown fields, unsupported versions, manifest
 mismatch, integrity damage and foreign identity are refused. Existing Store
@@ -534,6 +535,10 @@ or every historical binary. No API number or archive generation is allocated by
 this entry point; durable Host maintenance writers remain closed.
 
 ### Independent archive binary qualification
+
+The following original receipts qualify a schema-12 reader. They do not qualify
+an installed schema-13 reader, a schema-13 signed rollback chain or production
+maintenance writes; those require their own exact-binary evidence.
 
 The fixed reader source is `a3b7b1decc08b2ec95b6406d245b615c736d1645`.
 Its actual darwin/arm64 CLI is 46,073,506 bytes with SHA-256

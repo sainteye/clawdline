@@ -157,7 +157,10 @@ func TestBotArchiveCLICurrentNotesTombstonesAndRefusalsLeaveNoTarget(t *testing.
 		edit func(*botstore.Archive)
 		code pa.ErrorCode
 	}{
-		{"future", func(a *botstore.Archive) { a.Data.SchemaVersion = 13; a.Manifest.SchemaVersion = 13 }, pa.Unsupported},
+		{"future", func(a *botstore.Archive) {
+			a.Data.SchemaVersion = pa.SchemaVersion + 1
+			a.Manifest.SchemaVersion = a.Data.SchemaVersion
+		}, pa.Unsupported},
 		{"version-mismatch", func(a *botstore.Archive) { a.Manifest.SchemaVersion = 11 }, pa.Unsupported},
 		{"integrity", func(a *botstore.Archive) { a.Data.Bot.Name = "Damaged" }, pa.Invalid},
 		{"foreign-project", func(a *botstore.Archive) { a.Data.Bot.Project.CanonicalID = "foreign" }, pa.ScopeDenied},
@@ -225,9 +228,9 @@ func TestBotArchiveCLIRejectsOversizeTrailingFutureFieldsAndMissingExport(t *tes
 			case "future-fields":
 				var fields map[string]any
 				json.Unmarshal(raw, &fields)
-				fields["data"].(map[string]any)["SchemaVersion"] = float64(13)
+				fields["data"].(map[string]any)["SchemaVersion"] = float64(pa.SchemaVersion + 1)
 				fields["data"].(map[string]any)["future_field"] = true
-				fields["manifest"].(map[string]any)["schema_version"] = float64(13)
+				fields["manifest"].(map[string]any)["schema_version"] = float64(pa.SchemaVersion + 1)
 				data, _ = json.Marshal(fields)
 				want = pa.Unsupported
 			}

@@ -4856,7 +4856,7 @@
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
     "cmd/clawdline/main.go": "4e1df55777cec0be41e9c9b853dc20e8fa27576511b606a4f6cd63c4cbc3b10c",
     "cmd/clawdline/project_assistants.go": "480e6eec037b86c34b62fbf9b26641f0061fb6f5bdfdffae73e25dda0ba443d0",
-    "cmd/clawdline/project_assistants_archive.go": "ff477dbf581043447d4fbfca63ab6af5654b49c6caa63c922979c321d21b89a7",
+    "cmd/clawdline/project_assistants_archive.go": "e27ddab55e77d0e31be4f50e4e08bddff0056186e3fa252925fa0f14c2e8b0cc",
     "cmd/clawdline/session.go": "5da0de49664b879474852e8f783f40bf01d522f7f41249905b023dc85968a9d3",
     "internal/adapters/antigravity/hook_service.go": "32a3038657eece8c5f322c1eb1852caa3e49f35b1efc07e57a41f9962b89de7e",
     "internal/adapters/antigravitylaunch/context_proof.go": "631841327219afd094565f40dafef4b0bd8f90114fd76db0e6949d412f22e712",

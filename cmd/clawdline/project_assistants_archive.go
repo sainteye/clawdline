@@ -147,7 +147,7 @@ func readBotArchive(path string) (botstore.Archive, error) {
 // generation. A future writer increment does not silently expand this list.
 func botArchiveReadableSchema(version int) bool {
 	switch version {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12:
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13:
 		return true
 	}
 	return false

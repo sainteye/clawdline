@@ -300,13 +300,17 @@ func TestLedgerDoesNotChangeTheRealBotArchiveOrSchema(t *testing.T) {
 	if err := bots.RestoreArchive(ctx, archive); err != nil {
 		t.Fatal(err)
 	}
-	before, err := bots.Export(ctx, archive.Data.Bot.Key)
+	before, err := bots.ExportArchive(ctx, archive.Data.Bot.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var beforeVersion int
+	if err := db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&beforeVersion); err != nil || beforeVersion != pa.SchemaVersion || before.Manifest.SchemaVersion != beforeVersion || before.Data.SchemaVersion != beforeVersion {
+		t.Fatalf("fixture does not establish the current Bot schema: %d %v", beforeVersion, err)
+	}
 	s := ready(t, db)
 	i := identity()
-	i.Key, i.Project = before.Bot.Key, before.Bot.Project
+	i.Key, i.Project = before.Data.Bot.Key, before.Data.Bot.Project
 	r := servers.Record{Identity: i, Version: 1, State: servers.Accepted}
 	if err := s.Save(ctx, 0, r); err != nil {
 		t.Fatal(err)
@@ -317,7 +321,7 @@ func TestLedgerDoesNotChangeTheRealBotArchiveOrSchema(t *testing.T) {
 	}
 	c := readyCatalog(t, db)
 	saved := savedDefinition("catalog-archive-boundary")
-	saved.Spec.Key, saved.Spec.Project = before.Bot.Key, before.Bot.Project
+	saved.Spec.Key, saved.Spec.Project = before.Data.Bot.Key, before.Data.Bot.Project
 	if err := c.Create(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
@@ -325,15 +329,12 @@ func TestLedgerDoesNotChangeTheRealBotArchiveOrSchema(t *testing.T) {
 	if err := j.Save(ctx, 0, intent); err != nil {
 		t.Fatal(err)
 	}
-	after, err := bots.Export(ctx, before.Bot.Key)
-	if err != nil || !reflect.DeepEqual(before, after) {
-		t.Fatalf("source-local execution fact changed the portable Bot: %v", err)
-	}
 	var version int
-	if err := db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&version); err != nil || version != pa.SchemaVersion {
-		t.Fatalf("Bot schema changed: %d %v", version, err)
+	if err := db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&version); err != nil || version != beforeVersion {
+		t.Fatalf("source-local execution fact changed the Bot schema: %d -> %d %v", beforeVersion, version, err)
 	}
-	if version != 12 {
-		t.Fatal("this test no longer establishes the pinned core-12 boundary")
+	after, err := bots.ExportArchive(ctx, before.Data.Bot.Key)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("source-local execution fact changed the portable Bot or archive manifest: %v", err)
 	}
 }
