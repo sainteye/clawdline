@@ -25,7 +25,7 @@ export interface MachineManager {
   rename(machine: CloudMachine, name: string): Promise<RenameOutcome>
   forget(machine: CloudMachine): Promise<ForgetOutcome>
   /** Opens pairing for a named machine, or the target picker when null. */
-  pair(machine: string | null): void
+  pair(machine: string | null, approvedName?: string): void
   /** Whether that machine's descriptor serves a Cloud word (an older daemon may not). */
   serves?(machine: string, word: string): boolean
   /** One Cloud word to that machine, answered or thrown with its refusal code. */

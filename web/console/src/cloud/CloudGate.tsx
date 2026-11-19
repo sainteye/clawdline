@@ -1239,11 +1239,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       },
       invited: () => Boolean((session.current as { invited?: unknown } | null)?.invited),
       headerMachine: () => headerMachine.current,
-      pair: (id) => {
+      pair: (id, approvedName) => {
         if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)
         const named = known ? withAccountNames([known], namesRef.current, present)[0] : null
-        openPairingRef.current({ id, name: named ? named.name || named.label || id : id })
+        openPairingRef.current({ id, name: approvedName || named?.name || named?.label || id })
       },
     })
     // The owner-diagnostics reader's authority, read from the session at each call: the account
