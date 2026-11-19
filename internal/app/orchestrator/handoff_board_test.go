@@ -128,107 +128,207 @@ func TestFailedHandoffCannotTransferBoardWork(t *testing.T) {
 }
 
 func TestSessionMessageBoardsFollowAnExactHandoffReceiver(t *testing.T) {
-	b, ctx := newTestBroker(t)
-	project, _ := projects.ResolveScope(t.TempDir())
-	other, _ := projects.ResolveScope(t.TempDir())
-	now := time.Now().Truncate(time.Second)
-	b.Clock = func() time.Time { return now }
-	receiverStart := now.Add(-time.Second)
-	b.ProcessStart = func(int) time.Time { return receiverStart }
-	b.Launcher = &openingLauncher{pane: "%2"}
-	b.Type = (&typedKeys{}).Type
-	receiver := session.Session{ID: "%2", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
-		PID: 41, CWD: project.Key, Observation: session.Observation{Freshness: session.FreshnessCurrent}}
-	sender := session.Session{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation, CWD: project.Key}
-	b.Live = func(context.Context) []session.Session { return []session.Session{sender, receiver} }
-	lead := sb.Actor{ID: "claude:" + rootConversation, Label: "Original lead"}
-	peer := sb.Actor{ID: "claude:peer", Label: "Peer"}
-	nextConversation := "7bd00000-0000-4000-8000-000000000045"
-	next := sb.Actor{ID: "codex:" + nextConversation, Label: "Receiving Session"}
-	change := func(scope string, actor, target sb.Actor, cmd sb.Command, key string) string {
-		t.Helper()
-		out, err := b.Store.ChangeSessionBoard(ctx, scope, actor, target, cmd, key, now)
-		if err != nil {
-			t.Fatalf("%s: %v", cmd.Action, err)
+	t.Run("full board transfers to the witnessed receiver", func(t *testing.T) {
+		f := newHandoffMessageBoardFixture(t)
+		archived := f.create(f.project.ID, f.lead, "Archived board")
+		f.change(f.project.ID, f.lead, sb.Actor{}, sb.Command{Action: "archive", Board: archived}, "")
+		board := f.create(f.project.ID, f.lead, "Active board")
+		existing := f.create(f.project.ID, f.next, "Receiver's prior board")
+		f.change(f.project.ID, f.lead, sb.Actor{}, sb.Command{Action: "summary", Board: board, Text: "Keep this summary"}, "")
+		f.change(f.project.ID, f.lead, sb.Actor{}, sb.Command{Action: "post", Board: board, Text: "Keep this post"}, "post")
+		for i := 1; i < sb.MaxMembers; i++ {
+			actor := sb.Actor{ID: fmt.Sprintf("claude:member-%d", i), Label: "Member"}
+			f.change(f.project.ID, actor, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
 		}
-		return out.ID
-	}
-	create := func(scope string, actor sb.Actor, name string) string {
-		return change(scope, actor, sb.Actor{}, sb.Command{Action: "create", Name: name, Text: "Share decisions"}, name)
-	}
-	board := create(project.ID, lead, "Active board")
-	memberBoard := create(project.ID, peer, "Member board")
-	manual := create(project.ID, lead, "Manual transfer")
-	archived := create(project.ID, lead, "Archived board")
-	crossProject := create(other.ID, lead, "Other project")
-	change(project.ID, lead, sb.Actor{}, sb.Command{Action: "summary", Board: board, Text: "Keep this summary"}, "")
-	change(project.ID, lead, sb.Actor{}, sb.Command{Action: "post", Board: board, Text: "Keep this post"}, "post")
-	for i := 1; i < sb.MaxMembers; i++ {
-		actor := sb.Actor{ID: fmt.Sprintf("claude:member-%d", i), Label: "Member"}
-		change(project.ID, actor, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
-	}
-	change(project.ID, lead, sb.Actor{}, sb.Command{Action: "join", Board: memberBoard}, "")
-	change(project.ID, next, sb.Actor{}, sb.Command{Action: "join", Board: memberBoard}, "")
-	change(project.ID, peer, sb.Actor{}, sb.Command{Action: "join", Board: manual}, "")
-	change(project.ID, lead, sb.Actor{}, sb.Command{Action: "archive", Board: archived}, "")
+		f.open(board)
 
+		f.bindReceiver()
+		f.receiver.Activity.At = f.now.Add(-time.Second)
+		if n := f.read(); n != 0 {
+			t.Fatalf("activity from before the briefing moved %d handoffs", n)
+		}
+		f.receiver.Activity.At = f.now
+		f.receiverStart = f.now
+		if n := f.read(); n != 0 {
+			t.Fatalf("a replacement process moved %d handoffs", n)
+		}
+		f.receiverStart = f.now.Add(-time.Second)
+		f.receiveOnce()
+
+		got := f.page(f.project.ID, f.next.ID, board)
+		if got.Board.Lead != f.next.ID || len(got.Board.Members) != sb.MaxMembers || got.Board.Summary != "Keep this summary" ||
+			len(got.Posts) != 1 || got.Posts[0].Author != f.lead || got.Posts[0].Text != "Keep this post" {
+			t.Fatalf("transferred Lead or history: %+v", got)
+		}
+		f.change(f.project.ID, f.next, sb.Actor{}, sb.Command{Action: "summary", Board: board, Text: "Next decision"}, "")
+		f.denied(f.lead, board)
+		f.denied(f.next, existing)
+		if got := f.page("", "", existing).Board; got.Lead != "" || len(got.Members) != 0 {
+			t.Fatalf("the receiver's previous board retained its role or membership: %+v", got)
+		}
+		if got := f.page(f.project.ID, f.lead.ID, archived).Board; got.ArchivedAt == 0 || got.Lead != f.lead.ID || len(got.Members) != 1 {
+			t.Fatalf("archived membership or Lead changed: %+v", got)
+		}
+	})
+
+	t.Run("manual Lead transfer survives an already joined receiver", func(t *testing.T) {
+		f := newHandoffMessageBoardFixture(t)
+		peer := sb.Actor{ID: "claude:peer", Label: "Peer"}
+		board := f.create(f.project.ID, f.lead, "Manual transfer")
+		for _, actor := range []sb.Actor{peer, f.next} {
+			f.change(f.project.ID, actor, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
+		}
+		f.open(board)
+		f.change(f.project.ID, f.lead, peer, sb.Command{Action: "transfer", Board: board, Target: peer.ID}, "")
+		f.receiveOnce()
+
+		if got := f.page(f.project.ID, f.next.ID, board).Board; got.Lead != peer.ID || len(got.Members) != 2 {
+			t.Fatalf("ordinary membership or manual Lead transfer: %+v", got)
+		}
+		f.denied(f.lead, board)
+	})
+
+	t.Run("moving after capture does not enroll the receiver", func(t *testing.T) {
+		f := newHandoffMessageBoardFixture(t)
+		board := f.create(f.project.ID, f.lead, "Captured board")
+		existing := f.create(f.project.ID, f.next, "Receiver's board")
+		f.open(board)
+		late := f.create(f.project.ID, f.lead, "Joined after starting handoff")
+		f.receiveOnce()
+
+		f.denied(f.next, board)
+		f.denied(f.next, late)
+		if got := f.page(f.project.ID, f.lead.ID, late).Board; got.Lead != f.lead.ID || len(got.Members) != 1 {
+			t.Fatalf("later membership changed: %+v", got)
+		}
+		if got := f.page(f.project.ID, f.next.ID, existing).Board; got.Lead != f.next.ID || len(got.Members) != 1 {
+			t.Fatalf("the receiver's board changed: %+v", got)
+		}
+	})
+
+	t.Run("membership from a different project is excluded", func(t *testing.T) {
+		f := newHandoffMessageBoardFixture(t)
+		other, ok := projects.ResolveScope(t.TempDir())
+		if !ok {
+			t.Fatal("could not resolve the other project")
+		}
+		board := f.create(other.ID, f.lead, "Other project")
+		f.open("")
+		f.bindReceiver()
+		if n := f.read(); n != 0 {
+			t.Fatalf("another project's membership moved: %d handoffs", n)
+		}
+		if got := f.page(other.ID, f.lead.ID, board).Board; got.Lead != f.lead.ID || len(got.Members) != 1 {
+			t.Fatalf("another project's board changed: %+v", got)
+		}
+	})
+}
+
+const handoffMessageBoardReceiver = "7bd00000-0000-4000-8000-000000000045"
+
+type handoffMessageBoardFixture struct {
+	t             *testing.T
+	b             *Broker
+	ctx           context.Context
+	project       projects.Scope
+	now           time.Time
+	receiverStart time.Time
+	receiver      session.Session
+	lead, next    sb.Actor
+}
+
+func newHandoffMessageBoardFixture(t *testing.T) *handoffMessageBoardFixture {
+	t.Helper()
+	b, ctx := newTestBroker(t)
+	project, ok := projects.ResolveScope(t.TempDir())
+	if !ok {
+		t.Fatal("could not resolve the handoff project")
+	}
+	now := time.Now().Truncate(time.Second)
+	f := &handoffMessageBoardFixture{
+		t: t, b: b, ctx: ctx, project: project, now: now, receiverStart: now.Add(-time.Second),
+		lead: sb.Actor{ID: "claude:" + rootConversation, Label: "Original Lead"},
+		next: sb.Actor{ID: "codex:" + handoffMessageBoardReceiver, Label: "Receiving Session"},
+		receiver: session.Session{ID: "%2", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+			PID: 41, CWD: project.Key, Observation: session.Observation{Freshness: session.FreshnessCurrent}},
+	}
+	sender := session.Session{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation, CWD: project.Key}
+	b.Live = func(context.Context) []session.Session { return []session.Session{sender, f.receiver} }
+	b.Clock = func() time.Time { return now }
+	b.ProcessStart = func(int) time.Time { return f.receiverStart }
+	b.Launcher = &openingLauncher{pane: f.receiver.ID}
+	b.Type = (&typedKeys{}).Type
+	return f
+}
+
+func (f *handoffMessageBoardFixture) create(scope string, actor sb.Actor, name string) string {
+	f.t.Helper()
+	return f.change(scope, actor, sb.Actor{}, sb.Command{Action: "create", Name: name, Text: "Share decisions"}, name)
+}
+
+func (f *handoffMessageBoardFixture) change(scope string, actor, target sb.Actor, cmd sb.Command, key string) string {
+	f.t.Helper()
+	out, err := f.b.Store.ChangeSessionBoard(f.ctx, scope, actor, target, cmd, key, f.now)
+	if err != nil {
+		f.t.Fatalf("%s: %v", cmd.Action, err)
+	}
+	return out.ID
+}
+
+func (f *handoffMessageBoardFixture) open(board string) {
+	f.t.Helper()
 	yes := true
 	summary := "## Goal\nCarry the review forward.\n\n## Verified decisions\nUse the current build.\n\n## Blockers\nNone.\n\n## Evidence\n- docs/acceptance.md\n\n## Next step\nRead the evidence.\n"
-	request := HandoffRequest{ID: "7bd00000-0000-4000-8000-000000000046", ProjectDir: project.Key,
+	request := HandoffRequest{ID: "7bd00000-0000-4000-8000-000000000046", ProjectDir: f.project.Key,
 		FromSession: rootConversation, Assistant: "codex", Plain: &yes, Milestone: &yes, Summary: &summary}
-	h, _, err := b.OpenHandoff(ctx, request)
+	h, _, err := f.b.OpenHandoff(f.ctx, request)
 	if err != nil || h.State != HandoffDelivered {
-		t.Fatalf("handoff: state=%s failure=%s err=%v", h.State, h.Failure, err)
+		f.t.Fatalf("handoff: state=%s failure=%s err=%v", h.State, h.Failure, err)
 	}
-	late := create(project.ID, lead, "Joined after starting handoff")
-	change(project.ID, lead, peer, sb.Command{Action: "transfer", Board: manual, Target: peer.ID}, "")
+	if board == "" {
+		if h.SessionBoards != nil {
+			f.t.Fatalf("captured a board outside the handoff project: %+v", h.SessionBoards)
+		}
+		return
+	}
+	if h.SessionBoards == nil || len(h.SessionBoards.Boards) != 1 || h.SessionBoards.Boards[0] != board {
+		f.t.Fatalf("handoff did not capture exactly the sender's active board: %+v", h.SessionBoards)
+	}
+}
 
-	read := func() int {
-		return b.tendHandoffBoards(ctx, reading{sessions: map[string]session.Session{receiver.ID: receiver}})
+func (f *handoffMessageBoardFixture) bindReceiver() {
+	f.receiver.ConversationID = handoffMessageBoardReceiver
+	f.receiver.Label = f.next.Label
+	f.receiver.Activity = session.Activity{At: f.now}
+}
+
+func (f *handoffMessageBoardFixture) read() int {
+	return f.b.tendHandoffBoards(f.ctx, reading{sessions: map[string]session.Session{f.receiver.ID: f.receiver}})
+}
+
+func (f *handoffMessageBoardFixture) receiveOnce() {
+	f.t.Helper()
+	f.bindReceiver()
+	if n := f.read(); n != 1 {
+		f.t.Fatalf("bound receiver moved %d handoffs", n)
 	}
-	receiver.ConversationID, receiver.Label = nextConversation, next.Label
-	receiver.Activity = session.Activity{At: now.Add(-time.Second)}
-	if n := read(); n != 0 {
-		t.Fatalf("activity from before the briefing moved %d handoffs", n)
+	if n := f.read(); n != 0 {
+		f.t.Fatalf("the same handoff ran again: %d", n)
 	}
-	receiver.Activity.At = now
-	receiverStart = now
-	if n := read(); n != 0 {
-		t.Fatalf("a replacement process moved %d handoffs", n)
+}
+
+func (f *handoffMessageBoardFixture) page(scope, actor, id string) sb.Page {
+	f.t.Helper()
+	out, err := f.b.Store.SessionBoardPage(f.ctx, scope, actor, id, 0, 0)
+	if err != nil {
+		f.t.Fatal(err)
 	}
-	receiverStart = now.Add(-time.Second)
-	if n := read(); n != 1 {
-		t.Fatalf("bound receiver moved %d handoffs", n)
-	}
-	if n := read(); n != 0 {
-		t.Fatalf("the same handoff ran again: %d", n)
-	}
-	page := func(scope, actor, id string) sb.Page {
-		t.Helper()
-		out, err := b.Store.SessionBoardPage(ctx, scope, actor, id, 0, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return out
-	}
-	got := page(project.ID, next.ID, board)
-	if got.Board.Lead != next.ID || len(got.Board.Members) != sb.MaxMembers || got.Board.Summary != "Keep this summary" ||
-		len(got.Posts) != 1 || got.Posts[0].Author != lead {
-		t.Fatalf("transferred Lead or history: %+v", got)
-	}
-	change(project.ID, next, sb.Actor{}, sb.Command{Action: "summary", Board: board, Text: "Next decision"}, "")
-	if _, err := b.Store.SessionBoardPage(ctx, project.ID, lead.ID, board, 0, 0); !errors.Is(err, sb.ErrDenied) {
-		t.Fatalf("the former Lead still has membership: %v", err)
-	}
-	for _, id := range []string{memberBoard, manual} {
-		got := page(project.ID, next.ID, id)
-		if got.Board.Lead != peer.ID || len(got.Board.Members) != 2 {
-			t.Fatalf("ordinary membership or manual Lead transfer: %+v", got.Board)
-		}
-	}
-	for _, id := range []string{archived, late, crossProject} {
-		if got := page("", "", id).Board; got.Lead != lead.ID || len(got.Members) != 1 {
-			t.Fatalf("an ineligible board changed: %+v", got)
-		}
+	return out
+}
+
+func (f *handoffMessageBoardFixture) denied(actor sb.Actor, board string) {
+	f.t.Helper()
+	if _, err := f.b.Store.SessionBoardPage(f.ctx, f.project.ID, actor.ID, board, 0, 0); !errors.Is(err, sb.ErrDenied) {
+		f.t.Fatalf("actor %s still has membership on %s: %v", actor.ID, board, err)
 	}
 }
