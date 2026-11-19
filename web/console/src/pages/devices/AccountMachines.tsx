@@ -132,10 +132,10 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
 
   return (
     <div className="account-machines" data-tick={tick}>
-      <button className="am-ghost am-cloud-setup-entry" type="button" aria-haspopup="dialog" disabled={!manager} onClick={() => setCloudSetup(true)}>
+      {manager && !manager.invited?.() && <button className="am-ghost am-cloud-setup-entry" type="button" aria-haspopup="dialog" onClick={() => setCloudSetup(true)}>
         <span aria-hidden="true">+</span> {nextWord("msSetupCloud")}
-      </button>
-      {shown && cloudSetup && manager && createPortal(<CloudMachineSetup machines={rows ?? []} refresh={load}
+      </button>}
+      {shown && cloudSetup && manager && !manager.invited?.() && createPortal(<CloudMachineSetup apiOrigin={manager.apiOrigin} machines={rows ?? []} refresh={load}
         pair={id => { setCloudSetup(false); manager.pair(id) }} close={() => setCloudSetup(false)} />, document.body)}
       {accessSource && (
         <MachineAccess source={accessSource} picker={paired.length > 1 ? (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../../next-strings.js"
-import { readCloudConfig, type CloudMachine } from "../../cloud/copied.js"
+import type { CloudMachine } from "../../cloud/copied.js"
 
 const offers = {
   instabox: { name: "InstaBox", dashboard: "https://dashboard.instabox.sh/", pricing: "https://instabox.sh/pricing", detail: "msSetupInstaBox", template: "msSetupTemplateInstaBox" },
@@ -11,7 +11,8 @@ type Provider = keyof typeof offers
 // The provider account owns checkout. Opening either provider never submits an order.
 const install = `bash -o pipefail -c 'curl -fsSL https://clawdline.com/install.sh | sh -s -- --headless --no-app | sed "/^[[:space:]]*http:\\/\\/127\\.0\\.0\\.1:/d"'`
 
-export function CloudMachineSetup({ machines, refresh, pair, close }: {
+export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, close }: {
+  apiOrigin: string
   machines: readonly CloudMachine[]
   refresh: () => Promise<boolean>
   pair: (id: string) => void
@@ -69,7 +70,7 @@ export function CloudMachineSetup({ machines, refresh, pair, close }: {
             {copied && <span role="status">{nextWord(copied === "ok" ? "msSetupCopied" : "msSetupCopyFailed")}</span>}
             <p>{nextWord("msSetupLoginHelp")}</p>
             <pre><code>clawdline --lang en cloud login | sed '/^approve at /d'</code></pre>
-            <CloudMachineEnrollment onRegistered={id=>{setMachineID(id);void check()}} />
+            <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={id=>{setMachineID(id);void check()}} />
             <pre><code>clawdline cloud on</code></pre>
             <p>{nextWord("msSetupHealthHelp")}</p>
             <pre><code>{'systemctl --user is-active clawdline-next.service\nclawdline update --json'}</code></pre>
@@ -99,20 +100,18 @@ export function CloudMachineSetup({ machines, refresh, pair, close }: {
 type MachineReview = { name: string; fingerprint: string; review_digest: string }
 const deviceCode = /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/
 
-function CloudMachineEnrollment({onRegistered}:{onRegistered:(id:string)=>void}) {
-  const config=readCloudConfig(globalThis as {__clawdlineCloud?:unknown})
+function CloudMachineEnrollment({apiOrigin,onRegistered}:{apiOrigin:string;onRegistered:(id:string)=>void}) {
   const [code,setCode]=useState("")
   const [review,setReview]=useState<MachineReview|null>(null)
   const [state,setState]=useState<"idle"|"busy"|"unavailable"|"approved">("idle")
   const pending=useRef(false)
-  if(!config||config.appOrigin!==location.origin)return null
 
   const submit=async()=>{
     if(pending.current||!deviceCode.test(code))return
     pending.current=true;setState("busy")
     try {
       const action=review?"approve":"preview"
-      const response=await fetch(new URL("/v1/auth/device/"+action,config.apiOrigin),{
+      const response=await fetch(new URL("/v1/auth/device/"+action,apiOrigin),{
         method:"POST",credentials:"include",cache:"no-store",headers:{"content-type":"application/json"},
         body:JSON.stringify(review?{user_code:code,expected_kind:"machine",review_digest:review.review_digest}:{user_code:code}),
       })
