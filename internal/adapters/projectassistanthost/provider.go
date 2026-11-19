@@ -60,6 +60,7 @@ func (p *lazyProvider) Open(ctx context.Context, q app.OpenRequest, sink func(co
 // NativeWork carries private functions only. There is no serializable actor,
 // credential or arbitrary-Fence signing entry point in the composition callback.
 type NativeWork struct {
+	background      func(context.Context, string, string, string) (pa.BackgroundTask, error)
 	serverAvailable func(context.Context) error
 	servers         func(context.Context, app.DevServerRequest) (app.DevServerResult, error)
 	serverPublish   func(context.Context, func() error) error
@@ -133,6 +134,17 @@ func (w NativeWork) ListArtifacts(ctx context.Context) ([]app.ArtifactInfo, erro
 		return nil, failure(pa.Disabled, "output_tools")
 	}
 	return w.artifacts(ctx)
+}
+
+func (w NativeWork) BackgroundAvailable() bool {
+	return w.background != nil
+}
+
+func (w NativeWork) AddBackgroundWork(ctx context.Context, id, title, brief string) (pa.BackgroundTask, error) {
+	if !w.BackgroundAvailable() {
+		return pa.BackgroundTask{}, failure(pa.ScopeDenied, "background_origin")
+	}
+	return w.background(ctx, id, title, brief)
 }
 
 func (w NativeWork) SendMessage(ctx context.Context, id, text string) error {
@@ -878,6 +890,37 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return browser.Command(ctx, owner, command)
 	}
+	taskOwner, err := h.store.BackgroundOwner(openCtx, q.Bot.Key)
+	if err != nil {
+		life.invalidate()
+		return nil, NativeWork{}, err
+	}
+	if taskOwner.BotID == "" && pa.CanDelegateBackground(turn) {
+		tools.background = func(ctx context.Context, id, title, brief string) (pa.BackgroundTask, error) {
+			ctx, cancel, err := bound(ctx)
+			if err != nil {
+				return pa.BackgroundTask{}, err
+			}
+			defer cancel()
+			if err = pa.ValidateBackgroundBrief(title, brief); err != nil {
+				return pa.BackgroundTask{}, err
+			}
+			if err = journal(ctx, "background"); err != nil {
+				return pa.BackgroundTask{}, err
+			}
+			payload, _ := json.Marshal([3]string{turnID, title, brief})
+			hash := sha256.Sum256(payload)
+			command := pa.Command{
+				Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: "background-" + turnID + "-" + id,
+				ContentHash: hex.EncodeToString(hash[:]),
+			}
+			return h.store.AdmitBackgroundTask(ctx, command, pa.BackgroundTask{
+				ID: h.o.ID(), Fence: q.Binding.Fence, OriginTurnID: turnID,
+				Title: title, Brief: brief, CreatedAt: h.o.Clock(),
+			})
+		}
+	}
+
 	tools.send = func(ctx context.Context, id, text string) error {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -926,6 +969,14 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.WorkLink{}, e
 		}
 		return b.Status(ctx, actor, taskID)
+	}
+	if taskOwner.BotID != "" {
+		tools.routines = nil
+		tools.dispatch = nil
+		tools.teamAvailable = nil
+		tools.team = nil
+		tools.listBots = nil
+		tools.messageBot = nil
 	}
 	return life, tools, nil
 }

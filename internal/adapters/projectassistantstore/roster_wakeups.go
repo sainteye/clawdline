@@ -53,6 +53,9 @@ func (s *Store) rosterCommitted(machine string) {
 // This minimal journal survives aggregate/event deletion. It contains no
 // conversation content, but remains private to authorized roster projections.
 func appendRosterChange(ctx context.Context, tx *sql.Tx, a aggregate, removed bool) error {
+	if a.BackgroundOwner != nil {
+		return nil
+	}
 	project, err := json.Marshal(a.Bot.Project)
 	if err != nil {
 		return err

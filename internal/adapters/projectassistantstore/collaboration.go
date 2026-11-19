@@ -134,7 +134,7 @@ func (s *Store) Directory(ctx context.Context, fence pa.Fence, turn string, q pa
 	if _, err = exchangeActive(a, fence, turn); err != nil {
 		return pa.BotDirectoryPage{}, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot>? ORDER BY bot`, fence.Key.MachineID, q.Cursor)
+	rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot>? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL ORDER BY bot`, fence.Key.MachineID, q.Cursor)
 	if err != nil {
 		return pa.BotDirectoryPage{}, err
 	}

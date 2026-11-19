@@ -57,6 +57,11 @@ func (s *Service) View(ctx context.Context, q pa.ReadViewRequest) (ReadViewResul
 	if err := pa.CheckReadViewRequest(q); err != nil {
 		return ReadViewResult{}, err
 	}
+	workerCtx, _, err := s.backgroundChannel(ctx, q.Key)
+	if err != nil {
+		return ReadViewResult{}, err
+	}
+	ctx = workerCtx
 	a, err := s.readViewAuthority(ctx, q.Key)
 	if err != nil {
 		return ReadViewResult{}, err
@@ -66,7 +71,11 @@ func (s *Service) View(ctx context.Context, q pa.ReadViewRequest) (ReadViewResul
 	}
 	binding := readViewBinding(a)
 	check := func(ctx context.Context) error {
-		current, err := s.readViewAuthority(ctx, q.Key)
+		currentCtx, _, err := s.backgroundChannel(ctx, q.Key)
+		if err != nil {
+			return err
+		}
+		current, err := s.readViewAuthority(currentCtx, q.Key)
 		if err != nil {
 			return err
 		}

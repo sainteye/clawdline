@@ -128,7 +128,7 @@ func readBotArchive(path string) (botstore.Archive, error) {
 	if json.Unmarshal(raw, &header) != nil {
 		return archive, &pa.Failure{Code: pa.Invalid, Field: "archive_json"}
 	}
-	if header.Manifest.ContractVersion != pa.ContractVersion || !botArchiveReadableSchema(header.Data.SchemaVersion) || header.Manifest.SchemaVersion != header.Data.SchemaVersion {
+	if header.Manifest.ContractVersion != pa.ContractVersion || !botstore.SupportsArchiveSchema(header.Data.SchemaVersion) || header.Manifest.SchemaVersion != header.Data.SchemaVersion {
 		return archive, &pa.Failure{Code: pa.Unsupported, Field: "manifest_version"}
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
@@ -145,14 +145,6 @@ func readBotArchive(path string) (botstore.Archive, error) {
 
 // Reader admission is frozen independently of the Store's default export
 // generation. A future writer increment does not silently expand this list.
-func botArchiveReadableSchema(version int) bool {
-	switch version {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13:
-		return true
-	}
-	return false
-}
-
 func matchBotArchive(archive botstore.Archive, key pa.BotKey, project pa.ProjectScope) error {
 	if archive.Data.Bot.Key != key || archive.Data.Bot.Project != project {
 		return &pa.Failure{Code: pa.ScopeDenied, Field: "archive_target"}

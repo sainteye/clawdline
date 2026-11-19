@@ -4,6 +4,7 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"time"
 )
 
 func paWireReadTurn(v app.ReadTurnSummary) contract.ProjectAssistantReadTurnSummary {
@@ -12,10 +13,34 @@ func paWireReadTurn(v app.ReadTurnSummary) contract.ProjectAssistantReadTurnSumm
 }
 
 func paWireReadHead(v app.ReadViewHead) contract.ProjectAssistantReadViewHead {
-	return contract.ProjectAssistantReadViewHead{Key: paWireBotKey(v.Key), Project: paWireProjectScope(v.Project),
+	return contract.ProjectAssistantReadViewHead{BackgroundTasks: paWireBackgroundTasks(v.BackgroundTasks), Key: paWireBotKey(v.Key), Project: paWireProjectScope(v.Project),
 		Conversation: paWireConversation(v.Conversation), CurrentFence: paWireFence(v.CurrentFence),
 		BotVersion: v.BotVersion, MemoryRevision: v.MemoryRevision, EventFrontier: v.EventFrontier,
 		UnknownTurnCount: v.UnknownTurnCount, PendingPermissionCount: v.PendingPermissionCount, TraceCategoryCount: v.TraceCategoryCount}
+}
+
+func paWireBackgroundTasks(tasks []pa.BackgroundTaskSummary) []contract.ProjectAssistantBackgroundTaskSummary {
+	if len(tasks) == 0 {
+		return nil
+	}
+	out := make([]contract.ProjectAssistantBackgroundTaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		item := contract.ProjectAssistantBackgroundTaskSummary{
+			ID: task.ID, Title: task.Title, State: task.State, Activity: task.Activity, OriginMessageID: task.OriginMessageID,
+		}
+		if task.Worker != nil {
+			key := paWireBotKey(*task.Worker)
+			item.Worker = &key
+		}
+		if task.StartedAt != nil {
+			item.StartedAt = task.StartedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if task.EndedAt != nil {
+			item.EndedAt = task.EndedAt.UTC().Format(time.RFC3339Nano)
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func paWireReadSnapshot(v app.ReadSnapshot) (*contract.ProjectAssistantReadSnapshot, error) {

@@ -782,6 +782,7 @@ func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			h.tickBackgroundTasks(ctx)
 			h.mu.Lock()
 			serverRegistry := h.serverRegistry
 			h.mu.Unlock()

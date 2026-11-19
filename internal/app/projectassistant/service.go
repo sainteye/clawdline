@@ -83,7 +83,20 @@ func (s *Service) authorize(ctx context.Context, key pa.BotKey, write bool) (Aut
 	if err := ctx.Err(); err != nil {
 		return Authority{}, err
 	}
-	a, err := s.opts.Authorize(ctx, key, write)
+	authorizedKey := key
+	if repo, ok := s.opts.Repository.(backgroundOwnership); ok {
+		owner, err := repo.BackgroundOwner(ctx, key)
+		if err != nil {
+			return Authority{}, err
+		}
+		if owner.BotID != "" {
+			if ctx.Value(backgroundChannelKey{}) != key {
+				return Authority{}, serviceFailure(pa.NotFound, "bot")
+			}
+			authorizedKey = owner
+		}
+	}
+	a, err := s.opts.Authorize(ctx, authorizedKey, write)
 	if err != nil {
 		return Authority{}, err
 	}
@@ -423,6 +436,13 @@ func (s *Service) Export(ctx context.Context, key pa.BotKey) (Export, error) {
 }
 
 func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage) (pa.Receipt, error) {
+	ctx, thread, err := s.backgroundChannel(ctx, c.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if thread && (len(message.Attachments) != 0 || len(message.UploadIDs) != 0 || message.QuoteMessageID != "" || message.Handoff != nil) {
+		return pa.Receipt{}, serviceFailure(pa.Unsupported, "background_thread_input")
+	}
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -462,6 +482,10 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 }
 
 func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, error) {
+	ctx, _, err := s.backgroundChannel(ctx, request.Command.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
 	a, err := s.authorize(ctx, request.Command.Key, true)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -483,6 +507,10 @@ func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, er
 }
 
 func (s *Service) SendNow(ctx context.Context, request SendNowRequest) (pa.Receipt, error) {
+	ctx, _, err := s.backgroundChannel(ctx, request.Command.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
 	a, err := s.authorize(ctx, request.Command.Key, true)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -504,6 +532,10 @@ func (s *Service) SendNow(ctx context.Context, request SendNowRequest) (pa.Recei
 }
 
 func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.PermissionAnswer) (pa.Receipt, error) {
+	ctx, _, err := s.backgroundChannel(ctx, c.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {
 		return pa.Receipt{}, err

@@ -284,3 +284,10 @@ type NetworkToolRequest struct {
 type ReactionTools interface {
 	React(context.Context, string, string) (pa.Receipt, error)
 }
+
+// BackgroundTools puts long work in the Bot's own task queue. The caller's
+// native execution binding supplies the origin; arguments supply only a brief.
+type BackgroundTools interface {
+	BackgroundAvailable() bool
+	AddBackgroundWork(context.Context, string, string, string) (pa.BackgroundTask, error)
+}

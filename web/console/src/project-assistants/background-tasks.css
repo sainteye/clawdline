@@ -1,0 +1,55 @@
+.pa-background-capsule {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--pa-line);
+  border-radius: 16px;
+  background: var(--pa-card);
+  margin-bottom: 8px;
+}
+.project-assistants .pa-background-open,
+.project-assistants .pa-background-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  color: var(--pa-dim);
+}
+.pa-background-open span, .pa-background-open time { flex-shrink: 0; }
+.pa-background-open .pa-background-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-mark { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; flex: none; }
+.pa-background-mark[data-active] { background: currentColor; animation: pa-background-pulse 1.8s ease-in-out infinite; }
+@keyframes pa-background-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .pa-background-mark[data-active] { animation: none; } }
+.pa-background-capsule strong, .pa-background-row strong { color: var(--pa-ink,currentColor); font-weight: 550; }
+.pa-background-capsule time, .pa-background-row time { font-variant-numeric: tabular-nums; }
+.project-assistants .pa-background-stop { border: 0; border-radius: 12px; background: transparent; color: var(--pa-dim); display: grid; place-items: center; padding: 0; flex: none; width: 38px; height: 38px; }
+.project-assistants .pa-background-stop:hover, .project-assistants .pa-background-row:hover { background: var(--pa-card); color: inherit; }
+.pa-background-list { margin-block: 16px 24px; }
+.pa-background-list h3 { font-size: 14px; margin: 0 0 8px; }
+.pa-background-list h3 small { color: var(--pa-dim); font-weight: 400; margin-inline-start: 4px; }
+.pa-background-list > div { border: 1px solid var(--pa-line); border-radius: 14px; overflow: hidden; }
+.project-assistants .pa-background-row { width: 100%; border-radius: 0; padding: 10px; min-height: 44px; }
+.pa-background-row > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pa-background-row strong, .pa-background-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-row + *, .pa-background-empty + * { border-top: 1px solid var(--pa-line); }
+.pa-background-empty { margin: 0; padding: 10px; color: var(--pa-dim); font-size: 13px; }
+.project-assistants .pa-chat-surface > .pa-thread-inspector { display: block; width: min(var(--pa-inspector-width),100%); height: 100%; min-height: 0; padding: 0; overflow: hidden; }
+.pa-thread-inspector > .pa-chat-layout { width: 100%; }
+.project-assistants .pa-chat-surface .pa-thread-heading { flex: 1; min-width: 0; }
+.pa-thread-heading h2 { font-size: 14px; margin: 0 0 4px; }
+.pa-thread-heading small { display: flex; gap: 6px; color: var(--pa-dim); white-space: nowrap; overflow: hidden; }
+.pa-thread-heading small span { overflow: hidden; text-overflow: ellipsis; }
+.project-assistants .pa-chat-surface .pa-thread-header { min-height: 50px; padding: 6px 10px; }
+.project-assistants .pa-thread-inspector .pa-chat-scroll { padding: 14px 10px; }
+.pa-thread-brief { background: var(--pa-card); border-radius: 12px; padding: 10px; margin: 0 0 14px; }
+.pa-thread-brief summary { font-size: 13px; cursor: pointer; }
+.pa-thread-brief p { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width:700px) { .project-assistants .pa-chat-surface > .pa-thread-inspector { width: 100%; } }
+@media (pointer: coarse) {
+ .project-assistants .pa-background-stop { width: 44px; height: 44px; }
+}

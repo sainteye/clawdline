@@ -29,6 +29,7 @@ type ReadViewQuery struct {
 // are live reads, not cross-request frozen snapshots: only snapshot mode may
 // replace the client's event cursor; later pages reconcile through events.
 type ReadViewHead struct {
+	BackgroundTasks        []pa.BackgroundTaskSummary
 	Key                    pa.BotKey
 	Project                pa.ProjectScope
 	Conversation           pa.Conversation

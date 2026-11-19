@@ -97,6 +97,17 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
   own(h.current_fence,scope)
   if(!sameConversation({key:h.key,project:h.project,conversation_id:c.id},scope)||h.project.machine_id!==h.key.machine_id||c.key.machine_id!==h.key.machine_id||c.key.bot_id!==h.key.bot_id)throw failure("pa_scope_denied")
   if(c.binding_id!==h.current_fence.binding_id||c.generation!==h.current_fence.generation||c.memory_revision>h.memory_revision)throw failure("pa_invalid")
+  if(h.background_tasks!==undefined){
+    if(!Array.isArray(h.background_tasks)||h.background_tasks.length>100)throw failure("pa_invalid")
+    const ids=new Set<string>()
+    for(const task of h.background_tasks){
+      if(!task||!text(task.id)||ids.has(task.id)||!text(task.title)||!text(task.origin_message_id)||
+        !["waiting","active","waiting_permission","succeeded","failed","cancelled","unknown"].includes(task.state)||
+        task.activity!==undefined&&typeof task.activity!=="string"||task.started_at!==undefined&&!date(task.started_at)||task.ended_at!==undefined&&!date(task.ended_at))throw failure("pa_invalid")
+      if(task.worker!==undefined&&(!key(task.worker)||task.worker.machine_id!==h.key.machine_id||task.worker.bot_id!=="thread-"+task.id||task.worker.bot_id===h.key.bot_id))throw failure("pa_scope_denied")
+      ids.add(task.id)
+    }
+  }
   if(q.mode==="snapshot") {
     const s=answer.snapshot,b=s?.bot
     if(!s||!b||!Array.isArray(s.pending_turns)||!Array.isArray(s.queued_messages)||s.pending_turns.length>16||s.queued_messages.length>16||b.version!==h.bot_version)throw failure("pa_invalid")

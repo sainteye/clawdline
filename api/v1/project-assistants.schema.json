@@ -2392,10 +2392,31 @@
       ],
       "additionalProperties": false
     },
+    "ProjectAssistantBackgroundTaskSummary": {
+      "type": "object",
+      "description": "One task in a Bot's background queue or recent history.",
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "activity": {"type": "string"},
+        "state": {"type": "string", "enum": ["waiting", "active", "waiting_permission", "succeeded", "failed", "cancelled", "unknown"]},
+        "worker": {"$ref": "#/$defs/ProjectAssistantBotKey"},
+        "origin_message_id": {"type": "string"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["id", "title", "state", "origin_message_id"],
+      "additionalProperties": false
+    },
     "ProjectAssistantReadViewHead": {
       "type": "object",
       "description": "One SQL snapshot. Only a successful snapshot-mode response may replace the replay cursor; other page heads never advance it.",
       "properties": {
+        "background_tasks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ProjectAssistantBackgroundTaskSummary"},
+          "maxItems": 100
+        },
         "key": {
           "$ref": "#/$defs/ProjectAssistantBotKey"
         },

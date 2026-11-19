@@ -87,7 +87,11 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 		// execution's own MCP endpoint never prompt; each still checks its
 		// fence and source policy in the Host.
 		if owned != nil {
-			options["allowedTools"] = []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status", "mcp__clawdline__read_memory", "mcp__clawdline__search_memory", "mcp__clawdline__edit_memory"}
+			allowed := []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status", "mcp__clawdline__read_memory", "mcp__clawdline__search_memory", "mcp__clawdline__edit_memory"}
+			if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
+				allowed = append(allowed, "mcp__clawdline__add_work")
+			}
+			options["allowedTools"] = allowed
 		}
 		params["_meta"] = map[string]any{
 			"systemPrompt": map[string]any{"append": systemPrompt(q), "excludeDynamicSections": true},
@@ -150,6 +154,9 @@ func systemPrompt(q app.OpenRequest) string {
 		"",
 		"Workspace: your working directory is "+q.Directory+", the Project the user bound you to. For another project, use explicit paths or change directory for that command. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.",
 	)
+	if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
+		lines = append(lines, "", "Background work: When add_work is available in your own chat, use it for research or analysis that will take time. Give the worker a short title and a self-contained brief, confirm the handoff in chat, then finish this turn so it can start. Answer quick questions in chat. A background worker reports by replying in its own thread.")
+	}
 	if text := strings.TrimSpace(q.Bot.Instructions.Text); text != "" {
 		lines = append(lines, "", "Standing instructions from the user:", text)
 	}

@@ -513,8 +513,16 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				}
 				delete(after, table)
 			}
+			if rows, exists := after["project_assistant_background_tasks"]; !exists || len(rows) != 0 {
+				t.Fatal("migration did not create an empty background queue")
+			}
+			delete(after, "project_assistant_background_tasks")
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
+				if strings.Contains(statement, "project_assistant_background_") {
+					continue
+				}
+
 				if strings.HasPrefix(statement, "CREATE TABLE project_assistant_network_settings (") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_reactions (") ||
 					strings.HasPrefix(statement, "CREATE TABLE project_assistant_handoff_cards (") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_handoff_receipts (") {
 					continue

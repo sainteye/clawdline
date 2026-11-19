@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13483,
-  "riskKeys": 5799,
-  "nonRiskCount": 7684,
+  "englishContentKeys": 13506,
+  "riskKeys": 5806,
+  "nonRiskCount": 7700,
   "groups": [
     {
       "name": "acp / other",
@@ -551,7 +551,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 692,
+      "count": 695,
       "sources": [
         null
       ],
@@ -603,6 +603,9 @@
         "capacityRow.bots.artifact_title_bytes.what",
         "capacityRow.bots.attachment_bytes.what",
         "capacityRow.bots.attachments_per_message.what",
+        "capacityRow.bots.background_threads.full",
+        "capacityRow.bots.background_threads.what",
+        "capacityRow.bots.background_waiting.what",
         "capacityRow.bots.carry_messages.what",
         "capacityRow.bots.carry_quote_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
@@ -6078,7 +6081,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 401,
+      "count": 411,
       "sources": [
         null
       ],
@@ -6100,6 +6103,16 @@
         "projectAssistants.attachedFile",
         "projectAssistants.back",
         "projectAssistants.backToGroup",
+        "projectAssistants.backgroundBack",
+        "projectAssistants.backgroundBrief",
+        "projectAssistants.backgroundCompose",
+        "projectAssistants.backgroundFree",
+        "projectAssistants.backgroundLabel",
+        "projectAssistants.backgroundPermission",
+        "projectAssistants.backgroundRecent",
+        "projectAssistants.backgroundStop",
+        "projectAssistants.backgroundThreads",
+        "projectAssistants.backgroundWorking",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
         "projectAssistants.bots",
@@ -7763,7 +7776,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 208,
+      "count": 211,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7869,6 +7882,9 @@
         "transparency.card.notice.title",
         "transparency.card.persistent-bot-api-key.summary",
         "transparency.card.persistent-bot-api-key.title",
+        "transparency.card.persistent-bot-background-tasks.condition",
+        "transparency.card.persistent-bot-background-tasks.summary",
+        "transparency.card.persistent-bot-background-tasks.title",
         "transparency.card.persistent-bot-fallback.summary",
         "transparency.card.persistent-bot-fallback.title",
         "transparency.card.persistent-bot-group-rooms.condition",

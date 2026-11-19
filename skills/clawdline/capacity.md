@@ -65,6 +65,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.assistant_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.background_threads` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
+| `bots.background_waiting` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

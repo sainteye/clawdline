@@ -37,19 +37,20 @@ var _ app.Memory = (*Store)(nil)
 var _ app.EventFeed = (*Store)(nil)
 
 type aggregate struct {
-	Completion     *pa.BotCompletion                  `json:",omitempty"`
-	ArtifactTitles map[string]pa.ArtifactDisplayTitle `json:",omitempty"`
-	Bot            pa.Bot
-	Conversation   pa.Conversation
-	Turns          map[string]pa.Turn
-	Bindings       map[string]pa.ExecutionBinding
-	Messages       []pa.Message
-	Permissions    map[string]pa.PermissionOffer
-	WorkLinks      map[string]pa.WorkLink
-	Memory         pa.MemoryRevision
-	Entries        map[string]pa.MemoryEntry
-	ReadCursors    map[string]pa.ReadCursor
-	RosterTrace    *pa.Event `json:",omitempty"`
+	BackgroundOwner *pa.BotKey                         `json:",omitempty"`
+	Completion      *pa.BotCompletion                  `json:",omitempty"`
+	ArtifactTitles  map[string]pa.ArtifactDisplayTitle `json:",omitempty"`
+	Bot             pa.Bot
+	Conversation    pa.Conversation
+	Turns           map[string]pa.Turn
+	Bindings        map[string]pa.ExecutionBinding
+	Messages        []pa.Message
+	Permissions     map[string]pa.PermissionOffer
+	WorkLinks       map[string]pa.WorkLink
+	Memory          pa.MemoryRevision
+	Entries         map[string]pa.MemoryEntry
+	ReadCursors     map[string]pa.ReadCursor
+	RosterTrace     *pa.Event `json:",omitempty"`
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -288,6 +289,9 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
+	if err = dropInterruptedBackgroundTasks(ctx, tx, m.Turn); err != nil {
+		return pa.Receipt{}, err
+	}
 	if err = applyArtifactTitle(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -331,6 +335,9 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 		}
 	}
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
+		return pa.Receipt{}, err
+	}
+	if err = projectBackgroundTurn(ctx, tx, a, m); err != nil {
 		return pa.Receipt{}, err
 	}
 	if err = writeReceipt(ctx, tx, result); err != nil {
@@ -484,6 +491,10 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	return nil
 }
 func validateAggregate(a aggregate) error {
+	if a.BackgroundOwner != nil && (a.BackgroundOwner.MachineID != a.Bot.Key.MachineID ||
+		*a.BackgroundOwner == a.Bot.Key || a.BackgroundOwner.BotID == "" || !a.Bot.Hidden || a.Bot.ManageTeam) {
+		return failure(pa.ScopeDenied, "background_owner")
+	}
 	for id, t := range a.ArtifactTitles {
 		if id != t.ArtifactID || !pa.ArtifactTitle(t.Title) || t.Version < 2 {
 			return failure(pa.Invalid, "artifact_title")
@@ -817,7 +828,7 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 			return out, failure(pa.CursorExpired, "list_cursor")
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT machine,bot,data FROM project_assistant_bots WHERE (?='' OR machine=?) AND (machine>? OR (machine=? AND bot>?)) ORDER BY machine,bot`, q.MachineID, q.MachineID, cursor.LastMachine, cursor.LastMachine, cursor.LastBot)
+	rows, err := s.db.QueryContext(ctx, `SELECT machine,bot,data FROM project_assistant_bots WHERE (?='' OR machine=?) AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL AND (machine>? OR (machine=? AND bot>?)) ORDER BY machine,bot`, q.MachineID, q.MachineID, cursor.LastMachine, cursor.LastMachine, cursor.LastBot)
 	if err != nil {
 		return out, err
 	}
@@ -1034,9 +1045,37 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	if err != nil {
 		return err
 	}
+	if a.BackgroundOwner != nil {
+		return failure(pa.NotFound, "bot")
+	}
+	workers, err := backgroundDeleteKeys(ctx, tx, key)
+	if err != nil {
+		return err
+	}
 	if err = appendRosterChange(ctx, tx, a, true); err != nil {
 		return err
 	}
+	for _, owned := range append(workers, key) {
+		if err = deleteBotFacts(ctx, tx, owned); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM project_assistant_background_tasks WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
+		return err
+	}
+	// The Bot leaves every group in this same transaction: no reader sees a
+	// group naming a member whose row is gone. What it said stays in rooms.
+	if installed, e := groupsInstalled(ctx, tx); e != nil {
+		return e
+	} else if installed {
+		if _, err = leaveGroupsTx(ctx, tx, key, time.Now().UTC(), s.groupHook); err != nil {
+			return err
+		}
+	}
+	return s.commitRoster(ctx, tx, key.MachineID)
+}
+
+func deleteBotFacts(ctx context.Context, tx *sql.Tx, key pa.BotKey) error {
 	res, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_bots WHERE machine=? AND bot=?`, key.MachineID, key.BotID)
 	if err != nil {
 		return err
@@ -1049,16 +1088,7 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 			return err
 		}
 	}
-	// The Bot leaves every group in this same transaction: no reader sees a
-	// group naming a member whose row is gone. What it said stays in rooms.
-	if installed, e := groupsInstalled(ctx, tx); e != nil {
-		return e
-	} else if installed {
-		if _, err = leaveGroupsTx(ctx, tx, key, time.Now().UTC(), s.groupHook); err != nil {
-			return err
-		}
-	}
-	return s.commitRoster(ctx, tx, key.MachineID)
+	return nil
 }
 
 func inputIDs(files []pa.InputFile) []string {

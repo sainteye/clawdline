@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -54,6 +54,9 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		reactionsSchema,
 		handoffCardSchema,
 		handoffReceiptSchema,
+		backgroundTaskSchema,
+		`CREATE UNIQUE INDEX IF NOT EXISTS project_assistant_background_worker ON project_assistant_background_tasks(machine,worker) WHERE worker<>''`,
+		`CREATE INDEX IF NOT EXISTS project_assistant_background_waiting ON project_assistant_background_tasks(machine,bot,state,order_id)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_holds(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,scope TEXT NOT NULL,revision INTEGER NOT NULL,id TEXT NOT NULL,PRIMARY KEY(source,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_connector_credentials(source TEXT NOT NULL,bot TEXT NOT NULL,connector TEXT NOT NULL,id TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(source,bot,connector))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_login_kinds (source TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(source,id))`,
@@ -72,7 +75,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_roster_changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, machine TEXT NOT NULL, bot TEXT NOT NULL, project TEXT NOT NULL, conversation TEXT NOT NULL, generation INTEGER NOT NULL, binding TEXT NOT NULL, removed INTEGER NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_roster_machine ON project_assistant_roster_changes(machine,seq)`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_roster_bot ON project_assistant_roster_changes(machine,bot,seq)`,
-		`INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed) SELECT b.machine,b.bot,json_extract(CAST(b.data AS TEXT),'$.Bot.project'),json_extract(CAST(b.data AS TEXT),'$.Conversation.id'),json_extract(CAST(b.data AS TEXT),'$.Conversation.generation'),json_extract(CAST(b.data AS TEXT),'$.Conversation.binding_id'),0 FROM project_assistant_bots b WHERE NOT EXISTS(SELECT 1 FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot)`,
+		`INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed) SELECT b.machine,b.bot,json_extract(CAST(b.data AS TEXT),'$.Bot.project'),json_extract(CAST(b.data AS TEXT),'$.Conversation.id'),json_extract(CAST(b.data AS TEXT),'$.Conversation.generation'),json_extract(CAST(b.data AS TEXT),'$.Conversation.binding_id'),0 FROM project_assistant_bots b WHERE json_extract(CAST(b.data AS TEXT),'$.BackgroundOwner') IS NULL AND NOT EXISTS(SELECT 1 FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_routines (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, deleted INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_routine_hooks (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, secret TEXT NOT NULL, PRIMARY KEY(machine,bot,id))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_routine_runs (machine TEXT NOT NULL, bot TEXT NOT NULL, id TEXT NOT NULL, routine TEXT NOT NULL, state TEXT NOT NULL, published INTEGER NOT NULL, finished TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,id))`,
@@ -84,6 +87,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// V14 keeps private background workers out of older writers and rosters.
 	// V13 protects terminal quota attempt facts from older writers.
 	// V12 protects named topic-note metadata and index-only context from old writers.
 	// V8 makes login kind durable; old source-owned profiles are accounts.

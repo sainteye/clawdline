@@ -290,6 +290,16 @@
     "Note": true
   },
   {
+    "Name": "bots.background_threads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.background_waiting",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.carry_messages",
     "Known": true,
     "Note": true

@@ -86,15 +86,20 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 		return
 	}
 	if e := a.RosterTrace; e != nil && e.Trace != nil && e.Fence == turn.Fence && e.Trace.TurnID == turn.ID && !e.Trace.Complete {
-		switch e.Trace.Category {
-		case "tool_call":
-			if text := strings.TrimSpace(strings.SplitN(e.Trace.Text, "\n", 2)[0]); text != "" {
-				out.Activity = text
-			}
-		case "agent_message_chunk":
-			out.Activity = "writing"
-		case "agent_thought_chunk":
-			out.Activity = "thinking"
+		if activity := traceActivity(*e.Trace); activity != "" {
+			out.Activity = activity
 		}
 	}
+}
+
+func traceActivity(trace pa.Trace) string {
+	switch trace.Category {
+	case "tool_call", "tool_call_update", "tool":
+		return strings.TrimSpace(strings.SplitN(trace.Text, "\n", 2)[0])
+	case "agent_message_chunk":
+		return "writing"
+	case "agent_thought_chunk":
+		return "thinking"
+	}
+	return ""
 }

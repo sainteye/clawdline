@@ -81,6 +81,12 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 	if err = viewOwnChatHead(ctx, tx, &out.Head); err != nil {
 		return out, err
 	}
+	if q.Request.Mode == pa.ReadViewSnapshot || q.Request.Mode == pa.ReadViewEvents {
+		out.Head.BackgroundTasks, err = backgroundTaskSummaries(ctx, tx, h.Key)
+		if err != nil {
+			return out, err
+		}
+	}
 	if err = viewCounts(ctx, tx, q, &out.Head); err != nil {
 		return out, err
 	}

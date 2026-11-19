@@ -95,7 +95,7 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 	}
 	var changes []change
 	if p.Snapshot {
-		rows, err := tx.QueryContext(ctx, `SELECT b.bot,coalesce((SELECT max(seq) FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot),0) FROM project_assistant_bots b WHERE b.machine=? AND b.bot>? AND (?='' OR json_extract(CAST(b.data AS TEXT),'$.Bot.project.project_id')=?) ORDER BY b.bot LIMIT ?`, q.Request.MachineID, p.After, q.Request.ProjectID, q.Request.ProjectID, pa.MaxPageRows)
+		rows, err := tx.QueryContext(ctx, `SELECT b.bot,coalesce((SELECT max(seq) FROM project_assistant_roster_changes c WHERE c.machine=b.machine AND c.bot=b.bot),0) FROM project_assistant_bots b WHERE b.machine=? AND b.bot>? AND json_extract(CAST(b.data AS TEXT),'$.BackgroundOwner') IS NULL AND (?='' OR json_extract(CAST(b.data AS TEXT),'$.Bot.project.project_id')=?) ORDER BY b.bot LIMIT ?`, q.Request.MachineID, p.After, q.Request.ProjectID, q.Request.ProjectID, pa.MaxPageRows)
 		if err != nil {
 			return out, err
 		}

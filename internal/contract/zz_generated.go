@@ -4473,6 +4473,18 @@ type ProjectAssistantAttemptFact struct {
 	ToolActivity bool `json:"tool_activity,omitempty"`
 }
 
+// One task in a Bot's background queue or recent history.
+type ProjectAssistantBackgroundTaskSummary struct {
+	Activity        string                  `json:"activity,omitempty"`
+	EndedAt         string                  `json:"ended_at,omitempty"`
+	ID              string                  `json:"id"`
+	OriginMessageID string                  `json:"origin_message_id"`
+	StartedAt       string                  `json:"started_at,omitempty"`
+	State           string                  `json:"state"`
+	Title           string                  `json:"title"`
+	Worker          *ProjectAssistantBotKey `json:"worker,omitempty"`
+}
+
 type ProjectAssistantBot struct {
 	Agent          ProjectAssistantAgent               `json:"agent"`
 	Appearance     ProjectAssistantAppearance          `json:"appearance"`
@@ -5981,9 +5993,10 @@ type ProjectAssistantReadTurnSummary struct {
 // One SQL snapshot. Only a successful snapshot-mode response may replace the
 // replay cursor; other page heads never advance it.
 type ProjectAssistantReadViewHead struct {
-	BotVersion   int64                        `json:"bot_version"`
-	Conversation ProjectAssistantConversation `json:"conversation"`
-	CurrentFence ProjectAssistantFence        `json:"current_fence"`
+	BackgroundTasks []ProjectAssistantBackgroundTaskSummary `json:"background_tasks,omitempty"`
+	BotVersion      int64                                   `json:"bot_version"`
+	Conversation    ProjectAssistantConversation            `json:"conversation"`
+	CurrentFence    ProjectAssistantFence                   `json:"current_fence"`
 
 	// Machine log high-water mark from the same transaction, not a message sequence.
 	EventFrontier  int64                  `json:"event_frontier"`

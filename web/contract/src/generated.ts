@@ -5241,6 +5241,20 @@ export interface ProjectAssistantAttemptFact {
   tool_activity?: boolean
 }
 
+/**
+ * One task in a Bot's background queue or recent history.
+ */
+export interface ProjectAssistantBackgroundTaskSummary {
+  activity?: string
+  ended_at?: string
+  id: string
+  origin_message_id: string
+  started_at?: string
+  state: string
+  title: string
+  worker?: ProjectAssistantBotKey
+}
+
 export interface ProjectAssistantBot {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
@@ -6852,6 +6866,7 @@ export interface ProjectAssistantReadTurnSummary {
  * cursor; other page heads never advance it.
  */
 export interface ProjectAssistantReadViewHead {
+  background_tasks?: ProjectAssistantBackgroundTaskSummary[]
   bot_version: number
   conversation: ProjectAssistantConversation
   current_fence: ProjectAssistantFence

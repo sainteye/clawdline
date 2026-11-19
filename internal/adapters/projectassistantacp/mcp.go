@@ -446,6 +446,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if servers, ok := s.tools.(app.DevServerTools); ok && servers.DevServersAvailable(ctx) == nil {
 			list = append(list, mcpDevServerTools()...)
 		}
+		if background, ok := s.tools.(app.BackgroundTools); ok && background.BackgroundAvailable() {
+			list = append(list, mcpBackgroundTool())
+		}
 		if team, ok := s.tools.(app.TeamTools); ok && team.TeamAvailable(ctx) == nil {
 			list = append(list, mcpTeamTools()...)
 		}
@@ -636,6 +639,24 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return nil, refusal(pa.Unsupported, "mcp_output")
 		}
 		return tools.ListArtifacts(ctx)
+	case "add_work":
+		var q struct {
+			ID    string `json:"idempotency_key"`
+			Title string `json:"title"`
+			Brief string `json:"brief"`
+		}
+		if mcpDecode(arguments, &q) != nil || q.ID == "" {
+			return nil, refusal(pa.Invalid, "mcp_background")
+		}
+		tools, ok := s.tools.(app.BackgroundTools)
+		if !ok || !tools.BackgroundAvailable() {
+			return nil, refusal(pa.ScopeDenied, "background_origin")
+		}
+		task, err := tools.AddBackgroundWork(ctx, q.ID, q.Title, q.Brief)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"item_id": task.ID, "status": "waiting"}, nil
 	case "send_message":
 		var q struct {
 			ID   string `json:"idempotency_key"`
@@ -747,6 +768,22 @@ func mcpTeamTools() []any {
 		tool("list_team", "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。", map[string]any{}, []string{}),
 		tool("create_bot", "Propose a Bot in your Project. It inherits your agent, approval policy, mode and team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 建立 Bot，繼承你的代理、允許方式、模式及管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
 		tool("update_bot", "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。", update, []string{"idempotency_key", "botId"}),
+	}
+}
+
+func mcpBackgroundTool() map[string]any {
+	return map[string]any{
+		"name":        "add_work",
+		"description": "Put long research or analysis in this Bot's background queue so the chat can keep answering. The task starts separately after this turn and reports back. Put everything the worker needs in its brief. Reuse the same idempotency key after an uncertain response. For repository changes that require a worktree or a commit, use dispatch_work.",
+		"inputSchema": map[string]any{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]any{
+				"idempotency_key": map[string]string{"type": "string"},
+				"title":           map[string]string{"type": "string"},
+				"brief":           map[string]string{"type": "string"},
+			},
+			"required": []string{"idempotency_key", "title", "brief"},
+		},
 	}
 }
 

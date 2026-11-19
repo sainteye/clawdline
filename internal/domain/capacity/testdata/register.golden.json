@@ -1219,6 +1219,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.background_threads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxBackgroundThreads"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.background_waiting",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxBackgroundPending"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.carry_messages",
     "Class": "buffer",
     "Unit": "rows",
