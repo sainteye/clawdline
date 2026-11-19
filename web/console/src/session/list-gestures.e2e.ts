@@ -71,6 +71,8 @@ type ReadingScenario =
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
 let boardFixture = false
+const shortBoardPurpose = "Review the Session console"
+let boardPurpose = shortBoardPurpose
 let boardTreeFixture = false
 let boardReviewerLeft = false
 let boardReviewerTitle = "Reviewer"
@@ -440,7 +442,7 @@ function daemon(): Server {
     if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: 87 } : {}) })
     if (path === "/v1/orchestrator/session-boards" && boardFixture) {
       const board = {
-        id: "review", project: "fixture", name: "Review board", purpose: "Review the Session console", summary: "", latest: boardTreeFixture ? 2 : 1,
+        id: "review", project: "fixture", name: "Review board", purpose: boardPurpose, summary: "", latest: boardTreeFixture ? 2 : 1,
         lead: "claude:conversation-" + SAFE,
         members: [
           { id: "claude:conversation-" + SAFE, label: "Lead" },
@@ -1700,11 +1702,14 @@ test("Session board header closes a direct open and returns to the index from th
       await tab.go("/")
       const opener = "#rows .session-board-group > button"
       const dialog = ".session-board-dialog[open]"
+      const purpose = `${dialog} .session-board-heading-purpose`
       const headerAction = `${dialog} > header > .session-board-icon-button`
       await shortcutUntil(tab, `!!document.querySelector('${opener}')`)
       await tab.run(`document.querySelector('${opener}').focus()`)
       await tab.key("Enter")
       await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && document.querySelector('${dialog}').getAnimations().length === 0`)
+      assert.equal(await tab.run(`document.querySelector('${purpose}')?.textContent`), shortBoardPurpose)
+      assert.equal(await tab.run(`!!document.querySelector('${purpose} summary, ${purpose} button')`), false)
       assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "down")
       assert.equal(await tab.run(`getComputedStyle(document.querySelector('${headerAction}')).outlineStyle`), "none")
       await tab.key("Tab", true)
@@ -1713,16 +1718,25 @@ test("Session board header closes a direct open and returns to the index from th
       await tab.key("Enter")
       await shortcutUntil(tab, `!document.querySelector('${dialog}') && document.activeElement.matches('${opener}')`)
 
+      boardPurpose = "Review the Session console from a narrow screen. ".repeat(16).trim()
       await tab.press(".session-board-dock")
       await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
       await tab.press(`${dialog} .session-board-index-card`)
       await shortcutUntil(tab, `document.activeElement.matches('${dialog} h2') && !!document.querySelector('${headerAction} svg')`)
       assert.equal(await tab.run(`document.querySelector('${headerAction} svg').dataset.direction`), "back")
+      const longPurpose = await tab.run(`(() => {
+        const description = document.querySelector('${purpose}')
+        description.scrollTop = description.scrollHeight
+        return { text: description.textContent, scrollable: description.scrollTop > 0,
+          fitsWidth: description.scrollWidth === description.clientWidth }
+      })()`)
+      assert.deepEqual(longPurpose, { text: boardPurpose, scrollable: true, fitsWidth: true })
       await tab.press(headerAction)
       await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card') && !document.querySelector('${headerAction}')`)
     })
   } finally {
     boardFixture = false
+    boardPurpose = shortBoardPurpose
   }
 })
 

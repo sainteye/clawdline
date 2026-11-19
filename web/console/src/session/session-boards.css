@@ -83,16 +83,9 @@
   display: flex; align-items: center; gap: 7px;
 }
 .session-board-heading-purpose {
-  margin-block-start: .2rem; color: var(--dim); font-size: .84em;
+  margin: .2rem 0 0; color: var(--dim); font-size: .84em;
+  max-height: 5lh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.session-board-heading-purpose summary {
-  display: flex; align-items: center; gap: 4px; cursor: pointer; list-style: none;
-}
-.session-board-heading-purpose summary::-webkit-details-marker { display: none; }
-.session-board-heading-purpose span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-board-heading-purpose[open] span { max-height: 5lh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.session-board-heading-purpose .session-board-chevron { width: 13px; height: 13px; }
-.session-board-heading-purpose[open] .session-board-chevron { transform: rotate(-90deg); }
 .session-board-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .session-board-body { padding: 12px 14px 16px; }
 .session-board-dialog button {

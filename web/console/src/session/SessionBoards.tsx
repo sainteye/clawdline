@@ -426,9 +426,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
       </button>}
       <div className="session-board-heading">
         <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
-        {selectedBoard && <details className="session-board-heading-purpose" key={selectedBoard.id}>
-          <summary><span>{selectedBoard.purpose}</span><BoardChevron direction="down" /></summary>
-        </details>}
+        {selectedBoard && <p className="session-board-heading-purpose" key={selectedBoard.id}>{selectedBoard.purpose}</p>}
       </div>
       <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>{t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}</button>
       <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
