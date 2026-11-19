@@ -3,13 +3,16 @@ import React,{useState} from "react"
 import {createRoot} from "react-dom/client"
 import type * as W from "@clawdline/contract"
 import {BotRoster} from "./BotRoster"
+import {Bots} from "./Bots"
+import {contractVersion,fixtureSource} from "./fixtures"
 import {words} from "./words"
 import {activateCatalog,type CatalogTag} from "../catalog"
 import zh from "../../public/catalogs/zh-Hant.json"
 import type {SourceClient} from "./client"
 import type {RosterRoom} from "./roster-conversations"
 import "./styles.css"
-const language=(new URL(location.href).searchParams.get("lang")??"en") as CatalogTag
+const params=new URL(location.href).searchParams
+const language=(params.get("lang")??"en") as CatalogTag
 if(language==="zh-Hant")activateCatalog(zh,language)
 const key=(bot_id:string)=>({machine_id:"fixture-machine",bot_id})
 const status={machine_id:"fixture-machine",state:"online",access:"interactive",fresh:true,readable:true,writable:true,capabilities:[],observed_at:""} as W.ProjectAssistantSourceStatus
@@ -30,4 +33,19 @@ function App(){
  const roster=bots.slice(0,memberCount)
  return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope="mixed-fixture" items={roster.filter(item=>!query||item.bot.name.toLowerCase().includes(query.toLowerCase())||"fixture project".includes(query.toLowerCase()))} groupsItems={roster} machines={[source.machineID]} selected={selected} query={query} onQuery={setQuery} machine="" onMachine={()=>{}} onSelect={item=>setSelected(JSON.stringify([item.bot.key.machine_id,item.bot.key.bot_id]))} onClose={()=>{}} w={words(language)} language={language} loading={delayMembers&&memberCount===0} errors={[]} projectNames={names} sources={sources}/><section className="pa-main"><output>{selected}</output></section></main>
 }
-createRoot(document.querySelector("#app")!).render(<App/>)
+function historySource(){
+ const base=fixtureSource("fixture-machine")
+ const room={...group,room:group.room!,project:base.bots[0].project,members:base.bots.slice(0,2).map(bot=>({key:bot.key,joined_revision:1}))}
+ const source:SourceClient={...base,canGroups:()=>true,groups:async()=>({contract_version:contractVersion,groups:[room],source:status}),
+  groupHistory:async()=>({contract_version:contractVersion,group:room,room:room.room,lines:[],source:status,has_more:false,next_before_seq:0})}
+ return source
+}
+const historySources=params.has("history")?[historySource()]:[]
+function HistoryApp(){
+ const [opened,setOpened]=useState(false)
+ return <>
+  <button hidden={opened} onClick={()=>setOpened(true)}>Open fixture Bots</button>
+  {opened&&<Bots sources={historySources} language={language} accountKey="group-history-fixture" readerID="fixture-reader" manageHistory onClose={()=>setOpened(false)}/>}
+ </>
+}
+createRoot(document.querySelector("#app")!).render(params.has("history")?<HistoryApp/>:<App/>)

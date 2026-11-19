@@ -22,9 +22,9 @@ import { moveRosterBot, pinRosterBot, reorderKeys, type RosterState } from "./ro
 import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import "./roster-controls.css"
-export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange}: {
-  onOpenGroup?:()=>void;onGroupOpenChange?:(open:boolean)=>void;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
-  onSelect:(i:W.ProjectAssistantBotSummary)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
+export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack}: {
+  onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;onGroupOpenChange?:(open:boolean)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
+  onSelect:(i:W.ProjectAssistantBotSummary,fromGroup?:boolean)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
   errors:readonly [string,string,boolean][];onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;status?:ReactNode;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
@@ -80,7 +80,7 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
     }
     moves.current=target=>{
       if(!active||!draft.current||active.key===target.key)return
-      if(direct.current){
+      if(direct.current&&active.kind==="bot"){
         const from=groups.find(g=>g.items.some(i=>i.key===active.key)),to=groups.find(g=>g.items.some(i=>i.key===target.key))
         if(target.kind!=="bot"||!from||from!==to)return
       }
@@ -105,7 +105,7 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
       {groups.map(group => {
         const pinned = group.kind === "pinned", name = pinned ? w.pinned : projectNames.get(group.key)||w.unnamedProject
         const keys = group.items.map(item => item.key)
-        return <section className="pa-project-group" key={group.key} aria-label={name} {...targetProps({kind:"project", key:group.key})}>
+        return <section className="pa-project-group" key={group.key} aria-label={name} data-roster-project={!pinned||undefined} {...targetProps({kind:"project", key:group.key})}>
           <h2 className="pa-project-heading">{pinned ? <span>{w.pinned}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!pinned&&<small>{named(group.machineID)}</small>}{sorting&&!pinned&&handle({kind:"project",key:group.key},name,groups.filter(g=>g.kind==="project").map(g=>g.key))}</h2>
           {group.items.map(item => {
             const key = item.key, project = projectKey(item.machineID,item.projectID), name=item.kind==="bot"?item.item.bot.name:item.entry.group.name
@@ -124,7 +124,7 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
     </>
   }
   return <aside ref={root} className="pa-roster pa-roster-compact" data-sorting={sorting||undefined} aria-label={w.allBots}>
-    <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={onSelect} onGroupOpenChange={onGroupOpenChange}>
+    <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={item=>onSelect(item,true)} onGroupOpenChange={onGroupOpenChange} groupRoute={groupRoute} onGroupBack={onGroupBack}>
       {group=>{
         const createItems:PaMenuItem[]=[]
         if(onCreate)createItems.push({id:"bot",label:w.create,icon:<GroupActionIcon/>,onSelect:onCreate})
