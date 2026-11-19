@@ -5062,7 +5062,7 @@
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",
-    "web/console/src/project-assistants/Chat.tsx": "b5160473a947762ea446fbcb01a72f9209b8c938fa6614cd1181ba215668b85a",
+    "web/console/src/project-assistants/Chat.tsx": "13afc8c8973c49758dd9b93d578656f7743b75f59659e187c78cc5b371ebb0e9",
     "web/console/src/project-assistants/ChatRows.tsx": "48bb0a61ad136d5f929d8223bec571a3dff98b0fa1e820448a21fc9234051fd6",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "e8517aa4deff97e6c3c28bf0897192e24f6d69836c6ea2f4a9df67f3997cf44b",

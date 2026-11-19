@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13376,
-  "riskKeys": 5764,
-  "nonRiskCount": 7612,
+  "englishContentKeys": 13394,
+  "riskKeys": 5770,
+  "nonRiskCount": 7624,
   "groups": [
     {
       "name": "acp / other",
@@ -375,6 +375,27 @@
         "botBrowser.handingBack",
         "botBrowser.open",
         "botBrowser.unsupported"
+      ]
+    },
+    {
+      "name": "botCall / other",
+      "count": 12,
+      "sources": [
+        "src/project-assistants/bot-call-words.ts"
+      ],
+      "keys": [
+        "botCall.disconnected",
+        "botCall.end",
+        "botCall.interrupt",
+        "botCall.language",
+        "botCall.listening",
+        "botCall.mute",
+        "botCall.muted",
+        "botCall.opening",
+        "botCall.sending",
+        "botCall.speaking",
+        "botCall.start",
+        "botCall.unsupported"
       ]
     },
     {
