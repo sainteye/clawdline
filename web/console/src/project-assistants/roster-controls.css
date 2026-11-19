@@ -16,10 +16,6 @@
 .project-assistants [data-drop="true"] { outline:1px dashed var(--pa-accent,#e39567);outline-offset:-1px; }
 .project-assistants .pa-roster-save-error { padding:8px;color:var(--warning,#f0a030);font-size:13px; }
 @media (prefers-reduced-motion:reduce) { .project-assistants .pa-roster-entry { transition:none; } }
-.project-assistants .pa-group-avatars { position:relative;display:grid;grid-template-columns:repeat(2,22px);width:44px;min-width:44px;height:44px;align-content:center; }
-.project-assistants .pa-group-avatars > span { display:flex;align-items:center;justify-content:center;width:22px;height:22px; }
-.project-assistants .pa-group-unknown { color:var(--pa-dim);font-size:15px; }
-.project-assistants .pa-group-avatars > .pa-group-more { position:absolute;right:-4px;bottom:-4px;width:auto;min-width:20px;height:16px;background:var(--pa-panel,#18181b);border-radius:5px;color:var(--pa-text);font-size:10px; }
 .project-assistants .pa-roster-compact .pa-bot-row { min-height:72px; }
 .project-assistants .pa-roster-compact .pa-project-heading { margin-top:8px;margin-bottom:4px; }
 .project-assistants .pa-roster-compact .pa-toolbar h1 { flex:1; }

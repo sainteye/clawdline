@@ -15,6 +15,7 @@ import { useShowAfter } from "./PaLoading"
 import type { SourceClient } from "./client"
 import { Groups, groupWord } from "./Groups"
 import {GroupRosterRow} from "./GroupRosterRow"
+import {GroupActionIcon} from "./GroupAvatar"
 import {conversations,conversationSections,type GroupRosterEntry} from "./roster-conversations"
 import { useRosterDrag } from "./useRosterDrag"
 import { moveRosterBot, pinRosterBot, reorderKeys, type RosterState } from "./roster-state"
@@ -126,13 +127,13 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
     <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={onSelect} onGroupOpenChange={onGroupOpenChange}>
       {group=>{
         const createItems:PaMenuItem[]=[]
-        if(onCreate)createItems.push({id:"bot",label:w.create,onSelect:onCreate})
-        if(group.create)createItems.push({id:"group",label:groupWord("groupCreate"),onSelect:group.create})
+        if(onCreate)createItems.push({id:"bot",label:w.create,icon:<GroupActionIcon/>,onSelect:onCreate})
+        if(group.create)createItems.push({id:"group",label:groupWord("groupCreate"),icon:<GroupActionIcon group/>,onSelect:group.create})
         return <>
           <header className="pa-toolbar">
             <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
             <h1>{w.allBots}</h1>
-            {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<span aria-hidden="true">+</span>}/>}
+            {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
             {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
           </header>
           <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>

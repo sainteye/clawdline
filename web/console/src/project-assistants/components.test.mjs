@@ -93,7 +93,8 @@ test("101 permission and trace summaries remain separate from complete detail an
   assert.equal(first.items.length,100);assert.equal(first.has_more,true)
   const summary=first.items[0].permission_summary
   const html=render(PermissionCard,{summary,enabled:true,onDetail:()=>assert.fail("render loaded detail"),onAnswer:()=>assert.fail("summary answered"),w:words("en")})
-  assert.match(html,/View details/);assert.doesNotMatch(html,/Allow once/)
+  assert.match(html,/<details\b[^>]*\bopen=""/)
+  assert.match(html,/What it will do/);assert.doesNotMatch(html,/Allow once/)
   const last=await source.view({...base,mode:"permissions",source_epoch:snapshot.source_epoch,cursor:first.next_cursor},signal)
   assert.equal(last.items.length,1);assert.equal(last.has_more,false)
   const detail=await source.view({...base,mode:"detail",source_epoch:snapshot.source_epoch,cursor:summary.detail_cursor,page_size:1},signal)

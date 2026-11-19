@@ -1,15 +1,20 @@
 import {createPortal} from "react-dom"
 import {useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode} from "react"
+import {afterSurfaceExit} from "./surface-motion"
 
-export interface PaMenuItem { id:string; label:string; onSelect:()=>void; disabled?:boolean }
+export interface PaMenuItem { id:string; label:string; onSelect:()=>void; disabled?:boolean; icon?:ReactNode }
 
 /** An anchored action menu shared by the roster and chat header. */
 export function PaMenu({label,items,floating=false,triggerIcon}:{label:string;items:readonly PaMenuItem[];floating?:boolean;triggerIcon?:ReactNode}) {
-  const [open,setOpen]=useState(false),[active,setActive]=useState(0)
+  const [open,setOpen]=useState(false),[present,setPresent]=useState(false),[active,setActive]=useState(0)
   const root=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null)
   const [floatingStyle,setFloatingStyle]=useState<CSSProperties>({position:"fixed",visibility:"hidden"})
   const enabled=items.map((it,i)=>it.disabled?-1:i).filter(i=>i>=0)
   const close=(focus=true)=>{setOpen(false);if(focus)button.current?.focus({preventScroll:true})}
+  useLayoutEffect(()=>{
+    if(open){setPresent(true);return}
+    if(present&&menu.current)return afterSurfaceExit(menu.current,()=>setPresent(false))
+  },[open,present])
   useEffect(()=>{
     if(!open)return
     const focus=()=>menu.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.focus({preventScroll:true})
@@ -48,9 +53,9 @@ export function PaMenu({label,items,floating=false,triggerIcon}:{label:string;it
     place();window.addEventListener("resize",place);window.addEventListener("scroll",place,true);window.visualViewport?.addEventListener("resize",place);window.visualViewport?.addEventListener("scroll",place)
     return()=>{window.removeEventListener("resize",place);window.removeEventListener("scroll",place,true);window.visualViewport?.removeEventListener("resize",place);window.visualViewport?.removeEventListener("scroll",place)}
   },[open,floating])
-  const choices=<div className="pa-menu-list" role="menu" aria-label={label} ref={menu} style={floating?floatingStyle:undefined}>
+  const choices=<div className="pa-menu-list" role="menu" aria-label={label} ref={menu} inert={!open} data-closing={!open||undefined} style={floating?floatingStyle:undefined}>
     {items.map((it,i)=><button key={it.id} type="button" role="menuitem" data-index={i} tabIndex={i===active?0:-1} disabled={it.disabled}
-      onClick={()=>{close();it.onSelect()}}>{it.label}</button>)}
+      onClick={()=>{close();it.onSelect()}}>{it.icon}{it.label}</button>)}
   </div>
   return <div className="pa-menu" ref={root} data-open={open||undefined}>
     <button type="button" ref={button} className="pa-circle" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
@@ -58,6 +63,6 @@ export function PaMenu({label,items,floating=false,triggerIcon}:{label:string;it
       onKeyDown={e=>{if(e.key==="ArrowDown"){e.preventDefault();setActive(enabled[0]??0);setOpen(true)}}}>
       {triggerIcon??<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg>}
     </button>
-    {open&&(floating?createPortal(<div className="project-assistants">{choices}</div>,document.body):choices)}
+    {(open||present)&&(floating?createPortal(<div className="project-assistants">{choices}</div>,document.body):choices)}
   </div>
 }

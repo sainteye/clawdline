@@ -35,9 +35,9 @@ test("last speaker uses the returned author, supports the person and never inven
 test("the avatar preview counts all remaining members without losing membership or unknown identities",()=>{
   const group=room("many").group
   group.members=Array.from({length:64},(_,i)=>({key:key(String(i)),joined_revision:1}))
-  const preview=groupPreviewMembers(group)
+  const preview=groupPreviewMembers(group.members)
   assert.equal(preview.members.length,4);assert.equal(preview.more,60);assert.equal(group.members.length,64)
-  assert.equal(groupPreviewMembers({...group,members:[]}).more,0)
+  assert.equal(groupPreviewMembers([]).more,0)
 })
 test("same Project on another source, removed rooms and hidden saved identities stay isolated",()=>{
   const one=room("r"),other=room("r");other.group={...other.group,key:key("r","other")}

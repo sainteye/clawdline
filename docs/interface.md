@@ -15,6 +15,7 @@ have gone the other way, and a decision with no reason written down is one the n
 - [Starting the first Session](#starting-the-first-session)
 - [Running under `tmux -CC`](#running-under-tmux--cc)
 - [When there is no tmux server yet](#when-there-is-no-tmux-server-yet)
+- [Bots conversation controls](#bots-conversation-controls)
 - [Which session wants you](#which-session-wants-you)
 - [Reading a session back](#reading-a-session-back)
 - [The mark in a session's header](#the-mark-in-a-sessions-header)
@@ -22,6 +23,36 @@ have gone the other way, and a decision with no reason written down is one the n
 - [Dropping in a file or an image](#dropping-in-a-file-or-an-image)
 - [The notch](#the-notch)
 - [Browsing mascots](#browsing-mascots)
+
+## Bots conversation controls
+
+In the current Console, choose the identity in a Bot or group conversation to open its inspector.
+The desktop reserves space next to the conversation while the inspector moves. The mobile inspector
+uses the existing full-width cover, and closing it returns focus to the identity. The desktop roster
+remains available during the transition. Reduced motion removes these transitions.
+
+The group inspector shows the current members and offers additions from the same source and Project.
+The roster's Add menu opens the group form. The selection determines the avatar and supplies a
+default name. An entered name takes precedence. The source may return an existing group with the
+same membership.
+
+New message bubbles enter when the reader follows the end. Opening a conversation and loading older
+messages establish their displayed position without replaying those entrances. A confirmed send
+replaces the outgoing indicator, and a definite failure returns the draft for a manual send.
+Uncertain results follow the existing source recovery. The working indicator reports observed
+turn activity. Provider narration remains in the processing steps, where updates retain their
+step identity. Only source-published messages appear as completed replies.
+
+Processing steps use the source's turn identity to attach them to the triggering message. The
+count covers the steps loaded for that turn. A plus sign indicates that more steps may be available
+through the source's history pagination. The room source currently supplies activity state and
+published lines, so group rooms can display the waiting member and the reply when it is published.
+
+An empty composer offers Stop while the appropriate conversation is working. A draft or attachment
+exposes Send. The direct conversation's stop request names the active turn and uses the source's
+existing active-and-queued scope. Group Stop uses the room route. Pending permission cards load
+their content on entry. Opening a card reads details. Passing a decision still requires a separate
+action on the source's current option.
 
 ## Starting the first Session
 

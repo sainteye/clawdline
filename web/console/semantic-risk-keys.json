@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13301,
+  "englishKeys": 13302,
   "counts": {
     "negation": 3506,
     "state": 2243,
-    "permission": 812,
+    "permission": 813,
     "deletion": 312,
     "uncertainty": 543
   },
-  "unionCount": 5729,
+  "unionCount": 5730,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6380,6 +6380,7 @@
       "projectAssistants.agentNeedsLogin",
       "projectAssistants.allow_always",
       "projectAssistants.allow_once",
+      "projectAssistants.allow_session",
       "projectAssistants.approvalApprove",
       "projectAssistants.approvalAuto",
       "projectAssistants.approvalMode",
@@ -12316,6 +12317,7 @@
     "projectAssistants.agentUnavailable",
     "projectAssistants.allow_always",
     "projectAssistants.allow_once",
+    "projectAssistants.allow_session",
     "projectAssistants.approvalApprove",
     "projectAssistants.approvalAuto",
     "projectAssistants.approvalMode",

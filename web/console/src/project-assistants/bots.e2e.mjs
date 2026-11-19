@@ -188,7 +188,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     if(!selected||selected==="permission")for(const mode of ["cursor","generation"]){
       await fresh(()=>{window.botsFixture.a.seedCollections(1);window.botsFixture.a.configureViews({forbidLegacy:true})});await open();await ready()
       const offer=chat.locator('[data-permission-id="offer-0"]')
-      await offer.getByRole("button",{name:w.details,exact:true}).click();await offer.getByRole("button",{name:w.allow,exact:true}).waitFor()
+      await offer.getByRole("button",{name:w.allow,exact:true}).waitFor()
       await page.evaluate(mode=>window.botsFixture.a.configureViews(mode==="cursor"?{detailFailure:"pa_cursor_expired"}:{detailFenceChange:true}),mode)
       await offer.getByRole("button",{name:w.allow,exact:true}).click()
       await alert(mode==="cursor"?"pa_cursor_expired":"pa_stale_generation")
@@ -302,20 +302,20 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   assert.equal(await workResult("newer-work-observation").count(),1,"late old-generation work page cannot overwrite the newer event")
   await noLegacy();await shot("live-history-work-race")
 
-  await fresh(()=>{window.botsFixture.a.seedCollections(101);window.botsFixture.a.configureViews({forbidLegacy:true})});await open();await ready()
+  await fresh(()=>{window.botsFixture.a.seedCollections(101);window.botsFixture.a.configureViews({forbidLegacy:true});window.botsFixture.a.holdView("detail")});await open();await ready()
   await page.waitForFunction(()=>document.querySelectorAll("[data-permission-id]").length===100&&document.querySelectorAll("[data-trace-id]").length===100)
   assert.equal(await chat.locator("[data-permission-id]").count(),100)
   assert.equal(await chat.locator("[data-trace-id]").count(),100)
   assert.equal(await page.getByRole("button",{name:w.allow,exact:true}).count(),0,"summaries provide no answer control")
   assert.equal((await views("permissions")).every(r=>!r.request.cursor),true)
   assert.equal((await views("traces")).every(r=>!r.request.cursor),true)
+  await page.evaluate(()=>window.botsFixture.a.releaseView())
   await chat.locator(".pa-permissions").getByRole("button",{name:w.more,exact:true}).click()
   await page.waitForFunction(()=>document.querySelectorAll("[data-permission-id]").length===101)
   await chat.locator(".pa-trace > summary").click()
-  await chat.locator(".pa-trace").getByRole("button",{name:w.more,exact:true}).click()
+  await chat.locator(".pa-chat-content > .pa-trace-more-btn").click()
   await page.waitForFunction(()=>document.querySelectorAll("[data-trace-id]").length===101)
   const permission=chat.locator('[data-permission-id="offer-0"]')
-  await permission.getByRole("button",{name:w.details,exact:true}).click()
   await permission.getByRole("button",{name:w.allow,exact:true}).waitFor()
   await permission.getByRole("button",{name:w.allow,exact:true}).click()
   await page.waitForFunction(()=>window.botsFixture.log.filter(r=>r.method==="answer").length===1)
@@ -330,14 +330,13 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await noLegacy();await shot("manual-101-summary-detail")
 
   // A detail response may ignore its aborted signal while generation changes.
-  await page.evaluate(()=>window.botsFixture.a.holdView("detail"))
-  const detailReads=(await views("detail")).length
-  await chat.locator('[data-permission-id="offer-1"]').getByRole("button",{name:w.details,exact:true}).click();await waitView("detail",detailReads)
+  await fresh(()=>{window.botsFixture.a.seedCollections(2);window.botsFixture.a.holdView("detail")});await open();await ready()
+  await waitView("detail",0)
   await page.evaluate(()=>window.botsFixture.a.expireCursor());await refresh()
   await chat.locator('[data-permission-id="new-generation-offer"]').waitFor()
   await page.evaluate(()=>window.botsFixture.a.releaseView());await page.waitForTimeout(30)
   assert.equal(await chat.locator('[data-permission-id="offer-1"]').count(),0)
-  assert.equal((await log()).filter(r=>r.method==="answer").length,1,"old detail cannot restore an action")
+  assert.equal((await log()).filter(r=>r.method==="answer").length,0,"old detail cannot restore an action")
 
   await fresh(()=>{window.botsFixture.a.seedHistory(150);window.botsFixture.a.configureViews({forbidLegacy:true})});await open();await ready()
   await editor().fill("snapshot failure retains this draft")
@@ -419,11 +418,10 @@ async function boundedChecks(page,origin,language,width,shot,log) {
 
   for(const operation of ["snapshot","detail"]){
     await fresh(()=>{window.botsFixture.a.seedCollections(1);window.botsFixture.a.configureViews({forbidLegacy:true})})
-    if(operation==="snapshot")await page.evaluate(()=>window.botsFixture.a.holdView("snapshot"))
+    await page.evaluate(operation=>window.botsFixture.a.holdView(operation),operation)
     await open()
     if(operation==="detail"){
-      await ready();await chat.locator('[data-permission-id="offer-0"]').waitFor();await page.evaluate(()=>window.botsFixture.a.holdView("detail"))
-      await chat.locator('[data-permission-id="offer-0"]').getByRole("button",{name:w.details,exact:true}).click();await waitView("detail",0)
+      await ready();await chat.locator('[data-permission-id="offer-0"]').waitFor();await waitView("detail",0)
     }else await waitView("snapshot",0)
     await page.evaluate(()=>{window.botsFixture.revokeBeforeRender();window.botsFixture.a.releaseView()});await page.waitForTimeout(30)
     assert.equal(await page.getByRole("button",{name:w.allow,exact:true}).count(),0)

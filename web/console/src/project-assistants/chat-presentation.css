@@ -1,5 +1,4 @@
 /* Chat presentation stays local to this surface; shared group and memory layouts keep their owners. */
-.project-assistants .pa-chat-layout.pa-chat-surface.pa-info-open { grid-template-columns:minmax(0,1fr) 400px; }
 .project-assistants .pa-chat-surface .pa-chat-header { min-height:68px;padding:8px 20px;gap:12px; }
 .project-assistants .pa-chat-surface .pa-chat-heading { display:flex;justify-content:center;flex:1;min-width:0;margin:0;overflow:visible; }
 .project-assistants .pa-chat-surface .pa-chat-identity { display:flex;align-items:center;gap:10px;max-width:min(100%,580px);min-width:0;min-height:44px;padding:6px 12px;border:1px solid transparent;border-radius:26px;background:#181818;text-align:left; }
@@ -44,7 +43,6 @@
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-compact>label select { width:64%;min-height:32px;padding:5px 8px;margin:0;font-size:12px; }
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-management>summary { font-size:11px;padding:5px 0;color:var(--pa-dim); }
 @media(max-width:1000px) {
- .project-assistants .pa-chat-layout.pa-chat-surface.pa-info-open { grid-template-columns:minmax(0,1fr); }
  .project-assistants .pa-chat-surface .pa-info-panel { width:min(400px,100%); }
 }
 @media(max-width:700px) {
