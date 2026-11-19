@@ -200,7 +200,7 @@ test("legacy unverified draft: original text, quote and full scope survive separ
   const active=createViewState(store).unverifiedDrafts.active(own,scope)!
   assert.equal(active.text,"Legacy uncertain draft");assert.equal(active.quote,"quote-1")
   assert.equal("intent" in active,false);assert.equal("command" in active,false)
-  assert.equal(view.unverifiedDrafts.writeNew(own,scope),true)
+  assert.deepEqual(view.archiveUnverifiedDraft(own,scope),{text:"",quote:""})
   view.stage(own,"New manually entered draft");assert.equal(view.flush(own),true)
   const reloaded=createViewState(store)
   assert.equal(reloaded.draft(own),"New manually entered draft")
@@ -225,12 +225,12 @@ test("legacy unverified draft: every storage refusal retains the original and th
     const view=createViewState(storage)
     view.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","quote-1")
     fail=true
-    assert.equal(view.unverifiedDrafts.writeNew(own,scope),false)
+    assert.equal(view.archiveUnverifiedDraft(own,scope),undefined)
     assert.equal(view.unverifiedDrafts.active(own,scope)?.text,"Legacy uncertain draft")
     assert.equal(createViewState(store).unverifiedDrafts.active(own,scope)?.text,"Legacy uncertain draft")
     assert.equal(view.unverifiedDrafts.continuing(own,scope),false)
     fail=false
-    assert.equal(view.unverifiedDrafts.writeNew(own,scope),true)
+    assert.ok(view.archiveUnverifiedDraft(own,scope))
     assert.equal(createViewState(store).unverifiedDrafts.continuing(own,scope),true)
   }
 })
@@ -240,15 +240,34 @@ test("legacy unverified draft: a failed initial preservation and unreadable reco
   const view=createViewState({...store,setItem:()=>{throw new Error("blocked")}})
   view.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","quote-1")
   assert.equal(view.unverifiedDrafts.problem(own),"unsaved")
-  assert.equal(view.unverifiedDrafts.writeNew(own,scope),false)
+  assert.equal(view.archiveUnverifiedDraft(own,scope),undefined)
   assert.equal(disk.get(own),"Legacy uncertain draft")
   const raw="opaque undecodable original"
   disk.set(viewStateModule.unverifiedDraftKey(own),raw)
   const unreadable=createViewState(store)
   unreadable.unverifiedDrafts.capture(own,scope,"Legacy uncertain draft","")
-  assert.equal(unreadable.unverifiedDrafts.writeNew(own,scope),false)
+  assert.equal(unreadable.archiveUnverifiedDraft(own,scope),undefined)
   assert.equal(disk.get(viewStateModule.unverifiedDraftKey(own)),raw)
   assert.equal(disk.get(own),"Legacy uncertain draft")
+})
+
+test("archiving an old draft preserves newer text written by another tab or staged in this one",()=>{
+  for(const staged of [false,true]){
+    const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+    disk.set(own,"Old draft")
+    const view=createViewState(store)
+    assert.equal(view.draft(own),"Old draft")
+    view.quotes.set(own,"old quote")
+    view.unverifiedDrafts.capture(own,scope,"Old draft","old quote")
+    if(staged){
+      view.stage(own,"New staged draft")
+      view.quotes.set(own,"new quote")
+    }
+    disk.set(own,"New stored draft")
+    assert.deepEqual(view.archiveUnverifiedDraft(own,scope),staged?{text:"New staged draft",quote:"new quote"}:{text:"New stored draft",quote:""})
+    assert.equal(disk.get(own),"New stored draft")
+    assert.equal(view.unverifiedDrafts.history(own,scope)[0].text,"Old draft")
+  }
 })
 
 test("legacy plain draft retention does not borrow the send-size bound",()=>{
@@ -258,7 +277,7 @@ test("legacy plain draft retention does not borrow the send-size bound",()=>{
   const restored=createViewState(store)
   assert.equal(restored.unverifiedDrafts.active(own,scope)?.text,text)
   assert.equal(restored.unverifiedDrafts.problem(own),undefined)
-  assert.equal(restored.unverifiedDrafts.writeNew(own,scope),true)
+  assert.ok(restored.archiveUnverifiedDraft(own,scope))
   assert.equal(createViewState(store).unverifiedDrafts.history(own,scope)[0]?.text,text)
 })
 test("a send's late answer settles only its own entry and reaches a Chat opened after the sender left",()=>{

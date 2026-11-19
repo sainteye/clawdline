@@ -123,50 +123,35 @@ time or idle heuristic anywhere.
 The future-send journal cannot identify a draft saved by an earlier version.
 On entry, Chat captures the nonempty plain draft and its quote before any
 asynchronous source read. If the first validated, scope-matching snapshot
-reports an unknown turn and there is no held command, the draft is locked
-before that snapshot enables the composer. The send handler checks the same
-lock, including after its preflight. Body equality is never delivery evidence.
+reports an unknown turn and there is no held command, the draft is kept out
+of the send path while the console preserves it. Body equality is never
+delivery evidence.
 
-`UnverifiedDrafts` stores this separately under
-`clawdline.bot-unverified.<draft key>`: original text, quote, full Bot/Project/
-conversation scope and whether the person explicitly continued. It has no
-command, nonce, receipt, guessed delivery state or receipt-check button.
-History is filtered by account/key and all conversation scope fields. It has
-no count or send-size cap on retained plain drafts; storage failures keep the original locked. The source still validates the size of any explicitly new send. The original
-remains readable as **Unverified draft**, including its quote when available.
+`UnverifiedDrafts` stores the original text, quote, and full Bot/Project/
+conversation scope under `clawdline.bot-unverified.<draft key>`. The transcript
+shows the original in a single message bubble with **Old draft · Delivery
+unconfirmed** below it. The normal composer can be used as soon as the console
+has saved the original and cleared the matching plain-draft slot. Any newer
+draft in memory or on disk is retained. If storage refuses, the old draft stays
+in the transcript, the composer stays locked, and **Save old draft** retries
+the local save. An undecodable record remains untouched. The original survives
+reload independently from subsequent drafts.
 
-**Write a new message** first durably preserves the original active record,
-then clears the old plain-draft slot, then durably records the explicit
-continuation. Only after all three storage operations succeed does the UI open
-an empty composer. Failure at any stage keeps the original record and lock;
-a failure after clearing the plain slot still reloads the original from the
-active record. The retained record and a subsequently typed draft survive
-reload separately. Explicit continuation is scoped to that conversation, so
-reloading a new draft does not migrate it again. An undecodable local record
-is left untouched and keeps the composer locked.
-
-This is a Clawdline migration UI. It performs no export, query, resend, replay,
-cancel or acknowledgement. Existing source unknown turns and receipts stay
-unchanged by migration or continuation. A manually typed send receives a fresh
-UUID and still passes the source's existing admission policy; unknown plus an
-already queued turn can still be refused. Read-only/revoked/unsupported checks
-and permission-answer controls are unchanged. This does not reconstruct lost
-historical command identities, image data or quotes that were never retained.
+The old draft has no command or receipt to check. Saving it performs no
+export, query, send, replay, cancel, or acknowledgement. A subsequent explicit
+send receives a fresh UUID and still passes the source's admission policy.
 
 ## Compared with Codync
 
-Codync's desktop renderer (`apps/desktop/src/renderer/store/bot-store.ts` at
-9f67eb09) has no unknown state: any send failure marks the local row
-`failed`, failed rows are cached across launches (`bot-mirror.ts`
-`saveCache`), and **Retry** resends the same text with the same `clientNonce`,
-re-uploading files, relying on the host to skip a nonce it already has
-(`host/src/remote/relay/delivery.rs`:64-85). The actual pinned source was inspected at
-`9f67eb09084db61b3cca9c84a11bc03df9de29b7`: `bot-store.ts`:61-105
-creates the nonce and marks failures, :118-125 retries it;
-`bot-mirror.ts`:363-370 retains failed local rows. A send still in flight when the page
-goes away is not cached. Clawdline keeps its stronger fence instead of copying
-that retry: an uncertain send is never resent, only checked against its exact
-receipt, and continuing means a new, empty message.
+Codync iOS at `e7148ed2f89eef94f50d75a19cb55aad848d97f0` transfers a
+composer draft to a local user row with a `clientNonce` and clears the composer
+(`BotStore+Sending.swift`:47–101). The status and actions sit under that
+message bubble (`Thread/ChatRows.swift`:152–195). An explicit resend of a
+local message reuses its nonce (`BotStore+Sending.swift`:273–285) and the host
+returns an existing message for that nonce (`host/src/api/bots.rs`:253–268).
+The iOS mirror keeps pending local rows when it saves (`BotStore+Cache.swift`:42–66).
+Clawdline follows the chat row and independent composer model for old drafts.
+Its legacy drafts predate the journal and have no nonce to reuse.
 
 ## Evidence
 
@@ -212,19 +197,15 @@ receipt, and continuing means a new, empty message.
   isolation; permission answers; corruption and write failure; preserving unreadable bytes and retaining history
   independently of pending execution capacity.
 
-The `--legacy` browser mode seeds only synthetic historical source facts,
-a saved plain draft and no held journal. Against `80a8223631df41077b685b7f13755412e616dbfc`,
-the first assertion fails: **Legacy uncertain draft** is editable beside
-**Outcome unknown; no automatic retry**, with zero sends and exports. With
-the migration, the narrow scenario verifies the locked initial draft, refusal
-to continue when storage fails, empty new composer, original plus new draft
-after a full reload, a single explicit new UUID send, no automatic exports,
-account isolation and an unchanged visible unknown-source banner. A DOM
-observer checks that the legacy text never appears editable. State tests inject
-failure at each persistence stage and check every Project/conversation scope
-dimension. This is synthetic browser acceptance, not native-provider or
-production-Cloud acceptance; source queue admission is not simulated by the
-legacy fixture.
+The `--legacy` browser mode seeds synthetic historical source facts and a
+saved plain draft without a held journal. The narrow scenario checks a single
+copy in the scrollable transcript, an immediately empty composer, separate
+drafts after reload, one explicit new UUID send, zero automatic exports, and
+account isolation. Add `--refuse-storage` to fault the initial save, verify the
+lock, and recover through the local save control. State tests inject failures
+at each persistence stage, verify conversation scope and protect newer drafts.
+The fixture uses a synthetic source and does not exercise native execution
+or production Cloud admission.
 
 ## Not covered
 
