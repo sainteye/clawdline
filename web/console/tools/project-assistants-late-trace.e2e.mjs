@@ -48,7 +48,7 @@ try{
    scenario={tag,delay,traceRequested:false};traceGate=new Promise(r=>{releaseTrace=r});page.on('pageerror',e=>errors.push(String(e)))
    const click=loc=>width<700?loc.tap():loc.click()
    try{
-    await page.addInitScript(browserProbe);await page.goto(origin+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await page.locator('.pa-window .pa-bot-row').first().waitFor();await click(page.locator('.pa-window .pa-bot-row').first());await page.locator('.pa-window [data-message-seq="4"]').waitFor()
+    await page.addInitScript(browserProbe);await page.goto(origin+'/?lang=zh-Hant');await click(page.locator('.pa-dock'));await page.locator('.pa-window .pa-bot-row').first().waitFor();await click(page.locator('.pa-window .pa-bot-row').first());await page.locator('.pa-window [data-message-seq="4"]').waitFor()
     await page.waitForFunction(()=>[...document.querySelectorAll('.pa-window')].every(n=>n.getAnimations().every(a=>a.playState==='finished')))
     assert.equal(await page.locator('.pa-trace-row').count(),0);assert.equal(scenario.traceRequested,true)
     const before=await page.evaluate(()=>{window.__probe.marks.push({name:'before-trace',t:performance.now()});return window.__measure()})

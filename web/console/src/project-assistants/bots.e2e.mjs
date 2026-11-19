@@ -462,7 +462,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   if(width<701)await chat.getByRole("button",{name:w.back,exact:true}).click()
   await page.getByRole("button",{name:w.sessions,exact:true}).click()
   await page.getByRole("heading",{name:"Sessions",exact:true}).waitFor()
-  await page.waitForFunction(()=>document.activeElement?.classList.contains("pa-orb"))
+  await page.waitForFunction(()=>document.activeElement?.classList.contains("pa-dock"))
   await controlledRaces()
   all.push(...await log());return ["work admission order after Send, live completion and delayed history","600-event bounded initial100 / frontier602 / events603-604","opaque history and scroll anchor","old-generation work/event versus delayed older page","101 permission and trace summaries via manual more","detail-only answers / typed oversized detail","new generation cancels ignored-abort details","snapshot errors retain window and draft","same-account/Bot recovery latch across return and host remount","validated entry or manual snapshot is the only recovery unlock","new account isolation","queued16 and unknown17","ignored-abort mutation preflight and source revocation","API58 metadata / typed unsupported view / no fallback","IME, quote, draft switch, one send, unknown intent after remount","focus and voice ownership / no horizontal overflow","second permission preflight cursor/generation recovery latch","all parallel mutation controls abort on recovery/unmount and cannot resume after same-fence unlock"]
 }

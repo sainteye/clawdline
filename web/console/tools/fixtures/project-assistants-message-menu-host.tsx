@@ -15,6 +15,6 @@ registry.sync([{accountKey:registry.accountKey,readerID:registry.readerID,machin
  authorizationRevision:"synthetic-grant",apiLevel:89,paired:true,online:true,writable:true}],()=>(input,init)=>fetch(input,init))
 function Host(){
  const host=useProjectAssistantsHost({registry,apiLevel:89,cloud:false,language})
- return <main><p>Synthetic origin view</p>{host.entry}{host.content}</main>
+ return <main><p>Synthetic origin view</p>{host.dock}{host.content}</main>
 }
 createRoot(document.getElementById("app")!).render(<React.StrictMode><Host/></React.StrictMode>)

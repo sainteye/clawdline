@@ -107,7 +107,7 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         await page.locator(".copilot-bubble").waitFor()
         await back();await row().waitFor()
         await page.getByRole("button",{name:w.collapse,exact:true}).click();await orb.waitFor()
-        assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("pa-orb")),true)
+        assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("pa-dock")),true)
         assert.equal(await page.evaluate(() => document.querySelector("#list-scroll").scrollTop),420)
         assert.equal(await page.evaluate(() => location.hash),originalHash)
         // App remount is CloudGate's active-machine key; the account-owned draft survives.

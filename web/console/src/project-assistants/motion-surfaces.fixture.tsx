@@ -7,8 +7,6 @@ import {createViewState} from "./view-state"
 import {Chat} from "./Chat"
 import {FallbackSourceScope} from "./FallbackSettings"
 import {words} from "./words"
-import {setDockAvailable} from "./BotOrb"
-import {setOrbPlace} from "./orb-dock"
 import type * as W from "@clawdline/contract"
 import "./styles.css"
 
@@ -50,7 +48,6 @@ source.subscribeRoster=async(r,receive,signal)=>{
   })
 }
 const sources=[source],registry={accountKey:"motion",readerID:"motion",viewState:createViewState(),subscribe:()=>()=>{},getSnapshot:()=>sources}
-setDockAvailable(true);setOrbPlace({docked:true,right:16,bottom:72})
 const fixture={
   async phase(next:typeof phase){
     phase=next;revision++
@@ -65,7 +62,7 @@ const fixture={
 function App(){
   const language=new URL(location.href).searchParams.get("lang")??"en"
   const host=useProjectAssistantsHost({registry:registry as never,cloud:false,language})
-  return <><main className="pane-list"><h1>Sessions</h1>{host.entry}</main><footer aria-label="Status bar">{host.dock}</footer>{host.content}</>
+  return <><main className="pane-list"><h1>Sessions</h1></main><footer aria-label="Status bar">{host.dock}</footer>{host.content}</>
 }
 function FailureChat(){
   const [summary,setSummary]=React.useState<W.ProjectAssistantBotSummary>()

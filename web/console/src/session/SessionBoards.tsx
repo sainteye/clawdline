@@ -361,19 +361,19 @@ export function SessionBoardDock({ targets }: { targets: readonly SessionBoardTa
     button.current?.focus()
   }
   const target = targets.find(t => t.source.key === open)
+  const hasTargets = targets.length > 0
   useEffect(() => {
-    if (open !== null && open !== "" && !target) setOpen(null)
-  }, [open, target])
-  if (!targets.length) return null
+    if (open !== null && (!hasTargets || (open !== "" && !target))) setOpen(null)
+  }, [hasTargets, open, target])
   return <>
-    <button ref={button} type="button" className="session-board-dock" aria-haspopup="dialog"
+    <button ref={button} type="button" className="session-board-dock" aria-haspopup="dialog" disabled={!hasTargets}
       aria-label={label} title={label} data-unread={unread > 0 || undefined}
       onClick={() => setOpen(targets.length === 1 ? targets[0].source.key : "")}>
       <BoardGlyph />
       {unread > 0 && <span className="session-board-dock-dot" aria-hidden="true" />}
     </button>
     {target && createPortal(<StatusBoardDialog key={target.source.key} target={target} close={close} opener={button.current} />, document.body)}
-    {open === "" && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} opener={button.current} />, document.body)}
+    {open === "" && hasTargets && createPortal(<BoardMachinePicker targets={targets} choose={setOpen} close={close} opener={button.current} />, document.body)}
   </>
 }
 

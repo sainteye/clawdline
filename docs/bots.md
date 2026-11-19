@@ -25,9 +25,10 @@ it.
 ## Turn Bots on
 
 In the Clawdline app on this machine, open **Settings** and turn on
-**Persistent Bots** (on the tab with the dispatch settings). The Bots orb
-appears in the Session list. A paired browser or phone can read the setting
-but cannot change it, like this machine's other settings.
+**Persistent Bots** (on the tab with the dispatch settings). The Bots
+shortcut in the bottom status bar becomes available. A paired browser or
+phone can read the setting but cannot change it, like this machine's other
+settings.
 
 Bots is not in public releases yet: the switch is shown only on a dev build
 (`v<x.y.z>-dev.<commit>`), or where Bots is already on so it can be turned
@@ -47,9 +48,8 @@ first-use setup ahead of time and prints which Claude Code version it found;
 
 ## Use a Bot
 
-1. Click the Bots orb in the Session list, then **+**. You can drag the
-   orb anywhere over the list, or onto the quota bar at the bottom, where it
-   becomes a small icon that rings and counts new replies.
+1. Click Bots in the bottom status bar, then **+**. The shortcut rings
+   and counts new replies.
 2. Give it a name, choose the Project and write its standing instructions.
    Creating a Bot does not call a model.
 3. Send a message. Up to four pictures can go with it: press **+**, paste
@@ -97,9 +97,9 @@ motions follow Codync's activity cadence, adapted to line art. Reduced
 motion keeps the gradient and halo without movement. Existing saved shapes
 and colors keep the same storage and transport format.
 
-The chat header follows the current turn too. The status-bar and floating
-Bots entries summarize visible, authorized Bots: a Bot needing your answer
-takes precedence over working Bots, then the entry rests when all are idle.
+The chat header follows the current turn too. The status-bar shortcut
+summarizes visible, authorized Bots: a Bot needing your answer takes
+precedence over working Bots, then the entry rests when all are idle.
 Unread counts alone do not start a working animation. Stale or disconnected
 activity stops moving while unread counts remain available. Local sources
 that support the roster stream update the closed entry from that stream;
