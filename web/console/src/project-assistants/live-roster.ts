@@ -72,15 +72,45 @@ export function createRosterReconnect() {
   }
 }
 
-/** One serial subscription per source. Timers reconnect; they never list Bots. */
+async function readInitialRosterFallback(source:SourceClient,current:()=>readonly SourceClient[],signal:AbortSignal):Promise<W.ProjectAssistantBotSummary[]> {
+  return authorized(source,current,async s=>{
+    const pageSize=100,items:W.ProjectAssistantBotSummary[]=[],seen=new Set<string>()
+    let cursor=""
+    do {
+      const answer=await source.list({machine_id:source.machineID,cursor,query:"",page_size:pageSize},s)
+      if(answer.contract_version!=="project-assistants.v1"||!Array.isArray(answer.sources)||!Array.isArray(answer.items)||
+        answer.items.length>pageSize||typeof answer.next_cursor!=="string")throw failure("pa_invalid")
+      const own=answer.sources.find(status=>status.machine_id===source.machineID)
+      if(own?.state==="revoked")throw failure("pa_revoked")
+      if(own?.state==="unpaired")throw failure("pa_unpaired")
+      if(!own||!canRead(own))throw failure("pa_scope_denied")
+      if(own.state!=="online"||!own.fresh)throw failure("pa_offline")
+      for(const item of answer.items) {
+        if(item.bot.key.machine_id!==source.machineID||item.bot.project.machine_id!==source.machineID||
+          item.source.machine_id!==source.machineID||!canRead(item.source))throw failure("pa_scope_denied")
+        items.push({...item,source:{...own,fresh:false,writable:false}})
+      }
+      cursor=answer.next_cursor
+      if(cursor&&(!answer.items.length||seen.has(cursor)))throw failure("pa_invalid")
+      if(cursor&&seen.size+1>=LiveRosterRows/pageSize)throw failure("pa_capacity_full")
+      seen.add(cursor)
+    }while(cursor&&!s.aborted)
+    return mergeRoster([items])
+  },signal)
+}
+
+const rosterAuthorityLost=(code:string)=>["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(code)
+
+/** One serial subscription per source. A failed initial stream may recover via one List pass. */
 export async function followLiveRoster(source:SourceClient,current:()=>readonly SourceClient[],signal:AbortSignal,retryMs:number,update:(value:LiveRosterUpdate)=>void,wait=createRosterReconnect().wait):Promise<void> {
   if(!source.subscribeRoster)return
   const revision=source.authorizationRevision,request={machine_id:source.machineID}
   const held=()=>!signal.aborted&&source.authorizationRevision===revision&&current().some(s=>s===source)
   const fence=()=>{if(!held()||source.current?.()===false)throw failure("pa_revoked")}
-  let state=emptyLiveRoster(),statuses:W.ProjectAssistantSourceStatus[]=[],lastError=""
+  let state=emptyLiveRoster(),statuses:W.ProjectAssistantSourceStatus[]=[],lastError="",initialReadAvailable=true
   while(held()) {
     update({error:lastError,pending:true})
+    let readingStream=false
     try {
       const answer=await authorized(source,current,s=>source.status(s),signal)
       fence()
@@ -89,10 +119,12 @@ export async function followLiveRoster(source:SourceClient,current:()=>readonly 
       if(!own||!canRead(own)) {update({items:[],statuses,error:"",pending:false});return}
       if(!state.complete)state=emptyLiveRoster()
       state={...state,hello:false,snapshotting:false}
+      readingStream=true
       await source.subscribeRoster({...request,cursor:state.complete?state.cursor:""},frame=>{
         fence()
         state=applyLiveRoster(state,frame,request)
         if(state.complete&&frame.type!=="hello") {
+          initialReadAvailable=false
           const items=liveRosterItems(state),observed=frame.changes?.find(c=>c.summary)?.summary?.source
           if(observed)statuses=[observed]
           lastError=""
@@ -102,12 +134,26 @@ export async function followLiveRoster(source:SourceClient,current:()=>readonly 
       throw failure("pa_offline")
     }catch(error) {
       if(signal.aborted||!held())return
-      const code=errorCode(error)
+      let code=errorCode(error)
+      let fallbackItems:W.ProjectAssistantBotSummary[]|undefined
+      if(initialReadAvailable&&readingStream&&(code==="pa_cursor_expired"||code==="pa_offline")) {
+        initialReadAvailable=false
+        try {
+          const items=await readInitialRosterFallback(source,current,signal)
+          fence()
+          fallbackItems=items
+        }catch(fallbackError) {
+          if(!held())return
+          const refusal=errorCode(fallbackError)
+          if(rosterAuthorityLost(refusal))code=refusal
+        }
+      }
       lastError=code
-      const denied=code==="pa_revoked"||code==="pa_scope_denied"||code==="pa_unpaired"
+      const denied=rosterAuthorityLost(code)
       // A fresh oversized snapshot requires intervention; replay tombstones get one reset.
-      const stopped=denied||code==="pa_invalid"||code==="pa_unsupported"||code==="pa_disabled"||error instanceof RosterStreamFailure&&error.kind==="capacity"&&!state.complete||source.current?.()===false
-      update({...(denied?{items:[]}:{}),statuses:statuses.map(s=>({...s,fresh:false,writable:false})),error:code,pending:false,retryable:!stopped})
+      const stopped=denied||code==="pa_invalid"||code==="pa_unsupported"||error instanceof RosterStreamFailure&&error.kind==="capacity"&&!state.complete||source.current?.()===false
+      const items=denied?[]:fallbackItems
+      update({items,statuses:denied?[]:statuses.map(s=>({...s,fresh:false,writable:false})),error:code,pending:false,retryable:!stopped})
       if(stopped)return
       if(code==="pa_cursor_expired"||code==="pa_capacity_full"||!state.complete)state=emptyLiveRoster()
       if(source.current?.()===false)return

@@ -177,7 +177,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   // not label an absent publication as a pass or manufacture a Bot message.
   const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&lines.at(-1)?.kind==="person"
   const openEditor=(opener:HTMLElement|null)=>{opener?.focus({preventScroll:true});setEditing(true)}
-  const body=<section ref={room} hidden={!active} className={`pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-modal="true" aria-label={group.name}
+  const body=<section ref={room} hidden={!active} className={`pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-label={group.name}
     onFocusCapture={event=>{if(event.target instanceof HTMLElement)lastFocus.current=event.target}}
     onKeyDown={event=>{if(membersOpen&&!editing&&event.key==="Escape"&&!event.nativeEvent.isComposing&&!event.defaultPrevented){event.stopPropagation();showMembers(false);requestAnimationFrame(()=>memberToggle.current?.focus({preventScroll:true}))}}}>
     <div className="pa-chat"><header className="pa-chat-header"><button type="button" onClick={onClose}>{groupWord("groupBack")}</button><div><h2>{group.name}</h2><small>{group.members.map(member=>author(member.key)).join(" · ")}</small></div><button ref={memberToggle} type="button" aria-expanded={membersOpen} onClick={()=>showMembers(!membersOpen)}>{groupWord("groupMembers")} ({group.members.length})</button><PaMenu label={w.moreActions} items={[

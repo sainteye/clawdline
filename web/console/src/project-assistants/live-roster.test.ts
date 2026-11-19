@@ -159,3 +159,51 @@ test("an oversized fresh snapshot stops and does not promise automatic retry",as
   assert.equal(updates.at(-1)!.error,"pa_capacity_full")
   assert.equal(updates.at(-1)!.retryable,false)
 })
+
+test("a cold resync loads one paged roster without trusting partial rows or inventing a stream cursor",async()=>{
+  const control=new AbortController(),updates:LiveRosterUpdate[]=[],streamCursors:string[]=[],listCursors:string[]=[]
+  const source={machineID:"machine",authorizationRevision:"grant",current:()=>true,
+    status:async()=>({sources:[status]}),
+    list:async(q:W.ProjectAssistantListRequest)=>{
+      assert.equal(q.machine_id,"machine")
+      assert.equal(q.query,"")
+      listCursors.push(q.cursor)
+      return {contract_version:"project-assistants.v1",sources:[status],items:[item(q.cursor?"second":"first")],next_cursor:q.cursor?"":"second-page"}
+    },
+    subscribeRoster:async(q:W.ProjectAssistantRosterRequest,receive:(f:W.ProjectAssistantRosterFrame)=>void)=>{
+      streamCursors.push(q.cursor??"");receive(hello)
+      if(streamCursors.length<3){
+        receive(frame("snapshot","partial",[row(1,item("stream-partial"))]))
+        receive({type:"resync",failure:{code:"pa_cursor_expired",field:"roster_stream",retry_after_seconds:0}})
+      }
+      receive(frame("snapshot-complete","live",[row(2,item("live"))]));control.abort()
+    },
+  } as unknown as SourceClient
+  await followLiveRoster(source,()=>[source],control.signal,3000,value=>updates.push(value),async()=>{})
+  assert.deepEqual(streamCursors,["","",""])
+  assert.deepEqual(listCursors,["","second-page"])
+  const recovered=updates.filter(u=>u.items?.length)
+  assert.deepEqual(recovered.map(u=>u.items!.map(i=>i.bot.key.bot_id).sort()),[["first","second"],["live"]])
+  assert.ok(recovered[0].items?.every(i=>!i.source.fresh&&!i.source.writable))
+  assert.equal(recovered[0].error,"pa_cursor_expired")
+  assert.equal(recovered[1].items?.[0].source.fresh,true)
+})
+
+test("a typed refusal during cold roster recovery ends the read and clears authority",async()=>{
+  const updates:LiveRosterUpdate[]=[]
+  let lists=0
+  const source={machineID:"machine",authorizationRevision:"grant",current:()=>true,
+    status:async()=>({sources:[status]}),
+    list:async()=>{
+      if(++lists===1)return {contract_version:"project-assistants.v1",sources:[status],items:[item()],next_cursor:"second-page"}
+      throw new RosterStreamFailure("closure",{code:"pa_revoked",field:"grant",retry_after_seconds:0})
+    },
+    subscribeRoster:async()=>{throw new RosterStreamFailure("eof")},
+  } as unknown as SourceClient
+  await followLiveRoster(source,()=>[source],new AbortController().signal,3000,value=>updates.push(value),async()=>assert.fail("revoked roster cannot reconnect"))
+  assert.equal(lists,2)
+  assert.deepEqual(updates.filter(u=>u.items).map(u=>u.items),[[]])
+  assert.deepEqual(updates.at(-1)?.statuses,[])
+  assert.equal(updates.at(-1)?.error,"pa_revoked")
+  assert.equal(updates.at(-1)?.retryable,false)
+})

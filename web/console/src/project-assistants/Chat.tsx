@@ -748,7 +748,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}`} aria-expanded={!!infoTab} onClick={()=>infoTab?setInfoTab(null):openInfo("details")}>
           <BotAvatar appearance={bot.appearance} size={28} mood={mood}/>
           <span className="pa-chat-identity-text"><strong>{bot.name}</strong><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
-          <span className="pa-chat-identity-chevron" aria-hidden="true">⌄</span>
+          <svg className="pa-chat-identity-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
       </h2>
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>

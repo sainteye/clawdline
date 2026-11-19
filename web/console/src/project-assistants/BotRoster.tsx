@@ -3,15 +3,17 @@ import type { ReactNode } from "react"
 import type * as W from "@clawdline/contract"
 import { BotRow } from "./BotRow"
 import { BotRosterReadAction } from "./BotRosterReadAction"
+import { catalogWord } from "../catalog"
 import { botIdentity } from "./view-state"
 import type { Words } from "./words"
-import { PaSelect,PaMenu } from "./PaSelect"
+import { PaSelect } from "./PaSelect"
+import { PaMenu, type PaMenuItem } from "./PaMenu"
 import { ProjectMark } from "./ProjectMark"
 import { projectKey, pinnedGroupKey } from "./roster-groups"
 import { LoadingSkeleton } from "../LoadingSkeleton"
 import { useShowAfter } from "./PaLoading"
 import type { SourceClient } from "./client"
-import { Groups } from "./Groups"
+import { Groups, groupWord } from "./Groups"
 import {GroupRosterRow} from "./GroupRosterRow"
 import {conversations,conversationSections,type GroupRosterEntry} from "./roster-conversations"
 import { useRosterDrag } from "./useRosterDrag"
@@ -50,12 +52,12 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
   const beginSorting=(key?:string)=>{sortFocus.current=key;if(sorting)focusSortTarget();else setSorting(true)}
   const finishSorting=()=>{endDrag();restoreOptions.current=true;setSorting(false)}
   // Focus belongs to the mode's commit, never a later frame that can steal a subsequent choice.
-  useLayoutEffect(()=>{if(sorting)focusSortTarget();else if(restoreOptions.current){restoreOptions.current=false;root.current?.querySelector<HTMLButtonElement>(".pa-toolbar .pa-menu > button")?.focus({preventScroll:true})}},[sorting])
+  useLayoutEffect(()=>{if(sorting)focusSortTarget();else if(restoreOptions.current){restoreOptions.current=false;root.current?.querySelector<HTMLButtonElement>(".pa-toolbar > .pa-menu:last-child > button")?.focus({preventScroll:true})}},[sorting])
   // One machine needs no machine filter and no machine name on every row.
   const several=machines.length>1,named=(id:string)=>machineNames?.get(id)||w.thisMachine
   // The first read draws placeholder rows after 150ms; once Bots are listed, a later read only says so.
   const skeleton=useShowAfter(loading&&!items.length&&!errors.length)
-  const renderRows=(roomEntries:readonly GroupRosterEntry[],openGroup:(entry:GroupRosterEntry,opener?:HTMLElement)=>void,selectedGroup:string|null)=>{
+  const renderRows=(roomEntries:readonly GroupRosterEntry[],openGroup:(entry:GroupRosterEntry,opener?:HTMLElement)=>void,selectedGroup:string|null,dismissGroup:()=>void)=>{
     const allRows=conversations(items,roomEntries),groups=conversationSections(conversations(shown,roomEntries),state)
     const drop = (target: RosterDrag, source: RosterDrag, currentState=rosterState, save=true) => {
       const apply=(next:RosterState)=>{if(save)update(next);else {draft.current=next;setPreview(next)}}
@@ -111,7 +113,7 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
             return <div className="pa-roster-entry" key={key} {...targetProps({kind:"bot",key})}
               onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){event.preventDefault();beginSorting(key)}}}}
               onContextMenu={event=>{event.preventDefault();if(!active)beginSorting(key)}}>
-              {item.kind==="bot"?<BotRow item={item.item} grouped={!pinned} selected={selected===key} onSelect={()=>onSelect(item.item)} w={w} language={language} projectName={projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!pinned} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>}
+              {item.kind==="bot"?<BotRow item={item.item} grouped={!pinned} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} projectName={projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!pinned} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&pinned?named(item.machineID):undefined}/>}
               {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}/>}
               {sorting&&<div className="pa-roster-actions"><button type="button" className="pa-roster-pin" aria-label={`${pinLabel}: ${name}`} aria-pressed={pinned} title={pinLabel} onClick={()=>pin(key,!pinned)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill={pinned?"currentColor":"none"} stroke="currentColor" strokeWidth="1.3"><path d="m8 1.7 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2.1.7-4.3-3.1-3 4.3-.6Z"/></svg></button>{handle({kind:"bot",key},name,keys)}</div>}
             </div>
@@ -121,13 +123,29 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
     </>
   }
   return <aside ref={root} className="pa-roster pa-roster-compact" data-sorting={sorting||undefined} aria-label={w.allBots}>
-    <header className="pa-toolbar"><button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button><h1>{w.allBots}</h1>{onCreate&&<button className="pa-circle" onClick={onCreate} aria-label={w.create}>+</button>}{sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}</header>
-    <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>
-    {several&&<div className="pa-roster-filter"><span>{!shown.length&&errors.length?(errors.some(([, ,retryable])=>retryable)?w.sourceConnecting:w.sourceError):<>{w.total} {loading&&!items.length?"…":shown.length}</>}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
-    <div className="pa-roster-scroll">{loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
-      <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={onSelect} onGroupOpenChange={onGroupOpenChange}>{renderRows}</Groups>
-      {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
-    </div>
-    {status&&<footer className="pa-status-bar">{status}</footer>}
+    <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={onSelect} onGroupOpenChange={onGroupOpenChange}>
+      {group=>{
+        const createItems:PaMenuItem[]=[]
+        if(onCreate)createItems.push({id:"bot",label:w.create,onSelect:onCreate})
+        if(group.create)createItems.push({id:"group",label:groupWord("groupCreate"),onSelect:group.create})
+        return <>
+          <header className="pa-toolbar">
+            <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
+            <h1>{w.allBots}</h1>
+            {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<span aria-hidden="true">+</span>}/>}
+            {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
+          </header>
+          <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>
+          {several&&<div className="pa-roster-filter"><span>{!shown.length&&errors.length?(errors.some(([, ,retryable])=>retryable)?w.sourceConnecting:w.sourceError):<>{w.total} {loading&&!items.length?"…":shown.length}</>}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
+          <div className="pa-roster-scroll">
+            {loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
+            {renderRows(group.rows,group.open,group.selected,group.dismiss)}
+            {group.content}
+            {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
+          </div>
+          {status&&<footer className="pa-status-bar">{status}</footer>}
+        </>
+      }}
+    </Groups>
   </aside>
 }

@@ -7,7 +7,7 @@
 .project-assistants .pa-chat-surface .pa-chat-identity-text { display:flex;flex-direction:column;gap:2px;min-width:0; }
 .project-assistants .pa-chat-surface .pa-chat-identity-text strong { font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-chat-surface .pa-chat-identity-text small { font-size:11px;font-weight:400; }
-.project-assistants .pa-chat-surface .pa-chat-identity-chevron { flex:none;color:var(--pa-dim);font-size:14px; }
+.project-assistants .pa-chat-surface .pa-chat-identity-chevron { flex:none;color:var(--pa-dim); }
 .project-assistants .pa-chat-surface .pa-chat-error { flex:none;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:4px 12px;border-bottom:1px solid var(--pa-line);color:var(--warning,#f0a030);overflow-wrap:anywhere; }
 .project-assistants .pa-chat-surface .pa-chat-error button { min-height:44px; }
 .project-assistants .pa-chat-surface .pa-info-panel { padding:18px 20px;background:var(--pa-bg); }

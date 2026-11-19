@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13283,
-  "riskKeys": 5728,
-  "nonRiskCount": 7555,
+  "englishContentKeys": 13301,
+  "riskKeys": 5729,
+  "nonRiskCount": 7572,
   "groups": [
     {
       "name": "acp / other",
@@ -407,13 +407,17 @@
     },
     {
       "name": "botRoutineControls / other",
-      "count": 26,
+      "count": 42,
       "sources": [
         "src/project-assistants/routine-words.ts"
       ],
       "keys": [
         "botRoutineControls.addFilter",
         "botRoutineControls.confirmRotate",
+        "botRoutineControls.cronFields",
+        "botRoutineControls.custom",
+        "botRoutineControls.daily",
+        "botRoutineControls.dailyPreview",
         "botRoutineControls.delivery",
         "botRoutineControls.event",
         "botRoutineControls.eventName",
@@ -425,19 +429,31 @@
         "botRoutineControls.followUp",
         "botRoutineControls.followUpChain",
         "botRoutineControls.hideKey",
+        "botRoutineControls.hourly",
+        "botRoutineControls.hourlyPreview",
         "botRoutineControls.key",
         "botRoutineControls.localURL",
         "botRoutineControls.manageHook",
+        "botRoutineControls.minute",
+        "botRoutineControls.originalTrigger",
         "botRoutineControls.otherRun",
         "botRoutineControls.publicURL",
+        "botRoutineControls.repeat",
         "botRoutineControls.retryCount",
         "botRoutineControls.rotateKey",
         "botRoutineControls.rotateWarning",
+        "botRoutineControls.scheduleTime",
         "botRoutineControls.scheduledRun",
         "botRoutineControls.source",
         "botRoutineControls.testRun",
+        "botRoutineControls.timeZone",
         "botRoutineControls.viewKey",
-        "botRoutineControls.webhook"
+        "botRoutineControls.webhook",
+        "botRoutineControls.weekday",
+        "botRoutineControls.weekdays",
+        "botRoutineControls.weekdaysPreview",
+        "botRoutineControls.weekly",
+        "botRoutineControls.weeklyPreview"
       ]
     },
     {
@@ -5974,7 +5990,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 361,
+      "count": 362,
       "sources": [
         null
       ],
@@ -6213,6 +6229,7 @@
         "projectAssistants.retryReaction",
         "projectAssistants.roomEveryone",
         "projectAssistants.roomTarget",
+        "projectAssistants.rosterCreate",
         "projectAssistants.rosterDropPin",
         "projectAssistants.rosterOptions",
         "projectAssistants.rosterPin",

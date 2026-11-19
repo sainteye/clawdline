@@ -322,12 +322,12 @@ func TestGroupTranscriptScopeHTTP(t *testing.T) {
 	t.Log("actual HTTP/SQLite: own chats, two rooms, quote, tool, native binding; model/provider API calls=0")
 }
 
-// Actual Bots/room navigation over authenticated HTTP and SQLite. The only
+// Actual Bots/room navigation and roster controls over authenticated HTTP and SQLite. The only
 // provider is the in-process scripted fixture; no native process or model runs.
 func TestGroupMemberNavigationBrowser(t *testing.T) {
 	dir := os.Getenv("CLAWDLINE_GROUP_NAV_ARTIFACTS")
 	if dir == "" {
-		t.Skip("set CLAWDLINE_GROUP_NAV_ARTIFACTS and PLAYWRIGHT_MODULE for room/member navigation")
+		t.Skip("set CLAWDLINE_GROUP_NAV_ARTIFACTS and PLAYWRIGHT_MODULE for roster controls and room/member navigation")
 	}
 	f := newGroupHTTPFixture(t)
 	f.create(t)
@@ -436,6 +436,21 @@ func runGroupComposerViewportBrowser(t *testing.T, dir, outcome string) {
 	}
 	f := newGroupHTTPFixture(t, providers...)
 	f.create(t)
+	if outcome == "" {
+		command := f.command(pa.CreateOperation, "alternate-layout-room")
+		command.Key.BotID = "alternate-room"
+		status, body := f.request(t, http.MethodPost, "/v1/project-assistants/rooms/groups", "person", contract.ProjectAssistantGroupCreateRequest{
+			Command: command,
+			Settings: contract.ProjectAssistantGroupCreateSettings{
+				Target:  contract.ProjectAssistantProjectSelection{MachineID: "machine", ProjectID: "project"},
+				Name:    "Alternate room",
+				Members: []contract.ProjectAssistantBotKey{paWireBotKey(f.bots[1].Key)},
+			},
+		})
+		if status != http.StatusOK {
+			t.Fatalf("create alternate room: %d %s", status, body)
+		}
+	}
 	for i := 0; i < 12; i++ {
 		status, body := f.request(t, http.MethodPost, "/v1/project-assistants/rooms/groups/room/messages", "person", contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, fmt.Sprintf("layout-%d", i)), Text: fmt.Sprintf("Synthetic discussion %d — retain the original text 👍", i)})
 		if status != http.StatusOK {
@@ -545,6 +560,88 @@ if(process.env.BOTS_NATIVE){
  console.log('NATIVE_READY http://127.0.0.1:'+server.address().port);await Promise.race([nativeFinished,new Promise(r=>setTimeout(r,150000))]);server.closeAllConnections();await new Promise(r=>server.close(r));process.exit(0)
 }
 const pw=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href),results=[]
+async function checkDesktopConversationNavigation(page,width,room,firstRow,tag){
+ const bot=name=>page.locator('[data-bot-key]').filter({has:page.getByText(name,{exact:true})})
+ const altRow=page.locator('[data-group-key]').filter({has:page.getByText('Alternate room',{exact:true})})
+ const chat=page.locator('.pa-main .pa-chat-layout'),back=chat.locator('.pa-chat-back'),text=room.locator('textarea')
+ const heading=(surface,name)=>surface.locator('.pa-chat-header h2').filter({hasText:name}).waitFor()
+ const hit=async row=>{
+  await row.scrollIntoViewIfNeeded()
+  const point=await row.evaluate(el=>{
+   const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2
+   return {x,y,ownsHit:el.contains(document.elementFromPoint(x,y))}
+  })
+  assert.ok(point.ownsHit,'roster does not receive the pointer: '+JSON.stringify(point))
+  await page.mouse.click(point.x,point.y)
+  return point
+ }
+ const draft='Synthetic draft retained across resize and member return'
+ await text.fill(draft)
+ await text.evaluate(el=>el.setSelectionRange(4,10))
+ const original=await room.elementHandle(),composer=await text.elementHandle()
+ for(const nextWidth of [700,701,width]){
+  await page.setViewportSize({width:nextWidth,height:780})
+  await page.evaluate(()=>new Promise(requestAnimationFrame))
+  assert.ok(await original.evaluate(el=>el===document.querySelector('.pa-room-layout')&&!el.hidden))
+  assert.deepEqual(await composer.evaluate(el=>({focused:document.activeElement===el,selection:[el.selectionStart,el.selectionEnd],draft:el.value})),{focused:true,selection:[4,10],draft})
+ }
+ await room.getByRole('button',{name:'成員 (2)',exact:true}).click()
+ const member=room.locator('.pa-room-members').getByRole('button',{name:'Bob',exact:true})
+ const memberButton=await member.elementHandle()
+ await member.click()
+ await heading(chat,'Bob')
+ assert.equal(await back.getAttribute('aria-label'),'返回群組')
+ assert.equal(await firstRow.getAttribute('aria-current'),null)
+ assert.ok(await original.evaluate(el=>el.isConnected&&el.hidden))
+ await back.click()
+ await page.waitForFunction(el=>document.activeElement===el,memberButton)
+ assert.equal(await text.inputValue(),draft)
+ assert.equal(await firstRow.getAttribute('aria-current'),'true')
+ await room.locator('.pa-room-members').getByRole('button',{name:'關閉資訊',exact:true}).click()
+ const groupToGroup=await hit(altRow)
+ await heading(room,'Alternate room')
+ assert.ok(await original.evaluate(el=>!el.isConnected))
+ assert.equal(await text.inputValue(),'','the active group received a different group’s draft')
+ assert.equal(await altRow.getAttribute('aria-current'),'true')
+ await page.screenshot({path:path.join(artifacts,tag+'-alternate-group.png')})
+ const groupToBot=await hit(bot('Stranger'))
+ await heading(chat,'Stranger')
+ await room.waitFor({state:'detached'})
+ assert.equal(await back.isVisible(),false,'a roster Bot inherited the group return action')
+ assert.equal(await altRow.getAttribute('aria-current'),null)
+ await page.screenshot({path:path.join(artifacts,tag+'-ordinary-bot.png')})
+ await page.setViewportSize({width:700,height:780})
+ assert.equal(await back.getAttribute('aria-label'),'返回 Bots')
+ await back.click()
+ await page.waitForFunction(()=>document.activeElement?.textContent.includes('Stranger'))
+ assert.equal(await bot('Stranger').evaluate(el=>document.activeElement===el),true)
+ assert.equal(await room.count(),0,'ordinary Back reopened a previously selected group')
+ await page.setViewportSize({width,height:780})
+ await hit(firstRow)
+ await heading(room,'Review room')
+ await room.getByRole('button',{name:'成員 (2)',exact:true}).click()
+ await member.click()
+ await heading(chat,'Bob')
+ assert.equal(await back.getAttribute('aria-label'),'返回群組')
+ await hit(bot('Bob'))
+ await room.waitFor({state:'detached'})
+ assert.equal(await back.isVisible(),false,'choosing the same Bot from the roster kept its former group return action')
+ await hit(firstRow)
+ await heading(room,'Review room')
+ const create=page.getByRole('button',{name:'新增群組',exact:true})
+ await hit(create)
+ const editor=page.getByRole('dialog',{name:'新增群組',exact:true})
+ const cancel=editor.getByRole('button',{name:'取消',exact:true})
+ await cancel.waitFor()
+ await page.setViewportSize({width:700,height:780})
+ await cancel.click({trial:true})
+ assert.ok(await editor.evaluate(el=>el.contains(document.activeElement)),'resize moved focus outside the active editor')
+ await page.setViewportSize({width,height:780})
+ await cancel.click()
+ await editor.waitFor({state:'detached'})
+ assert.ok(await create.evaluate(el=>el===document.activeElement),'closing the editor lost the roster opener')
+ results.push({tag,state:'conversation-navigation',resize:[700,701,width],draftAndCaretRetained:true,memberFocusRestored:true,groupToGroup,groupToBot,ordinaryBackRestoredRoster:true,sameBotClearedGroupReturn:true,openEditorSurvivedResize:true})
+}
 try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')){
  const browser=await pw[engine].launch({headless:true,...engine==='chromium'?{args:['--disable-features=OmniboxEverywhere']}:{}})
  try{for(const width of (process.env.BOTS_WIDTHS??'390,320,1440').split(',').map(Number)){
@@ -552,11 +649,22 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
   page.on('pageerror',e=>errors.push(String(e)))
   const tag=engine+'-'+width,click=loc=>width<700?loc.tap():loc.click()
   try{
-   await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await click(page.locator('[data-group-key]').first())
+   const firstRow=page.locator('[data-group-key]').filter({has:page.getByText('Review room',{exact:true})})
+   await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await click(firstRow)
    const room=page.locator('.pa-room-layout'),text=room.locator('textarea'),send=room.locator('.pa-send')
    await room.locator('[data-room-seq]').last().waitFor()
    if(process.env.BOTS_EXPECT_NO_REPLY){await room.locator('.pa-room-unanswered').waitFor();assert.match(await room.locator('.pa-room-unanswered').innerText(),/目前沒有成員回覆/);assert.equal(await room.locator('.pa-room-author').count(),0);assert.equal(await room.locator('.pa-room-unanswered').getAttribute('role'),'status')}
    await page.waitForFunction(()=>document.querySelector('.pa-window').getAnimations().every(a=>a.playState==='finished'))
+   const columns=await room.evaluate(el=>{
+    const shell=el.parentElement,roster=shell.querySelector('.pa-roster'),row=roster.querySelector('[data-group-key][aria-current=true]'),box=row.getBoundingClientRect()
+    return {shell:shell.getBoundingClientRect().toJSON(),roster:roster.getBoundingClientRect().toJSON(),room:el.getBoundingClientRect().toJSON(),rowHit:row.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2))}
+   })
+   results.push({tag,state:'conversation-columns',...columns})
+   if(width>700){
+    assert.ok(Math.abs(columns.room.left-columns.roster.right)<=1&&Math.abs(columns.room.right-columns.shell.right)<=1&&columns.rowHit,'desktop roster and group must own separate hit areas: '+JSON.stringify(columns))
+   }else{
+    assert.ok(Math.abs(columns.room.left-columns.shell.left)<=1&&Math.abs(columns.room.right-columns.shell.right)<=1&&!columns.rowHit,'mobile group must fill the shell: '+JSON.stringify(columns))
+   }
    const inspect=async(state)=>{await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const observation=await room.evaluate(el=>{const rect=n=>n.getBoundingClientRect().toJSON(),text=el.querySelector('textarea'),send=el.querySelector('.pa-send'),scroll=el.querySelector('.pa-chat-scroll'),last=el.querySelector('[data-room-seq]:last-child'),footer=document.querySelector('.pa-status-bar'),checks=footer.querySelector('.pa-source-checks'),hit=n=>{const r=n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};return {room:rect(el),text:rect(text),send:rect(send),scroll:rect(scroll),last:rect(last),footer:rect(footer),checks:checks?rect(checks):null,viewport:{height:visualViewport.height,top:visualViewport.offsetTop,width:visualViewport.width},textHit:hit(text),sendHit:hit(send),following:Math.abs(scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight)<=1}});results.push({tag,state,...observation});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});{assert.ok(observation.textHit&&observation.sendHit,JSON.stringify(observation));assert.ok(observation.send.bottom<=observation.viewport.height+observation.viewport.top+1);assert.ok(observation.last.bottom<=observation.scroll.bottom+1,'last message clipped while following');assert.ok(observation.following,'resize released bottom following')}}
    const fieldMetrics=async(state)=>{const value=await text.evaluate(el=>{const form=el.closest('form'),mirror=form.querySelector('.pa-editor-mirror'),send=form.querySelector('.pa-send'),r=el.getBoundingClientRect(),f=form.getBoundingClientRect(),m=mirror.getBoundingClientRect(),b=send.getBoundingClientRect(),s=getComputedStyle(el),mstyle=getComputedStyle(mirror);return {value:el.value,leftInset:r.left-f.left+parseFloat(s.paddingLeft),rightInset:b.left-r.right+parseFloat(s.paddingRight),lineHeight:parseFloat(s.lineHeight),padding:[s.paddingTop,s.paddingRight,s.paddingBottom,s.paddingLeft],mirrorPadding:[mstyle.paddingTop,mstyle.paddingRight,mstyle.paddingBottom,mstyle.paddingLeft],height:r.height,mirrorHeight:m.height,singleLineCenter:r.top+parseFloat(s.paddingTop)+parseFloat(s.lineHeight)/2,sendCenter:b.top+b.height/2}});results.push({tag,state,...value});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});if(!baseline){assert.ok(value.leftInset>=14,'text/caret too close to rounded left edge: '+JSON.stringify(value));assert.ok(value.rightInset>=14,'text/caret too close to send button');assert.deepEqual(value.padding,value.mirrorPadding,'measurement differs from editable content');if(!value.value.includes('\n'))assert.ok(Math.abs(value.singleLineCenter-value.sendCenter)<=2,'single line and send are not centered')}}
    await text.fill('');await fieldMetrics('empty')
@@ -585,6 +693,7 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    const draft=await text.inputValue();await click(room.getByRole('button',{name:'成員 (2)',exact:true}));await page.waitForFunction(()=>document.querySelector('.pa-room-members')?.contains(document.activeElement));const motion=await room.locator('.pa-room-members').evaluate(n=>({duration:getComputedStyle(n).animationDuration,name:getComputedStyle(n).animationName}));assert.equal(motion.duration,width===320?'0s':'0.3s');results.push({tag,state:'member-motion',...motion});await page.keyboard.press('Escape');await room.locator('.pa-room-members').waitFor({state:'hidden'});assert.equal(await text.inputValue(),draft)
    await click(send);await page.waitForFunction(()=>!document.querySelector('.pa-room-layout textarea').value);const quoted=room.locator('[data-quote-seq]').last();await quoted.waitFor();assert.match(await quoted.innerText(),/👍|Synthetic|Alice|Bob/)
    assert.equal(writes.at(-1).body.text,'Synthetic reply 👍');assert.ok(writes.at(-1).body.quote.seq>0)
+   if(width>700&&!process.env.BOTS_EXPECT_NO_REPLY)await checkDesktopConversationNavigation(page,width,room,firstRow,tag)
    assert.deepEqual(errors,[])
   }catch(e){await page.screenshot({path:path.join(artifacts,tag+'-failure.png')});throw e}finally{await context.close()}
  }}finally{await browser.close()}

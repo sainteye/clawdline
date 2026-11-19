@@ -238,11 +238,16 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	if err != nil {
 		return nil, err
 	}
-	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, terminal AS MATERIALIZED (
- SELECT ` + viewTurnProjection("t.value") + ` j,
- (SELECT json_extract(m.value,'$.seq') FROM json_each(a.j,'$.Messages') m WHERE m.type='object' AND json_extract(m.value,'$.id')=json_extract(t.value,'$.message_id')) anchor,t.key id
- FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
- AND ` + ownChatTurnSQL("t.key") + `
+	// Join on scalar message positions so SQLite can look up each turn's
+	// anchor without walking the complete message array for each turn.
+	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, message_positions AS MATERIALIZED (
+ SELECT json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor
+ FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object'
+), terminal AS MATERIALIZED (
+ SELECT ` + viewTurnProjection("t.value") + ` j,m.anchor,t.key id
+ FROM a,json_each(a.j,'$.Turns') t
+ LEFT JOIN message_positions m ON m.id=json_extract(t.value,'$.message_id')
+ WHERE t.type='object' AND ` + ownChatTurnSQL("t.key") + `
  AND ` + viewBoundFenceSQL("t.value") + ` ORDER BY anchor DESC,id COLLATE BINARY DESC LIMIT 1
 )
 SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_extract(j,'$.state') IN ('succeeded','failed','cancelled','unknown')`
