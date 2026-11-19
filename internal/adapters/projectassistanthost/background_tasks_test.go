@@ -126,3 +126,61 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 		return err == nil && len(view.View.Head.BackgroundTasks) == 1 && view.View.Head.BackgroundTasks[0].State == "unknown"
 	})
 }
+
+func TestCollaborationBackgroundRecipientCanAnswerItsOwnChat(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Limits.MaxBots, f.o.Limits.MaxProcesses = 4, 3
+	f.start(t)
+	f.enable(t)
+	a, b := f.create(t, "requester"), f.create(t, "recipient")
+	if _, err := f.send(t, a, "Ask the peer."); err != nil {
+		t.Fatal(err)
+	}
+	sender := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	if _, err := f.send(t, b, "Separate human question."); err != nil {
+		t.Fatal(err)
+	}
+	foreground := fixtureReceive(t, f.p.sessions)
+	own := fixtureReceive(t, f.p.sent)
+	if !strings.Contains(own.Text, "Separate human question.") || foreground.q.Bot.Key != b.Key {
+		t.Fatalf("unexpected foreground prompt: %q", own.Text)
+	}
+	tools, ok := sender.q.Tools.(interface {
+		MessageBot(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	})
+	if !ok {
+		t.Fatal("sender cannot start an exchange")
+	}
+	x, err := tools.MessageBot(ctx, pa.BotMessageRequest{TargetBotID: b.Key.BotID, Text: "Check one synthetic fact.", IdempotencyKey: "check"})
+	if err != nil || x.RequestWorkerID == "" {
+		t.Fatalf("recipient did not use a background Thread: %+v, %v", x, err)
+	}
+	sender.reply <- app.PromptResult{FinalText: "I asked the peer."}
+	f.h.tickBackgroundTasks(ctx)
+	worker := fixtureReceive(t, f.p.sessions)
+	peer := fixtureReceive(t, f.p.sent)
+	if worker.q.Bot.Key != x.Recipient().Key || peer.Turn.Origin != pa.BotRequestOrigin || !strings.Contains(peer.Text, x.Request) {
+		got, _ := f.h.store.Exchange(ctx, a.Key, x.ID)
+		private, _ := f.h.store.Export(ctx, x.Recipient().Key)
+		t.Fatalf("work did not open with the recipient's private worker: origin=%s exchange=%+v worker=%+v", peer.Turn.Origin, got, private.Turns)
+	}
+	foreground.reply <- app.PromptResult{FinalText: "I can answer while the peer work runs."}
+	fixtureEventually(t, func() bool {
+		got, err := f.h.store.Export(ctx, b.Key)
+		return err == nil && len(got.Turns) == 1 && got.Turns[0].State == pa.TurnSucceeded &&
+			len(got.Exchanges) == 1 && got.Exchanges[0].Outcome == pa.ExchangeSent
+	})
+	worker.reply <- app.PromptResult{FinalText: "Synthetic fact checked."}
+	follow := fixtureReceive(t, f.p.sessions)
+	reply := fixtureReceive(t, f.p.sent)
+	if follow.q.Bot.Key != a.Key || reply.Turn.Origin != pa.BotReplyOrigin || !strings.Contains(reply.Text, "Synthetic fact checked.") {
+		t.Fatalf("worker reply did not reach the sender: %+v", reply.Turn)
+	}
+	follow.reply <- app.PromptResult{FinalText: "The peer confirmed the fact."}
+	fixtureEventually(t, func() bool {
+		got, err := f.h.store.Exchange(ctx, a.Key, x.ID)
+		return err == nil && got.Outcome == pa.ExchangeCompleted && got.Delivery == "delivered"
+	})
+}

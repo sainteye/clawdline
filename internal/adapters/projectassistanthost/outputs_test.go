@@ -19,11 +19,12 @@ func TestOutputToolsUseCurrentTurnAndDurableIdempotency(t *testing.T) {
 	if err := os.WriteFile(path, []byte("<h1>First</h1>"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	q := app.OutputRequest{Path: path, HTML: true, Title: "Report"}
+	notify := false
+	q := app.OutputRequest{Path: path, HTML: true, Title: "Report", Notify: &notify}
 	ctx := context.Background()
 	one, err := n.tools.PublishOutput(ctx, "first", q)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || one.Quiet {
+		t.Fatal("new artifacts always produce a chat card", one, err)
 	}
 	if err = os.Remove(path); err != nil {
 		t.Fatal(err)
@@ -43,7 +44,7 @@ func TestOutputToolsUseCurrentTurnAndDurableIdempotency(t *testing.T) {
 	q.Artifact = one.ArtifactID
 	q.Title = "Latest"
 	two, err := n.tools.PublishOutput(ctx, "second", q)
-	if err != nil || two.ArtifactID != one.ArtifactID || two.SHA256 == one.SHA256 {
+	if err != nil || two.ArtifactID != one.ArtifactID || two.SHA256 == one.SHA256 || !two.Quiet {
 		t.Fatal(two, err)
 	}
 	items, err := n.tools.ListArtifacts(ctx)
@@ -62,14 +63,17 @@ func TestOutputToolsUseCurrentTurnAndDurableIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
+	versions, cards := 0, 0
 	for _, m := range x.Messages {
 		if m.Output != nil {
-			count++
+			versions++
+			if !m.Output.Quiet {
+				cards++
+			}
 		}
 	}
-	if count != 2 {
-		t.Fatal("duplicate card", count)
+	if versions != 2 || cards != 1 {
+		t.Fatal("quiet update changed the number of artifact cards", versions, cards)
 	}
 	replaceNativeTurn(t, n, false)
 	if _, err = n.tools.PublishOutput(ctx, "stale", q); pa.Code(err) != pa.StaleGeneration {

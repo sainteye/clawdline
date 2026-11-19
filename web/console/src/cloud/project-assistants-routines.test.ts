@@ -34,6 +34,24 @@ test("routine management negotiates API73 before transport and keeps captured Pr
   await assert.rejects(wrong.routines(query,signal()),e=>errorCode(e)==="pa_scope_denied")
 })
 
+test("routine preview is a read on the captured Bot source and validates the answer",async()=>{
+  const preview:W.ProjectAssistantRoutinePreviewRequest={key,project,conversation_id:"chat",expression:"17 9 * * 1-5",time_zone:"Asia/Taipei"}
+  const g={...grant(),apiLevel:96},requests:string[]=[]
+  const source=new ProjectAssistantSourceClient(g,async input=>{
+    requests.push(input)
+    return Response.json({contract_version:"project-assistants.v1",next_due:"2026-11-23T01:17:00Z"})
+  },()=>g)
+  assert.equal(source.canRoutinePreview(),true)
+  assert.equal((await source.routinePreview(preview,signal())).next_due,"2026-11-23T01:17:00Z")
+  const routed=assistantRelayRequest(requests[0])
+  assert.equal(routed.word,"project-assistants.routine-preview")
+  assert.equal(routed.kind,"read")
+  assert.deepEqual(routed.fields,preview)
+  assert.throws(()=>assistantRelayRequest(requests[0]+"&expression=second"),e=>errorCode(e)==="pa_invalid")
+  await assert.rejects(source.routinePreview({...preview,project:{...project,machine_id:"another"}},signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.equal(requests.length,1)
+})
+
 test("routine reads discard late revoked grants and disabled history cannot write",async()=>{
   let live:AssistantGrant|null=grant(),release!:()=>void
   const g=live,waiting=new Promise<void>(resolve=>release=resolve)

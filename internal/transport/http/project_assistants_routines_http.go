@@ -28,6 +28,9 @@ func paRoutineRoute(r *http.Request) (paHTTPRoute, bool) {
 	}
 	if len(parts) >= 3 && paHTTPSafeBotID(parts[2]) {
 		out.offer = parts[2]
+		if len(parts) == 3 && parts[2] == "preview" && r.Method == "GET" {
+			out.action = "routine-preview"
+		}
 		if len(parts) == 4 && parts[3] == "hook" && r.Method == "POST" {
 			out.action = "routine-hook"
 		}
@@ -69,6 +72,39 @@ func paRoutineTrigger(t pa.RoutineTrigger) contract.ProjectAssistantRoutineTrigg
 		out.Filters = append(out.Filters, contract.ProjectAssistantRoutineEventFilter{Key: key, Value: t.Filters[key]})
 	}
 	return out
+}
+
+func (h *projectAssistantHTTP) previewRoutine(r *http.Request, route paHTTPRoute) (any, error) {
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		return nil, paHTTPFailure(pa.Invalid, "body")
+	}
+	q, err := paHTTPQuery(r, "machine_id", "project_id", "canonical_id", "kind", "conversation_id", "expression", "time_zone")
+	if err != nil {
+		return nil, err
+	}
+	key, err := h.queryKey(q, route)
+	if err != nil {
+		return nil, err
+	}
+	project := pa.ProjectScope{MachineID: key.MachineID, ProjectID: q.Get("project_id"), CanonicalID: q.Get("canonical_id"), Kind: pa.ProjectKind(q.Get("kind"))}
+	if err = pa.ValidateScope(project); err != nil {
+		return nil, err
+	}
+	trigger := pa.RoutineTrigger{Type: "cron", Expression: q.Get("expression"), TimeZone: q.Get("time_zone")}
+	if len(trigger.Expression) > pa.MaxRoutinePreviewFieldBytes || len(trigger.TimeZone) > pa.MaxRoutinePreviewFieldBytes {
+		return nil, paHTTPFailure(pa.Invalid, "routine_preview_input")
+	}
+	next, check, err := h.options.Service.PreviewRoutineSchedule(r.Context(), app.RoutineQuery{
+		Key: key, Project: project, ConversationID: q.Get("conversation_id"), PageSize: 1,
+	}, trigger)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(contract.ProjectAssistantRoutinePreviewResponse{ContractVersion: pa.ContractVersion, NextDue: paRoutineTime(next)})
+	if err != nil {
+		return nil, err
+	}
+	return paEncodedOutput{body: body, check: check}, nil
 }
 
 func (h *projectAssistantHTTP) readRoutines(r *http.Request, route paHTTPRoute) (any, error) {

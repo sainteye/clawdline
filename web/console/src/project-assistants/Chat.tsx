@@ -44,7 +44,7 @@ import { canMarkConversationRead, markConversationRead } from "./conversation-re
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
 import { memoryOpener } from "./loading"
-import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, backgroundTaskLabel, type BackgroundTask } from "./BackgroundTasks"
+import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, backgroundTaskLabel, liveBackgroundTask, type BackgroundStopOutcome, type BackgroundTask } from "./BackgroundTasks"
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
 import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
@@ -94,6 +94,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [selectedTask,setSelectedTask]=useState("")
   const taskOpener=useRef<HTMLButtonElement|null>(null)
   const [backgroundStopping,setBackgroundStopping]=useState("")
+  const [backgroundOutcomes,setBackgroundOutcomes]=useState<Record<string,BackgroundStopOutcome>>({})
   const backgroundStopControl=useRef<AbortController|null>(null)
   const [backgroundError,setBackgroundError]=useState("")
   const setSettings=(open:boolean)=>{if(open)setInfoTab("settings");setInfoOpen(open)}
@@ -102,6 +103,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(editProfileRequest){setInfoTab("details");setInfoOpen(true)}
   },[editProfileRequest])
   const identityButton=useRef<HTMLButtonElement>(null)
+  const focusedThread=useRef("")
   const [templateOpener,setTemplateOpener]=useState<HTMLButtonElement|null>(null)
   const [browserOpener,setBrowserOpener]=useState<HTMLButtonElement|null>(null)
   const [checkingUpdates,setCheckingUpdates]=useState(false)
@@ -935,10 +937,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const loadMoreTraces=()=>void collection("traces",traceMore).catch(()=>{})
   const afterMessage=(message:W.ProjectAssistantMessage)=>{
     const rows=traceGroups.get(message.turn_id)
-    if(!rows?.length||message.turn_id===liveTraceTurn||turnAnchors.get(message.turn_id)!==message.id)return
+    if(message.turn_id===liveTraceTurn||turnAnchors.get(message.turn_id)!==message.id||(!rows?.length&&!head?.trace_category_count))return
     const more=message.turn_id===moreTraceTurn
-    return <div className="pa-turn-trace" data-trace-turn={message.turn_id}><Trace summaries={rows} incomplete={more}
-      details={details} more={more} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/></div>
+    return <div className="pa-turn-trace" data-trace-turn={message.turn_id}>{rows?.length?<Trace summaries={rows} incomplete={more}
+      details={details} more={more} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/>:null}</div>
   }
   const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
@@ -950,7 +952,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const legacyProblem=view.unverifiedDrafts.problem(draftKey)
   const legacyRows=view.unverifiedDrafts.history(draftKey,scope)
   const legacyDrafts=legacyLocked&&!legacyRows.length&&entryDraft.text?[entryDraft]:legacyRows
-  const tasks=thread||recoveryRequired?[]:head?.background_tasks??[]
+  const taskRows=head?.background_tasks
+  const tasks=thread||recoveryRequired?[]:taskRows??[]
   const openTask=(task:BackgroundTask,button:HTMLButtonElement)=>{
     taskOpener.current=button
     if(task.worker)setSelectedTask(task.id)
@@ -962,23 +965,59 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     requestAnimationFrame(()=>{const opener=taskOpener.current;if(opener?.getClientRects().length)opener.focus({preventScroll:true});else identityButton.current?.focus({preventScroll:true})})
   }
   useEffect(()=>()=>backgroundStopControl.current?.abort(),[identity,source])
+  useEffect(()=>{
+    if(!taskRows)return
+    setBackgroundOutcomes(old=>{
+      const pending=Object.entries(old)
+      const live=pending.filter(([id])=>taskRows.some(task=>task.id===id&&liveBackgroundTask(task)))
+      return pending.length===live.length?old:Object.fromEntries(live)
+    })
+  },[taskRows])
   const stopTask=async(task:BackgroundTask)=>{
     const worker=task.worker
-    if(!worker||!source.view||!enabled||!valid()||backgroundStopControl.current)return
+    if(!worker||!source.view||!enabled||!valid()||recovery.current||backgroundStopControl.current||backgroundOutcomes[task.id])return
     const control=new AbortController()
     backgroundStopControl.current=control
     setBackgroundStopping(task.id);setBackgroundError("")
+    const settle=(outcome:BackgroundStopOutcome)=>setBackgroundOutcomes(old=>({...old,[task.id]:outcome}))
+    let attempted=false
     try{
       const query:W.ProjectAssistantReadViewRequest={key:worker,conversation_id:task.id,mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:1}
       const snapshot=readView(await authorized(source,current,signal=>source.view!(query,signal),control.signal),query,{key:worker,conversation_id:task.id,project:bot.project})
       if(!canWrite(snapshot.source))throw failure("pa_read_only")
       const turnID=snapshot.head.conversation.active_turn_id
+      if(!turnID){if(valid())void refresh();return}
       const action=command(worker,"stop")
-      await authorized(source,current,signal=>source.stop({command:action,fence:snapshot.head.current_fence,turn_id:turnID},signal),control.signal)
-      if(valid())void refresh()
-    }catch(error){if(valid()&&!control.signal.aborted)setBackgroundError(errorCode(error))}
-    finally{backgroundStopControl.current=null;if(valid())setBackgroundStopping("")}
+      const result=await authorized(source,current,signal=>{
+        attempted=true
+        return source.stop({command:action,fence:snapshot.head.current_fence,turn_id:turnID},signal)
+      },control.signal)
+      if(!valid())return
+      const {receipt}=result
+      if(result.contract_version!=="project-assistants.v1"||receipt?.command?.operation!=="stop"||
+        receipt.command.idempotency_key!==action.idempotency_key||botIdentity(receipt.command.key)!==botIdentity(worker)||receipt.resource_id!==turnID){
+        settle("unknown")
+      }else if(receipt.state==="failed")setBackgroundError(w.failed)
+      else settle(receipt.state==="accepted"||receipt.state==="delivered"?"acknowledged":"unknown")
+      void refresh()
+    }catch(error){
+      if(valid()&&!control.signal.aborted){
+        if(attempted&&memoryOutcomeUnknown(error))settle("unknown")
+        else setBackgroundError(errorCode(error))
+        void refresh()
+      }
+    }finally{backgroundStopControl.current=null;if(valid())setBackgroundStopping("")}
   }
+  useLayoutEffect(()=>{
+    if(!thread||!data||focusedThread.current===thread.id)return
+    focusedThread.current=thread.id
+    const composer=scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")
+    const alreadyInside=scroll.current?.parentElement?.contains(document.activeElement)
+    if(alreadyInside)return
+    const editable=enabled&&canWrite(data.source)&&window.matchMedia("(pointer:fine)").matches
+    if(editable&&composer&&!composer.disabled)composer.focus({preventScroll:true})
+    else identityButton.current?.focus({preventScroll:true})
+  },[thread,data,enabled])
   const brief=thread?messages.find(message=>message.seq===1):undefined
   const threadSummary:W.ProjectAssistantBotSummary|undefined=selected?.worker?{
     ...summary,bot:{...bot,key:selected.worker,conversation_id:selected.id},latest_message:"",unread_count:0,
@@ -989,7 +1028,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       <div className="pa-thread-heading"><h2>{thread.title}</h2><small><span>{backgroundTaskLabel(thread,w)}</span>
         <BackgroundDuration task={thread}/>{projectName&&<span title={projectName}>{projectName}</span>}
       </small></div>
-      {data?.conversation.active_turn_id&&<BackgroundStop w={w} disabled={!enabled||!!currentStop||busy} action={()=>void stop()}/>}
+      {data?.conversation.active_turn_id&&<BackgroundStop w={w} key={data.conversation.active_turn_id} disabled={!enabled||!canWrite(data.source)||!!currentStop||busy} action={()=>void stop()}/>}
     </header>:<header className="pa-chat-header">
       <button className="pa-circle pa-chat-back" data-show-back={showBack||undefined} onClick={()=>{flush();onBack()}} aria-label={backLabel??w.back} title={backLabel??w.back}>‹</button>
       <h2 className="pa-chat-heading">
@@ -1041,7 +1080,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} writable={enabled} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}{parts.queued.map(message=>{
+    <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
       return <div className="pa-queued" key={message.id} aria-busy={pending?true:undefined}>
@@ -1060,7 +1099,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language}/>}
-      <Composer key={draftKey} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} sendBlocked={filesLost||sendingAccepted||!handoff.ready||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      <Composer key={draftKey} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} sendBlocked={filesLost||sendingAccepted||!handoff.ready||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}

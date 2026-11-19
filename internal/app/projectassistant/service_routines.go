@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -264,6 +265,19 @@ func (s *Service) RoutinePage(ctx context.Context, q RoutineQuery) (RoutineReadR
 		return RoutineReadResult{}, err
 	}
 	return RoutineReadResult{Page: page, Source: a.Source, check: check}, nil
+}
+
+// PreviewRoutineSchedule uses the scheduler's clock, parser and time-zone database.
+func (s *Service) PreviewRoutineSchedule(ctx context.Context, q RoutineQuery, trigger pa.RoutineTrigger) (time.Time, func(context.Context) error, error) {
+	result, err := s.RoutinePage(ctx, q)
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	next, err := trigger.Next(s.opts.Clock())
+	if err != nil {
+		return time.Time{}, nil, err
+	}
+	return next, result.Revalidate, nil
 }
 
 // HumanRoutine never forges an active native turn. Metadata changes need no

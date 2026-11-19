@@ -424,6 +424,9 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 	if route.action == "memory-view" || route.action == "configuration" {
 		return h.readMemorySettings(r, route)
 	}
+	if route.action == "routine-preview" {
+		return h.previewRoutine(r, route)
+	}
 	if route.action == "routines" || route.action == "routine-runs" {
 		return h.readRoutines(r, route)
 	}

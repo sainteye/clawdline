@@ -51,7 +51,7 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
 
   }
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
-  return <>{buildTimelineChat(timeline).map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} onOpen={onOpenWork}/>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
+  return <>{buildTimelineChat(timeline.filter(item=>!item.message?.output?.quiet)).map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} onOpen={onOpenWork}/>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)

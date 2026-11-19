@@ -3302,6 +3302,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.routine_preview_field_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoutinePreviewFieldBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.routine_progress_tokens",
     "Class": "buffer",
     "Unit": "tokens",

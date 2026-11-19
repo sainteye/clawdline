@@ -169,6 +169,25 @@
         "result"
       ]
     },
+    "ProjectAssistantRoutinePreviewRequest": {
+      "type": "object",
+      "properties": {
+        "key": {"$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"},
+        "project": {"$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectScope"},
+        "conversation_id": {"type": "string"},
+        "expression": {"type": "string"},
+        "time_zone": {"type": "string"}
+      },
+      "required": ["key", "project", "conversation_id", "expression", "time_zone"]
+    },
+    "ProjectAssistantRoutinePreviewResponse": {
+      "type": "object",
+      "properties": {
+        "contract_version": {"type": "string"},
+        "next_due": {"type": "string"}
+      },
+      "required": ["contract_version", "next_due"]
+    },
     "ProjectAssistantRoutineListRequest": {
       "type": "object",
       "properties": {

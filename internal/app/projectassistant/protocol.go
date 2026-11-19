@@ -83,6 +83,7 @@ type OutputRequest struct {
 	Name     string `json:"name,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Artifact string `json:"artifact,omitempty"`
+	Notify   *bool  `json:"notify,omitempty"`
 	HTML     bool   `json:"-"`
 }
 

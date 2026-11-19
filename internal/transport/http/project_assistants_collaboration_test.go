@@ -303,6 +303,8 @@ func collaborationRealTCPMCPRequestAndReply(t *testing.T, maxActors int) {
 			t.Fatal("create", id)
 		}
 	}
+	f.key.BotID = "review-b"
+	groupsManagerToggle(t, f, true)
 	// The foreign source is actual stored data, but cannot be selected by an
 	// owned tool whose sender machine is host bound.
 	st := store.New(f.s.store.ProjectAssistantDatabase())

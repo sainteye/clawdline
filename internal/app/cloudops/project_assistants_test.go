@@ -35,6 +35,7 @@ func projectAssistantOperationCases() []operationCase {
 	}{
 		{"status", "GET", "/status", nil, nil},
 		{"routines", "GET", "/bot/routines", map[string]any{"key": key, "project": project, "conversation_id": "chat", "cursor": "", "page_size": 100}, map[string]string{"machine_id": "mac-01", "project_id": "project", "canonical_id": "canonical", "kind": "repository", "conversation_id": "chat", "cursor": "", "page_size": "100"}},
+		{"routine-preview", "GET", "/bot/routines/preview", map[string]any{"key": key, "project": project, "conversation_id": "chat", "expression": "17 9 * * 1-5", "time_zone": "Asia/Taipei"}, map[string]string{"machine_id": "mac-01", "project_id": "project", "canonical_id": "canonical", "kind": "repository", "conversation_id": "chat", "expression": "17 9 * * 1-5", "time_zone": "Asia/Taipei"}},
 		{"routine-runs", "GET", "/bot/routines/routine/runs", map[string]any{"key": key, "project": project, "conversation_id": "chat", "routine_id": "routine", "cursor": "", "page_size": 100}, map[string]string{"machine_id": "mac-01", "project_id": "project", "canonical_id": "canonical", "kind": "repository", "conversation_id": "chat", "cursor": "", "page_size": "100"}},
 		{"routine-save", "POST", "/bot/routines", map[string]any{"fence": fence, "id": "routine", "expected_revision": 1, "name": "Synthetic routine", "instruction": "Review a synthetic change", "triggers": []any{map[string]any{"type": "interval", "seconds": 3600, "at": 0, "expression": "", "timeZone": ""}}, "timeout_seconds": 3600, "enabled": true}, nil},
 		{"routine-enabled", "POST", "/bot/routines/routine/enabled", map[string]any{"fence": fence, "id": "routine", "expected_revision": 1, "enabled": false}, nil},
@@ -136,7 +137,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 67 {
+	if len(out) != 68 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

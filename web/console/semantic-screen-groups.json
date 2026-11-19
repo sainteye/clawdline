@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13539,
-  "riskKeys": 5810,
-  "nonRiskCount": 7729,
+  "englishContentKeys": 13547,
+  "riskKeys": 5813,
+  "nonRiskCount": 7734,
   "groups": [
     {
       "name": "acp / other",
@@ -454,7 +454,7 @@
     },
     {
       "name": "botRoutineControls / other",
-      "count": 53,
+      "count": 55,
       "sources": [
         "src/project-assistants/routine-words.ts"
       ],
@@ -481,6 +481,8 @@
         "botRoutineControls.hourly",
         "botRoutineControls.hourlyPreview",
         "botRoutineControls.instructionExample",
+        "botRoutineControls.invalidCron",
+        "botRoutineControls.invalidTimeZone",
         "botRoutineControls.key",
         "botRoutineControls.localURL",
         "botRoutineControls.manageHook",
@@ -563,7 +565,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 695,
+      "count": 696,
       "sources": [
         null
       ],
@@ -704,6 +706,7 @@
         "capacityRow.bots.routine_interval_seconds.what",
         "capacityRow.bots.routine_name_bytes.what",
         "capacityRow.bots.routine_pending.what",
+        "capacityRow.bots.routine_preview_field_bytes.full",
         "capacityRow.bots.routine_progress_tokens.what",
         "capacityRow.bots.routine_retry_attempts.what",
         "capacityRow.bots.routine_retry_delay_seconds.what",
@@ -6093,7 +6096,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 428,
+      "count": 430,
       "sources": [
         null
       ],
@@ -6124,6 +6127,8 @@
         "projectAssistants.backgroundPermission",
         "projectAssistants.backgroundRecent",
         "projectAssistants.backgroundStop",
+        "projectAssistants.backgroundStopConfirm",
+        "projectAssistants.backgroundStopEffects",
         "projectAssistants.backgroundThreads",
         "projectAssistants.backgroundWorking",
         "projectAssistants.botInformation",

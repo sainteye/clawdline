@@ -154,6 +154,44 @@ func routineHumanIdle(t *testing.T, f *paServerFixture) {
 	t.Fatal("synthetic actor did not finish")
 }
 
+func TestProjectAssistantRoutineCronPreviewUsesSourceScheduleWithoutMutation(t *testing.T) {
+	now := time.Date(2026, 11, 20, 2, 0, 0, 0, time.UTC)
+	f, _, server := newRoutineHumanFixtureAt(t, func() time.Time { return now })
+	original := routineHumanPage(t, f, server, "", "", 100)
+	project := original.Fence.Project
+	base := "/v1/project-assistants/" + f.key.BotID + "/routines/preview?"
+	q := url.Values{"machine_id": {f.key.MachineID}, "project_id": {project.ProjectID}, "canonical_id": {project.CanonicalID},
+		"kind": {string(project.Kind)}, "conversation_id": {original.Fence.ConversationID}, "expression": {"17 9 * * 1-5"}, "time_zone": {"Asia/Taipei"}}
+	status, raw := routineHumanTCP(t, f, server, "GET", base+q.Encode(), f.local, nil)
+	var reply contract.ProjectAssistantRoutinePreviewResponse
+	if status != 200 || json.Unmarshal(raw, &reply) != nil || reply.NextDue != "2026-11-23T01:17:00Z" {
+		t.Fatalf("preview %d %s", status, raw)
+	}
+	for _, tc := range []struct{ expression, zone, field string }{
+		{"0 0 31 2 *", "UTC", "routine_cron_future"},
+		{"99 9 * * *", "Asia/Taipei", "routine_cron"},
+		{"17 9 * * 1-5", "Invalid/Zone", "routine_time_zone"},
+		{strings.Repeat(" ", pa.MaxRoutinePreviewFieldBytes+1), "UTC", "routine_preview_input"},
+	} {
+		q.Set("expression", tc.expression)
+		q.Set("time_zone", tc.zone)
+		status, raw = routineHumanTCP(t, f, server, "GET", base+q.Encode(), f.local, nil)
+		if status != 400 || !bytes.Contains(raw, []byte(`"field":"`+tc.field+`"`)) {
+			t.Fatalf("preview refusal %d %s, want %s", status, raw, tc.field)
+		}
+	}
+	q.Set("conversation_id", "other-conversation")
+	q.Set("expression", "17 9 * * 1-5")
+	status, _ = routineHumanTCP(t, f, server, "GET", base+q.Encode(), f.local, nil)
+	if status == 200 {
+		t.Fatal("preview crossed the captured conversation")
+	}
+	after := routineHumanPage(t, f, server, "", "", 100)
+	if f.providerCalls.Load() != 0 || original.Fence != after.Fence || !reflect.DeepEqual(original.Definitions, after.Definitions) || !reflect.DeepEqual(original.Runs, after.Runs) {
+		t.Fatalf("preview touched routine definitions or started a provider: %+v", after)
+	}
+}
+
 func TestProjectAssistantRoutineHumanTCPManagement(t *testing.T) {
 	f, p, server := newRoutineHumanFixture(t)
 	base := "/v1/project-assistants/" + f.key.BotID + "/routines"

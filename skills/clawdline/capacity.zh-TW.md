@@ -170,6 +170,7 @@
 | `bots.routine_interval_seconds` | 31536000 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_name_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_pending` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.routine_preview_field_bytes` | 1024 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_progress_tokens` | 2000 | `tokens` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_retry_attempts` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_retry_delay_seconds` | 900 | `seconds` | `refuse` | `diagnostics, sender` | — |

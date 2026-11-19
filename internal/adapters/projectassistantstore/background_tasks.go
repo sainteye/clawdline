@@ -24,7 +24,7 @@ const backgroundTaskSchema = `CREATE TABLE IF NOT EXISTS project_assistant_backg
 // It performs no provider work. Only a still-current chat turn can add to it.
 func (s *Store) AdmitBackgroundTask(ctx context.Context, command pa.Command, task pa.BackgroundTask) (pa.BackgroundTask, error) {
 	if command.Operation != pa.DispatchOperation || command.Key != task.Fence.Key ||
-		task.ID == "" || task.OriginTurnID == "" || task.CreatedAt.IsZero() {
+		task.ID == "" || task.OriginTurnID == "" || task.ExchangeID != "" || task.CreatedAt.IsZero() {
 		return pa.BackgroundTask{}, failure(pa.Invalid, "background_admission")
 	}
 	if err := pa.ValidateBackgroundBrief(task.Title, task.Brief); err != nil {
@@ -59,22 +59,7 @@ func (s *Store) AdmitBackgroundTask(ctx context.Context, command pa.Command, tas
 		return pa.BackgroundTask{}, failure(pa.ScopeDenied, "background_origin")
 	}
 	task.OriginMessageID = turn.MessageID
-	var waiting int
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_background_tasks
-		WHERE machine=? AND bot=? AND state='waiting'`, command.Key.MachineID, command.Key.BotID).Scan(&waiting)
-	if err != nil {
-		return pa.BackgroundTask{}, err
-	}
-	if waiting >= pa.MaxBackgroundPending {
-		return pa.BackgroundTask{}, failure(pa.CapacityFull, "background_waiting")
-	}
-	data, err := json.Marshal(task)
-	if err != nil {
-		return pa.BackgroundTask{}, err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_background_tasks(machine,bot,task,data) VALUES(?,?,?,?)`,
-		command.Key.MachineID, command.Key.BotID, task.ID, data)
-	if err != nil {
+	if err = queueBackgroundTask(ctx, tx, task); err != nil {
 		return pa.BackgroundTask{}, err
 	}
 	if err = writeReceipt(ctx, tx, pa.Receipt{ID: task.ID, Command: command, State: pa.EffectAccepted, ResourceID: task.ID}); err != nil {
@@ -84,6 +69,26 @@ func (s *Store) AdmitBackgroundTask(ctx context.Context, command pa.Command, tas
 		return pa.BackgroundTask{}, err
 	}
 	return task, nil
+}
+
+func queueBackgroundTask(ctx context.Context, tx *sql.Tx, task pa.BackgroundTask) error {
+	key := task.Fence.Key
+	var waiting int
+	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_background_tasks
+		WHERE machine=? AND bot=? AND state='waiting'`, key.MachineID, key.BotID).Scan(&waiting)
+	if err != nil {
+		return err
+	}
+	if waiting >= pa.MaxBackgroundPending {
+		return failure(pa.CapacityFull, "background_waiting")
+	}
+	data, err := json.Marshal(task)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_background_tasks(machine,bot,task,data) VALUES(?,?,?,?)`,
+		key.MachineID, key.BotID, task.ID, data)
+	return err
 }
 
 func aggregateFence(a aggregate) pa.Fence {
@@ -136,7 +141,7 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 	if err != nil {
 		return pa.BotKey{}, err
 	}
-	if parent.BackgroundOwner != nil || parent.Conversation.ActiveTurnID != "" {
+	if parent.BackgroundOwner != nil {
 		return pa.BotKey{}, nil
 	}
 	var active int
@@ -149,7 +154,9 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 	}
 	var id string
 	err = tx.QueryRowContext(ctx, `SELECT task FROM project_assistant_background_tasks
-		WHERE machine=? AND bot=? AND state='waiting' ORDER BY order_id LIMIT 1`, key.MachineID, key.BotID).Scan(&id)
+		WHERE machine=? AND bot=? AND state='waiting'
+		AND (?='' OR json_extract(CAST(data AS TEXT),'$.exchange_id') IS NOT NULL)
+		ORDER BY order_id LIMIT 1`, key.MachineID, key.BotID, parent.Conversation.ActiveTurnID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return pa.BotKey{}, nil
 	}
@@ -164,12 +171,25 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 		task.Fence.ConversationID != parent.Conversation.ID {
 		return pa.BotKey{}, failure(pa.ScopeDenied, "background_parent")
 	}
-	origin := parent.Turns[task.OriginTurnID]
-	if origin.State != pa.TurnSucceeded && origin.State != pa.TurnFailed {
-		return pa.BotKey{}, nil
+	var exchange *pa.Exchange
+	if task.ExchangeID != "" {
+		x, err := exchangeRead(ctx, tx, key.MachineID, task.ExchangeID)
+		if err != nil {
+			return pa.BotKey{}, err
+		}
+		if x.Target != (pa.ExchangeEndpoint{Key: key, ConversationID: task.Fence.ConversationID}) ||
+			x.Project != task.Fence.Project || x.Outcome != pa.ExchangeQueued || x.ID != task.ID ||
+			x.RequestWorkerID != backgroundWorkerID(task.ID) {
+			return pa.BotKey{}, failure(pa.ScopeDenied, "background_exchange")
+		}
+		exchange = &x
+	} else {
+		origin := parent.Turns[task.OriginTurnID]
+		if origin.State != pa.TurnSucceeded && origin.State != pa.TurnFailed {
+			return pa.BotKey{}, nil
+		}
 	}
-
-	worker := newBackgroundWorker(parent, task, now)
+	worker := newBackgroundWorker(parent, task, now, exchange)
 	if err = validateAggregate(worker); err != nil {
 		return pa.BotKey{}, err
 	}
@@ -179,8 +199,8 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 	message := worker.Messages[0]
 	turn := worker.Turns[message.TurnID]
 	for _, event := range []pa.Event{
-		{Version: pa.ContractVersion, ID: task.ID + "-request", Fence: turn.Fence, At: now, Kind: pa.MessageCreated, Message: &message},
-		{Version: pa.ContractVersion, ID: task.ID + "-queued", Fence: turn.Fence, At: now, Kind: pa.TurnUpdated, Turn: &turn},
+		{Version: pa.ContractVersion, ID: message.ID, Fence: turn.Fence, At: now, Kind: pa.MessageCreated, Message: &message},
+		{Version: pa.ContractVersion, ID: task.ID + "-worker-queued", Fence: turn.Fence, At: now, Kind: pa.TurnUpdated, Turn: &turn},
 	} {
 		if _, err = appendEvent(ctx, tx, worker, event); err != nil {
 			return pa.BotKey{}, err
@@ -193,13 +213,15 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 	return worker.Bot.Key, tx.Commit()
 }
 
-func newBackgroundWorker(parent aggregate, task pa.BackgroundTask, now time.Time) aggregate {
+func backgroundWorkerID(taskID string) string { return "thread-" + taskID }
+
+func newBackgroundWorker(parent aggregate, task pa.BackgroundTask, now time.Time, exchange *pa.Exchange) aggregate {
 	bot := parent.Bot
-	bot.Key.BotID = "thread-" + task.ID
+	bot.Key.BotID = backgroundWorkerID(task.ID)
 	bot.ConversationID = task.ID
 	bot.Version = 1
 	bot.CreatedAt, bot.UpdatedAt = now, now
-	bot.Hidden, bot.ManageTeam = true, false
+	bot.Hidden, bot.ManageTeam, bot.Lead = true, false, false
 	bot.CreatedBy = nil
 	fence := pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: bot.ConversationID, BindingID: task.ID + "-binding", Generation: 1}
 	binding := pa.ExecutionBinding{Fence: fence, Agent: bot.Agent, LoginProfile: bot.LoginProfile, MemoryRevision: 1, InstructionRevision: bot.Instructions.Revision}
@@ -207,7 +229,10 @@ func newBackgroundWorker(parent aggregate, task pa.BackgroundTask, now time.Time
 		ID: task.ID + "-initial", MessageID: task.ID + "-brief", Fence: fence,
 		IdempotencyKey: task.ID, Origin: pa.UserOrigin, State: pa.TurnQueued,
 	}
-	message := pa.Message{ID: turn.MessageID, Seq: 1, TurnID: turn.ID, Fence: fence, Kind: pa.UserMessage, Text: task.Brief, At: now}
+	if exchange != nil {
+		turn.ID, turn.Origin, turn.ExchangeID, turn.Hops = exchange.RequestTurnID, pa.BotRequestOrigin, exchange.ID, exchange.Hops
+	}
+	message := pa.Message{ID: turn.MessageID, Seq: 1, TurnID: turn.ID, Fence: fence, Kind: pa.UserMessage, Text: task.Brief, At: now, Exchange: exchange}
 	return aggregate{
 		BackgroundOwner: &parent.Bot.Key,
 		Bot:             bot,
@@ -259,7 +284,7 @@ func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.M
 		return err
 	}
 	n, err := result.RowsAffected()
-	if err != nil || n == 0 || state != pa.TurnSucceeded {
+	if err != nil || n == 0 || state != pa.TurnSucceeded || m.Turn.Origin == pa.BotRequestOrigin {
 		return err
 	}
 	for i := len(a.Messages) - 1; i >= 0; i-- {

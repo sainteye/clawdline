@@ -813,6 +813,11 @@
     "Note": true
   },
   {
+    "Name": "bots.routine_preview_field_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.routine_progress_tokens",
     "Known": true,
     "Note": true

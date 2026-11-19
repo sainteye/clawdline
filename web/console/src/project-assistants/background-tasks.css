@@ -1,5 +1,6 @@
 .pa-background-capsule {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   width: 100%;
   border: 1px solid var(--pa-line);
@@ -53,3 +54,5 @@
 @media (pointer: coarse) {
  .project-assistants .pa-background-stop { width: 44px; height: 44px; }
 }
+
+.project-assistants .pa-background-stop-status { flex:0 0 100%; color:var(--pa-dim); padding:0 10px 5px; font-size:12px; }

@@ -11,7 +11,7 @@ import (
 func TestHumanRoutineCloudWordsPreserveScopeCommandsAndCeilings(t *testing.T) {
 	// The vocabulary examples are executable requests, not hand-maintained
 	// copies of their expected decoder source.
-	for _, word := range []string{"routines", "routine-runs", "routine-save", "routine-enabled", "routine-delete", "routine-test", "routine-hook"} {
+	for _, word := range []string{"routines", "routine-runs", "routine-preview", "routine-save", "routine-enabled", "routine-delete", "routine-test", "routine-hook"} {
 		t.Run(word, func(t *testing.T) {
 			var b body
 			operations, err := cloudvocab.Operations()
@@ -46,7 +46,7 @@ func TestHumanRoutineCloudWordsPreserveScopeCommandsAndCeilings(t *testing.T) {
 			if !answer.OK() || calls != 1 {
 				t.Fatal(answer, calls)
 			}
-			if word == "routines" || word == "routine-runs" {
+			if word == "routines" || word == "routine-runs" || word == "routine-preview" {
 				bridge.AllowCommands = func() bool { return false }
 				answer = bridge.Handle(context.Background(), request(t, ClassCtl, b))
 				if !answer.OK() {

@@ -804,7 +804,7 @@ func paWireExchange(x pa.Exchange) contract.ProjectAssistantExchange {
 }
 
 func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {
-	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID, TitleVersion: o.TitleVersion}
+	return contract.ProjectAssistantOutput{ID: o.ID, Name: o.Name, Bytes: o.Bytes, Sha256: o.SHA256, ArtifactID: o.ArtifactID, TitleVersion: o.TitleVersion, Quiet: o.Quiet}
 }
 
 func paDomainAgents(agents []contract.ProjectAssistantAgent) []pa.Agent {

@@ -40,7 +40,8 @@ import (
 // Editable source-owned Bot handoffs and versioned input adoption arrive at API 93.
 // Machine-authenticated callback Project Go-cache attachment arrives at API 94.
 // Source-owned Bot sidebar actions arrive at API 95.
-const APILevel = 95
+// Source-side Bot routine schedule previews arrive at API 96.
+const APILevel = 96
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

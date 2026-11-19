@@ -84,6 +84,62 @@ func TestBackgroundAdmissionAndReceiptRollBackTogether(t *testing.T) {
 	}
 }
 
+func TestBackgroundWorkerDoesNotKeepLeadAndDesignationRepairsDuplicates(t *testing.T) {
+	db, store, _ := testDB(t)
+	owner := seed(t, store, "zz-owner")
+	legacy := seed(t, store, "yy-legacy")
+	next := seed(t, store, "aa-next")
+	parent, err := load(testContext, db, owner.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent.Bot.Lead = true
+	task := pa.BackgroundTask{ID: "synthetic-worker", Brief: "Check the supplied facts."}
+	worker := newBackgroundWorker(parent, task, owner.CreatedAt, nil)
+	if worker.Bot.Lead {
+		t.Fatal("the private worker inherited the owner's lead role")
+	}
+	tx, err := db.BeginTx(testContext, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert the worker a previous version could have persisted.
+	worker.Bot.Lead = true
+	if err = persist(testContext, tx, worker, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	workerBot, err := store.Bot(testContext, worker.Bot.Key)
+	if err != nil || workerBot.Lead {
+		t.Fatalf("legacy worker has a lead role at runtime: %v, %v", workerBot.Lead, err)
+	}
+	if _, err = db.Exec(`UPDATE project_assistant_bots SET data=CAST(json_set(CAST(data AS TEXT),'$.Bot.lead',json('true')) AS BLOB)
+		WHERE machine=? AND bot IN (?,?)`, owner.Key.MachineID, owner.Key.BotID, legacy.Key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	next.Lead = true
+	next.Version++
+	_, err = store.Commit(testContext, app.Mutation{
+		Command: command(next.Key, pa.EditOperation, "designate-lead"), ExpectedVersion: next.Version - 1,
+		Bot: &next, DesignateLead: true, Receipt: pa.Receipt{ID: "designated", State: pa.EffectDelivered},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bot := range []pa.Bot{owner, legacy, next, worker.Bot} {
+		got, err := store.Bot(testContext, bot.Key)
+		if err != nil || got.Lead != (bot.Key == next.Key) {
+			t.Errorf("%s has lead=%v after designation: %v", bot.Key.BotID, got.Lead, err)
+		}
+	}
+	got, err := store.Bot(testContext, worker.Bot.Key)
+	if err != nil || got.Version != worker.Bot.Version {
+		t.Fatalf("lead designation rewrote the private worker: version %d, %v", got.Version, err)
+	}
+}
+
 func TestBackgroundWorkerWaitsForChatAndHasIndependentQueue(t *testing.T) {
 	db, store, _ := testDB(t)
 	bot := seed(t, store, "owner")

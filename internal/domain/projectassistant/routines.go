@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	MaxRoutinePreviewFieldBytes     = 1024
 	MaxRoutineDefinitions           = 1000
 	MaxRoutineTickMilliseconds      = 1000
 	MaxRoutinePendingPerDefinition  = 1

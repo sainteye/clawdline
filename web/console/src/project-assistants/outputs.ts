@@ -8,6 +8,7 @@ import {readSource} from "./read-views.ts"
 /** The source owns the same registered 100 MiB/5 MiB/384 KiB bounds. */
 export function outputMetadata(o:W.ProjectAssistantOutput):W.ProjectAssistantOutput {
   if(!o||typeof o.id!=="string"||!o.id||typeof o.name!=="string"||!o.name||new TextEncoder().encode(o.name).length>(o.artifact_id?200:128)||/\p{Cc}/u.test(o.name)||!o.artifact_id&&/[\/\\]/.test(o.name)||typeof o.artifact_id!=="string"||!/^[0-9a-f]{64}$/.test(o.sha256)||!Number.isSafeInteger(o.bytes)||o.bytes<0||o.bytes>100*1024*1024||o.artifact_id&&o.bytes>5*1024*1024)throw failure("pa_invalid")
+  if(o.quiet!==undefined&&(typeof o.quiet!=="boolean"||o.quiet&&!o.artifact_id))throw failure("pa_invalid")
   if(o.title_version!==undefined&&(!Number.isSafeInteger(o.title_version)||o.title_version<0))throw failure("pa_invalid")
   return o
 }
@@ -24,7 +25,7 @@ export async function loadOutput(source:SourceClient,q:W.ProjectAssistantOutputR
     if(!state.fresh||!state.readable||state.state!=="online"||state.access==="hidden")throw failure("pa_revoked")
     const out=outputMetadata(r.output)
     if(q.artifact_id?out.artifact_id!==q.artifact_id:out.id!==q.id)throw failure("pa_scope_denied")
-    if(metadata&&(out.id!==metadata.id||out.sha256!==metadata.sha256||out.bytes!==metadata.bytes||out.name!==metadata.name||out.title_version!==metadata.title_version))throw failure("pa_stale_version")
+    if(metadata&&(out.id!==metadata.id||out.sha256!==metadata.sha256||out.bytes!==metadata.bytes||out.name!==metadata.name||out.title_version!==metadata.title_version||out.quiet!==metadata.quiet))throw failure("pa_stale_version")
     if(!metadata){metadata=out;bytes=new Uint8Array(out.bytes)}
     if(typeof r.data!=="string"||r.data.length>4*Math.ceil(384*1024/3))throw failure("pa_invalid")
     let raw:string;try{raw=atob(r.data)}catch{throw failure("pa_invalid")}

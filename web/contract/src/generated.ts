@@ -6529,6 +6529,11 @@ export interface ProjectAssistantOutput {
   bytes: number
   id: string
   name: string
+
+  /**
+   * An immutable Artifact revision that refreshes the existing chat card.
+   */
+  quiet?: boolean
   sha256: string
 
   /**
@@ -7240,6 +7245,19 @@ export interface ProjectAssistantRoutineListResponse {
   next_cursor: string
   runs: ProjectAssistantRoutineRun[]
   source: ProjectAssistantSourceStatus
+}
+
+export interface ProjectAssistantRoutinePreviewRequest {
+  conversation_id: string
+  expression: string
+  key: ProjectAssistantBotKey
+  project: ProjectAssistantProjectScope
+  time_zone: string
+}
+
+export interface ProjectAssistantRoutinePreviewResponse {
+  contract_version: string
+  next_due: string
 }
 
 export interface ProjectAssistantRoutineRun {

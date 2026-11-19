@@ -24,6 +24,7 @@ type ArtifactDisplayTitle struct {
 }
 
 type Output struct {
+	Quiet        bool   `json:"quiet,omitempty"`
 	TitleVersion int64  `json:"title_version,omitempty"`
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -42,7 +43,7 @@ func ValidateOutput(o Output) error {
 	if o.ArtifactID != "" && (o.Bytes > MaxArtifactBytes || !OutputName(o.ArtifactID) || !ArtifactTitle(o.Name)) {
 		return fail(Invalid, "artifact")
 	}
-	if o.ArtifactID == "" && !OutputName(o.Name) {
+	if o.ArtifactID == "" && (o.Quiet || !OutputName(o.Name)) {
 		return fail(Invalid, "output_name")
 	}
 	if o.SnapshotID != "" && (!OutputName(o.SnapshotID) || !strings.HasPrefix(o.SnapshotID, "snapshot-")) {

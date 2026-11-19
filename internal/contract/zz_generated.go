@@ -5693,7 +5693,10 @@ type ProjectAssistantOutput struct {
 	Bytes      int64  `json:"bytes"`
 	ID         string `json:"id"`
 	Name       string `json:"name"`
-	Sha256     string `json:"sha256"`
+
+	// An immutable Artifact revision that refreshes the existing chat card.
+	Quiet  bool   `json:"quiet,omitempty"`
+	Sha256 string `json:"sha256"`
 
 	// Display-title revision for artifacts; absent on older sources means 1.
 	TitleVersion int64 `json:"title_version,omitempty"`
@@ -6321,6 +6324,19 @@ type ProjectAssistantRoutineListResponse struct {
 	NextCursor      string                              `json:"next_cursor"`
 	Runs            []ProjectAssistantRoutineRun        `json:"runs"`
 	Source          ProjectAssistantSourceStatus        `json:"source"`
+}
+
+type ProjectAssistantRoutinePreviewRequest struct {
+	ConversationID string                       `json:"conversation_id"`
+	Expression     string                       `json:"expression"`
+	Key            ProjectAssistantBotKey       `json:"key"`
+	Project        ProjectAssistantProjectScope `json:"project"`
+	TimeZone       string                       `json:"time_zone"`
+}
+
+type ProjectAssistantRoutinePreviewResponse struct {
+	ContractVersion string `json:"contract_version"`
+	NextDue         string `json:"next_due"`
 }
 
 type ProjectAssistantRoutineRun struct {

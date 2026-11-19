@@ -47,6 +47,7 @@ var copiedConstants = map[string]int64{
 	"projectassistant.MaxInstructionBytes":         projectassistant.MaxInstructionBytes,
 	"projectassistant.MaxPageRows":                 projectassistant.MaxPageRows,
 	"projectassistant.MaxEventPageRows":            projectassistant.MaxEventPageRows,
+	"projectassistant.MaxRoutinePreviewFieldBytes": projectassistant.MaxRoutinePreviewFieldBytes,
 	"projectassistant.MaxReadViewCursorBytes":      projectassistant.MaxReadViewCursorBytes,
 	"browserbridge.MaxAuditRows":                   browserbridge.MaxAuditRows,
 	"capacity.AntigravityConsentRequestBytesLimit": capacity.AntigravityConsentRequestBytesLimit,

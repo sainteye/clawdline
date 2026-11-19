@@ -207,29 +207,47 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 // active and last eligible admitted turn, one anchor message and pending controls.
 // Histories, instructions on old turns, trace payloads and permission options
 // never cross into Go. SQL checks bytes BEFORE returning a projected string.
-// replaceRosterLead demotes the previous lead inside the same write transaction.
+// replaceRosterLead repairs every other sidebar designation in the same write transaction.
 func replaceRosterLead(ctx context.Context, tx *sql.Tx, next aggregate) error {
 	if !next.Bot.Lead || next.BackgroundOwner != nil {
 		return failure(pa.ScopeDenied, "lead_sidebar")
 	}
 	key := next.Bot.Key
-	var prior string
-	err := tx.QueryRowContext(ctx, `SELECT bot FROM project_assistant_bots WHERE machine=? AND bot<>? AND json_extract(CAST(data AS TEXT),'$.Bot.lead')=1`, key.MachineID, key.BotID).Scan(&prior)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
+	rows, err := tx.QueryContext(ctx, `SELECT bot FROM project_assistant_bots WHERE machine=? AND bot<>?
+		AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL
+		AND json_extract(CAST(data AS TEXT),'$.Bot.lead')=1`, key.MachineID, key.BotID)
 	if err != nil {
 		return err
 	}
-	previous, err := load(ctx, tx, pa.BotKey{MachineID: key.MachineID, BotID: prior})
-	if err != nil {
+	defer rows.Close()
+	var prior []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		prior = append(prior, id)
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
-	expected := previous.Bot.Version
-	previous.Bot.Lead = false
-	previous.Bot.Version++
-	previous.Bot.UpdatedAt = next.Bot.UpdatedAt
-	return persist(ctx, tx, previous, expected)
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range prior {
+		previous, err := load(ctx, tx, pa.BotKey{MachineID: key.MachineID, BotID: id})
+		if err != nil {
+			return err
+		}
+		expected := previous.Bot.Version
+		previous.Bot.Lead = false
+		previous.Bot.Version++
+		previous.Bot.UpdatedAt = next.Bot.UpdatedAt
+		if err := persist(ctx, tx, previous, expected); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // JSONB is query-local only. The pinned SQLite supports it; parsing the same
@@ -240,7 +258,7 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
 ) ` + roomTurnsCTE + withdrawnTurnsCTE + `, turns AS MATERIALIZED (
  SELECT t.key,t.value FROM a,json_each(j,'$.Turns') t
 ), own_messages AS MATERIALIZED (
- SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE ` + ownChatMessageSQL("json_extract(m.value,'$.turn_id')") + `
+ SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE coalesce(json_extract(m.value,'$.output.quiet'),0)<>1 AND ` + ownChatMessageSQL("json_extract(m.value,'$.turn_id')") + `
 ), admissions AS MATERIALIZED (
  SELECT m.key,m.value FROM own_messages m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
 ), u AS MATERIALIZED (

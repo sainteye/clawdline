@@ -736,6 +736,10 @@
 .project-assistants .pa-working-time, .project-assistants .pa-working-chevron { flex:none; }
 .project-assistants .pa-working-steps-body { max-height:min(42vh,350px); margin:0; padding:0 12px 12px; }
 .project-assistants .pa-working-steps-body .pa-trace-list { max-width:none; margin-top:0; gap:6px; }
+/* Keep the collapsed disclosure in the same transcript slot while its page loads. */
+.project-assistants .pa-turn-trace { display:flow-root; min-block-size:32px; }
+.project-assistants .pa-turn-trace > .pa-trace > summary { white-space:nowrap; max-inline-size:100%; }
+.project-assistants .pa-turn-trace > .pa-trace > summary > span:first-of-type { overflow:hidden; text-overflow:ellipsis; }
 .project-assistants .pa-trace .pa-trace-summary {
   display:flex; width:fit-content; align-items:center; gap:7px; padding:4px 8px;
   background:color-mix(in srgb,var(--pa-line) 18%,var(--pa-bg)); border-radius:9px;

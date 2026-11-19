@@ -70,17 +70,56 @@ function nextCalendarTime(calendar:RoutineCalendarDraft,zone:string,now=Date.now
   return null
 }
 
-function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w}: {
+type SchedulePreviewScope={source:SourceClient;bot:W.ProjectAssistantBot}
+type SchedulePreviewResult={inputs:string;next?:string;error?:string;invalid?:boolean}
+
+function useCronPreview({source,bot}:SchedulePreviewScope, enabled:boolean, expression:string, zone:string) {
+  const {machine_id,bot_id}=bot.key
+  const {project_id,canonical_id,kind}=bot.project
+  const conversation_id=bot.conversation_id
+  const inputs=JSON.stringify([expression,zone])
+  const [result,setResult]=useState<SchedulePreviewResult>()
+  useEffect(()=>{
+    if(!enabled||!expression.trim()||!zone.trim()||!source.canRoutinePreview?.()||!source.routinePreview)return
+    const controller=new AbortController()
+    const timer=window.setTimeout(()=>{
+      void source.routinePreview!({
+        key:{machine_id,bot_id},project:{machine_id,project_id,canonical_id,kind},conversation_id,
+        expression,time_zone:zone,
+      },controller.signal).then(answer=>{
+        if(controller.signal.aborted)return
+        const next=new Intl.DateTimeFormat(currentCatalogTag(),{timeZone:zone,dateStyle:"medium",timeStyle:"short"}).format(Date.parse(answer.next_due))
+        setResult({inputs,next})
+      }).catch(error=>{
+        if(controller.signal.aborted)return
+        const field=(error as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
+        const invalid=errorCode(error)==="pa_invalid"&&["routine_time_zone","routine_cron","routine_cron_future","routine_preview_input"].includes(field??"")
+        const key=invalid?(field==="routine_time_zone"?"invalidTimeZone":field==="routine_cron_future"?"cronNoNext":"invalidCron"):"previewUnavailable"
+        setResult({inputs,invalid,error:tr(key)})
+      })
+    },220)
+    return ()=>{window.clearTimeout(timer);controller.abort()}
+  },[source,enabled,machine_id,bot_id,project_id,canonical_id,kind,conversation_id,inputs,expression,zone])
+  return enabled&&result?.inputs===inputs?result:undefined
+}
+
+function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w, previewScope}: {
   trigger: W.ProjectAssistantRoutineTrigger
   calendar: RoutineCalendarDraft
+  previewScope: SchedulePreviewScope
   onCalendar: (change: Partial<RoutineCalendarDraft>) => void
   onZone: (timeZone: string) => void
   w: Words
 }) {
   const {repeat, time, weekday} = calendar
-  const next = useMemo(()=>nextCalendarTime(calendar,trigger.timeZone),[repeat,time,weekday,trigger.timeZone])
+  const customPreview=useCronPreview(previewScope,repeat==="custom",trigger.expression,trigger.timeZone)
+  const presetNext=useMemo(()=>nextCalendarTime(calendar,trigger.timeZone),[repeat,time,weekday,trigger.timeZone])
+  const next=repeat==="custom"?customPreview?.next:presetNext
+  const cronInput=useRef<HTMLInputElement>(null)
+  useEffect(()=>{cronInput.current?.setCustomValidity(customPreview?.invalid?customPreview.error??"":"")},[customPreview])
   const zoneList = useId()
   const cronHelp = useId()
+  const previewNotice = useId()
   const weekdayLabel = useId()
   const minuteLabel = useId()
   return <div className="pa-routine-calendar">
@@ -98,7 +137,7 @@ function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w}: {
         </select>
       </label>}
       {repeat === "custom" ? <label>{w.routineExpression}
-        <input value={trigger.expression} placeholder="0 9 * * 1-5" spellCheck={false} autoCapitalize="off" aria-describedby={cronHelp}
+        <input ref={cronInput} value={trigger.expression} placeholder="0 9 * * 1-5" spellCheck={false} autoCapitalize="off" aria-invalid={customPreview?.invalid||undefined} aria-describedby={customPreview?.error?cronHelp+" "+previewNotice:cronHelp}
           onChange={event => onCalendar({customExpression: event.target.value})} required/>
       </label> : repeat === "hourly" ? <label><span id={minuteLabel}>{tr("minute")}</span>
         <select aria-labelledby={minuteLabel} value={time.slice(3)} onChange={event => onCalendar({time: `${time.slice(0, 2) || "09"}:${event.target.value}`})} required>
@@ -115,12 +154,13 @@ function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w}: {
       <datalist id={zoneList}>{routineZones.map(zone => <option key={zone} value={zone}/>)}</datalist>
     </div>
     {repeat === "custom" && <small id={cronHelp}>{tr("cronFields")}</small>}
-    <div className="pa-routine-preview" aria-live="polite"><strong><RoutineCalendarSummary trigger={trigger} calendar={calendar}/></strong>{next&&<small>{tr("nextPreview").replace("{time}",next)}</small>}</div>
+    <div className="pa-routine-preview" aria-live="polite"><strong><RoutineCalendarSummary trigger={trigger} calendar={calendar}/></strong>{next&&<small>{tr("nextPreview").replace("{time}",next)}</small>}{customPreview?.error&&<small id={previewNotice}>{customPreview.error}</small>}</div>
   </div>
 }
 
-function RoutineTriggerEditor({draft, index, count, events, w, onChange, onRemove}: {
+function RoutineTriggerEditor({draft, index, count, events, w, onChange, onRemove, previewScope}: {
   draft: RoutineTriggerDraft
+  previewScope: SchedulePreviewScope
   index: number
   count: number
   events: boolean
@@ -146,7 +186,7 @@ function RoutineTriggerEditor({draft, index, count, events, w, onChange, onRemov
       <p>{tr("unsupportedTrigger")}</p>
       <details><summary>{tr("originalTrigger")}</summary><pre>{JSON.stringify(t, null, 2)}</pre></details>
     </div> : <>
-      {draft.calendar && <RoutineScheduleFields trigger={t} calendar={draft.calendar} w={w}
+      {draft.calendar && <RoutineScheduleFields previewScope={previewScope} trigger={t} calendar={draft.calendar} w={w}
         onCalendar={value => onChange(updateRoutineCalendar(draft, value))} onZone={timeZone => change({timeZone})}/>}
       {t.type === "interval" && <label>{w.routineSeconds}
         <input type="number" min={1} max={31536000} value={t.seconds} onChange={event => change({seconds: Number(event.target.value)})} required/>
@@ -326,12 +366,12 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
               {events&&<button type="button" aria-pressed={mode==="webhook"} onClick={()=>setMode("webhook")}>{tr("webhook")}</button>}
               {mode==="advanced"&&<button type="button" aria-pressed={true}>{tr("advancedTriggers")}</button>}
             </div></div>
-            {mode==="schedule"&&schedule.calendar&&<RoutineScheduleFields trigger={schedule.trigger} calendar={schedule.calendar} w={w}
+            {mode==="schedule"&&schedule.calendar&&<RoutineScheduleFields previewScope={{source,bot}} trigger={schedule.trigger} calendar={schedule.calendar} w={w}
               onCalendar={change=>setSchedule(old=>updateRoutineCalendar(old,change))} onZone={timeZone=>setSchedule(old=>({...old,trigger:{...old.trigger,timeZone}}))}/>}
             {mode==="webhook"&&<p className="pa-routine-webhook-note">{tr("webhookSave")}</p>}
             {mode==="advanced"&&<>
               {triggers.length>1&&<p className="pa-routine-or">{w.routineOr}</p>}
-              {triggers.map((draft,i)=><RoutineTriggerEditor key={i} draft={draft} index={i} count={triggers.length} events={events} w={w}
+              {triggers.map((draft,i)=><RoutineTriggerEditor key={i} previewScope={{source,bot}} draft={draft} index={i} count={triggers.length} events={events} w={w}
                 onChange={value=>setTriggers(old=>old.map((row,n)=>n===i?value:row))}
                 onRemove={()=>setTriggers(old=>old.filter((_,n)=>n!==i))}/>)}
               <button type="button" className="pa-routine-add" disabled={triggers.length>=20}

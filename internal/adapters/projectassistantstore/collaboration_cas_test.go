@@ -45,7 +45,7 @@ func TestCollaborationSourceCASRebuildsFactsWithoutAnotherSend(t *testing.T) {
 		t.Run(stage, func(t *testing.T) {
 			_, store, _ := testDB(t)
 			a := seed(t, store, "a")
-			seed(t, store, "b")
+			seedTeamRecipient(t, store, "b")
 			repo := &collaborationRaceStore{Store: store, stage: stage}
 			peer := &recoveryPeer{sent: make(chan app.PromptRequest, 1), result: make(chan app.PromptResult, 1)}
 			var ids atomic.Int64

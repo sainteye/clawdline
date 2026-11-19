@@ -247,6 +247,7 @@ export const CARRIED = {
   "project-assistants.routine-delete": "captured Bot source DELETE /v1/project-assistants/{command.key.bot_id}/routines/{id}",
   "project-assistants.routine-enabled": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/routines/{id}/enabled",
   "project-assistants.routine-hook": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/routines/{id}/hook",
+  "project-assistants.routine-preview": "captured Bot source GET /v1/project-assistants/{key.bot_id}/routines/preview",
   "project-assistants.routine-runs": "captured Bot source GET /v1/project-assistants/{key.bot_id}/routines/{routine_id}/runs",
   "project-assistants.routine-save": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/routines",
   "project-assistants.routine-test": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/routines/{id}/runs",

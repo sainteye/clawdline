@@ -37,21 +37,31 @@ type ExchangeEndpoint struct {
 	ConversationID string `json:"conversation_id"`
 }
 type Exchange struct {
-	ID            string           `json:"id"`
-	Project       ProjectScope     `json:"project"`
-	Source        ExchangeEndpoint `json:"source"`
-	Target        ExchangeEndpoint `json:"target"`
-	SourceTurnID  string           `json:"source_turn_id"`
-	RequestTurnID string           `json:"request_turn_id"`
-	ReplyTurnID   string           `json:"reply_turn_id,omitempty"`
-	Request       string           `json:"request"`
-	Reply         string           `json:"reply,omitempty"`
-	Detail        string           `json:"detail,omitempty"`
-	Outcome       ExchangeOutcome  `json:"outcome"`
-	Revision      int64            `json:"revision"`
-	Hops          int              `json:"hops"`
+	ID              string           `json:"id"`
+	Project         ProjectScope     `json:"project"`
+	Source          ExchangeEndpoint `json:"source"`
+	Target          ExchangeEndpoint `json:"target"`
+	SourceTurnID    string           `json:"source_turn_id"`
+	RequestTurnID   string           `json:"request_turn_id"`
+	RequestWorkerID string           `json:"request_worker_id,omitempty"`
+	ReplyTurnID     string           `json:"reply_turn_id,omitempty"`
+	Request         string           `json:"request"`
+	Reply           string           `json:"reply,omitempty"`
+	Detail          string           `json:"detail,omitempty"`
+	Outcome         ExchangeOutcome  `json:"outcome"`
+	Revision        int64            `json:"revision"`
+	Hops            int              `json:"hops"`
 	// Delivery concerns the source reply turn; it does not assert observation/read.
 	Delivery string `json:"delivery,omitempty"`
+}
+
+// Recipient identifies the execution conversation. Target remains the visible
+// participant for projection, notification and exchange authorization.
+func (x Exchange) Recipient() ExchangeEndpoint {
+	if x.RequestWorkerID == "" {
+		return x.Target
+	}
+	return ExchangeEndpoint{Key: BotKey{MachineID: x.Target.Key.MachineID, BotID: x.RequestWorkerID}, ConversationID: x.ID}
 }
 
 type BotDirectoryQuery struct {

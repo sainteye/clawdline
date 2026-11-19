@@ -30,7 +30,7 @@ func (r *Engine) MessageBot(ctx context.Context, fence pa.Fence, turnID string, 
 	a.mu.Lock()
 	x, err := r.admitBotLocked(ctx, a, p, fence, turnID, q)
 	a.mu.Unlock()
-	if err == nil {
+	if err == nil && x.RequestWorkerID == "" {
 		r.wakeBot(x.Target.Key)
 	}
 	return x, err

@@ -2993,6 +2993,10 @@
         "artifact_id": {
           "type": "string"
         },
+        "quiet": {
+          "type": "boolean",
+          "description": "An immutable Artifact revision that refreshes the existing chat card."
+        },
         "title_version": {
           "type": "integer",
           "description": "Display-title revision for artifacts; absent on older sources means 1."

@@ -110,6 +110,8 @@ export interface SourceClient {
   canRoutineEvents?(): boolean
   routineHook?(request: W.ProjectAssistantRoutineHookRequest, signal: AbortSignal): Promise<W.ProjectAssistantRoutineHookResponse>
   canRoutines?(): boolean
+  canRoutinePreview?(): boolean
+  routinePreview?(request: W.ProjectAssistantRoutinePreviewRequest, signal: AbortSignal): Promise<W.ProjectAssistantRoutinePreviewResponse>
   routines?(request: W.ProjectAssistantRoutineListRequest, signal: AbortSignal): Promise<W.ProjectAssistantRoutineListResponse>
   saveRoutine?(request: W.ProjectAssistantRoutineSaveRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   enableRoutine?(request: W.ProjectAssistantRoutineEnabledRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>

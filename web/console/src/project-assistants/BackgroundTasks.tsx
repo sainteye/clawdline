@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react"
+import {useEffect, useLayoutEffect, useRef, useState} from "react"
 import type * as W from "@clawdline/contract"
 import {rowActivity} from "./working"
 import type {Words} from "./words"
@@ -38,13 +38,39 @@ export function BackgroundDuration({task}: {task: BackgroundTask}) {
 }
 
 export function BackgroundStop({action, disabled, w}: {action: () => void; disabled?: boolean; w: Words}) {
-  return <button type="button" className="pa-background-stop" aria-label={w.backgroundStop} title={w.backgroundStop} disabled={disabled} onClick={action}>
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
-  </button>
+  const [confirming, setConfirming] = useState(false)
+  const button = useRef<HTMLButtonElement>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
+  useLayoutEffect(() => {
+    if (!confirming) return
+    const node = dialog.current
+    const opener = button.current
+    node?.showModal()
+    return () => {
+      node?.close()
+      opener?.focus({preventScroll:true})
+    }
+  }, [confirming])
+  return <>
+    <button ref={button} type="button" className="pa-background-stop" aria-label={w.backgroundStop} title={w.backgroundStop} disabled={disabled} onClick={()=>setConfirming(true)}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
+    </button>
+    {confirming&&<dialog ref={dialog} className="pa-roster-confirm" aria-label={w.backgroundStopConfirm}
+      onCancel={event=>{event.preventDefault();setConfirming(false)}}>
+      <h2>{w.backgroundStopConfirm}</h2>
+      <p>{w.backgroundStopEffects}</p>
+      <div className="pa-actions">
+        <button type="button" autoFocus onClick={()=>setConfirming(false)}>{w.cancel}</button>
+        <button type="button" disabled={disabled} className="pa-danger" onClick={()=>{setConfirming(false);action()}}>{w.backgroundStop}</button>
+      </div>
+    </dialog>}
+  </>
 }
 
-export function BackgroundCapsule({tasks, open, stop, stopping, writable, w}: {
-  tasks: readonly BackgroundTask[]; open: OpenTask; stop: (task: BackgroundTask) => void; stopping: string; writable: boolean; w: Words
+export type BackgroundStopOutcome = "acknowledged" | "unknown"
+
+export function BackgroundCapsule({tasks, open, stop, stopping, outcomes, writable, w}: {
+  tasks: readonly BackgroundTask[]; open: OpenTask; stop: (task: BackgroundTask) => void; stopping: string; outcomes: Readonly<Record<string, BackgroundStopOutcome>>; writable: boolean; w: Words
 }) {
   const live = tasks.filter(liveBackgroundTask)
   const task = live.find(item => item.state === "waiting_permission") ?? live.find(item => item.worker) ?? live[0]
@@ -56,7 +82,10 @@ export function BackgroundCapsule({tasks, open, stop, stopping, writable, w}: {
       <span className="pa-background-title">{task.title}</span><BackgroundDuration task={task}/>
       {live.length>1&&<span aria-label={w.backgroundThreads}>+{live.length-1}</span>}
     </button>
-    {task.worker&&<BackgroundStop w={w} disabled={!writable||!!stopping} action={()=>stop(task)}/>}
+    {task.worker&&<BackgroundStop key={task.id} w={w} disabled={!writable||!!stopping||!!outcomes[task.id]} action={()=>stop(task)}/>}
+    {(stopping===task.id||outcomes[task.id])&&<span className="pa-background-stop-status" role="status">
+      {stopping===task.id?w.stopSending:outcomes[task.id]==="unknown"?w.stopUnconfirmed:w.stopAcknowledged}
+    </span>}
   </div>
 }
 

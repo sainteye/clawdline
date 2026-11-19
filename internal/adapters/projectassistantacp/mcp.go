@@ -621,15 +621,16 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			Name     string `json:"name"`
 			Title    string `json:"title"`
 			Artifact string `json:"artifact"`
+			Notify   *bool  `json:"notify"`
 		}
-		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Path == "" || name == "send_file" && (q.Title != "" || q.Artifact != "") || name == "publish_artifact" && q.Name != "" {
+		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Path == "" || name == "send_file" && (q.Title != "" || q.Artifact != "" || q.Notify != nil) || name == "publish_artifact" && q.Name != "" {
 			return nil, refusal(pa.Invalid, "mcp_output")
 		}
 		tools, ok := s.tools.(app.OutputTools)
 		if !ok {
 			return nil, refusal(pa.Unsupported, "mcp_output")
 		}
-		return tools.PublishOutput(ctx, q.ID, app.OutputRequest{Path: q.Path, Name: q.Name, Title: q.Title, Artifact: q.Artifact, HTML: name == "publish_artifact"})
+		return tools.PublishOutput(ctx, q.ID, app.OutputRequest{Path: q.Path, Name: q.Name, Title: q.Title, Artifact: q.Artifact, Notify: q.Notify, HTML: name == "publish_artifact"})
 	case "list_artifacts":
 		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
 			return nil, refusal(pa.Invalid, "mcp_artifacts")
@@ -812,7 +813,7 @@ func mcpTools() []any {
 		tool("delete_routine", "Delete this Bot's routine and cancel its pending wake; an already running task may finish.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),
 		tool("test_run_routine", "Explicitly enqueue one test run of this routine, including when paused. It runs in a separate session and returns its result to this chat.", map[string]any{"idempotency_key": text(), "id": text()}, "idempotency_key", "id"),
 		tool("send_file", "Explicitly share a regular file in your Project as an immutable chat snapshot (up to 100 MiB). Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "name": text()}, "idempotency_key", "path"),
-		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text()}, "idempotency_key", "path"),
+		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Set notify to false to refresh its existing chat card without posting another. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text(), "notify": map[string]any{"type": "boolean"}}, "idempotency_key", "path"),
 		tool("list_artifacts", "List your published HTML artifacts, newest first. Use the artifact ID to publish an updated whole snapshot.", map[string]any{}),
 		tool("browser_status", "Read your own browser state: the selected browser profile, whether the person stopped the browser channel, and only the tabs you opened. 讀取自己的瀏覽器狀態：選用的瀏覽器、是否被停止，以及只有自己開的分頁。", map[string]any{}),
 		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",

@@ -36,7 +36,7 @@ function browserProbe(){
  window.__measure=measure
  for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,e=>log.events.push({t:performance.now(),type,label:e.target.closest?.('button')?.getAttribute('aria-label'),class:e.target.closest?.('button')?.className,x:e.clientX,y:e.clientY}),true)
  const native=window.fetch
- window.fetch=async function(input,init){const record={start:performance.now(),url:typeof input==='string'?input:input.url,method:init?.method??'GET'};log.fetches.push(record);try{const response=await native.call(this,input,init);record.headers=performance.now();record.status=response.status;response.clone().text().then(text=>{record.body=performance.now();if(record.url.endsWith('/react')){try{const x=JSON.parse(text);record.receipt={state:x.receipt?.state,event_seq:x.receipt?.event_seq}}catch{}}});return response}catch(e){record.error=String(e);throw e}}
+ window.fetch=async function(input,init){const record={start:performance.now(),url:typeof input==='string'?input:input.url,method:init?.method??'GET'};log.fetches.push(record);try{const response=await native.call(this,input,init);record.headers=performance.now();record.status=response.status;response.clone().text().then(text=>{record.body=performance.now();if(record.url.endsWith('/react')){try{const x=JSON.parse(text);record.receipt={state:x.receipt?.state,event_seq:x.receipt?.event_seq}}catch{}}}).catch(error=>{record.bodyError=String(error);if(error?.name!=="AbortError")throw error});return response}catch(e){record.error=String(e);throw e}}
  let running=true;window.__stop=()=>{running=false}
  function frame(){if(!running)return;log.frames.push({t:performance.now(),...measure()});requestAnimationFrame(frame)}requestAnimationFrame(frame)
 }
@@ -51,6 +51,10 @@ try{
     await page.addInitScript(browserProbe);await page.goto(origin+'/?lang=zh-Hant');await click(page.locator('.pa-dock'));await page.locator('.pa-window .pa-bot-row').first().waitFor();await click(page.locator('.pa-window .pa-bot-row').first());await page.locator('.pa-window [data-message-seq="4"]').waitFor()
     await page.waitForFunction(()=>[...document.querySelectorAll('.pa-window')].every(n=>n.getAnimations().every(a=>a.playState==='finished')))
     assert.equal(await page.locator('.pa-trace-row').count(),0);assert.equal(scenario.traceRequested,true)
+    const row=page.locator('[data-message-seq="3"]'),trigger=row.locator('.pa-message-more')
+    if(width>=700)await row.hover()
+    else await trigger.focus()
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('[data-message-seq="3"] .pa-message-controls')).pointerEvents!=='none')
     const before=await page.evaluate(()=>{window.__probe.marks.push({name:'before-trace',t:performance.now()});return window.__measure()})
     await page.screenshot({path:path.join(artifacts,tag+'-before-trace.png')});releaseTrace();await page.locator('.pa-trace > summary').first().waitFor({state:'attached'});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
     const after=await page.evaluate(()=>{window.__probe.marks.push({name:'after-trace',t:performance.now()});return window.__measure()});await page.screenshot({path:path.join(artifacts,tag+'-after-trace.png')})
@@ -60,7 +64,13 @@ try{
     assert.equal(hit.seq,'3','the old message-action point must still hit the same row')
     assert.ok(hit.class.includes('pa-message-more'),'the old message-action point must still hit More')
     // Observe old-coordinate hit only; never replay an uncertain input.
-    const row=page.locator('[data-message-seq="3"]'),trigger=row.locator('.pa-message-more');await click(trigger);await page.locator('[role=menu].pa-message-menu').waitFor()
+    await click(trigger);await page.locator('[role=menu].pa-message-menu').waitFor()
+    const reaction=row.locator('.pa-message-shortcut[aria-haspopup="menu"]')
+    if(await reaction.isVisible()){
+     await page.keyboard.press('Escape')
+     await page.locator('[role=menu].pa-message-menu').waitFor({state:'hidden'})
+     await click(reaction)
+    }
     await click(page.locator('.pa-reaction-palette button').first());await row.locator('.pa-reaction-own').waitFor();await page.waitForFunction(()=>!document.querySelector('[data-message-seq="3"] .pa-reactions[aria-busy=true]'))
     const addDone=await page.evaluate(()=>{window.__probe.marks.push({name:'add-done',t:performance.now()});return window.__measure()})
     await click(row.locator('.pa-reaction-own'));await row.locator('.pa-reaction-own').waitFor({state:'detached'});await page.waitForFunction(()=>!document.querySelector('[data-message-seq="3"] .pa-reactions[aria-busy=true]'))

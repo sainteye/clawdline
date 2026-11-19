@@ -76,6 +76,10 @@ func load(ctx context.Context, r reader, key pa.BotKey) (aggregate, error) {
 	}
 	var a aggregate
 	err = json.Unmarshal(data, &a)
+	// Workers saved by earlier versions can carry their owner's sidebar role.
+	if a.BackgroundOwner != nil {
+		a.Bot.Lead = false
+	}
 	return a, err
 }
 func (s *Store) Bot(ctx context.Context, key pa.BotKey) (pa.Bot, error) {
@@ -670,7 +674,9 @@ func validateAggregate(a aggregate) error {
 		}
 		if msg.Exchange != nil {
 			x := msg.Exchange
-			if x.Project != b.Project || (x.Source.Key != b.Key || x.Source.ConversationID != c.ID) && (x.Target.Key != b.Key || x.Target.ConversationID != c.ID) || x.Source.Key == x.Target.Key {
+			self := pa.ExchangeEndpoint{Key: b.Key, ConversationID: c.ID}
+			worker := a.BackgroundOwner != nil && *a.BackgroundOwner == x.Target.Key && x.Recipient() == self
+			if x.Project != b.Project || x.Source != self && x.Target != self && !worker || x.Source.Key == x.Target.Key {
 				return failure(pa.ScopeDenied, "exchange_projection")
 			}
 		}
@@ -1066,6 +1072,9 @@ func (s *Store) DeleteBot(ctx context.Context, key pa.BotKey) error {
 	}
 	workers, err := backgroundDeleteKeys(ctx, tx, key)
 	if err != nil {
+		return err
+	}
+	if err = cancelWaitingBackgroundExchanges(ctx, tx, a, time.Now().UTC()); err != nil {
 		return err
 	}
 	if err = appendRosterChange(ctx, tx, a, true); err != nil {

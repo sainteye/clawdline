@@ -44,20 +44,24 @@ func (s *Store) CollaborationUsage(ctx context.Context, machine string) (int64, 
 	return total, largest, err
 }
 
-func (s *Store) lockExchange(a, b pa.BotKey) func() {
-	keys := []pa.BotKey{a, b}
+func (s *Store) lockExchange(keys ...pa.BotKey) func() {
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].MachineID == keys[j].MachineID {
 			return keys[i].BotID < keys[j].BotID
 		}
 		return keys[i].MachineID < keys[j].MachineID
 	})
-	u := s.lock(keys[0])
-	if a == b {
-		return u
+	var unlock []func()
+	for i, key := range keys {
+		if i == 0 || key != keys[i-1] {
+			unlock = append(unlock, s.lock(key))
+		}
 	}
-	v := s.lock(keys[1])
-	return func() { v(); u() }
+	return func() {
+		for i := len(unlock) - 1; i >= 0; i-- {
+			unlock[i]()
+		}
+	}
 }
 
 func exchangeRead(ctx context.Context, r reader, machine, id string) (pa.Exchange, error) {
@@ -74,7 +78,7 @@ func exchangeRead(ctx context.Context, r reader, machine, id string) (pa.Exchang
 }
 func (s *Store) Exchange(ctx context.Context, key pa.BotKey, id string) (pa.Exchange, error) {
 	x, err := exchangeRead(ctx, s.db, key.MachineID, id)
-	if err == nil && key != x.Source.Key && key != x.Target.Key {
+	if err == nil && key != x.Source.Key && key != x.Target.Key && key != x.Recipient().Key {
 		err = failure(pa.ScopeDenied, "exchange")
 	}
 	return x, err
@@ -231,7 +235,7 @@ func exchangeApply(ctx context.Context, tx *sql.Tx, a *aggregate, m app.Mutation
 
 func (s *Store) AdmitExchange(ctx context.Context, q app.ExchangeAdmission) (pa.Exchange, error) {
 	x := q.Exchange
-	if x.Source.Key != q.SourceFence.Key || x.Source.Key == x.Target.Key || x.Project != q.SourceFence.Project || x.Target.Key.MachineID != x.Source.Key.MachineID || x.ID == "" || x.Revision != 1 || x.Outcome != pa.ExchangeQueued || x.SourceTurnID != q.SourceTurnID || x.RequestTurnID == "" {
+	if x.Source.Key != q.SourceFence.Key || x.Source.Key == x.Target.Key || x.Project != q.SourceFence.Project || x.Target.Key.MachineID != x.Source.Key.MachineID || x.ID == "" || x.Revision != 1 || x.Outcome != pa.ExchangeQueued || x.SourceTurnID != q.SourceTurnID || x.RequestTurnID == "" || x.RequestWorkerID != "" {
 		return x, failure(pa.ScopeDenied, "exchange_admission")
 	}
 	u := s.lockExchange(x.Source.Key, x.Target.Key)
@@ -279,19 +283,31 @@ func (s *Store) AdmitExchange(ctx context.Context, q app.ExchangeAdmission) (pa.
 	if sender >= pa.MaxCollaborationPerSender {
 		return x, failure(pa.CapacityFull, "bot_sender_outstanding")
 	}
-	for _, turn := range b.Turns {
-		if turn.State == pa.TurnUnknown {
-			return x, failure(pa.OutcomeUnknown, "recipient_unknown")
+	var mb app.Mutation
+	if b.Bot.ManageTeam {
+		for _, turn := range b.Turns {
+			if turn.State == pa.TurnUnknown {
+				return x, failure(pa.OutcomeUnknown, "recipient_unknown")
+			}
 		}
+		if b.Conversation.BindingID == "" {
+			b.Conversation.BindingID = x.ID + "-initial"
+			b.Conversation.Generation = 1
+			f := exchangeFence(b)
+			b.Bindings[f.BindingID] = pa.ExecutionBinding{Fence: f, Agent: b.Bot.Agent, MemoryRevision: b.Memory.Revision, InstructionRevision: b.Bot.Instructions.Revision}
+		}
+		request := pa.Turn{ID: x.RequestTurnID, Fence: exchangeFence(b), MessageID: x.ID + "-request", State: pa.TurnQueued, Origin: pa.BotRequestOrigin, ExchangeID: x.ID, Hops: x.Hops, IdempotencyKey: x.ID}
+		mb = exchangeMutation(b, x.ID+"-admit-target", q.At, &request, []pa.Message{exchangeNotice(b, x, request.MessageID, x.Request, request.ID, q.At)})
+	} else {
+		x.RequestWorkerID = backgroundWorkerID(x.ID)
+		notice := exchangeNotice(b, x, x.ID+"-request", x.Request, "", q.At)
+		task := pa.BackgroundTask{ID: x.ID, Fence: aggregateFence(b), ExchangeID: x.ID,
+			OriginMessageID: notice.ID, Title: a.Bot.Name, Brief: x.Request, CreatedAt: q.At}
+		if err = queueBackgroundTask(ctx, tx, task); err != nil {
+			return x, err
+		}
+		mb = exchangeMutation(b, x.ID+"-admit-target", q.At, nil, []pa.Message{notice})
 	}
-	if b.Conversation.BindingID == "" {
-		b.Conversation.BindingID = x.ID + "-initial"
-		b.Conversation.Generation = 1
-		f := exchangeFence(b)
-		b.Bindings[f.BindingID] = pa.ExecutionBinding{Fence: f, Agent: b.Bot.Agent, MemoryRevision: b.Memory.Revision, InstructionRevision: b.Bot.Instructions.Revision}
-	}
-	request := pa.Turn{ID: x.RequestTurnID, Fence: exchangeFence(b), MessageID: x.ID + "-request", State: pa.TurnQueued, Origin: pa.BotRequestOrigin, ExchangeID: x.ID, Hops: x.Hops, IdempotencyKey: x.ID}
-	mb := exchangeMutation(b, x.ID+"-admit-target", q.At, &request, []pa.Message{exchangeNotice(b, x, request.MessageID, x.Request, request.ID, q.At)})
 	ma := exchangeMutation(a, x.ID+"-admit-source", q.At, nil, []pa.Message{exchangeNotice(a, x, x.ID+"-queued", x.Request, "", q.At)})
 	ma.Command = q.Command
 	ma.Receipt.Command = q.Command
@@ -315,7 +331,7 @@ func (s *Store) StartExchange(ctx context.Context, fence pa.Fence, turn, id stri
 	if err != nil {
 		return err
 	}
-	u := s.lockExchange(x.Source.Key, x.Target.Key)
+	u := s.lockExchange(x.Source.Key, x.Target.Key, fence.Key)
 	defer u()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -333,8 +349,23 @@ func (s *Store) StartExchange(ctx context.Context, fence pa.Fence, turn, id stri
 	if _, err = exchangeActive(b, fence, turn); err != nil {
 		return err
 	}
-	if x.Target.Key != fence.Key || x.Target.ConversationID != fence.ConversationID || x.Project != fence.Project || b.Bot.Hidden || x.RequestTurnID != turn || !x.Outstanding() {
+	if x.Recipient() != (pa.ExchangeEndpoint{Key: fence.Key, ConversationID: fence.ConversationID}) ||
+		x.Project != fence.Project || x.RequestTurnID != turn || !x.Outstanding() {
 		return failure(pa.ScopeDenied, "exchange_start")
+	}
+	if x.RequestWorkerID == "" {
+		if b.Bot.Hidden || b.BackgroundOwner != nil {
+			return failure(pa.ScopeDenied, "exchange_recipient")
+		}
+	} else {
+		owner, err := load(ctx, tx, x.Target.Key)
+		if err != nil {
+			return err
+		}
+		if b.BackgroundOwner == nil || *b.BackgroundOwner != x.Target.Key || owner.Bot.Hidden ||
+			owner.Bot.Project != x.Project || owner.Conversation.ID != x.Target.ConversationID {
+			return failure(pa.ScopeDenied, "exchange_recipient")
+		}
 	}
 	if x.Outcome == pa.ExchangeSent {
 		return nil
@@ -365,7 +396,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 	if err != nil {
 		return x, err
 	}
-	u := s.lockExchange(x.Source.Key, x.Target.Key)
+	u := s.lockExchange(x.Source.Key, x.Target.Key, m.Command.Key)
 	defer u()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -400,7 +431,9 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			return x, err
 		}
 	} else {
-		if t.Origin != pa.BotRequestOrigin || x.Target.Key != a.Bot.Key || x.RequestTurnID != t.ID || !x.Outstanding() {
+		if t.Origin != pa.BotRequestOrigin || x.Recipient() != (pa.ExchangeEndpoint{Key: a.Bot.Key, ConversationID: a.Conversation.ID}) ||
+			x.Project != a.Bot.Project || x.RequestTurnID != t.ID || !x.Outstanding() ||
+			x.RequestWorkerID != "" && (a.BackgroundOwner == nil || *a.BackgroundOwner != x.Target.Key) {
 			return x, failure(pa.StaleVersion, "request_completion")
 		}
 		switch t.State {
@@ -464,21 +497,100 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			}
 		}
 		m.Events = events
-		msg := exchangeNotice(a, x, x.ID+"-result-target", x.Request, "", at)
-		msg.Seq = a.Conversation.LastMessageSeq + 1
-		m.Messages = []pa.Message{msg}
-		if m.Conversation != nil {
-			m.Conversation.LastMessageSeq = msg.Seq
+		var message *pa.Message
+		if x.RequestWorkerID == "" {
+			msg := exchangeNotice(a, x, x.ID+"-result-target", x.Request, "", at)
+			message = &msg
+		} else if x.Reply != "" {
+			message = &pa.Message{ID: x.ID + "-worker-reply", Fence: t.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: x.Reply, At: at}
 		}
-		m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: msg.ID, At: at, Fence: msg.Fence, Kind: pa.MessageCreated, Message: &msg}, pa.Event{Version: pa.ContractVersion, ID: x.ID + "-complete-trace", At: at, Fence: t.Fence, Kind: pa.TraceUpdated, Trace: &pa.Trace{TurnID: t.ID, Category: "bot_request", Text: x.Reply, Complete: true}})
+		if message != nil {
+			message.Seq = a.Conversation.LastMessageSeq + 1
+			m.Messages = []pa.Message{*message}
+			if m.Conversation != nil {
+				m.Conversation.LastMessageSeq = message.Seq
+			}
+			m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: message.ID, At: at, Fence: message.Fence, Kind: pa.MessageCreated, Message: message})
+		}
+		m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: x.ID + "-complete-trace", At: at, Fence: t.Fence, Kind: pa.TraceUpdated, Trace: &pa.Trace{TurnID: t.ID, Category: "bot_request", Text: x.Reply, Complete: true}})
 		if err = exchangeApply(ctx, tx, &a, m); err != nil {
 			return x, err
+		}
+		if x.RequestWorkerID != "" {
+			owner, err := load(ctx, tx, x.Target.Key)
+			if err != nil {
+				return x, err
+			}
+			if owner.Bot.Project != x.Project || owner.Conversation.ID != x.Target.ConversationID {
+				return x, failure(pa.ScopeDenied, "exchange_recipient")
+			}
+			msg := exchangeNotice(owner, x, x.ID+"-result-target", x.Request, "", at)
+			if err = exchangeApply(ctx, tx, &owner, exchangeMutation(owner, x.ID+"-finish-target", at, nil, []pa.Message{msg})); err != nil {
+				return x, err
+			}
+			if err = projectBackgroundTurn(ctx, tx, a, m); err != nil {
+				return x, err
+			}
 		}
 	}
 	if err = exchangeWrite(ctx, tx, x, prior); err != nil {
 		return x, err
 	}
 	return x, s.commitRoster(ctx, tx, x.Project.MachineID)
+}
+
+// Cancel queued peer work before deleting its recipient. Active workers must
+// reach a terminal outcome through their own fence first.
+func cancelWaitingBackgroundExchanges(ctx context.Context, tx *sql.Tx, target aggregate, now time.Time) error {
+	key := target.Bot.Key
+	rows, err := tx.QueryContext(ctx, `SELECT task FROM project_assistant_background_tasks
+		WHERE machine=? AND bot=? AND state='waiting' AND json_extract(CAST(data AS TEXT),'$.exchange_id') IS NOT NULL`,
+		key.MachineID, key.BotID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var IDs []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return err
+		}
+		IDs = append(IDs, id)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range IDs {
+		x, err := exchangeRead(ctx, tx, key.MachineID, id)
+		if err != nil {
+			return err
+		}
+		if x.Target != (pa.ExchangeEndpoint{Key: key, ConversationID: target.Conversation.ID}) ||
+			x.Project != target.Bot.Project || x.RequestWorkerID != backgroundWorkerID(id) || x.Outcome != pa.ExchangeQueued {
+			return failure(pa.ScopeDenied, "background_exchange")
+		}
+		prior := x.Revision
+		x.Revision++
+		x.Outcome, x.Delivery = pa.ExchangeCancelled, "dropped"
+		source, err := load(ctx, tx, x.Source.Key)
+		if err != nil && pa.Code(err) != pa.NotFound {
+			return err
+		}
+		if err == nil && source.Bot.Project == x.Project && source.Conversation.ID == x.Source.ConversationID {
+			msg := exchangeNotice(source, x, x.ID+"-result-source", x.Request, "", now)
+			if err = exchangeApply(ctx, tx, &source, exchangeMutation(source, x.ID+"-cancel-source", now, nil, []pa.Message{msg})); err != nil {
+				return err
+			}
+		}
+		if err = exchangeWrite(ctx, tx, x, prior); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func collaborationQueueFull(a aggregate) bool {

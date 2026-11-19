@@ -613,6 +613,14 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 		}
 	}
 	for _, t := range pending {
+		if t.Origin == pa.BotRequestOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+			if p, ok := r.o.Repository.(CollaborationRepository); ok {
+				if x, e := p.Exchange(ctx, key, t.ExchangeID); e == nil && x.RequestWorkerID == key.BotID && x.Outcome == pa.ExchangeQueued {
+					// The durable background slot was reserved before a provider began.
+					continue
+				}
+			}
+		}
 		if pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
 			state := pa.TurnCancelled
 			if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
@@ -944,7 +952,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
-	if pa.IsPeerRequest(t.Origin) && (bot.Hidden || len(input.Files) > 0 || len(input.Attachments) > 0) {
+	peerWorker := t.Origin == pa.BotRequestOrigin && input.Exchange != nil &&
+		input.Exchange.RequestWorkerID == a.key.BotID && input.Exchange.Recipient() == (pa.ExchangeEndpoint{Key: a.key, ConversationID: c.ID})
+	if pa.IsPeerRequest(t.Origin) && (bot.Hidden && !peerWorker || len(input.Files) > 0 || len(input.Attachments) > 0) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "collaboration_recipient")
 	}
@@ -1534,7 +1544,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		// covers long conversations whose user message is outside the last page.
 		var explicit []string
 		for _, m := range export.Messages {
-			if m.TurnID == t.ID && m.Kind == pa.AssistantMessage {
+			if m.TurnID == t.ID && m.Kind == pa.AssistantMessage && (m.Output == nil || !m.Output.Quiet) {
 				explicit = append(explicit, m.ID)
 			}
 		}

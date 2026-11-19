@@ -71,11 +71,69 @@ func reviewFinish(t *testing.T, s *Store, key pa.BotKey, turn pa.Turn, state pa.
 	return m
 }
 
+func seedTeamRecipient(t *testing.T, s *Store, id string) pa.Bot {
+	t.Helper()
+	b := seed(t, s, id)
+	b.ManageTeam = true
+	b.Version++
+	cmd := command(b.Key, pa.EditOperation, "manage-team")
+	if _, err := s.Commit(testContext, app.Mutation{Command: cmd, ExpectedVersion: b.Version - 1, Bot: &b,
+		Receipt: pa.Receipt{ID: "team-recipient", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestCollaborationOrdinaryRecipientKeepsItsActiveChat(t *testing.T) {
+	_, s, _ := testDB(t)
+	sender := seed(t, s, "sender")
+	receiver := seed(t, s, "receiver")
+	collaborationActiveSource(t, s, sender)
+	collaborationActiveSource(t, s, receiver)
+	q := reviewAdmission(t, s, sender, receiver, "background-exchange")
+	x, err := s.AdmitExchange(testContext, q)
+	if err != nil || x.RequestWorkerID == "" || x.Recipient().Key == receiver.Key {
+		t.Fatalf("ordinary recipient did not delegate: %+v, %v", x, err)
+	}
+	worker, err := s.StartBackgroundTask(testContext, receiver.Key, time.Now())
+	if err != nil || worker != x.Recipient().Key {
+		t.Fatalf("active chat blocked the peer job: %v, %v", worker, err)
+	}
+	active := reviewStart(t, s, worker, x.RequestTurnID)
+	x, err = s.FinishExchange(testContext, reviewFinish(t, s, worker, active, pa.TurnSucceeded), "Independent answer.")
+	if err != nil || x.Outcome != pa.ExchangeCompleted || x.Delivery != "queued" {
+		t.Fatalf("peer result did not return to its sender: %+v, %v", x, err)
+	}
+	owner, err := s.Export(testContext, receiver.Key)
+	if err != nil || owner.Conversation.ActiveTurnID != "turn" || len(owner.Turns) != 1 {
+		t.Fatalf("peer job changed the user's active conversation: %+v, %v", owner.Conversation, err)
+	}
+	last := owner.Messages[len(owner.Messages)-1]
+	if last.Exchange == nil || last.Exchange.Reply != "Independent answer." || last.Kind != pa.NoticeMessage {
+		t.Fatalf("recipient did not retain the attributed result: %+v", last)
+	}
+	private, err := s.Export(testContext, worker)
+	if err != nil || private.Messages[len(private.Messages)-1].Text != "Independent answer." {
+		t.Fatalf("worker transcript did not retain its answer: %+v, %v", private.Messages, err)
+	}
+	waiting, err := s.AdmitExchange(testContext, reviewAdmission(t, s, sender, receiver, "waiting-peer-job"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DeleteBot(testContext, receiver.Key); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Exchange(testContext, sender.Key, waiting.ID)
+	if err != nil || got.Outcome != pa.ExchangeCancelled || got.Delivery != "dropped" {
+		t.Fatalf("deleting the recipient left the accepted peer job outstanding: %+v, %v", got, err)
+	}
+}
+
 func TestCollaborationAdmissionAndCompletionAreTwoBotTransactions(t *testing.T) {
 	db, s, _ := testDB(t)
 	a := seed(t, s, "a")
 	populate(t, s, a, pa.EffectAccepted)
-	b := seed(t, s, "b")
+	b := seedTeamRecipient(t, s, "b")
 	q := reviewAdmission(t, s, a, b, "one-exchange")
 	before := databaseFacts(t, db)
 	if _, err := db.Exec(`CREATE TRIGGER fail_admission BEFORE INSERT ON project_assistant_exchanges BEGIN SELECT RAISE(ABORT,'admission fault'); END`); err != nil {
@@ -182,7 +240,7 @@ func TestCollaborationStopRestartAndDeletedSenderKeepSurvivingFacts(t *testing.T
 			_, s, _ := testDB(t)
 			a := seed(t, s, "a")
 			populate(t, s, a, pa.EffectAccepted)
-			b := seed(t, s, "b")
+			b := seedTeamRecipient(t, s, "b")
 			x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, a, b, "lifetime"))
 			if err != nil {
 				t.Fatal(err)
@@ -349,7 +407,7 @@ func collaborationWaitingReplyFixture(t *testing.T) (*Store, pa.Bot, pa.Exchange
 	_, s, _ := testDB(t)
 	a := seed(t, s, "a")
 	populate(t, s, a, pa.EffectAccepted)
-	b := seed(t, s, "b")
+	b := seedTeamRecipient(t, s, "b")
 	x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, a, b, "full-source"))
 	if err != nil {
 		t.Fatal(err)

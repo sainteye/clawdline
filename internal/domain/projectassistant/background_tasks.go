@@ -17,6 +17,7 @@ type BackgroundTask struct {
 	ID              string    `json:"id"`
 	Fence           Fence     `json:"fence"`
 	OriginTurnID    string    `json:"origin_turn_id"`
+	ExchangeID      string    `json:"exchange_id,omitempty"`
 	OriginMessageID string    `json:"origin_message_id"`
 	Title           string    `json:"title"`
 	Brief           string    `json:"brief"`

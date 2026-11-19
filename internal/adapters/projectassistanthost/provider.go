@@ -687,7 +687,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if e = journal(ctx, "output"); e != nil {
 			return pa.Output{}, e
 		}
-		if id == "" || len(id) > pa.MaxNameRunes || request.Path == "" {
+		if id == "" || len(id) > pa.MaxNameRunes || request.Path == "" || !request.HTML && request.Notify != nil {
 			return pa.Output{}, failure(pa.Invalid, "output_request")
 		}
 		payload, _ := json.Marshal(struct {
@@ -772,6 +772,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		out.ID = outputID
 		out.Name = name
 		out.ArtifactID = artifactID
+		out.Quiet = request.HTML && request.Artifact != "" && request.Notify != nil && !*request.Notify
 		out.RequestHash = requestHash
 		if e = check(); e != nil {
 			return pa.Output{}, e

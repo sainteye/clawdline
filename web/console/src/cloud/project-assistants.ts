@@ -56,6 +56,7 @@ export const PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL = 92
 // Hiding and deleting a Bot arrived at 67; this machine's own console only, until the Cloud relay carries them.
 export const PROJECT_ASSISTANTS_MANAGE_API_LEVEL = 67
 export const PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL = 95
+export const PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL = 96
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -301,6 +302,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   canRoutineEvents() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL }
   canRoutines() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINES_API_LEVEL }
+  canRoutinePreview() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL }
+  async routinePreview(r: W.ProjectAssistantRoutinePreviewRequest, s: AbortSignal) {
+    this.key(r.key)
+    if(r.project.machine_id!==this.machineID || !r.conversation_id)throw failure("pa_scope_denied")
+    const answer=await this.request<W.ProjectAssistantRoutinePreviewResponse>(endpoint(r.key,"/routines/preview")+query({
+      machine_id:this.machineID, project_id:r.project.project_id, canonical_id:r.project.canonical_id,
+      kind:r.project.kind, conversation_id:r.conversation_id, expression:r.expression, time_zone:r.time_zone,
+    }),s,undefined,"GET",true,PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL)
+    if(answer?.contract_version!=="project-assistants.v1" || !Number.isFinite(Date.parse(answer.next_due)))throw failure("pa_invalid")
+    return answer
+  }
   async routines(r: W.ProjectAssistantRoutineListRequest,s: AbortSignal) {
     this.key(r.key)
     if(r.project.machine_id!==this.machineID || !Number.isInteger(r.page_size) || r.page_size<1 || r.page_size>100 || !r.conversation_id || r.cursor.length>4096)throw failure("pa_invalid")
@@ -595,6 +607,14 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size)}
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
+    }
+    if(tail==="/routines/preview") {
+      const fields=["machine_id","project_id","canonical_id","kind","conversation_id","expression","time_zone"]
+      if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(field=>url.searchParams.getAll(field).length!==1))throw failure("pa_invalid")
+      return {word:"project-assistants.routine-preview",kind:"read" as const,fields:{
+        key,project:{machine_id:q.machine_id,project_id:q.project_id,canonical_id:q.canonical_id,kind:q.kind},
+        conversation_id:q.conversation_id,expression:q.expression,time_zone:q.time_zone,
+      },id:""}
     }
     const routines=/^\/routines(?:\/([^/]+)\/runs)?$/.exec(tail)
     if(routines) {
