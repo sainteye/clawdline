@@ -45,6 +45,9 @@ func (n NetworkHost) SubmitAssistant(ctx context.Context, call wire.AssistantCal
 	if err != nil {
 		return "", err
 	}
+	if err = checkNewNetworkCapture(call.Target, current.Fence); err != nil {
+		return "", err
+	}
 	feature, source, err := n.Host.background(ctx, key, true)
 	if err != nil {
 		return "", err

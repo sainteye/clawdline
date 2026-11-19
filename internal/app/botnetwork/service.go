@@ -270,6 +270,9 @@ func (s *Service) dispatch(ctx context.Context, h wire.BotHeader, body []byte) (
 		if e != nil {
 			r.State = "unknown"
 			r.Failure = asFailure(e)
+			if r.Failure.Code == pa.StaleGeneration {
+				r.State = "refused"
+			}
 		} else {
 			r.State = "accepted"
 		}

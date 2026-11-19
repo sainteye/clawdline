@@ -132,6 +132,22 @@ func validAssistantCall(call AssistantCall, body []byte) bool {
 // dedicated pinned gateway key and fresh source-owned consent. It never accepts
 // a caller-supplied principal object, browser bearer or unconditional callback.
 func VerifyAssistantCall(call AssistantCall, body []byte, facts AssistantFacts) (VerifiedAssistant, error) {
+	principal, err := VerifyAssistantConsent(call, body, facts)
+	if err != nil {
+		return VerifiedAssistant{}, err
+	}
+	if !facts.TargetCurrent {
+		return VerifiedAssistant{}, AssistantStale
+	}
+	if !facts.FeatureEnabled || !facts.SourceWritable || !facts.TargetReachable {
+		return VerifiedAssistant{}, AssistantDenied
+	}
+	return principal, nil
+}
+
+// VerifyAssistantConsent authenticates and scopes a call before the source
+// looks up the target. The caller must still check current Host facts.
+func VerifyAssistantConsent(call AssistantCall, body []byte, facts AssistantFacts) (VerifiedAssistant, error) {
 	deny := func(err error) (VerifiedAssistant, error) { return VerifiedAssistant{}, err }
 	if !facts.GatewayConfigured {
 		return deny(AssistantUnavailable)
@@ -161,10 +177,10 @@ func VerifyAssistantCall(call AssistantCall, body []byte, facts AssistantFacts) 
 		time.Unix(call.IssuedAt, 0).Before(g.NotBefore) || time.Unix(call.ExpiresAt, 0).After(g.ExpiresAt) {
 		return deny(AssistantExpired)
 	}
-	if g.Epoch != call.GrantEpoch || !facts.TargetCurrent {
+	if g.Epoch != call.GrantEpoch {
 		return deny(AssistantStale)
 	}
-	if !facts.GlobalOptIn || !facts.FeatureEnabled || !facts.SourceWritable || !facts.TargetReachable ||
+	if !facts.GlobalOptIn ||
 		g.AccountID != call.Target.AccountID || g.MachineID != call.Target.MachineID ||
 		g.ProjectID != call.Target.ProjectID ||
 		(call.Kind == "directory" && !g.AllowList) || (call.Kind == "message" && !g.AllowMessage) ||

@@ -427,6 +427,12 @@ old capture cannot read its reply. The assistant receipt lane additionally binds
 authenticated principal ID and grant ID. A valid signature does not skip a
 fresh source check before effect/publication.
 
+The source checks the dedicated signature, grant scope and local opt-in before
+looking up the target Bot. It re-reads consent after that lookup. A new message
+on either rail must use the current target conversation and generation. The
+generation retained for an admitted turn still identifies its exact receipt
+and correlated reply after the native binding advances.
+
 Assistant grant rows and retained receipt rows each reuse the existing 64-row
 collaboration namespace budget, scoped to account/machine. Bot allowlists reuse
 the existing page-row bound. `AssistantUsage` reads actual SQLite occupancy;

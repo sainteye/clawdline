@@ -87,43 +87,48 @@ func NewAssistant(o AssistantOptions) (*AssistantService, error) {
 // credential is never examined or accepted by this rail.
 func (s *AssistantService) Verify(ctx context.Context, call wire.AssistantCall, body []byte) (wire.VerifiedAssistant, wire.AssistantGrant, error) {
 	var zero wire.VerifiedAssistant
-	p, err := s.o.Repository.AssistantPolicy(ctx)
+	facts, err := s.consent(ctx, call)
 	if err != nil {
-		return zero, wire.AssistantGrant{}, wire.AssistantUnavailable
+		return zero, facts.Grant, err
+	}
+	if _, err = wire.VerifyAssistantConsent(call, body, facts); err != nil {
+		return zero, facts.Grant, err
 	}
 	state, err := s.o.Host.CheckAssistant(ctx, call.Target, true)
 	if err != nil {
 		return zero, wire.AssistantGrant{}, err
 	}
-	// Re-read policy after target IO as well as at each effect/publication
-	// boundary. Turning global consent off while that IO waits must win.
-	p, err = s.o.Repository.AssistantPolicy(ctx)
+	// A consent update while target IO waits must win.
+	facts, err = s.consent(ctx, call)
+	if err != nil {
+		return zero, facts.Grant, err
+	}
+	facts.FeatureEnabled = state.FeatureEnabled
+	facts.SourceWritable = state.SourceWritable
+	facts.TargetCurrent = state.TargetCurrent
+	facts.TargetReachable = state.TargetReachable
+	principal, err := wire.VerifyAssistantCall(call, body, facts)
+	return principal, facts.Grant, err
+}
+
+func (s *AssistantService) consent(ctx context.Context, call wire.AssistantCall) (wire.AssistantFacts, error) {
+	p, err := s.o.Repository.AssistantPolicy(ctx)
 	if err != nil || p.AccountID != s.o.AccountID || p.MachineID != s.o.MachineID ||
 		p.GatewayKeyID == "" || len(p.GatewayPublicKey) != ed25519.PublicKeySize {
-		return zero, wire.AssistantGrant{}, wire.AssistantUnavailable
+		return wire.AssistantFacts{}, wire.AssistantUnavailable
 	}
-	if p.AccountID != s.o.AccountID || p.MachineID != s.o.MachineID ||
-		p.GatewayKeyID == "" || len(p.GatewayPublicKey) != ed25519.PublicKeySize {
-		return zero, wire.AssistantGrant{}, wire.AssistantUnavailable
+	if call.Target.AccountID != s.o.AccountID || call.Target.MachineID != s.o.MachineID {
+		return wire.AssistantFacts{}, wire.AssistantDenied
 	}
 	g, err := s.o.Repository.AssistantGrant(ctx, call.GrantID)
 	if err != nil {
-		return zero, g, wire.AssistantUnavailable
+		return wire.AssistantFacts{}, wire.AssistantUnavailable
 	}
 	if g.KeyID != p.GatewayKeyID || !bytes.Equal(g.PublicKey, p.GatewayPublicKey) {
-		return zero, g, wire.AssistantUnverified
+		return wire.AssistantFacts{}, wire.AssistantUnverified
 	}
-	if call.Target.AccountID != s.o.AccountID || call.Target.MachineID != s.o.MachineID {
-		return zero, g, wire.AssistantDenied
-	}
-	facts := wire.AssistantFacts{GatewayConfigured: true, GlobalOptIn: p.GlobalOptIn,
-		GrantReadable: true, Grant: g, Now: s.o.Clock(), FeatureEnabled: state.FeatureEnabled,
-		SourceWritable: state.SourceWritable, TargetCurrent: state.TargetCurrent, TargetReachable: state.TargetReachable}
-	principal, err := wire.VerifyAssistantCall(call, body, facts)
-	if err != nil {
-		return zero, g, err
-	}
-	return principal, g, nil
+	return wire.AssistantFacts{GatewayConfigured: true, GlobalOptIn: p.GlobalOptIn,
+		GrantReadable: true, Grant: g, Now: s.o.Clock()}, nil
 }
 
 // Receive is synchronous only through durable acceptance. Native execution is
@@ -173,6 +178,9 @@ func (s *AssistantService) Receive(ctx context.Context, call wire.AssistantCall,
 					receipt.State = "accepted"
 				} else {
 					receipt.State, receipt.Failure = "unknown", assistantFailure(err)
+					if receipt.Failure.Code == pa.StaleGeneration {
+						receipt.State = "refused"
+					}
 				}
 			} else {
 				receipt.State, receipt.Failure = "refused", assistantFailure(err)
