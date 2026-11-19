@@ -36,7 +36,9 @@ export function MessageReactions(props:Target&ActionProps) {
  const project=room?.project??direct!.fence.project
  const id=room?String(props.message.seq):direct!.id
  const builtInTrigger=useRef<HTMLButtonElement>(null),trigger=props.triggerRef??builtInTrigger
- const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[held,setHeld]=useState<Intent|null>(null),[error,setError]=useState(""),[blocked,setBlocked]=useState(false)
+ const reactionTrigger=useRef<HTMLButtonElement>(null)
+ const [menu,setMenu]=useState<"more"|"reaction"|"all"|null>(null)
+ const [busy,setBusy]=useState(false),[held,setHeld]=useState<Intent|null>(null),[error,setError]=useState(""),[blocked,setBlocked]=useState(false)
  const control=useRef<AbortController|null>(null),epoch=useRef(0),inflight=useRef(false)
  const scope=JSON.stringify([source?.intentAccount??"local",source?.machineID,source?.authorizationRevision,key,project,conversation,id])
  const storageKey=(room?"clawdline.room-reaction.":"clawdline.bot-reaction.")+JSON.stringify([source?.intentAccount??"local",key,project,conversation,id])
@@ -54,18 +56,19 @@ export function MessageReactions(props:Target&ActionProps) {
   return q
  }
  useEffect(()=>{
-  const current=++epoch.current;inflight.current=false;setHeld(null);setBusy(false);setError("");setBlocked(false);setOpen(false)
+  const current=++epoch.current;inflight.current=false;setHeld(null);setBusy(false);setError("");setBlocked(false);setMenu(null)
   try{
    const raw=localStorage.getItem(storageKey)
    if(raw){setHeld(savedIntent(raw));setError("pa_outcome_unknown")}
   }catch{setBlocked(true);setError("pa_outcome_unknown")}
   return()=>{if(epoch.current===current)epoch.current++;control.current?.abort()}
  },[scope,storageKey])
- useEffect(()=>{setOpen(false)},[dismissKey])
+ useEffect(()=>{setMenu(null)},[dismissKey])
  const [confirmed,setConfirmed]=useState<{scope:string;emojis:string[];revision:number}|null>(null)
  const storedOwn=message.reactions?.find(a=>a.own)
  const own=confirmed?.scope===scope&&confirmed.revision>(storedOwn?.revision??0)?confirmed:storedOwn
- const close=(focus:boolean)=>{setOpen(false);if(focus)trigger.current?.focus({preventScroll:true})}
+ const anchor=menu==="reaction"?reactionTrigger:trigger
+ const close=(focus:boolean)=>{setMenu(null);if(focus)anchor.current?.focus({preventScroll:true})}
  async function send(emoji?:string){
   if(!source||!canWrite()||inflight.current||busy||blocked)return
   inflight.current=true
@@ -98,7 +101,7 @@ export function MessageReactions(props:Target&ActionProps) {
      setConfirmed({scope,emojis:apply(own?.emojis??[],q),revision:q.expected_revision+1})
      onReactionChanged?.()
     }
-    setHeld(null);setOpen(false)
+    setHeld(null);setMenu(null)
    }
   }catch(e){
    const code=errorCode(e)
@@ -116,17 +119,25 @@ export function MessageReactions(props:Target&ActionProps) {
  const hasMenu=paletteVisible||onQuote||onCopy
  const other=(message.reactions??[]).filter(a=>!a.own&&a.emojis.length>0)
  return <>
-  {hasMenu&&<div className="pa-message-controls"><button ref={trigger} className="pa-message-more pa-reaction-add" type="button" aria-haspopup="menu" aria-expanded={open} aria-label={tr("messageActions")} title={tr("messageActions")} onClick={()=>{trigger.current?.focus({preventScroll:true});setOpen(v=>!v)}}><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg></button></div>}
+  {hasMenu&&<div className="pa-message-controls">
+   {!room&&paletteVisible&&<button ref={reactionTrigger} className="pa-message-shortcut" type="button" aria-haspopup="menu" aria-expanded={menu==="reaction"} aria-label={tr("chooseReaction")} title={tr("chooseReaction")} onClick={()=>setMenu("reaction")}><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.4 9.4a2.9 2.9 0 0 0 5.2 0M5.7 6.5h.1m4.4 0h.1" strokeLinecap="round"/></svg></button>}
+   {!room&&onQuote&&<button className="pa-message-shortcut" type="button" aria-label={quoteLabel??tr("quote")} title={quoteLabel??tr("quote")} onClick={onQuote}><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true"><path d="M6.5 2.7 2 7l4.5 4.2V8.7c3.1 0 5.3 1.2 7.5 3.8-.5-4.7-3.1-7-7.5-7z"/></svg></button>}
+   <button ref={trigger} className="pa-message-more pa-reaction-add" type="button" aria-haspopup="menu" aria-expanded={menu==="more"||menu==="all"} aria-label={tr("messageActions")} title={tr("messageActions")} onClick={event=>{
+     trigger.current?.focus({preventScroll:true})
+     const shortcuts=!room&&!!event.detail&&onCopy&&reactionTrigger.current?.getClientRects().length
+     setMenu(value=>value==="more"||value==="all"?null:shortcuts?"more":"all")
+   }}><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg></button>
+  </div>}
   {(!room||shown.length>0||other.length>0||busy||error)&&<div className="pa-reactions" aria-label={tr("reactions")} aria-busy={busy||undefined} data-reaction-state={busy?"pending":held||blocked?"unknown":error?"refused":"confirmed"}>
    {shown.map(emoji=><button type="button" className="pa-reaction pa-reaction-own" key={emoji} aria-label={tr("removeReaction")+" "+emoji} title={tr("yourReaction")} disabled={!enabled||busy||!!held||blocked} data-pending={busy||!!held||undefined} onClick={()=>void send(emoji)}>{emoji}<span>{tr("youReaction")}</span></button>)}
    {other.flatMap(a=>a.emojis.map(emoji=><span className="pa-reaction" key={a.id+emoji} title={a.kind==="bot"?a.name:tr("otherReaction")}>{a.kind==="bot"&&a.appearance&&<BotAvatar appearance={a.appearance} size={18}/>} {emoji}<span>{a.kind==="bot"?a.name:tr("otherReaction")}</span></span>))}
    {busy&&<span className="pa-reaction-progress" role="status">{tr("reactionSaving")}</span>}
    {error&&!busy&&<span className="pa-reaction-error" role="status">{held||blocked?tr("reactionUnknown"):tr("reactionFailed")} ({error}) {held&&<button type="button" disabled={!enabled||busy} onClick={()=>void send()}>{tr("retryReaction")}</button>}</span>}
   </div>}
-  <MessageMenu open={open&&!!hasMenu} anchor={trigger} label={tr("messageActions")} onClose={close}>
-   {paletteVisible&&<div className="pa-reaction-palette" role="group" aria-label={tr("chooseReaction")}>{palette.map(emoji=><button type="button" key={emoji} aria-label={tr("reactWith")+" "+emoji} aria-pressed={own?.emojis.includes(emoji)??false} disabled={!enabled||busy||!!held||blocked} onClick={()=>void send(emoji)}>{emoji}</button>)}</div>}
-   {onQuote&&<button type="button" role="menuitem" onClick={()=>{close(false);onQuote()}}>{quoteLabel??tr("quote")}</button>}
-   {onCopy&&<button type="button" role="menuitem" onClick={()=>{close(true);onCopy()}}>{copyLabel??tr("copyMessage")}</button>}
+  <MessageMenu open={menu!==null&&!!hasMenu} anchor={anchor} label={tr("messageActions")} onClose={close}>
+   {paletteVisible&&menu!=="more"&&<div className="pa-reaction-palette" role="group" aria-label={tr("chooseReaction")}>{palette.map(emoji=><button type="button" key={emoji} aria-label={tr("reactWith")+" "+emoji} aria-pressed={own?.emojis.includes(emoji)??false} disabled={!enabled||busy||!!held||blocked} onClick={()=>void send(emoji)}>{emoji}</button>)}</div>}
+   {menu==="all"&&onQuote&&<button type="button" role="menuitem" onClick={()=>{close(false);onQuote()}}>{quoteLabel??tr("quote")}</button>}
+   {menu!=="reaction"&&onCopy&&<button type="button" role="menuitem" onClick={()=>{close(true);onCopy()}}>{copyLabel??tr("copyMessage")}</button>}
   </MessageMenu>
  </>
 }
