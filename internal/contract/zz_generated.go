@@ -5316,6 +5316,22 @@ type ProjectAssistantMemoryDetail struct {
 	Truncated bool   `json:"truncated"`
 }
 
+// A Bot-scoped, retention-filtered history of completed dream runs. Omit when
+// the source does not provide history. An empty runs array means the source
+// provides history but has no visible runs.
+type ProjectAssistantMemoryDreamHistory struct {
+	Runs []ProjectAssistantMemoryDreamRun `json:"runs"`
+}
+
+type ProjectAssistantMemoryDreamRun struct {
+	Added    []string `json:"added"`
+	Archived []string `json:"archived"`
+	At       string   `json:"at"`
+	ID       string   `json:"id"`
+	Notes    []string `json:"notes"`
+	Undone   bool     `json:"undone,omitempty"`
+}
+
 type ProjectAssistantMemoryEntry struct {
 	Forgotten bool                   `json:"forgotten"`
 	ID        string                 `json:"id"`
@@ -5387,10 +5403,11 @@ type ProjectAssistantMemorySource struct {
 }
 
 type ProjectAssistantMemoryView struct {
-	Bot            ProjectAssistantBot             `json:"bot"`
-	ConversationID string                          `json:"conversation_id"`
-	Layers         []ProjectAssistantMemoryLayer   `json:"layers"`
-	Memory         ProjectAssistantMemoryViewState `json:"memory"`
+	Bot            ProjectAssistantBot                 `json:"bot"`
+	ConversationID string                              `json:"conversation_id"`
+	Dreams         *ProjectAssistantMemoryDreamHistory `json:"dreams,omitempty"`
+	Layers         []ProjectAssistantMemoryLayer       `json:"layers"`
+	Memory         ProjectAssistantMemoryViewState     `json:"memory"`
 }
 
 type ProjectAssistantMemoryViewResponse struct {

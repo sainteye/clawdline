@@ -6142,6 +6142,24 @@ export interface ProjectAssistantMemoryDetail {
   truncated: boolean
 }
 
+/**
+ * A Bot-scoped, retention-filtered history of completed dream runs. Omit when the
+ * source does not provide history. An empty runs array means the source provides
+ * history but has no visible runs.
+ */
+export interface ProjectAssistantMemoryDreamHistory {
+  runs: ProjectAssistantMemoryDreamRun[]
+}
+
+export interface ProjectAssistantMemoryDreamRun {
+  added: string[]
+  archived: string[]
+  at: string
+  id: string
+  notes: string[]
+  undone?: boolean
+}
+
 export interface ProjectAssistantMemoryEntry {
   forgotten: boolean
   id: string
@@ -6229,6 +6247,7 @@ export interface ProjectAssistantMemorySource {
 export interface ProjectAssistantMemoryView {
   bot: ProjectAssistantBot
   conversation_id: string
+  dreams?: ProjectAssistantMemoryDreamHistory
   layers: ProjectAssistantMemoryLayer[]
   memory: ProjectAssistantMemoryViewState
 }

@@ -3776,6 +3776,29 @@
         "entries"
       ]
     },
+    "ProjectAssistantMemoryDreamRun": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" },
+        "added": { "type": "array", "items": { "type": "string" } },
+        "archived": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "undone": { "type": "boolean" }
+      },
+      "required": ["id", "at", "added", "archived", "notes"]
+    },
+    "ProjectAssistantMemoryDreamHistory": {
+      "type": "object",
+      "description": "A Bot-scoped, retention-filtered history of completed dream runs. Omit when the source does not provide history. An empty runs array means the source provides history but has no visible runs.",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProjectAssistantMemoryDreamRun" }
+        }
+      },
+      "required": ["runs"]
+    },
     "ProjectAssistantMemoryView": {
       "type": "object",
       "properties": {
@@ -3787,6 +3810,9 @@
         },
         "memory": {
           "$ref": "#/$defs/ProjectAssistantMemoryViewState"
+        },
+        "dreams": {
+          "$ref": "#/$defs/ProjectAssistantMemoryDreamHistory"
         },
         "layers": {
           "type": "array",

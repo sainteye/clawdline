@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13320,
+  "englishKeys": 13333,
   "counts": {
-    "negation": 3509,
+    "negation": 3511,
     "state": 2248,
     "permission": 813,
     "deletion": 312,
     "uncertainty": 545
   },
-  "unionCount": 5739,
+  "unionCount": 5741,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3094,6 +3094,8 @@
       "projectAssistants.loginKeyHint",
       "projectAssistants.loginKeyStored",
       "projectAssistants.memoryAuthorUnknown",
+      "projectAssistants.memoryDreamsEmpty",
+      "projectAssistants.memoryNoRelated",
       "projectAssistants.memoryPolicy",
       "projectAssistants.memoryTimeUnknown",
       "projectAssistants.nativeInherited",
@@ -12444,6 +12446,8 @@
     "projectAssistants.manageTitle",
     "projectAssistants.memoryAuthorUnknown",
     "projectAssistants.memoryDetailStale",
+    "projectAssistants.memoryDreamsEmpty",
+    "projectAssistants.memoryNoRelated",
     "projectAssistants.memoryNoteHint",
     "projectAssistants.memoryPolicy",
     "projectAssistants.memoryTimeUnknown",

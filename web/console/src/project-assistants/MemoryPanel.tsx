@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
+import { MemoryBrowser } from "./MemoryBrowser"
+import { MemoryDreams } from "./MemoryDreams"
 import type { Words } from "./words"
 import { LoadingSkeleton } from "../LoadingSkeleton"
 import "./topic-memory.css"
@@ -36,17 +38,49 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
   const [localNote,setLocalNote]=useState<MemoryNoteDraft|null>(pendingNote??null)
   const note=noteDraft===undefined?localNote:noteDraft,setNote=onNoteDraft??setLocalNote
   const noteForm=useRef<HTMLFormElement>(null)
-  useEffect(()=>{if(note)noteForm.current?.querySelector<HTMLInputElement>("input")?.focus({preventScroll:true})},[note?.entry_id])
-  const [layer,setLayer]=useState("bot"),[detail,setDetail]=useState<W.ProjectAssistantMemoryDetail|null>(null),[reading,setReading]=useState(false)
-  const detailSequence=useRef(0),detailAlive=useRef(true)
-  useEffect(()=>{detailAlive.current=true;return()=>{detailAlive.current=false;detailSequence.current++}},[])
-  useEffect(()=>{setDetail(null);setReading(false);detailSequence.current++},[layer,value.source_epoch,value.view.layers.map(l=>l.revision).join("/")])
-  const open=async(entry:W.ProjectAssistantMemoryRow)=>{
-    const owner=value.view.layers.find(l=>l.layer===layer);if(!owner)return
-    const sequence=++detailSequence.current;setReading(true);setDetail(null);setError("")
-    try{const answer=await readDetail({source_epoch:value.source_epoch,layer,entry_id:entry.id,revision:owner.revision});if(detailAlive.current&&sequence===detailSequence.current)setDetail(answer.detail??null)}catch(e){if(detailAlive.current&&sequence===detailSequence.current)setError(errorCode(e))}finally{if(detailAlive.current&&sequence===detailSequence.current)setReading(false)}
+  useEffect(()=>{
+    if (!note?.entry_id) return
+    noteForm.current?.scrollIntoView({block:"nearest"})
+    noteForm.current?.querySelector<HTMLInputElement>("input")?.focus({preventScroll:true})
+  },[note?.entry_id])
+  const [layer, setLayer] = useState("bot")
+  const [read, setRead] = useState<{ snapshot: string; detail?: W.ProjectAssistantMemoryDetail } | null>(null)
+  const detailSequence = useRef(0)
+  const detailHeading = useRef<HTMLHeadingElement>(null), detailOpener = useRef<HTMLButtonElement>(null)
+  const shown = value.view.layers.find(item => item.layer === layer)
+  const snapshot = JSON.stringify([layer, value.source_epoch, ...value.view.layers.map(item => [item.layer, item.revision])])
+  const detail = read?.snapshot === snapshot ? read.detail : undefined
+  const reading = read?.snapshot === snapshot && !read.detail
+
+  useEffect(() => () => { detailSequence.current++ }, [snapshot])
+  useEffect(() => {
+    if (!detail) return
+    detailHeading.current?.scrollIntoView({block:"nearest"})
+    detailHeading.current?.focus({preventScroll:true})
+  }, [detail])
+
+  const switchLayer = (next: string) => {
+    if (next === layer) return
+    detailSequence.current++
+    setRead(null)
+    setLayer(next)
   }
-  const shown=value.view.layers.find(l=>l.layer===layer)
+  const open = async (entry: W.ProjectAssistantMemoryRow, opener: HTMLButtonElement) => {
+    if (!shown?.available) return
+    const sequence = ++detailSequence.current
+    detailOpener.current = opener
+    setRead({ snapshot })
+    setError("")
+    try {
+      const answer = await readDetail({ source_epoch: value.source_epoch, layer, entry_id: entry.id, revision: shown.revision })
+      if (sequence !== detailSequence.current) return
+      setRead(answer.detail ? { snapshot, detail: answer.detail } : null)
+    } catch (e) {
+      if (sequence !== detailSequence.current) return
+      setRead(null)
+      setError(errorCode(e))
+    }
+  }
   const pending=useRef(false),panel=useRef<HTMLElement>(null)
   useEffect(()=>{
     const target=panel.current?.querySelector<HTMLElement>("textarea:not(:disabled)")??panel.current?.querySelector<HTMLElement>("h3")
@@ -63,11 +97,34 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
   }
   return <section ref={panel} className={embedded?"pa-memory pa-memory-embedded":"pa-card pa-memory"} aria-label={w.memory}>
     {!embedded&&<header className="pa-toolbar"><h3 tabIndex={-1}>{w.memory}</h3><button type="button" onClick={onClose}>{w.close}</button></header>}
-    <nav className="pa-memory-scopes" aria-label={w.memory}><button aria-pressed={layer==="project"} onClick={()=>setLayer("project")}>{w.memoryProject}</button><button aria-pressed={layer==="bot"} onClick={()=>setLayer("bot")}>{w.memoryBot}</button></nav><div className="pa-memory-refresh"><button type="button" onClick={()=>void onRefresh().catch(e=>setError(errorCode(e)))}>{w.memoryRefresh}</button></div>
-    {shown?.available&&<div className="pa-memory-content-head"><p className="pa-memory-usage">{w.memoryUsage.replace("{used}",String(shown.used)).replace("{cap}",String(shown.cap))}</p>{layer==="bot"&&onSaveNote&&<button className="pa-memory-create-note" type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>setNote({entry_id:crypto.randomUUID(),title:"",summary:"",text:"",expected_revision:value.view.memory.revision})}>{w.memoryCreateNote}</button>}</div>}
-    {!shown?.available?<p role="status">{w.memoryUnavailable}</p>:<>{shown.truncated&&<p role="status">{w.memoryTruncated}</p>}{shown.entries.length===0&&<p>{w.emptyMemory}</p>}{shown.entries.map(entry=><article key={entry.id} className="pa-memory-entry"><button type="button" className="pa-memory-index" aria-label={w.memoryRead+": "+entry.id} onClick={()=>void open(entry)}>{entry.title&&<strong>{entry.title}</strong>}<span>{entry.text}</span></button><small>{entry.author==="human"?w.memoryAuthorHuman:entry.author==="bot"?w.memoryAuthorBot:entry.author||w.memoryAuthorUnknown} · {entry.updated_at||w.memoryTimeUnknown}</small></article>)}</>}
-    {reading&&<p role="status">{w.memoryLoading}</p>}
-    {detail&&<section className="pa-memory-detail" aria-label={w.memoryRead}><h4>{detail.title||detail.id}</h4>{layer==="bot"&&detail.kind==="note"&&onSaveNote&&<div className="pa-toolbar"><button type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>setNote({entry_id:detail.id,title:detail.title??"",summary:detail.summary??"",text:detail.text,expected_revision:value.view.memory.revision})}>{w.memoryEditNote}</button><button type="button" disabled={!enabled||busy||!!note||uncertain} onClick={()=>{const row=entries.find(entry=>entry.id===detail.id);void run(()=>onForget([detail.id,...(row?.sources.map(source=>source.id)??[])]),()=>setDetail(null))}}>{w.forget}</button></div>}<pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{detail.text}</pre>{detail.truncated&&<p>{w.memoryTruncated}</p>}</section>}
+    <nav className="pa-memory-scopes" aria-label={w.memory}>
+      {[["bot", w.memoryBot], ["project", w.memoryProject], ["dreams", w.memoryDreams]].map(([id, label]) =>
+        <button key={id} type="button" aria-pressed={layer === id} onClick={() => switchLayer(id)}>{label}</button>
+      )}
+    </nav>
+    <div className="pa-memory-refresh">
+      <button type="button" onClick={() => void onRefresh().catch(e => setError(errorCode(e)))}>{w.memoryRefresh}</button>
+    </div>
+    {reading && <p role="status">{w.memoryLoading}</p>}
+    {detail && <section className="pa-memory-detail" aria-label={w.memoryRead}>
+      <header>
+        <h4 ref={detailHeading} tabIndex={-1}>{detail.title || (layer === "project" ? detail.id : w.memoryFacts)}</h4>
+        <button type="button" className="pa-memory-detail-close" onClick={() => {
+          setRead(null)
+          if (detailOpener.current?.isConnected) detailOpener.current.focus()
+        }}>{w.close}</button>
+      </header>
+      {layer === "bot" && detail.kind === "note" && onSaveNote && <div className="pa-toolbar">
+        <button type="button" disabled={!enabled || busy || !!note || uncertain}
+          onClick={() => setNote({ entry_id: detail.id, title: detail.title ?? "", summary: detail.summary ?? "", text: detail.text, expected_revision: value.view.memory.revision })}>{w.memoryEditNote}</button>
+        <button type="button" disabled={!enabled || busy || !!note || uncertain} onClick={() => {
+          const row = entries.find(entry => entry.id === detail.id)
+          void run(() => onForget([detail.id, ...(row?.sources.map(source => source.id) ?? [])]), () => setRead(null))
+        }}>{w.forget}</button>
+      </div>}
+      <pre tabIndex={0}>{detail.text}</pre>
+      {detail.truncated && <p>{w.memoryTruncated}</p>}
+    </section>}
     {layer==="bot"&&note&&onSaveNote&&<form ref={noteForm} className="pa-memory-note-editor" aria-label={w.memoryEditNote} onSubmit={event=>{event.preventDefault();void run(()=>onSaveNote(note),()=>setNote(null))}}>
       <label>{w.memoryNoteTitle}<input value={note.title} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,title:event.target.value})}/></label>
       <label>{w.memoryNoteSummary}<textarea value={note.summary} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,summary:event.target.value})}/></label>
@@ -75,6 +132,15 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       <label>{w.memoryNoteBody}<textarea className="pa-memory-note-body" value={note.text} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,text:event.target.value})}/></label>
       <div className="pa-toolbar"><button type="button" disabled={busy||uncertain} onClick={()=>setNote(null)}>{w.cancel}</button><button type="submit" disabled={!enabled||busy||!note.title.trim()||!note.summary.trim()||!note.text.trim()}>{uncertain?w.retry:w.save}</button></div>
     </form>}
+    {layer === "dreams" ? <MemoryDreams history={value.view.dreams} w={w}/> : !shown?.available ? <p role="status">{w.memoryUnavailable}</p> : <>
+      <div className="pa-memory-content-head">
+        <p className="pa-memory-usage">{w.memoryUsage.replace("{used}", String(shown.used)).replace("{cap}", String(shown.cap))}</p>
+        {layer === "bot" && onSaveNote && <button className="pa-memory-create-note" type="button" disabled={!enabled || busy || !!note || uncertain}
+          onClick={() => setNote({ entry_id: crypto.randomUUID(), title: "", summary: "", text: "", expected_revision: value.view.memory.revision })}>{w.memoryCreateNote}</button>}
+      </div>
+      {shown.truncated && <p role="status">{w.memoryTruncated}</p>}
+      <MemoryBrowser key={value.source_epoch} layer={shown} onOpen={(entry, opener) => void open(entry, opener)} w={w}/>
+    </>}
     <details className="pa-memory-policy"><summary>{w.memoryPolicyLabel}</summary><p>{w.memoryPolicy}</p></details>
     {layer==="bot"&&<><details className="pa-memory-short-facts" open={!!pendingText||undefined}><summary>{w.memoryShortFacts}</summary><p>{w.forgetScope}</p>
     <form onSubmit={event=>{event.preventDefault();void run(()=>onSave(text.trim()),()=>setText(""))}}>

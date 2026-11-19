@@ -2,8 +2,8 @@ package http
 
 import (
 	"context"
-	"github.com/sainteye/clawdline/internal/contract"
-	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"crypto/sha256"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -12,6 +12,9 @@ import (
 	"time"
 
 	store "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/contract"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 // Production Chat, memory editor and SourceClient use a real isolated Host/store.
@@ -28,6 +31,31 @@ func TestTopicMemoryEditorBrowser(t *testing.T) {
 	got := f.get(t, f.local)
 	seed := contract.ProjectAssistantMemoryWriteRequest{Command: f.command(pa.MemorySaveOperation, "seed-topic-readonly"), ExpectedRevision: 2, Entry: contract.ProjectAssistantMemoryEntry{ID: "readonly-topic", Key: got.Bot.Key, Project: got.Bot.Project, Kind: pa.TopicMemory, Title: "Readonly topic", Summary: "An authorized index", Text: "READONLY-TOPIC-BODY", Sources: []contract.ProjectAssistantMemorySource{}}}
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/memory", f.local, seed))
+	// Seed two entries from one transcript source, with an unrelated human fact
+	// from memorySettingsFixture. The public write endpoint assigns its own
+	// provenance, so use the authorized Bot store path for these fixture rows.
+	db := store.New(f.s.store.ProjectAssistantDatabase())
+	bot, err := db.Bot(t.Context(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := db.Current(t.Context(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := pa.MemorySource{ID: "transcript:fixture", Key: bot.Key, Project: bot.Project, Kind: "human", Revision: current.Revision}
+	for _, entry := range []pa.MemoryEntry{
+		{ID: "linked-topic", Kind: pa.TopicMemory, Title: "Release schedule", Summary: "Plan the next release", Text: "Linked topic body"},
+		{ID: "linked-fact", Text: "Friday releases"},
+	} {
+		entry.Key, entry.Project, entry.Revision, entry.Sources = bot.Key, bot.Project, current.Revision, []pa.MemorySource{source}
+		digest := sha256.Sum256([]byte(entry.ID))
+		command := pa.Command{Key: bot.Key, Operation: pa.MemorySaveOperation, IdempotencyKey: entry.ID, ContentHash: fmt.Sprintf("%x", digest)}
+		current, err = db.Save(t.Context(), app.MemoryWrite{Command: command, ExpectedRevision: current.Revision, Entry: entry})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	server := httptest.NewServer(f.h)
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
@@ -39,7 +67,7 @@ func TestTopicMemoryEditorBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("topic memory editor: %v\n%s", err, output)
 	}
-	x, err := store.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
+	x, err := db.Export(context.Background(), f.key)
 	if err != nil {
 		t.Fatal(err)
 	}

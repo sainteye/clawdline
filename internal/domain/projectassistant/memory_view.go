@@ -27,11 +27,27 @@ type MemoryViewState struct {
 	ForgottenCount   int64        `json:"forgotten_count"`
 }
 
+// MemoryDreamHistory contains previews from completed runs within the authorized
+// Bot scope. A source must apply its current retention rules before exposing them.
+type MemoryDreamHistory struct {
+	Runs []MemoryDreamRun `json:"runs"`
+}
+
+type MemoryDreamRun struct {
+	ID       string   `json:"id"`
+	At       string   `json:"at"`
+	Added    []string `json:"added"`
+	Archived []string `json:"archived"`
+	Notes    []string `json:"notes"`
+	Undone   bool     `json:"undone,omitempty"`
+}
+
 type MemoryView struct {
-	Bot            Bot             `json:"bot"`
-	ConversationID string          `json:"conversation_id"`
-	Memory         MemoryViewState `json:"memory"`
-	Layers         []MemoryLayer   `json:"layers"`
+	Bot            Bot                 `json:"bot"`
+	ConversationID string              `json:"conversation_id"`
+	Memory         MemoryViewState     `json:"memory"`
+	Layers         []MemoryLayer       `json:"layers"`
+	Dreams         *MemoryDreamHistory `json:"dreams,omitempty"`
 }
 type MemoryDetail struct {
 	Kind      string `json:"kind,omitempty"`

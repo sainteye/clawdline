@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13320,
-  "riskKeys": 5739,
-  "nonRiskCount": 7581,
+  "englishContentKeys": 13333,
+  "riskKeys": 5741,
+  "nonRiskCount": 7592,
   "groups": [
     {
       "name": "acp / other",
@@ -5992,7 +5992,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 366,
+      "count": 377,
       "sources": [
         null
       ],
@@ -6155,8 +6155,16 @@
         "projectAssistants.memoryAuthorBot",
         "projectAssistants.memoryAuthorHuman",
         "projectAssistants.memoryBot",
+        "projectAssistants.memoryConcepts",
         "projectAssistants.memoryCreateNote",
+        "projectAssistants.memoryDreams",
+        "projectAssistants.memoryDreamsAdded",
+        "projectAssistants.memoryDreamsArchived",
+        "projectAssistants.memoryDreamsNotes",
+        "projectAssistants.memoryDreamsUnavailable",
+        "projectAssistants.memoryDreamsUndone",
         "projectAssistants.memoryEditNote",
+        "projectAssistants.memoryFacts",
         "projectAssistants.memoryLoading",
         "projectAssistants.memoryNote",
         "projectAssistants.memoryNoteBody",
@@ -6164,11 +6172,14 @@
         "projectAssistants.memoryNoteTitle",
         "projectAssistants.memoryPolicyLabel",
         "projectAssistants.memoryProject",
+        "projectAssistants.memoryProjectFiles",
         "projectAssistants.memoryRead",
         "projectAssistants.memoryRefresh",
+        "projectAssistants.memoryRelated",
         "projectAssistants.memoryRevision",
         "projectAssistants.memorySettingsUnsupported",
         "projectAssistants.memoryShortFacts",
+        "projectAssistants.memoryTopicNotes",
         "projectAssistants.memoryTruncated",
         "projectAssistants.memoryUsage",
         "projectAssistants.memory_disabled",

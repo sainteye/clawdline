@@ -8,7 +8,7 @@
 .project-assistants .pa-memory-detail{min-width:0}
 .project-assistants .pa-memory { min-width:0;line-height:1.6; }
 .project-assistants .pa-memory-embedded { padding:0 0 24px; }
-.project-assistants .pa-memory-scopes { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--pa-card); }
+.project-assistants .pa-memory-scopes { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--pa-card); }
 .project-assistants .pa-memory-scopes button { border:0;border-radius:10px;background:transparent;min-height:48px;padding:8px 10px;font-size:13px;line-height:1.45; }
 .project-assistants .pa-memory-scopes button[aria-pressed="true"] { background:var(--pa-line);color:#fafafa; }
 .project-assistants .pa-memory-refresh { display:flex;justify-content:flex-end;margin:8px 0 20px; }
@@ -25,9 +25,34 @@
 .project-assistants .pa-memory .pa-memory-short-facts { margin:0; }
 .project-assistants .pa-memory .pa-memory-forget { margin:0 0 24px; }
 .project-assistants .pa-memory-detail { margin-top:20px;padding:16px 0;border-bottom:1px solid var(--pa-line); }
-.project-assistants .pa-memory-detail h4 { margin:0 0 12px; }
+.project-assistants .pa-memory-detail header { display:flex; align-items:center; justify-content:space-between; gap:12px; overflow-wrap:anywhere; margin-bottom:12px; }
+.project-assistants .pa-memory-detail h4 { margin:0; }
+.project-assistants .pa-memory-detail-close { flex:none; min-height:44px; }
 .project-assistants .pa-memory-detail .pa-toolbar { flex-wrap:wrap;justify-content:flex-start;gap:8px;margin-bottom:12px; }
 .project-assistants .pa-memory fieldset { min-width:0;margin-top:12px;padding:12px;border:1px solid var(--pa-line);border-radius:12px; }
 .project-assistants .pa-memory-revision { color:var(--pa-dim);font-size:11px; }
 
 .project-assistants .pa-memory-content-head { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:8px; }
+
+.project-assistants .pa-memory-concepts { padding:16px; border:1px solid var(--pa-line); border-radius:14px; background:var(--pa-card); }
+.project-assistants .pa-memory-concepts header { display:grid; gap:8px; margin-bottom:16px; }
+.project-assistants .pa-memory-concepts h4,
+.project-assistants .pa-memory-collection h4 { margin:0; font-size:14px; font-weight:650; }
+.project-assistants .pa-memory-concepts h5 { margin:14px 0 4px; color:var(--pa-dim); font-size:12px; font-weight:550; }
+.project-assistants .pa-memory-concepts h4 label { margin:0; color:inherit; font:inherit; }
+.project-assistants .pa-memory-concepts select { width:100%; min-width:0; min-height:44px; padding-inline:8px; color-scheme:dark; background:var(--pa-card); border:1px solid var(--pa-line); border-radius:8px; }
+.project-assistants .pa-memory-node { min-width:0; min-height:44px; width:100%; text-align:start; white-space:normal; overflow-wrap:anywhere; }
+.project-assistants .pa-memory-node-primary { font-weight:650; }
+.project-assistants .pa-memory-muted { margin:8px 0; color:var(--pa-dim); font-size:13px; }
+.project-assistants .pa-memory-branches { list-style:none; padding:0; margin:0; }
+.project-assistants .pa-memory-branches li { position:relative; padding:4px 0 4px 14px; border-inline-start:1px solid var(--pa-line); }
+.project-assistants .pa-memory-branches li::before { content:""; position:absolute; inset-inline-start:0; top:50%; width:12px; border-top:1px solid var(--pa-line); }
+.project-assistants .pa-memory-collection { margin-top:20px; }
+.project-assistants .pa-memory-collection .pa-memory-index { min-height:44px; }
+.project-assistants .pa-memory-detail pre { white-space:pre-wrap; overflow-wrap:anywhere; max-block-size:min(50dvh,28rem); overflow:auto; }
+.project-assistants .pa-memory-dreams { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
+.project-assistants .pa-memory-dreams > li { padding:14px 16px; border:1px solid var(--pa-line); border-radius:14px; overflow-wrap:anywhere; }
+.project-assistants .pa-memory-dreams header { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; font-weight:650; }
+.project-assistants .pa-memory-dreams small { color:var(--pa-dim); font-weight:400; }
+.project-assistants .pa-memory-dreams h4 { margin:12px 0 0; font-size:13px; }
+.project-assistants .pa-memory-dreams ul { padding-inline-start:18px; color:var(--pa-dim); font-size:13px; }
