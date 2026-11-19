@@ -263,3 +263,108 @@ func TestResourceAdmissionClientTimeoutDoesNotEraseTheServerRefusal(t *testing.T
 		t.Fatal(diagnostic)
 	}
 }
+
+func TestCompileHTTPReturnsQueuedWhileDiskPreparationContinues(t *testing.T) {
+	pane := shellPane(t.TempDir())
+	s, h, _, machine := wholeServer(t, pane, pane)
+	if err := s.broker.EnableTaskResources(); err != nil {
+		t.Fatal(err)
+	}
+	defer s.CloseTaskResources()
+	s.broker.AsyncResourceAdmission = true
+	s.broker.Resources.FreeSpace = func() (int64, error) { return 1 << 40, nil }
+	release := make(chan struct{})
+	released := false
+	s.broker.Resources.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
+		select {
+		case <-release:
+			return taskresource.Usage{Known: true}, nil
+		case <-c.Done():
+			return taskresource.Usage{}, c.Err()
+		}
+	}
+	server := httptest.NewServer(h)
+	defer server.Close()
+	id := uuid.NewString()
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	post := func(path, body string) *http.Response {
+		t.Helper()
+		r, _ := http.NewRequest("POST", server.URL+path, strings.NewReader(body))
+		r.Header.Set("X-Clawdline-Orchestrator", machine)
+		r.Header.Set("Content-Type", "application/json")
+		r.Host = "127.0.0.1:7757"
+		client := &http.Client{Timeout: time.Second}
+		out, err := client.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	begin := time.Now()
+	resp := post("/v1/orchestrator/leases", `{"resource":"heavy_compile","request_id":"`+id+`","holder":"synthetic HTTP preparation"}`)
+	var a contract.LeaseReply
+	err := json.NewDecoder(resp.Body).Decode(&a)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != 200 || a.State != "queued" || a.HoldReason != "storage_preparing" {
+		t.Fatal(a, resp.StatusCode, err)
+	}
+	t.Logf("queued HTTP response in %s while storage is blocked (client deadline 1s)", time.Since(begin))
+	// Cross the client's deadline with preparation still blocked. Closing that
+	// HTTP response must not cancel the durable waiter or background work.
+	time.Sleep(1100 * time.Millisecond)
+	close(release)
+	released = true
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		events, err := s.broker.Store.LatestEvents(context.Background(), "resource.preparation.finished", []string{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("request cancellation stopped accepted preparation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	resp = post("/v1/orchestrator/leases", `{"resource":"heavy_compile","request_id":"`+id+`","holder":"synthetic HTTP preparation"}`)
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil || a.State != "granted" {
+		t.Fatal(a, err)
+	}
+	t.Logf("prepared and granted after %s with the same request identity", time.Since(begin))
+	resp = post("/v1/orchestrator/leases/release", `{"resource":"heavy_compile","request_id":"`+id+`"}`)
+	resp.Body.Close()
+}
+
+func TestSharedGoAttachmentHTTPRequiresMachineAndClosedCallbackIdentity(t *testing.T) {
+	pane := shellPane(t.TempDir())
+	s, h, local, machine := wholeServer(t, pane, pane)
+	if err := s.broker.EnableTaskResources(); err != nil {
+		t.Fatal(err)
+	}
+	defer s.CloseTaskResources()
+	for _, test := range []struct {
+		token, body string
+		status      int
+	}{{local, `{"callback_task_id":"e9200000-0000-4000-8000-000000000001"}`, 403}, {machine, `{"callback_task_id":"e9200000-0000-4000-8000-000000000001","path":"/foreign"}`, 400}} {
+		req := httptest.NewRequest("POST", "/v1/orchestrator/resources/use-go", strings.NewReader(test.body))
+		req.Host = "127.0.0.1:7757"
+		req.Header.Set("Content-Type", "application/json")
+		if test.token == local {
+			req.Header.Set("Authorization", "Bearer "+test.token)
+		} else {
+			req.Header.Set("X-Clawdline-Orchestrator", test.token)
+		}
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, req)
+		if out.Code != test.status {
+			t.Fatal(out.Code, out.Body.String())
+		}
+	}
+}

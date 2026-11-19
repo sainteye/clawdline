@@ -13413,5 +13413,7 @@
   "botHandoff.changed": "交接稿已變更，請先查看目前的摘要再送出。",
   "botHandoff.unavailable": "來源目前無法確認交接，請查詢最新狀態。",
   "botHandoff.limit": "摘要超過訊息大小上限。",
-  "botHandoff.hide": "收起摘要"
+  "botHandoff.hide": "收起摘要",
+  "capacityRow.resources.ready_seconds.what": "磁碟準備結果最多保留 60 秒，且只能授權一次編譯租約。",
+  "capacityRow.resources.ready_seconds.full": "結果逾期後須重新準備；保留規則、資源配置、快取使用或 daemon 實例改變時也會失效。取得租約前仍會重新確認磁碟保留空間。"
 }

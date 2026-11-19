@@ -7,6 +7,9 @@ import (
 
 func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"resources.ready_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: taskresource.PreparationReadySecondsLimit, Note: "readiness expires and is consumed once; policy, allocation, use and service incarnation changes require fresh preparation"}
+		},
 		"resources.scratch_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, WindowSeconds: taskresource.ScratchRetentionSecondsLimit, Note: "per-completed-owner retention; presence and preservation are checked independently"}
 		},

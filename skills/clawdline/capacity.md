@@ -727,6 +727,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `resources.disk_reserve_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `resources.log_seconds` | 604800 | `seconds` | `rotate` | `diagnostics, sender` | — |
 | `resources.page_rows` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `resources.ready_seconds` | 60 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `resources.scan_files` | 262144 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.scratch_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |

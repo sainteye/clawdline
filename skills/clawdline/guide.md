@@ -1060,6 +1060,23 @@ All terminal scratch retains at least 24 hours; non-artifact raw logs retain 7 d
 
 Use `clawdline resources list [--after ID]` for one read-only page (at most 64 rows). `allocate --owner-kind task|root --owner-id UUID --class cache|scratch|execution_log` creates a new owned directory and returns its separate artifact path; it cannot adopt an existing path. For explicit Root resources, preserve files in that artifact path and keep a durable Session delivery before safely closing the exact Root executor. Missing completion or publication proof keeps its resources. A long-lived Root should use command-scoped callbacks for build caches rather than keeping one cache live until the Root closes. Existing Root assignment directories and Git worktrees are never deletion targets of this interface.
 
+From API 94, `clawdline resources use-go CALLBACK_UUID` attaches an already-running callback
+to its source-verified Project Go cache and prints its path. `tools/check.sh`
+automatically uses it for a callback's default cache when the installed CLI
+supports this capability. Explicit cache overrides and
+`CLAWDLINE_GO_CACHE_ISOLATED=1` stay isolated; ordinary tests still take no
+compile lease. Pure wait commands do not attach a shared consumer.
+
+Compile requests may return `queued` with `storage_preparing`. The durable waiter
+keeps its identity while the daemon prepares storage outside the short HTTP
+request. Repeated polls coalesce, cancellation never grants a late lease, and a
+restart requires a new service proof. Ready proofs expire after the registered
+60-second readiness window and are invalidated by resource/policy changes or a grant.
+No compilation starts before `granted`; an unconfirmed request does not authorize
+a command. Completed sources trigger guarded managed-resource reclamation
+independently of slow legacy checkout sweeps. Retention and output protections
+are unchanged.
+
 `resources publish UUID` seals only already-published, source-verified output; it cannot declare completion. `resources pin UUID` protects a resource (`--value=false` explicitly unpins with machine authority). To review and apply exact identities:
 
 `clawdline resources plan <resource UUID> > /path/to/reviewed-plan.json`
@@ -2447,8 +2464,9 @@ Build before taking `daemon_restart`. Never put `clawdline dev install` or anoth
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
 no memory stall above 10%), runs the command at a lower priority — on Linux also as the first
 thing the kernel kills if memory runs out — renews the lease while it runs and releases it after. It keeps the
-command's exit status. It never refuses to build for a missing daemon or a refusal it does not
-know: it runs the command anyway with a sentence on stderr. When `--max-wait` (default 30m) passes
+command's exit status. Once it selects a broker, an explicit refusal or an unconfirmed
+response does not run the command. Keep the request identity and inspect its receipt; a transport
+failure is not permission to compile. Standalone use without a selected broker remains available. When `--max-wait` (default 30m) passes
 before it has the slot and the memory, it gives up its place, does not run the command, and exits
 **75** — a code no command's own failure is mistaken for; run it again later. While it waits it
 prints one line when the wait starts and one when it ends, nothing in between: wait for it once,

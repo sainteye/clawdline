@@ -16,6 +16,7 @@ const (
 	DiskReserveBytesLimit        int64 = 2 << 30
 	PageRowsLimit                      = 64
 	FilesLimit                         = 262144
+	PreparationReadySecondsLimit       = 60
 )
 
 type Class string

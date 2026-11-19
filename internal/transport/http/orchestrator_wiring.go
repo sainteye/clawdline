@@ -294,8 +294,9 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return nextconfig.DefaultEffort(values, assistant)
 		},
 
-		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
-		ReclaimGrace: reclaimGrace(),
+		ReclaimAuto:            os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
+		AsyncResourceAdmission: true,
+		ReclaimGrace:           reclaimGrace(),
 	}
 }
 

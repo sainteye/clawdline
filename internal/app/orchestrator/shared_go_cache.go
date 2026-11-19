@@ -15,6 +15,10 @@ import (
 )
 
 func (b *Broker) prepareSharedGoCache(ctx context.Context, r Record) (Record, error) {
+	return b.attachSharedGoCache(ctx, r, true)
+}
+
+func (b *Broker) attachSharedGoCache(ctx context.Context, r Record, beforeStart bool) (Record, error) {
 	project := r.Repository
 	if project == "" {
 		project = r.ProjectDir
@@ -27,7 +31,7 @@ func (b *Broker) prepareSharedGoCache(ctx context.Context, r Record) (Record, er
 	err := b.Resources.UseSharedGo(ctx, ResourceOwnerScope(), project, func(resource taskresource.Resource, path string) error {
 		var err error
 		next, err = b.mutate(ctx, r.ID, "task.shared_go_cache_attached", func(x *Record) error {
-			if x.Callback == nil || x.State.Terminal() || !x.Callback.StartedAt.IsZero() {
+			if x.Callback == nil || x.State.Terminal() || (beforeStart && !x.Callback.StartedAt.IsZero()) {
 				return errors.New("resource_owner_already_started")
 			}
 			if x.Callback.GoCacheID != "" && (x.Callback.GoCacheID != resource.ID || x.Callback.GoCachePath != path) {
@@ -108,4 +112,43 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	}
 	out.EvidenceDigest = hex.EncodeToString(proofs.Sum(nil))
 	return out, nil
+}
+
+// UseCallbackGoCache lets trusted check tooling attach before its first Go
+// command. Scheduling intent does not decide whether compilation data is shared.
+// The source callback and canonical Project still own every consumer fact.
+func (b *Broker) UseCallbackGoCache(ctx context.Context, id string) (taskresources.Allocation, error) {
+	if b.Resources == nil {
+		return taskresources.Allocation{}, errors.New("resource_service_unavailable")
+	}
+	r, _, err := b.Record(ctx, id)
+	if err != nil {
+		return taskresources.Allocation{}, err
+	}
+	if r.Callback == nil || r.State.Terminal() || r.Callback.StartedAt.IsZero() {
+		return taskresources.Allocation{}, errors.New("resource_owner_not_allocatable")
+	}
+	if r.Callback.GoCacheID == "" {
+		r, err = b.attachSharedGoCache(ctx, r, false)
+		if err != nil {
+			return taskresources.Allocation{}, err
+		}
+	}
+	resource, err := b.Store.TaskResource(ctx, r.Callback.GoCacheID)
+	if err != nil {
+		return taskresources.Allocation{}, err
+	}
+	if err = b.Resources.FS.Verify(resource); err != nil {
+		return taskresources.Allocation{}, err
+	}
+	path := filepath.Join(b.Resources.FS.Path(), resource.ID, "go-build")
+	sourceProject := r.Repository
+	if sourceProject == "" {
+		sourceProject = r.ProjectDir
+	}
+	project, ok := projects.CanonicalProjectKey(sourceProject)
+	if !ok || resource.Owner.Kind != "shared_go" || resource.Owner.Project != project || r.Callback.GoCacheProject != project || r.Callback.GoCachePath != path || (resource.LastOutcome != "" && resource.LastOutcome != "kept") {
+		return taskresources.Allocation{}, errors.New("resource_shared_use_unverified")
+	}
+	return taskresources.Allocation{Resource: resource, Path: path, Artifacts: filepath.Join(r.Dir, "artifacts")}, nil
 }

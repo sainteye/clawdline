@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13413,
+  "englishKeys": 13415,
   "counts": {
     "negation": 3523,
-    "state": 2267,
+    "state": 2268,
     "permission": 813,
     "deletion": 314,
     "uncertainty": 552
   },
-  "unionCount": 5773,
+  "unionCount": 5774,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -4156,6 +4156,7 @@
       "capacityRow.resources.disk_reserve_bytes.what",
       "capacityRow.resources.log_seconds.full",
       "capacityRow.resources.page_rows.full",
+      "capacityRow.resources.ready_seconds.full",
       "capacityRow.resources.scratch_seconds.full",
       "capacityRow.resources.scratch_seconds.what",
       "capacityRow.resources.scratch_total_bytes.full",
@@ -8650,6 +8651,7 @@
     "capacityRow.resources.log_seconds.what",
     "capacityRow.resources.page_rows.full",
     "capacityRow.resources.page_rows.what",
+    "capacityRow.resources.ready_seconds.full",
     "capacityRow.resources.scan_files.full",
     "capacityRow.resources.scratch_seconds.full",
     "capacityRow.resources.scratch_seconds.what",

@@ -224,6 +224,7 @@ func (b *Broker) Reclaims(ctx context.Context) ([]store.Reclaim, error) {
 // for that would be reported stalled (DG-1) — and a stalled beat stops
 // settling everybody's tasks for the sake of a cleanup.
 func (b *Broker) reclaimDue(ctx context.Context) {
+	b.runManagedResourceCleanup(ctx)
 	if !b.ReclaimAuto {
 		return
 	}

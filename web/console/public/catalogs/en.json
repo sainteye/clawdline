@@ -13413,5 +13413,7 @@
   "botHandoff.changed": "This handoff changed. Check the current summary before sending.",
   "botHandoff.unavailable": "The source could not confirm the handoff. Check its current state.",
   "botHandoff.limit": "The summary exceeds the message size limit.",
-  "botHandoff.hide": "Hide summary"
+  "botHandoff.hide": "Hide summary",
+  "capacityRow.resources.ready_seconds.what": "A prepared storage result can authorize one compile grant for at most 60 seconds.",
+  "capacityRow.resources.ready_seconds.full": "Expired readiness requires fresh preparation. Policy, allocation, cache-use and daemon-incarnation changes invalidate it; the filesystem reserve is checked again before a grant."
 }

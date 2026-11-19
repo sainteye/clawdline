@@ -41,6 +41,10 @@ type Broker struct {
 	// Resources owns only newly allocated disposable directories. Legacy paths are never adopted.
 	Resources               *taskresources.Service
 	ResourceServiceRequired bool
+	// AsyncResourceAdmission keeps disk preparation outside short lease requests.
+	AsyncResourceAdmission bool
+	resourcePreparation    resourcePreparationState
+	managedCleanup         managedResourceCleanup
 	// AssistantAuthority is opt-in. Without a source-owned verifier and result
 	// sink, the typed Bot door is closed; ordinary Session doors are unchanged.
 	AssistantAuthority   *AssistantAuthority

@@ -3546,6 +3546,12 @@
     "Note": true
   },
   {
+    "Name": "resources.ready_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
     "Name": "resources.scan_files",
     "Known": true,
     "Note": true

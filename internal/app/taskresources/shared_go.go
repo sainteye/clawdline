@@ -34,6 +34,18 @@ func (s *Service) UseSharedGo(ctx context.Context, scope Scope, project string, 
 		if r.Owner != owner || r.Class != taskresource.Cache {
 			return fail("resource_identity_changed")
 		}
+		if r.LastOutcome == "removing" {
+			// An interrupted trim must not strand a verified shared cache until
+			// the next periodic sweep. Reconciliation preserves bytes and keeps
+			// another live handle's pending execution fenced.
+			if err := s.recoverResourceLocked(ctx, r); err != nil {
+				return err
+			}
+			r, err = s.Store.TaskResource(ctx, r.ID)
+			if err != nil {
+				return err
+			}
+		}
 		if r.LastOutcome != "" && r.LastOutcome != "kept" {
 			return fail("resource_cleanup_in_progress")
 		}
@@ -70,6 +82,7 @@ func (s *Service) UseSharedGo(ctx context.Context, scope Scope, project string, 
 	}
 	s.statsMu.Lock()
 	s.stats.Known = false
+	s.admissionRevision++
 	s.statsMu.Unlock()
 	return attach(selected, path)
 }

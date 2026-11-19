@@ -14030,6 +14030,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.ready_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.PreparationReadySecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "resources.scan_files",
     "Class": "buffer",
     "Unit": "rows",

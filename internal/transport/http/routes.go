@@ -38,7 +38,8 @@ import (
 // Session message board reply inboxes arrive at API 91.
 // Source-owned Bot server tools and exact local rules arrive at API 92.
 // Editable source-owned Bot handoffs and versioned input adoption arrive at API 93.
-const APILevel = 93
+// Machine-authenticated callback Project Go-cache attachment arrives at API 94.
+const APILevel = 94
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
