@@ -15,6 +15,7 @@ import { sessionsFact } from "../../cloud/unpaired-rows.js"
 import { machineSeenWord } from "../../cloud/machine-seen.js"
 import { OwnerDiagnostics } from "../../cloud/health-owner/OwnerDiagnostics.js"
 import { MachineAccess, cloudAccessSource } from "./MachineAccess.js"
+import { CloudMachineSetup } from "./CloudMachineSetup.js"
 import "./account-machines.css"
 
 /**
@@ -91,17 +92,19 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
   const roster = useSyncExternalStore(watchAccountMachines, () => accountRoster().status, () => accountRoster().status)
   const [rows, setRows] = useState<Row[] | null>(null)
   const [openID, setOpenID] = useState<string | null>(null)
+  const [cloudSetup, setCloudSetup] = useState(false)
   const [told, setTold] = useState<string | null>(null)
   const [, redraw] = useState(0)
 
   const load = useCallback(async () => {
     const reading = readAccountMachines()
-    if (!reading) return
+    if (!reading) return false
     try {
       const answer = await reading
       setRows(answer.machines as Row[])
+      return true
     } catch {
-      /* the next pass reads again; the rows on screen stay what they were */
+      return false // Keep the prior rows visible while the next read is pending.
     }
   }, [])
 
@@ -129,6 +132,11 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
 
   return (
     <div className="account-machines" data-tick={tick}>
+      <button className="am-ghost am-cloud-setup-entry" type="button" aria-haspopup="dialog" disabled={!manager} onClick={() => setCloudSetup(true)}>
+        <span aria-hidden="true">+</span> {nextWord("msSetupCloud")}
+      </button>
+      {shown && cloudSetup && manager && createPortal(<CloudMachineSetup machines={rows ?? []} refresh={load}
+        pair={id => { setCloudSetup(false); manager.pair(id) }} close={() => setCloudSetup(false)} />, document.body)}
       {accessSource && (
         <MachineAccess source={accessSource} picker={paired.length > 1 ? (
           <div className="access-chips" role="radiogroup" aria-label={nextWord("accessMachineLabel")}>

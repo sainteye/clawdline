@@ -218,3 +218,57 @@
 .access-group { display: grid; gap: 6px; margin-top: 12px; }
 .access-group-title { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
 .access-group-note { margin: 0 0 4px; }
+
+.am-cloud-setup-entry { justify-self:start; }
+.am-cloud-setup {
+  width:min(100% - 24px, 560px);
+  max-height:calc(100dvh - 32px);
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--card, #202023);
+  color:var(--ink, #f4f4f5);
+}
+.am-cloud-setup::backdrop { background:rgb(0 0 0 / 55%); }
+.am-cloud-setup-head,.am-cloud-setup-actions {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.am-cloud-setup-head,.am-cloud-setup-body { padding:16px; }
+.am-cloud-setup-head h2 { margin:0; font-size:17px; }
+.am-cloud-setup a { color:var(--accent); }
+.am-cloud-providers {
+  display:grid;
+  gap:8px;
+  min-width:0;
+  margin:0;
+  padding:0;
+  border:0;
+}
+.am-cloud-providers legend { margin-bottom:10px; }
+.am-cloud-provider {
+  display:grid;
+  gap:5px;
+  text-align:left;
+  color:inherit;
+  background:transparent;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px 13px;
+  cursor:pointer;
+}
+.am-cloud-provider span { color:var(--dim, #a1a1aa); font-size:13px; }
+.am-cloud-setup-steps { margin:12px 0 0; padding-inline-start:20px; }
+.am-cloud-setup-steps li { padding-block:7px; }
+.am-cloud-setup-steps h3,.am-cloud-setup-steps p { margin:0 0 8px; }
+.am-cloud-setup-steps h3 { font-size:14px; }
+.am-cloud-setup-steps p { font-size:13px; }
+.am-cloud-setup-steps pre { overflow-x:auto; padding:8px; border-radius:7px; background:var(--bg, #151518); }
+.am-cloud-setup-steps select { display:block; width:100%; min-height:44px; margin:6px 0; }
+.am-cloud-enrollment { display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px; margin-block:10px; }
+.am-cloud-enrollment label { display:grid; gap:4px; }
+.am-cloud-enrollment input { min-height:42px; padding:0 8px; max-width:100%; }
+.am-cloud-enrollment p { flex-basis:100%; }
