@@ -625,6 +625,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const availableBoardTargets = sessionBoardTargets ?? (boardSource ? [{
     source: boardSource, machine: fleetReaderMachine ?? undefined, label: quotaMachineName ?? "",
     candidates: rows.flatMap(row => {
+      if (row.source && row.source.freshness !== "current") return []
       const actor = sessionBoardActor(row.assistant, row.sessionId, detailSessionName(row), row.persona, row.icon)
       return actor ? [actor] : []
     }),

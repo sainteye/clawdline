@@ -8,7 +8,7 @@ func sessionBounds() []Entry {
 	return []Entry{
 		{Name: "session.message_board_boards", Class: Buffer, Unit: Rows, Limit: sb.MaxBoards, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxBoards"}},
 		{Name: "session.message_board_members", Class: Buffer, Unit: Rows, Limit: sb.MaxMembers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxMembers"}},
-		{Name: "session.message_board_posts", Class: Buffer, Unit: Rows, Limit: sb.MaxPosts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxPosts"}},
+		{Name: "session.message_board_posts", Class: UserInput, Unit: Rows, Limit: sb.MaxPosts, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/sessionboard.MaxPosts"}},
 		{Name: "session.message_board_page", Class: Buffer, Unit: Rows, Limit: sb.MaxPageRows, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/sessionboard.MaxPageRows"}},
 		{Name: "session.message_board_name_bytes", Class: Buffer, Unit: Bytes, Limit: sb.MaxName, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxName"}},
 		{Name: "session.message_board_text_bytes", Class: Buffer, Unit: Bytes, Limit: sb.MaxText, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/sessionboard.MaxText"}},

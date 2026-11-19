@@ -14527,17 +14527,16 @@
   {
     "Register": "daemon",
     "Name": "session.message_board_posts",
-    "Class": "buffer",
+    "Class": "user_input",
     "Unit": "rows",
     "Limit": 512,
     "WarnAt": 0,
-    "AtLimit": "refuse",
+    "AtLimit": "evict_oldest",
     "Deviation": "",
     "Told": [
-      "diagnostics",
-      "sender"
+      "diagnostics"
     ],
-    "EvictedBy": "person",
+    "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [

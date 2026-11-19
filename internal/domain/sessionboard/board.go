@@ -12,7 +12,7 @@ import (
 const (
 	MaxBoards      = 32
 	MaxMembers     = 24
-	MaxPosts       = 512
+	MaxPosts       = 512 // retained posts per board
 	MaxPageRows    = 24
 	MaxName        = 120
 	MaxText        = 4000 // bytes, including UTF-8 encoding
@@ -21,12 +21,13 @@ const (
 )
 
 var (
-	ErrInvalid = errors.New("session_board_invalid")
-	ErrMissing = errors.New("session_board_not_found")
-	ErrClosed  = errors.New("session_board_closed")
-	ErrDenied  = errors.New("session_board_denied")
-	ErrFull    = errors.New("session_board_full")
-	ErrReplay  = errors.New("session_board_key_reused")
+	ErrInvalid     = errors.New("session_board_invalid")
+	ErrMissing     = errors.New("session_board_not_found")
+	ErrClosed      = errors.New("session_board_closed")
+	ErrDenied      = errors.New("session_board_denied")
+	ErrFull        = errors.New("session_board_full")
+	ErrReplay      = errors.New("session_board_key_reused")
+	ErrPostExpired = errors.New("session_board_post_expired")
 )
 
 // Presence describes the current Session list. It is computed for the roster

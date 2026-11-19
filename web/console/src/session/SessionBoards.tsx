@@ -83,6 +83,7 @@ function writeProblem(code: string): string {
   switch (code) {
     case "session_board_closed": return t("sessionBoardArchived")
     case "session_board_full": return t("sessionBoardFull")
+    case "session_board_post_expired": return t("sessionBoardPostExpired")
     case "session_board_denied": return t("sessionBoardDenied")
     case "session_board_invalid": return t("sessionBoardInvalid")
     default: return t("sessionBoardWriteError")

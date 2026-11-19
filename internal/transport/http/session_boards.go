@@ -202,7 +202,7 @@ func sessionBoardCursor(q url.Values, field string) (int64, bool) {
 		return 0, true
 	}
 	n, err := strconv.ParseInt(q.Get(field), 10, 64)
-	return n, err == nil && n > 0 && n <= sb.MaxPosts+1
+	return n, err == nil && n > 0
 }
 
 func (s *Server) sessionBoardInbox(w http.ResponseWriter, r *http.Request) {
@@ -405,6 +405,8 @@ func writeSessionBoardError(w http.ResponseWriter, err error) {
 		writeRefusal(w, http.StatusConflict, sb.ErrClosed.Error(), "This message board is archived.")
 	case errors.Is(err, sb.ErrFull):
 		writeRefusal(w, http.StatusConflict, sb.ErrFull.Error(), "The message board reached its storage limit.")
+	case errors.Is(err, sb.ErrPostExpired):
+		writeRefusal(w, http.StatusConflict, sb.ErrPostExpired.Error(), "The post for this request is outside the message board’s retention window.")
 	case errors.Is(err, sb.ErrReplay):
 		writeRefusal(w, http.StatusConflict, sb.ErrReplay.Error(), "This request key already belongs to different content.")
 	case errors.Is(err, store.ErrBusy):

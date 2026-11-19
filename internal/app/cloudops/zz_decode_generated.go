@@ -5324,10 +5324,10 @@ func genDecodeSessionBoardsInbox(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("after", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+	if !b.genValid("after", genRule{kind: "integer", min: genInt(1)}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("before", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+	if !b.genValid("before", genRule{kind: "integer", min: genInt(1)}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("board", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
@@ -5357,10 +5357,10 @@ func genDecodeSessionBoardsRead(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("after", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+	if !b.genValid("after", genRule{kind: "integer", min: genInt(1)}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("before", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+	if !b.genValid("before", genRule{kind: "integer", min: genInt(1)}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("board", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {

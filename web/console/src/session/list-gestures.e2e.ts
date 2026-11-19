@@ -79,7 +79,7 @@ const shortBoardPurpose = "Review the Session console"
 let boardPurpose = shortBoardPurpose
 let boardTreeFixture = false
 let boardReviewerLeft = false
-let firstBoardFixture: "empty" | "no-sessions" | "archived" | undefined
+let firstBoardFixture: "empty" | "archived" | undefined
 let createdBoardFixture: { name: string; text: string; target: string } | undefined
 let failBoardIndex = false
 let boardReviewerTitle = "Reviewer"
@@ -399,7 +399,7 @@ function snapshot() {
       ] : [],
     },
     // The daemon's own answer moves; the page's order is the page's business.
-    sessions: firstBoardFixture === "no-sessions" ? [] : rows(),
+    sessions: rows(),
   }
 }
 
@@ -1810,8 +1810,7 @@ test("Session message board index distinguishes a failed read, an empty archive,
       failBoardIndex = false
       await tab.press(dialog + " .session-board-index-actions button")
       const archived = dialog + " .session-board-archived"
-      await shortcutUntil(tab, `!!document.querySelector('${archived}')`)
-      assert.equal(await tab.run(`document.querySelector('${dialog} .session-board-empty h3').textContent`), "目前沒有使用中的留言板")
+      await shortcutUntil(tab, `document.querySelector('${dialog} .session-board-empty h3')?.textContent === "目前沒有使用中的留言板"`)
       assert.equal(await tab.run(`document.querySelector('${dialog} .session-board-empty button').textContent`), "建立留言板")
       assert.equal(await tab.run(`document.querySelector('${archived}').open`), false)
       await tab.press(archived + " summary")
@@ -1820,10 +1819,11 @@ test("Session message board index distinguishes a failed read, an empty archive,
       await shortcutUntil(tab, `!document.querySelector('${dialog} .loading-skeleton')`)
       assert.equal(await tab.run(`!!document.querySelector('${dialog} textarea')`), false)
     })
-    firstBoardFixture = "no-sessions"
+    firstBoardFixture = "empty"
+    readingScenario = "five"
     await inTab(async tab => {
       await tab.go("/")
-      await shortcutUntil(tab, '!!document.querySelector(".session-board-dock")')
+      await shortcutUntil(tab, '!!document.querySelector("#rows .row") && !!document.querySelector(".session-board-dock")')
       await tab.press(".session-board-dock")
       const empty = ".session-board-dialog[open] .session-board-empty"
       await shortcutUntil(tab, `document.querySelector('${empty}')?.textContent.includes("先開啟一個 Session")`)
@@ -1832,6 +1832,7 @@ test("Session message board index distinguishes a failed read, an empty archive,
   } finally {
     boardFixture = failBoardIndex = false
     firstBoardFixture = undefined
+    readingScenario = "normal"
   }
 })
 

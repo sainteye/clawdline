@@ -752,7 +752,7 @@
 | `session.message_board_members` | 24 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `session.message_board_name_bytes` | 120 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.message_board_page` | 24 | `rows` | `coalesce` | `diagnostics, sender` | — |
-| `session.message_board_posts` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `session.message_board_posts` | 512 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `session.message_board_text_bytes` | 4000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `session.no_movement_seconds` | 1800 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `session.patch_detail_lines` | 18 | `rows` | `evict_oldest` | `diagnostics, sender` | — |

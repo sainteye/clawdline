@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -107,6 +108,12 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	if !ok || len(posts) != 1 {
 		t.Fatalf("duplicated or missing comments: %v", p)
 	}
+	for seq := 2; seq <= sb.MaxPosts+1; seq++ {
+		if _, err := f.server.store.ChangeSessionBoard(t.Context(), f.place, lead, sb.Actor{},
+			sb.Command{Action: "post", Board: result.ID, Text: "Earlier discussion"}, fmt.Sprintf("earlier-%d", seq), now); err != nil {
+			t.Fatalf("seed post %d: %v", seq, err)
+		}
+	}
 	original, err := f.server.store.ChangeSessionBoard(t.Context(), f.place, lead, sb.Actor{},
 		sb.Command{Action: "post", Board: result.ID, Text: "From the Session"}, "lead-post", now)
 	if err != nil {
@@ -114,14 +121,14 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	}
 	post["request"] = "board-reply"
 	post["command"] = map[string]any{"action": "post", "board": result.ID, "text": "Reply from the browser", "reply_to": original.Seq}
-	answer, _ = f.ask(t, 13, post)
-	if !answer.OK() {
+	answer, p = f.ask(t, 13, post)
+	if !answer.OK() || bodyOf(t, p)["seq"] != float64(original.Seq+1) {
 		t.Fatalf("reply: %d %s", answer.Status, answer.Payload)
 	}
 	f.bridge.AllowCommands = func() bool { return false }
 	answer, p = f.ask(t, 14, map[string]any{
 		"type": "session-boards.inbox", "session": cloudops.MachineReplySession, "request": "inbox",
-		"board": result.ID, "member": lead.ID,
+		"board": result.ID, "member": lead.ID, "before": original.Seq + 2,
 	})
 	if !answer.OK() {
 		t.Fatalf("read-only inbox: %d %s", answer.Status, answer.Payload)
@@ -134,6 +141,17 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	answer, _ = f.ask(t, 15, post)
 	if answer.OK() {
 		t.Fatal("disabled Cloud write admitted a post")
+	}
+	answer, p = f.ask(t, 16, map[string]any{
+		"type": "session-boards.read", "session": cloudops.MachineReplySession,
+		"request": "board-tail", "board": result.ID, "after": original.Seq,
+	})
+	if !answer.OK() {
+		t.Fatalf("read after #%d: %d %s", original.Seq, answer.Status, answer.Payload)
+	}
+	posts, ok = bodyOf(t, p)["posts"].([]any)
+	if !ok || len(posts) != 1 || posts[0].(map[string]any)["seq"] != float64(original.Seq+1) {
+		t.Fatalf("wrong board tail: %v", p)
 	}
 }
 
