@@ -82,6 +82,59 @@ test("explicit output reads keep their captured scope and distinct Cloud word be
   for(const offset of ["-1","1.5","104857601"]){const url=new URL(paths[0],"http://source.invalid");url.searchParams.set("offset",offset);assert.throws(()=>assistantRelayRequest(url.pathname+url.search),e=>errorCode(e)==="pa_invalid")}
 })
 const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:60,paired:true,online:true,writable:true})
+test("server relay routes carry six known-handle operations with exact request identity", () => {
+  const key = {machine_id:"one",bot_id:"bot-one"}
+  const request:W.ProjectAssistantDevServerControlRequest = {key,id:"server-one",fingerprint:"f".repeat(64),attempt:"attempt-one",revision:2,idempotency_key:"stable-server-control"}
+  const path = "/v1/project-assistants/bot-one/dev-servers"
+  assert.deepEqual(assistantRelayRequest(path+"?machine_id=one"),{word:"project-assistants.dev-servers",kind:"read",fields:{key},id:""})
+  assert.deepEqual(assistantRelayRequest(path+"/server-one/logs?machine_id=one"),{word:"project-assistants.dev-server-logs",kind:"read",fields:{key,id:request.id},id:""})
+  const init = {method:"POST",body:JSON.stringify(request),headers:{"Idempotency-Key":request.idempotency_key}}
+  for (const action of ["start","restart","stop","remove"]) {
+    assert.deepEqual(assistantRelayRequest(path+"/server-one/"+action,init),{word:"project-assistants.dev-server-"+action,kind:"action",fields:request,id:request.idempotency_key})
+  }
+  for (const suffix of ["?machine_id=one&machine_id=two","?machine_id=one&command=run"]) {
+    assert.throws(()=>assistantRelayRequest(path+suffix),e=>errorCode(e)==="pa_invalid")
+  }
+  assert.throws(()=>assistantRelayRequest(path+"/foreign/stop",init),e=>errorCode(e)==="pa_invalid")
+  assert.throws(()=>assistantRelayRequest(path+"/server-one/stop",{...init,headers:{"Idempotency-Key":"other"}}),e=>errorCode(e)==="pa_invalid")
+  assert.throws(()=>assistantRelayRequest(path+"/server-one/stop",{...init,body:"{"}),e=>errorCode(e)==="pa_invalid")
+  for (const extra of [{command:"run"},{env:{}},{pid:42},{approval:true}]) {
+    assert.throws(()=>assistantRelayRequest(path+"/server-one/start",{...init,body:JSON.stringify({...request,...extra})}),e=>errorCode(e)==="pa_invalid")
+  }
+})
+
+test("captured server relay keeps paired source authority and never repeats an unknown control", async () => {
+  const key = {machine_id:"one",bot_id:"bot-one"}
+  const names = ["status","dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove"].map(word=>"project-assistants."+word)
+  const calls:{machine:string;word:string;body:Record<string,unknown>;ref?:string}[]=[]
+  let loseReply=false
+  const connection={
+    machineDescriptor:()=>({machine:{commands:names}}),
+    async _machineRequest(machine:string,word:string,body:Record<string,unknown>){calls.push({machine,word,body});return word.endsWith(".status")?sourceStatus():{contract_version:"project-assistants.v1",servers:[]}},
+    async _machineRequestAs(ref:string,machine:string,word:string,body:Record<string,unknown>){calls.push({machine,word,body,ref});if(loseReply)throw new Error("synthetic lost response");return {contract_version:"project-assistants.v1",servers:[]}},
+  }
+  const transport=capturedAssistantRelayFetch("one",()=>connection,names)
+  const source=make(transport,{...grant(),apiLevel:92}).source
+  await source.status(signal())
+  await source.devServers(key,signal())
+  await source.devServerLogs(key,"server-one",signal())
+  const request:W.ProjectAssistantDevServerControlRequest={key,id:"server-one",fingerprint:"f".repeat(64),attempt:"attempt-one",revision:2,idempotency_key:"stable-server"}
+  for(const action of ["start","restart","stop","remove"] as const)await source.controlDevServer(action,{...request,idempotency_key:"stable-"+action},signal())
+  assert.deepEqual(calls.map(call=>call.word),names)
+  assert.ok(calls.every(call=>call.machine==="one"))
+  assert.deepEqual(calls.slice(3).map(call=>call.ref),["stable-start","stable-restart","stable-stop","stable-remove"])
+  const before=calls.length
+  assert.throws(()=>source.devServers({...key,machine_id:"two"},signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.equal(calls.length,before)
+  loseReply=true
+  await assert.rejects(source.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_outcome_unknown")
+  assert.equal(calls.length,before+1)
+  const reader=make(transport,{...grant(),apiLevel:92,writable:false}).source
+  await reader.status(signal());await reader.devServers(key,signal())
+  const readCount=calls.length
+  await assert.rejects(reader.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_read_only")
+  assert.equal(calls.length,readCount)
+})
 const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[],dev_servers_supported:true}]})
 const viewWire=():W.ProjectAssistantReadViewResponse=>{
   const project:W.ProjectAssistantProjectScope={machine_id:"one",project_id:"project",canonical_id:"canonical",kind:"repository"}
@@ -385,7 +438,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -896,7 +949,7 @@ test("known server controls keep source identity and refuse old or foreign sourc
   await assert.rejects(old.devServerLogs(key,request.id,signal()),e=>errorCode(e)==="pa_unsupported")
   await assert.rejects(old.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_unsupported")
   assert.throws(()=>source.devServers({...key,machine_id:"foreign"},signal()),e=>errorCode(e)==="pa_scope_denied")
-  assert.throws(()=>assistantRelayRequest(sent[0].path),e=>errorCode(e)==="pa_invalid")
+  assert.throws(()=>assistantRelayRequest("/v1/project-assistants/bot/dev-servers",{method:"POST",body:JSON.stringify({command:"must never execute"})}),e=>errorCode(e)==="pa_invalid")
   assert.equal(calls,0)
 })
 

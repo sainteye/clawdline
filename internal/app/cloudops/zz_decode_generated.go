@@ -105,6 +105,12 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.connector-secret":      genDecodeProjectAssistantsConnectorSecret,
 	"project-assistants.create":                genDecodeProjectAssistantsCreate,
 	"project-assistants.delete":                genDecodeProjectAssistantsDelete,
+	"project-assistants.dev-server-logs":       genDecodeProjectAssistantsDevServerLogs,
+	"project-assistants.dev-server-remove":     genDecodeProjectAssistantsDevServerRemove,
+	"project-assistants.dev-server-restart":    genDecodeProjectAssistantsDevServerRestart,
+	"project-assistants.dev-server-start":      genDecodeProjectAssistantsDevServerStart,
+	"project-assistants.dev-server-stop":       genDecodeProjectAssistantsDevServerStop,
+	"project-assistants.dev-servers":           genDecodeProjectAssistantsDevServers,
 	"project-assistants.edit":                  genDecodeProjectAssistantsEdit,
 	"project-assistants.events":                genDecodeProjectAssistantsEvents,
 	"project-assistants.export":                genDecodeProjectAssistantsExport,
@@ -2730,6 +2736,207 @@ func genDecodeProjectAssistantsDelete(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServerLogs is the `project-assistants.dev-server-logs` row's decode.
+func genDecodeProjectAssistantsDevServerLogs(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "key", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers/" + segment(genText(b["id"])) + "/logs"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "key.machine_id"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServerRemove is the `project-assistants.dev-server-remove` row's decode.
+func genDecodeProjectAssistantsDevServerRemove(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "attempt", "fingerprint", "id", "idempotency_key", "key", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("attempt", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fingerprint", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers/" + segment(genText(b["id"])) + "/remove"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"attempt": genValue{from: "attempt"}, "fingerprint": genValue{from: "fingerprint"}, "id": genValue{from: "id"}, "idempotency_key": genValue{from: "idempotency_key"}, "key": genValue{from: "key"}, "revision": genValue{from: "revision"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServerRestart is the `project-assistants.dev-server-restart` row's decode.
+func genDecodeProjectAssistantsDevServerRestart(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "attempt", "fingerprint", "id", "idempotency_key", "key", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("attempt", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fingerprint", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers/" + segment(genText(b["id"])) + "/restart"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"attempt": genValue{from: "attempt"}, "fingerprint": genValue{from: "fingerprint"}, "id": genValue{from: "id"}, "idempotency_key": genValue{from: "idempotency_key"}, "key": genValue{from: "key"}, "revision": genValue{from: "revision"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServerStart is the `project-assistants.dev-server-start` row's decode.
+func genDecodeProjectAssistantsDevServerStart(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "attempt", "fingerprint", "id", "idempotency_key", "key", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("attempt", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fingerprint", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers/" + segment(genText(b["id"])) + "/start"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"attempt": genValue{from: "attempt"}, "fingerprint": genValue{from: "fingerprint"}, "id": genValue{from: "id"}, "idempotency_key": genValue{from: "idempotency_key"}, "key": genValue{from: "key"}, "revision": genValue{from: "revision"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServerStop is the `project-assistants.dev-server-stop` row's decode.
+func genDecodeProjectAssistantsDevServerStop(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "attempt", "fingerprint", "id", "idempotency_key", "key", "request", "revision", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("attempt", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("fingerprint", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("revision", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers/" + segment(genText(b["id"])) + "/stop"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"attempt": genValue{from: "attempt"}, "fingerprint": genValue{from: "fingerprint"}, "id": genValue{from: "id"}, "idempotency_key": genValue{from: "idempotency_key"}, "key": genValue{from: "key"}, "revision": genValue{from: "revision"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsDevServers is the `project-assistants.dev-servers` row's decode.
+func genDecodeProjectAssistantsDevServers(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "key", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/dev-servers"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "key.machine_id"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

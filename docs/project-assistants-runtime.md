@@ -364,8 +364,9 @@ person's next message as before.
 This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
 against the pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 The table tracks subsequent source construction as well as that original
-baseline; its API 92 server row describes the current candidate, not the older
-893 build. It is not a production UI or installed-binary acceptance receipt.
+baseline; the API 92 server and API 93 handoff rows describe the current
+candidate, not the older 893 build. It is not a production UI or
+installed-binary acceptance receipt.
 
 Templates (`project-assistants-templates.md`), message reactions, pinned/Project
 roster sections and mark-all-read already have implementations. They must not
@@ -374,10 +375,10 @@ contains other features. Current source boundaries are:
 
 | Behavior | Existing source | Remaining construction and verification |
 | --- | --- | --- |
-| Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
-| Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
-| Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
+| Editable handoff card | API 93 stores an editable source-owned draft, Keep action and atomic adoption by the next input. SQLite and synthetic HTTP/browser checks cover stale edits, lost replies and API 90–92 fallback. Pending draft reads block calls; only an explicit pre-admission handoff refusal releases the call journal. | Installed and production Cloud acceptance remain separate. Original history stays readable. A fresh handoff can retain the physical history directory, so its read-only maintenance gate must still run before deciding whether to resume. |
+| Continuous Bot call | `BotCall.tsx` binds call IDs, input and replies to the chosen source/Bot/conversation. Synthetic Chromium checks cover playback, mute/interruption, explicit end, permission waits, source changes and unknown results without replay. Existing draft dictation remains available. | Installed and production Cloud acceptance remain pending. Synthetic audio does not qualify microphone recognition or voice quality. On-device recognition requires an installed language pack, and playback requires a local voice; there is no automatic remote speech fallback. |
+| Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. Captured Cloud routing adds two reads and four known-handle controls. The existing Project devstack route stays read/probe only. | Paired viewer/workerd/source acceptance, durable clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Durable native maintenance | Isolated qualification owns intent/terminal/unknown receipts. Read-only detached-history gates survive disable/enable and protect pending or unknown histories before fresh handoff and resume. | Production provider, verified idle admission, retention and trusted rollback qualification remain separate construction. Do not infer completion from lower token usage or send maintenance as ordinary chat. The production writer stays disabled; reader/recovery qualification must precede any writer release. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
 `docs/features/voice-call.md`, `host/tests/calls_e2e.rs` and
@@ -567,8 +568,33 @@ qualify an installed vendor, production Cloud/UI, physical recovery after Host
 crash, machine reboot or updater rollback. The details component has isolated
 desktop/mobile browser evidence, not installed or production Cloud acceptance.
 The later port-response and selected-chat sections implement owned port reads.
-New-control Cloud carriage and durable clean-restart intent still require
-construction.
+The captured Cloud mapping below completes the public operation vocabulary.
+Durable clean-restart intent still requires construction.
+
+### Captured Cloud server controls
+
+`assistantRelayRequest` maps the existing API 92 routes to
+`project-assistants.dev-servers`, `dev-server-logs`, and the four
+`dev-server-start`, `dev-server-restart`, `dev-server-stop` and
+`dev-server-remove` actions. Reads retain the captured machine/Bot key and
+known server ID. Actions retain the complete key, server ID, fingerprint,
+attempt, receipt revision and stable idempotency key. A closed body rejects
+new commands, environment variables, PIDs or client-supplied approval.
+
+The SourceClient still requires API 92 or later, the source's explicit fresh
+support signal, and current paired read/write authority. The existing encrypted
+connection checks its advertised words and preserves the write reference.
+An authenticated person's explicit known-handle start is the existing source
+Allow-once path; it cannot override a saved source deny. Source CAS, Forget
+and revocation checks remain in the Host. An uncertain transport response
+does not trigger another control call.
+
+The public Bridge/Router and real paired HTTP/Host/SQLite tests cover readable
+metadata, read-only write refusal, stale CAS, saved deny and revocation without
+opening a native provider. They do not exercise a production Relay. A paired
+browser through real workerd to the source, including Forget and lost replies,
+remains a distinct acceptance step. The private Relay's generic encrypted
+carriage does not by itself establish that six-operation acceptance.
 
 Source list/start/stop responses now carry `ports_known` and `ports`, bound to
 that exact definition, attempt and receipt revision. The optional process

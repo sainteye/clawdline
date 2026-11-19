@@ -553,6 +553,28 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   if (!match) throw failure("pa_invalid")
   const bot = match[1] ? decodeURIComponent(match[1]) : "", tail = match[2]
   const q = Object.fromEntries(url.searchParams)
+  const server = /^\/dev-servers(?:\/([^/]+)\/(logs|start|restart|stop|remove))?$/.exec(tail)
+  if (server) {
+    const id = server[1] ? decodeURIComponent(server[1]) : "", action = server[2]
+    if (!bot) throw failure("pa_invalid")
+    if (method === "GET") {
+      if (init?.body != null || url.searchParams.size !== 1 || !q.machine_id || (id && action !== "logs")) throw failure("pa_invalid")
+      const key = {machine_id:q.machine_id,bot_id:bot}
+      return id ? {word:"project-assistants.dev-server-logs",kind:"read" as const,fields:{key,id},id:""} :
+        {word:"project-assistants.dev-servers",kind:"read" as const,fields:{key},id:""}
+    }
+    if (method !== "POST" || !id || action === "logs" || url.search || typeof init?.body !== "string") throw failure("pa_invalid")
+    let fields
+    try { fields = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
+    const names = ["key","id","fingerprint","attempt","revision","idempotency_key"]
+    if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length ||
+      names.some(name=>!Object.hasOwn(fields,name)) || !fields.key || typeof fields.key !== "object" || Array.isArray(fields.key) ||
+      Object.keys(fields.key).length !== 2 || typeof fields.key.machine_id !== "string" || !fields.key.machine_id || fields.key.bot_id !== bot || fields.id !== id ||
+      typeof fields.fingerprint !== "string" || !/^[0-9a-fA-F]{64}$/.test(fields.fingerprint) || typeof fields.attempt !== "string" ||
+      !Number.isSafeInteger(fields.revision) || fields.revision < 0 || typeof fields.idempotency_key !== "string" || !fields.idempotency_key ||
+      new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key) throw failure("pa_invalid")
+    return {word:"project-assistants.dev-server-"+action,kind:"action" as const,fields:fields as Record<string,unknown>,id:fields.idempotency_key as string}
+  }
   if (method === "GET") {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}

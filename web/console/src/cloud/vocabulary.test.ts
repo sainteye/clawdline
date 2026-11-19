@@ -28,7 +28,7 @@ interface Row {
   example: Record<string,unknown>
   shapes: {path:string;query?:string[]}[]
   local?: {method:string}
-  decode?:{route?:{query?:Record<string,{from:string}>}}
+  decode?:{route?:{query?:Record<string,{from:string}>;headers?:Record<string,{from:string}>}}
 }
 
 function rows(): Row[] {
@@ -68,7 +68,9 @@ test("every carried row's console route is parsed as its word", () => {
         const example = row.example
         const lookup = (path:string) => path.split(".").reduce<unknown>((value,key) => (value as Record<string,unknown>)[key],example)
         let path = row.shapes[0].path.replace(/\{([^}]+)\}/g,(_match,field:string) => encodeURIComponent(String(lookup(field))))
-        const command = example.command as {key:{machine_id:string};idempotency_key:string} | undefined
+        const reference = row.decode?.route?.headers?.["Idempotency-Key"]?.from
+        const id = reference ? lookup(reference) : undefined
+        assert.ok(id === undefined || typeof id === "string",`${row.op}: declared stable command ref`)
         const key = example.key as {machine_id:string} | undefined
         const query = new URLSearchParams((row.shapes[0].query ?? []).map(field => {
           const from=row.decode?.route?.query?.[field]?.from
@@ -77,10 +79,10 @@ test("every carried row's console route is parsed as its word", () => {
         if (query.size) path += "?"+query
         const {session:_session,request:_request,...fields} = example
         const method = row.local!.method
-        const parsed = assistantRelayRequest(path,{method,...(command ? {body:JSON.stringify(fields),headers:{"Idempotency-Key":command.idempotency_key}} : {})})
+        const parsed = assistantRelayRequest(path,{method,...(method !== "GET" ? {body:JSON.stringify(fields),...(id ? {headers:{"Idempotency-Key":id as string}} : {})} : {})})
         assert.equal(parsed.word,row.op,`${row.op}: captured source parser`)
         assert.deepEqual(parsed.fields,fields,`${row.op}: complete request fields`)
-        assert.equal(parsed.id,command?.idempotency_key ?? "",`${row.op}: stable command ref`)
+        assert.equal(parsed.id,id ?? "",`${row.op}: stable command ref`)
       }
       continue
     }

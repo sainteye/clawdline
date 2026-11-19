@@ -117,7 +117,7 @@ func projectAssistantOperationCases() []operationCase {
 		c.body = body
 		out = append(out, c)
 	}
-	return append(out, projectAssistantGroupOperationCases()...)
+	return append(append(out, projectAssistantGroupOperationCases()...), projectAssistantServerOperationCases()...)
 }
 
 func (f projectAssistantRouter) Do(ctx context.Context, req LocalRequest) (LocalResponse, error) {
@@ -136,7 +136,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 61 {
+	if len(out) != 67 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -315,7 +315,7 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 			extra := cloneBody(base)
 			extra["principal"] = "forged"
 			mutations = append(mutations, extra)
-			if row.Kind == cloudvocab.Command {
+			if row.Kind == cloudvocab.Command && base["command"] != nil {
 				for _, path := range []string{"command.key.bot_id", "command.operation", "command.idempotency_key", "command.key.machine_id"} {
 					changed := cloneBody(base)
 					setProjectAssistantField(changed, path, "wrong")
@@ -336,7 +336,23 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				changed["command"].(map[string]any)["credential"] = "forged"
 				mutations = append(mutations, changed)
 			}
-			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version", "handoff.revision", "ref.revision"} {
+			if strings.HasPrefix(row.Op, "project-assistants.dev-server") {
+				changed := cloneBody(base)
+				setProjectAssistantField(changed, "key.bot_id", "../other")
+				mutations = append(mutations, changed)
+				changed = cloneBody(base)
+				changed["key"].(map[string]any)["credential"] = "forged"
+				mutations = append(mutations, changed)
+				if row.Kind == cloudvocab.Command {
+					changed = cloneBody(base)
+					changed["idempotency_key"] = "wrong"
+					mutations = append(mutations, changed)
+				}
+			}
+			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version", "handoff.revision", "ref.revision"} {
+				if path == "revision" && !strings.HasPrefix(row.Op, "project-assistants.dev-server-") {
+					continue // Memory-view revision is an opaque string, not this CAS integer.
+				}
 				if _, present := base.genLookup(path); !present {
 					continue
 				}
@@ -667,4 +683,44 @@ func TestProjectAssistantAttachmentReplyIntegrityAndCapacity(t *testing.T) {
 			t.Fatal("oversized base64 reply published")
 		}
 	}
+}
+
+// The server API uses source-owned handles and a top-level idempotency key,
+// rather than an Agent command that can supply a new executable.
+func projectAssistantServerOperationCases() []operationCase {
+	key := map[string]any{"machine_id": "mac-01", "bot_id": "bot"}
+	rows := []operationCase{}
+	for _, action := range []string{"list", "logs", "start", "restart", "stop", "remove"} {
+		word, method, path := "dev-server-"+action, "POST", "/v1/project-assistants/bot/dev-servers/server/"+action
+		fields := map[string]any{"key": key, "id": "server"}
+		query := map[string]string(nil)
+		if action == "list" || action == "logs" {
+			method = "GET"
+			query = map[string]string{"machine_id": "mac-01"}
+			if action == "list" {
+				word = "dev-servers"
+				path = "/v1/project-assistants/bot/dev-servers"
+				delete(fields, "id")
+			}
+		} else {
+			fields["fingerprint"] = strings.Repeat("f", 64)
+			fields["attempt"] = "attempt"
+			fields["revision"] = 2
+			fields["idempotency_key"] = "case-" + word
+		}
+		c := operationCase{word: "project-assistants." + word, method: method, path: path, query: query, session: MachineReplySession, answers: &router{body: `{"contract_version":"project-assistants.v1","servers":[]}`}}
+		if method == "GET" {
+			c.name = "read:case-" + word
+		} else {
+			c.name = "action:case-" + word
+			raw, _ := json.Marshal(fields)
+			c.body2 = string(raw)
+		}
+		fields["type"] = c.word
+		fields["session"] = MachineReplySession
+		fields["request"] = "case-" + word
+		c.body = fields
+		rows = append(rows, c)
+	}
+	return rows
 }
