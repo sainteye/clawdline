@@ -385,7 +385,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -963,4 +963,33 @@ test("withdrawing server support discards an in-flight body and keeps a write ou
   await assert.rejects(pending,e=>errorCode(e)===(write?"pa_outcome_unknown":"pa_unsupported"))
   assert.equal(calls,1);assert.equal(source.canDevServers(),false)
  }
+})
+
+test("handoff routes and send versions require the captured API 93 source", async () => {
+  const fence = viewWire().head.current_fence
+  const ref = {id: "synthetic-card", revision: 2}
+  const edit: W.ProjectAssistantHandoffRequest = {command: command(key, "edit", "handoff-edit"), fence, action: "edit", ref, text: "Reviewed summary"}
+  const send: W.ProjectAssistantSendRequest = {command: command(key, "send", "handoff-send"), fence, text: "New input", quote_message_id: "", handoff: ref}
+  const readPath = "/v1/project-assistants/" + encodeURIComponent(key.bot_id) + "/handoff-card?machine_id=one&conversation_id=chat"
+  for (const apiLevel of [90, 91, 92]) {
+    const paths: string[] = []
+    const {source} = make(async path => {paths.push(path); return Response.json(sourceStatus())}, {...grant(), apiLevel})
+    await source.status(signal())
+    assert.equal(source.canHandoff(), false)
+    await assert.rejects(source.handoff(key, "chat", signal()), error => errorCode(error) === "pa_unsupported")
+    await assert.rejects(source.writeHandoff(edit, signal()), error => errorCode(error) === "pa_unsupported")
+    await assert.rejects(source.send(send, signal()), error => errorCode(error) === "pa_unsupported")
+    assert.deepEqual(paths, ["/v1/project-assistants/status"])
+    await source.send({...send, handoff: undefined}, signal())
+    assert.deepEqual(paths, ["/v1/project-assistants/status", "/v1/project-assistants/same%2Fid/messages"])
+  }
+  assert.deepEqual(assistantRelayRequest(readPath), {word: "project-assistants.handoff-card", kind: "read", fields: {...key, conversation_id: "chat"}, id: ""})
+  assert.throws(() => assistantRelayRequest(readPath + "&conversation_id=duplicate"), error => errorCode(error) === "pa_invalid")
+  const writePath = readPath.split("?")[0]
+  const forwarded = assistantRelayRequest(writePath, {method: "POST", body: JSON.stringify(edit),
+    headers: {"Idempotency-Key": edit.command.idempotency_key}})
+  assert.deepEqual(forwarded, {word: "project-assistants.handoff-card-write", kind: "action", fields: edit, id: "handoff-edit"})
+  const sendForwarded = assistantRelayRequest(writePath.replace(/handoff-card$/, "messages"),
+    {method: "POST", body: JSON.stringify(send), headers: {"Idempotency-Key": send.command.idempotency_key}})
+  assert.deepEqual(sendForwarded.fields, send)
 })

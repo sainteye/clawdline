@@ -22,10 +22,13 @@ import { Routines } from "./Routines"
 import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
+import { HandoffCard } from "./HandoffCard"
+import { handoffWords } from "./handoff-card-words"
+import { useHandoffCard } from "./useHandoffCard"
 import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer, MAX_PICTURES } from "./Composer"
 import { BotCallControls, useBotCall } from "./BotCall"
-import { botCallSendID, isBotCallSend, type CallInput } from "./bot-call"
+import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { Trace } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
@@ -169,6 +172,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   currentData.current=data;timelineRef.current=timeline;headRef.current=head;permissionRows.current=permissions;traceRows.current=traceSummaries;detailRows.current=details
   const fence=useCallback((d:W.ProjectAssistantGetResponse):W.ProjectAssistantFence=>({key:d.bot.key,project:d.bot.project,conversation_id:d.conversation.id,binding_id:d.conversation.binding_id,generation:d.conversation.generation}),[])
   const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.machineID===key.machine_id&&s.authorizationRevision===grant),[source,current,grant,key.machine_id])
+  const enabled=!recoveryRequired&&!!data&&canWrite(data.source)
+  const handoff=useHandoffCard(source,current,head?.current_fence,enabled,
+    JSON.stringify([head?.current_fence,head?.memory_revision,head?.conversation.active_turn_id,head?.conversation.active_turn_id?"":head?.bot_version]))
+  const [editingHandoff,setEditingHandoff]=useState(false)
+  useEffect(()=>{if(!handoff.available)setEditingHandoff(false)},[handoff.available])
   const fail=useCallback((e:unknown)=>{if(valid())setError(errorCode(e))},[valid])
   const changeText=(value:string)=>{view.stage(draftKey,value);setText(value)}
   const flush=()=>setDraftDurable(view.flush(draftKey))
@@ -391,8 +399,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setSending(null);setUnknown(false);repaintJournal()
   },[timeline,receipt,view,draftKey])
   const send=async()=>{
-    if(call.active||busy||unknown||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
-    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
+    if(call.active||busy||unknown||!handoff.ready||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||editingHandoff||handoff.mutating()||handoff.error||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
+    const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
+    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
@@ -456,9 +465,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
+      const field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
+      const handoffRefused=field?.startsWith("handoff_")
+      if(valid()&&handoffRefused)handoff.conflict(code)
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||owner==="active")restore()
-      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
+      if(valid()){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
     }finally{if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
   }
 
@@ -678,6 +690,24 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
     finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history");if(valid())setEarlierLoading(false)}
   }
+  const viewHandoffHistory=(bookmark?:string)=>{
+    const timeline=scroll.current
+    if(!timeline)return
+    followingRef.current=false;setFollowing(false)
+    const message=(bookmark?timeline.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(bookmark)}"]`):null)
+      ??timeline.querySelector<HTMLElement>("[data-message-id]")
+    if(message){message.scrollIntoView({block:"center"});message.focus({preventScroll:true})}
+    else timeline.focus()
+  }
+  const prepareHandoff=async()=>{
+    await handoff.update("prepare")
+    if(!valid())return
+    setInfoOpen(false)
+    requestAnimationFrame(()=>{
+      const card=scroll.current?.querySelector<HTMLElement>(".pa-handoff-card")
+      card?.scrollIntoView({block:"nearest"});card?.focus({preventScroll:true})
+    })
+  }
   const exportBot=async()=>{
     const control=new AbortController()
     reads.current.add(control);setExporting(true);setExportError("")
@@ -739,12 +769,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     try{await mutate((_,signal)=>{attempted=true;return source.forget(request,signal)})}
     catch(error){if(!attempted||!memoryOutcomeUnknown(error))memoryForget.current=null;throw error}
     memoryForget.current=null
+    void handoff.refresh()
     await loadExport().catch(fail)
     void refresh(true)
   }
   // Opening a conversation draws chat-shaped placeholders after 150ms, until its first read answers.
   const chatSkeleton=useShowAfter(!data&&!error)
-  const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
+  const bot=data?.bot??summary.bot, parts=partitionMessages(messages,turns)
   const activeTurn=turns.find(turn=>turn.id===data?.conversation.active_turn_id&&(turn.state==="running"||turn.state==="waiting_permission"))
   const live=!recoveryRequired&&!error&&source.current?.()!==false&&liveActivity(summary.source)&&liveActivity(data?.source??summary.source)
   const permissionCards=permissions.map(summary=>{
@@ -763,15 +794,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const callObservation=()=>{
     const d=currentData.current,h=headRef.current
     if(!d||!h||!epoch.current||!valid()||recovery.current||error||source.current?.()===false
-      ||!canWrite(d.source)||document.hidden||!navigator.onLine||browserOpener||templateOpener)return null
+      ||!canWrite(d.source)||document.hidden||!navigator.onLine||browserOpener||templateOpener
+      ||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return null
     return {
       owner:JSON.stringify([accountKey,readerID,grant,epoch.current]),
       fence:h.current_fence,activeTurn:h.conversation.active_turn_id,turns,
       messages,
-      frontier:callViewFrontier.current,caughtUp:h.event_frontier<=callViewFrontier.current,
+      frontier:callViewFrontier.current,caughtUp:handoff.ready&&h.event_frontier<=callViewFrontier.current,
     }
   }
   const submitCall=async(input:CallInput)=>{
+    if(!handoff.ready||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return {state:"sendFailed" as const}
     const intent:W.ProjectAssistantSendRequest={
       command:command(key,"send",botCallSendID(input.callID)),fence:input.fence,text:input.text,quote_message_id:"",
     }
@@ -791,6 +824,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         received.answer=result.receipt
       })
     }catch(e){
+      if(attempted&&handoffInputRefused(e)) {
+        view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null)
+        if(valid()){setReceipt(null);setUnknown(false);repaintJournal();void handoff.refresh()}
+        return {state:"sendFailed" as const}
+      }
       if(!attempted||provablyNotSent(e)) {
         if(attempted){view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null);repaintJournal()}
         return {state:"sendFailed" as const}
@@ -870,6 +908,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
       {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} total={orphanTraces.length} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>}
       {!!traceMore&&<button className="pa-pill pa-trace-more-btn" type="button" aria-label={`${w.trace} · ${w.more}`} onClick={()=>void collection("traces",traceMore).catch(()=>{})}>{w.more}</button>}
+      {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
+        onEdit={(ref,text)=>handoff.update("edit",ref,text)} onKeep={ref=>void handoff.update("keep",ref)}
+        onHistory={viewHandoffHistory} onRefresh={()=>void handoff.refresh()} onEditing={setEditingHandoff}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       <div className="tx-jump pa-jump" data-end="bottom" data-shown={following?"off":"on"} data-fresh="off">
@@ -898,7 +939,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{legacyBlocked()&&<div className="pa-held-send" role="group" aria-label={w.unverifiedDraft}><p>{w.unverifiedExplanation}</p><button type="button" disabled={busy||!enabled} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.unverifiedDrafts.history(draftKey,scope).map((draft,i)=><div className="pa-held-send pa-held-aside" role="group" aria-label={w.unverifiedDraft} key={i}><p>{w.unverifiedDraft}: <span className="pa-held-text">{draft.text}</span>{draft.quote&&<> · {w.heldQuoted}: {messages.find(m=>m.id===draft.quote)?.text??w.quoteMissing}</>}</p></div>)}{view.unverifiedDrafts.problem(draftKey)&&<p role="alert">{w.unverifiedUnsaved}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       <BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language}/>
-      <Composer key={draftKey} callActive={call.active} text={text} onText={changeText} onSend={()=>void send()} onStop={data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost||sendingAccepted} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      <Composer key={draftKey} callActive={call.active} text={text} onText={changeText} onSend={()=>void send()} onStop={data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost||sendingAccepted||!handoff.ready||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
@@ -906,6 +947,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     {templateOpener&&<BotTemplate opener={templateOpener} source={source} current={current} scope={scope} available={()=>valid()&&!recovery.current&&!!currentData.current&&canRead(currentData.current.source)&&sameConversation({key:currentData.current.bot.key,project:currentData.current.bot.project,conversation_id:currentData.current.conversation.id},scope)} w={w} onClose={()=>setTemplateOpener(null)}/>}
     <BotSidePanel inactive={!!browserOpener||!!templateOpener} opener={identityButton} bot={bot} open={infoOpen} tab={infoTab} onTab={openInfo} onClose={()=>setInfoOpen(false)} w={w} detailsActions={
         <><DevServers key={JSON.stringify([accountKey,readerID,source.authorizationRevision,bot.key,bot.project])} source={source} bot={bot} enabled={enabled} active={infoOpen&&infoTab==="details"&&!browserOpener&&!templateOpener} observation={servers} w={w}/><div className="pa-info-actions">
+          {handoff.canPrepare&&<button type="button" className="pa-pill" disabled={busy||unknown||handoff.busy} onClick={()=>void prepareHandoff()}>{handoffWords(language).prepare}</button>}
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
           <button type="button" className="pa-pill" disabled={checkingUpdates} aria-busy={checkingUpdates||undefined} onClick={()=>void checkForUpdates()}>{w.refresh}</button>
         </div></>

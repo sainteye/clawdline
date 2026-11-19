@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node's strip-types runner uses source extensions.
-import { BotCall, botCallSendID, isBotCallSend, type CallAudioSource, type CallInput, type CallObservation, type CallPorts } from "./bot-call.ts"
+import { BotCall, botCallSendID, isBotCallSend, handoffInputRefused, type CallAudioSource, type CallInput, type CallObservation, type CallPorts } from "./bot-call.ts"
 
 const fence: W.ProjectAssistantFence = {
   key: { machine_id: "source", bot_id: "bot" }, conversation_id: "conversation", binding_id: "", generation: 0,
@@ -170,4 +170,16 @@ test("an ambiguous write stops the call without retrying or reading back its lat
   assert.equal(f.call.state.phase, "sendUnknown")
   assert.equal(f.sent.length, 1)
   assert.deepEqual(f.played, [])
+})
+
+test("only the source's explicit handoff admission refusal releases a call input", () => {
+  const refusal = {contract_version: "project-assistants.v1", error: {code: "pa_stale_version", field: "handoff_revision", retry_after_seconds: 0}}
+  assert.equal(handoffInputRefused(refusal), true)
+  for (const cause of [null, new Error("lost response"), {...refusal, contract_version: "unknown"},
+    {...refusal, error: {...refusal.error, code: "pa_outcome_unknown"}},
+    {...refusal, error: {...refusal.error, field: "handoff_admission"}},
+    {...refusal, error: {...refusal.error, retry_after_seconds: 1}},
+    {contract_version: "project-assistants.v1", error: {code: "pa_outcome_unknown"}, response: refusal}]) {
+    assert.equal(handoffInputRefused(cause), false)
+  }
 })

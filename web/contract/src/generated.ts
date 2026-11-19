@@ -6046,6 +6046,63 @@ export interface ProjectAssistantGroupStopResponse {
   stopped: boolean
 }
 
+export type ProjectAssistantHandoffAction =
+    "prepare"
+  | "edit"
+  | "keep"
+
+export const ProjectAssistantHandoffActionValues: readonly ProjectAssistantHandoffAction[] = ["prepare", "edit", "keep"] as const
+
+/**
+ * Source-local handoff. Summary text is available while the draft is current. An
+ * adoption identifies the input's turn and is not execution evidence.
+ */
+export interface ProjectAssistantHandoffCard {
+  bookmark_message_id?: string
+  ref: ProjectAssistantHandoffRef
+  state: ProjectAssistantHandoffCardState
+  text?: string
+  turn_id?: string
+}
+
+export type ProjectAssistantHandoffCardState =
+    "draft"
+  | "kept"
+  | "adopted"
+  | "withdrawn"
+
+export const ProjectAssistantHandoffCardStateValues: readonly ProjectAssistantHandoffCardState[] = ["draft", "kept", "adopted", "withdrawn"] as const
+
+/**
+ * The exact source-owned handoff card version displayed before a send.
+ */
+export interface ProjectAssistantHandoffRef {
+  id: string
+  revision: number
+}
+
+/**
+ * API 93. Prepare the source's filtered summary, edit the exact draft revision, or
+ * keep the current native conversation.
+ */
+export interface ProjectAssistantHandoffRequest {
+  action: ProjectAssistantHandoffAction
+  command: ProjectAssistantCommand
+  fence: ProjectAssistantFence
+  ref?: ProjectAssistantHandoffRef
+  text: string
+}
+
+/**
+ * API 93. Current handoff and preparation eligibility on the Bot's source.
+ */
+export interface ProjectAssistantHandoffResponse {
+  can_prepare: boolean
+  card?: ProjectAssistantHandoffCard
+  contract_version: string
+  fence: ProjectAssistantFence
+}
+
 /**
  * before_seq=0 starts from latest. Items are ascending within a page. Page size
  * 1..100.
@@ -7231,6 +7288,11 @@ export interface ProjectAssistantSendNowRequest {
 export interface ProjectAssistantSendRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
+
+  /**
+   * The exact draft version approved for this input on API 93 sources.
+   */
+  handoff?: ProjectAssistantHandoffRef
 
   /**
    * Pictures as base64 data: URLs, at most four; each is normalized and stored

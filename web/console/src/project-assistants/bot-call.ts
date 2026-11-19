@@ -212,3 +212,11 @@ export function botCallSendID(callID: string) {
 export function isBotCallSend(id: string) {
   return id.startsWith(callSendPrefix)
 }
+
+/** The source rejects this exact input before its admission transaction mutates.
+ * Never inspect nested transport evidence: an unknown response stays unknown. */
+export function handoffInputRefused(cause: unknown): boolean {
+  const value = cause as Partial<W.ProjectAssistantErrorResponse> | null
+  return value?.contract_version === "project-assistants.v1" && value.error?.code === "pa_stale_version"
+    && value.error.field === "handoff_revision" && value.error.retry_after_seconds === 0
+}

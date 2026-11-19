@@ -300,6 +300,48 @@ unit. Filtered SQLite memory, rather than opaque provider context, is the source
 for the new opening after forgetting. This does not establish real Claude/Codex
 adapter admission or claim that a native provider erased its external memory.
 
+## A reviewed handoff can open a fresh Bot conversation
+
+The Bot information panel offers **Prepare a fresh conversation** after a
+native conversation exists and the source is idle. The card starts from the
+same filtered history selection used by the fresh native opening. People can
+review that text, save an edit, discard an unsaved edit, jump to original
+history, or keep the current conversation. A preparation, edit, or Keep has no
+native effect. Keep leaves the existing binding eligible for ordinary resume.
+
+The source persists a draft and its edit receipts in source-local SQLite
+tables. Those tables stay outside the portable v12 Bot archive and its
+canonical digest. The draft belongs to the exact Bot, Project, conversation,
+binding generation, memory revision and instruction revision. The HTTP and
+Cloud Pass routes first appear at API 93. Each human send must name the
+displayed draft revision while a current draft exists. Input admission,
+the user message, its receipt and adoption commit together. A stale revision
+fails without admitting an input. Source receipts let a client inspect an
+uncertain response without starting another turn.
+
+The admitted turn opens the existing fresh-session path. At its final memory
+and authorization boundary, the source claims the summary once and clears the
+stored text. The Agent receives it as quoted history alongside the actual new
+input. Forget withdraws an unclaimed draft and clears its text in the memory
+transaction. An adopted input with no current grant fails closed. After a
+restart a saved draft remains available. An adopted turn that has lost its
+in-process grant is never reauthorized from its receipt, and an unknown
+handoff turn keeps the native outcome unknown.
+
+The source regression uses real SQLite, the normal HTTP handler and the
+verified Cloud Pass seam with a scripted Provider. The browser regression
+uses the real Bot chat with desktop and mobile Chromium viewports. With web
+dependencies prepared and existing Playwright and Chromium installed, run:
+
+```sh
+go test ./internal/adapters/projectassistantstore -run '^TestHandoffCard'
+go test ./internal/transport/http -run '^TestHandoffCardSource'
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/path/to/browser-cache \
+CLAWDLINE_HANDOFF_CARD_ARTIFACTS=/path/to/evidence \
+go test ./internal/transport/http -run '^TestHandoffCardBrowser$' -count=1
+```
+
 ## Resuming after a restart
 
 Since 2026-11-14, as in Codync (host/src/agent/bot/mod.rs RESUME_PROMPT,

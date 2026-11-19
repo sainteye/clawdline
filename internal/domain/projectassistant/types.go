@@ -277,6 +277,7 @@ type Message struct {
 	Output      *Output      `json:"output,omitempty"`
 }
 type SendMessage struct {
+	Handoff        *HandoffRef  `json:"handoff,omitempty"`
 	UploadIDs      []string     `json:"upload_ids,omitempty"`
 	Fence          Fence        `json:"fence"`
 	Text           string       `json:"text"`

@@ -16,7 +16,7 @@ lines.on("line",line=>{const message=JSON.parse(line),resolve=pending.get(messag
 const exchange=frame=>new Promise(resolve=>{const id=++sequence;pending.set(id,resolve);process.stdout.write(JSON.stringify({id,...frame})+"\n")})
 const boot=await exchange({kind:"init"}),trace=[],checks=[],mutants=[]
 const words=Object.keys(CARRIED)
-assert.deepEqual(words.filter(word=>word.startsWith("project-assistants.")).sort(),["network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-react","group-stop","team-plans","team-answer","team-settings","input","upload","send-files","output","attachment","send-pictures","status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","react","observed","forget","memory","view","delete","visibility","rules","send-now","rule-remove","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook"].map(word=>"project-assistants."+word).sort())
+assert.deepEqual(words.filter(word=>word.startsWith("project-assistants.")).sort(),["handoff-card","handoff-card-write","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-send","group-react","group-stop","team-plans","team-answer","team-settings","input","upload","send-files","output","attachment","send-pictures","status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","react","observed","forget","memory","view","delete","visibility","rules","send-now","rule-remove","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook"].map(word=>"project-assistants."+word).sort())
 const signal=()=>new AbortController().signal
 const request=(name,mode="snapshot",extra={})=>({key:boot.fixtures[name].key,conversation_id:boot.fixtures[name].conversation_id,mode,source_epoch:"",cursor:"",after_seq:0,page_size:100,...extra})
 const scope=name=>({...boot.fixtures[name],conversation_id:boot.fixtures[name].conversation_id})
@@ -57,6 +57,21 @@ assert.equal(snapshot.snapshot.pending_turns.length,1)
 assert.equal(snapshot.snapshot.queued_messages[0].turn_id,"current-turn")
 assert.equal(snapshot.items[0].message.seq,120)
 assert.equal(snapshot.has_more,true)
+// Additive handoff words still use the captured source and paired-person
+// authority. Read the real source without opening an Agent or mutating a card.
+const modernHandoff=sourceFor("main","owner",{apiLevel:93})
+await modernHandoff.source.status(signal())
+const handoff=await modernHandoff.source.handoff(boot.fixtures.main.key,boot.fixtures.main.conversation_id,signal())
+assert.deepEqual(handoff.fence,snapshot.head.current_fence)
+assert.equal(handoff.can_prepare,false,"an active or unknown turn cannot prepare a handoff")
+assert.equal(handoff.card,undefined)
+assert.equal(trace.at(-1).word,"project-assistants.handoff-card")
+assert.equal(trace.at(-1).status,200)
+const readonlyHandoff=sourceFor("main","reader",{apiLevel:93})
+await readonlyHandoff.source.status(signal())
+const beforeHandoffRead=trace.length
+await assert.rejects(readonlyHandoff.source.handoff(boot.fixtures.main.key,boot.fixtures.main.conversation_id,signal()),error=>errorCode(error)==="pa_read_only")
+assert.equal(trace.length,beforeHandoffRead,"read-only handoff requests are refused before transport")
 const epoch=snapshot.source_epoch,history=[]
 let cursor=snapshot.next_cursor
 while(cursor){const page=await actual.source.view(request("main","history",{source_epoch:epoch,cursor}),signal());assert.equal(page.next_seq,0);history.push(...page.items);cursor=page.next_cursor}
@@ -203,17 +218,27 @@ for(const row of rows){
  const suffix=row.op.split(".").at(-1);if(suffix==="status")continue
  const {request:_request,session:_session,...fields}=row.example
  if(suffix==="projects")fields.machine_id="source-one"
+ // Current examples include an optional API93 handoff. API60 must refuse it
+ // before transport, then keep accepting the original unversioned send shape.
+ if(suffix==="send"){
+  assert.ok(fields.handoff)
+  const before=captured.length
+  await assert.rejects(legacySource.send(fields,signal()),error=>errorCode(error)==="pa_unsupported")
+  assert.equal(captured.length,before)
+  delete fields.handoff
+ }
  const method={read:"markRead",observed:"observe",memory:"saveMemory"}[suffix]??suffix
  await legacySource[method](fields,signal())
+ if(suffix==="send")assert.equal("handoff" in JSON.parse(http.body),false)
 }
 assert.equal(captured.length,16)
 assert.equal(new Set(captured.map(row=>row.word)).size,16)
 const allMethods=new Set([...captured.map(row=>row.word),...trace.map(row=>row.word)])
-assert.equal(allMethods.size,17)
+assert.equal(allMethods.size,18)
 assert.equal(trace.filter(row=>row.word==="project-assistants.export").length,0,"View scenarios must not use archive fallback")
 assert.deepEqual(new Set(trace.filter(row=>row.word==="project-assistants.view"&&row.status===200).map(row=>row.fields.mode)),new Set(["snapshot","history","events","permissions","traces","detail"]))
 checks.push("JRV-08")
 assert.equal(new Set(checks).size,8)
-await exchange({kind:"report",report:{checks:checks.sort(),successful_modes:6,strict_single_field_mutants:mutants,actual_methods:allMethods.size,legacy_api58_methods:captured.length,carried_words:words.length,real_source_responses:trace.length,archive_fallback_calls:0,native_model_calls:0}})
+await exchange({kind:"report",report:{checks:checks.sort(),successful_modes:6,strict_single_field_mutants:mutants,actual_methods:allMethods.size,legacy_api58_methods:captured.length,carried_words:words.length,handoff_read_methods:1,handoff_mutation_calls:0,real_source_responses:trace.length,archive_fallback_calls:0,native_model_calls:0}})
 lines.close()
 process.stdin.destroy()

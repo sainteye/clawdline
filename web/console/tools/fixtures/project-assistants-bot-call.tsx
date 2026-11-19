@@ -38,8 +38,33 @@ let offer: W.ProjectAssistantPermissionOffer | undefined
 const receipt = (command: W.ProjectAssistantCommand, resource_id: string): W.ProjectAssistantReceiptResponse => ({
   contract_version: contractVersion, receipt: { id: crypto.randomUUID(), command, event_seq: 0, state: "accepted", resource_id },
 })
+const handoffState = {hold: true, pending: false, rejected: 0,
+  card: {ref: {id: "synthetic-handoff", revision: 1}, state: "draft", text: "Reviewed synthetic context"} as W.ProjectAssistantHandoffCard}
+let releaseHandoff: (() => void) | undefined
 for (const row of rows) {
+  const hasHandoff = row === rows[0] && new URL(location.href).searchParams.has("handoff")
+  if (hasHandoff) {
+    const handoffView = (): W.ProjectAssistantHandoffResponse => ({contract_version: contractVersion,
+      fence: fenceOf(row.bot), can_prepare: true, card: handoffState.card})
+    Object.assign(row.source, {
+      canHandoff: () => true,
+      handoff: async () => {
+        if (handoffState.hold) {handoffState.pending = true; await new Promise<void>(resolve => {releaseHandoff = resolve})}
+        return handoffView()
+      },
+      writeHandoff: async (request: W.ProjectAssistantHandoffRequest) => {
+        if (request.action !== "keep" || request.ref?.id !== handoffState.card.ref.id || request.ref.revision !== handoffState.card.ref.revision)
+          throw new Error("Fixture received a foreign handoff version")
+        handoffState.card = {...handoffState.card, state: "kept"}
+        return handoffView()
+      },
+    })
+  }
   row.source.send = async request => {
+    if (hasHandoff && handoffState.card.state === "draft" && !request.handoff) {
+      handoffState.rejected++
+      throw {contract_version: contractVersion, error: {code: "pa_stale_version", field: "handoff_revision", retry_after_seconds: 0}}
+    }
     if (request.fence.key.machine_id !== row.bot.key.machine_id || request.fence.key.bot_id !== row.bot.key.bot_id
       || request.fence.conversation_id !== row.bot.conversation_id) throw new Error("Fixture received a foreign write")
     received.push(request)
@@ -169,7 +194,9 @@ async function tone(frequency: number, text: string, late = false) {
   return peak > 0
 }
 Object.assign(window, { callFixture: {
-  audio, received, approved, network, select, tone,
+  audio, received, approved, network, select, tone, handoffState,
+  releaseHandoff() {handoffState.hold = false; releaseHandoff?.(); releaseHandoff = undefined},
+  anotherHandoff() {handoffState.card = {...handoffState.card, state: "draft", ref: {...handoffState.card.ref, revision: handoffState.card.ref.revision + 1}}},
   complete(index: number, which: number, text: string) {
     const row = rows[index], id = turnNames[which]
     row.source.scriptMessage(row.bot, id + "-reply", "assistant", text, id)

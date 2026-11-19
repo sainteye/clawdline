@@ -83,7 +83,8 @@ type runtimeActor struct {
 	stopped            bool
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
-	steering map[string]bool
+	steering         map[string]bool
+	handoffAuthority handoffInputAuthority
 }
 
 var _ Runtime = (*Engine)(nil)
@@ -270,6 +271,14 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	if err := pa.ValidateInputSend(s.Message.Text, s.Message.Attachments, s.Message.UploadIDs); err != nil {
 		return pa.Receipt{}, err
+	}
+	if s.Message.Handoff != nil {
+		if err := pa.ValidateHandoffRef(*s.Message.Handoff); err != nil {
+			return pa.Receipt{}, err
+		}
+		if s.Notice || s.Network != nil || s.Room != nil || s.AuthorityCheck == nil {
+			return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "handoff_input")
+		}
 	}
 	if s.Network != nil && (!s.Notice || s.Room != nil || len(s.Message.Attachments) > 0 || len(s.Message.UploadIDs) > 0 || s.Message.QuoteMessageID != "") {
 		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "network_submission")
@@ -478,9 +487,12 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		turn.Room = &ticket
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
-	receipt, err := r.mutate(ctx, bot, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
+	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
 	if err != nil {
 		return pa.Receipt{}, err
+	}
+	if s.Message.Handoff != nil && receipt.ResourceID == turn.ID {
+		a.handoffAuthority = handoffInputAuthority{TurnID: turn.ID, Check: afterRequest(ctx, s.AuthorityCheck)}
 	}
 	r.setProject(a, bot.Project)
 	if !a.working {
@@ -516,6 +528,11 @@ func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
 	}
 	for _, t := range resumable {
 		if len(t.Attempts) > 0 {
+			continue
+		}
+		if card, e := r.handoffForTurn(ctx, t); e != nil {
+			return e
+		} else if card != nil {
 			continue
 		}
 		_ = r.resumeInterrupted(ctx, key, t)
@@ -716,6 +733,9 @@ func (r *Engine) work(a *runtimeActor) {
 		r.wakeExchangeReply(*turn)
 		a.mu.Lock()
 		a.cancel = nil
+		if a.handoffAuthority.TurnID == turn.ID {
+			a.handoffAuthority = handoffInputAuthority{}
+		}
 		a.turnID = ""
 		// Only an already completed routine awaiting its terminal commit keeps
 		// that success in memory. Unknown Open/Close still persists TurnUnknown.
@@ -783,6 +803,19 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
+	handoffCard, err := r.handoffForTurn(ctx, t)
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	var handoffCheck func(context.Context) error
+	if handoffCard != nil {
+		if a.handoffAuthority.TurnID != t.ID || a.handoffAuthority.Check == nil {
+			a.mu.Unlock()
+			return runtimeFailure(pa.Revoked, "handoff_authority")
+		}
+		handoffCheck = a.handoffAuthority.Check
+	}
 	preparedBot := bot
 	if original != nil && !sameExecutionConfig(bot, *original) {
 		a.mu.Unlock()
@@ -847,6 +880,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	if handoffCard != nil {
+		if err = checkHandoffExecution(*handoffCard, t, bot, currentFence(bot, c), current, original == nil); err == nil {
+			err = handoffCheck(ctx)
+		}
+		if err != nil {
+			a.mu.Unlock()
+			return err
+		}
 	}
 	snapshot, err := r.o.Memory.Snapshot(ctx, a.key)
 	if err != nil {
@@ -929,7 +971,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Each configured identity keeps its own native conversation. A switch
 	// chooses only its newest confirmed-clean binding, never the active
 	// alternate's history. All execution authority is minted afresh below.
-	if !isolatedRoutine && pa.HasFallbacks(bot) && (binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile) {
+	if handoffCard == nil && !isolatedRoutine && pa.HasFallbacks(bot) && (binding.Agent != effectiveAgent || binding.LoginProfile != effectiveBot.LoginProfile) {
 		carryKind = "recap"
 		if parked, seen, ok := parkedAttempt(export, t, effectiveAgent, effectiveBot.LoginProfile); ok {
 			binding = parked
@@ -950,7 +992,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
-	resume := (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	resume := handoffCard == nil && (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
 	if resumedFrom != "" && resume {
 		carryKind = "catch_up"
 	} else {
@@ -1037,7 +1079,10 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	a.mu.Lock()
 	a.opening = true
 	a.mu.Unlock()
-	if err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); err != nil {
+	if err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); err == nil && handoffCheck != nil {
+		err = handoffCheck(ctx)
+	}
+	if err != nil {
 		a.mu.Lock()
 		a.opening = false
 		a.mu.Unlock()
@@ -1203,6 +1248,22 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		// Recheck the exact authority at the external write boundary.
 		if e = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, false); e != nil {
 			return e
+		}
+		if handoffCard != nil {
+			if handoff == nil {
+				return runtimeFailure(pa.ContextStale, "handoff_native_opening")
+			}
+			if e = handoffCheck(ctx); e != nil {
+				return e
+			}
+			text, claimErr := r.o.Repository.(HandoffRepository).ClaimHandoffText(ctx, *handoffCard)
+			if claimErr != nil {
+				return claimErr
+			}
+			if e = handoffCheck(ctx); e != nil {
+				return e
+			}
+			handoff.editedSummary = &text
 		}
 		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
 		return e

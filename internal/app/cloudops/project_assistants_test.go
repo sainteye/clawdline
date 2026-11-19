@@ -51,6 +51,8 @@ func projectAssistantOperationCases() []operationCase {
 		{"projects", "GET", "/v1/project-assistant-targets", map[string]any{"machine_id": "mac-01", "cursor": "page", "page_size": 100}, map[string]string{"machine_id": "mac-01", "cursor": "page", "page_size": "100"}},
 		{"list", "GET", "", map[string]any{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": 2}, map[string]string{"machine_id": "mac-01", "query": "search", "cursor": "page", "page_size": "2"}},
 		{"get", "GET", "/bot", key, map[string]string{"machine_id": "mac-01"}},
+		{"handoff-card", "GET", "/bot/handoff-card", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat"}},
+		{"handoff-card-write", "POST", "/bot/handoff-card", map[string]any{"fence": fence, "action": "edit", "ref": map[string]any{"id": "card", "revision": 1}, "text": "Reviewed summary"}, nil},
 		{"memory-view", "GET", "/bot/memory-view", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "source_epoch": "", "layer": "", "entry_id": "", "revision": ""}},
 		{"configuration-profile", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": "", "login_profile": ""}},
 		{"react", "POST", "/bot/react", map[string]any{"fence": fence, "message_id": "message", "emoji": "👍", "present": true, "expected_revision": 0}, nil},
@@ -98,7 +100,7 @@ func projectAssistantOperationCases() []operationCase {
 			c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		}
 		if r.method != "GET" {
-			op := map[string]string{"network-settings-save": "network-settings", "connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
+			op := map[string]string{"handoff-card-write": "edit", "network-settings-save": "network-settings", "connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -134,7 +136,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 59 {
+	if len(out) != 61 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -175,7 +177,7 @@ const grant={accountKey:'fixture-account',readerID:'trusted-reader',machineID:ma
 const source=new ProjectAssistantSourceClient(grant,async(input,init)=>{http={input,method:init.method,body:init.body??null,idempotency:new Headers(init.headers).get('Idempotency-Key')};return relay(input,init)},()=>grant);
 const signal=new AbortController().signal;
 await source.status(signal);
-for(const row of rows){const word=row.op.split('.').at(-1);if(word==='status')continue;const {request,session,...fields}=row.example;if(word==='projects')fields.machine_id=machine;const method={read:'markRead',observed:'observe',memory:'saveMemory'}[word]??word;await source[method](fields,signal);}
+for(const row of rows){const word=row.op.split('.').at(-1);if(word==='status')continue;const fields=Object.fromEntries(row.shapes[0].body.filter(key=>key!=='request'&&key!=='session').map(key=>[key,row.example[key]]));if(word==='projects')fields.machine_id=machine;const method={read:'markRead',observed:'observe',memory:'saveMemory'}[word]??word;await source[method](fields,signal);}
 process.stdout.write(JSON.stringify(fixtures));
 `
 
@@ -300,6 +302,9 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				delete(missing, key)
 				// Optional picture/reply targets may be absent; null still is not.
 				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && (key == "reply_to_author" || key == "quote") || row.Op == "project-assistants.login-profile" && key == "kind" || row.Op == "project-assistants.login-secret" && key == "kind"
+				if key == "handoff" || row.Op == "project-assistants.handoff-card-write" && key == "ref" {
+					optional = true
+				}
 				if !optional {
 					mutations = append(mutations, missing)
 				}
@@ -331,7 +336,7 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				changed["command"].(map[string]any)["credential"] = "forged"
 				mutations = append(mutations, changed)
 			}
-			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version"} {
+			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version", "handoff.revision", "ref.revision"} {
 				if _, present := base.genLookup(path); !present {
 					continue
 				}
