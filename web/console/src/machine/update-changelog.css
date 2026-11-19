@@ -2,7 +2,7 @@
   box-sizing: border-box;
   width: min(680px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
-  padding: 24px;
+  padding: 0 24px 24px;
   overflow: auto;
   color: var(--ink);
   background: var(--card);
@@ -16,7 +16,7 @@
 .update-changelog-heading {
   position: sticky; top: 0; z-index: 1;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: -24px -24px 0; padding: 24px 24px 16px; background: var(--card);
+  margin-inline: -24px; padding: 24px 24px 16px; background: var(--card);
 }
 .update-changelog-heading button { flex: none; }
 .update-changelog h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }

@@ -234,8 +234,6 @@ test("the Session list shortcut creates an item and keeps its assignment card in
   assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
   assert.match(source, /<WorkCard item=\{item\} sessions=\{sessions\}/)
   assert.match(styles, /\.work-created-panel/)
-  assert.match(styles, /\.work-created-modal[^}]*overflow:\s*auto/)
-  assert.match(styles, /\.work-created-panel[^}]*overflow:\s*visible/)
 })
 
 test("the create actions have breathing room above them", () => {

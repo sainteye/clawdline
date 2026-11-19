@@ -64,16 +64,16 @@
 .browser-mode-choice span span { color: var(--dim); font-size: 13px; line-height: 1.5; }
 .browser-modes:disabled .browser-mode-choice { opacity: .6; cursor: default; }
 
-.browser-audit-dialog { box-sizing: border-box; width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); overflow-y: auto; overscroll-behavior: contain; }
+.browser-audit-dialog { box-sizing: border-box; width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); --audit-padding: 20px; padding: 0 var(--audit-padding) var(--audit-padding); border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); overflow-y: auto; overscroll-behavior: contain; }
 .browser-audit-dialog::backdrop { background: #0009; }
 .browser-audit-dialog > header {
     position: sticky; top: 0; z-index: 1;
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    margin: -20px -20px 0; padding: 20px; background: var(--bg);
+    margin-inline: calc(0px - var(--audit-padding)); padding: var(--audit-padding); background: var(--bg);
 }
 .browser-audit-dialog h2 { margin: 0; font-size: 20px; }
 .browser-audit-dialog .chip, .browser-audit-dialog select { min-height: 44px; }
-@media (max-width: 600px) { .browser-audit-dialog { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); } }
+@media (max-width: 600px) { .browser-audit-dialog { --audit-padding: 16px; padding-bottom: calc(var(--audit-padding) + env(safe-area-inset-bottom)); } }
 
 .browser-policy-list { list-style: none; margin: 12px 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; }
 .browser-policy-list > li { display: flex; align-items: center; gap: 6px; min-height: 64px; padding: 6px 12px 6px 4px; min-width: 0; background: var(--card); }

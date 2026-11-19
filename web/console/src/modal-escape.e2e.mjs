@@ -26,6 +26,10 @@ import {PasteField} from './src/pages/terminal/PasteField';
 import {CompleteWorkDialog} from './src/pages/work/CompleteWorkDialog';
 import {WorkV2Page} from './src/pages/work/WorkV2';
 import {openNewWorkItem} from './src/pages/work/new-item';
+import {BotCreate} from './src/project-assistants/BotCreate';
+import {fixtureSource} from './src/project-assistants/fixtures';
+import {words as projectAssistantWords} from './src/project-assistants/words';
+import './src/project-assistants/styles.css';
 import './src/pages/terminal/terminal.css';
 import './src/pages/work/work.css';
 import {bootCatalog} from './src/catalog';import {loadStrings} from './src/legacy/bridge';
@@ -38,10 +42,12 @@ window.addEventListener('cancel',e=>{if(e.target.id==='native')window.cancelCoun
 window.addEventListener('close',e=>{if(e.target.id==='native')window.closeCount++},{capture:true});
 const machines=['alpha','beta'].map(id=>({id,name:id,platform:'Linux',freshness:'current'}));
 const source={subscribe:()=>()=>{},readMachine:async()=>({kind:'ready',complete:true,observedAt:Date.now(),rows:[]}),readMachinePresentations:async()=>[]};
+const botSources=[fixtureSource()];const currentBots=()=>botSources;
 function Examples(){
 const [busy,setBusy]=React.useState(false);
 const [paste,setPaste]=React.useState(false);
 const [complete,setComplete]=React.useState(false);
+const [bot,setBot]=React.useState(false);
 return <>
 <button id="native-open" onClick={()=>document.getElementById('native').showModal()}>Native</button>
 <dialog id="native"><input id="native-input"/><button id="nested-open" onClick={()=>{document.getElementById('nested').hidden=false}}>Picker</button>
@@ -54,6 +60,8 @@ return <>
 <WorkV2Page shown={false}/>
 <button id="complete-open" onClick={()=>setComplete(true)}>Complete work</button>
 {complete&&<CompleteWorkDialog item={{id:'fixture',title:'Example'}} busy={false} failure="" onConfirm={()=>{throw Error('unexpected completion')}} onCancel={()=>setComplete(false)}/>}
+<button id="bot-open" onClick={()=>setBot(true)}>New Bot fixture</button>
+{bot&&<div className="project-assistants pa-shell" style={{position:'fixed',inset:0}}><BotCreate sources={botSources} current={currentBots} onClose={()=>setBot(false)} onCreated={()=>{throw Error('unexpected Bot creation')}} w={projectAssistantWords(localStorage.getItem('ui_language'))}/></div>}
 <button id="custom-open" onClick={()=>{document.getElementById('custom').hidden=false;document.getElementById('custom-input').focus()}}>Custom</button>
 <div id="custom" role="dialog" aria-modal="true" hidden onKeyDown={e=>{if(e.key==='Escape')e.currentTarget.hidden=true}}><input id="custom-input"/></div>
 <input id="outside"/>
@@ -150,6 +158,27 @@ createRoot(document.getElementById('root')).render(<Examples/>);
         await complete.waitFor({state:'visible'})
         await page.mouse.click(4, 4)
         await complete.waitFor({state:'detached'})
+
+        const desktop = page.viewportSize()
+        for (const width of [390, desktop.width]) {
+          await page.setViewportSize({width, height: 560})
+          await page.locator('#bot-open').click()
+          const bot = page.getByRole('dialog', {name: lang === 'en' ? 'Create Bot' : '新增 Bot', exact: true})
+          const cancelBot = bot.getByRole('button', {name: lang === 'en' ? 'Cancel' : '取消', exact: true})
+          await cancelBot.waitFor()
+          assert.deepEqual(await bot.evaluate(panel => {
+            panel.scrollTop = panel.scrollHeight
+            const box = panel.getBoundingClientRect()
+            const toolbar = panel.querySelector('header')
+            const innerTop = box.top + panel.clientTop
+            const hit = document.elementFromPoint(box.left + box.width / 2, innerTop + 2)
+            return { scrolled: panel.scrollTop > 0, atTop: Math.abs(toolbar.getBoundingClientRect().top - innerTop) <= 1,
+              coversTop: toolbar.contains(hit) }
+          }), {scrolled: true, atTop: true, coversTop: true}, `${engine.name()} ${width}: Bot content cannot scroll above the close toolbar`)
+          await cancelBot.click()
+          await bot.waitFor({state: 'detached'})
+        }
+        await page.setViewportSize(desktop)
 
         await page.locator('#custom-open').click()
         await page.keyboard.press('Escape')

@@ -99,7 +99,7 @@
 .ops-confirm p { margin: 0 0 .6rem; }
 
 .ops-overlay { position: fixed; inset: 0; z-index: 120; background: #000a; display: grid; place-items: center; padding: 1rem; }
-.ops-dialog { --ops-dialog-padding: clamp(1.1rem, 3vw, 1.6rem); width: min(100%, 34rem); max-height: 90dvh; overflow: auto; padding: var(--ops-dialog-padding); background: var(--card); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 1rem 3rem #0006; }
+.ops-dialog { --ops-dialog-padding: clamp(1.1rem, 3vw, 1.6rem); width: min(100%, 34rem); max-height: 90dvh; overflow: auto; padding: 0 var(--ops-dialog-padding) var(--ops-dialog-padding); background: var(--card); border: 1px solid var(--line); border-radius: 1rem; box-shadow: 0 1rem 3rem #0006; }
 .ops-dialog-wide { width: min(100%, 44rem); }
 .ops-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .ops-dialog h2 { margin: 0; font-size: 1.25rem; }
@@ -142,6 +142,6 @@
 
 .ops-dialog > header {
     position: sticky; top: 0; z-index: 2;
-    margin: calc(0px - var(--ops-dialog-padding)) calc(0px - var(--ops-dialog-padding)) 0;
+    margin: 0 calc(0px - var(--ops-dialog-padding));
     padding: var(--ops-dialog-padding) var(--ops-dialog-padding) 8px; background: var(--card);
 }

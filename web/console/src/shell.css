@@ -112,11 +112,11 @@ a.sidebar-item { text-decoration: none; }
 }
 .sidebar-shortcuts-entry { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
 .sidebar-help-mark { width: 18px; flex: 0 0 18px; margin-right: 12px; text-align: center; }
-.shortcuts-sheet { --shortcuts-pad-top: 20px; --shortcuts-pad-inline: 22px; width: min(760px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; }
+.sheet.shortcuts-sheet { --shortcuts-pad-top: 20px; --shortcuts-pad-inline: 22px; width: min(760px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; padding-block-start: 0; }
 .shortcuts-head {
     position: sticky; top: 0; z-index: 1; background: var(--card);
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin: calc(0px - var(--shortcuts-pad-top)) calc(0px - var(--shortcuts-pad-inline)) 12px;
+    margin: 0 calc(0px - var(--shortcuts-pad-inline)) 12px;
     padding: var(--shortcuts-pad-top) var(--shortcuts-pad-inline) 6px;
 }
 .shortcuts-head h2 { margin: 0; }
@@ -128,7 +128,7 @@ a.sidebar-item { text-decoration: none; }
 .shortcuts-sheet .foot { line-height: 1.6; }
 @media (max-width: 599px) {
   .shortcuts-groups { grid-template-columns: minmax(0, 1fr); gap: 22px; }
-  .shortcuts-sheet { --shortcuts-pad-top: 18px; --shortcuts-pad-inline: 18px; padding: 18px; }
+  .sheet.shortcuts-sheet { --shortcuts-pad-top: 18px; --shortcuts-pad-inline: 18px; padding: 0 18px 18px; }
 }
 
 /* Keep the phone's native horizontal Back/Forward gesture available. The

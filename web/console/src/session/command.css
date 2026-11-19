@@ -47,8 +47,9 @@
   min-height: clamp(160px, calc(var(--vvh, 100dvh) - 360px), 640px);
 }
 
+.sheet.command-sheet { padding-block-start: 0; }
 .command-heading {
   position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin: -20px -22px 0; padding: 12px 22px; background: var(--card);
+  gap: 12px; margin-inline: -22px; padding: 12px 22px; background: var(--card);
 }
 .command-heading h2 { margin: 0; }
