@@ -52,6 +52,20 @@ type NativeMaintenanceJournal interface {
 	Resolve(context.Context, NativeMaintenanceRecord) (NativeMaintenanceRecord, error)
 }
 
+// NativeMaintenanceHistory is the reader-side gate for a detached maintenance
+// journal. It is used even while command dispatch is disabled.
+type NativeMaintenanceHistory interface {
+	Ready(context.Context) error
+	CheckNativeHistory(context.Context, pa.ExecutionBinding) error
+}
+
+func (r *Engine) checkNativeHistory(ctx context.Context, binding pa.ExecutionBinding) error {
+	if r.o.NativeHistory == nil || binding.NativeSessionID == "" {
+		return nil
+	}
+	return r.o.NativeHistory.CheckNativeHistory(ctx, binding)
+}
+
 // QualifyNativeMaintenance is an explicit internal operation with an isolated,
 // tool-free Provider and journal supplied by qualification composition. The
 // regular Bot provider, scheduler and HTTP service never call this entry point.

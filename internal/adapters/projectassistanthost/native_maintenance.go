@@ -7,6 +7,18 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+// Native-history readiness does not resume a provider or mutate the journal.
+// Actual pending intents already block history; recovery may seal them only
+// after the previous execution owner is proved stopped.
+func (h *Host) nativeHistoryReady(ctx context.Context) error {
+	if h.o.NativeHistory == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
+	defer cancel()
+	return h.o.NativeHistory.Ready(ctx)
+}
+
 // qualifyNativeMaintenance composes the internal maintenance path for isolated
 // qualification. No production binding supplies a provider or journal. In
 // particular this never uses the regular provider's turn tools and MCP grants.

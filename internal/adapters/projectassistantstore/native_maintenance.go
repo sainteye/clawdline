@@ -5,6 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+
+	_ "modernc.org/sqlite"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -168,4 +174,134 @@ func (j *NativeMaintenanceJournal) RecoverInterrupted(ctx context.Context) (int6
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// This state lives beside the live Bot databases. The updater can restore its
+// main store without discarding the maintenance history barrier. Directory
+// and marker are independent so losing either is a refusal, not a fresh start.
+const (
+	nativeMaintenanceDir    = "project-assistant-native-maintenance"
+	nativeMaintenanceMarker = "project-assistant-native-maintenance.initialized"
+	nativeMaintenanceDB     = "journal.sqlite3"
+	nativeMaintenanceFormat = "native-maintenance-v1\n"
+)
+
+// NativeMaintenanceHistoryReader only opens established state read-only. A
+// source installed before maintenance has no marker, directory or writer.
+type NativeMaintenanceHistoryReader struct {
+	state string
+	seen  atomic.Bool
+}
+
+func NewNativeMaintenanceHistoryReader(state string) *NativeMaintenanceHistoryReader {
+	return &NativeMaintenanceHistoryReader{state: state}
+}
+
+func (r *NativeMaintenanceHistoryReader) Ready(ctx context.Context) error {
+	db, err := r.open()
+	if err != nil || db == nil {
+		return err
+	}
+	defer db.Close()
+	var integrity string
+	if err = db.QueryRowContext(ctx, `PRAGMA quick_check(1)`).Scan(&integrity); err != nil || integrity != "ok" {
+		return maintenanceReadFailure(err)
+	}
+	// A readable but empty/wrong SQLite file is not an initialized journal.
+	var present bool
+	err = db.QueryRowContext(ctx, `SELECT EXISTS(SELECT intent FROM native_maintenance
+		WHERE machine=? AND bot=? AND state IN ('', 'unknown'))`, "", "").Scan(&present)
+	if err != nil {
+		return maintenanceReadFailure(err)
+	}
+	return nil
+}
+
+func (r *NativeMaintenanceHistoryReader) CheckNativeHistory(ctx context.Context, binding pa.ExecutionBinding) error {
+	db, err := r.open()
+	if err != nil || db == nil {
+		return err
+	}
+	defer db.Close()
+
+	fence := binding.Fence
+	var data []byte
+	err = db.QueryRowContext(ctx, `SELECT intent FROM native_maintenance
+		WHERE machine=? AND bot=? AND state IN ('', 'unknown')`, fence.Key.MachineID, fence.Key.BotID).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return maintenanceReadFailure(err)
+	}
+	var blocked app.NativeMaintenanceIntent
+	if err = json.Unmarshal(data, &blocked); err != nil {
+		return maintenanceReadFailure(err)
+	}
+	if err = blocked.Validate(); err != nil || blocked.Binding.Fence.Key != fence.Key {
+		return maintenanceReadFailure(err)
+	}
+	// The ACP directory partitions history by conversation, account selection
+	// and privacy/instruction epoch. A new execution generation alone still
+	// points at the same history.
+	prior := blocked.Binding
+	if prior.Fence.Project == fence.Project && prior.Fence.ConversationID == fence.ConversationID &&
+		prior.Agent == binding.Agent && prior.LoginProfile == binding.LoginProfile && prior.SessionSlot == binding.SessionSlot &&
+		prior.InstructionRevision == binding.InstructionRevision && prior.ForgottenThrough == binding.ForgottenThrough &&
+		prior.NativeSessionID == binding.NativeSessionID {
+		return failure(pa.ExecutionEffectUnknown, "native_maintenance_history")
+	}
+	return nil
+}
+
+func (r *NativeMaintenanceHistoryReader) open() (*sql.DB, error) {
+	if !filepath.IsAbs(r.state) {
+		return nil, maintenanceReadFailure(nil)
+	}
+	state, err := os.Stat(r.state)
+	if err != nil || !state.IsDir() {
+		return nil, maintenanceReadFailure(err)
+	}
+	dir := filepath.Join(r.state, nativeMaintenanceDir)
+	marker := filepath.Join(r.state, nativeMaintenanceMarker)
+	dirInfo, dirErr := os.Lstat(dir)
+	markerInfo, markerErr := os.Lstat(marker)
+	if errors.Is(dirErr, os.ErrNotExist) && errors.Is(markerErr, os.ErrNotExist) && !r.seen.Load() {
+		return nil, nil
+	}
+	if dirErr == nil || markerErr == nil {
+		r.seen.Store(true)
+	}
+	if err = errors.Join(dirErr, markerErr); err != nil {
+		return nil, maintenanceReadFailure(err)
+	}
+	if !dirInfo.IsDir() || !markerInfo.Mode().IsRegular() || markerInfo.Size() != int64(len(nativeMaintenanceFormat)) {
+		return nil, maintenanceReadFailure(nil)
+	}
+	format, err := os.ReadFile(marker)
+	if err != nil || string(format) != nativeMaintenanceFormat {
+		return nil, maintenanceReadFailure(err)
+	}
+	path := filepath.Join(dir, nativeMaintenanceDB)
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		info, err := os.Lstat(path + suffix)
+		if suffix != "" && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			return nil, maintenanceReadFailure(err)
+		}
+	}
+	// SQLite opens the committed WAL view when present. immutable=1 could
+	// skip a pending intent written since the last main-file checkpoint.
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, maintenanceReadFailure(err)
+	}
+	return db, nil
+}
+
+func maintenanceReadFailure(cause error) error {
+	return errors.Join(failure(pa.ExecutionEffectUnknown, "native_maintenance_journal"), cause)
 }

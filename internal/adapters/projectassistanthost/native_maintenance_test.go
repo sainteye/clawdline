@@ -464,3 +464,239 @@ func TestMaintenanceACPPeer(t *testing.T) {
 	}
 	os.Exit(0)
 }
+
+func establishHostHistoryFixture(t *testing.T, state string) *journalstore.NativeMaintenanceJournal {
+	t.Helper()
+	dir := filepath.Join(state, "project-assistant-native-maintenance")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, journal := qualificationJournal(t, filepath.Join(dir, "journal.sqlite3"))
+	if err := os.WriteFile(filepath.Join(state, "project-assistant-native-maintenance.initialized"), []byte("native-maintenance-v1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return journal
+}
+
+func TestHostNativeMaintenanceHistoryBlocksNativeLoadAcrossRestart(t *testing.T) {
+	for _, recover := range []bool{false, true} {
+		name := "pending"
+		if recover {
+			name = "unknown"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			f := newHostFixture(t)
+			state := t.TempDir()
+			f.o.NativeHistory = journalstore.NewNativeMaintenanceHistoryReader(state)
+			f.start(t)
+			f.enable(t)
+			bot := f.create(t, "protected-history")
+			if _, err := f.send(t, bot, "seed"); err != nil {
+				t.Fatal(err)
+			}
+			seed := fixtureReceive(t, f.p.sent)
+			fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "seeded"}
+			fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+			binding, err := f.h.store.Binding(ctx, bot.Key, seed.Turn.Fence.BindingID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			journal := establishHostHistoryFixture(t, state)
+			intent := app.NativeMaintenanceIntent{
+				ID: "interrupted", Binding: binding, PrincipalID: "server-reader", ReaderID: "server-reader",
+				AuthorizationRevision: "current", CLIVersion: "fake", AdapterVersion: "fake", Evidence: "fixture-only",
+			}
+			if _, reserved, err := journal.Reserve(ctx, intent); !reserved || err != nil {
+				t.Fatal("could not stage the independent maintenance journal", reserved, err)
+			}
+			if err := f.h.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if recover {
+				n, err := journal.RecoverInterrupted(ctx)
+				if n != 1 || err != nil {
+					t.Fatal("could not simulate sealing the interrupted writer", n, err)
+				}
+			}
+
+			f.o.Broker = f.broker(t, f.o.Broker.Dir)
+			f.o.NativeHistory = journalstore.NewNativeMaintenanceHistoryReader(state)
+			f.start(t)
+			f.enable(t)
+			receipt, err := f.send(t, bot, "blocked-resume")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixtureEventually(t, func() bool {
+				turn, err := f.h.store.Turn(ctx, bot.Key, receipt.ResourceID)
+				return err == nil && turn.State == pa.TurnFailed
+			})
+			failed, err := f.h.store.Turn(ctx, bot.Key, receipt.ResourceID)
+			if err != nil || failed.Failure == nil || failed.Failure.Code != pa.ExecutionEffectUnknown || f.p.opens.Load() != 1 {
+				t.Fatal("uncertain history reached the native provider after restart", failed.Failure, f.p.opens.Load(), err)
+			}
+
+			// Forget creates a different physical history epoch. On an ordinary
+			// authorized input it must get a fresh environment, not load the
+			// blocked session or require resolving the old writer.
+			service, err := f.h.Service()
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := f.h.store.Current(ctx, bot.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Forget(ctx, app.ForgetRequest{
+				Command: pa.Command{Key: bot.Key, Operation: pa.ForgetOperation, IdempotencyKey: "forget-held"},
+				Project: bot.Project, ExpectedRevision: current.Revision, SourceIDs: []string{"synthetic-source"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			f.revoked.Store(true)
+			if _, err := f.send(t, bot, "revoked"); pa.Code(err) != pa.Revoked || f.p.opens.Load() != 1 {
+				t.Fatal("revocation accidentally opened native history", err)
+			}
+			f.revoked.Store(false)
+			if _, err := f.send(t, bot, "clean-privacy-epoch"); err != nil {
+				t.Fatal(err)
+			}
+			fresh := fixtureReceive(t, f.p.sessions)
+			if fresh.q.Resume || fresh.q.Binding.NativeSessionID != "" || fresh.q.Binding.ForgottenThrough <= binding.ForgottenThrough {
+				t.Fatal("Forget did not yield a separate filtered session", fresh.q)
+			}
+			fixtureReceive(t, f.p.sent)
+			fresh.reply <- app.PromptResult{FinalText: "new history only"}
+			fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+			if old, found, err := journal.Lookup(ctx, intent); err != nil || !found || (recover && old.State != app.NativeCompactionUnknown) || (!recover && old.State != "") {
+				t.Fatal("normal chat or Host startup rewrote the isolated journal", old.State, found, err)
+			}
+		})
+	}
+}
+
+func TestHostNativeMaintenanceHistoryRefusesStartupWithMissingEstablishedJournal(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	state := t.TempDir()
+	if err := os.WriteFile(filepath.Join(state, "project-assistant-native-maintenance.initialized"), []byte("native-maintenance-v1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.o.NativeHistory = journalstore.NewNativeMaintenanceHistoryReader(state)
+	f.start(t)
+	if err := f.h.Enable(ctx); pa.Code(err) != pa.ExecutionEffectUnknown {
+		t.Fatal("unreadable maintenance state enabled native recovery", err)
+	}
+	if f.h.engine != nil || f.h.routineDone != nil || f.factories.Load() != 0 || f.p.opens.Load() != 0 {
+		t.Fatal("failed readiness started native recovery or scheduled work")
+	}
+}
+
+type historyReaderObservation struct {
+	app.NativeMaintenanceHistory
+	checked chan error
+}
+
+func (r historyReaderObservation) CheckNativeHistory(ctx context.Context, binding pa.ExecutionBinding) error {
+	err := r.NativeMaintenanceHistory.CheckNativeHistory(ctx, binding)
+	r.checked <- err
+	return err
+}
+
+func TestHostNativeMaintenanceHistoryKeepsInterruptedChatUnacknowledged(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	state := t.TempDir()
+	f.o.NativeHistory = journalstore.NewNativeMaintenanceHistoryReader(state)
+	f.start(t)
+	f.enable(t)
+	bot := f.create(t, "interrupted")
+	receipt, err := f.send(t, bot, "original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := fixtureReceive(t, f.p.sent)
+	binding, err := f.h.store.Binding(ctx, bot.Key, seed.Turn.Fence.BindingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := establishHostHistoryFixture(t, state)
+	intent := app.NativeMaintenanceIntent{
+		ID: "prior-owner", Binding: binding, PrincipalID: "server-reader", ReaderID: "server-reader",
+		AuthorizationRevision: "current", CLIVersion: "fake", AdapterVersion: "fake", Evidence: "fixture-only",
+	}
+	if _, reserved, err := journal.Reserve(ctx, intent); !reserved || err != nil {
+		t.Fatal("could not stage a pending maintenance intent", reserved, err)
+	}
+	if err := f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.h.store.Export(ctx, bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := make(chan error, 1)
+	f.o.NativeHistory = historyReaderObservation{journalstore.NewNativeMaintenanceHistoryReader(state), checked}
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	if err := fixtureReceive(t, checked); pa.Code(err) != pa.ExecutionEffectUnknown {
+		t.Fatal("restart checked the wrong native history", err)
+	}
+	after, err := f.h.store.Export(ctx, bot.Key)
+	if err != nil || !reflect.DeepEqual(before.Turns, after.Turns) || !reflect.DeepEqual(before.Messages, after.Messages) || f.p.opens.Load() != 1 {
+		t.Fatal("restricted restart created a replacement notice or opened a provider", err)
+	}
+	turn, err := f.h.store.Turn(ctx, bot.Key, receipt.ResourceID)
+	if err != nil || turn.State != pa.TurnUnknown || turn.Failure == nil || turn.Failure.Field != app.RestartField {
+		t.Fatal("original interrupted chat was acknowledged by the blocked resume", turn, err)
+	}
+}
+
+func TestHostNativeMaintenanceHistoryKeepsIsolatedRoutineAvailable(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	state := t.TempDir()
+	f.o.NativeHistory = journalstore.NewNativeMaintenanceHistoryReader(state)
+	f.start(t)
+	f.enable(t)
+	bot := f.create(t, "protected-main")
+	if _, err := f.send(t, bot, "seed-main"); err != nil {
+		t.Fatal(err)
+	}
+	seed := fixtureReceive(t, f.p.sent)
+	main := fixtureReceive(t, f.p.sessions)
+	binding, err := f.h.store.Binding(ctx, bot.Key, seed.Turn.Fence.BindingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := main.q.Tools.(app.RoutineTools)
+	disabled := false
+	routine, err := tools.Routines(ctx, app.RoutineRequest{Action: "save", IdempotencyKey: "save", Name: "Fixture", Instruction: "Independent routine", IntervalSeconds: 3600, Enabled: &disabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools.Routines(ctx, app.RoutineRequest{Action: "test", IdempotencyKey: "run", ID: routine.ID}); err != nil {
+		t.Fatal(err)
+	}
+	journal := establishHostHistoryFixture(t, state)
+	intent := app.NativeMaintenanceIntent{
+		ID: "prior-main", Binding: binding, PrincipalID: "server-reader", ReaderID: "server-reader",
+		AuthorizationRevision: "current", CLIVersion: "fake", AdapterVersion: "fake", Evidence: "fixture-only",
+	}
+	if _, reserved, err := journal.Reserve(ctx, intent); !reserved || err != nil {
+		t.Fatal("could not stage a pending main history intent", reserved, err)
+	}
+	if err := f.h.engine.TickRoutines(ctx, bot.Key); err != nil {
+		t.Fatal(err)
+	}
+	main.reply <- app.PromptResult{FinalText: "main done"}
+	isolated := fixtureReceive(t, f.p.sessions)
+	if isolated.q.Resume || isolated.q.Binding.SessionSlot == "" || isolated.q.Binding.NativeSessionID != "" {
+		t.Fatal("independent routine reused protected main history", isolated.q)
+	}
+	fixtureReceive(t, f.p.sent)
+	isolated.reply <- app.PromptResult{FinalText: "isolated routine"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+}
