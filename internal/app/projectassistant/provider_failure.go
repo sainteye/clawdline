@@ -72,6 +72,17 @@ type ProviderFailure struct {
 func (f *ProviderFailure) Error() string { return f.Cause.Error() }
 func (f *ProviderFailure) Unwrap() error { return f.Cause }
 
+// TerminalQuotaFailure is the native adapter's typed terminal quota rejection
+// for the current prompt. The engine must still rule out observed activity
+// and close the owned session before another Agent can receive the input.
+type TerminalQuotaFailure struct {
+	Failure  *ProviderFailure
+	NoOutput bool
+}
+
+func (f *TerminalQuotaFailure) Error() string { return f.Failure.Error() }
+func (f *TerminalQuotaFailure) Unwrap() error { return f.Failure }
+
 // PreSendRefusal is a provider's authoritative guarantee that Open refused
 // before any prompt or external action. It must return a cleanup handle too.
 // Native adapters do not construct this until separately qualified. A typed

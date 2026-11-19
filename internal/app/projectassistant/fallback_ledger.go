@@ -35,11 +35,19 @@ func observeAttempt(t *pa.Turn, tool bool) bool {
 // id is its stable call identity; retrying the journal never invokes the tool.
 // This method conveys no authority to execute or to replay an unknown effect.
 func (r *Engine) RecordToolActivity(ctx context.Context, fence pa.Fence, turnID, id string) error {
+	return r.recordToolActivity(ctx, fence, turnID, id, false)
+}
+
+func (r *Engine) RecordToolDiscovery(ctx context.Context, fence pa.Fence, turnID, id string) error {
+	return r.recordToolActivity(ctx, fence, turnID, id, true)
+}
+
+func (r *Engine) recordToolActivity(ctx context.Context, fence pa.Fence, turnID, id string, discovery bool) error {
 	if id == "" {
 		return runtimeFailure(pa.Invalid, "tool_activity_id")
 	}
 	return r.Publish(ctx, ProtocolEvent{ID: "tool-activity-" + id, Fence: fence, TurnID: turnID,
-		Trace: &pa.Trace{TurnID: turnID, Category: "tool_activity", Text: id}})
+		Trace: &pa.Trace{TurnID: turnID, Category: "tool_activity", Text: id}, ToolDiscovery: discovery})
 }
 
 // parkedAttempt restores only the newest session of this configured identity.

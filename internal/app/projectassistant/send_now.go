@@ -88,6 +88,8 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 		a.steering = map[string]bool{}
 	}
 	a.steering[t.ID] = true
+	// Any native steer may have changed the input the active Agent saw.
+	a.steeredTurnID = running
 	a.mu.Unlock()
 	locked = false
 	// The agent's answer travels apart from its turn's events, which need

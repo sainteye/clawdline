@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +64,24 @@ func TestACPTestPeer(t *testing.T) {
 		}
 		switch f.Method {
 		case "initialize":
+			if mode == "provider-claude-terminal-quota" {
+				var init struct {
+					ClientCapabilities struct {
+						Meta struct {
+							JetBrains struct {
+								AIR struct {
+									Version      int      `json:"version"`
+									Capabilities []string `json:"capabilities"`
+								} `json:"air"`
+							} `json:"jetbrains"`
+						} `json:"_meta"`
+					} `json:"clientCapabilities"`
+				}
+				if json.Unmarshal(f.Params, &init) != nil || init.ClientCapabilities.Meta.JetBrains.AIR.Version != 1 ||
+					!slices.Contains(init.ClientCapabilities.Meta.JetBrains.AIR.Capabilities, "sessionFailure") {
+					os.Exit(9)
+				}
+			}
 			if strings.HasPrefix(mode, "compact-") {
 				var init struct {
 					ClientCapabilities struct {
@@ -184,6 +203,10 @@ func TestACPTestPeer(t *testing.T) {
 					}
 				}
 				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
+			if mode == "provider-claude-terminal-quota" {
+				send(frame{ID: f.ID, Result: json.RawMessage(os.Getenv("CLAWDLINE_ACP_ERROR"))})
 				continue
 			}
 			if mode == "provider-error" || mode == "provider-error-eof" {
@@ -397,7 +420,11 @@ func openLimitedTestClient(t *testing.T, mode string, sink func(context.Context,
 			t.Error("direct owned process was not reaped")
 		}
 	})
-	if err = c.initialize(context.Background(), app.OpenRequest{Directory: t.TempDir()}); err != nil {
+	q := app.OpenRequest{Directory: t.TempDir()}
+	if mode == "provider-claude-terminal-quota" {
+		q.Bot.Agent = pa.ClaudeCode
+	}
+	if err = c.initialize(context.Background(), q); err != nil {
 		t.Fatal(err)
 	}
 	return c, p

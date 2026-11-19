@@ -227,6 +227,60 @@ func (r *Engine) refuseBeforeSend(ctx context.Context, a *runtimeActor, t *pa.Tu
 	return e == nil, e
 }
 
+func terminalQuota(t pa.Turn, err error) *TerminalQuotaFailure {
+	var quota *TerminalQuotaFailure
+	if !mainChatTurn(t) || t.Room != nil || len(t.Attempts) == 0 ||
+		!errors.As(err, &quota) || quota.Failure == nil || !pa.IsQuotaReason(string(quota.Failure.Reason)) {
+		return nil
+	}
+	return quota
+}
+
+// closeQuotaAttempt runs after confirmed native cleanup. It re-reads the
+// ledger because output, permissions and tool calls can arrive during Wait
+// or cleanup. The transition, revocation and login rest are one transaction.
+func (r *Engine) closeQuotaAttempt(ctx context.Context, a *runtimeActor, t *pa.Turn, binding pa.ExecutionBinding, reason ProviderFailureReason) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopped.Load() || ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	latest, err := r.o.Repository.Turn(ctx, a.key, t.ID)
+	if err != nil {
+		return false, err
+	}
+	if latest.Fence != t.Fence || latest.State != pa.TurnRunning ||
+		len(latest.Attempts) == 0 || a.steeredTurnID == t.ID {
+		return false, nil
+	}
+	f := latest.Attempts[len(latest.Attempts)-1]
+	if f.Stage != pa.AttemptSent || f.NativeActivity || f.ToolActivity || f.AnswerObserved || f.CleanupConfirmed {
+		return false, nil
+	}
+	bot, err := r.o.Repository.Bot(ctx, a.key)
+	if err != nil {
+		return false, err
+	}
+	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
+		return false, err
+	}
+	f.Stage, f.Reason, f.Effect, f.CleanupConfirmed = pa.AttemptClosed, string(reason), "none", true
+	latest.Attempts = append(slices.Clone(latest.Attempts), f)
+	rest, err := r.attemptRest(ctx, bot, latest)
+	if err != nil {
+		return false, err
+	}
+	binding.Revoked = true
+	cmd := r.command(a.key, pa.SendOperation, "runtime-quota-"+t.ID+"-"+binding.Fence.BindingID, f)
+	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &latest, Binding: &binding, AgentRest: rest,
+		Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: latest.ID}, Events: []pa.Event{{Fence: latest.Fence, Kind: pa.TurnUpdated, Turn: &latest}}})
+	if err != nil {
+		return false, err
+	}
+	*t = latest
+	return true, nil
+}
+
 func (r *Engine) attemptRest(ctx context.Context, bot pa.Bot, t pa.Turn) (*pa.AgentRest, error) {
 	store, ok := r.o.Repository.(AgentRestRepository)
 	if !ok {
@@ -275,8 +329,15 @@ func (r *Engine) holdAttempt(a *runtimeActor, turn pa.Turn, cause error, cleanup
 	if err != nil {
 		return err
 	}
+	var rest *pa.AgentRest
+	if cleanup && terminalQuota(latest, cause) != nil {
+		rest, err = r.attemptRest(ctx, bot, latest)
+		if err != nil {
+			return err
+		}
+	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-held-"+turn.ID+"-"+f.Fence.BindingID, f)
-	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &latest, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: turn.ID}, Events: []pa.Event{{Fence: latest.Fence, Kind: pa.TurnUpdated, Turn: &latest}}})
+	_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &latest, AgentRest: rest, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: turn.ID}, Events: []pa.Event{{Fence: latest.Fence, Kind: pa.TurnUpdated, Turn: &latest}}})
 	return err
 }
 
@@ -308,7 +369,7 @@ func attemptSwitchNotice(x Export, t pa.Turn, primary pa.Agent, profiles ...stri
 	if before.Agent == effective.Agent && before.LoginProfile == effective.LoginProfile {
 		return ""
 	}
-	return "Login switched before sending / 送出前已切換登入身分：" + pa.LoginKey(before.Agent, before.LoginProfile) + " → " + pa.LoginKey(effective.Agent, effective.LoginProfile)
+	return "Agent login switched / 已切換 Agent 登入身分：" + pa.LoginKey(before.Agent, before.LoginProfile) + " → " + pa.LoginKey(effective.Agent, effective.LoginProfile)
 }
 
 func loginRest(ctx context.Context, store AgentRestRepository, machine string, agent pa.Agent, profile string) (*pa.AgentRest, error) {

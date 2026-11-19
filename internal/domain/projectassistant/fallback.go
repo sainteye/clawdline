@@ -137,7 +137,17 @@ func SafeAttemptClosed(t Turn) bool {
 		return false
 	}
 	f := t.Attempts[len(t.Attempts)-1]
-	return f.Stage == AttemptClosed && f.CleanupConfirmed && !f.SendStarted && !f.SendReturned && !f.NativeActivity && !f.ToolActivity && !f.AnswerObserved && f.Effect == "none" && f.Reason != ""
+	if f.Stage != AttemptClosed || !f.CleanupConfirmed || f.NativeActivity || f.ToolActivity || f.AnswerObserved || f.Effect != "none" {
+		return false
+	}
+	if f.SendStarted {
+		return f.SendReturned && IsQuotaReason(f.Reason)
+	}
+	return !f.SendReturned && f.Reason != ""
+}
+
+func IsQuotaReason(reason string) bool {
+	return reason == "usage_limit" || reason == "out_of_credits"
 }
 
 // FallbackConfig keeps Bot's existing value semantics. The wire remains an

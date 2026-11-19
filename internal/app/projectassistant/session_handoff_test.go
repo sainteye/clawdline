@@ -282,3 +282,25 @@ func TestFreshContinuationRecapAndBoundaryProtection(t *testing.T) {
 		t.Fatalf("expected context stale on tampered recap, got %v", err)
 	}
 }
+
+func TestFreshContinuationKeepsPictureOnlyHistory(t *testing.T) {
+	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
+		t.Run(string(agent), func(t *testing.T) {
+			x, turn, filtered := continuationFixture()
+			x.Messages[0].Text = ""
+			x.Messages[0].Attachments = []pa.Attachment{{ID: strings.Repeat("a", 64), Bytes: 1, MediaType: "image/png"}}
+			h, err := newSessionHandoffForAgent(x, turn, filtered, agent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(h.Continuation) != 2 || h.Continuation[0].Text != "[Image attachment / 圖片附件]" ||
+				h.Continuation[1].Text != x.Messages[1].Text {
+				t.Fatalf("picture-only input and its reply did not survive: %+v", h.Continuation)
+			}
+			opening, err := h.Opening(turn, filtered)
+			if err != nil || strings.Contains(opening, x.Messages[0].Attachments[0].ID) {
+				t.Fatalf("unexpected picture data in opening: %v", err)
+			}
+		})
+	}
+}

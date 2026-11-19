@@ -86,6 +86,7 @@ type runtimeActor struct {
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
 	steering         map[string]bool
+	steeredTurnID    string
 	handoffAuthority handoffInputAuthority
 
 	maintenance bool // immutable: owns the actor without a chat turn
@@ -776,6 +777,9 @@ func (r *Engine) work(a *runtimeActor) {
 						state = pa.TurnCancelled
 					}
 				}
+				if latest.State == pa.TurnRunning && pa.SafeAttemptClosed(latest) && latest.Attempts[len(latest.Attempts)-1].SendReturned {
+					state = pa.TurnFailed
+				}
 				var notStarted *routineNotStarted
 				if latest.RoutineRunID != "" && errors.As(err, &notStarted) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 					state = pa.TurnFailed
@@ -1316,7 +1320,23 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	result, err := pending.Wait(ctx)
 	if err != nil {
-		return err
+		quota := terminalQuota(t, err)
+		if quota == nil || !quota.NoOutput || a.stopped.Load() || ctx.Err() != nil {
+			return err
+		}
+		closeErr := r.closeSession(a, session)
+		cleaned, cleanupConfirmed = true, closeErr == nil
+		if closeErr != nil {
+			return errors.Join(closeErr, err)
+		}
+		continued, transitionErr := r.closeQuotaAttempt(ctx, a, &t, binding, quota.Failure.Reason)
+		if transitionErr != nil || !continued {
+			return errors.Join(err, transitionErr)
+		}
+		if _, selectErr := r.selectStep(ctx, preparedBot, t); selectErr != nil {
+			return err
+		}
+		return r.executeAttempt(ctx, a, t, &preparedBot)
 	}
 	if err = r.appendAttempt(ctx, a, &t, pa.AttemptAnswered, nil, nil); err != nil {
 		return err
@@ -1413,6 +1433,9 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 			}
 			text += file.Name
 		}
+	}
+	if strings.TrimSpace(text) == "" && len(message.Attachments) > 0 {
+		text = "[Image attachment / 圖片附件]"
 	}
 	if err := pa.ValidateMessage(text); err != nil {
 		return nil, err
@@ -1709,7 +1732,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 		return runtimeFailure(pa.Invalid, "incoming_payload")
 	}
 	tool := e.Permission != nil || e.Trace != nil && (e.Trace.Category == "tool_call" || e.Trace.Category == "tool_call_update" || e.Trace.Category == "tool_activity")
-	if observeAttempt(&t, tool) || permissionWaitStarted {
+	if (!e.ToolDiscovery && observeAttempt(&t, tool)) || permissionWaitStarted {
 		m.Turn = &t
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.TurnUpdated, Turn: &t})
 	}

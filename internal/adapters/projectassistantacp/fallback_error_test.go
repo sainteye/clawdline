@@ -209,3 +209,32 @@ func TestACPErrorKindBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestACPClaudeTerminalQuotaFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		tokens       int
+		actions      string
+		wantTerminal bool
+		wantNoOutput bool
+	}{
+		{name: "denied", actions: "[]", wantTerminal: true, wantNoOutput: true},
+		{name: "partial-work", tokens: 19, actions: "[]", wantTerminal: true},
+		{name: "rate-limited", actions: `["retry"]`},
+		{name: "context-exhausted", actions: `["new_session"]`},
+		{name: "untyped", actions: "null"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAWDLINE_ACP_ERROR", fmt.Sprintf(`{"stopReason":"end_turn","usage":{"outputTokens":%d},"_meta":{"jetbrains":{"air":{"version":1,"sessionFailure":{"id":"turn:error","revision":1,"severity":"error","category":"limit","title":"Private provider explanation","actions":%s}}}}}`, tc.tokens, tc.actions))
+			c, _ := openTestClient(t, "provider-claude-terminal-quota", func(context.Context, app.ProtocolEvent) error { return nil })
+			_, err := sendTestPrompt(t, c).Wait(context.Background())
+			var quota *app.TerminalQuotaFailure
+			if err == nil || errors.As(err, &quota) != tc.wantTerminal || strings.Contains(err.Error(), "Private") {
+				t.Fatalf("unexpected terminal classification: %v", err)
+			}
+			if quota != nil && (quota.NoOutput != tc.wantNoOutput || quota.Failure.Reason != app.ProviderUsageExhausted) {
+				t.Fatalf("unexpected quota evidence: %+v", quota)
+			}
+		})
+	}
+}

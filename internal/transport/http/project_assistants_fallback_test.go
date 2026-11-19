@@ -619,3 +619,159 @@ func fallbackAttemptStages(attempts []pa.AttemptFact) string {
 	}
 	return strings.Join(out, " ")
 }
+
+func TestProjectAssistantFallbackHTTPClaudeTerminalQuota(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		noOutput   bool
+		toolCalled bool
+		switches   bool
+	}{
+		{name: "clean first rejection", noOutput: true, switches: true},
+		{name: "prior tool call", noOutput: true, toolCalled: true},
+		{name: "partial response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newPAServerFixture(t, true)
+			var primary, alternate, discovers atomic.Int32
+			var firstClosed atomic.Bool
+			f.s.projectAssistants.provider = func() (app.Provider, error) {
+				return paServerProvider{open: func(ctx context.Context, q app.OpenRequest) (app.ProviderSession, error) {
+					if q.Bot.Agent == pa.Codex {
+						if !firstClosed.Load() {
+							t.Error("Codex opened before Claude closed")
+						}
+						alternate.Add(1)
+						return &fallbackHTTPSession{send: func(p app.PromptRequest) (app.PendingPrompt, error) {
+							if p.Handoff == nil || p.Handoff.Agent != pa.Codex {
+								t.Error("Codex lost the source-owned handoff")
+							}
+							return fallbackHTTPPending{}, nil
+						}}, nil
+					}
+					primary.Add(1)
+					if tools, ok := q.Tools.(app.TeamTools); ok {
+						_ = tools.TeamAvailable(ctx)
+						discovers.Add(1)
+					}
+					if tc.toolCalled {
+						if err := q.Tools.SendMessage(ctx, "already-published", "Scripted tool result"); err != nil {
+							t.Error(err)
+						}
+					}
+					return &fallbackHTTPSession{
+						close: func() error { firstClosed.Store(true); return nil },
+						send: func(app.PromptRequest) (app.PendingPrompt, error) {
+							return fallbackHTTPPending{err: &app.TerminalQuotaFailure{
+								Failure:  &app.ProviderFailure{Reason: app.ProviderUsageExhausted, Cause: &pa.Failure{Code: pa.Unsupported}},
+								NoOutput: tc.noOutput,
+							}}, nil
+						},
+					}, nil
+				}}, nil
+			}
+			f.enable(t)
+			fallbackHTTPCreate(t, f)
+			paServerOK(t, f.send(t, f.local, "terminal-quota"))
+			first := fallbackHTTPWait(t, f)
+			if len(first.Turns) != 1 || primary.Load() != 1 || discovers.Load() != 1 || !firstClosed.Load() {
+				t.Fatalf("unexpected primary lifecycle: turns=%d, primary=%d, discovers=%d, closed=%v", len(first.Turns), primary.Load(), discovers.Load(), firstClosed.Load())
+			}
+			turn := first.Turns[0]
+			want := pa.TurnUnknown
+			wantAlternate := int32(0)
+			if tc.switches {
+				want, wantAlternate = pa.TurnSucceeded, 1
+				var refused *pa.AttemptFact
+				for i := range turn.Attempts {
+					f := &turn.Attempts[i]
+					if f.Agent == pa.ClaudeCode && f.Stage == pa.AttemptClosed {
+						refused = f
+					}
+				}
+				if refused == nil || !refused.SendReturned || !refused.CleanupConfirmed || refused.Effect != "none" || refused.Reason != "usage_limit" {
+					t.Fatalf("quota cutoff evidence lost: %+v", turn.Attempts)
+				}
+			}
+			if turn.State != want || alternate.Load() != wantAlternate {
+				t.Fatalf("first state=%s alternate=%d, want %s/%d: %+v", turn.State, alternate.Load(), want, wantAlternate, turn)
+			}
+			repo := store.New(f.s.store.ProjectAssistantDatabase())
+			rest, err := repo.AgentRest(context.Background(), f.key.MachineID, pa.ClaudeCode)
+			if err != nil || rest == nil || rest.Reason != "usage_limit" {
+				t.Fatalf("Claude rest=%+v err=%v", rest, err)
+			}
+			paServerOK(t, f.send(t, f.local, "new-explicit-input"))
+			second := fallbackHTTPWait(t, f)
+			if primary.Load() != 1 || alternate.Load() != wantAlternate+1 || len(second.Turns) != 2 || second.Bot.Agent != pa.ClaudeCode {
+				t.Fatalf("new input did not use the alternate with the configured primary preserved: primary=%d alternate=%d turns=%d", primary.Load(), alternate.Load(), len(second.Turns))
+			}
+		})
+	}
+}
+
+type fallbackModelProvider struct{ paServerProvider }
+
+func (fallbackModelProvider) Configuration(_ context.Context, b pa.Bot, _ string, model string) (pa.ConfigurationCatalog, error) {
+	if b.Agent != pa.Codex || model != "scripted-selected" {
+		return pa.ConfigurationCatalog{}, &pa.Failure{Code: pa.Unsupported, Field: "model"}
+	}
+	return pa.ConfigurationCatalog{Agent: b.Agent, Model: model}, nil
+}
+
+func TestProjectAssistantFreshPrimaryKeepsPictureHistoryAndSelectedModel(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.s.projectAssistants.provider = func() (app.Provider, error) {
+		return fallbackModelProvider{paServerProvider{open: func(_ context.Context, q app.OpenRequest) (app.ProviderSession, error) {
+			return &fallbackHTTPSession{send: func(p app.PromptRequest) (app.PendingPrompt, error) {
+				if q.Bot.Agent == pa.ClaudeCode {
+					if len(p.Images) != 1 || p.Text != "" {
+						t.Error("Claude did not receive the original picture-only input")
+					}
+				} else if q.PrimaryAgent != pa.Codex || q.Bot.RuntimeSettings.Model != "scripted-selected" ||
+					p.Handoff == nil || len(p.Handoff.Continuation) != 2 ||
+					p.Handoff.Continuation[0].Text != "[Image attachment / 圖片附件]" ||
+					p.Handoff.Continuation[1].Kind != pa.AssistantMessage || len(p.Images) != 0 {
+					t.Error("selected primary model did not receive the correct historical recap")
+				}
+				return fallbackHTTPPending{}, nil
+			}}, nil
+		}}}, nil
+	}
+	f.enable(t)
+	fallbackHTTPCreate(t, f)
+	bot := f.get(t, f.local)
+	route := "/v1/project-assistants/" + f.key.BotID
+	fence := contract.ProjectAssistantFence{
+		Key: bot.Bot.Key, Project: bot.Bot.Project, ConversationID: bot.Conversation.ID,
+		BindingID: bot.Conversation.BindingID, Generation: bot.Conversation.Generation,
+	}
+	image := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGMwaEkhCTGMahjVMHw1AACoJBgQ9FGyagAAAABJRU5ErkJggg=="
+	paServerOK(t, f.request(t, "POST", route+"/messages", f.local, contract.ProjectAssistantSendRequest{
+		Command: f.command(pa.SendOperation, "picture-only"), Fence: fence, Images: []string{image},
+	}))
+	before := fallbackHTTPWait(t, f)
+	if len(before.Turns) != 1 || before.Turns[0].State != pa.TurnSucceeded {
+		t.Fatalf("picture-only first turn did not succeed: %+v", before.Turns)
+	}
+	bot = f.get(t, f.local)
+	paServerOK(t, f.request(t, "PATCH", route, f.local, contract.ProjectAssistantEditRequest{
+		Command: f.command(pa.EditOperation, "select-primary-model"),
+		Settings: contract.ProjectAssistantEditSettings{
+			ExpectedVersion: bot.Bot.Version, Name: bot.Bot.Name, Appearance: bot.Bot.Appearance,
+			Instructions: bot.Bot.Instructions.Text, Agent: contract.ProjectAssistantAgentCodex,
+			RuntimeSettings: &contract.ProjectAssistantRuntimeSettings{Model: "scripted-selected", Options: map[string]string{}},
+		},
+	}))
+	paServerOK(t, f.send(t, f.local, "next-after-primary-edit"))
+	after := fallbackHTTPWait(t, f)
+	if after.Bot.Agent != pa.Codex || after.Bot.RuntimeSettings.Model != "scripted-selected" ||
+		after.Conversation.ID != before.Conversation.ID || len(after.Turns) != 2 {
+		t.Fatalf("primary settings or conversation not preserved: %s %q %d", after.Bot.Agent, after.Bot.RuntimeSettings.Model, len(after.Turns))
+	}
+	for _, turn := range after.Turns {
+		if turn.State != pa.TurnSucceeded {
+			t.Fatalf("turn did not succeed: %+v", turn)
+		}
+	}
+}

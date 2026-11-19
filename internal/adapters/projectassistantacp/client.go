@@ -90,6 +90,7 @@ type Client struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	adapterVersion    string
+	sessionFailures   bool
 	ownedMCP          *OwnedMCP
 	mcpMu             sync.Mutex
 	mcpRevoked        bool
@@ -148,7 +149,14 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 			} `json:"steering"`
 		} `json:"_meta"`
 	}
-	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{"session": map[string]any{"compaction": map[string]any{}}}, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
+	caps := map[string]any{"session": map[string]any{"compaction": map[string]any{}}}
+	c.sessionFailures = !maintenance && q.Bot.Agent == pa.ClaudeCode
+	if c.sessionFailures {
+		caps["_meta"] = map[string]any{"jetbrains": map[string]any{"air": map[string]any{
+			"version": 1, "capabilities": []string{"sessionFailure"},
+		}}}
+	}
+	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": caps, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
 	if err != nil {
 		return err
 	}
@@ -548,6 +556,11 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	}
 	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_stopped")
+	}
+	if p.rpc.c.sessionFailures {
+		if err := claudePromptFailure(b, result.StopReason, result.Text); err != nil {
+			return app.PromptResult{}, err
+		}
 	}
 	if result.StopReason == "max_tokens" || result.StopReason == "max_turn_requests" {
 		return app.PromptResult{}, refusal(pa.Unsupported, "prompt_"+result.StopReason)

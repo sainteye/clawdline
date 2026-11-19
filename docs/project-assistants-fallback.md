@@ -1,11 +1,33 @@
 # Provider failure metadata and pre-send Agent fallback
 
-The original prerequisite slice preserves native ACP error classification.
-That classification alone does not choose another Agent, change retry policy,
-or prove that a failed prompt had no effects. The pre-send backend slice below
-adds a separate authoritative guarantee and cleanup transition. A running
-prompt that fails remains unknown under
-the existing runtime policy, even when its error is classified as quota.
+Clawdline follows Codync's ordered login chain, terminal provider
+classification, login rest, and source-owned recap. A native Claude Code prompt
+can move the same chat turn to its configured alternate when the pinned adapter
+returns a negotiated terminal quota failure with zero output tokens. The Host
+must confirm cleanup and the durable turn must show no output, permission, or
+tool execution. The agent's read-only discovery of the team tool catalog is
+still journaled.
+
+The checked transition atomically closes the attempt, records its exhausted
+login, and revokes the ended binding before opening the next Agent on the
+existing logical turn and deadline. Output, tool activity, or an uncertain
+cleanup holds the original turn. A confirmed quota failure with prior activity
+also rests the login after cleanup, so a new explicit follow-up can use another
+Agent. The primary selection survives the rest, and manually saving a different
+primary or model uses the ordinary settings and next-turn admission flow.
+
+Claude's pinned ACP adapter negotiates the existing AIR `sessionFailure`
+capability. The runtime reads the terminal prompt result, where the adapter
+identifies account quota by its limit/error category and empty action array.
+Context and budget limits use a new-session action, and transient rate limits
+use retry. The runtime does not classify assistant text or background
+notifications as terminal quota. Generic JSON-RPC errors retain their prior
+diagnostic and unknown-effect behavior. Schema 13 protects the additional
+closed-attempt transition from older writers. Earlier archives remain readable.
+
+Fresh handoff represents an image-only historical input as an image-attachment
+placeholder and retains its paired reply. The placeholder carries neither the
+image bytes nor its digest and crosses the ordinary quote provenance checks.
 
 ## Console progress and Host tool journals
 
@@ -308,9 +330,9 @@ confirmed-cleanup receipt, alternate start and pre-Send persistence boundaries;
 reopening and explicit recovery never restart those inputs. Configuration tests
 cover read-only/foreign/stale writes and omitted versus explicit-empty edits.
 
-Native adapters deliberately do **not** construct `PreSendRefusal` in this
-change. Their existing typed quota errors therefore remain unknown after Send
-and do not automatically switch. Installed native A/B/A, authoritative pre-send
+Native adapters did not construct `PreSendRefusal` in this slice. At that
+point a typed quota error after Send remained unknown. The native Claude
+terminal quota path is described at the start of this document. Installed native A/B/A, authoritative pre-send
 qualification, complete native tool/effect interception, completed-action
 verification, fixed-mode stand-ins, sign-in/reset telemetry,
 fallback editing/status/switch-back UI and broader exhaustion UX remain separate

@@ -47,10 +47,16 @@ func applyAgentRest(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation
 	}
 	if m.AgentRest != nil {
 		rest := m.AgentRest
-		if rest.MachineID != a.Bot.Key.MachineID || m.Turn == nil || !pa.SafeAttemptClosed(*m.Turn) {
+		if rest.MachineID != a.Bot.Key.MachineID || m.Turn == nil || len(m.Turn.Attempts) == 0 {
 			return failure(pa.ScopeDenied, "agent_rest")
 		}
 		fact := m.Turn.Attempts[len(m.Turn.Attempts)-1]
+		// A held quota failure can rest a login for a future explicit turn.
+		// Only SafeAttemptClosed can advance the current turn to another Agent.
+		if !pa.SafeAttemptClosed(*m.Turn) &&
+			!(fact.Stage == pa.AttemptHeld && fact.SendReturned && fact.CleanupConfirmed && pa.IsQuotaReason(fact.Reason)) {
+			return failure(pa.ScopeDenied, "agent_rest")
+		}
 		if fact.Agent != rest.Agent || fact.LoginProfile != rest.LoginProfile || fact.Reason != rest.Reason || rest.Failures < 1 {
 			return failure(pa.ScopeDenied, "agent_rest_attempt")
 		}
@@ -169,6 +175,11 @@ func validAttemptStage(before, after pa.AttemptFact) bool {
 	case pa.AttemptAnswered:
 		return before.Stage == pa.AttemptSent && after.SendReturned && after.AnswerObserved && !after.CleanupConfirmed && after.Effect == "unknown" && after.Reason == ""
 	case pa.AttemptClosed:
+		if before.Stage == pa.AttemptSent && before.Reason == "" && after.Reason != "" {
+			expected := before
+			expected.Stage, expected.Reason, expected.Effect, expected.CleanupConfirmed = pa.AttemptClosed, after.Reason, "none", true
+			return after == expected && pa.SafeAttemptClosed(pa.Turn{Attempts: []pa.AttemptFact{after}})
+		}
 		if !after.CleanupConfirmed || after.SendStarted != before.SendStarted || after.Opened != before.Opened || after.SendReturned != before.SendReturned || after.AnswerObserved != before.AnswerObserved || after.NativeActivity != before.NativeActivity || after.ToolActivity != before.ToolActivity || after.Reason != before.Reason {
 			return false
 		}

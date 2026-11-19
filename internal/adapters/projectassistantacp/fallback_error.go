@@ -53,6 +53,50 @@ func providerFailure(r *rpcError) error {
 		Cause: refusal(pa.Unsupported, "rpc_"+strconv.Itoa(r.Code))}
 }
 
+// claudePromptFailure reads the pinned adapter's negotiated AIR sessionFailure
+// response. Its quota policy uses limit/error with an empty action array;
+// context/budget limits advertise new_session and rate limits advertise retry.
+// An ordinary success or a chat message has no authority to report quota.
+func claudePromptFailure(raw json.RawMessage, stopReason, output string) error {
+	var response struct {
+		Usage struct {
+			OutputTokens *int64 `json:"outputTokens"`
+		} `json:"usage"`
+		Meta struct {
+			JetBrains struct {
+				AIR struct {
+					Version int             `json:"version"`
+					Failure json.RawMessage `json:"sessionFailure"`
+				} `json:"air"`
+			} `json:"jetbrains"`
+		} `json:"_meta"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return refusal(pa.ExecutionEffectUnknown, "prompt_result")
+	}
+	air := response.Meta.JetBrains.AIR
+	if len(air.Failure) == 0 {
+		return nil
+	}
+	var failure struct {
+		ID       string    `json:"id"`
+		Revision int64     `json:"revision"`
+		Category string    `json:"category"`
+		Severity string    `json:"severity"`
+		Actions  *[]string `json:"actions"`
+	}
+	if err := json.Unmarshal(air.Failure, &failure); err != nil || air.Version != 1 ||
+		failure.ID == "" || failure.Revision <= 0 || failure.Severity != "error" || failure.Actions == nil {
+		return refusal(pa.ExecutionEffectUnknown, "prompt_result")
+	}
+	if failure.Category != "limit" || len(*failure.Actions) != 0 {
+		return refusal(pa.ExecutionEffectUnknown, "prompt_result")
+	}
+	quota := &app.ProviderFailure{Reason: app.ProviderUsageExhausted, Cause: refusal(pa.Unsupported, "prompt_quota")}
+	noOutput := stopReason == "end_turn" && output == "" && response.Usage.OutputTokens != nil && *response.Usage.OutputTokens == 0
+	return &app.TerminalQuotaFailure{Failure: quota, NoOutput: noOutput}
+}
+
 func validErrorKind(kind string) bool {
 	if kind == "" || len(kind) > capacity.MaximumBotErrorKindBytes {
 		return false

@@ -145,7 +145,7 @@ func TestTopicMemoryMigrationKeepsSchemaElevenShortFactsAndArchives(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Manifest.SchemaVersion != 12 {
+	if next.Manifest.SchemaVersion != pa.SchemaVersion {
 		t.Fatal("named note archive lacks its protecting schema")
 	}
 	next.Manifest.SchemaVersion = 11

@@ -218,6 +218,9 @@ type ProtocolEvent struct {
 	Trace      *pa.Trace
 	Permission *pa.PermissionOffer
 	Output     *pa.Output
+	// ToolDiscovery is set by the Host for its own read-only tool catalog
+	// lookup, which is journaled but cannot execute a model tool.
+	ToolDiscovery bool
 }
 
 // PromptFile contains only an owned, verified path for this native execution.

@@ -483,6 +483,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if life.closed.Load() || life.insideSend(ctx) || ctx.Err() != nil {
 			return failure(pa.Revoked, "native_work_journal_lifetime")
 		}
+		if tool == "teamAvailable" {
+			return r.RecordToolDiscovery(ctx, q.Binding.Fence, turnID, id)
+		}
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
