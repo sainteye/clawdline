@@ -13,18 +13,28 @@ const root=fileURLToPath(new URL('..',import.meta.url))
 const built=await build({entryPoints:[path.join(root,'tools/fixtures/project-assistants-dev-servers.tsx')],bundle:true,write:false,outfile:'servers.js',format:'esm',platform:'browser',target:'es2022',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"'}})
 const files=new Map(built.outputFiles.map(f=>['/'+path.basename(f.path),f.contents])),traffic=[]
 const hashes={}
-for(const file of ['tools/fixtures/project-assistants-dev-servers.tsx','src/project-assistants/DevServers.tsx','src/project-assistants/dev-servers.css']){const bytes=await readFile(path.join(root,file));hashes[file]={bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}}
+for(const file of ['tools/fixtures/project-assistants-dev-servers.tsx','src/project-assistants/DevServers.tsx','src/project-assistants/dev-servers.css','src/project-assistants/words.ts','src/project-assistants/MessageMenu.tsx','src/project-assistants/message-reactions.css','src/project-assistants/styles.css','src/cloud/project-assistants.ts','public/catalogs/en.json','public/catalogs/zh-Hant.json']){const bytes=await readFile(path.join(root,file));hashes[file]={bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}}
 for(const file of built.outputFiles)hashes[path.basename(file.path)]={bytes:file.contents.length,sha256:createHash('sha256').update(file.contents).digest('hex')}
 await writeFile(path.join(artifacts,'devserver-ui-built-inputs.json'),JSON.stringify(hashes,null,2)+'\n')
-const row=(id,name,state)=>({id,name,state,command:'synthetic-watch --foreground',folder:'/synthetic/project',attempt:'synthetic-attempt',fingerprint:'f'.repeat(64),revision:1})
-const rows=new Map([['Builder',[row('server-one','Web preview','running'),row('server-two','Watch build','stopped')]],['Other Bot',[row('other-server','Other watcher','running')]]])
-let loseNext=false,holdRead=false,releaseRead
+const preview=createServer((_req,res)=>{res.setHeader('Content-Type','text/plain');res.end('Synthetic owned preview fixture')})
+await new Promise(resolve=>preview.listen(0,'127.0.0.1',resolve))
+const previewPort=preview.address().port,previewOrigin=`http://127.0.0.1:${previewPort}`
+const row=(id,name,state)=>({id,name,state,command:'synthetic-watch --foreground',folder:'/synthetic/project',attempt:'synthetic-attempt',fingerprint:'f'.repeat(64),revision:1,ports_known:true,ports:state==='running'?[{port:previewPort,bind:'127.0.0.1',local:previewOrigin,remote:[]}]:[]})
+const network={...row('network-server','Network preview','running'),ports:[{port:43124,bind:'0.0.0.0',local:'http://127.0.0.1:43124',remote:['http://192.0.2.23:43124']}]}
+const unknown={...row('unknown-server','Unconfirmed watcher','running'),ports_known:false,ports:[]}
+const rows=new Map([['Builder',[row('server-one','Web preview','running'),row('server-two','Watch build','stopped'),network,unknown]],['Other Bot',[row('other-server','Other watcher','running')]]])
+let loseNext=false,invalidNext=false,holdRead=false,releaseRead
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(body))}
 const failure=(res,code)=>json(res,409,{contract_version:'project-assistants.v1',error:{code,field:'synthetic-control',retry_after_seconds:0}})
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://synthetic.invalid')
+  if(['/fixture/copy','/fixture/open'].includes(url.pathname)&&req.method==='POST'){
+   const chunks=[];for await(const chunk of req)chunks.push(chunk)
+   traffic.push({fixture:url.pathname,...JSON.parse(Buffer.concat(chunks))});await writeFile(path.join(artifacts,'devserver-ui-synthetic-traffic.json'),JSON.stringify(traffic,null,2)+'\n');json(res,200,{recorded:true});return
+  }
   if(url.pathname==='/fixture/lose-next'&&req.method==='POST'){loseNext=true;json(res,200,{ready:true});return}
+  if(url.pathname==='/fixture/invalid-next'&&req.method==='POST'){invalidNext=true;json(res,200,{ready:true});return}
   if(url.pathname==='/fixture/hold-read'){holdRead=true;json(res,200,{ready:true});return}
   if(url.pathname==='/fixture/release-read'){releaseRead?.();releaseRead=undefined;json(res,200,{released:true});return}
   if(url.pathname==='/fixture/add-server'){const list=rows.get('Builder');if(!list.some(r=>r.id==='late-server'))list.push(row('late-server','New watcher','running'));json(res,200,{added:true});return}
@@ -46,6 +56,7 @@ const server=createServer(async(req,res)=>{
      else{item.state=action==='stop'?'stopped':'running';item.attempt=body.idempotency_key;item.revision++}
      record.applied=true
      if(loseNext){loseNext=false;record.replyLost=true;res.destroy()}
+     else if(invalidNext){invalidNext=false;record.replyInvalid=true;res.writeHead(200,{'Content-Type':'application/json'});res.end('{"contract_version":')}
      else json(res,200,{contract_version:'project-assistants.v1',servers:rows.get(bot)??[]})
     }
    }
@@ -58,6 +69,6 @@ const server=createServer(async(req,res)=>{
  }catch(error){res.writeHead(500);res.end(String(error))}
 })
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
-const address={pid:process.pid,origin:`http://127.0.0.1:${server.address().port}`,synthetic:true}
+const address={pid:process.pid,origin:`http://127.0.0.1:${server.address().port}`,previewOrigin,synthetic:true}
 await writeFile(path.join(artifacts,'devserver-ui-fixture-address.json'),JSON.stringify(address,null,2)+'\n');console.log(JSON.stringify(address))
-const stop=()=>server.close(()=>process.exit(0));process.once('SIGTERM',stop);process.once('SIGINT',stop)
+const stop=()=>server.close(()=>preview.close(()=>process.exit(0)));process.once('SIGTERM',stop);process.once('SIGINT',stop)

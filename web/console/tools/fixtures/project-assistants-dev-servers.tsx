@@ -11,7 +11,17 @@ import "../../src/legacy/tokens.css"
 import "../../src/project-assistants/styles.css"
 const query=new URL(location.href).searchParams,language=query.get("lang")??"en"
 localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json")
-const grant={accountKey:"local",readerID:"synthetic-person",machineID:"synthetic-machine",authorizationRevision:"one",apiLevel:query.has("old")?89:90,paired:true,online:true,writable:!query.has("readonly")}
+const grant={accountKey:query.has("remote")?"synthetic-cloud":"local",readerID:"synthetic-person",machineID:"synthetic-machine",authorizationRevision:"one",apiLevel:query.has("old")?89:90,paired:true,online:true,writable:!query.has("readonly")}
+// Observe this fixture's copy request without changing the person's clipboard.
+Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async(text:string)=>{
+ await fetch("/fixture/copy",{method:"POST",body:JSON.stringify({text})})
+ if(query.has("copy-fails"))throw new DOMException("synthetic clipboard refusal","NotAllowedError")
+}}})
+const nativeOpen=window.open.bind(window)
+window.open=((url?:string|URL,target?:string,features?:string)=>{
+ void fetch("/fixture/open",{method:"POST",body:JSON.stringify({url:String(url),target,features})})
+ return nativeOpen(url,target,features)
+}) as typeof window.open
 let revoked=false
 const source=new ProjectAssistantSourceClient(grant,fetch.bind(window),()=>revoked?null:grant)
 await source.status(new AbortController().signal)
@@ -19,7 +29,7 @@ const project={machine_id:grant.machineID,project_id:"synthetic-project",canonic
 function bot(id:string):W.ProjectAssistantBot{return {key:{machine_id:grant.machineID,bot_id:id},project,name:id,agent:"codex",appearance:{shape:"blob",color:"#7fa3ff"},conversation_id:id+"-conversation",version:1,created_at:"2026-11-19T00:00:00Z",updated_at:"2026-11-19T00:00:00Z",permission_policy:"ask",instructions:{text:"Synthetic fixture",revision:1,role_snapshot_ref:""}}}
 function Fixture(){
  const [selected,setSelected]=useState("Builder"),[active,setActive]=useState(true),[live,setLive]=useState(true),[frontier,setFrontier]=useState(0),w=words(language),current=bot(selected)
- return <div className="project-assistants"><nav aria-label="Synthetic controls"><button onClick={()=>setSelected(s=>s==="Builder"?"Other Bot":"Builder")}>Switch Bot</button><button onClick={()=>setActive(a=>!a)}>Toggle details</button><button onClick={()=>{revoked=true;setLive(false)}}>Revoke source</button><button onClick={()=>void fetch("/fixture/lose-next",{method:"POST"})}>Lose next reply</button><button onClick={()=>void fetch("/fixture/hold-read",{method:"POST"})}>Hold next read</button><button onClick={()=>void fetch("/fixture/release-read",{method:"POST"})}>Release read</button><button onClick={()=>void fetch("/fixture/add-server",{method:"POST"}).then(()=>setFrontier(n=>n+1))}>Complete new server</button></nav><main className="pa-server-fixture" hidden={!active}>
+ return <div className="project-assistants"><nav aria-label="Synthetic controls"><button onClick={()=>setSelected(s=>s==="Builder"?"Other Bot":"Builder")}>Switch Bot</button><button onClick={()=>setActive(a=>!a)}>Toggle details</button><button onClick={()=>{revoked=true;setLive(false)}}>Revoke source</button><button onClick={()=>void fetch("/fixture/lose-next",{method:"POST"})}>Lose next reply</button><button onClick={()=>void fetch("/fixture/invalid-next",{method:"POST"})}>Invalidate next reply</button><button onClick={()=>void fetch("/fixture/hold-read",{method:"POST"})}>Hold next read</button><button onClick={()=>void fetch("/fixture/release-read",{method:"POST"})}>Release read</button><button onClick={()=>void fetch("/fixture/add-server",{method:"POST"}).then(()=>setFrontier(n=>n+1))}>Complete new server</button></nav><main className="pa-server-fixture" hidden={!active}>
   <DevServers key={selected} source={source} bot={current} enabled={live&&grant.writable} active={active} frontier={frontier} w={w}/><BotDetailsPanel bot={current} projectName="Synthetic Project" machineName="Synthetic computer" onSettings={()=>{}} onRoutines={()=>{}} w={w}/>
  </main></div>
 }

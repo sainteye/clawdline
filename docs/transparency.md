@@ -12,6 +12,22 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The details address menu opens or copies only literal HTTP candidates supplied
+by the source. Reviewed both persistent-bots language versions for loopback
+origin plus local transport, conservative remote selection on LAN/Cloud,
+unknown-write inspection, clipboard refusals and the difference between an
+address candidate and reachability. The section imports its shared menu styles
+rather than depending on a chat reaction being mounted first. Native clipboard failures retain their DOMException category or adapter code;
+they do not become a fabricated source-offline refusal or expose arbitrary
+exception messages. No native tool, model instruction, approval choice or source
+mutation is added. Isolated
+browser evidence does not establish installed or Cloud acceptance. A socket-loss
+fixture observed two identical-key requests with one applied effect; it is not
+zero retransmission evidence. A separate invalid-JSON case checks one
+application call with an unknown result. Original failure observations remain
+preserved; opening a popup does not prove its body was read through the browser
+channel, and no foreign-tab ownership is bypassed.
+
 The source listener response binds each OS observation to the complete current
 server attempt and revision before and after the read. Reviewed English and
 Taiwan Traditional Chinese persistent-bots explanations for literal source
@@ -26,7 +42,7 @@ and retain prior failed-gate and destination boundaries.
 
 The optional source TCP observer adds no model instruction, native tool or
 human control. Reviewed the existing English and Taiwan Chinese explanations:
-owned-port display and physical recovery still remain unqualified. Its kernel
+installed owned-port display and physical recovery still remain unqualified. Its kernel
 root pin belongs only to combined-output source commands, and a fresh rooted
 identity check fences each bounded read. A full probe pool refuses without
 starting another OS query; its actual count has a capacity measurement. Register

@@ -860,3 +860,15 @@ test("known server controls keep source identity and refuse old or foreign sourc
   assert.throws(()=>assistantRelayRequest(sent[0].path),e=>errorCode(e)==="pa_invalid")
   assert.equal(calls,0)
 })
+
+test("an invalid server write reply stays unknown without a new application transport call",async()=>{
+  let calls=0
+  const transport:AssistantFetch=async(path)=>{
+    if(path.endsWith("/status"))return Response.json(sourceStatus())
+    calls++;return new Response('{"contract_version":',{headers:{"Content-Type":"application/json"}})
+  }
+  const source=make(transport,{...grant(),accountKey:"local",readerID:"local",apiLevel:90}).source
+  await source.status(signal())
+  await assert.rejects(source.controlDevServer("stop",{key,id:"known",idempotency_key:"synthetic-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2},signal()),e=>errorCode(e)==="pa_outcome_unknown")
+  assert.equal(calls,1)
+})

@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,serverState,serverActions,serverControlRequest} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -274,4 +274,53 @@ test("uncertain or stopping servers offer no new mutation while terminal rows ca
 test("sources without server support render no empty details section",()=>{
   const html=render(compiled.exports.DevServers,{source:{canDevServers:()=>false},bot:{key:{machine_id:"source",bot_id:"bot"}},enabled:false,w:words("en")})
   assert.equal(html,"")
+})
+
+test("server addresses use source candidates and default to remote-safe selection",()=>{
+  const server={state:"running",ports_known:true,ports:[{port:43123,bind:"0.0.0.0",local:"http://127.0.0.1:43123",remote:["http://192.0.2.23:43123","http://192.0.2.23:43123"]},{port:43124,bind:"::1",local:"http://[::1]:43124",remote:[]}]}
+  assert.deepEqual(compiled.exports.serverAddresses(server),["http://192.0.2.23:43123"])
+  assert.deepEqual(compiled.exports.serverAddresses(server,true),["http://127.0.0.1:43123","http://192.0.2.23:43123","http://[::1]:43124"])
+  assert.equal(compiled.exports.serverPortSummary(server),":43123 +1")
+  for(const changed of [{ports_known:false},{state:"stopped"},{state:"unknown"},{ports:null},{ports:[null,{},"malformed"]}]){
+    assert.deepEqual(compiled.exports.serverAddresses({...server,...changed},true),[])
+    assert.equal(compiled.exports.serverPortSummary({...server,...changed}),"")
+  }
+})
+test("server candidates never become script, credentials, DNS or remote loopback targets",()=>{
+  const candidates=["javascript:alert(1)","https://192.0.2.23:43123","http://user:synthetic-fixture-password@192.0.2.23:43123","http://supplied.invalid:43123","http://192.0.2.23:43123/path","http://192.0.2.23:43123?secret=synthetic","http://192.0.2.23:43123#fragment","http://192.0.2.23:43124","http://127.0.0.1:43123","http://127.23.4.5:43123","http://[::1]:43123","http://[::ffff:127.0.0.1]:43123","http://0.0.0.0:43123","http://[::]:43123","http://[fe80::123]:43123"]
+  for(const candidate of candidates){
+    const server={state:"running",ports_known:true,ports:[{port:43123,local:candidate,remote:[candidate]}]}
+    assert.deepEqual(compiled.exports.serverAddresses(server),[],candidate)
+  }
+  const noGuess={state:"running",ports_known:true,ports:[],command:"visit http://192.0.2.23:43123",log:"http://192.0.2.23:43123"}
+  assert.deepEqual(compiled.exports.serverAddresses(noGuess,true),[])
+})
+test("server rows keep one quiet primary action and show the known port summary",()=>{
+  const server={name:"Preview",command:"synthetic",state:"running",ports_known:true,ports:[{port:43123,local:"http://127.0.0.1:43123",remote:[]}]}
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),props={server,w,active:true,addressesAvailable:true,disabled:false,canRead:()=>true,onLogs:()=>assert.fail("render read logs"),onControl:()=>assert.fail("render mutated")}
+    const local=render(compiled.exports.ServerRow,{...props,localSource:true}),remote=render(compiled.exports.ServerRow,{...props,localSource:false})
+    assert.ok(local.includes(`title="${w.serverOpen}"`));assert.ok(remote.includes(`title="${w.serverLogs}"`))
+    for(const html of [local,remote]){assert.match(html,/:43123/);assert.equal((html.match(/<button/g)||[]).length,2);assert.doesNotMatch(html,/http:\/\//)}
+  }
+})
+
+test("local transport alone does not authorize loopback on a LAN or Cloud browser",()=>{
+  for(const origin of ["http://127.0.0.1:7727/","http://localhost:7727/","http://[::1]:7727/"]){
+    assert.equal(compiled.exports.localServerSource({browserRemote:false},origin),true)
+    for(const source of [{browserRemote:true},{}])assert.equal(compiled.exports.localServerSource(source,origin),false)
+  }
+  for(const origin of ["http://192.0.2.23:7727/","https://app.clawdline.com/","https://source.invalid/","file:///synthetic/index.html","malformed"]){
+    assert.equal(compiled.exports.localServerSource({browserRemote:false},origin),false)
+  }
+})
+
+test("clipboard refusals retain their category without exposing arbitrary messages",()=>{
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),format=compiled.exports.serverCopyFailure
+    assert.equal(format(new DOMException("synthetic sensitive detail","NotAllowedError"),w),w.serverCopyFailed+" (NotAllowedError)")
+    assert.equal(format(new DOMException("synthetic unavailable detail","NotSupportedError"),w),w.serverCopyFailed+" (NotSupportedError)")
+    assert.equal(format({code:"clipboard_denied",message:"synthetic sensitive detail"},w),w.serverCopyFailed+" (clipboard_denied)")
+    for(const error of [null,{message:"synthetic sensitive detail"},{name:"unexpected words with details"}])assert.equal(format(error,w),w.serverCopyFailed)
+  }
 })
