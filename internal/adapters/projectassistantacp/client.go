@@ -120,6 +120,13 @@ func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, 
 }
 
 func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
+	return c.initializeSession(ctx, q, false)
+}
+
+func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maintenance bool) error {
+	if maintenance && (!q.Resume || q.Bot.Agent != pa.Codex || c.ownedMCP != nil) {
+		return refusal(pa.ScopeDenied, "native_maintenance_open")
+	}
 	var initialized struct {
 		ProtocolVersion   int `json:"protocolVersion"`
 		AgentCapabilities struct {
@@ -157,7 +164,7 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	if c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterPackage(q.Bot.Agent)) {
 		return refusal(pa.ProviderVersionUnsupported, "acp_adapter_identity")
 	}
-	if q.Bot.Agent == pa.Codex && !hasCapability(initialized.AgentCapabilities.SessionCapabilities["systemPrompt"]) {
+	if !maintenance && q.Bot.Agent == pa.Codex && !hasCapability(initialized.AgentCapabilities.SessionCapabilities["systemPrompt"]) {
 		return refusal(pa.Unsupported, "system_prompt")
 	}
 	if q.Bot.Agent == pa.ClaudeCode && !hasCapability(initialized.AgentCapabilities.Meta["claudeCode"]) {
@@ -169,9 +176,14 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	if q.Resume && q.PersistNativeSession && !nativeSessionUUID.MatchString(q.Binding.NativeSessionID) {
 		return refusal(pa.ScopeDenied, "native_session_id")
 	}
-	params, err := sessionParameters(q, c.ownedMCP)
-	if err != nil {
-		return err
+	// Maintenance loads existing history without applying a chat prompt,
+	// tool server, model, mode or runtime setting.
+	params := map[string]any{"cwd": q.Directory, "mcpServers": []any{}}
+	if !maintenance {
+		params, err = sessionParameters(q, c.ownedMCP)
+		if err != nil {
+			return err
+		}
 	}
 	method := "session/new"
 	if q.Resume {
@@ -221,6 +233,9 @@ func (c *Client) initialize(ctx context.Context, q app.OpenRequest) error {
 	c.mu.Lock()
 	c.sessionID = session.SessionID
 	c.mu.Unlock()
+	if maintenance {
+		return nil
+	}
 	c.configuration, err = c.configureModel(ctx, q.Bot, b, !c.discovery || c.discoveryApply)
 	if err != nil {
 		return err
