@@ -196,9 +196,60 @@ func TestNativeMaintenanceHistoryReaderBlocksPendingWALAndRecoveredHistory(t *te
 	if err := replacement.CheckNativeHistory(ctx, resume); pa.Code(err) != pa.ExecutionEffectUnknown {
 		t.Fatal("late terminal cleared the recovered barrier", err)
 	}
-	resume.NativeSessionID = "separate-clean-native"
-	if err := replacement.CheckNativeHistory(ctx, resume); err != nil {
-		t.Fatal("a different native history should remain available", err)
+	for _, id := range []string{"", "another-native"} {
+		resume.NativeSessionID = id
+		if err := replacement.CheckNativeHistory(ctx, resume); pa.Code(err) != pa.ExecutionEffectUnknown {
+			t.Fatal("changing the native ID reopened the same partition", id, err)
+		}
+	}
+	forgotten, instructions, routine := resume, resume, resume
+	forgotten.ForgottenThrough++
+	instructions.InstructionRevision++
+	routine.SessionSlot = "independent-routine"
+	for _, clean := range []pa.ExecutionBinding{forgotten, instructions, routine} {
+		if err := replacement.CheckNativeHistory(ctx, clean); err != nil {
+			t.Fatal("separate history partition was blocked", clean, err)
+		}
+	}
+}
+
+func TestNativeMaintenanceHistoryReaderPreservesUncertainTerminalsAcrossEpochs(t *testing.T) {
+	ctx := context.Background()
+	state := t.TempDir()
+	_, db, journal := establishMaintenanceHistory(t, state)
+	var receipts []app.NativeMaintenanceRecord
+	for i, result := range []app.NativeCompactionState{app.NativeCompactionFailed, app.NativeCompactionCancelled, app.NativeCompactionCompleted, app.NativeCompactionUnknown} {
+		intent := maintenanceReaderIntent()
+		intent.ID = string(result)
+		intent.Binding.Fence.BindingID = string(result)
+		intent.Binding.Fence.Generation += int64(i)
+		intent.Binding.InstructionRevision += int64(i)
+		if _, inserted, err := journal.Reserve(ctx, intent); !inserted || err != nil {
+			t.Fatal("could not reserve a new epoch", result, inserted, err)
+		}
+		terminal := app.NativeMaintenanceRecord{Intent: intent, State: result}
+		if result != app.NativeCompactionUnknown {
+			terminal.NativeID = "matched-terminal"
+		}
+		if got, err := journal.Resolve(ctx, terminal); err != nil || got != terminal {
+			t.Fatal("terminal evidence changed", got, err)
+		}
+		receipts = append(receipts, terminal)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader := NewNativeMaintenanceHistoryReader(state)
+	for _, receipt := range receipts {
+		binding := receipt.Intent.Binding
+		binding.NativeSessionID = ""
+		want := pa.ExecutionEffectUnknown
+		if receipt.State == app.NativeCompactionCompleted {
+			want = ""
+		}
+		if err := reader.CheckNativeHistory(ctx, binding); pa.Code(err) != want {
+			t.Fatalf("unexpected history gate for %s: %v", receipt.State, err)
+		}
 	}
 }
 
@@ -226,6 +277,7 @@ func TestNativeMaintenanceHistoryReaderSurvivesMainStoreRollback(t *testing.T) {
 	}
 	_, writer, journal := establishMaintenanceHistory(t, state)
 	intent := maintenanceReaderIntent()
+	intent.Binding.Fence.Generation = 3
 	if _, inserted, err := journal.Reserve(ctx, intent); !inserted || err != nil {
 		t.Fatal("could not stage a synthetic intent", inserted, err)
 	}
@@ -255,7 +307,11 @@ func TestNativeMaintenanceHistoryReaderSurvivesMainStoreRollback(t *testing.T) {
 	if err := after.Ready(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := after.CheckNativeHistory(ctx, intent.Binding); pa.Code(err) != pa.ExecutionEffectUnknown {
+	beforeMaintenance := intent.Binding
+	beforeMaintenance.NativeSessionID = ""
+	beforeMaintenance.Fence.Generation--
+	beforeMaintenance.Fence.BindingID = "previous-binding"
+	if err := after.CheckNativeHistory(ctx, beforeMaintenance); pa.Code(err) != pa.ExecutionEffectUnknown {
 		t.Fatal("main store rollback removed the independent barrier", err)
 	}
 }

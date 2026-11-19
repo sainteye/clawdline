@@ -210,7 +210,7 @@ func (r *NativeMaintenanceHistoryReader) Ready(ctx context.Context) error {
 	// A readable but empty/wrong SQLite file is not an initialized journal.
 	var present bool
 	err = db.QueryRowContext(ctx, `SELECT EXISTS(SELECT intent FROM native_maintenance
-		WHERE machine=? AND bot=? AND state IN ('', 'unknown'))`, "", "").Scan(&present)
+		WHERE machine=? AND bot=? AND state <> 'completed')`, "", "").Scan(&present)
 	if err != nil {
 		return maintenanceReadFailure(err)
 	}
@@ -225,31 +225,37 @@ func (r *NativeMaintenanceHistoryReader) CheckNativeHistory(ctx context.Context,
 	defer db.Close()
 
 	fence := binding.Fence
-	var data []byte
-	err = db.QueryRowContext(ctx, `SELECT intent FROM native_maintenance
-		WHERE machine=? AND bot=? AND state IN ('', 'unknown')`, fence.Key.MachineID, fence.Key.BotID).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
+	// Failed and cancelled receipts preserve their terminal evidence, but
+	// neither state proves the history escaped a partial write.
+	rows, err := db.QueryContext(ctx, `SELECT intent FROM native_maintenance
+		WHERE machine=? AND bot=? AND state <> 'completed'`, fence.Key.MachineID, fence.Key.BotID)
 	if err != nil {
 		return maintenanceReadFailure(err)
 	}
-	var blocked app.NativeMaintenanceIntent
-	if err = json.Unmarshal(data, &blocked); err != nil {
-		return maintenanceReadFailure(err)
+	defer rows.Close()
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return maintenanceReadFailure(err)
+		}
+		var blocked app.NativeMaintenanceIntent
+		if err := json.Unmarshal(data, &blocked); err != nil {
+			return maintenanceReadFailure(err)
+		}
+		if err := blocked.Validate(); err != nil || blocked.Binding.Fence.Key != fence.Key {
+			return maintenanceReadFailure(err)
+		}
+		// Match the physical ACP partition. Both a fresh session with no ID
+		// yet and a newer session ID can point to the same directory.
+		prior := blocked.Binding
+		if prior.Fence.Project == fence.Project && prior.Fence.ConversationID == fence.ConversationID &&
+			prior.Agent == binding.Agent && prior.LoginProfile == binding.LoginProfile && prior.SessionSlot == binding.SessionSlot &&
+			prior.InstructionRevision == binding.InstructionRevision && prior.ForgottenThrough == binding.ForgottenThrough {
+			return failure(pa.ExecutionEffectUnknown, "native_maintenance_history")
+		}
 	}
-	if err = blocked.Validate(); err != nil || blocked.Binding.Fence.Key != fence.Key {
+	if err := rows.Err(); err != nil {
 		return maintenanceReadFailure(err)
-	}
-	// The ACP directory partitions history by conversation, account selection
-	// and privacy/instruction epoch. A new execution generation alone still
-	// points at the same history.
-	prior := blocked.Binding
-	if prior.Fence.Project == fence.Project && prior.Fence.ConversationID == fence.ConversationID &&
-		prior.Agent == binding.Agent && prior.LoginProfile == binding.LoginProfile && prior.SessionSlot == binding.SessionSlot &&
-		prior.InstructionRevision == binding.InstructionRevision && prior.ForgottenThrough == binding.ForgottenThrough &&
-		prior.NativeSessionID == binding.NativeSessionID {
-		return failure(pa.ExecutionEffectUnknown, "native_maintenance_history")
 	}
 	return nil
 }

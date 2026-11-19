@@ -60,7 +60,7 @@ type NativeMaintenanceHistory interface {
 }
 
 func (r *Engine) checkNativeHistory(ctx context.Context, binding pa.ExecutionBinding) error {
-	if r.o.NativeHistory == nil || binding.NativeSessionID == "" {
+	if r.o.NativeHistory == nil {
 		return nil
 	}
 	return r.o.NativeHistory.CheckNativeHistory(ctx, binding)

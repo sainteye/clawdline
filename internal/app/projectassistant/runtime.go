@@ -1111,7 +1111,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err == nil && handoffCheck != nil {
 		err = handoffCheck(ctx)
 	}
-	if err == nil && resume {
+	if err == nil {
 		err = r.checkNativeHistory(ctx, binding)
 	}
 	if err != nil {
@@ -1127,11 +1127,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		// was sent to the old one, so nothing is repeated.
 		resume = false
 		binding.NativeSessionID = ""
-		if e := r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true); e != nil {
+		err = r.checkAttemptBoundary(ctx, a, preparedBot, c, t, true)
+		if err == nil {
+			err = r.checkNativeHistory(ctx, binding)
+		}
+		if err != nil {
 			a.mu.Lock()
 			a.opening = false
 			a.mu.Unlock()
-			return e
+			return err
 		}
 		session, err = r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: false}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
 	}
