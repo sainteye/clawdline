@@ -60,6 +60,7 @@
 | `bots.archive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_bytes` | 5242880 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.artifact_title_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.assistant_frames` | 16 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.assistant_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.assistant_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |

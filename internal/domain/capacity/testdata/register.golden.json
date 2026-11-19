@@ -1118,6 +1118,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.assistant_frames",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.(*localAssistantSource).attach:chan(pa.MaxNetworkCloudFrames)"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.assistant_grants",
     "Class": "evidence",
     "Unit": "rows",

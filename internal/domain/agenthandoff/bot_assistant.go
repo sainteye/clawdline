@@ -39,6 +39,7 @@ type AssistantGrant struct {
 	MachineID    string
 	ProjectID    string
 	BotIDs       []string
+	Capture      *BotEndpoint `json:"capture,omitempty"`
 	AllowList    bool
 	AllowMessage bool
 	AllowRead    bool
@@ -183,6 +184,7 @@ func VerifyAssistantConsent(call AssistantCall, body []byte, facts AssistantFact
 	if !facts.GlobalOptIn ||
 		g.AccountID != call.Target.AccountID || g.MachineID != call.Target.MachineID ||
 		g.ProjectID != call.Target.ProjectID ||
+		(g.Capture != nil && *g.Capture != call.Target) ||
 		(call.Kind == "directory" && !g.AllowList) || (call.Kind == "message" && !g.AllowMessage) ||
 		(call.Kind == "read" && !g.AllowRead) {
 		return deny(AssistantDenied)

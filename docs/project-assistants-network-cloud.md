@@ -2,7 +2,8 @@
 
 The source uses the frozen Bot v1 envelope, original signed pair, and independent
 human-approved Bot consent. Session grants and viewer bearers confer no Bot
-authority. The external assistant gateway remains unavailable.
+authority. A separately configured Cloud assistant uses its own machine frames,
+wire signature and human consent.
 
 The normal Server constructs its network service before enabling Host when real
 stored machine identity and signing keys are readable. Its repository is lazy:
@@ -105,7 +106,34 @@ real human-consent revoke. Synthetic subscription data supplied the two-machine
 entitlement; the unchanged Free admission correctly refused the second source in
 the preceding setup run. No billing or external model API was called.
 
-These local proofs do not cover every private-service failure injection or a
-production rollout. Production deployments, installed-provider acceptance and the
-external assistant gateway remain separate work. The Board's whole memory/settings
-step remains incomplete.
+## External assistant source
+
+An operator may enroll a paired POSIX source by placing a regular mode-0600
+`assistant-source.json` in its Clawdline state directory. The file contains
+`account_id`, `machine_id`, `gateway_key_id`, `gateway_public_key` and
+`link_key`. The public key is a dedicated Ed25519 key and the link key is
+a random per-source secret, each 32 bytes in standard base64. The credentials
+are provisioned through the Cloud operator's existing secret handling.
+Restart the source Host to load new trust. Removing or changing the file
+withdraws the loaded trust immediately at admission and publication.
+
+`NetworkSwitches` reports the assistant lane ready once the authenticated
+machine socket negotiates it under the current local opt-in. Bot reachability
+remains a separate setting. Live consent from a human Cloud session names the
+exact account, machine, Project, Bot, conversation, generation and allowed
+directions. The source checks that consent with its machine credential and
+uses the installed gateway key to verify each call. Signed calls and correlated
+responses are sealed using AES-256-GCM with distinct HKDF-SHA256 call and
+reply keys, scoped to the account and machine. The response authenticates
+the SHA-256 of the original sealed request. Browser and peer credentials
+provide no access to this lane.
+
+The source retains the first receipt for a stable request ID. Read the receipt
+with the original grant and a correlation ID. A timeout can leave the effect
+unknown. Neither the relay nor the source automatically repeats the effect.
+The `bots.assistant_frames` capacity row measures the source queue and counts
+frames refused when it fills. The live WebSocket reader keeps processing its
+other traffic, and the caller may receive an unknown outcome from the relay.
+The loopback test `TestAssistantCloudPrivateSource` uses the ordinary Host,
+SQLite, authenticated Cloud WebSocket and an owned synthetic ACP subprocess.
+Production issuer, provider and destination acceptance remain separate.

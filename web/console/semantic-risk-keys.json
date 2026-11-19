@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13481,
+  "englishKeys": 13483,
   "counts": {
     "negation": 3527,
-    "state": 2283,
+    "state": 2285,
     "permission": 818,
     "deletion": 314,
-    "uncertainty": 551
+    "uncertainty": 552
   },
-  "unionCount": 5797,
+  "unionCount": 5799,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3658,6 +3658,8 @@
       "capacityRow.bots.archive_bytes.what",
       "capacityRow.bots.artifact_bytes.full",
       "capacityRow.bots.artifact_title_bytes.full",
+      "capacityRow.bots.assistant_frames.full",
+      "capacityRow.bots.assistant_frames.what",
       "capacityRow.bots.assistant_grants.full",
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.attachment_bytes.full",
@@ -6991,6 +6993,7 @@
       "capacityRow.antigravity.native_tty_entries.full",
       "capacityRow.antigravity.process_read_seconds.full",
       "capacityRow.antigravity.state_age_seconds.full",
+      "capacityRow.bots.assistant_frames.full",
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.assistant_receipts.what",
       "capacityRow.bots.carry_quote_bytes.full",
@@ -7834,6 +7837,8 @@
     "capacityRow.bots.archive_bytes.what",
     "capacityRow.bots.artifact_bytes.full",
     "capacityRow.bots.artifact_title_bytes.full",
+    "capacityRow.bots.assistant_frames.full",
+    "capacityRow.bots.assistant_frames.what",
     "capacityRow.bots.assistant_grants.full",
     "capacityRow.bots.assistant_grants.what",
     "capacityRow.bots.assistant_receipts.full",

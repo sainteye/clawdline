@@ -265,6 +265,11 @@
     "Note": true
   },
   {
+    "Name": "bots.assistant_frames",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.assistant_grants",
     "Known": true,
     "Note": true

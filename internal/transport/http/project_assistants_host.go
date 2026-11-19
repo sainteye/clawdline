@@ -158,9 +158,11 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		extensions = attachConnectorCredentials(inventory, s.store.ProjectAssistantDatabase(), account, i.MachineID)
 	}
 	netSource := s.prepareBotNetwork(i)
+	netSource.prepareAssistant(ctx)
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
 		NativeHistory: projectassistantstore.NewNativeMaintenanceHistoryReader(s.cfg.Dir),
 		Network:       netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
+		Assistants:       netSource.assistantService(),
 		NetworkTransport: s.botNetworkTransport,
 		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,

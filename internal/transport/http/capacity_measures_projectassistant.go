@@ -115,6 +115,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.cloud_lease_seconds":        s.botCloudMeasure("lease"),
 		"bots.cloud_refresh_seconds":      s.botCloudMeasure("refresh"),
 		"bots.network_grants":             s.botNetworkGrantMeasure,
+		"bots.assistant_frames":           s.botAssistantFramesMeasure,
 		"bots.assistant_grants":           s.botAssistantRowsMeasure("project_assistant_gateway_grants"),
 		"bots.assistant_receipts":         s.botAssistantRowsMeasure("project_assistant_gateway_receipts"),
 		"bots.network_receipts":           s.botNetworkReceiptMeasure,

@@ -4787,6 +4787,22 @@
           "line": 1
         },
         {
+          "path": "internal/transport/http/project_assistants_assistant_cloud.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/botnetwork/assistant_sealed.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/cloud/assistant_consent_api.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/cloud/assistant_socket.go",
+          "line": 1
+        },
+        {
           "path": "internal/transport/http/project_assistants_network_consent.go",
           "line": 1
         }
@@ -4860,6 +4876,7 @@
     "internal/adapters/botdevserverstore/rules.go": "5018a72ffb3a08545f18e95cd99924b1ca4c6f168d0ba2d02fc793c0f17d7197",
     "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
     "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
+    "internal/adapters/botnetwork/assistant_sealed.go": "da120c0e3950781ec4308576755df2ec741aa83ed409d2bc97bd0ab6adbf17b9",
     "internal/adapters/botnetwork/assistant_store.go": "9432829b171d7f9c6cae52de68b08ad3ad86525d6ae28d0129a9a9990d54ad84",
     "internal/adapters/botnetwork/cloud.go": "b180683ae344bbaa9c25f0d20fb55ecb37926ee99238218813e798eac6f41b4f",
     "internal/adapters/botnetwork/cloud_rail.go": "249aaea2e61073a45388a47b5e3b377597e042cab39eeefbf4a2584f22e90a22",
@@ -4867,6 +4884,8 @@
     "internal/adapters/botnetwork/receipt_publication.go": "b3e84f8a304699fd01724822b16b1f10c2909626e8a7d632ba9100a1db5561bb",
     "internal/adapters/botnetwork/store.go": "20e8f2bd497af2e30ce9f24b0e3bcc7c28f6e8056d04b0ca86ad205608cac254",
     "internal/adapters/botprofilevault/files.go": "d4a768036c567d4050c30060abdc9a12983fbcf7b7143d4710884c99817805f5",
+    "internal/adapters/cloud/assistant_consent_api.go": "869d5db1fb97b23f3fbdfd41ed78aeddf637b8de49f87954941cad5d0a5136e6",
+    "internal/adapters/cloud/assistant_socket.go": "1d6e3c16a1d75119f4cf5cdf1ab56318c3b6dbf7c07555a9686de0dd3bbde428",
     "internal/adapters/cloud/bot_network_api.go": "dd5a9831f5ac368537f88f2ce14161217ea8c6750a71e5ef6f21009066eed6c0",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
@@ -4999,7 +5018,7 @@
     "internal/app/start.go": "e0366b1e3e6b8a6221989722d55ee12ea1a8fd5259964bc5c3a9d6b17302f7cb",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
-    "internal/domain/agenthandoff/bot_assistant.go": "00a63d9fca0a6a26286d1c1194530637df37b2ff458574a0ebea1f42692758f0",
+    "internal/domain/agenthandoff/bot_assistant.go": "d6598c29f1384edc5575329fa40a7bf5908b1f2f851b8ad1620d487a66462ab3",
     "internal/domain/agenthandoff/bot_wire.go": "bddd27e286f534321125bb4a175cedf3df19388bb2055c2d3e9ef420b84ad862",
     "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
@@ -5038,11 +5057,12 @@
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "39cd9213de52243300696d2d75afaa658ea326e28a10b45b239caad3c1b9b7a4",
     "internal/transport/http/project_assistants_artifacts.go": "f4c03c31dd5899e69cf6ecc043792265d8cc7c5c61b0043b48ccf9d411a3baa6",
+    "internal/transport/http/project_assistants_assistant_cloud.go": "fac5fc5a9774d186b6318a2616568f8229331a0f4cd8effea692fdc0df41a635",
     "internal/transport/http/project_assistants_connector_credentials.go": "d5734c4e6ebff636c46b24c87a044df390b26d226f95dff6308b4d7f70caf89f",
-    "internal/transport/http/project_assistants_host.go": "d1a83613cb973b29a8a049c2e842ed7fc9736f253d0931e379759c09b8a642e6",
+    "internal/transport/http/project_assistants_host.go": "f41c2985e6b154bc40503de681deca4f31e091f6f41fbeec92f020f562a6df3e",
     "internal/transport/http/project_assistants_login_profiles.go": "10a43acbb279c6455d8d7adf226ffdb36da32b18e124b37d23849da0aec73ad2",
     "internal/transport/http/project_assistants_memory_settings.go": "78b5e2408ec7f730d1d596b94974eee6baeb07700d5e0ef4cec900f257544223",
-    "internal/transport/http/project_assistants_network_cloud.go": "a4a4bda0c2d797650b5f6a0d62295c9a2c9d74af9ec02454dc690c93ea7c4c72",
+    "internal/transport/http/project_assistants_network_cloud.go": "a8aef307f3919de642a6f2e2dde804d806c4e2141c081608749226187b98e572",
     "internal/transport/http/project_assistants_network_consent.go": "4c5d03575488ae078d2ff19192d266d12e222bcfdb05ec733fb867e1dc80f497",
     "internal/transport/http/project_assistants_routine_hooks.go": "60170d1af2fa2948944103afd16ccb8559a62822e54ea4d4152de86cfd7a2a20",
     "internal/transport/http/project_assistants_uploads.go": "30d22c0b2a43999ac792f191e500b4118ad940893ac0882d21ea59a4d19030f3",
@@ -5128,7 +5148,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "ac2f838bd19fcdb5de1f8b6750721e923d751feed6bfa72e2b9f92b5dacc1944",
-    "zh-Hant": "e12368c83c874e583e113c6a50227253dd248081d0f8cd6f73387389136282b5"
+    "en": "bbf4e890e911a4a1496ab3069fda486e09de3691cc552da7383a0a3a78531c00",
+    "zh-Hant": "dfe01bc2039ca3f5b6d28ae1f90fa1a952aed98a4a6fac31cfd2d9d056e2d142"
   }
 }

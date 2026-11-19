@@ -76,6 +76,20 @@ func (s *Server) botNetworkGrantMeasure() capacity.Reading {
 	return capacity.Reading{Known: true, Used: used, Note: "largest retained Bot network grant count per source machine, including revoked identities"}
 }
 
+func (s *Server) botAssistantFramesMeasure() capacity.Reading {
+	s.projectAssistants.mu.RLock()
+	n := s.projectAssistants.network
+	s.projectAssistants.mu.RUnlock()
+	reading := capacity.Reading{Known: true, Note: "queued sealed assistant frames outside the socket reader"}
+	if n != nil && n.assistant != nil {
+		reading.Counters.Refused = n.assistant.refused.Load()
+		if binding := n.assistant.binding.Load(); binding != nil {
+			reading.Used = int64(len(binding.pending))
+		}
+	}
+	return reading
+}
+
 func (s *Server) botAssistantRowsMeasure(table string) func() capacity.Reading {
 	return func() capacity.Reading {
 		if s.store == nil {

@@ -132,6 +132,9 @@ type Transport struct {
 	botCallback     func(uint64, []byte)
 	botReady        uint64
 	botWanted       uint64
+	assistant       func(uint64, []byte)
+	assistantReady  uint64
+	assistantWanted uint64
 	rawRekeyPending chan struct{}
 	opts            Options
 
@@ -530,6 +533,9 @@ func (t *Transport) handleFrame(conn *Conn, data []byte, h connectionhealth.Hand
 		return nil
 	}
 	switch kind {
+	case "bot_assistant_ready", "bot_assistant_call", "bot_assistant_error":
+		t.handleAssistantFrame(conn, kind, data)
+		return nil
 	case "bot_network_ready", "bot_network_delivery", "bot_network_envelope", "bot_network_ack", "bot_network_delivery_recorded", "bot_network_error":
 		t.handleBotFrame(conn, kind, data)
 		return nil

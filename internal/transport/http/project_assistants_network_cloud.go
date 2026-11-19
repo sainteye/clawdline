@@ -35,6 +35,7 @@ type projectAssistantNetwork struct {
 	cancel      context.CancelFunc
 	lease       cloud.BotCapabilities
 	nextRefresh time.Time
+	assistant   *localAssistantSource
 }
 
 func (s *Server) prepareBotNetwork(i cloud.Identity) *projectAssistantNetwork {
@@ -211,6 +212,9 @@ func (s *Server) botNetworkCapabilities(ctx context.Context, account, machine st
 	if ready {
 		result.Peer = pa.NetworkCapability{State: pa.NetworkReady}
 	}
+	if n.assistant != nil {
+		result.Assistants = n.assistant.capability(ctx)
+	}
 	return result
 }
 func (s *Server) botNetworkTransport(ctx context.Context, machine string) (app.Transport, error) {
@@ -238,6 +242,15 @@ func (s *Server) StartBotNetwork(ctx context.Context, socket *cloud.Transport) <
 	go func() {
 		defer close(done)
 		defer cancel()
+		assistantDone := make(chan struct{})
+		go func() {
+			defer close(assistantDone)
+			s.runAssistantSources(ctx, socket)
+		}()
+		defer func() {
+			cancel()
+			<-assistantDone
+		}()
 		var owner *projectAssistantNetwork
 		defer func() {
 			if owner != nil {
