@@ -4911,7 +4911,7 @@
     "internal/adapters/projectassistantacp/tcp_unix.go": "10a87b9755be433ba220358efefce186323b08f061dc162d6f856a8080290557",
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projectassistantacp/trace.go": "44a1caf9239cb9b02009cc47879b974dd87132d80734bebf42ab09ebcd4bb137",
-    "internal/adapters/projectassistanthost/devservers.go": "5f386bf0794388df8b7d579266912b5a91534e98471f3d60d69addeca603cb61",
+    "internal/adapters/projectassistanthost/devservers.go": "c45d9c98aeb493d55c8fb1100dfe3558b22ff1554e307b857d8969c30b0c6a5d",
     "internal/adapters/projectassistanthost/devservers_human.go": "6d64c119af05d1787d04217d0eea2a9110d060909b0386ffdb62737065acfc0b",
     "internal/adapters/projectassistanthost/devservers_ports.go": "371bc4e39137e097aa4ff0e2cc7856e7527a203bc90aa2be363bdd6fe2a4f96a",
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",

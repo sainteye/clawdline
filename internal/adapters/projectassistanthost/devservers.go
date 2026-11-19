@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/bootid"
 	process "github.com/sainteye/clawdline/internal/adapters/botdevserverprocess"
 	serverstore "github.com/sainteye/clawdline/internal/adapters/botdevserverstore"
 	acp "github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
@@ -61,7 +62,8 @@ func (h *Host) serverCheck(ctx context.Context, spec servers.Spec) error {
 }
 
 // Enable owns this registry independently of any Engine/native lifetime.
-// Reopened attempts remain unknown; this function never adopts or restarts one.
+// Reopened active attempts remain unknown. Clean restart intent is consumed
+// separately after Enable establishes current background authority.
 func (h *Host) makeServers(ctx context.Context) error {
 	h.mu.Lock()
 	prior := h.serverRegistry
@@ -89,6 +91,13 @@ func (h *Host) makeServers(ctx context.Context) error {
 	}
 	r, err := servers.OpenRegistry(ctx, servers.RegistryOptions{MachineID: h.o.MachineID, Lifetime: context.Background(), Catalog: c, ID: h.o.ID, CleanupTimeout: h.o.Limits.CleanupTimeout,
 		CheckControl: h.serverControl,
+		Restarts:     c,
+		AuthorizeRestart: func(ctx context.Context, saved servers.SavedServer) (func(context.Context) error, error) {
+			return (servers.Approval{Rules: c, Check: h.serverCheck, Guard: h.serverMemory,
+				Review: func(context.Context, pa.PermissionAction, []pa.PermissionOption) (pa.PermissionOption, error) {
+					return pa.PermissionOption{}, failure(pa.ScopeDenied, "server_restart_approval")
+				}}).Authorize(ctx, saved)
+		},
 		AuthorizeStart: func(ctx context.Context, saved servers.SavedServer) (func(context.Context) error, error) {
 			review, ok := ctx.Value(serverReviewKey{}).(serverReview)
 			if !ok {
@@ -121,8 +130,18 @@ func (h *Host) makeServers(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	readBoot := h.o.ServerBootID
+	if readBoot == nil {
+		readBoot = bootid.Read
+	}
+	boot := ""
+	if id, err := readBoot(ctx); err == nil && id != "" {
+		digest := sha256.Sum256([]byte(id))
+		boot = hex.EncodeToString(digest[:])
+	}
 	h.mu.Lock()
 	h.serverRegistry = r
+	h.serverBoot = boot
 	h.mu.Unlock()
 	return nil
 }

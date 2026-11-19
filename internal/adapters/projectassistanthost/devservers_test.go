@@ -112,7 +112,7 @@ func beginServerNative(t *testing.T, f *hostFixture, bot pa.Bot, key string) (Na
 	return session.q.Tools.(NativeWork), session
 }
 
-func startReviewedServer(t *testing.T, f *hostFixture, bot pa.Bot, tools NativeWork, key string) app.DevServerInfo {
+func startReviewedServer(t *testing.T, f *hostFixture, bot pa.Bot, tools NativeWork, key string, choices ...pa.PermissionOptionKind) app.DevServerInfo {
 	t.Helper()
 	done := make(chan struct {
 		r app.DevServerResult
@@ -127,7 +127,11 @@ func startReviewedServer(t *testing.T, f *hostFixture, bot pa.Bot, tools NativeW
 	}()
 	offer := hostSourceOffer(t, f, bot.Key)
 	service, _ := f.h.Service()
-	if _, err := service.Answer(context.Background(), pa.Command{Key: bot.Key, Operation: pa.AnswerOperation, IdempotencyKey: "allow-" + key}, pa.PermissionAnswer{Fence: offer.Fence, TurnID: offer.TurnID, OfferID: offer.ID, OptionID: string(pa.AllowAlways)}); err != nil {
+	choice := pa.AllowAlways
+	if len(choices) > 0 {
+		choice = choices[0]
+	}
+	if _, err := service.Answer(context.Background(), pa.Command{Key: bot.Key, Operation: pa.AnswerOperation, IdempotencyKey: "allow-" + key}, pa.PermissionAnswer{Fence: offer.Fence, TurnID: offer.TurnID, OfferID: offer.ID, OptionID: string(choice)}); err != nil {
 		t.Fatal(err)
 	}
 	got := fixtureReceive(t, done)

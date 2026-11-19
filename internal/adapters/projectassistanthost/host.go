@@ -30,7 +30,9 @@ type DispatchPolicy struct {
 
 type Options struct {
 	// ServerLaunch is an optional owned-process fixture; production uses the source launcher.
-	ServerLaunch        func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
+	ServerLaunch func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
+	// ServerBootID is a trusted composition seam; production reads the OS boot identity.
+	ServerBootID        func(context.Context) (string, error)
 	NativeHistory       app.NativeMaintenanceHistory
 	Assistants          *network.AssistantService
 	Network             *network.Service
@@ -74,6 +76,7 @@ type Options struct {
 
 type Host struct {
 	serverRegistry     *servers.Registry
+	serverBoot         string
 	profiles           app.LoginProfiles
 	configurationSlots chan struct{}
 	routineStop        context.CancelFunc
@@ -429,15 +432,19 @@ func (h *Host) Enable(ctx context.Context) error {
 	if err := serverstore.InstallCatalog(ctx, h.o.Database); err != nil {
 		return err
 	}
+	if err := serverstore.InstallRestarts(ctx, h.o.Database); err != nil {
+		return err
+	}
 	if err := h.makeServers(ctx); err != nil {
 		return err
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if err := h.makeService(); err != nil {
+		h.mu.Unlock()
 		return err
 	}
 	if err := h.connect(); err != nil {
+		h.mu.Unlock()
 		return err
 	}
 	// Only a disabled, proven clean Engine can be replaced.
@@ -445,11 +452,23 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.engine = nil
 	}
 	h.enabled = true
+	registry, boot := h.serverRegistry, h.serverBoot
+	h.mu.Unlock()
+	// Restoration needs current background authority, which is unavailable
+	// until enabled. The transition lock still excludes Disable and Close.
+	if err := registry.ResumeClean(ctx, boot); err != nil {
+		h.mu.Lock()
+		h.enabled = false
+		h.mu.Unlock()
+		return err
+	}
+	h.mu.Lock()
 	tickCtx, stop := context.WithCancel(context.Background())
 	h.routineStop = stop
 	h.routineDone = make(chan struct{})
 	go h.routineTick(tickCtx, h.routineDone)
 	go h.resumeInterrupted()
+	h.mu.Unlock()
 	return nil
 }
 
@@ -514,6 +533,7 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.closed = h.closed || closeHost
 	r := h.engine
 	serverRegistry := h.serverRegistry
+	serverBoot := h.serverBoot
 	rooms := h.rooms
 	stop, done := h.routineStop, h.routineDone
 	h.cleanupPending = h.store != nil
@@ -545,7 +565,11 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 		}
 	}
 	if serverRegistry != nil {
-		result = errors.Join(result, serverRegistry.Close(ctx))
+		if closeHost {
+			result = errors.Join(result, serverRegistry.CloseForRestart(ctx, serverBoot))
+		} else {
+			result = errors.Join(result, serverRegistry.Close(ctx))
+		}
 	}
 	if r != nil {
 		if closeHost {

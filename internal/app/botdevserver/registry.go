@@ -41,8 +41,11 @@ type RegistryOptions struct {
 	// launch check. That check must not expire merely because the Agent turn
 	// ends. It still rechecks source revocation, Project and forgotten context.
 	AuthorizeStart func(context.Context, SavedServer) (func(context.Context) error, error)
-	Launch         func(context.Context, Spec) (Process, error)
-	CleanupTimeout time.Duration
+	// AuthorizeRestart cannot ask a person or retain an earlier AllowOnce.
+	AuthorizeRestart func(context.Context, SavedServer) (func(context.Context) error, error)
+	Restarts         Restarts
+	Launch           func(context.Context, Spec) (Process, error)
+	CleanupTimeout   time.Duration
 }
 
 type registered struct {
@@ -140,6 +143,9 @@ func (r *Registry) StartExpected(ctx context.Context, saved SavedServer, attempt
 	return r.start(ctx, saved.Spec, attemptID, &saved)
 }
 func (r *Registry) start(ctx context.Context, spec Spec, attemptID string, expected *SavedServer) (SavedServer, error) {
+	return r.startMode(ctx, spec, attemptID, expected, false)
+}
+func (r *Registry) startMode(ctx context.Context, spec Spec, attemptID string, expected *SavedServer, restarting bool) (SavedServer, error) {
 	fingerprint, err := spec.Fingerprint()
 	if err != nil {
 		return SavedServer{}, err
@@ -165,7 +171,14 @@ func (r *Registry) start(ctx context.Context, spec Spec, attemptID string, expec
 	}
 	// Human approval can wait, so it must not hold either registry mutex.
 	reviewedID := e.saved.ID
-	check, err := r.o.AuthorizeStart(ctx, r.view(e))
+	authorize := r.o.AuthorizeStart
+	if restarting {
+		authorize = r.o.AuthorizeRestart
+	}
+	if authorize == nil {
+		return SavedServer{}, failure(pa.ScopeDenied, "server_restart_approval")
+	}
+	check, err := authorize(ctx, r.view(e))
 	if err != nil {
 		return SavedServer{}, err
 	}
@@ -493,25 +506,47 @@ func (r *Registry) Usage() Usage {
 }
 
 func (r *Registry) Close(ctx context.Context) error {
+	return r.close(ctx, "")
+}
+func (r *Registry) close(ctx context.Context, boot string) error {
 	ctx, cancel := context.WithTimeout(ctx, r.o.CleanupTimeout)
 	defer cancel()
+	r.ops.Lock()
+	defer r.ops.Unlock()
 	r.mu.Lock()
+	if r.closed {
+		boot = "" // A repeated close cannot create or renew restart intent.
+	}
 	r.closed = true
-	r.cancel()
 	entries := make([]*registered, 0, len(r.rows))
 	for _, e := range r.rows {
 		entries = append(entries, e)
 	}
 	r.mu.Unlock()
+	wanted := make(map[*registered]bool)
+	if boot != "" && r.o.Restarts != nil {
+		for _, e := range entries {
+			state := r.view(e).Attempt.State
+			wanted[e] = state == Accepted || state == Running
+		}
+	}
+	r.cancel()
 	var result error
 	for _, e := range entries {
 		r.mu.Lock()
 		owner := e.owner
 		r.mu.Unlock()
 		if owner != nil {
-			result = errors.Join(result, owner.Close(ctx))
+			err := owner.Close(ctx)
+			result = errors.Join(result, err)
 			if state := owner.Snapshot().State; state == Stopped || state == Failed {
 				r.release(e, owner)
+			}
+			if err == nil && wanted[e] {
+				row := Restart{Saved: r.view(e), Boot: boot}
+				if row.Saved.Attempt.State == Stopped && row.Saved.Attempt.Failure == "" {
+					result = errors.Join(result, r.o.Restarts.SaveRestart(ctx, row))
+				}
 			}
 		} else if activeState(r.view(e).Attempt.State) {
 			result = errors.Join(result, failure(pa.ExecutionEffectUnknown, "server_owner"))

@@ -377,7 +377,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | API 93 stores an editable source-owned draft, Keep action and atomic adoption by the next input. SQLite and synthetic HTTP/browser checks cover stale edits, lost replies and API 90–92 fallback. Pending draft reads block calls; only an explicit pre-admission handoff refusal releases the call journal. | Installed and production Cloud acceptance remain separate. Original history stays readable. A fresh handoff can retain the physical history directory, so its read-only maintenance gate must still run before deciding whether to resume. |
 | Continuous Bot call | `BotCall.tsx` binds call IDs, input and replies to the chosen source/Bot/conversation. Synthetic Chromium checks cover playback, mute/interruption, explicit end, permission waits, source changes and unknown results without replay. Existing draft dictation remains available. | Installed and production Cloud acceptance remain pending. Synthetic audio does not qualify microphone recognition or voice quality. On-device recognition requires an installed language pack, and playback requires a local voice; there is no automatic remote speech fallback. |
-| Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. Captured Cloud routing adds two reads and four known-handle controls. The existing Project devstack route stays read/probe only. | Paired viewer/workerd/source acceptance, durable clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
+| Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. Captured Cloud routing adds two reads and four known-handle controls. Clean Host restarts consume exact terminal checkpoints under current standing approval. The existing Project devstack route stays read/probe only. | Paired viewer/workerd/source acceptance and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Isolated qualification owns intent/terminal/unknown receipts. Read-only detached-history gates survive disable/enable and protect pending or unknown histories before fresh handoff and resume. | Production provider, verified idle admission, retention and trusted rollback qualification remain separate construction. Do not infer completion from lower token usage or send maintenance as ordinary chat. The production writer stays disabled; reader/recovery qualification must precede any writer release. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -542,8 +542,9 @@ observer through server lists and title/details. Cloud carriage and a Host
 background change stream remain separate. Ordinary ACP peers
 retain no observer. It does not replace the existing cleanup supervisor, persist
 kernel facts, adopt an escaped/crashed owner or authorize kill/restart by PID.
-Physical crash/boot recovery and durable clean-restart intent remain separate
-construction; portable Bot/archive 12 and the maintenance writer are unchanged.
+Physical crash/boot recovery remains separate construction. Clean-restart
+checkpoints are described below; portable Bot/archive 12 and the maintenance
+writer are unchanged.
 
 The registry owns foreground process handles through the existing ACP physical
 supervisor, without creating another native provider. It drains combined output
@@ -569,7 +570,42 @@ crash, machine reboot or updater rollback. The details component has isolated
 desktop/mobile browser evidence, not installed or production Cloud acceptance.
 The later port-response and selected-chat sections implement owned port reads.
 The captured Cloud mapping below completes the public operation vocabulary.
-Durable clean-restart intent still requires construction.
+
+### Clean Host restart checkpoints
+
+A planned Host close stops each owned tree before saving its restart checkpoint.
+Only an accepted/running attempt with a successful cleanup and a known stopped
+receipt qualifies. A natural exit, explicit stop, feature disable, failure or
+unknown cleanup does not. Repeating close cannot renew an intent. Opening the
+registry remains inspection only and never adopts a process.
+
+The optional source-local `bot_devserver_restarts` table retains one checkpoint
+per bounded definition: the OS boot identity's SHA-256, exact current attempt
+and terminal revision. Installation is explicit and rejects unknown table shapes.
+It neither changes Bot/archive 12 nor grants authority. Existing catalog writers
+can ignore this table; an intervening attempt/revision invalidates the checkpoint
+before consumption. This source compatibility property is not a new historical
+binary or updater qualification.
+
+Enable preserves the native-history barrier and establishes current background
+authority before consuming checkpoints in one transaction. A failed or uncertain
+consume returns no executable work. A different or unreadable OS boot identity
+discards the intent and leaves the server stopped. No deferred retry waits for a
+later grant. Matching boot identity alone is insufficient: the source, Bot,
+canonical Project, Forget boundary and current exact permanent rule are checked
+again, including immediately before launch. AllowOnce does not become a standing
+grant, and restoration never creates a new approval card or Agent provider.
+An admitted restoration has a new attempt identity and the usual source-owned
+process/cleanup journal; response uncertainty does not replay the old attempt.
+
+Temporary SQLite reopen and Host fixtures cover clean restart, single consumption,
+intervening writers, failed transactions, denied/one-time approval, revocation,
+Project replacement, Forget, stopped/exited work and unknown cleanup. A Darwin/
+Linux test also runs a real source-owned shell command, proves cleanup through the
+existing supervisor, restarts the same definition and cleans the second tree.
+Boot-change tests inject the OS identity; they do not reboot the machine. This
+does not yet persist kernel birth facts or clean up survivors after an unplanned
+Host crash. Such active ownerless receipts remain unknown and reserve capacity.
 
 ### Captured Cloud server controls
 
