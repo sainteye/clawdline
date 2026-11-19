@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13348,
-  "riskKeys": 5745,
-  "nonRiskCount": 7603,
+  "englishContentKeys": 13361,
+  "riskKeys": 5751,
+  "nonRiskCount": 7610,
   "groups": [
     {
       "name": "acp / other",
@@ -6003,7 +6003,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 377,
+      "count": 384,
       "sources": [
         null
       ],
@@ -6045,7 +6045,10 @@
         "projectAssistants.copiedMessage",
         "projectAssistants.copyMessage",
         "projectAssistants.create",
+        "projectAssistants.createCheckMissing",
+        "projectAssistants.createCheckUnknown",
         "projectAssistants.createHint",
+        "projectAssistants.createSaving",
         "projectAssistants.createSubmit",
         "projectAssistants.decisionActivity",
         "projectAssistants.deleteBotHint",
@@ -6200,11 +6203,14 @@
         "projectAssistants.model",
         "projectAssistants.more",
         "projectAssistants.moreActions",
+        "projectAssistants.moreTrace",
         "projectAssistants.name",
+        "projectAssistants.nativeBusy",
         "projectAssistants.nativeDefault",
         "projectAssistants.nativeLoading",
         "projectAssistants.nativeOff",
         "projectAssistants.nativeOn",
+        "projectAssistants.nativeRetry",
         "projectAssistants.nativeSettings",
         "projectAssistants.networkAssistants",
         "projectAssistants.networkAssistantsHint",
@@ -6216,6 +6222,7 @@
         "projectAssistants.offline",
         "projectAssistants.online",
         "projectAssistants.openingOutput",
+        "projectAssistants.openingPDF",
         "projectAssistants.otherReaction",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",

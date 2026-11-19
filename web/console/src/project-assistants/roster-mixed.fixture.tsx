@@ -18,11 +18,16 @@ const bots=["One","Two","Three","Four","Five","Six"].map((name,i)=>({bot:{key:ke
 const group:RosterRoom={key:key("room"),name:"Release discussion",project,members:bots.slice(0,2).map(item=>({key:item.bot.key,joined_revision:1})),conversation_id:"room-conversation",created_at:"2026-11-17T00:00:00Z",updated_at:"2026-11-17T00:00:00Z",membership_revision:1,version:1,deleted:false,last_entry:{seq:2,kind:"member",author:key("Two"),text:"The final group reply is ready for review.",at:"2026-11-18T02:00:00Z"},room:{epoch:1,pending:0,running:0,revision:2,stopped_at:0}}
 const plain={...group,key:key("old-room"),name:"Older source without a preview",last_entry:undefined,room:undefined}
 const many={...group,key:key("many"),name:"Six member room",members:bots.map(item=>({key:item.bot.key,joined_revision:1}))}
-const counts={groups:0,history:0,writes:0};(window as unknown as {fixture:typeof counts}).fixture=counts
+const counts={groups:0,history:0,writes:0,setMemberCount:(_count:number)=>{}}
+const delayMembers=new URL(location.href).searchParams.has("delayMembers")
+;(window as unknown as {fixture:typeof counts}).fixture=counts
 const source={machineID:"fixture-machine",authorizationRevision:"fixture",canGroups:()=>true,current:()=>true,status:async()=>({sources:[status]}),groups:async()=>{counts.groups++;return {groups:[group,plain,many],source:status}},groupHistory:async({key:target}:W.ProjectAssistantGroupHistoryRequest)=>{counts.history++;const chosen=[group,plain,many].find(room=>room.key.bot_id===target.bot_id)!;return {group:chosen,room:group.room,lines:chosen.last_entry?[chosen.last_entry]:[],source:status,has_more:false,next_before_seq:0}}} as unknown as SourceClient
 const sources=[source],names=new Map([[JSON.stringify(["fixture-machine","fixture-project"]),"Fixture Project"]])
 function App(){
  const [query,setQuery]=useState(""),[selected,setSelected]=useState("")
- return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope="mixed-fixture" items={bots.filter(item=>!query||item.bot.name.toLowerCase().includes(query.toLowerCase())||"fixture project".includes(query.toLowerCase()))} groupsItems={bots} machines={[source.machineID]} selected={selected} query={query} onQuery={setQuery} machine="" onMachine={()=>{}} onSelect={item=>setSelected(JSON.stringify([item.bot.key.machine_id,item.bot.key.bot_id]))} onClose={()=>{}} w={words(language)} language={language} loading={false} errors={[]} projectNames={names} sources={sources}/><section className="pa-main"><output>{selected}</output></section></main>
+ const [memberCount,setMemberCount]=useState(delayMembers?0:bots.length)
+ counts.setMemberCount=setMemberCount
+ const roster=bots.slice(0,memberCount)
+ return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope="mixed-fixture" items={roster.filter(item=>!query||item.bot.name.toLowerCase().includes(query.toLowerCase())||"fixture project".includes(query.toLowerCase()))} groupsItems={roster} machines={[source.machineID]} selected={selected} query={query} onQuery={setQuery} machine="" onMachine={()=>{}} onSelect={item=>setSelected(JSON.stringify([item.bot.key.machine_id,item.bot.key.bot_id]))} onClose={()=>{}} w={words(language)} language={language} loading={delayMembers&&memberCount===0} errors={[]} projectNames={names} sources={sources}/><section className="pa-main"><output>{selected}</output></section></main>
 }
 createRoot(document.querySelector("#app")!).render(<App/>)

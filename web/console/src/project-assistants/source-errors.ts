@@ -42,7 +42,7 @@ export function botTurnOutcome(turn:{state:string;failure_code:string;failure_fi
   if(!turn.failure_code)return w[turn.state]??w.failed
   const fields:Record<string,string>={
     prompt_timeout:"failTimeout",prompt_stopped:"failStopped",acp_eof:"failConnection",
-    prompt_result:"failResponse",prompt_max_tokens:"failOutputLimit",prompt_max_turn_requests:"failStepLimit",
+    native_update:"failNativeUpdate",prompt_result:"failResponse",prompt_max_tokens:"failOutputLimit",prompt_max_turn_requests:"failStepLimit",
     owned_cleanup:"failCleanup",restart:"failRestart",acknowledged:"failAcknowledged",
     provider_usage_limit:"failUsage",provider_out_of_credits:"failCredits",provider_rate_limited:"failRate",
     provider_overloaded:"failOverloaded",provider_signed_out:"failSignedOut",provider_model_missing:"failModel",

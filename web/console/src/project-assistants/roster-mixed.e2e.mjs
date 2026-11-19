@@ -81,6 +81,22 @@ try{
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
    }
    assert.deepEqual(errors,[])
+   if(variant==="after"){
+    await page.goto(`${origin}/after/?lang=${language}&delayMembers`)
+    const avatar=group.locator(".pa-group-avatars")
+    const many=page.locator("[data-group-key]").filter({has:page.getByText("Six member room",{exact:true})})
+    await group.waitFor()
+    assert.doesNotMatch(await avatar.innerText(),/\?/,"Group loaded ahead of its member roster")
+    assert.equal(await avatar.locator("svg").count(),1)
+    assert.equal(await many.locator(".pa-group-more").innerText(),"+2")
+    await page.evaluate(()=>window.fixture.setMemberCount(1))
+    await avatar.locator(".pa-avatar").waitFor()
+    assert.doesNotMatch(await avatar.innerText(),/\?/,"Only part of the member roster is available")
+    await page.evaluate(()=>window.fixture.setMemberCount(6))
+    await avatar.locator(".pa-avatar").nth(1).waitFor()
+    assert.equal(await many.locator(".pa-avatar").count(),4)
+    assert.deepEqual(errors,[])
+   }
    await context.close()
   }
   evidence.push(result)

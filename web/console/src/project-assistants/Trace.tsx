@@ -44,7 +44,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,incom
         </div>}
         {hasBody && isOpen && <TraceBody category={row.category} text={trimmedFull}/>}
       </div>
-    })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.more}</button>}</div></details>
+    })}{more && <button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.moreTrace}</button>}</div></details>
   }
   if (!items.length) return null
   const turns = new Map<string, ProjectAssistantTrace[]>()

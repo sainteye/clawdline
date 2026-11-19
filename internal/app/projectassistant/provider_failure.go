@@ -31,6 +31,12 @@ func executionFailureField(cause error) string {
 		if failure.Code == pa.CapacityFull && failure.Field != "" {
 			return failure.Field
 		}
+		if failure.Code == pa.Invalid {
+			switch failure.Field {
+			case "update", "tool_content", "tool_terminal_id":
+				return "native_update"
+			}
+		}
 		switch failure.Field {
 		case "acp_eof", "prompt_stopped", "prompt_result", "prompt_max_tokens", "prompt_max_turn_requests", "owned_cleanup":
 			return failure.Field
