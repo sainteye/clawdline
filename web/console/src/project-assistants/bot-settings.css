@@ -33,12 +33,4 @@
 .project-assistants .pa-settings-editor label,.project-assistants .pa-settings-editor .pa-settings-hint { margin:0; }
 .project-assistants .pa-settings-editor .pa-settings-hint { line-height:1.5; }
 
-.project-assistants .pa-routines-toggle { display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:12px 0;border:0;border-radius:0;background:transparent;text-align:start;font-weight:600; }
-.project-assistants .pa-routines-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
 .project-assistants .pa-routines-embedded { padding:0 0 20px; }
-.project-assistants .pa-routines-hint { line-height:1.65;color:var(--pa-dim);margin-bottom:16px; }
-.project-assistants .pa-routines .pa-routines-actions { justify-content:flex-start;align-items:stretch;gap:10px;margin-bottom:16px; }
-.project-assistants .pa-routines-actions button { min-height:44px;font-size:13px;text-align:start; }
-@media(max-width:420px) {
-  .project-assistants .pa-routines .pa-routines-actions { display:grid;grid-template-columns:minmax(0,1fr); }
-}

@@ -1,6 +1,18 @@
 import {catalogWord} from "../catalog"
 
 export const en={
+  setUp:"Set up a routine",
+  createRoutine:"Create routine",
+  emptyRoutines:"No routines yet. Ask the Bot to make one, or use + to set it up.",
+  nameExample:"For example, Morning summary",
+  instructionExample:"Describe what the Bot should do each time it runs.",
+  when:"When to run",
+  schedule:"Schedule",
+  advancedTriggers:"Advanced triggers",
+  nextPreview:"Next {time}",
+  runSettings:"Run settings",
+  timeoutSummary:"Timeout {time}",
+  webhookSave:"Runs when a request reaches its Webhook. Save to get its address and key.",
   repeat:"Repeat",hourly:"Hourly",daily:"Daily",weekdays:"Weekdays",weekly:"Weekly",custom:"Custom",
   weekday:"Day of the week",minute:"Minute of the hour",scheduleTime:"Time",timeZone:"Time zone",
   cronFields:"Minute · hour · day of month · month · day of week",
@@ -27,6 +39,18 @@ export const en={
   delivery:"Delivery ID",retryCount:"Safe retry count",retryAt:"Retry no earlier than",eventRun:"Webhook delivery",scheduledRun:"Scheduled run",testRun:"Test run",otherRun:"Source reported by the host",unknownRun:"The effects of this run are unknown. It cannot be retried from this history.",
 } as const
 export const zhHant:Record<keyof typeof en,string>={
+  setUp:"設定例行任務",
+  createRoutine:"建立例行任務",
+  emptyRoutines:"還沒有例行任務。請 Bot 建立，或點「＋」自行設定。",
+  nameExample:"例如：晨間摘要",
+  instructionExample:"描述每次執行時要 Bot 做的事。",
+  when:"何時執行",
+  schedule:"日程",
+  advancedTriggers:"進階觸發條件",
+  nextPreview:"下次 {time}",
+  runSettings:"執行設定",
+  timeoutSummary:"逾時 {time}",
+  webhookSave:"收到 Webhook 請求時執行。儲存後可取得網址和金鑰。",
   repeat:"頻率",hourly:"每小時",daily:"每日",weekdays:"平日",weekly:"每週",custom:"自訂",
   weekday:"星期",minute:"每小時的第幾分鐘",scheduleTime:"時間",timeZone:"時區",
   cronFields:"分鐘 · 小時 · 日期 · 月份 · 星期",

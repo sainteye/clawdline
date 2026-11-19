@@ -87,3 +87,117 @@
   border-color: #e39567;
   color: #17100b;
 }
+
+.project-assistants .pa-routine-section-header,
+.project-assistants .pa-routine-modal-header,
+.project-assistants .pa-routine-when {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.project-assistants .pa-routine-section-header { justify-content: space-between; margin-bottom: 8px; }
+.project-assistants .pa-routine-section-header h3 { font-size: 14px; margin: 0; }
+.project-assistants .pa-routine-plus,
+.project-assistants .pa-routine-modal-header > button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--pa-dim);
+  font-size: 23px;
+}
+.project-assistants .pa-routine-plus:hover,
+.project-assistants .pa-routine-modal-header > button:hover { color: var(--pa-ink); background: var(--pa-card); }
+.pa-routines-empty { margin: 0 0 24px; padding: 14px; border: 1px solid var(--pa-line); border-radius: 14px; color: var(--pa-dim); font-size: 13px; }
+.project-assistants .pa-routine-dialog {
+  box-sizing: border-box;
+  width: min(550px,calc(100% - 28px));
+  max-height: calc(100dvh - 28px);
+  padding: 0;
+  border: 1px solid var(--pa-line);
+  border-radius: 20px;
+  background: var(--pa-card);
+  color: var(--pa-ink);
+  overflow: auto;
+}
+.project-assistants .pa-routine-dialog[open] { animation: pa-routine-enter 180ms ease both; }
+.project-assistants .pa-routine-dialog[open][data-closing] { animation: pa-routine-enter 140ms ease reverse both; }
+.project-assistants .pa-routine-dialog::backdrop { background: rgb(0 0 0 / .52); }
+@keyframes pa-routine-enter {
+  from { transform: translateY(10px) scale(.99); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.project-assistants .pa-routine-dialog .pa-routine-editor {
+  margin: 0;
+  padding: 18px 20px 22px;
+  border: 0;
+}
+.project-assistants .pa-routine-modal-header { margin-bottom: 18px; }
+.project-assistants .pa-routine-modal-header h4 { flex: 1; margin: 0; font-size: 17px; }
+.pa-routine-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 11px; background: var(--pa-line); }
+.project-assistants .pa-routine-dialog :is(input:not([type="checkbox"]),textarea,select) {
+  border: 0;
+  border-radius: 9px;
+  background: var(--pa-line);
+  padding: 8px 10px;
+  box-sizing: border-box;
+  margin-top: 4px;
+}
+.project-assistants .pa-routine-dialog textarea { min-height: 82px; }
+.pa-routine-when { justify-content: space-between; margin-top: 22px; }
+.pa-routine-modes { display: flex; gap: 3px; background: var(--pa-line); padding: 3px; border-radius: 18px; }
+.project-assistants .pa-routine-modes button,
+.project-assistants .pa-routine-choices button {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--pa-dim);
+}
+.project-assistants .pa-routine-modes button[aria-pressed="true"],
+.project-assistants .pa-routine-choices button[aria-pressed="true"] {
+  background: color-mix(in srgb,var(--pa-ink) 16%,transparent);
+  color: var(--pa-ink);
+}
+.project-assistants .pa-routine-dialog .pa-routine-calendar { margin-top: 10px; }
+.project-assistants .pa-routine-dialog :is(.pa-routine-repeat,.pa-routine-fields > label) {
+  display: grid;
+  grid-template-columns: 82px minmax(0,1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--pa-bg);
+  color: var(--pa-dim);
+  font-size: 13px;
+}
+.project-assistants .pa-routine-dialog .pa-routine-repeat { border-radius: 14px 14px 0 0; }
+.project-assistants .pa-routine-dialog .pa-routine-choices { gap: 2px; margin: 0; }
+.project-assistants .pa-routine-dialog .pa-routine-fields { display: block; margin: 0; }
+.project-assistants .pa-routine-dialog .pa-routine-fields > label { border-top: 1px solid var(--pa-line); }
+.project-assistants .pa-routine-dialog .pa-routine-calendar .pa-routine-fields > label:last-of-type { border-radius: 0 0 14px 14px; }
+.project-assistants .pa-routine-dialog .pa-routine-fields :is(input,select) { margin: 0; color: var(--pa-ink); }
+.project-assistants .pa-routine-dialog .pa-routine-calendar :is(input[type="time"],select,input[list]) { width: fit-content; max-width: 100%; }
+.project-assistants .pa-routine-dialog .pa-routine-preview { background: none; padding: 4px 0 0; display: grid; gap: 4px; }
+.pa-routine-preview small { color: var(--pa-dim); }
+.pa-routine-webhook-note { padding: 12px; border-radius: 12px; background: var(--pa-bg); color: var(--pa-dim); font-size: 13px; }
+.pa-routine-run-settings { margin-top: 18px; }
+.pa-routine-run-settings summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; color: var(--pa-dim); }
+.pa-routine-run-settings summary span::after { content: "⌄"; margin-inline-start: 6px; }
+.pa-routine-run-settings[open] summary span::after { content: "⌃"; }
+.pa-routine-run-settings[open] summary small { visibility: hidden; }
+.pa-routine-advanced { margin-top: 8px; }
+.pa-routine-footer kbd { font-family: inherit; font-size: 11px; margin-inline-start: 3px; opacity: .68; }
+@media (max-width: 520px) {
+  .project-assistants .pa-routine-dialog { width: min(550px,calc(100% - 16px)); max-height: calc(100dvh - 16px); }
+  .project-assistants .pa-routine-dialog .pa-routine-editor { padding: 14px; }
+  .project-assistants .pa-routine-dialog :is(.pa-routine-repeat,.pa-routine-fields > label) { grid-template-columns: 55px minmax(0,1fr); }
+  .project-assistants .pa-routine-dialog .pa-routine-choices button { padding: 4px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-assistants .pa-routine-dialog[open],
+  .project-assistants .pa-routine-dialog[open][data-closing] { animation: none; }
+}

@@ -855,7 +855,7 @@ export const zhHant: Record<WordKey, string> = {
   "fallbackReason_unknown": "無法辨識拒絕原因",
 
   "routineResumeUnsupported": "此 Bot 目前無法在獨立對話執行排程。必須先有主對話，且助理須支援恢復該對話。",
-  "routines": "例行排程",
+  "routines": "例行任務",
   "backgroundLabel": "背景",
   "backgroundQueued": "正在從聊天接手",
   "backgroundWorking": "正在工作",

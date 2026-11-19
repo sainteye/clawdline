@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13506,
-  "riskKeys": 5806,
-  "nonRiskCount": 7700,
+  "englishContentKeys": 13518,
+  "riskKeys": 5807,
+  "nonRiskCount": 7711,
   "groups": [
     {
       "name": "acp / other",
@@ -453,13 +453,15 @@
     },
     {
       "name": "botRoutineControls / other",
-      "count": 42,
+      "count": 53,
       "sources": [
         "src/project-assistants/routine-words.ts"
       ],
       "keys": [
         "botRoutineControls.addFilter",
+        "botRoutineControls.advancedTriggers",
         "botRoutineControls.confirmRotate",
+        "botRoutineControls.createRoutine",
         "botRoutineControls.cronFields",
         "botRoutineControls.custom",
         "botRoutineControls.daily",
@@ -477,10 +479,13 @@
         "botRoutineControls.hideKey",
         "botRoutineControls.hourly",
         "botRoutineControls.hourlyPreview",
+        "botRoutineControls.instructionExample",
         "botRoutineControls.key",
         "botRoutineControls.localURL",
         "botRoutineControls.manageHook",
         "botRoutineControls.minute",
+        "botRoutineControls.nameExample",
+        "botRoutineControls.nextPreview",
         "botRoutineControls.originalTrigger",
         "botRoutineControls.otherRun",
         "botRoutineControls.publicURL",
@@ -488,18 +493,24 @@
         "botRoutineControls.retryCount",
         "botRoutineControls.rotateKey",
         "botRoutineControls.rotateWarning",
+        "botRoutineControls.runSettings",
+        "botRoutineControls.schedule",
         "botRoutineControls.scheduleTime",
         "botRoutineControls.scheduledRun",
+        "botRoutineControls.setUp",
         "botRoutineControls.source",
         "botRoutineControls.testRun",
         "botRoutineControls.timeZone",
+        "botRoutineControls.timeoutSummary",
         "botRoutineControls.viewKey",
         "botRoutineControls.webhook",
+        "botRoutineControls.webhookSave",
         "botRoutineControls.weekday",
         "botRoutineControls.weekdays",
         "botRoutineControls.weekdaysPreview",
         "botRoutineControls.weekly",
-        "botRoutineControls.weeklyPreview"
+        "botRoutineControls.weeklyPreview",
+        "botRoutineControls.when"
       ]
     },
     {

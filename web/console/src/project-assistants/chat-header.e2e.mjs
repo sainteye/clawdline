@@ -135,11 +135,15 @@ try{
       assert.equal(await settings.getAttribute("aria-selected"),"true")
       await panel.locator(".pa-settings-editor").waitFor()
       await details.click()
-      const routines=panel.getByRole("button",{name:zh?"例行排程":"Routines",exact:true})
-      await routines.click()
-      await panel.getByText(zh?"尚無例行排程":"No routines yet",{exact:true}).waitFor()
-      await routines.click()
-      await panel.locator(".pa-routines").waitFor({state:"detached"})
+      const routineName=zh?"設定例行任務":"Set up a routine"
+      const addRoutine=panel.getByRole("button",{name:routineName,exact:true})
+      await panel.getByText(zh?/還沒有例行任務/:/No routines yet/).waitFor()
+      await addRoutine.click()
+      const routineDialog=page.getByRole("dialog",{name:routineName,exact:true})
+      await routineDialog.waitFor()
+      await page.keyboard.press("Escape")
+      await routineDialog.waitFor({state:"detached"})
+      assert.equal(await focused(addRoutine),true)
 
       // A trapped snapshot fails, then retry is discoverable inside the visible error.
       await page.evaluate(()=>window.botsFixture.a.configureViews({failure:"pa_offline"}))

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13506,
+  "englishKeys": 13518,
   "counts": {
-    "negation": 3527,
+    "negation": 3528,
     "state": 2289,
     "permission": 818,
     "deletion": 314,
     "uncertainty": 552
   },
-  "unionCount": 5806,
+  "unionCount": 5807,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -117,6 +117,7 @@
       "botExchange.noReply",
       "botHandoff.empty",
       "botHandoff.unavailable",
+      "botRoutineControls.emptyRoutines",
       "botRoutineControls.eventHint",
       "botRoutineControls.followUpCancelUnavailable",
       "botRoutineControls.hookHeld",
@@ -7701,6 +7702,7 @@
     "botHandoff.adopted",
     "botHandoff.empty",
     "botHandoff.unavailable",
+    "botRoutineControls.emptyRoutines",
     "botRoutineControls.eventHint",
     "botRoutineControls.followUpCancelUnavailable",
     "botRoutineControls.followUps",
