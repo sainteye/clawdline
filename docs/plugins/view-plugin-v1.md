@@ -10,8 +10,8 @@ The earlier revision proposed machine-owned installation; that transport is defe
 The sidebar’s **View plugins** entry owns installation and management. The bottom
 status-bar orbit button opens installed, enabled views only: one view opens
 directly, while multiple views use a compact picker. An empty launcher points to
-the sidebar without embedding installation controls. The orbit entry stays
-visible in the status bar when provider quotas are hidden.
+the sidebar without embedding installation controls. The orbit entry follows
+the provider quota bar’s visibility.
 An opened view fills the app.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.

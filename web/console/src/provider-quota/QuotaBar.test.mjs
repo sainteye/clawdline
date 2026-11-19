@@ -60,11 +60,8 @@ test("a real zero remains a usable reading and refresh failures retain it", () =
     if (error) assert.match(html, /data-stale="true"/)
   }
 })
-test("quota preferences, mobile detail and older machines hide quotas while keeping shortcuts", () => {
-  for (const state of [{ enabled: false }, { mobile: true, mobileListShown: false }, { apiLevel: 27 }]) {
-    const html = render({ providers: [provider], ...state })
-    assert.match(html, /<footer/)
-    assert.match(html, /Dock entry/)
-    assert.doesNotMatch(html, /data-provider=|<dialog|quota-refresh/)
+test("shortcuts follow the original quota bar visibility", () => {
+  for (const state of [{ enabled: false }, { enabled: false, mobile: true }, { mobile: true, mobileListShown: false }, { apiLevel: 27 }]) {
+    assert.equal(render({ providers: [provider], ...state }), "")
   }
 })

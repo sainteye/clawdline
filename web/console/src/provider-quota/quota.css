@@ -1,6 +1,6 @@
 /* A shared footer reserves its measured height in both fixed pages and the Session grid. */
 .app { margin-bottom: var(--quota-footer-height, 0px); }
-:root .page { bottom: var(--quota-footer-height, 0px); }
+.page { bottom: var(--quota-footer-height, 0px); }
 .provider-quota-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 42;
   display: flex; align-items: center; gap: 14px;
@@ -53,10 +53,7 @@
   .quota-provider-name { display: none; }
 }
 @media (max-width: 899px) {
-  .app .pane-detail { height: calc(var(--vvh, 100dvh) - var(--quota-footer-height, 0px)); }
-  :root .page { bottom: calc(100% - var(--vvh, 100dvh) - var(--vvt, 0px) + var(--quota-footer-height, 0px)); }
   .provider-quota-bar {
-    bottom: calc(100% - var(--vvh, 100dvh) - var(--vvt, 0px));
     gap: 8px; padding: 8px 10px calc(8px + max(var(--indicator, 0px), env(safe-area-inset-bottom, 0px), 12px));
   }
   .quota-compact-window { text-overflow: ellipsis; white-space: nowrap; }

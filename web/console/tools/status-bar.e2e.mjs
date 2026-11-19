@@ -44,6 +44,12 @@ try {
             assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900, JSON.stringify(box))
           }
         }
+        const shortcutsHidden = async () => {
+          assert.equal(await bar.count(), 0)
+          assert.equal(await page.locator(".pa-dock,.vp-dock,.session-board-dock").count(), 0)
+          assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--quota-footer-height")), "")
+        }
+        const layout = width < 900 ? "mobile" : "desktop"
         await check("initial-loading", async () => {
           await page.waitForFunction(() => fixtureHost.log.some(row => row.method === "status-wait"))
           await shortcutsVisible()
@@ -70,11 +76,12 @@ try {
         await check("zero-reading", async () => { assert.equal(await bar.locator('[data-provider="codex"]').count(), 1) })
         await page.evaluate(() => fixtureHost.quota("error")); await bar.locator(".quota-refresh").click(); await page.waitForTimeout(100)
         await check("stale-reading", async () => { assert.equal(await bar.locator('[data-provider="codex"][data-stale]').count(), 1) })
-        await page.evaluate(layout => fixtureHost.quotaVisible(layout, false), width < 900 ? "mobile" : "desktop")
-        await check("quotas-off", async () => {
-          await shortcutsVisible()
-          assert.equal(await bar.locator(".quota-providers").count(), 0)
-        })
+        await page.evaluate(layout => fixtureHost.quotaVisible(layout, false), layout)
+        await bar.waitFor({ state: "detached" })
+        await check("quotas-off", shortcutsHidden)
+        await page.evaluate(layout => fixtureHost.quotaVisible(layout, true), layout)
+        await bar.waitFor()
+        await check("quotas-on", shortcutsVisible)
         await views.click()
         await page.locator(".vp-host").waitFor()
         await page.locator(".vp-close").click()
@@ -95,17 +102,15 @@ try {
         await page.waitForFunction(() => document.activeElement?.classList.contains("pa-dock"))
         await check("bots-return", shortcutsVisible)
 
-        await page.evaluate(layout => fixtureHost.quotaVisible(layout, true), width < 900 ? "mobile" : "desktop")
         await page.evaluate(() => fixtureHost.quota("ready"))
         if (width < 900) {
           await page.locator("#rows > li.row").first().click()
           const detail = page.locator("#app[data-view=detail] .pane-detail").first()
           await detail.waitFor()
           await check("mobile-detail", async () => {
-            await shortcutsVisible()
-            assert.equal(await bar.locator(".quota-providers").count(), 0)
-            const [pane, footer] = await Promise.all([detail.boundingBox(), bar.boundingBox()])
-            assert.ok(pane && footer && pane.y + pane.height <= footer.y + 1, "the status bar must leave room for the Session composer")
+            await shortcutsHidden()
+            const pane = await detail.boundingBox()
+            assert.ok(pane && Math.abs(pane.y + pane.height - 900) <= 1, "the detail pane reaches the bottom of the viewport")
           })
           await page.evaluate(() => history.back())
           await page.locator("#app[data-view=list]").waitFor()
@@ -117,7 +122,7 @@ try {
         await page.locator("#brand").click()
         await page.locator("#nav-work").click()
         await page.locator('#nav-work[aria-current="page"]').waitFor({ state: "attached" })
-        await check("work-page", shortcutsVisible)
+        await check("work-page", layout === "mobile" ? shortcutsHidden : shortcutsVisible)
         assert.deepEqual(errors, [])
       } finally { await page.close() }
     } } finally { await browser.close() }
