@@ -4860,7 +4860,7 @@
     "internal/adapters/botdevserverstore/rules.go": "5018a72ffb3a08545f18e95cd99924b1ca4c6f168d0ba2d02fc793c0f17d7197",
     "internal/adapters/botloginprofiles/registry.go": "901bc7226c7eff2a7c9083ecc8b0c0c9374a844a0cb75b47b3e9f82036008e28",
     "internal/adapters/botloginprofiles/secrets.go": "862ae86b785febd5e4c225de30171ce4950e277817caa44fa3f6a6ad710b2ff1",
-    "internal/adapters/botnetwork/assistant_store.go": "77f56ac961f408428879967f9ae78a81d7aad36adb4bb4de96903b38a1d3e2c1",
+    "internal/adapters/botnetwork/assistant_store.go": "9432829b171d7f9c6cae52de68b08ad3ad86525d6ae28d0129a9a9990d54ad84",
     "internal/adapters/botnetwork/cloud.go": "b180683ae344bbaa9c25f0d20fb55ecb37926ee99238218813e798eac6f41b4f",
     "internal/adapters/botnetwork/cloud_rail.go": "249aaea2e61073a45388a47b5e3b377597e042cab39eeefbf4a2584f22e90a22",
     "internal/adapters/botnetwork/local_authority.go": "fcf9c598cfa46095ea0802b276372ed049ef30daf79dcd1f25bde270b4fb98c4",
