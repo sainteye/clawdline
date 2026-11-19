@@ -1347,6 +1347,7 @@
   "http.fd9c4ff12d86a6be": "另一項請求正持有此租約。",
   "http.fdb6c0ad1159d1d1": "清單須以 GET 讀取，並以 POST 新增內容。",
   "http.fde0d270a8b29b28": "每張圖片只接受一個字串路徑欄位。",
+  "http.fdee516f7da935d5": "只有 Session 本身、開啟它的 Epic，或它所屬留言板的 Lead 可以關閉它。",
   "http.fe14319b66177349": "變更 Board 模式需要管理裝置。",
   "http.fe22264f8896a7cd": "回呼會喚醒提出請求的 Session；root.session_id 指定該對話。",
   "http.fe2e3ab3d1fb1194": "只有已驗證身分的 Session 可以使用此路由。",

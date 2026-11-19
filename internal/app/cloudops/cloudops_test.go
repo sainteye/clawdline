@@ -1551,6 +1551,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-local", method: "POST", path: "/v1/cloud/direct/local-network",
 		body2: `{"enabled":true}`,
 	}, {
+		word: "session-boards.inbox",
+		body: map[string]any{"type": "session-boards.inbox", "session": machine, "request": "req-session-board-inbox",
+			"board": "board-one", "member": "codex:conversation", "before": 4},
+		session: machine, name: "read:req-session-board-inbox", method: "GET", path: "/v1/orchestrator/session-boards/inbox",
+		query: map[string]string{"board": "board-one", "member": "codex:conversation", "before": "4"},
+	}, {
 		word: "session-boards.read",
 		body: map[string]any{"type": "session-boards.read", "session": machine, "request": "req-session-board-read",
 			"board": "board-one", "after": 4},

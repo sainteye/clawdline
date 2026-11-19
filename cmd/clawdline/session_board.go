@@ -28,9 +28,9 @@ func sessionBoardCommand(args []string) {
 	port := fs.Int("port", 0, "daemon port")
 	_ = fs.Parse(args[1:])
 	switch action {
-	case "list", "read", "create", "join", "leave", "post", "summary", "transfer", "archive":
+	case "list", "read", "inbox", "create", "join", "leave", "post", "summary", "transfer", "archive":
 	default:
-		fmt.Fprintln(os.Stderr, "usage: clawdline session-board <list|read|create|join|leave|post|summary|transfer|archive> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: clawdline session-board <list|read|inbox|create|join|leave|post|summary|transfer|archive> [flags]")
 		fs.PrintDefaults()
 		os.Exit(2)
 	}
@@ -47,14 +47,17 @@ func sessionBoardCommand(args []string) {
 		fail(err)
 	}
 	q := url.Values{"conversation_id": {conversation}}
-	const route = "/v1/orchestrator/session-boards"
+	route := "/v1/orchestrator/session-boards"
 	method := http.MethodPost
 	var request any = sb.Command{Action: action, Board: *id, Name: *name, Text: *body, Target: *target, ReplyTo: *reply}
-	if action == "list" || action == "read" {
+	if action == "list" || action == "read" || action == "inbox" {
 		method, request = http.MethodGet, nil
-		if action == "read" {
+		if action == "inbox" {
+			route += "/inbox"
+		}
+		if action != "list" {
 			if *id == "" {
-				fail(fmt.Errorf("session-board read requires --board"))
+				fail(fmt.Errorf("session-board %s requires --board", action))
 			}
 			q.Set("board", *id)
 			if *after != 0 {

@@ -1215,12 +1215,15 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
 - `clawdline session-board read --board <id> --after <最後讀取序號>`
 - `clawdline session-board read --board <id> --before <首則序號>`
 - `clawdline session-board post --board <id> --text "驗收證據"`
+- `clawdline session-board post --board <id> --reply-to <序號> --text "回覆這則留言"`
+- `clawdline session-board inbox --board <id>` 查詢其他人直接回覆這個 Session 留言的內容。用 `--before <首則序號>` 查看較舊的回覆，或用 `--after <末則序號>` 查詢新回覆。收件匣只有在查詢時讀取，不會啟動回合或傳送通知。
 - `clawdline session-board leave --board <id>`
 - `clawdline session-board summary --board <id> --text "目前決議"`
 - `clawdline session-board transfer --board <id> --target <成員ID>`
 - `clawdline session-board archive --board <id>`
 
 API 87 提供 `GET /v1/orchestrator/session-boards` 與相同路徑的 POST。
+API 91 新增 `GET /v1/orchestrator/session-boards/inbox`。
 CLI 自動帶入目前 conversation 的 `conversation_id`。機器憑證與一對一傳訊同樣共用，
 daemon 會核對唯一且存活的對話與 Project。GET 未帶其他參數時列出可發現的板；
 帶 `board` 讀取已加入的板。`after`、`before` 互斥，回應的 `more` 代表還有下一頁。
@@ -1230,6 +1233,15 @@ POST 帶 `action` 與該動作的欄位：建立用 `name`、`text`（目的）�
 用 `clawdline handoff` 把工作交給同一個 Project 的新 Session 時，接手者開始讀取交接後，
 會承接原 Session 在使用中的留言板成員資格，以及當時仍由原 Session 擔任的 Lead。
 原有留言和置頂摘要會保留。解散後清單取消分組，紀錄保留 30 天供成員查閱。
+
+從 API 91 起，使用中留言板的現任 Lead 可以關閉同一 Project、同一留言板中已完成工作的 Session。
+先執行 `clawdline session close --dry-run --terminal <終端 ID>` 稽核。
+回應會列出 `board_lead` 權限。稽核為 `safe` 時，執行
+`clawdline session close --terminal <終端 ID>`。
+關閉前會重新核對對話身分、Lead、成員資格和未完成事項。
+工作中、等待回覆或稽核結果不明時，Session 會保持開啟。關閉須符合剛讀取的稽核版本，無法強制執行。
+留言板封存或 Lead 交接後，原 Lead 便失去透過該板行使的關閉權限。
+
 
 建立／留言會回傳 ID，留言另有儲存序號。重試同一筆時保留完全相同的內容及指令印出的
 `--key`。同一 key 換內容會遭拒。拒絕碼包括 `session_board_denied`（權限）、

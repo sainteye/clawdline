@@ -1347,6 +1347,7 @@
   "http.fd9c4ff12d86a6be": "Another request holds this lease.",
   "http.fdb6c0ad1159d1d1": "The list is read with GET and added to with POST.",
   "http.fde0d270a8b29b28": "Each image accepts only one string path field.",
+  "http.fdee516f7da935d5": "Only the Session itself, its owning Epic, or the Lead of a message board it belongs to can close it.",
   "http.fe14319b66177349": "Changing board mode requires an administrative device.",
   "http.fe22264f8896a7cd": "A callback wakes the session that asked for it; root.session_id names that conversation.",
   "http.fe2e3ab3d1fb1194": "Only an authenticated Session may use this route.",

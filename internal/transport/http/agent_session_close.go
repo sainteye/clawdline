@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -13,10 +14,8 @@ import (
 //
 // The paired-device routes (`/v1/sessions`, `…/close`) stay a person's. This
 // is the machine credential's way to the same guarded close, and it is
-// narrower in two ways: a Session may close only itself, or a Feature Root its
-// Epic owner opened with `--assign-new`; and `force` does not exist here. A
-// person may know something the obligations do not; an agent closing its own
-// Session is exactly the one who must not override them.
+// restricted to the Session itself, its owning Epic, or a current Lead of an
+// active message board it belongs to. An agent cannot force a close.
 //
 //	GET  /v1/work/v2/agent/sessions/<terminal>/closeability?session_id=<caller>
 //	POST /v1/work/v2/agent/sessions/<terminal>/close
@@ -35,7 +34,7 @@ type agentCloseAudit struct {
 	State      string                 `json:"state"`
 	Version    string                 `json:"version"`
 	Reasons    []contract.CloseReason `json:"reasons"`
-	// Authority is why this caller may close it: self, or epic_owner.
+	// Authority is why this caller may close it: self, epic_owner, or board_lead.
 	Authority      string          `json:"authority"`
 	RootAssignment string          `json:"-"`
 	Target         session.Session `json:"-"`
@@ -102,14 +101,31 @@ func (s *Server) agentCloseSession(w http.ResponseWriter, r *http.Request, termi
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(closeRefusalWire("closeability_unknown", "What this Session owes could not be read clearly enough to close it.", audit.Reasons))
 		return
-	case body.ExpectedCloseabilityVersion != "" && body.ExpectedCloseabilityVersion != audit.Version:
+	case (audit.Authority == "board_lead" || body.ExpectedCloseabilityVersion != "") && body.ExpectedCloseabilityVersion != audit.Version:
 		writeRefusal(w, http.StatusConflict, "close_not_proven",
 			"The Session changed since it was read. Read its closeability again before closing.")
 		return
 	}
 	ctx, more := context.WithTimeout(r.Context(), closeBudget)
 	defer more()
-	closed, err := s.closeActions(r).Close(ctx, terminal, false)
+	actions := s.closeActions(r)
+	var closed session.Session
+	var err error
+	if audit.Authority == "board_lead" {
+		// Recheck after the terminal lane is ours. A role, membership, turn, or
+		// terminal can change while waiting behind another operation.
+		guarded := app.WithOperationCheck(ctx, func() error {
+			next, refusal := s.agentAuditClose(ctx, body.SessionID, terminal)
+			if refusal != nil || next.Authority != "board_lead" || next.Version != audit.Version ||
+				next.State != string(contract.CloseabilityStateSafe) {
+				return app.Refusal{Code: "close_not_proven", Detail: "The Session changed since it was read. Read its closeability again before closing."}
+			}
+			return nil
+		})
+		closed, err = actions.CloseAudited(guarded, audit.Target)
+	} else {
+		closed, err = actions.Close(ctx, terminal, false)
+	}
 	if err != nil {
 		writeActionRefusal(w, err)
 		return
@@ -190,8 +206,17 @@ func (s *Server) agentAuditClose(ctx context.Context, caller, terminal string) (
 		// item it still owns and has not finished blocks below.
 		authority = "epic_owner"
 	default:
-		return agentCloseAudit{}, &agentCloseRefusal{http.StatusForbidden, "close_not_yours",
-			"A Session may close only itself, or a Feature Root its Epic opened with --assign-new."}
+		allowed, err := s.boardLeadMayClose(ctx, inv, caller, target)
+		if err != nil {
+			return agentCloseAudit{}, &agentCloseRefusal{http.StatusConflict, "closeability_unknown",
+				"What this Session owes could not be read clearly enough to close it."}
+		}
+		if !allowed {
+			return agentCloseAudit{}, &agentCloseRefusal{http.StatusForbidden, "close_not_yours",
+				"Only the Session itself, its owning Epic, or the Lead of a message board it belongs to can close it."}
+		}
+		authority = "board_lead"
+		target.ExpectedStart = liveOf(target).ProcessStart
 	}
 	c := row.Closeability
 	reasons := append([]contract.CloseReason{}, c.Reasons...)
@@ -205,6 +230,21 @@ func (s *Server) agentAuditClose(ctx context.Context, caller, terminal string) (
 		TerminalID: terminal, State: string(agentCloseState(c.State, reasons)), Version: c.Version,
 		Reasons: reasons, Authority: authority, RootAssignment: rootAssignment, Target: target,
 	}, nil
+}
+
+func (s *Server) boardLeadMayClose(ctx context.Context, inv session.Inventory, caller string, target session.Session) (bool, error) {
+	if s.store == nil || target.ConversationID == "" || !currentExecution(target, inv) {
+		return false, nil
+	}
+	lead, project, ok := s.sessionBoardActor(ctx, inv, caller, false)
+	if !ok {
+		return false, nil
+	}
+	member, targetProject, ok := s.sessionBoardActor(ctx, inv, string(target.Assistant)+":"+target.ConversationID, true)
+	if !ok || targetProject != project {
+		return false, nil
+	}
+	return s.store.SessionBoardLeadMayClose(ctx, project, lead.ID, member.ID)
 }
 
 // unacknowledgedCloseReasons is every child completion the Session has not

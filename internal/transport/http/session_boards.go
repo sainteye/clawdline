@@ -2,10 +2,12 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 )
 
 const sessionBoardRoute = "/v1/orchestrator/session-boards"
+const sessionBoardInboxRoute = sessionBoardRoute + "/inbox"
 
 func (s *Server) sessionBoardActor(ctx context.Context, inv session.Inventory, id string, qualified bool) (sb.Actor, string, bool) {
 	var actor sb.Actor
@@ -193,18 +196,67 @@ func validSessionBoardCommand(c sb.Command) bool {
 	}
 }
 
+func sessionBoardCursor(q url.Values, field string) (int64, bool) {
+	if !q.Has(field) {
+		return 0, true
+	}
+	n, err := strconv.ParseInt(q.Get(field), 10, 64)
+	return n, err == nil && n > 0 && n <= sb.MaxPosts+1
+}
+
+func (s *Server) sessionBoardInbox(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use GET to read a Session message board inbox.")
+		return
+	}
+	if s.store == nil {
+		writeSessionBoardError(w, nil)
+		return
+	}
+	q := r.URL.Query()
+	for key, values := range q {
+		if len(values) != 1 || !slices.Contains([]string{"board", "after", "before", "conversation_id", "member"}, key) {
+			writeSessionBoardError(w, sb.ErrInvalid)
+			return
+		}
+	}
+	id := q.Get("board")
+	after, afterOK := sessionBoardCursor(q, "after")
+	before, beforeOK := sessionBoardCursor(q, "before")
+	if !sb.ValidText(id, sha256.Size*2) || !afterOK || !beforeOK || (after > 0 && before > 0) {
+		writeSessionBoardError(w, sb.ErrInvalid)
+		return
+	}
+	ctx := r.Context()
+	member, project := q.Get("member"), ""
+	if machineAuthed(r) {
+		if q.Has("member") {
+			writeSessionBoardError(w, sb.ErrDenied)
+			return
+		}
+		actor, scope, ok := s.sessionBoardActor(ctx, s.freshReading(ctx), q.Get("conversation_id"), false)
+		if !ok {
+			writeSessionBoardError(w, sb.ErrDenied)
+			return
+		}
+		member, project = actor.ID, scope
+	} else if q.Has("conversation_id") || !sb.ValidText(member, sb.MaxKey) {
+		writeSessionBoardError(w, sb.ErrDenied)
+		return
+	}
+	inbox, err := s.store.SessionBoardInbox(ctx, project, member, id, after, before)
+	if err != nil {
+		writeSessionBoardError(w, err)
+		return
+	}
+	writeJSON(w, inbox)
+}
+
 func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, project, actor string) {
 	q := r.URL.Query()
 	ctx := r.Context()
-	parse := func(field string) (int64, bool) {
-		if !q.Has(field) {
-			return 0, true
-		}
-		n, err := strconv.ParseInt(q.Get(field), 10, 64)
-		return n, err == nil && n > 0 && n <= sb.MaxPosts+1
-	}
-	after, afterOK := parse("after")
-	before, beforeOK := parse("before")
+	after, afterOK := sessionBoardCursor(q, "after")
+	before, beforeOK := sessionBoardCursor(q, "before")
 	id := q.Get("board")
 	if !afterOK || !beforeOK || (after > 0 && before > 0) || (id == "" && (after > 0 || before > 0)) {
 		writeSessionBoardError(w, sb.ErrInvalid)

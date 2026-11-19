@@ -203,7 +203,7 @@ type Session struct {
 	Backend           Backend `json:"backend"`
 	TTY               string  `json:"tty,omitempty"`
 	PID               int     `json:"pid,omitempty"`
-	// ExpectedStart pins a recovery close to the process the person saw.
+	// ExpectedStart pins a close to the process previously verified.
 	ExpectedStart time.Time `json:"-"`
 	// RemoteSessionID is the native bridge address, never a browser-supplied target.
 	RemoteSessionID string    `json:"-"`

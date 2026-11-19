@@ -6,13 +6,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/session"
+	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
 )
 
 func agentCloseCode(t *testing.T, s *Server, method, path, body string) (int, string, []byte) {
@@ -187,5 +192,105 @@ func TestAnAgentClosesAPaneWhoseNameNeedsEscaping(t *testing.T) {
 	var audit agentCloseAudit
 	if err := json.Unmarshal(body, &audit); err != nil || audit.TerminalID != "%84" || audit.Authority != "self" {
 		t.Fatalf("audit: %s", body)
+	}
+}
+
+type boardCloseHost struct {
+	*pane
+	lead session.Session
+}
+
+func (h *boardCloseHost) Inventory(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Sessions: []session.Session{h.s, h.lead}}, nil
+}
+
+func TestMessageBoardLeadClosesOnlyAnAuditedCurrentMember(t *testing.T) {
+	s, target, _ := sessionItemServer(t)
+	target.s.PID = os.Getpid()
+	lead := target.s
+	lead.ID = "pane-5"
+	lead.ConversationID = "20000000-0000-4000-8000-000000000009"
+	host := &boardCloseHost{pane: target, lead: lead}
+	hosts := []ports.TerminalHost{host}
+	s.terminals, s.inventory.Terminals, s.inventory.Screen = hosts, hosts, host
+	project := projects.ProjectID(target.s.CWD)
+	leadActor := sb.Actor{ID: string(lead.Assistant) + ":" + lead.ConversationID, Label: "Lead"}
+	targetActor := sb.Actor{ID: string(target.s.Assistant) + ":" + target.s.ConversationID, Label: "Member"}
+	change := func(actor sb.Actor, cmd sb.Command, key string) sb.Result {
+		t.Helper()
+		out, err := s.store.ChangeSessionBoard(t.Context(), project, actor, targetActor, cmd, key, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	create := func(name string) string {
+		t.Helper()
+		return change(leadActor, sb.Command{Action: "create", Name: name, Text: "Shared work"}, name).ID
+	}
+	board := create("First board")
+
+	const base = "/v1/work/v2/agent/sessions/pane-4"
+	audit := func(want int) agentCloseAudit {
+		t.Helper()
+		status, code, payload := agentCloseCode(t, s, http.MethodGet, base+"/closeability?session_id="+lead.ConversationID, "")
+		if status != want {
+			t.Fatalf("audit status = %d %s, want %d: %s", status, code, want, payload)
+		}
+		var got agentCloseAudit
+		if err := json.Unmarshal(payload, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	close := func(version string, wantStatus int, wantCode string) {
+		t.Helper()
+		request, err := json.Marshal(agentCloseRequest{SessionID: lead.ConversationID, ExpectedCloseabilityVersion: version})
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, code, payload := agentCloseCode(t, s, http.MethodPost, base+"/close", string(request))
+		if status != wantStatus || code != wantCode {
+			t.Fatalf("close returned %d %s, want %d %s: %s", status, code, wantStatus, wantCode, payload)
+		}
+	}
+
+	audit(http.StatusForbidden)
+	change(targetActor, sb.Command{Action: "join", Board: board}, "")
+	current := audit(http.StatusOK)
+	if current.Authority != "board_lead" || current.State != "safe" || current.Version == "" {
+		t.Fatalf("board Lead's audit: %+v", current)
+	}
+	close("", http.StatusConflict, "close_not_proven")
+	close("stale-audit", http.StatusConflict, "close_not_proven")
+	target.s.State, target.screen = session.StateWorking, "✻ Working…"
+	close(current.Version, http.StatusConflict, "close_blocked")
+	target.s.State, target.screen = session.StateIdle, ""
+
+	change(leadActor, sb.Command{Action: "archive", Board: board}, "")
+	close(current.Version, http.StatusForbidden, "close_not_yours")
+	// A fresh active board restores authority until the role transfers.
+	board = create("Second board")
+	change(targetActor, sb.Command{Action: "join", Board: board}, "")
+	current = audit(http.StatusOK)
+	change(leadActor, sb.Command{Action: "transfer", Board: board, Target: targetActor.ID}, "")
+	close(current.Version, http.StatusForbidden, "close_not_yours")
+	if target.closeCalls != 0 || s.closes.count() != 0 {
+		t.Fatal("a delegated refusal closed or scheduled a close")
+	}
+
+	newAuditPath := "/v1/work/v2/agent/sessions/pane-5"
+	status, code, payload := agentCloseCode(t, s, http.MethodGet, newAuditPath+"/closeability?session_id="+target.s.ConversationID, "")
+	var inherited agentCloseAudit
+	if status != http.StatusOK || json.Unmarshal(payload, &inherited) != nil || inherited.Authority != "board_lead" || inherited.State != "safe" {
+		t.Fatalf("transferred Lead: %d %s %s", status, code, payload)
+	}
+	request, err := json.Marshal(agentCloseRequest{SessionID: target.s.ConversationID, ExpectedCloseabilityVersion: inherited.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, code, payload = agentCloseCode(t, s, http.MethodPost, newAuditPath+"/close", string(request))
+	if status != http.StatusOK || target.closeCalls != 1 || s.closes.count() != 0 {
+		t.Fatalf("safe delegated close: %d %s %s; close calls = %d", status, code, payload, target.closeCalls)
 	}
 }

@@ -70,6 +70,11 @@ type Page struct {
 	More  bool   `json:"more"`
 }
 
+type Inbox struct {
+	Posts []Post `json:"posts"`
+	More  bool   `json:"more"`
+}
+
 type Command struct {
 	Action  string   `json:"action"`
 	Board   string   `json:"board,omitempty"`

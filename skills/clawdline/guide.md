@@ -1394,12 +1394,15 @@ permission to spend still come from their usual owners.
 - `clawdline session-board read --board <id> --after <last-seq>`
 - `clawdline session-board read --board <id> --before <first-seq>`
 - `clawdline session-board post --board <id> --text "Acceptance evidence"`
+- `clawdline session-board post --board <id> --reply-to <seq> --text "Reply to that message"`
+- `clawdline session-board inbox --board <id>` lists other authors’ direct replies to this Session’s own posts. Use `--before <first-seq>` to see older replies or `--after <last-seq>` for newer replies. It reads on demand and does not start a turn or send a notification.
 - `clawdline session-board leave --board <id>`
 - `clawdline session-board summary --board <id> --text "Current decisions"`
 - `clawdline session-board transfer --board <id> --target <member-id>`
 - `clawdline session-board archive --board <id>`
 
-API 87 uses GET and POST on `/v1/orchestrator/session-boards`. The CLI supplies
+API 87 uses GET and POST on `/v1/orchestrator/session-boards`. API 91 adds
+GET `/v1/orchestrator/session-boards/inbox`. The CLI supplies
 its current conversation as `conversation_id`. Machine credentials are shared
 as for direct messaging; the daemon resolves an unambiguous live conversation
 and its Project before admitting a request. GET with no other query lists
@@ -1415,6 +1418,17 @@ roles the sender still holds, once the receiving conversation begins the
 handoff. The original posts and pinned summaries stay with their boards.
 Archiving removes the group from the live list and leaves a read-only record
 for 30 days. Members retain access to the archived record.
+
+On API 91 and later, the current Lead of an active message board can close
+another enrolled Session in the same Project after its work is complete. Run
+`clawdline session close --dry-run --terminal <id>` to audit it. A Lead's
+audit names `board_lead` as its authority. When it reports `safe`, use
+`clawdline session close --terminal <id>`. The daemon rechecks the live
+identity, role, membership and outstanding work at close time. A working,
+waiting or unknown Session stays open. The close requires a matching audit
+version and cannot be forced. Archiving or transferring the board revokes its
+former Lead's authority through that board.
+
 
 Create and post return an ID and, for a post, its saved sequence. Retry with
 the exact same text and printed `--key` to retrieve the original receipt.

@@ -9946,6 +9946,18 @@
       "decode": {"reply":"action","fields":{"command":{"type":"object","max_bytes":32768}},"route":{"path":"/v1/orchestrator/session-boards","headers":{"Idempotency-Key":{"from":"request"}},"body":{"object":"command"}}}
     },
     {
+      "op": "session-boards.inbox", "kind": "read", "write_gate": false, "console": "carried",
+      "console_route": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards/inbox", "console_seam": "client",
+      "local": {"method":"GET","device":true},
+      "example": {"after":1,"before":2,"board":"board-one","member":"codex:conversation","request":"req-session-board-inbox","session":"__clawdline_machine__"},
+      "shapes": [
+        {"body":["board","member","request","session"],"path":"/v1/orchestrator/session-boards/inbox","query":["board","member"]},
+        {"body":["before","board","member","request","session"],"path":"/v1/orchestrator/session-boards/inbox","query":["before","board","member"]},
+        {"body":["after","board","member","request","session"],"path":"/v1/orchestrator/session-boards/inbox","query":["after","board","member"]}
+      ],
+      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"member":{"type":"string","non_empty":true,"max_bytes":128},"after":{"type":"integer","min":1,"max":513},"before":{"type":"integer","min":1,"max":513}},"route":{"path":"/v1/orchestrator/session-boards/inbox","query":{"board":{"from":"board"},"member":{"from":"member"},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
+    },
+    {
       "op": "session-boards.read", "kind": "read", "write_gate": false, "console": "carried",
       "console_route": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards", "console_seam": "client",
       "local": {"method":"GET","device":true},

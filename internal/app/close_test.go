@@ -298,3 +298,37 @@ func TestEveryCloseReleasesItemsAwaitingDeployFirstAndStopsWhenItCannot(t *testi
 		t.Fatalf("the terminal was closed after the release failed: %v", h.calls)
 	}
 }
+
+func TestCloseAuditedChecksIdentityAndAuthorityBeforeChangingWork(t *testing.T) {
+	ctx := t.Context()
+	host := &closeHost{conversation: "audited"}
+	actions := closeActions(host)
+	audit, err := actions.Find(ctx, "%1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions.ReleaseAwaitingDeploy = func(context.Context, session.Session) error {
+		host.calls = append(host.calls, "release")
+		return nil
+	}
+	guard := WithOperationCheck(ctx, func() error {
+		return Refusal{Code: "close_not_proven"}
+	})
+	for _, attempt := range []struct {
+		ctx          context.Context
+		conversation string
+	}{
+		{ctx, "replacement"},
+		{guard, "audited"},
+	} {
+		host.conversation = attempt.conversation
+		_, err = actions.CloseAudited(attempt.ctx, audit)
+		var refusal Refusal
+		if !errors.As(err, &refusal) || refusal.Code != "close_not_proven" {
+			t.Fatalf("close = %v, want a denied audit", err)
+		}
+		if len(host.calls) > 0 {
+			t.Fatalf("lost authority changed the Session: %v", host.calls)
+		}
+	}
+}

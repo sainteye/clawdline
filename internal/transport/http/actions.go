@@ -691,7 +691,7 @@ func actionStatus(code string) int {
 		// Not 404. The machine did not say this is absent; it said it could not
 		// see. 409 is the honest shape: try again when the reading is whole.
 		return http.StatusConflict
-	case "close_blocked":
+	case "close_blocked", "close_not_proven":
 		return http.StatusConflict
 	case app.CloseReleaseFailed:
 		// Nothing was closed, and the same decision may be pressed again:

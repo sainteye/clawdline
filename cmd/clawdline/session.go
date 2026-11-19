@@ -407,8 +407,8 @@ func conversationRefusal(err error, flag string) string {
 		err, flag)
 }
 
-// `clawdline session close`: a finished Session closing itself, or an Epic
-// owner closing a Feature Root it opened. It reads the Session's closeability
+// `clawdline session close` lets a Session close itself, an Epic close a Root
+// it opened, or a message board Lead close an enrolled Session. It reads closeability
 // first, prints every blocker with who moves it, and closes only a `safe`
 // one, naming the version it read so a Session that changed meanwhile is not
 // closed on an old answer. It never forces: the daemon refuses force from an

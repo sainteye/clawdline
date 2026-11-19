@@ -71,6 +71,8 @@ type ReadingScenario =
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
 let boardFixture = false
+let boardInboxFixture = false
+const boardInboxReads: { member: string | null; before: string | null }[] = []
 let boardPresenceFixture = false
 let boardPresenceUnverified = false
 const shortBoardPurpose = "Review the Session console"
@@ -441,7 +443,17 @@ function daemon(): Server {
       if (url.searchParams.has("look")) openedLooks.push(url.searchParams.get("look") ?? "")
       return json(res, 200, snapshot())
     }
-    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: 87 } : {}) })
+    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: boardInboxFixture ? 91 : 87 } : {}) })
+    if (path === "/v1/orchestrator/session-boards/inbox" && boardInboxFixture) {
+      const member = url.searchParams.get("member"), before = url.searchParams.get("before")
+      boardInboxReads.push({ member, before })
+      const isLead = member === "claude:conversation-" + SAFE
+      const author = { id: "claude:conversation-" + NEEDS_ATTESTATION, label: "Member" }
+      const post = before === "5"
+        ? { seq: 2, author, text: "Earlier reply for lead", reply_to: 1, at: 2 }
+        : { seq: 5, author, text: "Latest reply for lead", reply_to: 1, at: 5 }
+      return json(res, 200, { posts: isLead ? [post] : [], more: isLead && !before })
+    }
     if (path === "/v1/orchestrator/session-boards" && boardFixture) {
       const board = {
         id: "review", project: "fixture", name: "Review board", purpose: boardPurpose, summary: "", latest: boardTreeFixture ? 2 : 1,
@@ -1523,6 +1535,49 @@ test("Session navigation keeps focus on grouped rows in their visible order", as
     })
   } finally {
     boardFixture = false
+  }
+})
+
+test("a Session board reads replies only after opening the inbox and choosing a member", async () => {
+  boardFixture = boardInboxFixture = true
+  boardInboxReads.length = 0
+  try {
+    await inTab(async tab => {
+      await tab.go("/")
+      const group = "#rows .session-board-group > button"
+      const inbox = ".session-board-dialog[open] .session-board-inbox"
+      await shortcutUntil(tab, `!!document.querySelector('${group}')`)
+      await tab.press(group)
+      await shortcutUntil(tab, `!!document.querySelector('${inbox} > summary')`)
+      assert.deepEqual(boardInboxReads, [])
+      await tab.press(`${inbox} > summary`)
+      const picker = `${inbox} select`
+      await shortcutUntil(tab, `!!document.querySelector('${picker}')`)
+      assert.deepEqual(boardInboxReads, [])
+      const select = (actor: string) => tab.run(`(() => {
+        const picker = document.querySelector('${picker}')
+        picker.value = ${JSON.stringify(actor)}
+        picker.dispatchEvent(new Event('change', { bubbles: true }))
+      })()`)
+      const lead = "claude:conversation-" + SAFE
+      const member = "claude:conversation-" + NEEDS_ATTESTATION
+      await select(lead)
+      await shortcutUntil(tab, `document.querySelector('${inbox} ol')?.textContent.includes('Latest reply for lead')`)
+      assert.deepEqual(boardInboxReads, [{ member: lead, before: null }])
+      await tab.press(`${inbox} .session-board-inbox-replies > button:last-child`)
+      await shortcutUntil(tab, `document.querySelector('${inbox} ol')?.textContent.includes('Earlier reply for lead')`)
+      assert.deepEqual(boardInboxReads.at(-1), { member: lead, before: "5" })
+      await select(member)
+      await shortcutUntil(tab, `document.querySelector('${inbox}')?.textContent.includes('目前還沒有人回覆這個 Session 的留言')`)
+      assert.deepEqual(boardInboxReads.at(-1), { member, before: null })
+      assert.equal(await tab.run(`document.querySelector('${inbox} ol') === null`), true)
+      await tab.press(`${inbox} > summary`)
+      await shortcutUntil(tab, `document.querySelector('${picker}') === null`)
+      assert.equal(boardInboxReads.length, 3)
+    })
+  } finally {
+    boardFixture = boardInboxFixture = false
+    boardInboxReads.length = 0
   }
 })
 

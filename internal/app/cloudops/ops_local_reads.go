@@ -5,6 +5,7 @@ import ()
 func init() {
 	register(
 		op{name: "session-boards.read", read: true},
+		op{name: "session-boards.inbox", read: true},
 		op{name: "session-boards.change"},
 		// MARK: reads with a local capability
 		op{name: "sessions.list", read: true},

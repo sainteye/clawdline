@@ -49,7 +49,20 @@ func TestSessionBoardRefusesTheNextConversationOnTheSameTerminal(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil || page.Board.Project != project || len(page.Board.Members) != 1 {
 		t.Fatalf("board page: %s (%v)", rec.Body, err)
 	}
+	inboxQuery := sessionBoardInboxRoute + "?board=" + created.ID + "&conversation_id=" + url.QueryEscape(old)
+	readInbox := func(path string, status int) {
+		t.Helper()
+		got := httptest.NewRecorder()
+		s.sessionBoardInbox(got, agentWorkV2Request(http.MethodGet, path, "", ""))
+		if got.Code != status {
+			t.Fatalf("native inbox status = %d, want %d: %s", got.Code, status, got.Body)
+		}
+	}
+	readInbox(inboxQuery, http.StatusOK)
+	readInbox(inboxQuery+"&member=codex:other", http.StatusForbidden)
+	readInbox(inboxQuery+"&after=1&before=2", http.StatusBadRequest)
 	pane.s.ConversationID = "20000000-0000-4000-8000-000000000004"
+	readInbox(inboxQuery, http.StatusForbidden)
 	call(old, "", created.ID, http.StatusForbidden)
 	call(pane.s.ConversationID, "", created.ID, http.StatusForbidden)
 	call(pane.s.ConversationID, `{"action":"join","board":"`+created.ID+`"}`, "", http.StatusOK)
@@ -94,9 +107,31 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	if !ok || len(posts) != 1 {
 		t.Fatalf("duplicated or missing comments: %v", p)
 	}
-	f.bridge.AllowCommands = func() bool { return false }
-	post["request"] = "write-gate-off"
+	original, err := f.server.store.ChangeSessionBoard(t.Context(), f.place, lead, sb.Actor{},
+		sb.Command{Action: "post", Board: result.ID, Text: "From the Session"}, "lead-post", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post["request"] = "board-reply"
+	post["command"] = map[string]any{"action": "post", "board": result.ID, "text": "Reply from the browser", "reply_to": original.Seq}
 	answer, _ = f.ask(t, 13, post)
+	if !answer.OK() {
+		t.Fatalf("reply: %d %s", answer.Status, answer.Payload)
+	}
+	f.bridge.AllowCommands = func() bool { return false }
+	answer, p = f.ask(t, 14, map[string]any{
+		"type": "session-boards.inbox", "session": cloudops.MachineReplySession, "request": "inbox",
+		"board": result.ID, "member": lead.ID,
+	})
+	if !answer.OK() {
+		t.Fatalf("read-only inbox: %d %s", answer.Status, answer.Payload)
+	}
+	replies, ok := bodyOf(t, p)["posts"].([]any)
+	if !ok || len(replies) != 1 || replies[0].(map[string]any)["reply_to"] != float64(original.Seq) {
+		t.Fatalf("wrong inbox: %v", p)
+	}
+	post["request"] = "write-gate-off"
+	answer, _ = f.ask(t, 15, post)
 	if answer.OK() {
 		t.Fatal("disabled Cloud write admitted a post")
 	}

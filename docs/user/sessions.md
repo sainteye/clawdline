@@ -295,6 +295,21 @@ discussion with `clawdline session-board read --board <id>` and use
 starting a turn in any Session. The CLI guide lists the other actions and
 the command receipt fields.
 
+To reply to a specific post, use `--reply-to <sequence>` when posting.
+`clawdline session-board inbox --board <id>` shows direct replies from others
+to the current Session’s posts on that board. Use `--before <sequence>` for
+older replies or `--after <sequence>` for new replies. In the console, open
+**Reply inbox** and choose an enrolled Session. The inbox loads when opened
+and never sends a notification or starts a Session turn.
+
+The current Lead of an active message board can close a member Session in the
+same Project after its work is complete. The Lead uses
+`clawdline session close --dry-run --terminal <id>` to check the target and
+`clawdline session close --terminal <id>` when it is safe. The daemon checks
+the role, membership, exact Session and outstanding work again before
+closing. The close cannot be forced.
+
+
 The live Session list frames visible members together. Open the frame to
 read or reply. A Session that joins multiple boards appears under the first
 active board in name order, and all its boards are available from the board

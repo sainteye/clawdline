@@ -201,6 +201,7 @@ var generatedDecoders = map[string]genDecoder{
 	"screen":                                   genDecodeScreen,
 	"send":                                     genDecodeSend,
 	"session-boards.change":                    genDecodeSessionBoardsChange,
+	"session-boards.inbox":                     genDecodeSessionBoardsInbox,
 	"session-boards.read":                      genDecodeSessionBoardsRead,
 	"session-codegraph":                        genDecodeSessionCodegraph,
 	"session-codegraph-build":                  genDecodeSessionCodegraphBuild,
@@ -5311,6 +5312,38 @@ func genDecodeSessionBoardsChange(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genObject("command")
+	return p, req, true
+}
+
+// genDecodeSessionBoardsInbox is the `session-boards.inbox` row's decode.
+func genDecodeSessionBoardsInbox(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "board", "member", "request", "session"},
+		[]string{"type", "before", "board", "member", "request", "session"},
+		[]string{"type", "after", "board", "member", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("after", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("before", genRule{kind: "integer", min: genInt(1), max: genInt(513)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("board", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("member", genRule{kind: "string", nonEmpty: true, maxBytes: 128}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/orchestrator/session-boards/inbox"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"after": genValue{from: "after", omitEmpty: true}, "before": genValue{from: "before", omitEmpty: true}, "board": genValue{from: "board"}, "member": genValue{from: "member"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

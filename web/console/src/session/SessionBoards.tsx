@@ -24,6 +24,8 @@ export type SessionMessageBoard = { id: string; project: string; name: string; p
 type Board = SessionMessageBoard
 type Post = { seq: number; author: Actor; text: string; reply_to?: number; at: number }
 type Page = { board: Board; posts: Post[]; more: boolean }
+type Inbox = { posts: (Post & { reply_to: number })[]; more: boolean }
+type InboxQuery = { board: string; member: string; before?: number }
 type Cursor = { board?: string; before?: number; after?: number }
 export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
 type Command = SessionBoardCommand
@@ -35,6 +37,7 @@ export type SessionBoardSource = {
   machine?: string
   writable: boolean
   read<T>(fields: Cursor, signal?: AbortSignal): Promise<T>
+  readInbox?(fields: InboxQuery, signal: AbortSignal): Promise<Inbox>
   change(command: Command, key: string): Promise<Receipt>
 }
 
@@ -44,6 +47,13 @@ const local: SessionBoardSource = {
   async read(fields, signal) {
     const query = new URLSearchParams(Object.entries(fields).map(([k, v]) => [k, String(v)]))
     const response = await fetch(path + (query.size ? `?${query}` : ""), { signal, cache: "no-store" })
+    if (!response.ok) throw await refusal(response)
+    return response.json()
+  },
+  async readInbox({ board, member, before }, signal) {
+    const query = new URLSearchParams({ board, member })
+    if (before) query.set("before", String(before))
+    const response = await fetch(`${path}/inbox?${query}`, { signal, cache: "no-store" })
     if (!response.ok) throw await refusal(response)
     return response.json()
   },
@@ -98,6 +108,15 @@ export function cloudSessionBoardSource(machine: string, account: string, writab
       connection(word)
       return result as T
     },
+    ...(current()?.machineDescriptor?.(machine)?.machine?.commands?.includes("session-boards.inbox")
+      ? { async readInbox(fields: InboxQuery, signal: AbortSignal): Promise<Inbox> {
+        const word = "session-boards.inbox"
+        const c = connection(word)
+        if (!c._machineRequest) throw new Error("offline")
+        const result = await c._machineRequest(machine, word, fields, "read", undefined, { signal })
+        connection(word)
+        return result as Inbox
+      } } : {}),
     async change(command, key) {
       const word = "session-boards.change"
       const c = connection(word)
@@ -115,14 +134,15 @@ export function sessionBoardActor(assistant: string | undefined, conversation: s
 }
 
 export function useLocalSessionBoards(enabled: boolean): SessionBoardSource | undefined {
-  const [ready, setReady] = useState(false)
+  const [level, setLevel] = useState(0)
   useEffect(() => {
     if (!enabled || followsRelay()) return
     let current = true
-    void client.health().then(health => { if (current) setReady((health.api_level ?? 0) >= 87) }).catch(() => {})
+    void client.health().then(health => { if (current) setLevel(health.api_level ?? 0) }).catch(() => {})
     return () => { current = false }
   }, [enabled])
-  return enabled && ready && !followsRelay() ? local : undefined
+  const older = useMemo(() => ({ ...local, get writable() { return local.writable }, readInbox: undefined }), [])
+  return enabled && level >= 87 && !followsRelay() ? (level >= 91 ? local : older) : undefined
 }
 
 function cursorKey(source: SessionBoardSource, id: string) { return `clawdline.session-board.read:${source.key}:${id}` }
@@ -634,6 +654,7 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
             {member.presence === "not_listed" && <small className="session-board-member-presence">{t("sessionBoardMemberNotListed")}</small>}
           </li>)}</ul>
         </details>}
+        {source.readInbox && total > 0 && <BoardInbox source={source} id={id} members={rosterMembers} labelFor={labelFor} avatar={avatar} />}
       </div>
       {allowed && manage && <div className="session-board-management">
         <form key={b.summary} onSubmit={e => { e.preventDefault(); action({ action: "summary", text: String(new FormData(e.currentTarget).get("summary")) }) }}>
@@ -659,9 +680,7 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
           {p.author.id !== "person" && avatar(p.author)}
           <strong>{p.author.id === "person" ? t("sessionBoardPerson") : labelFor(p.author)}</strong>
           {p.author.id === roster?.lead && <SessionBoardLead />}
-          <time dateTime={new Date(p.at * 1000).toISOString()}>
-            {new Date(p.at * 1000).toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" })}
-          </time>
+          <BoardPostTime at={p.at} />
           <span>#{p.seq}</span>
         </div>
         {p.reply_to && <small>{t("sessionBoardReplyTo", { seq: p.reply_to })}</small>}
@@ -674,6 +693,81 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
     </>}
+  </div>
+}
+
+function BoardPostTime({ at }: { at: number }) {
+  const date = new Date(at * 1000)
+  return <time dateTime={date.toISOString()}>
+    {date.toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" })}
+  </time>
+}
+
+function BoardInbox({ source, id, members, labelFor, avatar }: {
+  source: SessionBoardSource; id: string; members: Actor[]; labelFor: (actor: Actor) => string; avatar: (actor: Actor) => ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [selected, select] = useState("")
+  const member = members.find(actor => actor.id === selected) ?? (members.length === 1 ? members[0] : undefined)
+  return <details className="session-board-inbox" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardInbox")}</summary>
+    {open && <>
+      <label>{t("sessionBoardInboxSession")}<select value={member?.id ?? ""} onChange={e => select(e.currentTarget.value)}>
+        <option value="">{t("sessionBoardChoose")}</option>
+        {members.map(actor => <option key={actor.id} value={actor.id}>{labelFor(actor)}</option>)}
+      </select></label>
+      {member && <BoardInboxReplies key={member.id} source={source} id={id} member={member.id} labelFor={labelFor} avatar={avatar} />}
+    </>}
+  </details>
+}
+
+function BoardInboxReplies({ source, id, member, labelFor, avatar }: {
+  source: SessionBoardSource; id: string; member: string; labelFor: (actor: Actor) => string; avatar: (actor: Actor) => ReactNode
+}) {
+  const [page, setPage] = useState<Inbox>()
+  const [reading, setReading] = useState(false)
+  const [problem, setProblem] = useState(false)
+  const controller = useRef<AbortController | null>(null)
+  const current = useRef(source)
+  current.current = source
+  const load = useCallback(async (before?: number) => {
+    controller.current?.abort()
+    const request = new AbortController()
+    controller.current = request
+    setReading(true)
+    setProblem(false)
+    try {
+      const read = current.current.readInbox
+      if (!read) throw new Error("offline")
+      const next = await read({ board: id, member, ...(before ? { before } : {}) }, request.signal)
+      if (!request.signal.aborted) {
+        setPage(previous => before && previous ? { ...next, posts: [...next.posts, ...previous.posts] } : next)
+      }
+    } catch {
+      if (!request.signal.aborted) setProblem(true)
+    } finally {
+      if (!request.signal.aborted) setReading(false)
+    }
+  }, [id, member])
+  useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
+  return <div className="session-board-inbox-replies" aria-busy={reading}>
+    {reading && !page && <p role="status">{t("sessionBoardInboxLoading")}</p>}
+    {problem && <p role="alert">{t("sessionBoardInboxReadError")}</p>}
+    <BoardRefresh refresh={() => void load()} disabled={reading} />
+    {page && !page.posts.length && <p>{t("sessionBoardInboxEmpty")}</p>}
+    {!!page?.posts.length && <ol className="session-board-posts" reversed>
+      {[...page.posts].reverse().map(post => <li key={post.seq}>
+        <div className="session-board-post-meta">
+          {post.author.id !== "person" && avatar(post.author)}
+          <strong>{post.author.id === "person" ? t("sessionBoardPerson") : labelFor(post.author)}</strong>
+          <BoardPostTime at={post.at} />
+          <span>#{post.seq}</span>
+        </div>
+        <small>{t("sessionBoardReplyTo", { seq: post.reply_to })}</small>
+        <BoardPostText text={post.text} />
+      </li>)}
+    </ol>}
+    {page?.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardInboxEarlier")}</button>}
   </div>
 }
 

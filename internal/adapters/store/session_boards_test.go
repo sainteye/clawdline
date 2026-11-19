@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -172,5 +174,70 @@ func TestSessionBoardConcurrentPostAndArchive(t *testing.T) {
 	}
 	if _, err := st.ChangeSessionBoard(ctx, "project", lead, sb.Actor{}, post, "new-key", now); !errors.Is(err, sb.ErrClosed) {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionBoardInboxPagesOnlyOtherAuthorsDirectReplies(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	const project = "project"
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	member := sb.Actor{ID: "claude:member", Label: "Member"}
+	person := sb.Actor{Label: "Person"}
+	now := time.Now()
+	change := func(actor, target sb.Actor, cmd sb.Command, key string) sb.Result {
+		t.Helper()
+		out, err := st.ChangeSessionBoard(ctx, project, actor, target, cmd, key, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	board := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Review", Text: "Topic"}, "create").ID
+	other := change(lead, sb.Actor{}, sb.Command{Action: "create", Name: "Other", Text: "Other topic"}, "other").ID
+	change(member, sb.Actor{}, sb.Command{Action: "join", Board: board}, "")
+	post := func(actor sb.Actor, id string, replyTo int64, text string) int64 {
+		return change(actor, sb.Actor{}, sb.Command{Action: "post", Board: id, Text: text, ReplyTo: replyTo}, text).Seq
+	}
+	mine := post(lead, board, 0, "Mine")
+	theirs := post(member, board, 0, "Theirs")
+	post(lead, board, mine, "Self-reply")
+	first := post(person, board, mine, "Person reply")
+	post(person, board, theirs, "Someone else's reply")
+	post(lead, other, 0, "Other board original")
+	post(person, other, mine, "Other board reply")
+	last := first
+	for i := range sb.MaxPageRows {
+		last = post(member, board, mine, fmt.Sprintf("Reply %d", i))
+	}
+
+	page, err := st.SessionBoardInbox(ctx, project, lead.ID, board, 0, 0)
+	if err != nil || !page.More || len(page.Posts) != sb.MaxPageRows || page.Posts[len(page.Posts)-1].Seq != last {
+		t.Fatalf("newest replies: %+v, %v", page, err)
+	}
+	for _, reply := range page.Posts {
+		if reply.Author != member || reply.ReplyTo != mine {
+			t.Fatalf("unrelated reply: %+v", reply)
+		}
+	}
+	earlier, err := st.SessionBoardInbox(ctx, "", lead.ID, board, 0, page.Posts[0].Seq)
+	if err != nil || earlier.More || len(earlier.Posts) != 1 || earlier.Posts[0].Seq != first || earlier.Posts[0].ReplyTo != mine {
+		t.Fatalf("older replies: %+v, %v", earlier, err)
+	}
+	newer, err := st.SessionBoardInbox(ctx, project, lead.ID, board, first, 0)
+	if err != nil || !slices.Equal(newer.Posts, page.Posts) || newer.More {
+		t.Fatalf("newer replies: %+v, %v", newer, err)
+	}
+	if _, err := st.SessionBoardInbox(ctx, "another project", lead.ID, board, 0, 0); !errors.Is(err, sb.ErrMissing) {
+		t.Fatalf("cross-project inbox: %v", err)
+	}
+	change(lead, member, sb.Command{Action: "transfer", Board: board, Target: member.ID}, "")
+	change(lead, sb.Actor{}, sb.Command{Action: "leave", Board: board}, "")
+	if _, err := st.SessionBoardInbox(ctx, project, lead.ID, board, 0, 0); !errors.Is(err, sb.ErrDenied) {
+		t.Fatalf("left member still has an inbox: %v", err)
 	}
 }

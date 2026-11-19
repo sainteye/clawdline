@@ -883,6 +883,16 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 // ClosePinned ends a process-only row only while its PID and kernel start
 // still match the closeability version the person confirmed.
 func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int, started time.Time) (session.Session, error) {
+	return a.close(ctx, id, force, pid, started, nil)
+}
+
+// CloseAudited pins the close to the Session whose current conversation and
+// execution were checked by the delegating authority.
+func (a Actions) CloseAudited(ctx context.Context, audited session.Session) (session.Session, error) {
+	return a.close(ctx, audited.ID, false, 0, time.Time{}, &audited)
+}
+
+func (a Actions) close(ctx context.Context, id string, force bool, pid int, started time.Time, audited *session.Session) (session.Session, error) {
 	s, err := a.Find(ctx, id)
 	if err != nil {
 		return session.Session{}, err
@@ -893,6 +903,14 @@ func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int
 			return s, Refusal{Code: "close_not_proven", Detail: "the process changed since this close was confirmed"}
 		}
 		s.ExpectedStart = started
+	}
+	if audited != nil {
+		if s.Backend != audited.Backend || s.Assistant != audited.Assistant || s.PID != audited.PID ||
+			s.ConversationID != audited.ConversationID || (!audited.ExpectedStart.IsZero() &&
+			!ownrecords.ProcessStart(s.PID).Equal(audited.ExpectedStart)) {
+			return s, Refusal{Code: "close_not_proven", Detail: "The Session changed since it was read. Read its closeability again before closing."}
+		}
+		s.ExpectedStart = audited.ExpectedStart
 	}
 	owed, owedErr := a.owed(ctx)
 	c := task.Closeability(s.ID, owed, owedErr)
@@ -918,6 +936,13 @@ func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int
 	if err != nil {
 		return session.Session{}, err
 	}
+	// Hold the terminal write lane before any release so a delegated close's
+	// last authorization check runs before it can change the Session's work.
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
 	// Released before the close and not after: an item left assigned to a
 	// Session that is gone waits for nobody, and a release that failed must
 	// leave the Session open for the person to try again.
@@ -935,16 +960,6 @@ func (a Actions) ClosePinned(ctx context.Context, id string, force bool, pid int
 				Cause:  err}
 		}
 	}
-	// A close types into the session now — the assistant's own quit word,
-	// before anything is taken away (terminal.farewell) — so it takes the
-	// terminal's lane like every other write. Without it a close and a message
-	// would be two writers on one terminal, which is the one thing the lane
-	// exists to prevent.
-	release, err := a.turn(ctx, s)
-	if err != nil {
-		return s, err
-	}
-	defer release()
 	if err := closeIt(ctx, s); err != nil {
 		return s, closeRefusal(err)
 	}

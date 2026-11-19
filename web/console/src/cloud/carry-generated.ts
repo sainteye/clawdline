@@ -320,6 +320,7 @@ export const CARRIED = {
   screen: "GET /v1/sessions/{id}/screen",
   send: "POST /v1/sessions/{id}/send",
   "session-boards.change": "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards",
+  "session-boards.inbox": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards/inbox",
   "session-boards.read": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards",
   "session-codegraph": "GET /v1/sessions/{id}/codegraph",
   "session-codegraph-build": "POST /v1/sessions/{id}/codegraph",

@@ -177,6 +177,19 @@ func (t *WorkV2Tx) TransferSessionBoards(project, from string, to sb.Actor, ids 
 	return nil
 }
 
+// SessionBoardLeadMayClose checks the current role and both memberships in one
+// Project. An archived board never delegates the power to close a Session.
+func (s *Store) SessionBoardLeadMayClose(ctx context.Context, project, lead, target string) (bool, error) {
+	var allowed bool
+	err := s.rd.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM session_boards b
+		JOIN session_board_members caller ON caller.board=b.id AND caller.actor=b.lead
+		JOIN session_board_members member ON member.board=b.id AND member.actor=?
+		WHERE b.project=? AND b.lead=? AND b.archived_at=0
+	)`, target, project, lead).Scan(&allowed)
+	return allowed, classify(err)
+}
+
 func boardMember(members []sb.Actor, id string) bool {
 	return slices.ContainsFunc(members, func(a sb.Actor) bool { return a.ID == id })
 }
@@ -201,43 +214,87 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 	if actor != "" && !boardMember(b.Members, actor) {
 		return sb.Page{}, sb.ErrDenied
 	}
-	query := "SELECT seq,actor,label,persona,text,reply_to,at FROM session_board_posts WHERE board=?"
-	args := []any{id}
-	switch {
-	case after > 0:
-		query += " AND seq>? ORDER BY seq ASC"
-		args = append(args, after)
-	case before > 0:
-		query += " AND seq<? ORDER BY seq DESC"
-		args = append(args, before)
-	default:
-		query += " ORDER BY seq DESC"
-	}
-	rows, err := tx.QueryContext(ctx, query+" LIMIT ?", append(args, sb.MaxPageRows+1)...)
+	query := "SELECT p.seq,p.actor,p.label,p.persona,p.text,p.reply_to,p.at FROM session_board_posts p WHERE p.board=?"
+	posts, more, err := querySessionBoardPosts(ctx, tx, query, []any{id}, after, before)
 	if err != nil {
 		return sb.Page{}, err
 	}
+	return sb.Page{Board: b, Posts: posts, More: more}, tx.Commit()
+}
+
+// SessionBoardInbox reads direct replies written by others to an enrolled
+// member. Empty project is the paired person's view; an Agent is project-bound.
+func (s *Store) SessionBoardInbox(ctx context.Context, project, actor, id string, after, before int64) (sb.Inbox, error) {
+	if actor == "" || id == "" || (after > 0 && before > 0) {
+		return sb.Inbox{}, sb.ErrInvalid
+	}
+	tx, err := s.rd.BeginTx(ctx, nil)
+	if err != nil {
+		return sb.Inbox{}, err
+	}
+	defer tx.Rollback()
+	b, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", id))
+	if err != nil {
+		return sb.Inbox{}, err
+	}
+	if project != "" && b.Project != project {
+		return sb.Inbox{}, sb.ErrMissing
+	}
+	var belongs int
+	err = tx.QueryRowContext(ctx, "SELECT 1 FROM session_board_members WHERE board=? AND actor=?", id, actor).Scan(&belongs)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sb.Inbox{}, sb.ErrDenied
+	}
+	if err != nil {
+		return sb.Inbox{}, err
+	}
+
+	query := `SELECT p.seq,p.actor,p.label,p.persona,p.text,p.reply_to,p.at
+		FROM session_board_posts p JOIN session_board_posts original
+		ON original.board=p.board AND original.seq=p.reply_to
+		WHERE p.board=? AND original.actor=? AND p.actor<>original.actor`
+	posts, more, err := querySessionBoardPosts(ctx, tx, query, []any{id, actor}, after, before)
+	if err != nil {
+		return sb.Inbox{}, err
+	}
+	return sb.Inbox{Posts: posts, More: more}, tx.Commit()
+}
+
+func querySessionBoardPosts(ctx context.Context, q sessionBoardQuery, query string, args []any, after, before int64) ([]sb.Post, bool, error) {
+	switch {
+	case after > 0:
+		query += " AND p.seq>? ORDER BY p.seq ASC"
+		args = append(args, after)
+	case before > 0:
+		query += " AND p.seq<? ORDER BY p.seq DESC"
+		args = append(args, before)
+	default:
+		query += " ORDER BY p.seq DESC"
+	}
+	rows, err := q.QueryContext(ctx, query+" LIMIT ?", append(args, sb.MaxPageRows+1)...)
+	if err != nil {
+		return nil, false, err
+	}
 	defer rows.Close()
-	page := sb.Page{Board: b, Posts: []sb.Post{}}
+	posts := []sb.Post{}
 	for rows.Next() {
 		var p sb.Post
 		if err := rows.Scan(&p.Seq, &p.Author.ID, &p.Author.Label, &p.Author.Persona, &p.Text, &p.ReplyTo, &p.At); err != nil {
-			return sb.Page{}, err
+			return nil, false, err
 		}
-		page.Posts = append(page.Posts, p)
+		posts = append(posts, p)
 	}
 	if err := rows.Err(); err != nil {
-		return sb.Page{}, err
+		return nil, false, err
 	}
-	rows.Close()
-	if len(page.Posts) > sb.MaxPageRows {
-		page.More = true
-		page.Posts = page.Posts[:sb.MaxPageRows]
+	more := len(posts) > sb.MaxPageRows
+	if more {
+		posts = posts[:sb.MaxPageRows]
 	}
 	if after == 0 {
-		slices.Reverse(page.Posts)
+		slices.Reverse(posts)
 	}
-	return page, tx.Commit()
+	return posts, more, nil
 }
 
 func (s *Store) ChangeSessionBoard(ctx context.Context, project string, actor, target sb.Actor, c sb.Command, key string, now time.Time, additions ...sb.Actor) (sb.Result, error) {

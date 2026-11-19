@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13333,
+  "englishKeys": 13339,
   "counts": {
-    "negation": 3511,
+    "negation": 3513,
     "state": 2248,
     "permission": 813,
     "deletion": 312,
     "uncertainty": 545
   },
-  "unionCount": 5741,
+  "unionCount": 5743,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2781,6 +2781,8 @@
       "next.sendQueuedHeld",
       "next.sendUnknown",
       "next.sendUnsubmitted",
+      "next.sessionBoardInboxEmpty",
+      "next.sessionBoardInboxReadError",
       "next.sessionBoardNoPosts",
       "next.sessionBoardReadError",
       "next.sessionBoardWriteError",
@@ -11869,6 +11871,8 @@
     "next.sendUnknown",
     "next.sendUnsubmitted",
     "next.sessionBoardDenied",
+    "next.sessionBoardInboxEmpty",
+    "next.sessionBoardInboxReadError",
     "next.sessionBoardNoPosts",
     "next.sessionBoardReadError",
     "next.sessionBoardRestore",

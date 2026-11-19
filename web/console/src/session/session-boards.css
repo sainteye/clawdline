@@ -150,12 +150,12 @@
 .session-board-lead-strip { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .session-board-lead-strip strong { overflow-wrap: anywhere; font-size: .92em; }
 .session-board-disclosures { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px; margin-block-end: 10px; }
-.session-board-summary, .session-board-members {
+.session-board-summary, .session-board-members, .session-board-inbox {
   max-width: 100%; min-width: 0; padding: 6px 9px; color: var(--ink);
   border: 1px solid var(--line); border-radius: 8px; background: var(--card-hi);
 }
 .session-board-disclosures details[open] { flex: 1 0 100%; }
-.session-board-summary summary, .session-board-members summary { cursor: pointer; font-size: .86em; font-weight: 650; }
+.session-board-disclosures summary { cursor: pointer; font-size: .86em; font-weight: 650; }
 .session-board-members summary span { color: var(--dim); margin-inline-start: 4px; font-weight: 400; }
 .session-board-members ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .session-board-members li { display: flex; align-items: center; gap: 6px; padding: 7px 0; }
@@ -164,6 +164,9 @@
 .session-board-member-presence { color: var(--dim); font-size: .76em; }
 
 .session-board-new { color: var(--session-board-accent); font-size: .84em; margin: 0 0 6px; }
+.session-board-inbox > label { margin-block-start: 9px; }
+.session-board-inbox-replies > .session-board-posts { margin-block-start: 8px; }
+.session-board-inbox-replies { margin-block-start: 8px; }
 .session-board-posts { margin-bottom: 9px; }
 .session-board-posts li { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; }
 .session-board-posts li[data-unread] { background: var(--session-board-tint); border-color: var(--session-board-edge); }
@@ -207,8 +210,8 @@
   .session-board-dock { width: 36px; height: 42px; }
 }
 
-.session-board-summary > summary, .session-board-members > summary { display:flex;align-items:center;gap:6px;list-style:none; }
-.session-board-summary > summary::-webkit-details-marker, .session-board-members > summary::-webkit-details-marker { display:none; }
+.session-board-disclosures details > summary { display:flex;align-items:center;gap:6px;list-style:none; }
+.session-board-disclosures details > summary::-webkit-details-marker { display:none; }
 
 @media (width > 700px) {
   .session-board-reader { height: 94dvh; max-height: none; }
