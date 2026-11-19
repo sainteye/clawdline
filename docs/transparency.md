@@ -12,6 +12,74 @@ source receipt is refreshed; this review does not deploy the public website.
 
 ## Content ownership
 
+The details address menu opens or copies only literal HTTP candidates supplied
+by the source. Reviewed both persistent-bots language versions for loopback
+origin plus local transport, conservative remote selection on LAN/Cloud,
+unknown-write inspection, clipboard refusals and the difference between an
+address candidate and reachability. The section imports its shared menu styles
+rather than depending on a chat reaction being mounted first. Native clipboard failures retain their DOMException category or adapter code;
+they do not become a fabricated source-offline refusal or expose arbitrary
+exception messages. No native tool, model instruction, approval choice or source
+mutation is added. Isolated
+browser evidence does not establish installed or Cloud acceptance. A socket-loss
+fixture observed two identical-key requests with one applied effect; it is not
+zero retransmission evidence. A separate invalid-JSON case checks one
+application call with an unknown result. Original failure observations remain
+preserved; opening a popup does not prove its body was read through the browser
+channel, and no foreign-tab ownership is bypassed.
+
+The source listener response binds each OS observation to the complete current
+server attempt and revision before and after the read. Reviewed English and
+Taiwan Traditional Chinese persistent-bots explanations for literal source
+addresses, loopback-only access, unknown reads and the distinction between a
+TCP listener and HTTP/reachability acceptance. No model instruction, tool,
+approval choice or process mutation is added. Optional observations share the
+existing native-frame budget and become wholly unknown on overflow. The
+source-only response does not establish address UI/background refresh, Cloud
+carriage, installed UI or physical recovery. Register the Host address mapper
+and retain prior failed-gate and destination boundaries.
+
+
+The optional source TCP observer adds no model instruction, native tool or
+human control. Reviewed the existing English and Taiwan Chinese explanations:
+installed owned-port display and physical recovery still remain unqualified. Its kernel
+root pin belongs only to combined-output source commands, and a fresh rooted
+identity check fences each bounded read. A full probe pool refuses without
+starting another OS query; its actual count has a capacity measurement. Register
+the observer source with persistent-bots, retaining the separate Host/UI/Cloud
+and crash-recovery construction gaps. No website deployment follows a receipt
+refresh alone.
+
+The details server section reuses the existing source API and anchored menu;
+it adds no model tool or instruction. Reviewed both language explanations for
+known-ID controls, plain-text logs, incomplete tails and the inspection lock
+after an uncertain write. No log-derived address, arbitrary human command,
+automatic write replay or new provider permission is introduced. Desktop/mobile
+component checks use a synthetic HTTP source and do not qualify Cloud carriage,
+installed UI or physical process recovery.
+
+The known-ID human server API adds no model tool or instruction. Reviewed both
+language explanations against the source controls: current paired-person write
+authority, displayed baseline checks, history readable to the person, unchanged
+Forget restrictions for new execution, and no arbitrary command input. Register
+the private human control handler with the persistent-bots inventory. Source HTTP
+and client tests do not establish new-control Cloud carriage or server UI.
+
+The source-owned development-server continuation adds four native MCP tools
+through the existing endpoint, independent Host process ownership, exact local
+rules and current source/Forget checks. Reviewed the persistent-bots explanation
+and the new tool descriptions in English and Taiwan Traditional Chinese. The
+copy names source-user files/network authority outside the agent sandbox,
+complete command/directory review, no model-supplied identity or human approval,
+unknown cleanup and the remaining Cloud/UI/ports/crash-recovery gaps. Native
+rule scope and the related loading/memory/replay explanations retain their
+existing meaning. Source rule visibility follows API 92 while older sources keep
+their native rule behavior. The inventory includes the private command handler,
+its native descriptor and the per-definition reconciliation boundary. A local
+synthetic process test is not an installed vendor or Cloud acceptance receipt.
+Website snapshot publication follows the reviewed product tree after integration;
+refreshing the source/copy receipt is not a deployment.
+
 Codex full tasks retain the workspace profile but now send requested sandbox
 exceptions to native automatic review. This restores the request path needed
 for an explicitly authorized browser launch; it does not add a permission
@@ -959,3 +1027,17 @@ isolated database. Neither command starts a native provider, resumes imported
 turns or replaces the running daemon's data. This introduces no model prompt
 or live recovery policy. The new command and refreshed parent-command source
 receipts do not establish actual-binary qualification or destination acceptance.
+
+
+The generated English and Taiwan Traditional Chinese route inventories now
+report API 92. Only that generated level line changes; generated routes are not
+one of the compiled guide's 21 freshness-pinned translation parts. The current
+and fallback translation tests still verify those independent guide pins.
+
+
+The Bot server title and details now share a source/grant/Bot/Project-bound
+observation driven by the existing visible-chat refresh. Both language
+explanations distinguish selected-chat observation from a Host background
+stream, preserve stale and uncertain outcomes, and keep installed/Cloud
+acceptance separate. The controller, hook and Chat mount are included in the
+reviewed source receipts; the native Bot instructions themselves are unchanged.

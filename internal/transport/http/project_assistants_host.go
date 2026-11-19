@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -297,7 +298,7 @@ func (s *Server) projectAssistantSource(ctx context.Context, key pa.BotKey, writ
 	}
 	f.Enabled = f.Enabled && allowed && v.ProjectAssistantsEnabled()
 	source := pa.SourceStatus{MachineID: i.MachineID, State: pa.SourceOnline,
-		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access()}
+		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access(), DevServersSupported: runtime.GOOS != "windows"}
 	if a, ok := ctx.Value(accessKey{}).(access); ok {
 		_, _, _, writable, err := s.projectAssistantHuman(ctx, a, i)
 		if err != nil {

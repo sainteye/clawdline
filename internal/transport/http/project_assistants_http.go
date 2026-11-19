@@ -188,6 +188,9 @@ func paHTTPSafeBotID(id string) bool {
 }
 
 func paRoute(r *http.Request) (paHTTPRoute, error) {
+	if route, ok := paDevServerRoute(r); ok {
+		return route, nil
+	}
 	if route, ok := paRoutineRoute(r); ok {
 		return route, nil
 	}
@@ -394,6 +397,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 }
 
 func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, error) {
+	if strings.HasPrefix(route.action, "server-") {
+		return h.devServerHTTP(nil, r, route)
+	}
 	if route.action == "memory-view" || route.action == "configuration" {
 		return h.readMemorySettings(r, route)
 	}
@@ -553,6 +559,9 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 }
 
 func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, route paHTTPRoute) (any, error) {
+	if strings.HasPrefix(route.action, "server-") {
+		return h.devServerHTTP(w, r, route)
+	}
 	if strings.HasPrefix(route.action, "routine-") {
 		return h.writeRoutine(w, r, route)
 	}

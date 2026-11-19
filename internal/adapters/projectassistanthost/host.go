@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	serverstore "github.com/sainteye/clawdline/internal/adapters/botdevserverstore"
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	servers "github.com/sainteye/clawdline/internal/app/botdevserver"
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -27,6 +29,8 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
+	// ServerLaunch is an optional owned-process fixture; production uses the source launcher.
+	ServerLaunch        func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
 	Assistants          *network.AssistantService
 	Network             *network.Service
 	NetworkTransport    func(context.Context, string) (network.Transport, error)
@@ -68,6 +72,7 @@ type Options struct {
 }
 
 type Host struct {
+	serverRegistry     *servers.Registry
 	profiles           app.LoginProfiles
 	configurationSlots chan struct{}
 	routineStop        context.CancelFunc
@@ -106,6 +111,9 @@ func New(ctx context.Context, o Options) (*Host, error) {
 		// Disabled installations retain readable history and may skip Enable.
 		// Run repeatable additive migrations here, never in the read adapter.
 		if err = app.InstallSchemas(ctx, o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
+			return nil, err
+		}
+		if err = serverstore.InstallCatalog(ctx, o.Database); err != nil {
 			return nil, err
 		}
 		if err = h.makeService(); err != nil {
@@ -199,7 +207,7 @@ func (h *Host) makeService() error {
 			return err
 		}
 	}
-	s, err := app.NewService(app.ServiceOptions{NetworkAccount: h.networkAccount, NetworkSettings: h.store, NetworkCapabilities: h.o.NetworkCapabilities, Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, Deleter: h.store, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
+	s, err := app.NewService(app.ServiceOptions{NetworkAccount: h.networkAccount, NetworkSettings: h.store, NetworkCapabilities: h.o.NetworkCapabilities, Extensions: h.o.Extensions, LoginProfiles: h.profiles, ProjectMemory: h.o.ProjectMemory, Configuration: h.configuration, Groups: groups, Rooms: rooms, Repository: h.store, ReadViews: views, ReadViewByteLimit: h.o.ReadViewByteLimit, Memory: h.store, Events: h.store, Runtime: runtimeFacade{h}, Projects: h.o.Projects, Rules: h.o.Rules, SourceRules: hostSourceRules{h}, DevServers: hostDevServers{h}, Deleter: hostBotDeleter{h}, Authorize: h.human, Clock: h.o.Clock, ID: h.o.ID})
 	if err == nil {
 		h.service = s
 	}
@@ -413,6 +421,12 @@ func (h *Host) Enable(ctx context.Context) error {
 	if err := app.InstallSchemas(ctx, h.o.Database, featurestore.Installer{}, featurestore.GroupInstaller{}); err != nil {
 		return err
 	}
+	if err := serverstore.InstallCatalog(ctx, h.o.Database); err != nil {
+		return err
+	}
+	if err := h.makeServers(ctx); err != nil {
+		return err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := h.makeService(); err != nil {
@@ -494,6 +508,7 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 	h.enabled = false
 	h.closed = h.closed || closeHost
 	r := h.engine
+	serverRegistry := h.serverRegistry
 	rooms := h.rooms
 	stop, done := h.routineStop, h.routineDone
 	h.cleanupPending = h.store != nil
@@ -523,6 +538,9 @@ func (h *Host) stop(ctx context.Context, closeHost bool) error {
 		case <-ctx.Done():
 			result = failure(pa.ExecutionEffectUnknown, "routine_tick_cleanup")
 		}
+	}
+	if serverRegistry != nil {
+		result = errors.Join(result, serverRegistry.Close(ctx))
 	}
 	if r != nil {
 		if closeHost {
@@ -735,6 +753,14 @@ func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			h.mu.Lock()
+			serverRegistry := h.serverRegistry
+			h.mu.Unlock()
+			if serverRegistry != nil {
+				check, done := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
+				_ = serverRegistry.Reconcile(check, h.serverCheck)
+				done()
+			}
 			query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 			for {
 				page, err := h.store.List(ctx, query)

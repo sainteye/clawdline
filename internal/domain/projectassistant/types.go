@@ -437,14 +437,15 @@ const (
 )
 
 type SourceStatus struct {
-	MachineID    string         `json:"machine_id"`
-	State        SourceState    `json:"state"`
-	Readable     bool           `json:"readable"`
-	Writable     bool           `json:"writable"`
-	Fresh        bool           `json:"fresh"`
-	ObservedAt   time.Time      `json:"observed_at"`
-	Access       Access         `json:"access"`
-	Capabilities []Capabilities `json:"capabilities"`
+	MachineID           string         `json:"machine_id"`
+	State               SourceState    `json:"state"`
+	Readable            bool           `json:"readable"`
+	Writable            bool           `json:"writable"`
+	Fresh               bool           `json:"fresh"`
+	ObservedAt          time.Time      `json:"observed_at"`
+	Access              Access         `json:"access"`
+	Capabilities        []Capabilities `json:"capabilities"`
+	DevServersSupported bool           `json:"dev_servers_supported,omitempty"`
 }
 type ReadCursor struct {
 	Key            BotKey `json:"key"`

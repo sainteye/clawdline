@@ -51,6 +51,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
   const action=offer?.action,kind=action?.tool_kind??summary?.tool_kind??"",title=action?.title??summary?.title??""
   const canExpand=!!(action&&(action.detail||action.diffs.length||action.shortened)||!offer&&onDetail)
   return <section className="pa-card pa-permission" data-permission-id={value.id} aria-label={w.permission} aria-busy={busy||undefined} data-state={state}><h3>{actionHeading(kind,w)}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>{title&&<p className="pa-permission-title">{title}</p>}<small className="pa-permission-source">{context||offer?.fence.key.machine_id}</small><p className="pa-permission-state" role="status">{state&&w[state]}</p>
+    {kind==="source_command"&&<p className="pa-approval-detail">{w.permissionSourceAuthority}</p>}
     {canExpand&&<details className="pa-permission-detail" open={expanded} onToggle={event=>{
       const open=event.currentTarget.open
       setExpanded(open);onExpandedChange?.(open)
@@ -79,6 +80,6 @@ function permissionCardState(value:PermissionStatus,summary?:PermissionStatus) {
 // Codync titles a card by what the tool would do; an unknown kind still says
 // it asks for permission.
 function actionHeading(kind:string,w:Words){
-  const heading:Record<string,string>={execute:w.permissionExecute,edit:w.permissionEdit,delete:w.permissionDelete,move:w.permissionMove,read:w.permissionRead,search:w.permissionSearch,fetch:w.permissionFetch,switch_mode:w.permissionSwitchMode}
+  const heading:Record<string,string>={execute:w.permissionExecute,source_command:w.permissionExecute,edit:w.permissionEdit,delete:w.permissionDelete,move:w.permissionMove,read:w.permissionRead,search:w.permissionSearch,fetch:w.permissionFetch,switch_mode:w.permissionSwitchMode}
   return heading[kind]??w.permission
 }

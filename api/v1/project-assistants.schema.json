@@ -1129,6 +1129,10 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantCapabilities"
           }
+        },
+        "dev_servers_supported": {
+          "type": "boolean",
+          "description": "Optional explicit source support for source-owned server tools and exact command rules. Missing or false is unsupported; it is not an authority grant."
         }
       },
       "required": [
@@ -2727,7 +2731,7 @@
     "ProjectAssistantRulesResponse": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The Bot's Project standing rules; only Claude Code Bots have them (API level 66).",
+      "description": "Claude native Project rules at API66; exact source-owned server rules for either Agent at API90. Listing a rule is not approval or execution.",
       "properties": {
         "contract_version": {
           "type": "string"
@@ -3779,14 +3783,42 @@
     "ProjectAssistantMemoryDreamRun": {
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "at": { "type": "string", "format": "date-time" },
-        "added": { "type": "array", "items": { "type": "string" } },
-        "archived": { "type": "array", "items": { "type": "string" } },
-        "notes": { "type": "array", "items": { "type": "string" } },
-        "undone": { "type": "boolean" }
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "archived": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "undone": {
+          "type": "boolean"
+        }
       },
-      "required": ["id", "at", "added", "archived", "notes"]
+      "required": [
+        "id",
+        "at",
+        "added",
+        "archived",
+        "notes"
+      ]
     },
     "ProjectAssistantMemoryDreamHistory": {
       "type": "object",
@@ -3794,10 +3826,14 @@
       "properties": {
         "runs": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ProjectAssistantMemoryDreamRun" }
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantMemoryDreamRun"
+          }
         }
       },
-      "required": ["runs"]
+      "required": [
+        "runs"
+      ]
     },
     "ProjectAssistantMemoryView": {
       "type": "object",
@@ -4585,6 +4621,165 @@
         "expected_revision"
       ],
       "additionalProperties": false
+    },
+    "ProjectAssistantDevServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "failure": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ports_known": {
+          "type": "boolean"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantDevServerPort"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "command",
+        "folder",
+        "attempt",
+        "state",
+        "fingerprint",
+        "revision",
+        "ports_known",
+        "ports"
+      ]
+    },
+    "ProjectAssistantDevServerLog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "truncated"
+      ]
+    },
+    "ProjectAssistantDevServersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantDevServer"
+          }
+        },
+        "server": {
+          "$ref": "#/$defs/ProjectAssistantDevServer"
+        },
+        "log": {
+          "$ref": "#/$defs/ProjectAssistantDevServerLog"
+        }
+      },
+      "required": [
+        "contract_version",
+        "servers"
+      ]
+    },
+    "ProjectAssistantDevServerControlRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ProjectAssistantBotKey"
+        },
+        "id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "key",
+        "id",
+        "idempotency_key",
+        "fingerprint",
+        "attempt",
+        "revision"
+      ],
+      "description": "API90 human controls name an existing server, exact fingerprint and observed attempt/revision. No command, folder, environment or PID is accepted. Keys are scoped to the principal, server and action; unknown outcomes require explicit inspection."
+    },
+    "ProjectAssistantDevServerPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "bind": {
+          "type": "string"
+        },
+        "local": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "port",
+        "bind",
+        "local",
+        "remote"
+      ]
     }
   }
 }

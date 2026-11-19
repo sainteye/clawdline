@@ -2,6 +2,8 @@ package http
 
 import (
 	"context"
+
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"time"
@@ -48,6 +50,32 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		_, installed := usage()
 		return capacity.Reading{Known: !installed, Note: "no allocation before installation; installed durable queues, native descendants and IO duration are not exposed by Host.Usage"}
 	}
+	serverUnobserved := func() capacity.Reading {
+		_, installed := usage()
+		return capacity.Reading{Known: !installed, Note: "no source runtime allocation before installation; Host does not expose retained server log/caller occupancy"}
+	}
+	serverCount := func(processes bool) func() capacity.Reading {
+		return func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed := p.host, p.inspectionFailed
+			p.mu.RUnlock()
+			if h == nil {
+				return capacity.Reading{Known: !failed, Note: "no source server registry before feature installation"}
+			}
+			if _, err := h.Service(); err != nil {
+				return capacity.Reading{Known: !failed, Note: "source server schema never installed"}
+			}
+			u, err := h.ServerUsage(context.Background())
+			if err != nil || failed {
+				return capacity.Unmeasured("source server catalog or registry unavailable")
+			}
+			if processes {
+				return capacity.Reading{Known: u.Known, Used: int64(u.Processes), Note: "owned source attempts; unknown cleanup retains occupancy and is not zero"}
+			}
+			return capacity.Reading{Known: true, Used: int64(u.Definitions), Note: "actual admitted source definitions; removed-ID tombstones are separate"}
+		}
+	}
 	reviews := func(sender bool) func() capacity.Reading {
 		return func() capacity.Reading {
 			p := &s.projectAssistants
@@ -69,6 +97,14 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
+		"bots.server_definitions":     serverCount(false),
+		"bots.server_processes":       serverCount(true),
+		"bots.server_spec_bytes":      pure,
+		"bots.server_log_bytes":       serverUnobserved,
+		"bots.server_caller_receipts": serverUnobserved,
+		"bots.server_probe_readers": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(projectassistantacp.SourceTCPReaders()), Note: "actual active source TCP observations; busy readers refuse without queuing another OS probe"}
+		},
 		"bots.archive_bytes": func() capacity.Reading {
 			return capacity.Unmeasured("offline CLI input is not retained or observed by the daemon")
 		},

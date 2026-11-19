@@ -49,9 +49,13 @@ type mcpFixture struct {
 
 func newMCPFixture(t *testing.T, tools app.NativeTools) *mcpFixture {
 	t.Helper()
-	l := testLimits()
+	return newMCPFixtureWithContext(t, tools, context.Background(), testLimits())
+}
+
+func newMCPFixtureWithContext(t *testing.T, tools app.NativeTools, parent context.Context, l Limits) *mcpFixture {
+	t.Helper()
 	c := &Client{l: l, rpcSlots: make(chan struct{}, l.RPCPending)}
-	lease, err := c.openMCP(context.Background(), app.OpenRequest{Binding: pa.ExecutionBinding{Fence: testFence()}, Tools: tools})
+	lease, err := c.openMCP(parent, app.OpenRequest{Binding: pa.ExecutionBinding{Fence: testFence()}, Tools: tools})
 	if err != nil {
 		t.Fatal(err)
 	}

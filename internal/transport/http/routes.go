@@ -36,7 +36,8 @@ import (
 // Named topic memory and on-demand native memory detail arrive at API 89.
 // Source-owned room message reactions arrive at API 90.
 // Session message board reply inboxes arrive at API 91.
-const APILevel = 91
+// Source-owned Bot server tools and exact local rules arrive at API 92.
+const APILevel = 92
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

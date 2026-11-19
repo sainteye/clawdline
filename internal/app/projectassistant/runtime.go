@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -77,6 +78,8 @@ type runtimeActor struct {
 	turnID     string
 	// Includes only pending offers durably committed for this active turn.
 	pendingPermissions int
+	permissionFence    pa.Fence
+	sourcePermissions  map[string]*sourcePermission
 	stopped            bool
 	// steering holds queued turns handed to the agent by Send now until it
 	// answers; the worker does not start one meanwhile (actor.mu).
@@ -106,7 +109,9 @@ func (r *Engine) Usage() RuntimeUsage {
 			}
 			if a.session != nil {
 				if s, ok := a.session.(interface{ Usage() SessionUsage }); ok {
-					usage.Sessions = append(usage.Sessions, s.Usage())
+					reading := s.Usage()
+					reading.PendingPermissions = max(reading.PendingPermissions, a.pendingPermissions)
+					usage.Sessions = append(usage.Sessions, reading)
 				} else {
 					usage.Known = false
 				}
@@ -1583,6 +1588,12 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if e.Permission != nil {
 		count++
 		p := *e.Permission
+		if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) || strings.HasPrefix(p.ID, sourcePermissionPrefix) {
+			return runtimeFailure(pa.ScopeDenied, "source_permission_namespace")
+		}
+		if a.pendingPermissions >= capacity.MaximumBotPermissions {
+			return runtimeFailure(pa.CapacityFull, "pending_permissions")
+		}
 		if a.closing {
 			return runtimeFailure(pa.StaleGeneration, "permission_session")
 		}
@@ -1610,6 +1621,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	}
 	if e.Permission != nil {
 		a.pendingPermissions++
+		a.permissionFence = e.Fence
 	}
 	// As Codync's "Approve automatically", an Approve Bot allows each request
 	// with the agent's allow-once option; AutoRead allows only read-only ones.
@@ -1785,6 +1797,9 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 	}
 	if q.Command.Key != q.Answer.Fence.Key || a.turnID != p.TurnID || a.session == nil || a.stopped || a.closing {
 		return pa.Receipt{}, runtimeFailure(pa.StaleGeneration, "permission_session")
+	}
+	if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) {
+		return r.answerSourcePermission(ctx, a, bot, p, q)
 	}
 	// Persist unknown before the external write. A crash here is inspectable,
 	// never an automatic repeat of a native permission response.
