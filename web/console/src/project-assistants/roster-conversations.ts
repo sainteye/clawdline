@@ -15,9 +15,9 @@ export type ConversationSection = {key:string;kind:"pinned"|"project";machineID:
 // A group and a Bot may have the same source-qualified ID without sharing preferences.
 export const groupConversationKey=(key:W.ProjectAssistantBotKey)=>JSON.stringify(["group",key.machine_id,key.bot_id])
 export const GroupPreviewAvatars=4
-export function groupPreviewMembers(group:RosterRoom){
-  const members=group.members.slice(0,GroupPreviewAvatars)
-  return {members,more:group.members.length-members.length}
+export function groupPreviewMembers<T>(all:readonly T[]){
+  const members=all.slice(0,GroupPreviewAvatars)
+  return {members,more:all.length-members.length}
 }
 
 export function conversations(items:readonly W.ProjectAssistantBotSummary[],rooms:readonly GroupRosterEntry[]):RosterConversation[]{

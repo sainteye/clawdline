@@ -41,8 +41,9 @@ try{
    for(const [mode,language,width,height] of [['local','en',1440,900],['local','zh-Hant',390,720],['cloud','en',1440,900],['cloud','zh-Hant',390,720]]){
     const context=await browser.newContext({viewport:{width,height},hasTouch:width===390}),page=await context.newPage(),start=traffic.length,errors=[],name=[engine,mode,language].join('-')
     page.on('pageerror',error=>errors.push(String(error)))
-    const click=locator=>width===390?locator.tap():locator.click(),row=page.locator('[data-group-key]'),room=page.locator('.pa-room-layout'),dialog=page.getByRole('dialog',{name:language==='en'?'Edit group':'編輯群組',exact:true}),membersLabel=language==='en'?'Members':'成員',editLabel=language==='en'?'Edit group':'編輯群組',saveLabel=language==='en'?'Save':'儲存',cancelLabel=language==='en'?'Cancel':'取消'
-    const open=async()=>{await click(row);await room.waitFor({state:'visible'});await click(room.getByRole('button',{name:new RegExp('^'+membersLabel+' \\(')}));await click(room.getByRole('button',{name:editLabel,exact:true}));await dialog.waitFor()}
+    const click=locator=>width===390?locator.tap():locator.click(),row=page.locator('[data-group-key]'),room=page.locator('.pa-room-layout'),dialog=page.getByRole('dialog',{name:language==='en'?'Edit group':'編輯群組',exact:true}),editLabel=language==='en'?'Edit group':'編輯群組',saveLabel=language==='en'?'Save':'儲存',cancelLabel=language==='en'?'Cancel':'取消'
+    const openPanel=async()=>{await click(row);await room.waitFor({state:'visible'});await click(room.locator('.pa-room-identity'))}
+    const open=async()=>{await openPanel();await click(room.getByRole('button',{name:editLabel,exact:true}));await dialog.waitFor()}
     const back=async()=>{await click(room.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}));await click(room.getByRole('button',{name:language==='en'?'Back':'返回',exact:true}));await room.waitFor({state:'detached'});await row.waitFor({state:'visible'})}
     const avatars=()=>row.locator('.pa-group-avatars .pa-avatar').evaluateAll(nodes=>nodes.map(svg=>svg.querySelector('linearGradient stop:nth-child(2)')?.getAttribute('stop-color')))
     const verify=async(expected,label)=>{
@@ -54,15 +55,30 @@ try{
     }
     try{
      await page.goto(origin+'/?'+new URLSearchParams({mode,lang:language}));await row.waitFor();await open()
-     const candidates=await dialog.getByRole('checkbox').evaluateAll(nodes=>nodes.map(node=>node.closest('label').textContent.trim()))
+     const candidates=await dialog.locator('.pa-group-choice-name').allTextContents()
      assert.deepEqual(candidates,['Alice','Bob','Charlie']);assert.notDeepEqual(candidates.filter(name=>name!=='Charlie').map(name=>name.toLowerCase()),['bob','alice'],'fixture did not exercise different candidate order')
      await dialog.getByRole('textbox').fill('Renamed '+name)
      // Removing and reselecting a retained member is not an order request.
      await click(dialog.getByRole('checkbox',{name:'Bob',exact:true}));await click(dialog.getByRole('checkbox',{name:'Bob',exact:true}))
      await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
      const rename=await verify(['bob','alice'],'name-only')
-     await open();assert.equal(await dialog.getByRole('textbox').inputValue(),'Renamed '+name);await click(dialog.getByRole('checkbox',{name:'Charlie',exact:true}));await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
+     await openPanel()
+     const add=room.locator('.pa-room-add-member'),addDialog=page.locator('dialog.pa-group-editor')
+     await click(add)
+     await addDialog.waitFor()
+     assert.equal(await addDialog.getByRole('textbox').count(),0)
+     const saveMembers=addDialog.getByRole('button',{name:saveLabel,exact:true})
+     assert.equal(await saveMembers.isDisabled(),true)
+     for(const name of ['Alice','Bob']){
+      const current=addDialog.getByRole('checkbox',{name,exact:true})
+      assert.equal(await current.isChecked(),true)
+      assert.equal(await current.isDisabled(),true)
+     }
+     await click(addDialog.getByRole('checkbox',{name:'Charlie',exact:true}))
+     await page.screenshot({path:path.join(artifacts,name+'-add-members.png')})
+     await click(saveMembers);await addDialog.waitFor({state:'detached'})
      const added=await verify(['bob','alice','charlie'],'add member');assert.equal(added.group.members.at(-1).joined_revision,rename.group.membership_revision+1)
+     assert.equal(added.group.name,rename.group.name)
      await open();assert.equal(await dialog.getByRole('checkbox',{name:'Charlie',exact:true}).isChecked(),true);await click(dialog.getByRole('checkbox',{name:'Charlie',exact:true}));await dialog.getByRole('textbox').fill('Review room');await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
      const removed=await verify(['bob','alice'],'remove new member'),beforeCancel=writes(start).length
      await open();await dialog.getByRole('textbox').fill('Unsaved order draft');await click(dialog.getByRole('checkbox',{name:'Charlie',exact:true}));await click(dialog.getByRole('button',{name:cancelLabel,exact:true}));await dialog.waitFor({state:'detached'});await back()

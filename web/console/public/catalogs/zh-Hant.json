@@ -10300,6 +10300,7 @@
   "projectAssistants.rosterUnsaved": "無法儲存清單偏好，變更會保留在目前畫面。",
   "projectAssistants.clearSearch": "清除搜尋",
   "projectAssistants.searchEmpty": "找不到符合搜尋條件的 Bot 或群組。",
+  "projectAssistants.allow_session": "在本次對話期間允許",
   "playbook.boardDriveTitle": "看板項目推進",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",

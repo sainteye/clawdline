@@ -17,4 +17,7 @@ await source.status(new AbortController().signal)
 const page=await source.list({machine_id:"machine",query:"",cursor:"",page_size:100},new AbortController().signal)
 // Candidate ordering is an input: a name-sorted list must not reorder a room.
 const items=[...page.items].sort((a,b)=>a.bot.name.localeCompare(b.bot.name)),sources=[source]
-createRoot(document.getElementById("app")!).render(<section className="pa-shell"><aside className="pa-roster"><Groups sources={sources} items={items} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"]])}>{(rows,open)=>rows.map(entry=><GroupRosterRow key={entry.group.key.bot_id} entry={entry} bots={items.map(item=>item.bot)} selected={false} onSelect={target=>open(entry,target)}/>)}</Groups></aside><main className="pa-main"/></section>)
+createRoot(document.getElementById("app")!).render(<section className="project-assistants pa-shell"><aside className="pa-roster"><Groups sources={sources} items={items} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"]])}>{view=><>
+  {view.rows.map(entry=><GroupRosterRow key={entry.group.key.bot_id} entry={entry} bots={items.map(item=>item.bot)} selected={false} onSelect={target=>view.open(entry,target)}/>)}
+  {view.content}
+</>}</Groups></aside><main className="pa-main"/></section>)

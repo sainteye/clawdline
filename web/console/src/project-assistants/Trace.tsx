@@ -4,7 +4,7 @@ import { plainPreview } from "./BotRow"
 import { richText } from "../legacy/js/view/markdown.js"
 import type { Words } from "./words"
 
-export function Trace({items=[],summaries=[],details={},total=items.length,more=false,onMore,onDetail,w}:{items?:readonly ProjectAssistantTrace[];summaries?:readonly ProjectAssistantReadTraceSummary[];details?:Readonly<Record<string,ProjectAssistantTrace|ProjectAssistantPermissionOffer>>;total?:number;more?:boolean;onMore?:()=>void;onDetail?:(summary:ProjectAssistantReadTraceSummary)=>void;w:Words}) {
+export function Trace({items=[],summaries=[],details={},total=items.length,incomplete=false,more=false,onMore,onDetail,w}:{items?:readonly ProjectAssistantTrace[];summaries?:readonly ProjectAssistantReadTraceSummary[];details?:Readonly<Record<string,ProjectAssistantTrace|ProjectAssistantPermissionOffer>>;total?:number;incomplete?:boolean;more?:boolean;onMore?:()=>void;onDetail?:(summary:ProjectAssistantReadTraceSummary)=>void;w:Words}) {
   const requested = useRef(new Map<string,string>())
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({})
 
@@ -25,7 +25,7 @@ export function Trace({items=[],summaries=[],details={},total=items.length,more=
   },[summaries,openIds,onDetail])
 
   if (summaries.length || !items.length && total > 0) {
-    return <details className="pa-trace"><summary>{w.trace} · {total}</summary><div className="pa-trace-list">{[...summaries].reverse().map(row => {
+    return <details className="pa-trace"><summary>{w.trace} · {total}{incomplete?"+":""}</summary><div className="pa-trace-list">{[...summaries].reverse().map(row => {
       const value = details[row.id], full = value && "text" in value ? value : undefined
       const info = formatTraceItem(row.category, full?.text, w)
       const trimmedFull = full?.text?.trim() ?? ""

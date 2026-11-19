@@ -10300,6 +10300,7 @@
   "projectAssistants.rosterUnsaved": "Roster preferences could not be saved. Changes are kept for this view.",
   "projectAssistants.clearSearch": "Clear search",
   "projectAssistants.searchEmpty": "No Bots or groups match this search.",
+  "projectAssistants.allow_session": "Allow for this session",
   "playbook.boardDriveTitle": "Drive Board Items to Done",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",

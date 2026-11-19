@@ -2,17 +2,19 @@ import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type {GroupRosterEntry} from "./roster-conversations"
 import type * as W from "@clawdline/contract"
-import { catalogWord } from "../catalog"
+import { catalogWord, currentCatalogTag } from "../catalog"
 import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canRead, canWrite } from "./view-state"
 import { GroupRoom } from "./GroupRoom"
 import { EventRefreshMs } from "./Chat"
 import { rosterMood } from "./working"
 import { BotAvatar } from "./BotAvatar"
+import { GroupAvatar } from "./GroupAvatar"
 import { ProjectMark } from "./ProjectMark"
 import { PaSelect } from "./PaSelect"
 import "./group-editor.css"
 import {orderedGroupMembers} from "./group-editor-order"
+import {afterSurfaceExit} from "./surface-motion"
 
 export const groupWord=(key:string)=>catalogWord("projectAssistants",key)
 export const sameGroupProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -94,14 +96,29 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
   return children({rows,open,selected:selectedLive&&!selectedBot?identity(selected.group.key):null,dismiss,create:canCreate?()=>setCreating(true):undefined,content})
 }
 
-export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
+// Match the existing group-name limit in internal/domain/projectassistant.
+const GroupNameRunes=128
+
+export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,addMembers=false,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;addMembers?:boolean;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null)
+  const opener=useRef<HTMLElement|null>(null)
+  const [closing,setClosing]=useState<(()=>void)|null>(null)
   useLayoutEffect(()=>{
-    const node=dialog.current!,opener=document.activeElement
+    const node=dialog.current!
+    opener.current=document.activeElement instanceof HTMLElement?document.activeElement:null
     bindNativeModalBackdrop(node)
     node.showModal()
-    return()=>{node.close();if(opener instanceof HTMLElement&&opener.isConnected)opener.focus({preventScroll:true})}
+    return()=>{if(node.open){node.close();opener.current?.focus({preventScroll:true})}}
   },[])
+  useLayoutEffect(()=>{
+    const node=dialog.current
+    if(!closing||!node)return
+    return afterSurfaceExit(node,()=>{
+      node.close()
+      opener.current?.focus({preventScroll:true})
+      closing()
+    })
+  },[closing])
   const choices=bots.filter(b=>sources.some(s=>s.source.machineID===b.key.machine_id&&canWrite(s.status))).filter((b,i,all)=>all.findIndex(other=>sameGroupProject(b.project,other.project))===i)
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
   const draft = JSON.stringify([project, name, members])
@@ -110,25 +127,61 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const source=sources.find(s=>s.source.machineID===project?.machine_id&&canWrite(s.status))?.source
   const eligible=bots.filter(b=>project&&sameGroupProject(b.project,project))
   const complete=members.every(id=>eligible.some(b=>identity(b.key)===id))
+  const existing=group?.members.map(member=>member.key)??[]
+  const selection=orderedGroupMembers(existing,members,eligible.map(bot=>bot.key))
+  const memberNames=selection.flatMap(key=>{const bot=eligible.find(bot=>identity(bot.key)===identity(key));return bot?[bot.name]:[]})
+  const defaultName=Array.from(new Intl.ListFormat(currentCatalogTag(),{type:"unit"}).format(memberNames)).slice(0,GroupNameRunes).join("").trimEnd()
+  const savedName=name.trim()||(group?"":defaultName)
+  const canSave=!!source&&!!project&&!busy&&!unknown&&!closing&&!!savedName&&selection.length>0&&complete&&(!addMembers||selection.length>existing.length)
+  const formTitle=groupWord(addMembers?"groupMembers":group?"groupEdit":"groupCreate")
+  const close=()=>{if(!busy&&!closing)setClosing(()=>onClose)}
   async function save(){
-    if(!source||!project||busy||unknown||!complete)return
-    const settings={name:name.trim(),members:orderedGroupMembers(group?.members.map(member=>member.key)??[],members,eligible.map(bot=>bot.key))}
+    if(!source||!project||!canSave)return
+    const settings={name:savedName,members:selection}
     const fingerprint=JSON.stringify([project,settings])
     let request=pending.current?.fingerprint===fingerprint?pending.current.request:null
     if(!request){const key=group?.key??{machine_id:project.machine_id,bot_id:crypto.randomUUID()};request=group?{command:command(key,"edit"),settings:{...settings,expected_version:group.version}}:{command:command(key,"create"),settings:{...settings,target:{machine_id:project.machine_id,project_id:project.project_id}}};pending.current={fingerprint,request}}
     setBusy(true);setError("")
     try {
       const answer=await authorized(source,current,signal=>group?source.editGroup!(request as W.ProjectAssistantGroupEditRequest,signal):source.createGroup!(request as W.ProjectAssistantGroupCreateRequest,signal),new AbortController().signal)
-      onSaved(source,answer.group)
+      setClosing(()=>()=>onSaved(source,answer.group))
     }catch(e){const code=errorCode(e);setError(code);if(code==="pa_outcome_unknown")setUnknown(true)}finally{setBusy(false)}
   }
-  return <dialog data-modal-dismiss={String(!busy && !unknown && draft === initialDraft.current)} ref={dialog} className="pa-form-panel pa-group-editor" aria-label={groupWord(group?"groupEdit":"groupCreate")} onCancel={event=>{event.preventDefault();onClose()}} onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation()}}>
-    <header className="pa-toolbar"><button type="button" onClick={onClose}>{groupWord("groupCancel")}</button><h2>{groupWord(group?"groupEdit":"groupCreate")}</h2><button type="button" disabled={!source||busy||unknown||!name.trim()||!members.length||!complete} onClick={()=>void save()}>{groupWord(busy?"groupSaving":"groupSave")}</button></header>
-    <div className="pa-form-body"><fieldset disabled={busy||unknown}>
-      <label>{groupWord("groupName")}<input value={name} onChange={e=>setName(e.target.value)}/></label>
-      <PaSelect label={groupWord("groupProject")} disabled={!!group} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]);const pName=projectNames.get(keyStr)??b.project.project_id;const icon=projectIcons?.get(keyStr);const machineSuffix=sources.length>1?` · ${sources.find(s=>s.source.machineID===b.key.machine_id)?.source.machineName??b.key.machine_id}`:"";return {value:JSON.stringify(b.project),label:`${pName}${machineSuffix}`,icon:<ProjectMark icon={icon} size={16}/>}})}/>
-      <fieldset><legend>{groupWord("groupMembers")}</legend>{eligible.map(bot=>{const id=identity(bot.key);const checked=members.includes(id);return <label key={id} style={{display:"flex",flexDirection:"row",alignItems:"center",gap:12,minHeight:44,margin:"6px 0",cursor:"pointer"}}><input type="checkbox" style={{flex:"none",width:20,height:20,minHeight:20,minWidth:20,margin:0,padding:0,accentColor:"#e39567"}} checked={checked} onChange={e=>setMembers(old=>e.target.checked?[...old,id]:old.filter(k=>k!==id))}/><BotAvatar appearance={bot.appearance} size={28}/><span style={{flex:1,fontSize:15,color:"#fafafa",fontWeight:500}}>{bot.name}</span></label>})}</fieldset>
-    </fieldset><p>{groupWord("groupSameProject")}</p>{!complete&&<p role="status">{groupWord("groupMembersMissing")}</p>}{error&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} ({error})</p>}</div>
+  return <dialog data-modal-dismiss={String(!busy&&!unknown&&!closing&&draft===initialDraft.current)} data-closing={!!closing||undefined} ref={dialog} className="pa-form-panel pa-group-editor" aria-label={formTitle}
+    onCancel={event=>{event.preventDefault();close()}} onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation()}}>
+    <form className="pa-group-form" inert={!!closing||undefined} onSubmit={event=>{event.preventDefault();void save()}}>
+      <header className="pa-toolbar"><button type="button" disabled={busy} onClick={close}>{groupWord("groupCancel")}</button><h2>{formTitle}</h2><button type="submit" disabled={!canSave}>{groupWord(busy?"groupSaving":group?"groupSave":"createSubmit")}</button></header>
+      <div className="pa-form-body">
+        <fieldset disabled={busy||unknown}>
+          <div className="pa-group-form-identity">
+            <GroupAvatar keys={selection} bots={eligible} size={88}/>
+            {addMembers?<strong>{group?.name}</strong>:<label>{groupWord("groupName")}<input value={name} placeholder={!group?defaultName:undefined} onChange={e=>setName(e.target.value)}
+              onKeyDown={event=>{if(event.key==="Enter"&&(event.nativeEvent.isComposing||event.keyCode===229))event.preventDefault()}}/></label>}
+          </div>
+          {!group&&<PaSelect label={groupWord("groupProject")} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{
+            const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]),source=sources.find(s=>s.source.machineID===b.key.machine_id)?.source
+            const pName=projectNames.get(keyStr)??b.project.project_id,icon=projectIcons?.get(keyStr)
+            const machineSuffix=sources.length>1?` · ${source?.machineName??b.key.machine_id}`:""
+            return {value:JSON.stringify(b.project),label:`${pName}${machineSuffix}`,icon:<ProjectMark icon={icon} size={16}/>}
+          })}/>}
+          <fieldset className="pa-group-choice-field">
+            <legend>{groupWord("groupMembers")}</legend>
+            <div className="pa-group-choices">{eligible.map(bot=>{
+              const id=identity(bot.key),checked=members.includes(id)
+              const fixed=addMembers&&existing.some(key=>identity(key)===id)
+              return <label className="pa-group-choice" key={id}>
+                <input type="checkbox" disabled={fixed} checked={checked} onChange={e=>setMembers(old=>e.target.checked?[...old,id]:old.filter(key=>key!==id))}/>
+                <span className="pa-group-choice-face"><BotAvatar appearance={bot.appearance} size={42}/><span className="pa-group-choice-check" aria-hidden="true">✓</span></span>
+                <span className="pa-group-choice-name" title={bot.name}>{bot.name}</span>
+              </label>
+            })}</div>
+          </fieldset>
+        </fieldset>
+        {!group&&<p>{groupWord("groupSameProject")}</p>}
+        {!complete&&<p role="status">{groupWord("groupMembersMissing")}</p>}
+        {error&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} ({error})</p>}
+      </div>
+    </form>
   </dialog>
 }
 

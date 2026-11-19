@@ -14,8 +14,12 @@ export function sendAcknowledgement(value:unknown,intent:W.ProjectAssistantSendR
 
 /** Admission is not observation: match the source's turn and message, not text alone. */
 export function admittedMessage(intent:W.ProjectAssistantSendRequest,receipt:W.ProjectAssistantReceipt|null|undefined,messages:readonly W.ProjectAssistantMessage[]) {
-  if(!admittedReceipt(receipt)||receipt!.command.operation!=="send"||!sameBot(receipt!.command.key,intent.command.key)||receipt!.command.idempotency_key!==intent.command.idempotency_key)return false
-  return messages.some(message=>message.kind==="user"&&message.turn_id===receipt!.resource_id&&message.text===intent.text&&sameConversation(message.fence,intent.fence))
+  return !!admittedRow(intent,receipt,messages)
+}
+
+export function admittedRow(intent:W.ProjectAssistantSendRequest,receipt:W.ProjectAssistantReceipt|null|undefined,messages:readonly W.ProjectAssistantMessage[]) {
+  if(!admittedReceipt(receipt)||receipt!.command.operation!=="send"||!sameBot(receipt!.command.key,intent.command.key)||receipt!.command.idempotency_key!==intent.command.idempotency_key)return
+  return messages.find(message=>message.kind==="user"&&message.turn_id===receipt!.resource_id&&message.text===intent.text&&sameConversation(message.fence,intent.fence))
 }
 
 /** Only a send this Chat owns may keep reading while its browser is hidden. */

@@ -32,6 +32,44 @@ const server=createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,pw=await import(pathToFileURL(module).href),evidence=[]
 const position=room=>room.locator('.pa-chat-scroll').evaluate(el=>{const top=el.getBoundingClientRect().top,row=[...el.querySelectorAll('[data-room-seq]')].find(row=>row.getBoundingClientRect().bottom>top);return {top:el.scrollTop,seq:row?.dataset.roomSeq,offset:row?row.getBoundingClientRect().top-top:null}})
+const settle=locator=>locator.evaluate(async el=>{
+ await new Promise(resolve=>requestAnimationFrame(resolve))
+ await Promise.allSettled(el.getAnimations().map(animation=>animation.finished))
+})
+
+async function verifyInspectorMotion(page,trigger,panel,close,kind){
+ const originalTrigger=await trigger.elementHandle()
+ const snapshot=async(open,reduce)=>originalTrigger.evaluate(async(button,{kind,open,reduce})=>{
+  const layout=button.closest(kind==='group'?'.pa-room-layout':'.pa-chat-layout')
+  const panel=layout.querySelector('.pa-side-inspector')
+  if(open)button.click()
+  else panel.querySelector('header button').click()
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+  const style=getComputedStyle(panel),animations=panel.getAnimations()
+  return {hidden:panel.hidden,inert:panel.inert,moving:animations.some(animation=>animation.transitionProperty==='transform'),
+   duration:style.transitionDuration,reduce,focus:open?panel.contains(document.activeElement):document.activeElement===button}
+ },{kind,open,reduce})
+ await page.emulateMedia({reducedMotion:'no-preference'})
+ const enter=await snapshot(true,false)
+ assert.deepEqual([enter.hidden,enter.inert,enter.moving,enter.focus],[false,false,true,true])
+ await settle(panel)
+ const exit=await snapshot(false,false)
+ assert.deepEqual([exit.hidden,exit.inert,exit.moving,exit.focus],[true,true,true,true])
+ // Reopen before the exit edge. The same inspector and its draft stay mounted.
+ const element=await panel.elementHandle()
+ await originalTrigger.evaluate(button=>button.click())
+ await settle(panel)
+ assert.equal(await element.evaluate(el=>!el.hidden&&!el.inert),true)
+ await close.press('Escape')
+ await panel.waitFor({state:'hidden'})
+ await page.emulateMedia({reducedMotion:'reduce'})
+ const instantEnter=await snapshot(true,true),instantExit=await snapshot(false,true)
+ assert.deepEqual([instantEnter.moving,instantExit.moving,instantEnter.focus,instantExit.focus],[false,false,true,true])
+ assert.equal(instantEnter.duration,'0s')
+ assert.equal(instantExit.duration,'0s')
+ await page.emulateMedia({reducedMotion:'no-preference'})
+ return {enter,exit,reversal:true,reducedMotion:true}
+}
 
 async function verifyCreationMenu(page,click,language,mode,name) {
  const words=language==='en'
@@ -54,6 +92,8 @@ async function verifyCreationMenu(page,click,language,mode,name) {
  await menu.waitFor()
  assert.deepEqual(await menu.getByRole('menuitem').allTextContents(),[words.bot,words.group])
  assert.equal(await focused(bot),true,'opening the menu did not focus its first action')
+ assert.equal(await menu.locator('button > svg[aria-hidden=true]').count(),2)
+ await settle(menu)
  const anchor=await trigger.boundingBox(),box=await menu.boundingBox(),viewport=page.viewportSize()
  assert.ok(Math.abs(anchor.x+anchor.width-box.x-box.width)<=1&&box.y>=anchor.y+anchor.height&&box.x>=0&&box.y+box.height<=viewport.height,'the menu is outside the viewport or detached from Add')
  await page.screenshot({path:path.join(artifacts,name+'-creation-menu.png')})
@@ -79,13 +119,14 @@ async function verifyCreationMenu(page,click,language,mode,name) {
   assert.equal(await focused(trigger),true,`${title} cancellation lost its Add trigger`)
   assert.equal(await trigger.getAttribute('aria-expanded'),'false')
  }
- return {choices:[words.bot,words.group],anchor,box,focusRestored:true}
+ return {choices:[words.bot,words.group],icons:2,anchor,box,focusRestored:true}
 }
 
 async function verifyDetailsChevron(page,click,language,name) {
  const info=page.getByRole('button',{name:language==='en'?'Stranger · Bot information':'Stranger · Bot 資訊',exact:true})
  const identity=await info.elementHandle()
  const panel=page.locator('.pa-main .pa-info-panel')
+ const close=panel.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true})
  const direction=await info.evaluate(button=>{
   const arrow=button.querySelector('svg[aria-hidden="true"].pa-chat-identity-chevron path')
   if(!arrow)return null
@@ -98,10 +139,57 @@ async function verifyDetailsChevron(page,click,language,name) {
  else await info.press('Enter')
  await panel.waitFor({state:'visible'})
  assert.equal(await identity.getAttribute('aria-expanded'),'true')
- await click(panel.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}))
+ await settle(panel)
+ await page.screenshot({path:path.join(artifacts,name+'-bot-details.png')})
+ await click(close)
  await panel.waitFor({state:'hidden'})
  assert.equal(await info.getAttribute('aria-expanded'),'false')
- return {right:true,opensDetails:true}
+ return {right:true,opensDetails:true,motion:await verifyInspectorMotion(page,info,panel,close,'bot')}
+}
+
+async function verifyGroupCreate(page,click,language,name,start){
+ const zh=language!=='en',trigger=page.locator('.pa-roster').getByRole('button',{name:zh?'新增':'Add',exact:true})
+ const title=zh?'新增群組':'New group',menu=page.getByRole('menu',{name:zh?'新增':'Add',exact:true})
+ await click(trigger)
+ await click(menu.getByRole('menuitem',{name:title,exact:true}))
+ const form=page.getByRole('dialog',{name:title,exact:true}),submit=form.getByRole('button',{name:zh?'建立':'Create',exact:true})
+ const alice=form.getByRole('checkbox',{name:'Alice',exact:true}),bob=form.getByRole('checkbox',{name:'Bob',exact:true}),field=form.getByRole('textbox')
+ await form.waitFor()
+ const motion=await form.evaluate(el=>getComputedStyle(el).transitionDuration)
+ assert.equal(motion,'0.3s, 0.3s')
+ await settle(form)
+ assert.equal(await submit.isDisabled(),true)
+ const project=form.getByRole('button',{name:/^Project/})
+ await click(project)
+ await click(form.getByRole('option',{name:'other',exact:true}))
+ assert.equal(await alice.count(),0)
+ assert.equal(await form.getByRole('checkbox',{name:'Stranger',exact:true}).count(),1)
+ await click(project)
+ await click(form.getByRole('option',{name:'project',exact:true}))
+ assert.equal(await form.getByRole('checkbox',{name:'Stranger',exact:true}).count(),0)
+ await click(alice)
+ await bob.press('Space')
+ assert.equal(await alice.isChecked(),true)
+ assert.equal(await bob.isChecked(),true)
+ assert.equal(await form.locator('.pa-group-form-identity .pa-avatar').count(),2)
+ assert.equal(await form.locator('.pa-group-choice-check:visible').count(),2)
+ const multiName=await field.getAttribute('placeholder')
+ assert.match(multiName,/^Alice.*Bob$/)
+ await page.screenshot({path:path.join(artifacts,name+'-group-preview.png')})
+ await click(zh?alice:bob)
+ const defaultName=await field.getAttribute('placeholder')
+ assert.equal(defaultName,zh?'Bob':'Alice')
+ const savedName=zh?'Synthetic review circle':defaultName
+ if(zh)await field.fill(savedName)
+ await page.screenshot({path:path.join(artifacts,name+'-group-create.png')})
+ await click(submit)
+ await form.waitFor({state:'detached'})
+ await page.locator('.pa-room-layout .pa-room-identity').getByText(savedName,{exact:true}).waitFor()
+ const writes=traffic.slice(start).filter(r=>r.word==='project-assistants.group-create'||r.method==='POST'&&r.path==='/v1/project-assistants/rooms/groups')
+ assert.equal(writes.length,1)
+ assert.equal(writes[0].body.settings.name,savedName)
+ assert.deepEqual(writes[0].body.settings.members.map(key=>key.bot_id),[zh?'bob':'alice'])
+ return {multiName,defaultName,savedName,projectFiltered:true,writes:1}
 }
 
 try{
@@ -145,22 +233,31 @@ try{
      assert.ok(Math.abs(bounds.left-(width>700?roster.right:shell.left))<=1)
      assert.equal(rowHit,width>700,'the roster must receive desktop pointer hits and remain behind the mobile room')
      const text=room.locator('textarea'),quote=mode!=='read'&&mode!=='old'
+     const memberToggle=baseline?room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}):room.locator('.pa-room-identity')
+     const membersPanel=room.locator('.pa-room-members'),closeMembers=membersPanel.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true})
      if(mode==='old')assert.equal(await room.locator('.pa-room-reply').count(),0,'API87 source exposed API88 quote actions')
      if(mode==='read')assert.equal(await room.locator('.pa-room-reply').first().isDisabled(),true)
      if(quote){await room.locator('[data-room-seq="6"] .pa-room-reply').click();await room.locator('.pa-room-draft-quote').waitFor()}
      if(mode!=='read')await text.fill('Retained room draft for '+name)
      else assert.equal(await text.isDisabled(),true)
      await room.locator('.pa-chat-scroll').evaluate(el=>{el.scrollTop=Math.floor((el.scrollHeight-el.clientHeight)/3)})
-     await room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}).click()
+     const inspector=baseline?null:await verifyInspectorMotion(page,memberToggle,membersPanel,closeMembers,'group')
+     await click(memberToggle)
+     await settle(membersPanel)
+     if(!baseline){
+      assert.equal(await memberToggle.locator('.pa-avatar').count(),2)
+      assert.equal(await membersPanel.locator('header .pa-avatar').count(),2)
+      await page.screenshot({path:path.join(artifacts,name+'-group-members.png')})
+     }
      if(mode!=='read'){
       const edit=room.getByRole('button',{name:language==='en'?'Edit group':'編輯群組',exact:true})
       await click(edit)
       const editor=room.getByRole('dialog',{name:language==='en'?'Edit group':'編輯群組',exact:true})
-      await editor.waitFor();const cancel=editor.getByRole('button',{name:language==='en'?'Cancel':'取消',exact:true}),box=await cancel.boundingBox()
+      await editor.waitFor();await settle(editor);const cancel=editor.getByRole('button',{name:language==='en'?'Cancel':'取消',exact:true}),box=await cancel.boundingBox()
       const point=width===390?{x:32,y:42}:{x:box.x+box.width/2,y:box.y+box.height/2}
       const hit=await cancel.evaluate((button,point)=>{const target=document.elementFromPoint(point.x,point.y);return {cancelOwnsHit:!!target&&button.contains(target),targetTag:target?.tagName,targetClass:target?.className,stack:document.elementsFromPoint(point.x,point.y).slice(0,8).map(el=>({tag:el.tagName,class:el.className,label:el.getAttribute('aria-label')})),cancelBox:button.getBoundingClientRect().toJSON()}},point)
       if(width===390)await page.touchscreen.tap(point.x,point.y);else await page.mouse.click(point.x,point.y)
-      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+      if(hit.cancelOwnsHit)await editor.waitFor({state:'detached'})
       const closed=await editor.count()===0
       let recovery
       if(!closed&&process.env.BOTS_EDITOR_RECOVERY==='1'){
@@ -181,7 +278,7 @@ try{
       assert.equal(await edit.evaluate(button=>document.activeElement===button),true,'Cancel did not restore the edit trigger')
       const exits=[]
       for(const method of ['role','keyboard','escape']){
-       await click(edit);await editor.waitFor()
+       await click(edit);await editor.waitFor();await settle(editor)
        assert.equal(await editor.getByRole('textbox').inputValue(),'Review room','Cancel saved an earlier rename')
        assert.equal(await editor.locator('input[type="checkbox"]:checked').count(),2)
        assert.equal(await cancel.evaluate(button=>document.activeElement===button),true,'the editor did not receive keyboard focus')
@@ -211,7 +308,8 @@ try{
       await click(more);await room.getByRole('menuitem',{name:language==='en'?'Edit group':'編輯群組',exact:true}).click()
       await editor.waitFor();await page.keyboard.press('Escape');await editor.waitFor({state:'detached'})
       assert.equal(await more.evaluate(button=>document.activeElement===button),true,'header edit did not return to its menu trigger')
-      await click(room.getByRole('button',{name:language==='en'?'Members (2)':'成員 (2)',exact:true}))
+      await click(memberToggle)
+      await settle(membersPanel)
       const groupWrites=traffic.slice(start).filter(r=>/^project-assistants\.group-(create|edit|delete|send|stop)$/.test(r.word??'')||r.method!=='GET'&&/\/rooms\/groups/.test(r.path))
       assert.equal(groupWrites.length,0,'leaving the group form mutated group data')
       await writeFile(path.join(artifacts,name+'-editor-exits.json'),JSON.stringify({coordinate:point,exits,headerEscape:true,groupWrites:0,returnsToMemberPanel:true,focusRestored:true},null,2)+'\n')
@@ -241,8 +339,9 @@ try{
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
      assert.equal(traffic.slice(start).filter(record=>record.word==='project-assistants.send'||record.word==='project-assistants.group-send'||/\/messages$/.test(record.path)).length,0,'navigation sent a prompt')
      assert.deepEqual(errors,[])
-     evidence.push({engine,mode,language,width,height,baseline:baseline??null,creation,details,createWrites:writes.length,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,clicks:{openGroup:1,openMembers:1,openMemberChat:1,returnRoom:1,closeMembers:1,returnList:1},frontendPrompts:0,sourceAPI:mode==='old'?87:88,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
      await page.screenshot({path:path.join(artifacts,name+'-returned-list.png')})
+     const created=baseline||mode!=='local'?null:await verifyGroupCreate(page,click,language,name,traffic.length)
+     evidence.push({engine,mode,language,width,height,baseline:baseline??null,creation,details,inspector,created,createWrites:writes.length,originalBot:'stranger',memberKey:selection,roomBounds:bounds,saved,returned,draftPreserved:true,quotePreserved:quote,roomRemainedMounted:true,focusRestored:true,rosterTop:originTop,frontendPrompts:0,sourceAPI:mode==='old'?87:88,legacyRoomAllowed:false,outerCloudEncryptedCarrierSimulated:true})
     }catch(error){await page.screenshot({path:path.join(artifacts,name+'-failure.png')});await writeFile(path.join(artifacts,name+'-failure.json'),JSON.stringify({error:String(error),focus:await page.evaluate(()=>document.activeElement?.outerHTML),rooms:await page.locator('.pa-room-layout').evaluateAll(rooms=>rooms.map(room=>({hidden:room.hidden,connected:room.isConnected}))),text:await page.locator('body').innerText(),errors},null,2));throw error}
     finally{await context.close()}
    }

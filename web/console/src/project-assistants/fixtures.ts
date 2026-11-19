@@ -189,6 +189,13 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     holdStatus(){statusGate=new Promise(resolve=>{releaseStatus=resolve})},releaseStatus(){releaseStatus?.();statusGate=null;releaseStatus=null},
     holdCreate(){createGate=new Promise(resolve=>{releaseCreate=resolve})},releaseCreate(){releaseCreate?.();createGate=null;releaseCreate=null},
     setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
+    scriptMessage(bot:W.ProjectAssistantBot,id:string,kind:W.ProjectAssistantMessageKind,text:string,turn_id:string){
+      const rows=messages.get(bot.key.bot_id)??[]
+      const message:W.ProjectAssistantMessage={id,seq:rows.length+1,at,fence:fence(bot),kind,text,quote_message_id:"",turn_id}
+      messages.set(bot.key.bot_id,[...rows,message])
+      push({id:"published-"+id,seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})
+      return message
+    },
     expireCursor(mode:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full"="ok"){
       expiredCursor=true;exportFailure=mode
       const bot=bots[0],oldFence=fence(bot),options=events.find(e=>e.permission)?.permission?.options??[]

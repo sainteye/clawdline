@@ -3,40 +3,51 @@ import { createPortal } from "react-dom"
 import type * as W from "@clawdline/contract"
 import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canRead, canWrite } from "./view-state"
-import { GroupEditor, TeamApprovals, groupWord } from "./Groups"
+import { GroupEditor, TeamApprovals, groupWord, sameGroupProject } from "./Groups"
 import { PaMenu } from "./PaSelect"
 import { composerEnter } from "./composer-keyboard"
 import { BotAvatar } from "./BotAvatar"
+import { GroupActionIcon, GroupAvatar } from "./GroupAvatar"
 import { words } from "./words"
 import { currentCatalogTag } from "../catalog"
 import { EventRefreshMs } from "./Chat"
 import { followSnapshotRoster, serialSnapshotRefresh } from "./snapshot-roster"
 import { groupMentionOptions, withGroupMention } from "./group-mentions"
+import { useMessageArrivals } from "./message-arrivals"
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
 const merge=(previous:W.ProjectAssistantRoomEntry[],incoming:W.ProjectAssistantRoomEntry[])=>[...new Map([...previous,...incoming].map(line=>[line.seq,line])).values()].sort((a,b)=>a.seq-b.seq)
 type Position={top:number;following:boolean;seq?:string;offset?:number}
 
 export function GroupRoom({source,current,group:initial,bots,projectNames,onClose,onChanged,active=true,onOpenMember}:{source:SourceClient;current:()=>readonly SourceClient[];group:W.ProjectAssistantGroup;bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;onClose:()=>void;onChanged:(group:W.ProjectAssistantGroup)=>void;active?:boolean;onOpenMember?:(key:W.ProjectAssistantBotKey)=>void}) {
-  const [group,setGroup]=useState(initial),[page,setPage]=useState<W.ProjectAssistantGroupHistoryResponse|null>(null),[lines,setLines]=useState<W.ProjectAssistantRoomEntry[]>([]),[text,setText]=useState(""),[quote,setQuote]=useState<W.ProjectAssistantRoomEntry|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[unknown,setUnknown]=useState(false),[editing,setEditing]=useState(false),[deleting,setDeleting]=useState(false)
+  const [group,setGroup]=useState(initial),[page,setPage]=useState<W.ProjectAssistantGroupHistoryResponse|null>(null),[lines,setLines]=useState<W.ProjectAssistantRoomEntry[]>([]),[text,setText]=useState(""),[quote,setQuote]=useState<W.ProjectAssistantRoomEntry|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[unknown,setUnknown]=useState(false),[editing,setEditing]=useState<"edit"|"add"|null>(null),[deleting,setDeleting]=useState(false)
   const [membersOpen,setMembersOpen]=useState(false),[paging,setPaging]=useState(false),[following,setFollowing]=useState(true),[host,setHost]=useState<HTMLElement|null>(null)
+  const [sending,setSending]=useState<W.ProjectAssistantGroupSendRequest|null>(null)
   const [caret,setCaret]=useState(0),[highlight,setHighlight]=useState(0),[dismissed,setDismissed]=useState<string|null>(null)
-  const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),w=words(currentCatalogTag()),mentionID=useId()
+  const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),w=words(currentCatalogTag()),mentionID=useId(),membersID=useId()
+  const membersFocus=useRef<"panel"|"header"|null>(null)
+  const composerFocusFrame=useRef(0)
   const pending=useRef<W.ProjectAssistantGroupSendRequest|null>(null),control=useRef(new AbortController()),refresh=useRef<(earlier?:boolean)=>Promise<void>>(async()=>{})
   const observing=useRef(false)
   const currentRef=useRef(current),changedRef=useRef(onChanged),activeRef=useRef(active)
   currentRef.current=current;changedRef.current=onChanged;activeRef.current=active
   const scroll=useRef<HTMLDivElement>(null),[more,setMore]=useState<{before:number;hasMore:boolean}|null>(null)
   const linesRef=useRef(lines),moreRef=useRef(more),position=useRef<Position>({top:0,following:true}),restore=useRef<Position|null>(null)
+  const sentAfter=useRef(0),localEntry=useRef(0)
   const rememberMore=(value:{before:number;hasMore:boolean})=>{moreRef.current=value;setMore(value)}
   const botFor=(key?:W.ProjectAssistantBotKey)=>key?bots.find(bot=>identity(bot.key)===identity(key)):undefined
   const author=(key?:W.ProjectAssistantBotKey)=>key?(botFor(key)?.name??key.bot_id):groupWord("groupPerson")
   const members=group.members.flatMap(member=>{const bot=botFor(member.key);return bot?[bot]:[]})
+  const memberKeys=group.members.map(member=>member.key)
+  const memberCount=`${groupWord("groupMembers")} (${memberKeys.length})`
   const options=dismissed===text?[]:groupMentionOptions(text,caret,members)
   const picked=Math.min(highlight,Math.max(0,options.length-1))
   const writable=active&&!!page&&canWrite(page.source)&&source.current?.()!==false&&!group.deleted
   const readable=active&&!!page&&canRead(page.source)&&source.current?.()!==false&&!group.deleted
+  const canAdd=writable&&members.length===memberKeys.length&&bots.some(bot=>sameGroupProject(bot.project,group.project)&&!memberKeys.some(key=>identity(key)===identity(bot.key)))
   const canQuote=source.canGroupContext?.()===true
+  const motion=useMessageArrivals({items:lines,ready:active&&!!page,following,seq:line=>line.seq,id:line=>String(line.seq),
+    skip:line=>line.seq===localEntry.current||line.kind!=="person"&&line.kind!=="member"})
 
   useLayoutEffect(()=>{setHost(anchor.current?.closest<HTMLElement>(".pa-shell")??null)},[])
   useLayoutEffect(()=>{
@@ -86,9 +97,14 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     if(!active||!host)return
     const savedFocus=lastFocus.current
     const frame=requestAnimationFrame(()=>{
-      const usable=savedFocus?.isConnected&&!savedFocus.matches(":disabled")&&!savedFocus.closest("[hidden]")&&getComputedStyle(savedFocus).visibility!=="hidden"
-      const target=usable?savedFocus:membersOpen?membersPanel.current?.querySelector<HTMLElement>("button"):composer.current
-      target?.focus({preventScroll:true})
+      const panelOpen=membersPanel.current?.hidden===false
+      const focused=document.activeElement
+      if(focused===document.body||!room.current?.contains(focused)){
+        const usable=savedFocus?.isConnected&&!savedFocus.matches(":disabled")&&!savedFocus.closest("[hidden]")&&
+          getComputedStyle(savedFocus).visibility!=="hidden"&&(!panelOpen||membersPanel.current?.contains(savedFocus))
+        const target=usable?savedFocus:panelOpen?membersPanel.current?.querySelector<HTMLElement>("button"):composer.current
+        target?.focus({preventScroll:true})
+      }
       if(scroll.current)scroll.current.scrollTop=position.current.following?scroll.current.scrollHeight:position.current.top
     })
     return()=>cancelAnimationFrame(frame)
@@ -141,16 +157,40 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     refresh.current=earlier=>earlier?queue(true):follow?.()??Promise.resolve()
     return()=>{observing.current=false;controller.abort()}
   },[source,initial.key.machine_id,initial.key.bot_id,active])
-  const focusComposer=()=>requestAnimationFrame(()=>composer.current?.focus({preventScroll:true}))
-  const showMembers=(open:boolean)=>{
-    restore.current=capturePosition();setMembersOpen(open)
-    if(open)requestAnimationFrame(()=>{if(activeRef.current&&membersPanel.current&&!membersPanel.current.hidden)membersPanel.current.querySelector<HTMLElement>("button")?.focus({preventScroll:true})})
+  const focusComposer=(at?:number)=>{
+    cancelAnimationFrame(composerFocusFrame.current)
+    composerFocusFrame.current=requestAnimationFrame(()=>{
+      if(!activeRef.current||membersPanel.current?.hidden===false)return
+      composer.current?.focus({preventScroll:true})
+      if(at!==undefined)composer.current?.setSelectionRange(at,at)
+    })
   }
+  const showMembers=(open:boolean,focus=true)=>{
+    if(open)cancelAnimationFrame(composerFocusFrame.current)
+    restore.current=capturePosition()
+    membersFocus.current=focus?(open?"panel":"header"):null
+    setMembersOpen(open)
+  }
+  useLayoutEffect(()=>{
+    const destination=membersFocus.current
+    membersFocus.current=null
+    if(!active||!destination)return
+    const target=destination==="panel"?membersPanel.current?.querySelector("button"):memberToggle.current
+    target?.focus({preventScroll:true})
+  },[active,membersOpen])
+  useEffect(()=>{
+    if(!active||!membersOpen||editing)return
+    const escape=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"&&!event.isComposing&&!event.defaultPrevented&&event.target===document.body)showMembers(false)
+    }
+    document.addEventListener("keydown",escape)
+    return()=>document.removeEventListener("keydown",escape)
+  },[active,membersOpen,editing])
   const replyTo=(line:W.ProjectAssistantRoomEntry)=>{setQuote(line);pending.current=null;focusComposer()}
   const mention=(bot:W.ProjectAssistantBot,replace=true)=>{
     const next=replace?withGroupMention(text,bot.name):text+(text&&!/\s$/u.test(text)?" ":"")+"@"+bot.name+" "
     setText(next);setCaret(next.length);setHighlight(0);setDismissed(null);pending.current=null
-    requestAnimationFrame(()=>{composer.current?.focus({preventScroll:true});composer.current?.setSelectionRange(next.length,next.length)})
+    focusComposer(next.length)
   }
   async function effect(run:(signal:AbortSignal)=>Promise<unknown>){
     if(!writable||busy||unknown)return
@@ -162,38 +202,58 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     if(!text.trim()||!writable||busy||unknown)return
     const request=pending.current??{command:command(group.key,"send"),text,...(quote?{quote:{seq:quote.seq}}:{})}
     pending.current=request
+    sentAfter.current=linesRef.current.at(-1)?.seq??0
+    position.current.following=true;setFollowing(true)
+    setSending(request);setText("")
+    if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight
     await effect(async signal=>{
       const answer=await source.sendGroup!(request,signal)
       observing.current=true
+      localEntry.current=answer.entry.seq
       pending.current=null;setText("");setCaret(0);setQuote(null);setDismissed(null)
       position.current.following=true;restore.current={top:0,following:true}
       const next=merge(linesRef.current,[answer.entry]);linesRef.current=next;setLines(next)
+      setSending(null)
+      setPage(old=>old&&answer.room.revision>=old.room.revision?{...old,room:answer.room}:old)
       return answer
     })
+    if(pending.current===request)setText(request.text)
+    setSending(null)
   }
   const activity=page?.activity??[]
   const working=!!page?.room.running||activity.length>0
+  const stopRoom=()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))
+  const showStop=working&&!text.trim()&&!!source.stopGroup
   // The room snapshot has active tickets, not terminal member outcomes. Do
   // not label an absent publication as a pass or manufacture a Bot message.
   const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&lines.at(-1)?.kind==="person"
-  const openEditor=(opener:HTMLElement|null)=>{opener?.focus({preventScroll:true});setEditing(true)}
+  const openEditor=(opener:HTMLElement|null,mode:"edit"|"add"="edit")=>{opener?.focus({preventScroll:true});setEditing(mode)}
   const body=<section ref={room} hidden={!active} className={`pa-room-layout${membersOpen?" pa-members-open":""}`} role="dialog" aria-label={group.name}
     onFocusCapture={event=>{if(event.target instanceof HTMLElement)lastFocus.current=event.target}}
-    onKeyDown={event=>{if(membersOpen&&!editing&&event.key==="Escape"&&!event.nativeEvent.isComposing&&!event.defaultPrevented){event.stopPropagation();showMembers(false);requestAnimationFrame(()=>memberToggle.current?.focus({preventScroll:true}))}}}>
-    <div className="pa-chat"><header className="pa-chat-header"><button type="button" onClick={onClose}>{groupWord("groupBack")}</button><div><h2>{group.name}</h2><small>{group.members.map(member=>author(member.key)).join(" · ")}</small></div><button ref={memberToggle} type="button" aria-expanded={membersOpen} onClick={()=>showMembers(!membersOpen)}>{groupWord("groupMembers")} ({group.members.length})</button><PaMenu label={w.moreActions} items={[
+    onKeyDown={event=>{if(membersOpen&&!editing&&event.key==="Escape"&&!event.nativeEvent.isComposing&&!event.defaultPrevented){event.stopPropagation();showMembers(false)}}}>
+    <div className="pa-chat"><header className="pa-chat-header"><button type="button" onClick={onClose}>{groupWord("groupBack")}</button>
+    <h2 className="pa-room-heading"><button ref={memberToggle} type="button" className="pa-room-identity" aria-expanded={membersOpen} aria-controls={membersID} onClick={()=>showMembers(!membersOpen)}>
+      <GroupAvatar keys={memberKeys} bots={bots} size={34}/><span className="pa-room-identity-text"><strong>{group.name}</strong><small>{memberCount}</small></span>
+      <svg className="pa-room-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg>
+    </button></h2><PaMenu label={w.moreActions} items={[
       {id:"edit",label:groupWord("groupEdit"),disabled:!writable||busy||unknown,onSelect:()=>openEditor(room.current?.querySelector<HTMLElement>(".pa-chat-header .pa-menu>button")??null)},
-      {id:"stop",label:groupWord("groupStop"),disabled:!writable||busy||unknown,onSelect:()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))},
+      {id:"stop",label:groupWord("groupStop"),disabled:!writable||busy||unknown,onSelect:stopRoom},
       {id:"delete",label:groupWord("groupDelete"),disabled:!writable||busy||unknown,onSelect:()=>setDeleting(true)}
     ]}/></header>
     <div className="pa-chat-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;if(el&&activeRef.current){const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;position.current={top:el.scrollTop,following:end};setFollowing(end)}}}><div className="pa-chat-content">
       <TeamApprovals sources={[source]} bots={source.canGroupContext?.()?members.filter(bot=>activity.some(turn=>identity(turn.member)===identity(bot.key))):page?.room.running?members:[]}/>
       {more?.hasMore&&<button type="button" disabled={paging||busy} onClick={()=>void refresh.current(true)}>{paging?w.earlierLoading:groupWord("groupOlder")}</button>}
-      {lines.map(line=>{const member=botFor(line.author),person=line.kind==="person";return <article key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}>
+      {lines.map(line=>{const member=botFor(line.author),person=line.kind==="person";return <article key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}
+        data-arrival={motion.arrivals.has(String(line.seq))||undefined} onAnimationEnd={event=>{if(event.animationName==="pa-bubble-enter")motion.finish(String(line.seq))}}>
         {!person&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{author(line.author)}</strong></div>}
         <div className="pa-room-bubble">{line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}<p>{line.text}</p></div>
         {canQuote&&(line.kind==="member"||person)&&<button className="pa-room-reply" type="button" aria-label={`${groupWord("groupReply")} · ${author(line.author)}`} disabled={!writable||busy||unknown} onClick={()=>replyTo(line)}>{groupWord("groupReply")}</button>}
       </article>})}
-      {!lines.length&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
+      {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
+      {sending&&<article key={sending.command.idempotency_key} data-local-entrance className="pa-room-message pa-room-person pa-sending" aria-live="polite">
+        {!lines.some(line=>line.kind==="person"&&line.seq>sentAfter.current&&line.text===sending.text)&&<div className="pa-room-bubble">{sending.text}</div>}
+        <small><span className="pa-send-spinner" aria-hidden="true"/>{groupWord("groupWorking")}</small>
+      </article>}
     </div></div>
     {!following&&lines.length>0&&<button type="button" className="pa-room-jump" onClick={()=>{position.current.following=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>{w.jump} ↓</button>}
     <footer className="pa-chat-footer">
@@ -216,13 +276,33 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
             }
             if(composerEnter(event.nativeEvent,composing.current)==="send"){event.preventDefault();void send()}
           }}/></div>
-        <button className="pa-send" type="submit" aria-label={groupWord(busy?"groupWorking":"groupSend")} disabled={!writable||busy||unknown||!text.trim()}>↑</button>
+        <button className="pa-send" type={showStop?"button":"submit"} data-stop={showStop||undefined} aria-label={groupWord(showStop?"groupStop":busy?"groupWorking":"groupSend")}
+          title={showStop?groupWord("groupStop"):undefined} onClick={showStop?stopRoom:undefined} disabled={!writable||busy||unknown||!showStop&&!text.trim()}>{showStop?null:"↑"}</button>
       </form>
       {deleting&&<div role="alert"><p>{groupWord("groupDeleteHint")}</p><button type="button" disabled={busy||unknown} onClick={()=>setDeleting(false)}>{groupWord("groupCancel")}</button><button type="button" disabled={busy||unknown} onClick={()=>void effect(async signal=>{const result=await source.deleteGroup!({command:command(group.key,"delete"),expected_version:group.version},signal);changedRef.current({...group,deleted:true});return result})}>{groupWord("groupDeleteConfirm")}</button></div>}
       {(error||unknown)&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} {error&&`(${error})`}</p>}
     </footer>
-    </div><aside ref={membersPanel} hidden={!membersOpen} tabIndex={-1} className="pa-room-members" aria-label={groupWord("groupMembers")}><header className="pa-toolbar"><h3>{groupWord("groupMembers")}</h3><button type="button" aria-label={w.closeInformation} onClick={()=>{showMembers(false);requestAnimationFrame(()=>memberToggle.current?.focus({preventScroll:true}))}}>×</button></header><h2>{group.name}</h2>{group.members.map(member=>{const bot=botFor(member.key);return <div className="pa-room-member" key={identity(member.key)}><button type="button" disabled={!readable||busy||!bot||!onOpenMember} onClick={event=>{lastFocus.current=event.currentTarget;onOpenMember?.(member.key)}}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<span><strong>{author(member.key)}</strong></span></button><button type="button" aria-label={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false)}}>@</button></div>})}<button type="button" disabled={!writable||busy||unknown} onClick={event=>openEditor(event.currentTarget)}>{groupWord("groupEdit")}</button></aside>
-    {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} onClose={()=>setEditing(false)} onSaved={(_,changed)=>{setGroup(changed);setEditing(false);changedRef.current(changed);void refresh.current()}}/>}
+    </div>
+    <aside ref={membersPanel} id={membersID} hidden={!membersOpen} inert={!membersOpen} tabIndex={-1} className="pa-room-members pa-side-inspector" aria-label={groupWord("groupMembers")}>
+      <header className="pa-room-members-identity">
+        <button className="pa-room-members-close pa-circle" type="button" aria-label={w.closeInformation} onClick={()=>showMembers(false)}>×</button>
+        <GroupAvatar keys={memberKeys} bots={bots} size={64}/><h2>{group.name}</h2><small>{memberCount}</small>
+      </header>
+      <ul className="pa-room-member-list">
+        {group.members.map(member=>{
+          const bot=botFor(member.key)
+          return <li className="pa-room-member" key={identity(member.key)}>
+            <button type="button" disabled={!readable||busy||!bot||!onOpenMember} onClick={event=>{lastFocus.current=event.currentTarget;onOpenMember?.(member.key)}}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<strong>{author(member.key)}</strong></button>
+            <button type="button" aria-label={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false,false)}}>@</button>
+          </li>
+        })}
+      </ul>
+      <div className="pa-room-member-actions">
+        <button className="pa-room-add-member" type="button" disabled={!canAdd||busy||unknown} onClick={event=>openEditor(event.currentTarget,"add")}><GroupActionIcon/>{groupWord("rosterCreate")}</button>
+        <button className="pa-room-member-edit" type="button" disabled={!writable||busy||unknown} onClick={event=>openEditor(event.currentTarget)}>{groupWord("groupEdit")}</button>
+      </div>
+    </aside>
+    {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} addMembers={editing==="add"} onClose={()=>setEditing(null)} onSaved={(_,changed)=>{setGroup(changed);setEditing(null);changedRef.current(changed);void refresh.current()}}/>}
   </section>
   return <><span ref={anchor} hidden/>{host&&createPortal(body,host)}</>
 }
