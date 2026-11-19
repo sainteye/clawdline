@@ -389,7 +389,7 @@ func TestNoticeAndSessionMessage(t *testing.T) {
 	}
 	msg := page.Entries[1]
 	if msg.Kind != KindMessage || msg.Text != "hi" || msg.Source != "Root" || msg.SourceMode != "clawdline" ||
-		msg.SourceAssistant != "codex" {
+		msg.SourceAssistant != "codex" || msg.SourceConversation != "" {
 		t.Fatalf("message: %+v", msg)
 	}
 	if page.Entries[2].Kind != KindUser {

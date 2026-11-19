@@ -166,15 +166,27 @@ func (b *Broker) relay(ctx context.Context, m Message, key string, allowSelf boo
 			"The target is showing a menu; typing would answer it instead of delivering the message.")
 	}
 
-	label := source.Label
+	label := ""
+	if b.MessageSourceLabel != nil {
+		label = b.MessageSourceLabel(source)
+	}
+	if label == "" {
+		label = source.Label
+	}
 	if label == "" {
 		label = source.ID
+	}
+	// Keep the existing envelope readable by older versions. Its opaque
+	// source id now distinguishes a conversation from a reusable terminal.
+	sourceID := source.ID
+	if source.ConversationID != "" {
+		sourceID = session.MessageConversationPrefix + source.ConversationID
 	}
 	encoded, err := json.Marshal(sessionMessage{
 		Protocol: "clawdline.message",
 		Version:  1,
 		Kind:     "session_message",
-		Source:   messageSource{ID: source.ID, Assistant: string(source.Assistant), Label: label},
+		Source:   messageSource{ID: sourceID, Assistant: string(source.Assistant), Label: label},
 		Body:     m.Text,
 	})
 	if err != nil || strings.ContainsAny(string(encoded), "\n\r") {

@@ -250,6 +250,7 @@ func (s *Server) sessionBoardInbox(w http.ResponseWriter, r *http.Request) {
 		writeSessionBoardError(w, err)
 		return
 	}
+	s.projectSessionBoardNames(false, nil, inbox.Posts)
 	writeJSON(w, inbox)
 }
 
@@ -269,9 +270,9 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 			writeSessionBoardError(w, err)
 			return
 		}
-		if actor == "" {
-			s.markSessionBoardPresence(page.Board)
-		}
+		board := []sb.Board{page.Board}
+		s.projectSessionBoardNames(actor == "", board, page.Posts)
+		page.Board = board[0]
 		writeJSON(w, page)
 		return
 	}
@@ -280,22 +281,53 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 		writeSessionBoardError(w, err)
 		return
 	}
-	if actor == "" {
-		s.markSessionBoardPresence(boards...)
-	}
+	s.projectSessionBoardNames(actor == "", boards, nil)
 	writeJSON(w, struct {
 		Boards []sb.Board `json:"boards"`
 	}{boards})
 }
 
-// markSessionBoardPresence uses the same bounded snapshot the Session list
-// serves. Absence from the enabled sources describes the list only. It does
-// not revoke membership or establish that a Session was closed.
-func (s *Server) markSessionBoardPresence(boards ...sb.Board) {
-	if !slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 }) {
+// Project display names from one shared list snapshot. Only the paired roster
+// read that already needed presence can request a list build. Inbox and native
+// reads use the published snapshot, when present, without waiting for a build.
+func (s *Server) projectSessionBoardNames(presence bool, boards []sb.Board, posts []sb.Post) {
+	hasMembers := slices.ContainsFunc(boards, func(board sb.Board) bool { return len(board.Members) > 0 })
+	if !hasMembers && len(posts) == 0 {
 		return
 	}
-	setSessionBoardPresence(s.lists().snapshot(), boards)
+	lists := s.lists()
+	var snapshot sessionsSnapshotWire
+	if presence && hasMembers {
+		snapshot = lists.snapshot()
+		setSessionBoardPresence(snapshot, boards)
+	} else {
+		snapshot, _ = lists.sessions.peek()
+	}
+	labels := make(map[string]string, len(snapshot.Sessions))
+	for _, row := range snapshot.Sessions {
+		if row.Assistant == "" || row.SessionID == "" {
+			continue
+		}
+		id := string(row.Assistant) + ":" + row.SessionID
+		_, duplicate := labels[id]
+		labels[id] = ""
+		if !duplicate && row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent {
+			labels[id] = row.Label
+		}
+	}
+	apply := func(actor *sb.Actor) {
+		if label := labels[actor.ID]; label != "" {
+			actor.Label = label
+		}
+	}
+	for _, board := range boards {
+		for i := range board.Members {
+			apply(&board.Members[i])
+		}
+	}
+	for i := range posts {
+		apply(&posts[i].Author)
+	}
 }
 
 func setSessionBoardPresence(snapshot sessionsSnapshotWire, boards []sb.Board) {

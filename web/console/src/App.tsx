@@ -246,7 +246,7 @@ function rowNode(id: string): HTMLElement | null {
 export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, sessionBoardTargets, fleetTarget = null, fleetTargetRow = null,
   fleetTargetIdentity = null, fleetReaderMachine = null, executionReadRevision = 0,
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
-  fleetDetailProblem = null, onFleetDetailPending, onFleetClose, fleetActionIntent = null, onFleetActionIntentHandled,
+  fleetDetailProblem = null, onFleetDetailPending, onFleetClose, onOpenFleetSession, fleetActionIntent = null, onFleetActionIntentHandled,
   fleetCloseIntent = null, onFleetCloseIntentHandled,
   quotaMachineName, hideSessionCounts = false, onChooseDashboardMachine, dashboardSource, dashboardRequested = false, onDashboardClosed, focusCloudSessions = false, onLeaveCloudSessions, onTitleSaved, confirmedTitle, projectAssistants, viewPluginSources, onOpenAssistantWork, assistantWorkIntent, onAssistantWorkOpened }: {
   viewPluginSources?: readonly ViewSource[]
@@ -277,6 +277,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   /** Whether the opened fleet Session's own row is still missing from this machine's rows. */
   onFleetDetailPending?: (pending: boolean) => void
   onFleetClose?: () => void
+  onOpenFleetSession?: (destination: SessionDestination) => void
   fleetActionIntent?: { target: SessionDestination; title: string; kind: "end" | "archive" } | null
   onFleetActionIntentHandled?: () => void
   fleetCloseIntent?: { target: SessionDestination; title: string; kind?: "end" | "archive"; recovered?: boolean } | null
@@ -1380,6 +1381,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         selected={selected}
         openId={detailID}
         onOpen={(id) => openSession(id)}
+        onOpenFleetSession={onOpenFleetSession}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
         onStarted={openStarted}

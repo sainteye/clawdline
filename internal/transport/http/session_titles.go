@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -184,4 +185,21 @@ func (s *Server) sessionDisplayLabel(ctx context.Context, item session.Session) 
 		project = filepath.Base(item.CWD)
 	}
 	return rowLabel(item, view.TitleOf(live, item.CustomTitle, lives), project)
+}
+
+// publishedSessionLabel uses the shared list's title without making a send
+// wait for another scan or repeating the list's title and ledger reads.
+func (s *Server) publishedSessionLabel(item session.Session) string {
+	if item.ConversationID == "" {
+		return ""
+	}
+	snapshot, _ := s.lists().sessions.peek()
+	for _, row := range snapshot.Sessions {
+		if row.ID == item.ID && row.SessionID == item.ConversationID &&
+			string(row.Assistant) == string(item.Assistant) && row.Source != nil &&
+			row.Source.Freshness == contract.SourceFreshnessCurrent {
+			return row.Label
+		}
+	}
+	return ""
 }

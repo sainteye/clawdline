@@ -333,3 +333,48 @@ func TestSessionBoardArchivesOnlyAfterTwoCompleteReadingsWithoutListedMembers(t 
 	check(empty, false)
 	check(empty, true)
 }
+
+func TestSessionBoardNamesReuseThePublishedListForEveryPost(t *testing.T) {
+	s := &Server{}
+	const id = "known-conversation"
+	rows := []sessionRowWire{{SessionRow: contract.SessionRow{
+		ID: "first", Assistant: "codex", SessionID: id, Label: "Current title",
+		Source: &contract.BearingsSource{Freshness: contract.SourceFreshnessCurrent},
+	}}}
+	lists := s.lists()
+	lists.sessions.build = func(context.Context) (sessionsSnapshotWire, error) {
+		return sessionsSnapshotWire{Sessions: rows}, nil
+	}
+	if _, err := lists.sessions.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	actor := sb.Actor{ID: "codex:" + id, Label: "Saved title"}
+	boards := []sb.Board{{Members: []sb.Actor{actor}}}
+	posts := make([]sb.Post, sb.MaxPosts)
+	for i := range posts {
+		posts[i].Author = actor
+	}
+	s.projectSessionBoardNames(false, boards, posts)
+	if got := boards[0].Members[0].Label; got != "Current title" {
+		t.Fatalf("roster title: %q", got)
+	}
+	for _, post := range posts {
+		if post.Author.Label != "Current title" {
+			t.Fatalf("author title: %q", post.Author.Label)
+		}
+	}
+	if builds := lists.sessions.builds.Load(); builds != 1 {
+		t.Fatalf("projecting %d posts rebuilt the Session list: %d builds", len(posts), builds)
+	}
+	second := rows[0]
+	second.ID, second.Label = "second", "Duplicate title"
+	rows = append(rows, second)
+	if _, err := lists.sessions.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	boards[0].Members[0], posts[0].Author = actor, actor
+	s.projectSessionBoardNames(false, boards, posts[:1])
+	if boards[0].Members[0] != actor || posts[0].Author != actor {
+		t.Fatal("ambiguous identity replaced a saved title")
+	}
+}

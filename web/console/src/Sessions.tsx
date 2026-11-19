@@ -3,7 +3,7 @@ import { SessionStateEmpty } from "./session/SessionStateEmpty.js"
 import { matchesLocalStateFilter, type SessionStateFilter } from "./session/state-filter.js"
 import { stateFilterLabel } from "./session/SessionStateFilter.js"
 import { catalogWord } from "./catalog.js"
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react"
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskList, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import { detailSessionName } from "./brand-mark.js"
@@ -11,7 +11,8 @@ import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
 import { visualBranches, visualDepths, visualParents } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
-import type { FleetDetailProblem } from "./cloud/all-machine-sessions.js"
+import { indexMessageSenders } from "./session/message-source.js"
+import type { FleetDetailProblem, SessionDestination } from "./cloud/all-machine-sessions.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { placePresence, seedSessionsStarted, sessionsStarted, useFirstRun } from "./session/first-run.js"
 import { FirstTour } from "./session/FirstTour.js"
@@ -67,6 +68,7 @@ export function SessionsPage({
   selected,
   openId,
   onOpen,
+  onOpenFleetSession,
   onBack,
   onDid,
   onStarted,
@@ -110,6 +112,7 @@ export function SessionsPage({
   /** The session in the detail pane (`li.open`). */
   openId: string | null
   onOpen: (id: string) => void
+  onOpenFleetSession?: (destination: SessionDestination) => void
   onBack: () => void
   onDid: () => void
   onStarted?: (answer: StartAnswer, place: StartPlaceRow | null, finish: () => boolean) => boolean
@@ -178,6 +181,14 @@ export function SessionsPage({
   // From the whole fleet, as `byId` looks it up: a filter that hides the open
   // row does not close it.
   const open = rows.find((r) => r.id === openId) ?? null
+  const detailRows = open ? rows : null
+  const messageSenders = useMemo(() => indexMessageSenders(detailRows ?? []), [detailRows])
+  const openMessageSender = (sender: SessionRow) => {
+    if (!fleetList) { onOpen(sender.id); return }
+    if (readerMachine && sender.execution_generation) {
+      onOpenFleetSession?.({ machineID: readerMachine, sessionID: sender.id, executionGeneration: sender.execution_generation })
+    }
+  }
   const T = L.strings
   const sourceFailure = scanFailureWords(scanNotes, scanSources)
   const briefRefresh = inventoryRefreshInProgress(scanNotes) &&
@@ -412,7 +423,9 @@ export function SessionsPage({
           <NotifyFooter /></>}
         </section>
 
-        <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid}
+        <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} messageSenders={messageSenders}
+          onOpenMessageSender={!fleetList || (readerMachine && onOpenFleetSession) ? openMessageSender : undefined}
+          messageSenderNeedsGeneration={!!fleetList} onBack={onBack} onDid={onDid}
           scanSources={scanSources}
           readerMachine={readerMachine}
           projectedCoordinatorBound={fleetCoordinatorBound}

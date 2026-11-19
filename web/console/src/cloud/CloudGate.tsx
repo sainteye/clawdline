@@ -2269,6 +2269,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             sessionBoardSource={fleetScope ? undefined : sessionBoardsFor(readerMachine ?? chosen.id)}
             sessionBoardTargets={boardTargets}
             onFleetClose={closeFleetTarget}
+            onOpenFleetSession={openFleetSession}
             fleetActionIntent={fleetActionIntent}
             onFleetActionIntentHandled={() => setFleetActionIntent(null)}
             fleetCloseIntent={fleetCloseIntent}
