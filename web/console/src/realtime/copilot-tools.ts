@@ -242,7 +242,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 【工具】
 - list_sessions：所有 Session 的整理好的狀態。結果已分成 needs_you（等使用者回應，附它在問什麼）、working（工作中，未讀取逐字稿）、done（已完成）、idle（閒置）；有交付摘要的附 delivered。
-- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多2個，其他批次由程式接續，不把所有項目壓成一句話。每個先說清楚它的名稱，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。使用者要繼續被打斷的介紹時設 continue_report=true，不要重新查清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
+- get_sessions_summary：一群 Session 各自的摘要，依最近活動排序；通話每次只介紹回傳的最多2個，其他批次由程式接續，不把所有項目壓成一句話。每個用清楚且一致的口語名稱帶出，再用日常語言解釋目的、進展及真正待決事項；不要只重念程式術語。依語意辨識續報。使用者要接著聽未說完的介紹時設 continue_report=true；要換到下一項或其他 Session 時再加 next_report=true。沿用這次的清單。使用者要「工作中的都在做什麼」用 which=working，「閒置的／最近完成的那些做了什麼」用 which=idle，預設30分鐘，沒有才擴到1小時；照 idle_for 說每個閒置約多久（依最後確認活動估計），最近閒置的先報。只有明確要全部閒置才用idle_scope=all。「全部」用 which=all；照結果的順序（最近的先）逐一講，每個兩到三句，講完 sessions 就停；有 not_read 就最後說一句「還有幾個比較久沒動的沒有讀」。
 - get_session_summary：某個 Session 現在的摘要（它自己寫的 recap 與詳細版 recap_detail、最後一次交付摘要、最後一則回覆、在等什麼）。問「它現在怎樣、最後做完什麼」「目前為止完成了哪些事情、有哪些事情需要我決定」「報告這個 Session 的 summary」都先用這個。
 - get_session_recap：某個 Session 從開始到現在的完整經過。get_session_summary 沒有 recap_detail，而使用者問「這個 Session 完成了什麼、從頭到尾做了哪些、幫我總結」時用這個。
 - get_session_activity：某個 Session 的完整工作紀錄（使用者交代什麼、AI 回報了什麼、跑了什麼）。摘要不夠、使用者要細節或過程時才用。
@@ -375,6 +375,7 @@ export const COPILOT_TOOLS = [
         which: { type: 'string', enum: ['working', 'idle', 'all'], description: 'working：工作中與等使用者回應的；idle：近期閒置；all：全部' },
         fresh:{type:'boolean',description:'只有使用者明確要「最新」「即時」「強制更新」的摘要時才設 true：5 分鐘內寫好的摘要照用，更舊的會當場重寫（每個要多等幾秒）。平常不填，用背景已寫好的摘要並說明是多久前寫的。'},
         continue_report:{type:'boolean',description:'通話中使用者要繼續剛才被打斷的 Session 介紹時設為 true，沿用已保存的批次，不重查清單或重排順序。這是介紹接續，不是自動工作額度的同意。'},
+        next_report: { type: 'boolean', description: '使用者明確要聽下一項或其他 Session 時設為 true，跳過被打斷的當前項目。依語意判斷，不需固定說法。' },
         idle_scope:{type:'string',enum:['recent','all'],description:'idle 預設只查最近30分鐘，沒有才擴到1小時；只有使用者明確要全部閒置時才用all。逐一說明閒置約多久，最近閒置的先報。時間依最後確認活動估計，不能當作精確停止時間。'},
       },
     },

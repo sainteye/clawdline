@@ -1587,3 +1587,18 @@ test('Live announces each new Project before narrating its first Session', async
   assert.doesNotMatch(notes[1], /Project name/)
   assert.match(notes[2], /Project name "Cedar".*"Task 2"/)
 })
+
+test('completed report audio advances a paraphrased batch without proving a reference for writes', async () => {
+  const f = fixture(false, null)
+  const row = {session_id:'report-1',label:'The exact repository title'}
+  f.c.sessionReports.start({sessions:[row]}, async () => assert.fail('no further read'), page => f.c.presentSessionReport(page, () => true))
+  f.c.sessionReports.resume()
+  await f.c.handleRealtimeEvent({type:'response.created',response:{id:'report-response'}})
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.started',response_id:'report-response'})
+  await f.c.handleRealtimeEvent({type:'response.output_audio_transcript.delta',delta:'The checkout report is ready.'})
+  await f.c.handleRealtimeEvent({type:'response.done',response:{id:'report-response',status:'completed',output:[{type:'message'}]}})
+  assert.equal(f.c.sessionReports.hasPending(), true)
+  await f.c.handleRealtimeEvent({type:'output_audio_buffer.stopped',response_id:'report-response'})
+  assert.equal(f.c.sessionReports.hasPending(), false)
+  assert.deepEqual(f.c.spokenSessions.heardIDs(), [])
+})

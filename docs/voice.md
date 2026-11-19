@@ -476,7 +476,16 @@ of its words are new against the kept recap and everything the live model has sa
 **The call itself.** Both systems have two tools about the call, added on 2026-11-16 at the
 person's request. `get_call_status` reads the call's own state (`callStatus` in `ToolDeps`): the
 system, seconds since it connected (`connectedAt`) and the dollars on its cost line, so the copilot
-answers from the figures instead of guessing. The client recognizes a direct hangup request
+answers from the figures instead of guessing. Report continuation can use natural language and the
+voice tool's structured continuation or next-item choice. Realtime advances a prepared report only
+after generation and audio playback finish. Spoken Session references used for actions still carry
+independent identity evidence.
+
+The call requests a duplex audio route when the browser supports it. A ring starts when its
+Web Audio context runs, restarts on recovery during setup, and stops when the call becomes ready,
+fails or closes. The local journal records the graph state separately from connection phases.
+
+The client recognizes a direct hangup request
 or conversational goodbye in the person's transcript and disconnects with a local tone without
 waiting for the model. Realtime uses the completed transcription. GPT-Live uses a quiet window
 for streaming input or the start of the next response. Closing a terminal Session, quoted words

@@ -2166,7 +2166,7 @@ test("a Cloud carried question is answered from its returned row without polling
 })
 
 test('ending this conversation and standalone goodbyes end the call in either language',()=>{
- for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.','這樣就足夠了，那就這樣吧，拜拜','I have what I need, talk to you later, goodbye.'])assert.equal(asksToEndCall(text),true,text)
+ for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.','這樣就足夠了，那就這樣吧，拜拜','I have what I need, talk to you later, goodbye.','其他 Session 等下次再聊，掰掰','Let’s wrap up this call now.'])assert.equal(asksToEndCall(text),true,text)
  for(const text of ['不要掛斷電話','先不要拜拜','Tell that Session goodbye','請你跟那個 Session 說拜拜','How do I hang up?','我們先不要結束通話','Please fix the end call button','請修正掛斷電話的問題','她說「那就這樣，掰掰」','The test Session said, that’s all, goodbye.'])assert.equal(asksToEndCall(text),false,text)
 })
 

@@ -2,7 +2,7 @@ import { test, type TestContext } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { playChime, primeChime } from "./chime.ts"
+import { borrowAudioSession, playChime, primeChime } from "./chime.ts"
 
 class FakeContext extends EventTarget {
   static made: FakeContext[] = []
@@ -117,5 +117,21 @@ test("a chime nobody plays closes itself once no recording could still be waitin
     assert.equal(contexts[0].closed, 0)
     t.mock.timers.tick(1)
     assert.equal(contexts[0].closed, 1)
+  }, t)
+})
+
+test("the voice call keeps duplex audio across a short cue and restores the prior route", t => {
+  withAudio((_contexts, session) => {
+    const call = borrowAudioSession("play-and-record")
+    assert.equal(session.type, "play-and-record")
+    const cue = primeChime()
+    cue.play()
+    assert.equal(session.type, "play-and-record")
+    const replacement = borrowAudioSession("play-and-record")
+    call()
+    t.mock.timers.tick(1000)
+    assert.equal(session.type, "play-and-record")
+    replacement()
+    assert.equal(session.type, "auto")
   }, t)
 })

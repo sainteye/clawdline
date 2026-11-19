@@ -2,11 +2,11 @@
   "version": 1,
   "englishKeys": 13339,
   "counts": {
-    "negation": 3513,
+    "negation": 3512,
     "state": 2249,
     "permission": 813,
     "deletion": 312,
-    "uncertainty": 545
+    "uncertainty": 544
   },
   "unionCount": 5743,
   "categories": {
@@ -3398,7 +3398,6 @@
       "transparency.card.voice-call-ending.effect",
       "transparency.card.voice-call-ending.how",
       "transparency.card.voice-list-briefing.condition",
-      "transparency.card.voice-list-briefing.effect",
       "transparency.card.voice-list-briefing.how",
       "transparency.card.voice-live-pacing.effect",
       "transparency.card.voice-live-pacing.summary",
@@ -7430,7 +7429,6 @@
       "transparency.card.persistent-bots.effect",
       "transparency.card.persistent-bots.how",
       "transparency.card.voice-call-ending.effect",
-      "transparency.card.voice-list-briefing.effect",
       "transparency.card.voice-work.effect",
       "viewPlugins.error_host_unavailable",
       "viewPlugins.error_missing_entry",

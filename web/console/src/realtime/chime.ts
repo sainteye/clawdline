@@ -33,28 +33,33 @@ export function playChime(context: AudioContext): void {
 }
 
 type AudioContextClass = new () => AudioContext
+type AudioType = 'playback' | 'play-and-record'
 type AudioSession = { type: string }
-const playbackOwners = new WeakMap<AudioSession, { previous: string; count: number }>()
+type AudioOwners = { previous: string; applied: string; calls: number; cues: number }
+const audioOwners = new WeakMap<AudioSession, AudioOwners>()
 
-/** Overlapping cues borrow one category; their last owner restores it once. */
-function borrowPlayback(): () => void {
+/** A call owns duplex audio while it is active. Short standalone cues borrow
+ * playback and cannot override a live microphone route. */
+export function borrowAudioSession(type: AudioType): () => void {
   const session = (globalThis.navigator as { audioSession?: AudioSession } | undefined)?.audioSession
   if (!session) return () => undefined
-  let owner = playbackOwners.get(session)
-  if (!owner) {
-    const previous = session.type
-    try { session.type = 'playback' } catch { return () => undefined }
-    owner = { previous, count: 0 }
-    playbackOwners.set(session, owner)
+  const owner = audioOwners.get(session) ?? { previous: session.type, applied: session.type, calls: 0, cues: 0 }
+  const slot = type === 'play-and-record' ? 'calls' : 'cues'
+  const apply = (next: string) => {
+    if (session.type !== owner.applied || next === owner.applied) return
+    try { session.type = next; owner.applied = session.type } catch { /* refusal-ok: the browser retains its category. */ }
   }
-  owner.count++
+  const requested = () => owner.calls ? 'play-and-record' : owner.cues ? 'playback' : owner.previous
+  audioOwners.set(session, owner)
+  owner[slot]++
+  apply(requested())
   let released = false
   return () => {
     if (released) return
     released = true
-    if (--owner.count) return
-    playbackOwners.delete(session)
-    try { if (session.type === 'playback') session.type = owner.previous } catch { /* refusal-ok: the browser retains its own category. */ }
+    owner[slot]--
+    apply(requested())
+    if (!owner.calls && !owner.cues) audioOwners.delete(session)
   }
 }
 
@@ -94,7 +99,7 @@ export function primeChime(): { play(): void; drop(): void } {
       // the person sent should still be heard, as the copilot's call is;
       // the session goes back to the browser's choice afterwards so the
       // next recording opens the microphone as before.
-      const release = borrowPlayback()
+      const release = borrowAudioSession('playback')
       let finished = false
       const interrupted = () => { if (was.state !== 'running') finish() }
       const finish = () => {

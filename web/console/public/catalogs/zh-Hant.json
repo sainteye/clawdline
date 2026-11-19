@@ -12753,7 +12753,7 @@
   "projectAssistants.fallbackMode": "替代 Agent 目前需要 Auto 模式。已儲存的順序會保留；固定模式不會切換。",
   "projectAssistants.fallbackSaveUnknown": "儲存結果未知。表單會保留，也不會重送。再次變更前，請關閉並重新開啟設定，向來源核對。",
   "projectAssistants.fallbackSaveStale": "設定已在其他地方變更。表單會保留。請關閉並重新開啟設定，查看最新版本。",
-  "transparency.card.voice-list-briefing.effect": "程式保留已完成項目的進度與一批預讀。Live 每次只交付一項，以未被打斷的轉寫活動與安靜視窗判斷介紹進度；這不是已播完音訊的證明。第幾個等指稱仍須獨立核對實際講出的完整名稱，不能用來核准寫入。接續會先消耗目前輸入，不再等助理開口才清空。畫面顯示準備、報告、暫停與未觀察到語音等狀態。讀取失敗及未讀範圍仍會明示；介紹不替使用者回答問題或核准操作。",
+  "transparency.card.voice-list-briefing.effect": "程式保留匯報進度，並預讀下一批。Realtime 播完已準備的匯報後接續；Live 以逐項未中斷的轉寫與安靜視窗估計進度。後續操作的 Session 指稱另有身分核對。使用者可以用自然說法要求繼續或換下一項。讀取失敗和未讀項目仍會明示。",
   "transparency.card.voice-list-briefing.summary": "Realtime 與 GPT-Live 都會自動開始報告，先讀需要本人回覆的 Session，包括未解便條。切換專案時先說專案名稱，接著報告進度、卡點及真正的待決事項。",
   "transparency.card.voice-list-briefing.title": "從列表撥號自動介紹 Session",
   "transparency.card.voice-list-briefing.how": "向確切機器讀取目前摘要、最後回覆，以及現在的問題或未解便條。沿用既有摘要設定與快取規則；摘要啟用時可能使用該 Session 助理的額度。不另開整理模型或持久任務；目前講述期間可準備一個下一批。",

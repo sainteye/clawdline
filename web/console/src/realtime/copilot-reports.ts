@@ -51,10 +51,28 @@ export function relativeSession(text:string):number|'last'|undefined {
 }
 export function sameReference(ref:SessionReference,row:SessionReference){return ref.id===row.id&&ref.label===row.label&&(ref.machine??'')===(row.machine??'')&&(ref.conversation??'')===(row.conversation??'')}
 export function remainingReport(text:string){return /(?:其他|其餘|其余|剩下|還沒|还没).*(?:session|station)|(?:session|station).*(?:其他|其餘|其余|剩下|還沒|还没)/i.test(text)}
-/** Complete requests and short next commands control presentation, never work or writes. */
-export function nextReport(text:string){return /^(?:我(?:是)?說[，, ]*)?(?:請|请|麻煩|麻烦)?(?:你)?(?:去)?(?:介紹|介绍|報告|报告|說明|说明|講|讲|說|说)(?:一下)?[ ]*(?:其他|其餘|其余|剩下)[ ]*(?:的[ ]*)?(?:sessions?|工作階段)(?:[ ]*(?:現在|现在)?(?:在(?:做什麼|做什么|幹嘛|干嘛)|(?:的)?(?:進度|进度|狀況|情况|狀態|状态)))?[。！!？? ]*$|^(?:please )?(?:introduce|describe|report on|tell me about) (?:the )?(?:other|remaining|next) sessions?(?: now)?[.!? ]*$/i.test(text.trim())||/^(?:(?:請|请|那|還有|还有)[，,、 ]*)?(?:其他(?:的)?|下一批|下一段|後面|后面|接下來|接下来)(?:的)?(?:呢|咧)?[？?。.! ]*$|^(?:(?:the )?next(?: batch| sessions?)?|what comes next|(?:what about )?(?:the )?others)[?!. ]*$/i.test(text.trim())}
-export function continueReport(text:string){return nextReport(text)||/^(?:(?:請|请|好|好的|那|可以)[，,、 ]*)?(?:繼續|继续)(?:報告|报告|介紹|介绍|說|说|講|讲|下一段|下一批)?[。.! ]*$|^(?:please )?continue(?: (?:the )?(?:session )?report)?[.! ]*$/i.test(text.trim())}
+/** Presentation controls accept ordinary paraphrases in the active report. */
+function reportRequest(text: string): string {
+  const words = text.normalize('NFKC').toLowerCase().trim().replace(/[\u3002\uff01!\uff1f?.\s]+$/, '')
+  if (/不要|暫停|暂停|別|别|取消|關[閉闭掉]|关[闭掉]|刪除|删除|轉告|转告|傳[送給]|\b(?:do not|don['’]t|stop|pause|cancel|close|delete|send|tell them)\b|[「『“"]/.test(words)) return ''
+  return words
+}
 
+export function nextReport(text: string): boolean {
+  const words = reportRequest(text)
+  if (!words) return false
+  const remaining = /其他|其餘|其余|剩下|還沒|还没|後面|后面|下一|接下|\b(?:remaining|rest|other|others|next|what(?: is|'s) left)\b/
+  const report = /報告|报告|介紹|介绍|說明|说明|[說说講讲]到|進度|进度|[狀状][況况態态]|在做|(?:請|请|麻煩|麻烦)[^，,]*[講讲說说]|\b(?:report|introduce|describe|cover|walk me through|tell me about|go over)\b/
+  const subject = /sessions?|工作[階阶]段|專案|专案|projects?|\bbatch\b/
+  if (remaining.test(words) && subject.test(words) && report.test(words)) return true
+  return /^(?:那|請|请|還有|还有)?[，,、\s]*(?:其他(?:的)?|下一[個个批段]|[後后]面|接下[來来])(?:的)?(?:呢|咧)?$|^(?:(?:the )?next(?: batch| sessions?)?|what comes next|(?:what about )?(?:the )?others)$/.test(words)
+}
+
+export function continueReport(text: string): boolean {
+  if (nextReport(text)) return true
+  const words = reportRequest(text)
+  return /^(?:(?:請|请|好|好的|那|可以)[，,、\s]*)?(?:請|请)?(?:[繼继][續续](?:報告|报告|介紹|介绍|[說说講讲])?|接[著着][說说講讲]|從剛才[沒没][說说]完的地方[繼继][續续])(?:吧|就好)?$|^(?:please )?(?:continue(?: (?:the )?(?:session )?report)?|keep going|pick up where you left off)(?: please)?$/.test(words)
+}
 
 export class SpokenSessions {
  private evidence:SessionReference[]=[]
@@ -146,10 +164,10 @@ export class SessionReportQueue {
   if(!this.page.error)this.prefetch();else this.paused=true
  }
 }
-export const SESSION_REPORT_GUIDANCE = `Explain only the supplied Sessions, in their supplied order. For each, say its supplied label once as an exact reference anchor and explain the goal, progress and current situation in everyday language. ${SESSION_STATUS_SPEECH} Lead with any current pending question and unresolved Notes for that Session. Use evidence for blockers and decisions. Old recaps and deliveries cannot authorize an action. The application prepares subsequent batches; report only what it supplies. Continue after any already-said text. Requests for other or next Sessions move past an interrupted item; requests to continue resume it.`
+export const SESSION_REPORT_GUIDANCE = `Explain only the supplied Sessions, in their supplied order. For each, use a clear and stable spoken name, and explain the goal, progress and current situation in everyday language. ${SESSION_STATUS_SPEECH} Lead with any current pending question and unresolved Notes for that Session. Use evidence for blockers and decisions. Old recaps and deliveries cannot authorize an action. The application prepares subsequent batches; report only what it supplies. Continue after any already-said text. Requests for other or next Sessions move past an interrupted item; requests to continue resume it.`
 
 export function sessionReportGuidance(language = '') {
   return /^zh(?:-|$)/i.test(language)
-    ? '依提供的順序介紹這次的 Session，完整說出每個 Session 的名稱一次，再用日常口語講進度、卡在哪，以及真正需要使用者決定或處理的事。沒有待決事項時，直接講進度和卡點，略過「目前沒有需要你決定或處理的事」，即使摘要寫了這句也略過。跨 Project 匯報時，先報第一個專案的名稱。每次換專案，在介紹該專案的第一個 Session 前先說專案名稱，例如「接下來是 Cedar 專案的 Session」。同一專案內可以直接接下一個 Session。以目前的問題和未處理的便條為準。只報目前給的資料，不介紹還沒讀到的項目。接續時只補還沒說完的內容；明確要求下一批或其他 Session 時跳過被打斷的項目。'
+    ? '依提供的順序介紹這次的 Session，每個 Session 用清楚且一致的口語名稱帶出，再講進度、卡在哪，以及真正需要使用者決定或處理的事。沒有待決事項時，直接講進度和卡點，略過「目前沒有需要你決定或處理的事」，即使摘要寫了這句也略過。跨 Project 匯報時，先報第一個專案的名稱。每次換專案，在介紹該專案的第一個 Session 前先說專案名稱，例如「接下來是 Cedar 專案的 Session」。同一專案內可以直接接下一個 Session。以目前的問題和未處理的便條為準。只報目前給的資料，不介紹還沒讀到的項目。接續時只補還沒說完的內容；明確要求下一批或其他 Session 時跳過被打斷的項目。'
     : SESSION_REPORT_GUIDANCE
 }
