@@ -13,6 +13,8 @@ import { BotAvatar } from "./BotAvatar"
 import "./chat-presentation.css"
 import {BotSidePanel,type BotInfoTab} from "./BotSidePanel"
 import {BotDetailsPanel} from "./BotDetailsPanel"
+import {DevServers,DevServerTitle,serverTitle} from "./DevServers"
+import {useDevServerObservation} from "./useDevServerObservation"
 import { BotSettings } from "./BotSettings"
 import { BotTemplate } from "./BotTemplate"
 import { TeamApprovals } from "./Groups"
@@ -20,8 +22,13 @@ import { Routines } from "./Routines"
 import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import { ChatRows } from "./ChatRows"
+import { HandoffCard } from "./HandoffCard"
+import { handoffWords } from "./handoff-card-words"
+import { useHandoffCard } from "./useHandoffCard"
 import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer, MAX_PICTURES } from "./Composer"
+import { BotCallControls, useBotCall } from "./BotCall"
+import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { Trace } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
@@ -83,7 +90,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [infoTab,setInfoTab]=useState<BotInfoTab>("details"),[infoOpen,setInfoOpen]=useState(false),[settingsRevision,setSettingsRevision]=useState(0)
   const setSettings=(open:boolean)=>{if(open)setInfoTab("settings");setInfoOpen(open)}
-  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);setInfoOpen(true);if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
+  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);setInfoOpen(true);if(tab==="details")servers.refresh();if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
   const identityButton=useRef<HTMLButtonElement>(null)
   const [templateOpener,setTemplateOpener]=useState<HTMLButtonElement|null>(null)
   const [browserOpener,setBrowserOpener]=useState<HTMLButtonElement|null>(null)
@@ -129,9 +136,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const legacyAtMount=useRef(view.unverifiedDrafts.active(draftKey,scope)).current
   const acceptedAtMount=admittedReceipt(heldAtMount?.receipt)?heldSendAtMount:null
   const lockedAtMount=inFlightAtMount||acceptedAtMount?null:heldSendAtMount
+  const lockedDraft=lockedAtMount&&!isBotCallSend(lockedAtMount.command.idempotency_key)?lockedAtMount:null
   const observation=useRef(new ChatObservation(heldAtMount?.receipt)).current
   const uncertain=()=>{const held=view.heldOutcomes.get(draftKey);return !!held&&!(held.intent.command.operation==="send"&&admittedReceipt(held.receipt))}
-  const [text,setText]=useState(()=>lockedAtMount?lockedAtMount.text:legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedAtMount?lockedAtMount.quote_message_id:legacyAtMount?.quote??entryDraft.quote)
+  const [text,setText]=useState(()=>lockedDraft?.text??legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedDraft?.quote_message_id??legacyAtMount?.quote??entryDraft.quote)
   const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>((inFlightAtMount??acceptedAtMount)?.text??null)
   const [localSend,setLocalSend]=useState("")
   const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
@@ -145,7 +153,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const legacyBlocked=()=>!!view.unverifiedDrafts.active(draftKey,scope)||!!view.unverifiedDrafts.problem(draftKey)
     || (entryUnknown.current&&!view.unverifiedDrafts.continuing(draftKey,scope))
   const scroll=useRef<HTMLDivElement>(null),alive=useRef(true),currentData=useRef(data),lastSeq=useRef(0),epoch=useRef("")
-  const stopping=useRef(false)
+  const stopping=useRef(false),callViewFrontier=useRef(0)
   const [queueAction,setQueueAction]=useState<{id:string;operation:"send_now"|"stop"}|null>(null)
   const queueInFlight=useRef(false)
   const [memoryNoteDraft,setMemoryNoteDraft]=useState<MemoryNoteDraft|null>(null)
@@ -164,6 +172,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   currentData.current=data;timelineRef.current=timeline;headRef.current=head;permissionRows.current=permissions;traceRows.current=traceSummaries;detailRows.current=details
   const fence=useCallback((d:W.ProjectAssistantGetResponse):W.ProjectAssistantFence=>({key:d.bot.key,project:d.bot.project,conversation_id:d.conversation.id,binding_id:d.conversation.binding_id,generation:d.conversation.generation}),[])
   const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.machineID===key.machine_id&&s.authorizationRevision===grant),[source,current,grant,key.machine_id])
+  const enabled=!recoveryRequired&&!!data&&canWrite(data.source)
+  const handoff=useHandoffCard(source,current,head?.current_fence,enabled,
+    JSON.stringify([head?.current_fence,head?.memory_revision,head?.conversation.active_turn_id,head?.conversation.active_turn_id?"":head?.bot_version]))
+  const [editingHandoff,setEditingHandoff]=useState(false)
+  useEffect(()=>{if(!handoff.available)setEditingHandoff(false)},[handoff.available])
   const fail=useCallback((e:unknown)=>{if(valid())setError(errorCode(e))},[valid])
   const changeText=(value:string)=>{view.stage(draftKey,value);setText(value)}
   const flush=()=>setDraftDurable(view.flush(draftKey))
@@ -202,7 +215,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
     const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
     const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows);observation.apply(page)
-    epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier
+    epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier;callViewFrontier.current=page.head.event_frontier
     headRef.current=page.head;setHead(page.head);currentData.current=fresh;setData(fresh)
     setMore(page.next_cursor);setError("")
     // No receipts in a bounded snapshot means an unknown local intent remains unknown.
@@ -235,7 +248,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     finally{reads.current.delete(control);if(collectionBusy.current.get(mode)===control)collectionBusy.current.delete(mode)}
   },[read,request,valid,adoptHead,lock,fail])
   refreshRun.current=async(manual)=>{
-    if(!valid()||source.current?.()===false||document.visibilityState==="hidden"&&!manual&&!observation.active||recovery.current&&!manual)return
+    if(!valid()||source.current?.()===false){if(call.active)call.end("disconnected");return}
+    if(document.visibilityState==="hidden"&&!manual&&!observation.active||recovery.current&&!manual)return
     if(timer.current){clearTimeout(timer.current);timer.current=null}
     // Consume a final catch-up demand once. An older snapshot must not turn
     // it into an immediate loop; the existing cadence still owns later reads.
@@ -264,7 +278,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
             }
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
-          lastSeq.current=page.next_seq;setError("")
+          lastSeq.current=page.next_seq;callViewFrontier.current=page.has_more?page.next_seq:page.head.event_frontier;setError("")
           await Promise.all([
             before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission)?collection("permissions"):undefined,
             before.trace_category_count!==page.head.trace_category_count||page.items.some(row=>row.event?.trace)?collection("traces"):undefined,
@@ -345,7 +359,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   useEffect(()=>{markVisible()},[messages,data])
   useEffect(()=>{identityButton.current?.focus({preventScroll:true})},[identity])
   const onScroll=()=>{const el=scroll.current;if(!el)return;const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;followingRef.current=end;setFollowing(end);view.position.set(draftKey,{top:el.scrollTop,following:end});markVisible()}
-  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal)=>Promise<T>):Promise<T>=>{
+  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal,head:W.ProjectAssistantReadViewResponse)=>Promise<T>):Promise<T>=>{
     const captured=currentData.current,capturedEpoch=epoch.current
     if(recovery.current||!captured||!canWrite(captured.source)||!valid())throw failure("pa_read_only")
     const control=new AbortController();activeMutations.current.add(control)
@@ -360,7 +374,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const fresh:W.ProjectAssistantGetResponse={contract_version:page.contract_version,bot:page.snapshot!.bot,conversation:page.head.conversation,source:page.source}
       // Preflight cannot replace the visible window or advance replay past unseen facts.
       if(recovery.current||s.aborted||!valid()||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence))throw failure("pa_read_only")
-      return operation(fresh,s)
+      return operation(fresh,s,page)
     },control.signal)}finally{activeMutations.current.delete(control)}
   }
   const [images,setImages]=useState<string[]>([])
@@ -385,8 +399,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setSending(null);setUnknown(false);repaintJournal()
   },[timeline,receipt,view,draftKey])
   const send=async()=>{
-    if(busy||unknown||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
-    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(pictures.length?{images:pictures}:{})}
+    if(call.active||busy||unknown||!handoff.ready||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||editingHandoff||handoff.mutating()||handoff.error||(!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return
+    const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
+    const submitted=text,pictures=images,selected=files,intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
@@ -450,9 +465,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
       const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
+      const field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
+      const handoffRefused=field?.startsWith("handoff_")
+      if(valid()&&handoffRefused)handoff.conflict(code)
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||owner==="active")restore()
-      if(valid()){if((!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
+      if(valid()){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
     }finally{if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
   }
 
@@ -514,8 +532,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(legacyBlocked()){
       if(!view.unverifiedDrafts.writeNew(draftKey,scope)){repaintJournal();return}
     }else if(!view.heldOutcomes.setAside(draftKey)){repaintJournal();return}
-    view.stage(draftKey,"");view.quotes.delete(draftKey);flush()
-    setText("");setQuote("");setImages([]);setFiles([]);rememberFiles(false);setFilesLost(false)
+    if(!held||!isBotCallSend(held.intent.command.idempotency_key)){
+      view.stage(draftKey,"");view.quotes.delete(draftKey);flush()
+      setText("");setQuote("");setImages([]);setFiles([]);rememberFiles(false);setFilesLost(false)
+    }
     setReceipt(null);setUnknown(false);setError("");setInspection(null);repaintJournal()
   }
 
@@ -670,6 +690,24 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     }catch(e){if(!control.signal.aborted&&valid()){fail(e);if(errorCode(e)!=="pa_capacity_full")lock()}}
     finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history");if(valid())setEarlierLoading(false)}
   }
+  const viewHandoffHistory=(bookmark?:string)=>{
+    const timeline=scroll.current
+    if(!timeline)return
+    followingRef.current=false;setFollowing(false)
+    const message=(bookmark?timeline.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(bookmark)}"]`):null)
+      ??timeline.querySelector<HTMLElement>("[data-message-id]")
+    if(message){message.scrollIntoView({block:"center"});message.focus({preventScroll:true})}
+    else timeline.focus()
+  }
+  const prepareHandoff=async()=>{
+    await handoff.update("prepare")
+    if(!valid())return
+    setInfoOpen(false)
+    requestAnimationFrame(()=>{
+      const card=scroll.current?.querySelector<HTMLElement>(".pa-handoff-card")
+      card?.scrollIntoView({block:"nearest"});card?.focus({preventScroll:true})
+    })
+  }
   const exportBot=async()=>{
     const control=new AbortController()
     reads.current.add(control);setExporting(true);setExportError("")
@@ -731,12 +769,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     try{await mutate((_,signal)=>{attempted=true;return source.forget(request,signal)})}
     catch(error){if(!attempted||!memoryOutcomeUnknown(error))memoryForget.current=null;throw error}
     memoryForget.current=null
+    void handoff.refresh()
     await loadExport().catch(fail)
     void refresh(true)
   }
   // Opening a conversation draws chat-shaped placeholders after 150ms, until its first read answers.
   const chatSkeleton=useShowAfter(!data&&!error)
-  const bot=data?.bot??summary.bot,enabled=!recoveryRequired&&!!data&&canWrite(data.source), parts=partitionMessages(messages,turns)
+  const bot=data?.bot??summary.bot, parts=partitionMessages(messages,turns)
   const activeTurn=turns.find(turn=>turn.id===data?.conversation.active_turn_id&&(turn.state==="running"||turn.state==="waiting_permission"))
   const live=!recoveryRequired&&!error&&source.current?.()!==false&&liveActivity(summary.source)&&liveActivity(data?.source??summary.source)
   const permissionCards=permissions.map(summary=>{
@@ -752,6 +791,65 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
     return()=>clearTimeout(timer)
   },[nextDeadline,permissionTick])
+  const callObservation=()=>{
+    const d=currentData.current,h=headRef.current
+    if(!d||!h||!epoch.current||!valid()||recovery.current||error||source.current?.()===false
+      ||!canWrite(d.source)||document.hidden||!navigator.onLine||browserOpener||templateOpener
+      ||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return null
+    return {
+      owner:JSON.stringify([accountKey,readerID,grant,epoch.current]),
+      fence:h.current_fence,activeTurn:h.conversation.active_turn_id,turns,
+      messages,
+      frontier:callViewFrontier.current,caughtUp:handoff.ready&&h.event_frontier<=callViewFrontier.current,
+    }
+  }
+  const submitCall=async(input:CallInput)=>{
+    if(!handoff.ready||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return {state:"sendFailed" as const}
+    const intent:W.ProjectAssistantSendRequest={
+      command:command(key,"send",botCallSendID(input.callID)),fence:input.fence,text:input.text,quote_message_id:"",
+    }
+    const id=intent.command.idempotency_key
+    let attempted=false
+    const received:{answer:W.ProjectAssistantReceipt|null}={answer:null}
+    try{
+      await mutate(async(d,s,page)=>{
+        if(input.signal.aborted||!sameFence(input.fence,page.head.current_fence)||d.conversation.active_turn_id
+          ||page.snapshot!.queued_messages.length||page.head.unknown_turn_count||view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
+        view.heldOutcomes.set(draftKey,{intent,receipt:null});view.heldOutcomes.beginTransport(draftKey,id)
+        attempted=true
+        // Once the source might have admitted the turn, hangup only ends the
+        // audio lease. The original command still settles its own journal.
+        const result=await source.send(intent,s)
+        if(!sendAcknowledgement(result,intent))throw failure("pa_outcome_unknown")
+        received.answer=result.receipt
+      })
+    }catch(e){
+      if(attempted&&handoffInputRefused(e)) {
+        view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null)
+        if(valid()){setReceipt(null);setUnknown(false);repaintJournal();void handoff.refresh()}
+        return {state:"sendFailed" as const}
+      }
+      if(!attempted||provablyNotSent(e)) {
+        if(attempted){view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null);repaintJournal()}
+        return {state:"sendFailed" as const}
+      }
+    }
+    const {answer}=received
+    const admitted=admittedReceipt(answer)
+    const hold=admitted||!answer||answer.state==="unknown"
+    view.heldOutcomes.settle(draftKey,id,hold?{intent,receipt:answer}:null)
+    view.heldOutcomes.endTransport(draftKey,id,answer)
+    if(answer)observation.accept(answer)
+    if(valid()){
+      repaintJournal();setReceipt(answer);setUnknown(uncertain());void refresh(true)
+    }
+    if(admitted&&answer)return {state:"admitted" as const,turn:answer.resource_id,eventSeq:answer.event_seq}
+    return {state:hold?"sendUnknown" as const:"sendFailed" as const}
+  }
+  const callView=callObservation()
+  const {call,state:callState}=useBotCall({current:callObservation,submit:submitCall})
+  const canCall=!!callView?.caughtUp&&!callView.activeTurn&&!busy&&!unknown&&!legacyBlocked()
+    &&!view.heldOutcomes.has(draftKey)&&!parts.queued.length&&!head?.unknown_turn_count
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
   const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
@@ -782,13 +880,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=botBrowserSupported(source)
   const canReadActions=!!data&&!recoveryRequired&&source.current?.()!==false&&canMarkConversationRead(data.source)
+  const servers=useDevServerObservation({source,bot,enabled,active:canReadActions&&!browserOpener&&!templateOpener,pulse:head})
+  const serverLabel=serverTitle(servers.state,w)
   return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={bot.name}><div className="pa-chat" inert={!!browserOpener}>
     <header className="pa-chat-header">
       <button className="pa-circle pa-chat-back" data-show-back={showBack||undefined} onClick={()=>{flush();onBack()}} aria-label={backLabel??w.back} title={backLabel??w.back}>‹</button>
       <h2 className="pa-chat-heading">
-        <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}`} aria-expanded={infoOpen} onClick={()=>infoOpen?setInfoOpen(false):openInfo("details")}>
+        <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}${serverLabel?" · "+serverLabel:""}`} aria-expanded={infoOpen} onClick={()=>infoOpen?setInfoOpen(false):openInfo("details")}>
           <BotAvatar appearance={bot.appearance} size={28} mood={mood}/>
-          <span className="pa-chat-identity-text"><strong>{bot.name}</strong><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
+          <span className="pa-chat-identity-text"><span className="pa-chat-server-heading"><strong>{bot.name}</strong><DevServerTitle observation={servers} w={w}/></span><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
           <svg className="pa-chat-identity-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
       </h2>
@@ -808,6 +908,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
       {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} total={orphanTraces.length} onDetail={row=>void detail("trace",row.id,row.detail_cursor)} w={w}/>}
       {!!traceMore&&<button className="pa-pill pa-trace-more-btn" type="button" aria-label={`${w.trace} · ${w.more}`} onClick={()=>void collection("traces",traceMore).catch(()=>{})}>{w.more}</button>}
+      {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
+        onEdit={(ref,text)=>handoff.update("edit",ref,text)} onKeep={ref=>void handoff.update("keep",ref)}
+        onHistory={viewHandoffHistory} onRefresh={()=>void handoff.refresh()} onEditing={setEditingHandoff}/>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       <div className="tx-jump pa-jump" data-end="bottom" data-shown={following?"off":"on"} data-fresh="off">
@@ -834,18 +937,21 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           </button>}
       </div>
     })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{legacyBlocked()&&<div className="pa-held-send" role="group" aria-label={w.unverifiedDraft}><p>{w.unverifiedExplanation}</p><button type="button" disabled={busy||!enabled} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.unverifiedDrafts.history(draftKey,scope).map((draft,i)=><div className="pa-held-send pa-held-aside" role="group" aria-label={w.unverifiedDraft} key={i}><p>{w.unverifiedDraft}: <span className="pa-held-text">{draft.text}</span>{draft.quote&&<> · {w.heldQuoted}: {messages.find(m=>m.id===draft.quote)?.text??w.quoteMissing}</>}</p></div>)}{view.unverifiedDrafts.problem(draftKey)&&<p role="alert">{w.unverifiedUnsaved}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
-      {fileError&&<p role="alert">{fileError}</p>}<Composer key={draftKey} text={text} onText={changeText} onSend={()=>void send()} onStop={data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost||sendingAccepted} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      {fileError&&<p role="alert">{fileError}</p>}
+      <BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language}/>
+      <Composer key={draftKey} callActive={call.active} text={text} onText={changeText} onSend={()=>void send()} onStop={data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled} disabled={!enabled||unknown||legacyBlocked()} sendBlocked={filesLost||sendingAccepted||!handoff.ready||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
 
     {templateOpener&&<BotTemplate opener={templateOpener} source={source} current={current} scope={scope} available={()=>valid()&&!recovery.current&&!!currentData.current&&canRead(currentData.current.source)&&sameConversation({key:currentData.current.bot.key,project:currentData.current.bot.project,conversation_id:currentData.current.conversation.id},scope)} w={w} onClose={()=>setTemplateOpener(null)}/>}
     <BotSidePanel inactive={!!browserOpener||!!templateOpener} opener={identityButton} bot={bot} open={infoOpen} tab={infoTab} onTab={openInfo} onClose={()=>setInfoOpen(false)} w={w} detailsActions={
-        <div className="pa-info-actions">
+        <><DevServers key={JSON.stringify([accountKey,readerID,source.authorizationRevision,bot.key,bot.project])} source={source} bot={bot} enabled={enabled} active={infoOpen&&infoTab==="details"&&!browserOpener&&!templateOpener} observation={servers} w={w}/><div className="pa-info-actions">
+          {handoff.canPrepare&&<button type="button" className="pa-pill" disabled={busy||unknown||handoff.busy} onClick={()=>void prepareHandoff()}>{handoffWords(language).prepare}</button>}
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
           <button type="button" className="pa-pill" disabled={checkingUpdates} aria-busy={checkingUpdates||undefined} onClick={()=>void checkForUpdates()}>{w.refresh}</button>
-        </div>
-      } editor={<BotSettings key={settingsRevision} embedded part={infoTab==="settings"?"rarely":"often"} onFrequent={()=>openInfo("details")} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={bot.agent==="claude"&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettingsRevision(n=>n+1);setSettings(false)}}catch(e){fail(e);throw e}}}/>} children={{
+        </div></>
+      } editor={<BotSettings key={settingsRevision} embedded part={infoTab==="settings"?"rarely":"often"} onFrequent={()=>openInfo("details")} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage w={w} enabled={enabled} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettingsRevision(n=>n+1);setSettings(false)}}catch(e){fail(e);throw e}}}/>} children={{
       details:<><BotDetailsPanel showInstructions={false} bot={bot} projectName={projectName||bot.project.project_id} machineName={machineName||source.machineName||key.machine_id} onSettings={()=>openInfo("settings")} routinesOpen={routines} onRoutines={()=>setRoutines(open=>!open)} w={w}/>{routines&&<Routines embedded key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])} onClose={()=>setRoutines(false)}/>}
         <div className="pa-info-data">
           <div className="pa-info-actions">

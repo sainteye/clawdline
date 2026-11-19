@@ -204,6 +204,9 @@ func (s *Store) changeMemory(ctx context.Context, cmd pa.Command, change func(*a
 		if err = clearRoutineProgress(ctx, tx, a); err != nil {
 			return old, err
 		}
+		if err = forgetHandoffCard(ctx, tx, cmd.Key); err != nil {
+			return old, err
+		}
 	}
 	expected := a.Bot.Version
 	a.Bot.Version++

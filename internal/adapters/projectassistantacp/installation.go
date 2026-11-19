@@ -282,6 +282,10 @@ func nativeLimits() Limits {
 	return Limits{RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotProcessCensusBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond}
 }
 
+// SourceProcessLimits uses the existing registered physical-process budgets.
+// It contains no provider configuration, credentials or approval authority.
+func SourceProcessLimits() Limits { return nativeLimits() }
+
 // InstalledClaudeProvider is the production factory. Its construction and all
 // metadata operations are inert. Runtime admission sets up the supplied adapter
 // on first use and finds the person's tools; only Open starts the adapter.

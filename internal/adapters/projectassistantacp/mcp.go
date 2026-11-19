@@ -28,7 +28,8 @@ import (
 
 // ownedMCPServer implements the JSON response profile of MCP Streamable HTTP
 // (2025-06-18). It exposes only host-bound functions, never a daemon credential,
-// filesystem, terminal, arbitrary actor, or human approval operation.
+// arbitrary actor or human approval operation. Source server commands use
+// the Host's separate exact review and process owner, not an Agent terminal.
 // One listener belongs to one already bounded runtime process slot. Accepted
 // connections and outbound ACP requests share that client's RPCPending budget.
 type ownedMCPServer struct {
@@ -348,6 +349,14 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var tool struct {
 			Name string `json:"name"`
 		}
+		if json.Unmarshal(f.Params, &tool) == nil && tool.Name == "start_dev_server" {
+			// Source cards remain answerable until this actual native execution ends.
+			// The parent deadline is already supplied by the Host, not by arguments.
+			if deadline, ok := s.ctx.Deadline(); ok {
+				timeout = time.Until(deadline) + s.limits.WriteTimeout
+				_ = http.NewResponseController(w).SetWriteDeadline(deadline.Add(s.limits.WriteTimeout))
+			}
+		}
 		if json.Unmarshal(f.Params, &tool) == nil && (tool.Name == "create_bot" || tool.Name == "update_bot") {
 			// These calls wait for an explicit human decision for up to the
 			// upstream 270 seconds; the ordinary RPC deadline is shorter.
@@ -358,6 +367,10 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	result, err := s.request(ctx, f)
+	fenced, hasFence := result.(serverMCPReply)
+	if hasFence {
+		result = fenced.value
+	}
 	var reply frame
 	reply.JSONRPC, reply.ID = "2.0", f.ID
 	if err != nil {
@@ -372,6 +385,10 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		encoded, _ = json.Marshal(reply)
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if hasFence {
+		s.writeServerReply(ctx, w, f, encoded, fenced)
+		return
+	}
 	_, _ = w.Write(encoded)
 }
 
@@ -426,6 +443,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		return map[string]any{}, nil
 	case "tools/list":
 		list := mcpTools()
+		if servers, ok := s.tools.(app.DevServerTools); ok && servers.DevServersAvailable(ctx) == nil {
+			list = append(list, mcpDevServerTools()...)
+		}
 		if team, ok := s.tools.(app.TeamTools); ok && team.TeamAvailable(ctx) == nil {
 			list = append(list, mcpTeamTools()...)
 		}
@@ -447,6 +467,14 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 			return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true), nil
 		}
 		result := mcpToolResult(value, false)
+		switch q.Name {
+		case "start_dev_server", "list_dev_servers", "stop_dev_server", "dev_server_logs":
+			tools, ok := s.tools.(app.DevServerTools)
+			if !ok {
+				return nil, refusal(pa.Unsupported, "server_publication")
+			}
+			return serverMCPReply{value: result, publish: tools.PublishDevServers}, nil
+		}
 		if q.Name == "list_team" || q.Name == "create_bot" || q.Name == "update_bot" {
 			encoded, err := json.Marshal(result)
 			if err != nil || len(encoded)+browserFrameMargin > s.limits.FrameBytes {
@@ -471,6 +499,29 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
 	switch name {
+	case "start_dev_server", "list_dev_servers", "stop_dev_server", "dev_server_logs":
+		tools, ok := s.tools.(app.DevServerTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "server_tools")
+		}
+		if err := tools.DevServersAvailable(ctx); err != nil {
+			return nil, err
+		}
+		var q app.DevServerRequest
+		if mcpDecode(mcpEmpty(arguments), &q) != nil {
+			return nil, refusal(pa.Invalid, "server_arguments")
+		}
+		switch name {
+		case "start_dev_server":
+			q.Action = "start"
+		case "list_dev_servers":
+			q.Action = "list"
+		case "stop_dev_server":
+			q.Action = "stop"
+		case "dev_server_logs":
+			q.Action = "logs"
+		}
+		return tools.DevServers(ctx, q)
 	case "list_team", "create_bot", "update_bot":
 		team, ok := s.tools.(app.TeamTools)
 		if !ok {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -158,7 +159,8 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	}
 	netSource := s.prepareBotNetwork(i)
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
-		Network: netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
+		NativeHistory: projectassistantstore.NewNativeMaintenanceHistoryReader(s.cfg.Dir),
+		Network:       netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
 		NetworkTransport: s.botNetworkTransport,
 		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,
@@ -297,7 +299,7 @@ func (s *Server) projectAssistantSource(ctx context.Context, key pa.BotKey, writ
 	}
 	f.Enabled = f.Enabled && allowed && v.ProjectAssistantsEnabled()
 	source := pa.SourceStatus{MachineID: i.MachineID, State: pa.SourceOnline,
-		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access()}
+		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access(), DevServersSupported: runtime.GOOS != "windows"}
 	if a, ok := ctx.Value(accessKey{}).(access); ok {
 		_, _, _, writable, err := s.projectAssistantHuman(ctx, a, i)
 		if err != nil {

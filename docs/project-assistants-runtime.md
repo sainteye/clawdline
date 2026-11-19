@@ -300,6 +300,48 @@ unit. Filtered SQLite memory, rather than opaque provider context, is the source
 for the new opening after forgetting. This does not establish real Claude/Codex
 adapter admission or claim that a native provider erased its external memory.
 
+## A reviewed handoff can open a fresh Bot conversation
+
+The Bot information panel offers **Prepare a fresh conversation** after a
+native conversation exists and the source is idle. The card starts from the
+same filtered history selection used by the fresh native opening. People can
+review that text, save an edit, discard an unsaved edit, jump to original
+history, or keep the current conversation. A preparation, edit, or Keep has no
+native effect. Keep leaves the existing binding eligible for ordinary resume.
+
+The source persists a draft and its edit receipts in source-local SQLite
+tables. Those tables stay outside the portable v12 Bot archive and its
+canonical digest. The draft belongs to the exact Bot, Project, conversation,
+binding generation, memory revision and instruction revision. The HTTP and
+Cloud Pass routes first appear at API 93. Each human send must name the
+displayed draft revision while a current draft exists. Input admission,
+the user message, its receipt and adoption commit together. A stale revision
+fails without admitting an input. Source receipts let a client inspect an
+uncertain response without starting another turn.
+
+The admitted turn opens the existing fresh-session path. At its final memory
+and authorization boundary, the source claims the summary once and clears the
+stored text. The Agent receives it as quoted history alongside the actual new
+input. Forget withdraws an unclaimed draft and clears its text in the memory
+transaction. An adopted input with no current grant fails closed. After a
+restart a saved draft remains available. An adopted turn that has lost its
+in-process grant is never reauthorized from its receipt, and an unknown
+handoff turn keeps the native outcome unknown.
+
+The source regression uses real SQLite, the normal HTTP handler and the
+verified Cloud Pass seam with a scripted Provider. The browser regression
+uses the real Bot chat with desktop and mobile Chromium viewports. With web
+dependencies prepared and existing Playwright and Chromium installed, run:
+
+```sh
+go test ./internal/adapters/projectassistantstore -run '^TestHandoffCard'
+go test ./internal/transport/http -run '^TestHandoffCardSource'
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/path/to/browser-cache \
+CLAWDLINE_HANDOFF_CARD_ARTIFACTS=/path/to/evidence \
+go test ./internal/transport/http -run '^TestHandoffCardBrowser$' -count=1
+```
+
 ## Resuming after a restart
 
 Since 2026-11-14, as in Codync (host/src/agent/bot/mod.rs RESUME_PROMPT,
@@ -321,8 +363,9 @@ person's next message as before.
 
 This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
 against the pinned Codync `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
-It distinguishes existing components from the product behavior they do not yet
-provide. It is not a production UI or installed-binary acceptance receipt.
+The table tracks subsequent source construction as well as that original
+baseline; its API 92 server row describes the current candidate, not the older
+893 build. It is not a production UI or installed-binary acceptance receipt.
 
 Templates (`project-assistants-templates.md`), message reactions, pinned/Project
 roster sections and mark-all-read already have implementations. They must not
@@ -333,7 +376,7 @@ contains other features. Current source boundaries are:
 | --- | --- | --- |
 | Editable handoff card | `session_handoff.go` creates a source-owned, filtered opening for a fresh native session. | A persisted editable draft, Keep action and atomic adoption by the next input are missing. Preserve the original history and bind adoption to the Bot, Project, conversation/generation, memory and instruction revisions. Test concurrent edit/Keep/send, Forget, revocation, restart and lost acknowledgement without replaying unknown work. |
 | Continuous Bot call | `Composer.tsx` appends recognized speech to the current unsent draft. General Session voice has a separate owner. | Bind call ID, input, replies and history to the chosen Bot/conversation; support speech playback, mute/interruption and explicit end. Test account/Bot changes, disconnect, pending permission and late results after end with synthetic audio before any live call. Dictation is not this lifecycle. |
-| Bot-owned dev server | `internal/adapters/devstack` reads declarations and probes ports; the Project devstack HTTP route accepts GET only. | A separately owned command/process tree, approved command and directory, start/list/stop/log operations and durable outcomes are missing. Test turn completion, concurrent start/stop, deleted Bot, revoked source, Host restart and lost acknowledgement. Stop only a verified owned process generation; do not inherit provider credentials or expose arbitrary repository commands through the read route. |
+| Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. The existing Project devstack route stays read/probe only. | New-control Cloud carriage, clean-restart intent and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Live context readings and the optional ACP compaction port retain the native session and execution fence. | Host-owned idle admission and persistent intent/terminal/unknown recovery remain missing. Do not infer completion from lower token usage or send maintenance as ordinary chat. Reader/recovery qualification must precede any new-format writer; no policy control should appear before the operation exists. |
 
 The relevant pinned upstream sources are `host/src/chat/handoff.rs`,
@@ -351,3 +394,260 @@ are absent. The archive reader's independent qualification and remaining recover
 gaps are recorded in [memory and settings](project-assistants-memory-settings.md#independent-archive-binary-qualification).
 No new API level, archive generation or maintenance writer is enabled by this
 audit.
+
+
+### Source-owned development servers (API 92 construction)
+
+One Host owns a source-local server registry independently of its Engine and
+native executions. Enabling the already opt-in Bot feature explicitly installs
+the local catalog and opens that registry; metadata inspection starts nothing.
+The source launcher snapshots only basic source environment values, excludes
+provider/profile credentials and runtime startup hooks, and resolves an existing
+canonical starting directory under the current full Project. This directory
+check is not a shell/filesystem/network sandbox. Approved commands run with the
+source user's files and network authority, as the pinned upstream specification
+describes. Windows source launch remains unavailable.
+
+The existing owned native MCP endpoint advertises `start_dev_server`,
+`list_dev_servers`, `stop_dev_server` and `dev_server_logs` only to a current
+source-bound execution with the service available. Start accepts command,
+optional name/folder and an explicit idempotency key. The other tools use known
+IDs; no tool accepts Bot/Project identity, environment, PID or approval. Host
+source/canonical Project authority is checked before effects and again before
+content is returned. The actual MCP body write and flush also cross the Host's
+current memory/publication fence, under the existing write deadline; waiting for
+human review or peer consumption never holds that lock. Source start reviews
+use the actual native execution deadline rather than the shorter ordinary RPC
+budget. A refused last publication returns only a typed code, and a failed or
+partial transport write is never followed by another response frame.
+Mutation keys cache the exact argument hash, no-op and
+uncertain results for that execution; changing a payload conflicts. A cached
+old stop cannot stop a later restarted attempt. Accepted is distinct from
+running. Valid list/log calls also record source tool activity.
+
+Each definition binds Bot, full Project, command, directory and the source
+Forget boundary. A label does not change command authority or start another
+copy. Ordinary memory saves do not invalidate resources. Model listings and
+logs exclude definitions from a different Forget epoch, and publication checks
+run under the existing memory fence. Historical definitions and exact rules
+remain visible/revocable to the person through the human rules API. The
+console's Codex source-rule entry requires API 92; Claude's separate native
+Project rules retain their existing scope. Matching Cloud transport qualification
+remains separate from this source construction.
+
+The source API also exposes typed human list/log reads and start/restart/stop/remove
+controls for existing IDs under `/v1/project-assistants/{bot}/dev-servers`.
+Controls carry the displayed fingerprint, attempt and revision; they accept no
+command, directory, environment or PID. The source checks the same paired human
+principal and current write authority at admission, including when an exact
+standing rule exists. Read-only devices may read history but cannot mutate it.
+Human history remains readable after native completion or Host disable; this
+does not expose forgotten history to the model. An old Forget provenance cannot
+be silently transferred to a new execution.
+
+The registry compares the complete displayed baseline under its operation lock,
+both before review and at final start admission. A completed intervening attempt
+invalidates an old control. A start/restart key derives a stable attempt identity
+from the trusted principal, machine, Bot, server, action and idempotency key.
+Replaying that same attempt cannot launch another process. Restart first stops
+the observed attempt and may subsequently fail; it is not an atomic external
+stop-and-start transaction. A refusal after the stop reports an unknown overall
+outcome and requires inspection. Stale stop/remove controls refuse and require a fresh
+read; uncertain responses are never automatically retried with a new key. These
+receipts remain source-local and add no portable Bot operations.
+
+Bot details show the server section before the ordinary editor, and only after
+a source read finds servers. Each quiet row opens its first eligible source-provided address, or the available
+log tail when no address is available. Copy/address choices, logs and process
+controls live behind the existing anchored menu, visible on desktop hover
+or keyboard focus and directly available on touch. Logs use a native modal,
+show executable text as plain text, and retain the incomplete-tail warning.
+Source status/permissions still gate every operation; read-only devices retain
+logs. A write locks further controls until a fresh source read succeeds. A lost
+reply displays an inspection request and never automatically resends the write.
+The full source/principal/Bot/Project key remounts this view when its owner changes.
+Current chat event frontiers trigger reads, with demand during a slow read
+coalesced into another read rather than cancelling the first. Closing details
+removes its portalled menu and log sheet. No address is guessed from log text;
+background observation and chat-title summaries remain separate construction.
+
+The existing rules/remove client already has Cloud relay and vocabulary entries;
+its request flag means content access, not local-only transport. The new server
+controls still need their own Cloud carriage, private bridge and UI. Source HTTP
+and client tests do not qualify those destinations.
+
+The command handler requests the existing source-owned permission card, with
+complete structured scope and all four choices. The human card explicitly
+states that source file/network authority is outside the Agent terminal sandbox,
+in English and Taiwan Traditional Chinese. A human selection is persisted
+before being delivered, never sent as a vendor permission RPC. Always allow
+and Never then persist an exact versioned local rule before returning; uncertain
+rule storage releases no launch check. Revocation retains its version so a stale
+card cannot recreate a grant. It affects future starts; stopping an existing
+server is a separate action. The retained Host launch check keeps no native
+review callback and does not expire at the end of a native turn. Source policy
+revocation and Forget stop known owned processes through Host reconciliation;
+they do not automatically restart when policy becomes available again. One old
+forgotten definition cannot stop a new current-epoch definition for the same Bot.
+
+Definitions persist before human review, without an accepted attempt or process.
+Accepted intent, the current-attempt pointer and source-wide process budget
+commit atomically. The attempt ledger compares complete immutable identity and
+revision; the stable storage key does not contain mutable Project/approval
+payload. Lost acknowledgements remain unknown and are never automatically
+replayed. There are at most 64 live definitions, four source-owned attempts,
+8 KiB per complete spec, a 64 KiB output tail per run and 32 mutation receipts
+per native caller, all in the existing capacity register. Unknown owners retain
+occupancy. The HTTP capacity projection reports actual admitted definition and
+attempt counts; retained log/caller buffer occupancy remains explicitly unknown.
+A restored historical output tail is marked incomplete rather than complete
+and empty.
+
+The catalog borrows the Host's existing SQLite writer. Installation is explicit;
+inspection refuses an old/unknown format without writing. Known local catalog
+version 1 upgrades atomically to 2, adding one optional rule per definition;
+old definitions retain epoch zero and no approval. Malformed/partial schemas,
+dangling current pointers and unowned live receipts are refused without repair
+or downstamping. Removing a terminal definition clears command/rule text and
+retains an ID-only tombstone, so late controls cannot address a reused ID.
+These local tables change neither portable Bot core/archive 12 nor SQLite's
+host user_version. The maintenance writer stays closed.
+
+The command adapter now has an optional read-only TCP observer. It pins the
+root before the direct child can be reaped: Darwin uses kernel birth plus the
+exec-stable unique process ID; Linux retains a pidfd and kernel start ticks.
+Each observation brackets the listener read with fresh, complete rooted parent
+and kernel-identity snapshots. A reused PID, changed ancestry, missing root,
+incomplete inventory or unsupported platform returns an unknown/unavailable
+reading, never guessed addresses. Darwin queries lsof with an explicit PID
+intersection and TCP LISTEN selector. Linux joins only the owned processes'
+socket descriptors to TCP tables in the source host's network namespace, then
+rechecks matching descriptors. Other network namespaces remain unsupported. No command text,
+file contents, argv or environment is returned.
+
+OS probes share the existing census byte, descendant and cleanup-time budgets.
+At most four source TCP observations run at once across the process; a busy read
+refuses without queuing another probe, and the existing capacity override may
+only lower this admission limit. The capacity view reports the actual active
+count. The new bound's unregistered guard was exercised red before registration.
+A controlled PID-only comparison disclosed a replaced child's bind; the full
+identity comparison refuses it. Actual Darwin Go HTTP peers cover exclusion of
+an unrelated listener, exec without losing ownership and port closure on cleanup.
+Linux implementation and tests still require their platform CI; a Darwin test
+is not Linux runtime evidence.
+
+The later source-response and selected-chat sections below carry this optional
+observer through server lists and title/details. Cloud carriage and a Host
+background change stream remain separate. Ordinary ACP peers
+retain no observer. It does not replace the existing cleanup supervisor, persist
+kernel facts, adopt an escaped/crashed owner or authorize kill/restart by PID.
+Physical crash/boot recovery and durable clean-restart intent remain separate
+construction; portable Bot/archive 12 and the maintenance writer are unchanged.
+
+The registry owns foreground process handles through the existing ACP physical
+supervisor, without creating another native provider. It drains combined output
+into the bounded tail and retains an acquired handle even when launch returns
+late or fails. Direct-child exit is not descendant cleanup: the exact existing
+process owner still closes its verified tree. Native turn completion, cancellation
+or replacement cannot close that separate Host owner. Host disable/close stops
+known resources; Bot deletion stops them and removes their executable definitions.
+Unknown cleanup is retained and blocks Host replacement. Reopened active receipts
+are unknown observations, never proof of a live/gone process or permission to
+adopt, kill by bare PID or run a command again.
+
+Tests use real temporary SQLite, a synthetic Go ACP subprocess following its
+actual owned HTTP MCP descriptor, stored human approval cards and controlled
+process handles. They cover all four tools, duplicate starts, payload conflicts,
+old stop after restart, Forget filtering, deletion, revocation and unknown cleanup.
+A separately launched real Go HTTP peer survives native turn completion and its
+port closes on Host disable. A controlled whole-Bot reconciliation counterexample
+stops a fresh context's server; the per-definition fix refuses that regression.
+These are local synthetic checks with zero vendor/model requests. They do not
+qualify an installed vendor, production Cloud/UI, physical recovery after Host
+crash, machine reboot or updater rollback. The details component has isolated
+desktop/mobile browser evidence, not installed or production Cloud acceptance.
+The later port-response and selected-chat sections implement owned port reads.
+New-control Cloud carriage and durable clean-restart intent still require
+construction.
+
+Source list/start/stop responses now carry `ports_known` and `ports`, bound to
+that exact definition, attempt and receipt revision. The optional process
+observer reads current owned TCP listeners; a second Owner/Registry check
+rejects a result if stop, restart, removal or owner replacement occurred during
+the OS read. No registry or memory lock spans that read. Known stopped/failed
+attempts report an empty set; unsupported, lost, denied or changing ownership
+remains unknown. These observations are point-in-time reads, not durable
+process ownership or restart authority.
+
+Each source-derived port includes its literal bind, a local HTTP candidate and
+remote HTTP candidates. Loopback has no remote candidate. Wildcard binds use
+current source interface addresses of the same address family, excluding
+loopback and link-local addresses; clients supply neither hosts nor URLs. IPv6
+literals use brackets. These are TCP observations, not HTTP probes or a promise
+of another device's reachability. Remote clients must not open the local-only
+candidate. Source responses retain every server identity; if optional listener
+details exceed the existing native-frame budget, all port observations become
+unknown rather than a partial list being described as complete. The details
+view opens and copies only these source candidates. Local transport plus a
+loopback console origin is required for a local-only candidate: LAN access can
+also use the local transport, so its account key alone does not prove the
+browser is on the source machine. Cloud, LAN and unknown origins use only
+remote candidates. Unknown write results lock navigation/copy as well as process
+changes until a fresh read; logs remain available. Clipboard failures are shown
+without claiming a successful copy. The selected-chat observation below shares
+these readings with the title; this source change does not establish Cloud
+carriage or installed UI acceptance.
+
+
+### Selected-chat server observation
+
+The selected visible chat now owns one observation shared by its title and
+details. It reuses the existing chat read pulse, including a new read-view head
+with the same conversation frontier; server changes need not create a chat
+message. Opening details explicitly refreshes that same owner rather than
+creating a second poller. There is no new timer, global observer map or Host
+change stream. A quiet title prefers the first running server with a known
+port, otherwise its name; `+n` counts the other running servers, not listeners.
+Starting, stopping, failed and unknown readings remain distinct. Stale or
+unconfirmed readings do not supply a title.
+
+One request slot serializes reads and controls, retaining at most one following
+read demand. An abort does not release a non-cooperative request's slot until
+its promise settles. Hidden pages pause; resuming requests a new source read.
+The owner is bound to the source object, machine, grant revision and full
+Bot/Project scope. Scope changes or revocation discard old bodies before they
+can enter the new title, list or log dialog. Read failures retain stale rows
+rather than imply an empty authoritative set. Unknown controls retain an
+inspection lock until an explicit read; neither refresh pulses nor visibility
+changes replay a write. Request keys are created only after local admission.
+
+Controlled-promise tests cover coalescing, read/write exclusion, non-cooperative
+abort, unknown outcomes, read-only authority and late results after revocation
+or closure. Removing the post-read authority check produced a failing private-row
+disclosure counterexample; restoring it passes. Isolated desktop English and
+mobile Taiwan Traditional Chinese browsers exercise the actual Chat and details
+components against a synthetic source: details-closed changes update the title
+while the chat frontier remains unchanged, a held read does not fan out under
+chat refresh, switching Bots excludes its late body, and revocation hides the
+server rows and title. The chat read-view is scripted while server reads use
+the fixture HTTP transport. These checks use no formal daemon, provider/model
+request or private conversation; they do not qualify a full installed App,
+production Cloud transport, server reachability or crash/reboot recovery.
+
+
+The server candidate's minimum API level is 92 after coordinating publication
+order with the group-reaction and message-board owners. API 90 supplies group
+reactions and published API 91 supplies message-board replies. The console must
+not infer source server tools or exact source-command rules from either level;
+all server reads, log reads and controls require 92 before transport. The
+candidate integrates both lower-level implementations from main and regenerates
+the shared contract outputs. A private higher-level build alone does not
+establish that its features have been deployed.
+
+
+A published API 91 source can provide message-board replies without server
+tools. Server support therefore also requires an explicit optional
+`dev_servers_supported` source-status signal, fresh readable authority and API
+92 or newer. A missing or false signal never enables a server read or control,
+even on a higher API level. Read-only readers may inspect existing servers;
+controls still require the current paired-person write grant.

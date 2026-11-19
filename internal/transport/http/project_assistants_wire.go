@@ -321,6 +321,7 @@ func paWireContextSnapshot(value pa.ContextSnapshot) contract.ProjectAssistantCo
 func paWireSourceStatus(value pa.SourceStatus) (contract.ProjectAssistantSourceStatus, error) {
 	var out contract.ProjectAssistantSourceStatus
 	out.MachineID = value.MachineID
+	out.DevServersSupported = value.DevServersSupported
 	out.State = contract.ProjectAssistantSourceState(value.State)
 	out.Readable = value.Readable
 	out.Writable = value.Writable

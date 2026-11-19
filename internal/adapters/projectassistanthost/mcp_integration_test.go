@@ -104,6 +104,11 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 		case "session/prompt":
 			request("initialize", 1, map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]string{"name": "owned-go-peer", "version": "1"}})
 			request("notifications/initialized", nil, nil)
+			if os.Getenv("CLAWDLINE_SERVER_ONLY") == "1" {
+				runSourceServerMCPPeer(request, call, check)
+				write(f.ID, map[string]string{"stopReason": "end_turn"})
+				continue
+			}
 			if os.Getenv("CLAWDLINE_REACTION_ONLY") == "1" {
 				check(call("react", map[string]any{"emoji": "👍"}), false)
 				check(call("react", map[string]any{"emoji": "🎉"}), false)

@@ -73,6 +73,9 @@ export interface SourceClient {
   history(request: W.ProjectAssistantHistoryRequest, signal: AbortSignal): Promise<W.ProjectAssistantHistoryResponse>
   view(request: W.ProjectAssistantReadViewRequest, signal: AbortSignal): Promise<W.ProjectAssistantReadViewResponse>
   send(request: W.ProjectAssistantSendRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
+  canHandoff?(): boolean
+  handoff?(key: W.ProjectAssistantBotKey, conversation: string, signal: AbortSignal): Promise<W.ProjectAssistantHandoffResponse>
+  writeHandoff?(request: W.ProjectAssistantHandoffRequest, signal: AbortSignal): Promise<W.ProjectAssistantHandoffResponse>
   stop(request: W.ProjectAssistantStopRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   answer(request: W.ProjectAssistantPermissionAnswerRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   markRead(request: W.ProjectAssistantReadRequest, signal: AbortSignal): Promise<W.ProjectAssistantReadResponse>
@@ -93,6 +96,12 @@ export interface SourceClient {
   rules?(key: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
   removeRule?(request: W.ProjectAssistantRuleRemoveRequest, signal: AbortSignal): Promise<W.ProjectAssistantRulesResponse>
   canRules?(): boolean
+  /** Exact source-owned server rules require the complete server capability. */
+  canSourceRules?(): boolean
+  canDevServers?(): boolean
+  devServers?(key:W.ProjectAssistantBotKey,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
+  devServerLogs?(key:W.ProjectAssistantBotKey,id:string,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
+  controlDevServer?(action:"start"|"restart"|"stop"|"remove",request:W.ProjectAssistantDevServerControlRequest,signal:AbortSignal):Promise<W.ProjectAssistantDevServersResponse>
   /** Hide a Bot from the list or bring it back, and delete one (Codync's Hide from list and Delete). */
   setHidden?(request: W.ProjectAssistantVisibilityRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>
@@ -121,8 +130,9 @@ export function errorCode(error: unknown): W.ProjectAssistantErrorCode | "unavai
 
 /**
  * A write failure that provably never left this client: the request was
- * refused before any byte reached a transport. Only this marker lets a caller
- * release an uncertain effect; every other write failure may have crossed.
+ * refused before any byte reached a transport. This is the generic transport
+ * proof. A source's explicit pre-admission domain refusal is a different fact;
+ * other write failures may have crossed and remain uncertain.
  * The mark is not enumerable, so the error's own envelope is unchanged.
  */
 export function notSent<T>(error: T): T {

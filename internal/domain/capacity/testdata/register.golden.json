@@ -3463,6 +3463,128 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.server_caller_receipts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerCallerReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.server_definitions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerDefinitions"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.server_log_bytes",
+    "Class": "observation",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerLogBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.server_probe_readers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerProbeReaders",
+      "internal/adapters/projectassistantacp.package:chan(capacity.MaximumBotServerProbeReaders)",
+      "internal/adapters/projectassistantacp.tcpReadLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.server_processes",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerProcesses"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.server_spec_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotServerSpecBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.skill_asset_files",
     "Class": "buffer",
     "Unit": "rows",
