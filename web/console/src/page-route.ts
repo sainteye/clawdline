@@ -107,9 +107,10 @@ export function sessionsPageHash(terminal = false, open?: TerminalRoute): string
   return hash
 }
 
-/** Bots owns one roster entry and at most one chat entry above the Session origin. */
+/** Bots can keep the roster, a group, and its member chat above the Session origin. */
 export function assistantHistoryBackSteps(state: unknown, expectedView: string): number {
   if (!expectedView || !state || typeof state !== "object" || !("paView" in state) || state.paView !== expectedView) return 0
+  if ("paDepth" in state && typeof state.paDepth === "number" && Number.isSafeInteger(state.paDepth) && state.paDepth > 0) return state.paDepth
   return "paBot" in state && state.paBot ? 2 : 1
 }
 

@@ -37,6 +37,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
   const [groupOpen,setGroupOpen]=useState(false)
+  const [groupRoute,setGroupRoute]=useState<string|null>(null)
   const [destination,setDestination]=useState(()=>botFromFragment(location.hash))
   const reconnects=useRef(new Map<string,()=>void>())
   const [snapshotPending,setSnapshotPending]=useState<Record<string,boolean>>({})
@@ -142,19 +143,39 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     for(const source of sources)void authorized(source,current,async s=>{const request={machine_id:source.machineID,cursor:"",page_size:100};return projectChoices(await source.projects(request,s),request)},control.signal).then(answer=>{if(!control.signal.aborted)setProjectNames(old=>{const next=new Map(old);for(const p of answer.items)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.label);return next});setProjectIcons(old=>{const next=new Map(old);for(const p of answer.items)if(p.icon)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.icon);return next})}).catch(()=>{})
     return()=>control.abort()
   },[authorization,current])
-  const select=(item:W.ProjectAssistantBotSummary)=>{
-    lastSelected.current=botIdentity(item.bot.key)
-    setSelected(botIdentity(item.bot.key));selectRef.current?.(item.bot.key)
+  const writeHistory=(bot:string|null,group:string|null,replace:boolean)=>{
+    const current=history.state
+    const depth=current?.paView===historyID.current?(current.paDepth??1):1
+    // A member chat is a step above its group. Switching conversations on
+    // desktop replaces only the current step and keeps the actual depth.
+    const state={...current,paView:historyID.current,paBot:bot,paGroup:group,paDepth:depth+(replace?0:1)}
+    if(replace)history.replaceState(state,"")
+    else history.pushState(state,"")
+  }
+  const select=(item:W.ProjectAssistantBotSummary,fromGroup=false)=>{
+    const id=botIdentity(item.bot.key)
+    lastSelected.current=id
+    setSelected(id);selectRef.current?.(item.bot.key)
     if(manageHistory){
-      const state={...history.state,paView:historyID.current,paBot:botIdentity(item.bot.key)}
-      if(history.state?.paView===historyID.current&&history.state?.paBot)history.replaceState(state,"")
-      else history.pushState(state,"")
+      const previous=history.state
+      const group=fromGroup&&previous?.paView===historyID.current?previous.paGroup??null:null
+      setGroupRoute(group)
+      writeHistory(id,group,previous?.paView===historyID.current&&!!(previous.paBot||previous.paGroup&&!fromGroup))
     }
   }
-  const groupOpened=()=>{
+  const groupOpened=(key:W.ProjectAssistantBotKey)=>{
     lastSelected.current=null
     setGroupOpen(true);setDestination(null);setSelected(null);selectRef.current?.(null)
-    if(manageHistory&&history.state?.paView===historyID.current)history.replaceState({...history.state,paBot:null},"")
+    if(manageHistory){
+      const id=botIdentity(key),previous=history.state
+      setGroupRoute(id)
+      writeHistory(null,id,previous?.paView===historyID.current&&!!(previous.paBot||previous.paGroup))
+    }
+  }
+  const groupBack=()=>{
+    if(!manageHistory||history.state?.paView!==historyID.current||!history.state.paGroup||history.state.paBot)return false
+    history.back()
+    return true
   }
   const groupOpenChanged=useCallback((open:boolean)=>{setGroupOpen(open);if(!open)lastSelected.current=null},[])
   const back=()=>{
@@ -178,8 +199,15 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   useEffect(()=>{
     const opener=returnFocus??(document.activeElement instanceof HTMLElement?document.activeElement:null)
     const scrollX=window.scrollX,scrollY=window.scrollY
-    if(manageHistory&&history.state?.paView!==historyID.current)history.pushState({...history.state,paView:historyID.current,paBot:null},"")
-    const pop=()=>{if(history.state?.paView===historyID.current){const identity=history.state.paBot??null;setSelected(identity);const item=pagesRef.current;const key=Object.values(item).flatMap(page=>page.items).find(row=>botIdentity(row.bot.key)===identity)?.bot.key??null;selectRef.current?.(key)}else closeRef.current()}
+    if(manageHistory&&history.state?.paView!==historyID.current)history.pushState({...history.state,paView:historyID.current,paBot:null,paGroup:null,paDepth:1},"")
+    const pop=(event:PopStateEvent)=>{
+      const state=event.state
+      if(state?.paView!==historyID.current){closeRef.current();return}
+      const id=state.paBot??null
+      setSelected(id);setGroupRoute(state.paGroup??null)
+      const key=Object.values(pagesRef.current).flatMap(page=>page.items).find(row=>botIdentity(row.bot.key)===id)?.bot.key??null
+      selectRef.current?.(key)
+    }
     if(manageHistory)window.addEventListener("popstate",pop)
     return()=>{window.removeEventListener("popstate",pop);requestAnimationFrame(()=>{if(opener?.isConnected)opener.focus({preventScroll:true});window.scrollTo(scrollX,scrollY)})}
   },[manageHistory])
@@ -201,7 +229,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&!groupOpen&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected,groupOpen])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <BotRoster key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen} backLabel={groupOpen?w.backToGroup:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>{const gone=selected;back();setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==gone)}])))}} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/></FallbackSourceScope>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>

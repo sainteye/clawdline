@@ -146,7 +146,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const animating = useRef(false), folded = useRef(false)
   const motion = () => !matchMedia("(prefers-reduced-motion: reduce)").matches
   const finish = useCallback(() => {
-    // Bots owns both nested entries. The host never pushes a second history stack.
+    // Bots owns its roster and conversation entries. The host only closes the stack.
     const steps = assistantHistoryBackSteps(history.state,ownedHistory.current)
     if (steps) { history.go(-steps); return }
     openedRef.current = false; setOpened(false)

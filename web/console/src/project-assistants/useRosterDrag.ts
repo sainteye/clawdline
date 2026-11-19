@@ -4,7 +4,9 @@ import type { RosterDrag } from "./RosterHandle"
 // Gesture recognition and motion timings, not storage or queue limits.
 export const RosterHoldMs = 350
 const pressSlop = 8, slideMs = 180, edge = 36, edgeSpeed = 12
-const rowSelector = ".pa-roster-entry,.pa-project-heading"
+const entrySelector = ".pa-roster-entry"
+const projectSelector = ".pa-project-group[data-roster-project]"
+const rowSelector = `${entrySelector},${projectSelector}`
 type Point = {x:number;y:number}
 type Callbacks = {start:(source:RosterDrag,direct:boolean)=>void;over:(target:RosterDrag)=>void;finish:(commit:boolean)=>void}
 
@@ -13,13 +15,23 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
   const latest=useRef(callbacks);latest.current=callbacks
   const cancel=useRef<()=>void>(()=>{})
   const positions=useRef(new Map<HTMLElement,number>())
+  const slides=useRef(new Map<HTMLElement,Animation>())
   useLayoutEffect(()=>{
-    const next=new Map<HTMLElement,number>(),reduce=matchMedia("(prefers-reduced-motion: reduce)").matches
-    for(const row of root.current?.querySelectorAll<HTMLElement>(rowSelector)??[]){
+    const node=root.current
+    const next=new Map<HTMLElement,number>()
+    const scrollTop=node?.querySelector(".pa-roster-scroll")?.scrollTop??0
+    const kind=node?.dataset.rosterDragging
+    const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches
+    // Measure resting positions before animating either the sections or their children.
+    for(const animation of slides.current.values())animation.cancel()
+    slides.current.clear()
+    for(const row of node?.querySelectorAll<HTMLElement>(rowSelector)??[])next.set(row,row.getBoundingClientRect().top+scrollTop)
+    for(const [row,top] of next){
       const old=positions.current.get(row)
-      for(const animation of row.getAnimations())animation.cancel()
-      const top=row.getBoundingClientRect().top+(root.current?.querySelector(".pa-roster-scroll")?.scrollTop??0);next.set(row,top)
-      if(old!==undefined&&old!==top&&!reduce&&root.current?.dataset.rosterDragging&&row.dataset.dragging!=="true")row.animate([{transform:`translateY(${old-top}px)`},{transform:"translateY(0)"}],{duration:slideMs,easing:"cubic-bezier(.2,.8,.2,1)"})
+      const moving=kind&&(kind==="project"?row.matches(projectSelector):row.matches(entrySelector))
+      if(moving&&old!==undefined&&old!==top&&!reduce&&row.dataset.dragging!=="true"){
+        slides.current.set(row,row.animate([{transform:`translateY(${old-top}px)`},{transform:"translateY(0)"}],{duration:slideMs,easing:"cubic-bezier(.2,.8,.2,1)"}))
+      }
     }
     positions.current=next
   })
@@ -44,14 +56,23 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
       if(lifted){latest.current.finish(commit);swallow=true}
     }
     cancel.current=()=>finish(false)
-    const update=()=>{
+    const update=(vertical=0)=>{
       const g=gesture;if(!g?.lifted)return
       if(!node.contains(g.row)){finish(false);return}
       g.ghost!.style.translate=`${g.at.x-g.grab.x}px ${g.at.y-g.grab.y}px`
-      const under=document.elementFromPoint(g.at.x,g.at.y),row=under?.closest<HTMLElement>("[data-roster-drop-kind]")
+      const under=document.elementFromPoint(g.at.x,g.at.y)
+      const project=g.source.kind==="project"
+      const row=under?.closest<HTMLElement>(project?projectSelector:"[data-roster-drop-kind]")
       // A neighbour still sliding out of the way is not a new target.
-      if(row?.getAnimations().length)return
-      const over=target(under);if(over)latest.current.over(over)
+      if(!row||slides.current.get(row)?.playState==="running")return
+      if(project){
+        const position=g.row.compareDocumentPosition(row)
+        // Blocks of unequal height can stay under the pointer after a move.
+        // Only move past a section in the direction the pointer or scroll is travelling.
+        const direction=vertical>0?Node.DOCUMENT_POSITION_FOLLOWING:Node.DOCUMENT_POSITION_PRECEDING
+        if(!vertical||!(position&direction))return
+      }
+      const over=target(row);if(over)latest.current.over(over)
     }
     const tick=()=>{
       const g=gesture,scroller=node.querySelector<HTMLElement>(".pa-roster-scroll")
@@ -60,7 +81,11 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
       const box=scroller.getBoundingClientRect()
       if(g.at.x>=box.left&&g.at.x<=box.right){
         const reach=Math.max(0,box.top+edge-g.at.y)-Math.max(0,g.at.y-(box.bottom-edge))
-        if(reach){scroller.scrollTop-=Math.sign(reach)*Math.min(edgeSpeed,Math.abs(reach)/edge*edgeSpeed);update()}
+        if(reach){
+          const previous=scroller.scrollTop
+          scroller.scrollTop-=Math.sign(reach)*Math.min(edgeSpeed,Math.abs(reach)/edge*edgeSpeed)
+          update(scroller.scrollTop-previous)
+        }
       }
       frame=requestAnimationFrame(tick)
     }
@@ -70,19 +95,21 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
       g.grab={x:g.from.x-box.left,y:g.from.y-box.top}
       const ghost=document.createElement("div");ghost.className="project-assistants pa-roster-lift";ghost.setAttribute("aria-hidden","true");ghost.inert=true
       const copy=g.row.cloneNode(true) as HTMLElement
-      copy.classList.remove("pa-roster-entry","pa-project-heading");copy.classList.add("pa-roster-ghost-row")
+      copy.classList.remove("pa-roster-entry");copy.classList.add("pa-roster-ghost-row")
       for(const el of copy.querySelectorAll("[data-bot-key],[data-group-key]")){el.removeAttribute("data-bot-key");el.removeAttribute("data-group-key")}
       for(const el of [copy,...copy.querySelectorAll<HTMLElement>("[id],[data-roster-drop-kind]")]){el.removeAttribute("id");el.removeAttribute("data-roster-drop-kind");el.removeAttribute("data-roster-drop-key")}
       for(const el of copy.querySelectorAll(".pa-roster-actions,.pa-roster-read"))el.remove()
       ghost.append(copy);ghost.style.width=`${box.width}px`;document.body.append(ghost);g.ghost=ghost
-      node.dataset.rosterDragging="true";document.documentElement.classList.add("pa-roster-dragging")
+      node.dataset.rosterDragging=g.source.kind;document.documentElement.classList.add("pa-roster-dragging")
       latest.current.start(g.source,g.direct);update();frame=requestAnimationFrame(tick)
     }
     const begin=(element:Element|null,id:number,touch:boolean,at:Point)=>{
       if(gesture){finish(false);return}
       swallow=false
-      const handle=element?.closest(".pa-roster-handle"),row=element?.closest<HTMLElement>(rowSelector)
-      if(!row||!node.contains(row)||(!handle&&(!row.matches(".pa-roster-entry")||element?.closest(".pa-roster-actions,.pa-roster-read"))))return
+      const handle=element?.closest(".pa-roster-handle")
+      const heading=element?.closest(".pa-project-heading")
+      const row=heading?heading.closest<HTMLElement>(projectSelector):element?.closest<HTMLElement>(entrySelector)
+      if(!row||!node.contains(row)||(!handle&&element?.closest(".pa-roster-actions,.pa-roster-read")))return
       const source=target(row);if(!source)return
       gesture={id,touch,from:at,at,row,source,lifted:false,ghost:null,grab:{x:0,y:0},direct:!handle}
       if(handle)lift();else timer=setTimeout(lift,RosterHoldMs)
@@ -90,8 +117,9 @@ export function useRosterDrag(root:RefObject<HTMLElement|null>, callbacks:Callba
     const move=(at:Point,event:Event)=>{
       const g=gesture;if(!g)return
       if(!g.lifted&&Math.hypot(at.x-g.from.x,at.y-g.from.y)>pressSlop){finish(false);return}
+      const vertical=at.y-g.at.y
       g.at=at
-      if(g.lifted){if(event.cancelable)event.preventDefault();update()}
+      if(g.lifted){if(event.cancelable)event.preventDefault();update(vertical)}
     }
     const end=()=>{
       const g=gesture;if(!g)return

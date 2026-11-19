@@ -30,7 +30,7 @@ type GroupRosterView={
 }
 
 /** Group entries live beside Bots, but open a room rather than a native chat. */
-export function Groups({sources,items,projectNames,projectIcons,query="",machine="",selected:selectedBot,children,onOpenGroup,onSelectMember,onGroupOpenChange}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;query?:string;machine?:string;selected?:string|null;onOpenGroup?:()=>void;onSelectMember?:(item:W.ProjectAssistantBotSummary)=>void;onGroupOpenChange?:(open:boolean)=>void;children:(view:GroupRosterView)=>ReactNode}) {
+export function Groups({sources,items,projectNames,projectIcons,query="",machine="",selected:selectedBot,children,onOpenGroup,onSelectMember,onGroupOpenChange,groupRoute,onGroupBack}:{sources:readonly SourceClient[];items:readonly W.ProjectAssistantBotSummary[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;query?:string;machine?:string;selected?:string|null;onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;onSelectMember?:(item:W.ProjectAssistantBotSummary)=>void;onGroupOpenChange?:(open:boolean)=>void;children:(view:GroupRosterView)=>ReactNode}) {
   const [pages,setPages]=useState<GroupSource[]>([]),[error,setError]=useState(""),[creating,setCreating]=useState(false),[selected,setSelected]=useState<{source:SourceClient;group:W.ProjectAssistantGroup}|null>(null)
   const opener=useRef<HTMLElement|null>(null),originScroll=useRef<{element:HTMLElement;top:number}|null>(null)
   const restoreOrigin=useRef(false),reportedOpen=useRef<boolean|undefined>(undefined)
@@ -44,7 +44,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
     opener.current=target??(document.activeElement instanceof HTMLElement?document.activeElement:null)
     const scroll=opener.current?.closest<HTMLElement>(".pa-roster-scroll")
     originScroll.current=scroll?{element:scroll,top:scroll.scrollTop}:null
-    onOpenGroup?.()
+    onOpenGroup?.(entry.group.key)
     setSelected(entry)
   }
   const dismiss=()=>{
@@ -53,7 +53,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
     // Clear the member return route before the roster records the next Bot.
     reportOpen(false)
   }
-  const close=()=>{restoreOrigin.current=true;dismiss()}
+  const close=()=>{if(onGroupBack?.())return;restoreOrigin.current=true;dismiss()}
   useLayoutEffect(()=>{
     if(selected||!restoreOrigin.current)return
     restoreOrigin.current=false
@@ -81,6 +81,23 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
     return()=>{control.abort();clearInterval(timer)}
   },[sources,revision])
   const active=pages.filter(p=>sources.includes(p.source)&&p.source.current?.()!==false)
+  useLayoutEffect(()=>{
+    if(groupRoute===undefined||groupRoute===(selected?identity(selected.group.key):null))return
+    if(groupRoute===null){
+      restoreOrigin.current=true
+      setSelected(null)
+      return
+    }
+    // Forward can restore only a room on a source that is still readable.
+    for(const page of active){
+      const group=canRead(page.status)?page.groups.find(group=>identity(group.key)===groupRoute):undefined
+      if(!group)continue
+      if(opener.current?.dataset.groupKey!==groupRoute){opener.current=null;originScroll.current=null}
+      setSelected({source:page.source,group})
+      return
+    }
+    if(selected)setSelected(null)
+  },[groupRoute,pages,sources,selected])
   const canCreate=active.some(p=>canWrite(p.status)&&items.some(b=>b.bot.key.machine_id===p.source.machineID))
   const rows=active.flatMap(p=>p.groups.filter(g=>(!machine||g.key.machine_id===machine)&&(!query||[g.name,projectNames.get(JSON.stringify([g.key.machine_id,g.project.project_id]))??""].some(text=>text.toLocaleLowerCase().includes(query.toLocaleLowerCase())))).map(group=>({source:p.source,group,status:p.status})))
   const content=<>

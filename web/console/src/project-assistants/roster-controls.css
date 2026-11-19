@@ -26,8 +26,10 @@
 }
 .project-assistants .pa-roster-compact .pa-row-meta time { max-width:none;white-space:nowrap; }
 
-.project-assistants .pa-roster-entry { -webkit-touch-callout:none;user-select:none;-webkit-user-select:none; }
-.project-assistants [data-roster-dragging] .pa-roster-entry[data-dragging="true"] { opacity:.16;outline:1px dashed var(--pa-line); }
+.project-assistants .pa-roster-entry,
+.project-assistants [data-roster-project] > .pa-project-heading { -webkit-touch-callout:none;user-select:none;-webkit-user-select:none; }
+.project-assistants [data-roster-dragging] .pa-roster-entry[data-dragging="true"],
+.project-assistants [data-roster-dragging] .pa-project-group[data-dragging="true"] { opacity:.16;outline:1px dashed var(--pa-line); }
 .project-assistants [data-roster-dragging] [data-drop="true"] { outline:none; }
 html.pa-roster-dragging,html.pa-roster-dragging * { cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important; }
 .project-assistants.pa-roster-lift { position:fixed;left:0;top:0;z-index:10000;pointer-events:none;filter:drop-shadow(0 10px 18px #0008); }

@@ -18,6 +18,73 @@ const server=createServer((req,res)=>{
 })
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,evidence=[]
+
+async function checkProjectDrag(page,context,engine,width){
+  const section=name=>page.getByRole("region",{name,exact:true})
+  const heading=name=>section(name).locator("h2")
+  const projectOrder=()=>page.locator(".pa-roster .pa-project-group").evaluateAll(groups=>groups.map(group=>group.getAttribute("aria-label")))
+  const storageKey=JSON.stringify(["project-assistants","roster","fixture-a"])
+  const prefs=()=>page.evaluate(key=>localStorage.getItem(key),storageKey)
+  const point=async locator=>{
+    await locator.scrollIntoViewIfNeeded()
+    const {x,y,width,height}=await locator.boundingBox()
+    return {x:x+width/2,y:y+height/2}
+  }
+  const hold=async locator=>{
+    const at=await point(locator)
+    await page.mouse.move(at.x,at.y)
+    await page.mouse.down()
+    await page.waitForTimeout(420)
+  }
+
+  const initial=await projectOrder(),initialPrefs=await prefs()
+  await heading("Alpha").click()
+  assert.deepEqual(await projectOrder(),initial)
+  await hold(heading("Alpha"))
+  const ghost=page.locator(".pa-roster-lift")
+  assert.equal(await ghost.count(),1,"holding a Project title lifts the Project without sort mode")
+  assert.deepEqual(await ghost.locator(".pa-bot-row strong").allTextContents(),["Alpha One","Alpha Two"])
+  const beta=await point(section("Beta").locator(".pa-bot-row"))
+  await page.mouse.move(beta.x,beta.y)
+  await page.waitForFunction(()=>document.querySelector(".pa-roster .pa-project-group")?.getAttribute("aria-label")==="Beta")
+  assert.ok(await section("Beta").evaluate(group=>group.getAnimations().length)>0,"the neighbouring Project slides as one block")
+  assert.equal(await prefs(),initialPrefs,"preview must not save")
+  await page.waitForTimeout(220)
+  const preview=await projectOrder()
+  assert.deepEqual(preview,["Beta","Alpha","Other Alpha Project","Real Pinned Project"])
+  await page.mouse.up()
+  assert.deepEqual(await section("Alpha").locator(".pa-bot-row strong").allTextContents(),["Alpha One","Alpha Two"])
+  await page.reload();await heading("Alpha").waitFor()
+  assert.deepEqual(await projectOrder(),preview)
+
+  const saved=await prefs()
+  await page.emulateMedia({reducedMotion:"reduce"})
+  await hold(heading("Alpha"))
+  const before=await point(heading("Beta"))
+  await page.mouse.move(before.x,before.y)
+  await page.waitForFunction(()=>document.querySelector(".pa-roster .pa-project-group")?.getAttribute("aria-label")==="Alpha")
+  assert.equal(await section("Beta").evaluate(group=>group.getAnimations().length),0)
+  await page.keyboard.press("Escape");await page.mouse.up()
+  assert.deepEqual(await projectOrder(),preview)
+  assert.equal(await prefs(),saved)
+  await page.emulateMedia({reducedMotion:"no-preference"})
+
+  if(engine==="chromium"&&width===390){
+    const from=await point(heading("Alpha")),to=await point(heading("Beta"))
+    const cdp=await context.newCDPSession(page)
+    await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[from]})
+    await page.waitForTimeout(420)
+    assert.equal(await ghost.count(),1,"a real touch hold lifts the Project")
+    await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[to]})
+    await page.waitForFunction(()=>document.querySelector(".pa-roster .pa-project-group")?.getAttribute("aria-label")==="Alpha")
+    await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]})
+    await page.reload();await heading("Alpha").waitFor()
+    assert.deepEqual(await projectOrder(),initial)
+    await cdp.detach()
+  }
+  await page.evaluate(key=>localStorage.removeItem(key),storageKey)
+  await page.reload();await heading("Alpha").waitFor()
+}
 try{
   for(const engine of ["chromium","webkit"]){
     const browser=await pw[engine].launch({headless:true,...(engine==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})})
@@ -30,6 +97,7 @@ try{
         const row=name=>page.locator(".pa-roster-entry").filter({has:page.locator(".pa-bot-row strong",{hasText:name})})
         const order=()=>page.locator(".pa-roster-entry .pa-bot-row strong").allTextContents()
         await row("Alpha One").waitFor()
+        await checkProjectDrag(page,context,engine,width)
         // A delayed animation frame must not steal a row focus chosen since entering sort mode.
         await page.evaluate(()=>{const original=requestAnimationFrame,frames=[];window.requestAnimationFrame=callback=>{frames.push(callback);return frames.length};window.flushRosterFocus=()=>{window.requestAnimationFrame=original;for(const callback of frames)callback(performance.now())}})
         await sort(page)
@@ -89,7 +157,7 @@ try{
         assert.deepEqual(errors,[])
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
         await page.screenshot({path:path.join(artifacts,`${engine}-${language}-roster.png`),fullPage:true})
-        evidence.push({engine,language,width,height,mouseDrag:true,keyboardOrder:true,pinAndReload:true,projectOrderAndReload:true,accountIsolation:true,crossProjectRefused:true,noSelectionSideEffect:true,touchDrag:engine==="chromium"&&width===390,pageErrors:errors})
+        evidence.push({engine,language,width,height,mouseDrag:true,directProjectDrag:true,keyboardOrder:true,pinAndReload:true,projectOrderAndReload:true,accountIsolation:true,crossProjectRefused:true,noSelectionSideEffect:true,touchDrag:engine==="chromium"&&width===390,pageErrors:errors})
         // Broken persisted bytes show a warning and leave the roster usable.
         await page.evaluate(()=>localStorage.setItem(JSON.stringify(["project-assistants","roster","fixture-a"]),"broken"))
         await page.reload();await row("Alpha One").waitFor();await sort(page);assert.equal(await page.locator(".pa-roster-save-error").count(),1)
