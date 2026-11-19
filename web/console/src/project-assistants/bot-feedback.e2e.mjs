@@ -23,7 +23,7 @@ test("Bots chime only for new successes and return Chrome control on every panel
    await page.evaluate(()=>window.botFeedback.complete("one"));await wait(()=>window.botFeedback.snapshot().tones===2)
    await page.evaluate(()=>window.botFeedback.complete("one"));await page.waitForTimeout(50)
    assert.equal((await snapshot()).tones,2,"replay stays quiet")
-   await page.locator(".pa-orb").click();await page.locator(".pa-roster").waitFor();await wait(()=>window.botFeedback.snapshot().subscribers===1)
+   await page.locator(".pa-dock").click();await page.locator(".pa-roster").waitFor();await wait(()=>window.botFeedback.snapshot().subscribers===1)
    await page.evaluate(()=>window.botFeedback.complete("two"));await wait(()=>window.botFeedback.snapshot().tones===4)
    await page.locator(".pa-collapse").click();await page.locator(".pa-roster").waitFor({state:"detached"});await wait(()=>window.botFeedback.snapshot().subscribers===1)
    assert.equal((await snapshot()).tones,4,"returning to the Session list does not repeat a chime")

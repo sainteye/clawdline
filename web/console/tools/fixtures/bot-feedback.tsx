@@ -51,7 +51,7 @@ function Feedback(){
   const host=useProjectAssistantsHost({registry:registry as never,cloud:false,language})
   const [browser,setBrowser]=useState(new URL(location.href).searchParams.has("browser"))
   const current=useCallback(()=>sources,[])
-  return <><div className="fixture-controls"><button onClick={()=>{}}>Unlock audio</button><button onClick={()=>setBrowser(true)}>Open browser fixture</button><button onClick={()=>setBrowser(false)}>Leave browser fixture</button></div>{host.entry}{host.content}{browser&&<BotBrowser source={source} current={current} bot={base.bots[0]} writable reason="" onClose={()=>setBrowser(false)} onStale={async()=>{}}/>}</>
+  return <><div className="fixture-controls"><button onClick={()=>{}}>Unlock audio</button><button onClick={()=>setBrowser(true)}>Open browser fixture</button><button onClick={()=>setBrowser(false)}>Leave browser fixture</button></div>{host.dock}{host.content}{browser&&<BotBrowser source={source} current={current} bot={base.bots[0]} writable reason="" onClose={()=>setBrowser(false)} onStale={async()=>{}}/>}</>
 }
 createRoot(document.getElementById("root")!).render(<React.StrictMode><Feedback/></React.StrictMode>)
 Object.assign(window,{botFeedback:{

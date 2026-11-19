@@ -6,7 +6,7 @@ This host connects the approved removable [Bots module](../web/console/src/proje
 
 `SessionsPage.assistantEntry` is one slot outside the local/fleet list branch. `App` supplies the fixed orange blob `BotOrb` only after an authorized source has reported readable Bots access. A never-enabled source reporting `hidden` produces no entry and no list request. A source reporting `history_only` retains history/export access while content mutations remain disabled.
 
-`pages/project-assistants.tsx` registers `drawer: false`. Direct page admission returns Sessions; typing a fragment cannot enable the feature. The normal entry is the Session orb, and the origin fragment remains unchanged throughout the nested Bots journey.
+`pages/project-assistants.tsx` registers `drawer: false`. Direct page admission returns Sessions; typing a fragment cannot enable the feature. The normal entry is the Bots shortcut in the status bar, and the origin fragment remains unchanged throughout the nested Bots journey.
 
 `useProjectAssistantsHost` saves the actual `BotOrb.onOpen(opener)` element, the origin hash, window scroll and Session scroll elements before hiding the origin. The existing `SessionsPage`, Session composer, recorder owner and `CopilotDockView` remain mounted. The host renders a fresh `Bots` instance for each orb entry, so selection always starts empty. Desktop retains roster/chat columns; phones show roster then chat.
 

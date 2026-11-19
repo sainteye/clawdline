@@ -2,18 +2,12 @@
 import { hostBundle } from "./project-assistants-host.e2e.mjs"
 import { createServer } from "node:http"
 import { readFile, mkdir, writeFile } from "node:fs/promises"
-import { execFileSync } from "node:child_process"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { pathToFileURL } from "node:url"
 import assert from "node:assert/strict"
 const artifacts = process.env.STATUS_BAR_ARTIFACTS
 if (!artifacts || !process.env.PLAYWRIGHT_MODULE) throw Error("Set STATUS_BAR_ARTIFACTS and PLAYWRIGHT_MODULE")
 await mkdir(artifacts, { recursive: true })
-const sourceOverrides = new Map()
-// Run the identical matrix against a pinned pre-fix tree without editing the checkout.
-if (process.env.STATUS_BAR_BASELINE_REV) for (const path of ["provider-quota/QuotaBar.tsx", "project-assistants/BotOrb.tsx", "view-plugins/Host.tsx"]) {
-  sourceOverrides.set(fileURLToPath(new URL("../src/" + path, import.meta.url)), execFileSync("git", ["show", `${process.env.STATUS_BAR_BASELINE_REV}:web/console/src/${path}`], { encoding: "utf8" }))
-}
-const { html, files } = await hostBundle({sourceOverrides}), network = [], results = []
+const { html, files } = await hostBundle(), network = [], results = []
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://fixture")
@@ -28,8 +22,8 @@ await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
 const pw = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
 try {
   for (const engine of ["chromium", "webkit"]) {
-    const browser = await pw[engine].launch({ headless: true })
-    try { for (const width of [390, 1440]) for (const lang of ["en", "zh-Hant"]) {
+    const browser = await pw[engine].launch({ headless: true, ...(engine === "chromium" ? { args: ["--disable-features=OmniboxEverywhere"] } : {}) })
+    try { for (const width of [320, 390, 1440]) for (const lang of ["en", "zh-Hant"]) {
       const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" }), errors = []
       page.on("pageerror", e => errors.push(e.message))
       const name = `${engine}-${width}-${lang}`
@@ -40,19 +34,36 @@ try {
       }
       try {
         await page.route("**/v1/**", route => { network.push(route.request().url()); return route.abort() })
-        await page.goto(`http://127.0.0.1:${server.address().port}/?lang=${lang}&quota=hold`)
+        await page.goto(`http://127.0.0.1:${server.address().port}/?lang=${lang}&quota=hold&hold-status`)
         await page.locator("#filter").waitFor()
-        await page.evaluate(() => fixtureHost.dockOrb(true))
-        await page.waitForTimeout(1700)
-        const bar = page.locator(".provider-quota-bar"), floating = page.locator(".pa-orb,.vp-float")
-        await check("loading", async () => {
-          assert.equal(await bar.isVisible(), true)
-          assert.equal(await bar.locator(".pa-dock,.vp-dock").count(), 2)
-          assert.equal(await floating.count(), 0)
+        const bar = page.locator(".provider-quota-bar")
+        const bots = bar.locator(".pa-dock"), views = bar.locator(".vp-dock"), boards = bar.locator(".session-board-dock")
+        const shortcutsVisible = async () => {
+          for (const button of [bots, views, boards]) {
+            const box = await button.boundingBox()
+            assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900, JSON.stringify(box))
+          }
+        }
+        await check("initial-loading", async () => {
+          await page.waitForFunction(() => fixtureHost.log.some(row => row.method === "status-wait"))
+          await shortcutsVisible()
+          assert.equal(await bots.isDisabled(), true)
+          assert.equal(await boards.isDisabled(), true)
+          assert.equal(await views.isEnabled(), true)
+          assert.equal(await bar.locator('[data-reading-state="loading"]').count(), 1)
           assert.ok(await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--quota-footer-height"))) > 0)
         })
+        await page.evaluate(() => { fixtureHost.releaseStatus(); fixtureHost.allowBoards() })
+        await page.waitForFunction(() => document.querySelector(".pa-dock:enabled"))
+        await check("sources-ready", async () => {
+          await shortcutsVisible()
+          assert.equal(await boards.isEnabled(), true)
+        })
         await page.evaluate(() => fixtureHost.quota("empty")); await page.waitForTimeout(80)
-        await check("empty", async () => { assert.equal(await bar.isVisible(), true); assert.equal(await floating.count(), 0) })
+        await check("empty", async () => {
+          await shortcutsVisible()
+          assert.equal(await bar.locator('[data-reading-state="empty"]').count(), 1)
+        })
         await page.evaluate(() => fixtureHost.quota("ready"))
         // A remount uses the new source and its own initial reading, like a Cloud machine switch.
         await page.evaluate(() => fixtureHost.remount()); await page.waitForTimeout(100)
@@ -60,26 +71,53 @@ try {
         await page.evaluate(() => fixtureHost.quota("error")); await bar.locator(".quota-refresh").click(); await page.waitForTimeout(100)
         await check("stale-reading", async () => { assert.equal(await bar.locator('[data-provider="codex"][data-stale]').count(), 1) })
         await page.evaluate(layout => fixtureHost.quotaVisible(layout, false), width < 900 ? "mobile" : "desktop")
-        await page.waitForTimeout(1700)
-        await check("hidden", async () => {
-          assert.equal(await bar.count(), 0); assert.equal(await floating.count(), 0)
-          assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--quota-footer-height")), "")
+        await check("quotas-off", async () => {
+          await shortcutsVisible()
+          assert.equal(await bar.locator(".quota-providers").count(), 0)
         })
-        await page.evaluate(layout => fixtureHost.quotaVisible(layout, true), width < 900 ? "mobile" : "desktop"); await page.waitForTimeout(100)
-        await check("initial-error", async () => { assert.equal(await bar.isVisible(), true); assert.equal(await floating.count(), 0) })
-        await page.evaluate(() => fixtureHost.quota("ready")); await page.evaluate(() => fixtureHost.remount()); await page.waitForTimeout(100)
-        await check("restored", async () => { await bar.locator(".pa-dock").waitFor({timeout:5000}); assert.equal(await bar.locator(".pa-dock,.vp-dock").count(), 2); assert.equal(await floating.count(), 0) })
-        await bar.locator(".vp-dock").click(); await page.locator(".vp-host").waitFor()
-        await page.locator(".vp-close").click(); await page.locator(".vp-host").waitFor({state:"hidden"})
-        await check("overlay-return", async () => { assert.equal(await bar.locator(".pa-dock,.vp-dock").count(), 2); assert.equal(await floating.count(), 0) })
+        await views.click()
+        await page.locator(".vp-host").waitFor()
+        await page.locator(".vp-close").click()
+        await page.locator(".vp-host").waitFor({state:"hidden"})
+        await check("views-return", shortcutsVisible)
+
+        await boards.click()
+        const board = page.locator(".session-board-dialog[open]")
+        await board.waitFor()
+        await board.locator("header button").first().click()
+        await board.waitFor({ state: "hidden" })
+        await check("boards-return", shortcutsVisible)
+
+        await bots.click()
+        await page.locator(".pa-window .pa-bot-row").first().waitFor()
+        await page.locator(".pa-window .pa-collapse").click()
+        await page.locator(".pa-window").waitFor({ state: "hidden" })
+        await page.waitForFunction(() => document.activeElement?.classList.contains("pa-dock"))
+        await check("bots-return", shortcutsVisible)
+
+        await page.evaluate(layout => fixtureHost.quotaVisible(layout, true), width < 900 ? "mobile" : "desktop")
+        await page.evaluate(() => fixtureHost.quota("ready"))
         if (width < 900) {
-          await page.locator("#rows > li.row").first().click(); await page.waitForTimeout(100)
-          await check("mobile-detail", async () => { assert.equal(await bar.count(), 0); assert.equal(await floating.count(), 0) })
-          await page.evaluate(() => history.back()); await page.waitForTimeout(100)
-          await check("mobile-list-return", async () => { assert.equal(await bar.isVisible(), true); assert.equal(await floating.count(), 0) })
+          await page.locator("#rows > li.row").first().click()
+          const detail = page.locator("#app[data-view=detail] .pane-detail").first()
+          await detail.waitFor()
+          await check("mobile-detail", async () => {
+            await shortcutsVisible()
+            assert.equal(await bar.locator(".quota-providers").count(), 0)
+            const [pane, footer] = await Promise.all([detail.boundingBox(), bar.boundingBox()])
+            assert.ok(pane && footer && pane.y + pane.height <= footer.y + 1, "the status bar must leave room for the Session composer")
+          })
+          await page.evaluate(() => history.back())
+          await page.locator("#app[data-view=list]").waitFor()
+          await check("mobile-list-return", async () => {
+            await shortcutsVisible()
+            assert.equal(await bar.locator(".quota-providers").count(), 1)
+          })
         }
-        await page.evaluate(() => fixtureHost.dockOrb(false)); await page.waitForTimeout(100)
-        await check("explicit-float", async () => { assert.equal(await page.locator(".pa-orb").count(), 1); assert.equal(await page.locator(".vp-float").count(), 0) })
+        await page.locator("#brand").click()
+        await page.locator("#nav-work").click()
+        await page.locator('#nav-work[aria-current="page"]').waitFor({ state: "attached" })
+        await check("work-page", shortcutsVisible)
         assert.deepEqual(errors, [])
       } finally { await page.close() }
     } } finally { await browser.close() }

@@ -1373,7 +1373,6 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         scanNotes={fleet.snapshot?.scan.notes}
         scanSources={fleet.snapshot?.scan.sources}
         shown={page === "sessions" && !assistants.opened && !plugins.opened}
-        assistantEntry={<>{assistants.entry}{plugins.entry}</>}
         view={view}
         paneOpen={paneOpen}
         filter={filter}
@@ -1408,7 +1407,10 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         </ModuleLoadBoundary>
       ))}
       {!surveyAccount ? <SurveyCoordinator /> : null}
-      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine} key={fleetReaderMachine ?? "local"} machineName={quotaMachineName} offline={!!cloudMachineOffline} accessory={assistants.opened || plugins.opened ? null : <>{assistants.dock}{plugins.dock}<SessionBoardDock targets={boardTargets} /></>} />
+      <QuotaBar mobileListShown={page === "sessions" && view === "list" && !machine}
+        quotaScope={fleetReaderMachine} machineName={quotaMachineName} offline={!!cloudMachineOffline}
+        inert={assistants.opened || plugins.opened}
+        accessory={<>{assistants.dock}{plugins.dock}<SessionBoardDock targets={boardTargets} /></>} />
       <Overlays />
       {machine ? <MachineDashboard
         key={dashboardSource?.ownerScope ?? "local"}

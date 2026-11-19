@@ -35,7 +35,7 @@ try{
     page.on('pageerror',error=>errors.push(String(error)))
     const click=loc=>width<700?loc.tap():loc.click()
     try{
-     await page.goto(origin+'/?lang='+language);await click(page.locator('.pa-orb'));await page.locator('.pa-window .pa-bot-row').first().waitFor();await click(page.locator('.pa-window .pa-bot-row').first());await page.locator('.pa-window .pa-mine').last().waitFor()
+     await page.goto(origin+'/?lang='+language);await click(page.locator('.pa-dock'));await page.locator('.pa-window .pa-bot-row').first().waitFor();await click(page.locator('.pa-window .pa-bot-row').first());await page.locator('.pa-window .pa-mine').last().waitFor()
      await page.waitForFunction(()=>[...document.querySelectorAll('.pa-window')].every(node=>node.getAnimations().every(a=>a.playState==='finished')))
      const row=page.locator('.pa-window .pa-mine').last(),trigger=row.locator('.pa-message-more')
      await row.scrollIntoViewIfNeeded();const geometry=()=>row.evaluate(node=>({bubble:node.querySelector('.pa-message-bubble').getBoundingClientRect().toJSON(),scroll:node.closest('.pa-chat-scroll').scrollTop,height:node.closest('.pa-chat-scroll').scrollHeight}))

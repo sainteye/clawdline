@@ -17,7 +17,7 @@ import { followLiveRoster } from "../project-assistants/live-roster.js"
 
 const BADGE_REFRESH_MS = 15_000
 
-// Entry belongs to Sessions. A typed URL must not enable a default-off feature.
+// The status-bar entry follows source authority. A typed URL cannot grant access.
 export const page: PageModule = {id:"project-assistants",drawer:false,Component:() => null}
 
 export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, language, onOpenWork}: {
@@ -204,6 +204,5 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       viewState={registry.viewState} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
   </section> : null
-  return {opened,openedRef,content,entry:admitted ? <BotOrb language={language} {...badge} onOpen={open}/> : null,
-    dock:admitted ? <BotOrb variant="dock" language={language} {...badge} onOpen={open}/> : null}
+  return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} disabled={!admitted} onOpen={open}/>}
 }

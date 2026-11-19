@@ -8,7 +8,6 @@ import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
 import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
-import { setDockAvailable } from "../project-assistants/BotOrb.js"
 import { requestStatusRefresh } from "../status-refresh.js"
 import "./quota.css"
 
@@ -52,16 +51,39 @@ const mobileQuery = "(max-width: 899px)"
 function subscribeMobile(fn: () => void) { const query = window.matchMedia(mobileQuery); query.addEventListener("change", fn); return () => query.removeEventListener("change", fn) }
 const isMobile = () => window.matchMedia(mobileQuery).matches
 
-export function QuotaBar({ machineName, offline = false, mobileListShown = false, accessory }: { machineName?: string; offline?: boolean; mobileListShown?: boolean; accessory?: ReactNode }) {
+export function QuotaBar({ machineName, offline = false, mobileListShown = false, quotaScope, inert, accessory }: {
+  machineName?: string
+  offline?: boolean
+  mobileListShown?: boolean
+  quotaScope?: string | null
+  inert?: boolean
+  accessory?: ReactNode
+}) {
   const preference = useSyncExternalStore(subscribeQuotaVisible, quotaVisible)
   const mobile = useSyncExternalStore(subscribeMobile, isMobile)
   const version = useMachineVersion()
   const [revision, setRevision] = useState(0)
   useEffect(() => onMachineChanged(() => setRevision((n) => n + 1)), [])
-  if (!(mobile ? preference.mobile : preference.desktop) || (mobile && !mobileListShown) || (version.apiLevel !== undefined && version.apiLevel < 28)) return null
-  return <QuotaReading key={revision} machineName={machineName} offline={offline} mobile={mobile} accessory={accessory} />
+  const showQuotas = (mobile ? preference.mobile && mobileListShown : preference.desktop) &&
+    (version.apiLevel === undefined || version.apiLevel >= 28)
+  const footer = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const el = footer.current
+    if (!el) return
+    const measure = () => document.documentElement.style.setProperty("--quota-footer-height", `${el.getBoundingClientRect().height}px`)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--quota-footer-height") }
+  }, [])
+
+  return <footer ref={footer} className="provider-quota-bar" inert={inert}>
+    {accessory}
+    {showQuotas && <QuotaReading key={JSON.stringify([quotaScope, revision])} machineName={machineName} offline={offline} mobile={mobile} />}
+  </footer>
 }
-function QuotaReading({ machineName, offline, mobile = false, accessory }: { machineName?: string; offline: boolean; mobile?: boolean; accessory?: ReactNode }) {
+
+function QuotaReading({ machineName, offline, mobile }: { machineName?: string; offline: boolean; mobile: boolean }) {
   const offlineRef = useRef(offline); offlineRef.current = offline
   const read = useMemo(() => async () => {
     if (offlineRef.current) throw new Error("offline")
@@ -73,19 +95,9 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
   const more = rows.length - shown.length
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   useEffect(() => { const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60_000); return () => clearInterval(timer) }, [])
-  const footer = useRef<HTMLElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const opener = useRef<HTMLButtonElement | null>(null)
   const [expanded, setExpanded] = useState(false)
-  useLayoutEffect(() => {
-    if (!footer.current) return
-    const el = footer.current
-    const measure = () => document.documentElement.style.setProperty("--quota-footer-height", `${el.getBoundingClientRect().height}px`)
-    measure(); const observer = new ResizeObserver(measure); observer.observe(el)
-    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--quota-footer-height") }
-  }, [])
-  // Availability belongs to the footer, independently of readings and open overlays.
-  useLayoutEffect(() => { setDockAvailable(true); return () => setDockAvailable(false) }, [])
   useEffect(() => {
     if (expanded && dialog.current && !dialog.current.open) dialog.current.showModal()
     if (!expanded && dialog.current?.open) dialog.current.close()
@@ -99,33 +111,30 @@ function QuotaReading({ machineName, offline, mobile = false, accessory }: { mac
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
   const readingState = offline ? "offline" : polling.error ? "failed" : polling.pending ? "loading" : rows.length ? "ready" : "empty"
   return <>
-    <footer ref={footer} className="provider-quota-bar" data-reading-state={readingState} aria-label={nextWord("quotaTitle")}>
-      {accessory}
-      {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
-      <div className="quota-providers">
-        {!rows.length && <span className="quota-empty" role="status">{nextWord(offline ? "quotaOfflineNoReading" : polling.error ? "quotaReadUnavailable" : polling.pending ? "quotaLoading" : "quotaEmpty")}</span>}
-        {shown.map((row) => {
-          const compact = compactWindow(row)
-          const used = compact
-            ? (mobile ? `${Math.round(compact.used_percent)}%` : nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }))
-            : (mobile ? "" : nextWord("quotaUnknown"))
-          const reading = row.credits_in_use ? `${used} · ${nextWord("quotaCreditsInUseLong")}` : used
-          const aria = reading ? `${row.label} · ${reading}` : row.label
-          return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
-            data-stale={stale(row) || undefined} data-credits={row.credits_in_use || undefined} aria-label={aria} aria-haspopup="dialog" aria-controls="provider-quota-detail"
-            onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
-            <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
-            <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} mobile={mobile} /> : <span className="quota-unknown">{used}</span>}</span>
-            {!mobile && row.credits_in_use && <span className="quota-credits">{nextWord("quotaCredits")}</span>}
-            {!mobile && stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
-          </button>
-        })}
-        {more > 0 && <button type="button" className="quota-more" aria-haspopup="dialog" aria-controls="provider-quota-detail"
-          aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
-      </div>
-      <button className="quota-refresh" type="button" title={nextWord("quotaRefresh")} aria-label={nextWord("quotaRefresh")}
-        onClick={refresh}>↻</button>
-    </footer>
+    {machineName && <span className="quota-machine" title={machineName}>{machineName}</span>}
+    <div className="quota-providers" data-reading-state={readingState} role="group" aria-label={nextWord("quotaTitle")}>
+      {!rows.length && <span className="quota-empty" role="status">{nextWord(offline ? "quotaOfflineNoReading" : polling.error ? "quotaReadUnavailable" : polling.pending ? "quotaLoading" : "quotaEmpty")}</span>}
+      {shown.map((row) => {
+        const compact = compactWindow(row)
+        const used = compact
+          ? (mobile ? `${Math.round(compact.used_percent)}%` : nextWord("quotaUsed", { percent: Math.round(compact.used_percent) }))
+          : (mobile ? "" : nextWord("quotaUnknown"))
+        const reading = row.credits_in_use ? `${used} · ${nextWord("quotaCreditsInUseLong")}` : used
+        const aria = reading ? `${row.label} · ${reading}` : row.label
+        return <button key={row.id} className="quota-provider" type="button" data-provider={row.id}
+          data-stale={stale(row) || undefined} data-credits={row.credits_in_use || undefined} aria-label={aria} aria-haspopup="dialog" aria-controls="provider-quota-detail"
+          onClick={(e) => open(e.currentTarget)} title={`${row.label} · ${nextWord("quotaDetails")}`}>
+          <Icon id={row.id} /><span className="quota-provider-name">{row.label}</span>
+          <span className="quota-compact-window">{compact ? <WindowValue window={compact} now={now} mobile={mobile} /> : <span className="quota-unknown">{used}</span>}</span>
+          {!mobile && row.credits_in_use && <span className="quota-credits">{nextWord("quotaCredits")}</span>}
+          {!mobile && stale(row) && <span className="quota-stale">{offline ? nextWord("quotaOffline") : nextWord("quotaStale")}</span>}
+        </button>
+      })}
+      {more > 0 && <button type="button" className="quota-more" aria-haspopup="dialog" aria-controls="provider-quota-detail"
+        aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
+    </div>
+    <button className="quota-refresh" type="button" title={nextWord("quotaRefresh")} aria-label={nextWord("quotaRefresh")}
+      onClick={refresh}>↻</button>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
       onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
       onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}

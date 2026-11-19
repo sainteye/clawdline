@@ -74,7 +74,6 @@ export function SessionsPage({
   onStarted,
   streamTasks = null,
   fleetList,
-  assistantEntry,
   fleetDetailKey,
   fleetCoordinatorBound = false,
   fleetDetailPending = false,
@@ -124,7 +123,6 @@ export function SessionsPage({
   streamTasks?: TaskList | null
   /** The same page frame and detail, with only the list supplied by the Cloud fleet adapter. */
   fleetList?: ReactNode
-  assistantEntry?: ReactNode
   fleetDetailKey?: string
   fleetCoordinatorBound?: boolean
   fleetDetailPending?: boolean
@@ -439,7 +437,6 @@ export function SessionsPage({
           : <section className="pane pane-detail terminal-pane-empty" aria-label={nextWord("terminalListMode")}>
             <p>{nextWord("terminalPaneEmpty")}</p>
           </section>)}
-        {assistantEntry}
       </main>
       <StartSheet />
       <FirstTour sessionCount={listUnknown ? null : rows.length} shown={!!onScreen && !terminalMode} />

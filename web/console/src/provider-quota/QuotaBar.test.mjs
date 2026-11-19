@@ -12,7 +12,7 @@ const { outputFiles } = await build({
   bundle: true, platform: "node", format: "cjs", packages: "external", write: false,
   jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "quota-boundaries", setup(builder) {
-    builder.onResolve({ filter: /(?:client|next-strings|useFleet|NeedsUpdate|machine-switch|bridge|visibility|BotOrb)\.js$/ }, ({ path }) => ({ path, namespace: "fixture" }))
+    builder.onResolve({ filter: /(?:client|next-strings|useFleet|NeedsUpdate|machine-switch|bridge|visibility)\.js$/ }, ({ path }) => ({ path, namespace: "fixture" }))
     builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents:
       path.includes("client") ? "export const client = {}"
       : path.includes("next-strings") ? "export const nextWord = key => key"
@@ -20,8 +20,7 @@ const { outputFiles } = await build({
       : path.includes("NeedsUpdate") ? "export const useMachineVersion = () => globalThis.quotaFixture.version"
       : path.includes("machine-switch") ? "export const onMachineChanged = () => () => {}"
       : path.includes("bridge") ? "export const assistantLogoHTML = () => ''"
-      : path.includes("visibility") ? "export const subscribeQuotaVisible = () => () => {}; export const quotaVisible = () => globalThis.quotaFixture.preference"
-      : "export const setDockAvailable = () => {}",
+      : "export const subscribeQuotaVisible = () => () => {}; export const quotaVisible = () => globalThis.quotaFixture.preference",
     }))
   } }],
 })
@@ -61,8 +60,11 @@ test("a real zero remains a usable reading and refresh failures retain it", () =
     if (error) assert.match(html, /data-stale="true"/)
   }
 })
-test("visibility preference, mobile detail and older machines still hide the whole footer", () => {
+test("quota preferences, mobile detail and older machines hide quotas while keeping shortcuts", () => {
   for (const state of [{ enabled: false }, { mobile: true, mobileListShown: false }, { apiLevel: 27 }]) {
-    assert.equal(render({ providers: [provider], ...state }), "")
+    const html = render({ providers: [provider], ...state })
+    assert.match(html, /<footer/)
+    assert.match(html, /Dock entry/)
+    assert.doesNotMatch(html, /data-provider=|<dialog|quota-refresh/)
   }
 })

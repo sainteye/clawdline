@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { useStatusDockAvailable } from "../project-assistants/BotOrb.js"
 import type { ViewSource } from "./bridge.js"
 import { PluginError, parsePackage, type ViewPackage } from "./package.js"
 import { installedPackages, subscribePackages, installPackage, enablePackage, removePackage, rollbackPackage, officialUpdatePolicy, type Installed } from "./store.js"
@@ -23,7 +22,7 @@ const name = (p: ViewPackage, language: string) => p.manifest.name[language.star
 type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 
 export function useViewPlugins(sources: readonly ViewSource[], language: string) {
-  const [opened, setOpened] = useState(false), openedRef = useRef(false), dock = useStatusDockAvailable()
+  const [opened, setOpened] = useState(false), openedRef = useRef(false)
   const [mode, setMode] = useState<"manage" | "launch">("launch")
   const [rows, setRows] = useState<Installed[]>([]), [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -302,6 +301,6 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
         </>}
       </main></>}
   </div>, document.body) : null
-  return { opened, openedRef, dock: !opened && dock ? entry : null, entry: null, content,
+  return { opened, openedRef, dock: entry, content,
     openManager: (button: HTMLElement) => openRoot(button, "manage"), managerLabel: w.title }
 }
