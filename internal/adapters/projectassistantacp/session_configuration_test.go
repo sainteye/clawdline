@@ -208,3 +208,17 @@ func TestDiscoveryCleanupUncertaintyKeepsTheManagedProfileHold(t *testing.T) {
 		t.Fatal("known clean refusal leaked its hold")
 	}
 }
+
+func TestOnlyDesignatedLeadReceivesCoordinatorContext(t *testing.T) {
+	q := app.OpenRequest{Bot: pa.Bot{Name: "Synthetic assistant", Agent: pa.Codex}, Directory: t.TempDir()}
+	if strings.Contains(systemPrompt(q), "You are the lead assistant") {
+		t.Fatal("ordinary Bot received lead role")
+	}
+	q.Bot.Lead = true
+	prompt := systemPrompt(q)
+	for _, fact := range []string{"You are the lead assistant", "list_bots", "message_bot", "correlated reply"} {
+		if !strings.Contains(prompt, fact) {
+			t.Fatalf("lead prompt does not mention %q", fact)
+		}
+	}
+}

@@ -5,6 +5,7 @@ import {failure} from "./client.ts"
 // @ts-expect-error -- Node's strip-types runner loads source extensions.
 import {sameBot,sameConversation} from "./view-state.ts"
 
+export type ExchangeEntry = {exchange:W.ProjectAssistantExchange;seq:number;at:string}
 export type ExchangeScope = Pick<W.ProjectAssistantFence,"key"|"project"|"conversation_id">
 const text=(v:unknown):v is string=>typeof v==="string"&&v.length>0
 const sameProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>!!a&&!!b&&a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -17,8 +18,25 @@ export function scopedExchange(x:W.ProjectAssistantExchange,scope:ExchangeScope)
   return x
 }
 
+export function exchangePeer(exchange:W.ProjectAssistantExchange,key:W.ProjectAssistantBotKey):W.ProjectAssistantExchangeEndpoint {
+  return sameBot(exchange.source.key,key)?exchange.target:exchange.source
+}
+
+export function exchangeEntries(messages:readonly W.ProjectAssistantMessage[],scope:ExchangeScope):ExchangeEntry[] {
+  const entries=new Map<string,ExchangeEntry>()
+  for(const message of messages) {
+    if(!message.exchange||!sameConversation(message.fence,scope))continue
+    let exchange:W.ProjectAssistantExchange
+    try{exchange=scopedExchange(message.exchange,scope)}catch{continue}
+    const existing=entries.get(exchange.id)
+    if(!existing)entries.set(exchange.id,{exchange,seq:message.seq,at:message.at})
+    else if(exchange.revision>=existing.exchange.revision)entries.set(exchange.id,{...existing,exchange})
+  }
+  return [...entries.values()].sort((a,b)=>a.seq-b.seq)
+}
+
 /** Captured export is the existing bounded authenticated read route, never a Bot command. */
-export async function loadExchange(source:SourceClient,scope:ExchangeScope,reference:W.ProjectAssistantExchange,signal:AbortSignal):Promise<{exchange:W.ProjectAssistantExchange;botName:string}> {
+export async function loadExchange(source:SourceClient,scope:ExchangeScope,reference:W.ProjectAssistantExchange,signal:AbortSignal,includePeerHistory=false):Promise<{exchange:W.ProjectAssistantExchange;botName:string;history?:ExchangeEntry[]}> {
   const revision=source.authorizationRevision
   const check=()=>{
     if(signal.aborted)throw new DOMException("Aborted","AbortError")
@@ -42,7 +60,21 @@ export async function loadExchange(source:SourceClient,scope:ExchangeScope,refer
   if(s.state==="revoked"||s.state==="unpaired")throw failure("pa_revoked")
   if(!s.fresh||s.state!=="online")throw failure("pa_offline")
   if(!s.readable||s.access==="hidden")throw failure("pa_scope_denied")
-  check();return {exchange:x,botName:typeof value.bot.name==="string"?value.bot.name:""}
+  check()
+  const view={exchange:x,botName:typeof value.bot.name==="string"?value.bot.name:""}
+  if(!includePeerHistory)return view
+  const peer=exchangePeer(x,scope.key),authoritative=new Map<string,W.ProjectAssistantExchange>()
+  for(const entry of value.exchanges??[]){
+    // The export can contain exchanges with other peers in this chat.
+    try{
+      const item=scopedExchange(entry,scope)
+      if(sameBot(exchangePeer(item,scope.key).key,peer.key)&&exchangePeer(item,scope.key).conversation_id===peer.conversation_id)
+        authoritative.set(item.id,item)
+    }catch{/* No foreign or malformed record is eligible for this sheet. */}
+  }
+  return {...view,history:exchangeEntries(value.messages??[],scope)
+    .filter(entry=>authoritative.has(entry.exchange.id))
+    .map(entry=>({...entry,exchange:authoritative.get(entry.exchange.id)!}))}
 }
 
 /** Text content never determines completion or delivery. Unknown future states stay unknown. */

@@ -8,7 +8,7 @@ import {renderToStaticMarkup} from "react-dom/server"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error -- Node loads source extensions.
-import {loadExchange,scopedExchange,exchangeOutcome,exchangeDelivery} from "./exchanges.ts"
+import {loadExchange,scopedExchange,exchangeOutcome,exchangeDelivery,exchangeEntries} from "./exchanges.ts"
 // @ts-expect-error -- Node loads source extensions.
 import {errorCode} from "./client.ts"
 
@@ -85,12 +85,17 @@ test("rendered chat offers the exchange action only for its captured Bot; panel 
   const message:W.ProjectAssistantMessage={id:"notice",seq:1,at:"2026-11-17T00:00:00Z",kind:"notice",text:"Review requested",turn_id:"source-turn",quote_message_id:"",fence:{...scope,binding_id:"",generation:1},exchange}
   const source=fixture().source
   const render=(m:W.ProjectAssistantMessage,botKey=key,language="en")=>renderToStaticMarkup(React.createElement(compiled.exports.ChatRows,{timeline:[{id:m.id,kind:"message",message:m,anchor_message_seq:1,observed_event_seq:1}],source,botKey,onQuote:()=>{},w:compiled.exports.words(language),language}))
-  assert.match(render(message),/>View Bot exchange<\/button>/)
-  assert.match(render(message,key,"zh-Hant-TW"),/>查看 Bot 互審往來<\/button>/)
-  assert.doesNotMatch(render({...message,exchange:undefined}),/>View Bot exchange</)
-  assert.doesNotMatch(render(message,peer),/>View Bot exchange</)
+  assert.ok(render(message).includes(`aria-label="Messaged ${peer.bot_id}"`))
+  assert.ok(render(message,key,"zh-Hant-TW").includes(`aria-label="已傳訊息給 ${peer.bot_id}"`))
+  assert.ok(!render(message).includes("Review requested"))
+  assert.ok(!render({...message,exchange:undefined}).includes("pa-exchange-entry"))
+  assert.ok(!render(message,peer).includes("pa-exchange-entry"))
+  const updates=exchangeEntries([message,{...message,id:"updated",seq:2,exchange:{...exchange,revision:exchange.revision+1,outcome:"completed"}}],scope)
+  assert.equal(updates.length,1)
+  assert.equal(updates[0].seq,1)
+  assert.equal(updates[0].exchange.outcome,"completed")
   for(const [language,label] of [["en","Loading exchange…"],["zh-Hant-TW","正在載入往來詳情…"]]){
-    const html=renderToStaticMarkup(React.createElement(compiled.exports.ExchangePanel,{source,scope,reference:exchange,language,onClose:()=>{}}))
+    const html=renderToStaticMarkup(React.createElement(compiled.exports.ExchangePanel,{source,scope,reference:exchange,entries:[],language,w:compiled.exports.words(language),onClose:()=>{}}))
     assert.ok(html.includes(label));assert.ok(html.includes('aria-busy="true"'));assert.ok(!html.includes("<script>"));assert.ok(!html.includes(exchange.reply!))
   }
 })

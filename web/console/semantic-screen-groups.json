@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13532,
-  "riskKeys": 5807,
-  "nonRiskCount": 7725,
+  "englishContentKeys": 13535,
+  "riskKeys": 5809,
+  "nonRiskCount": 7726,
   "groups": [
     {
       "name": "acp / other",
@@ -400,7 +400,7 @@
     },
     {
       "name": "botExchange / other",
-      "count": 19,
+      "count": 20,
       "sources": [
         "src/project-assistants/exchange-words.ts"
       ],
@@ -409,10 +409,10 @@
         "botExchange.delivery",
         "botExchange.delivery_queued",
         "botExchange.detail",
+        "botExchange.from",
         "botExchange.hops",
         "botExchange.identity",
         "botExchange.loading",
-        "botExchange.open",
         "botExchange.queued",
         "botExchange.refresh",
         "botExchange.reply",
@@ -423,7 +423,8 @@
         "botExchange.revision",
         "botExchange.sent",
         "botExchange.state",
-        "botExchange.title"
+        "botExchange.title",
+        "botExchange.to"
       ]
     },
     {
