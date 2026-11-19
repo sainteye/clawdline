@@ -4946,7 +4946,7 @@
     "web/console/src/cloud/project-assistants.ts": "08dc8d5b48f892fdbd671d219360d091db3ffd43cf4dc55b64835ad92a9b1ee7",
     "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "58b65e70b6abf11311471130d1d1c97fe8c2e7f5251729062c8755d2ede4b496",
+    "web/console/src/next-strings.ts": "5eed4be20195a48c6b1e6f4a4f38f2dc029b479081f585031339afad53b8510b",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "e6c94aebc1fdf6510c8a6c224bfa2c9ff41c185fcf5041a016aff12c449f02d1",

@@ -315,7 +315,7 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
   </>
 }
 
-export type SessionBoardTarget = { machine?: string; source: SessionBoardSource; label: string; candidates: Actor[] }
+export type SessionBoardTarget = { machine?: string; source: SessionBoardSource; label: string; candidates: Actor[]; preferredLead?: string }
 
 function isBoardBackdrop(event: MouseEvent<HTMLDialogElement>) {
   if (event.target !== event.currentTarget) return false
@@ -400,7 +400,7 @@ function BoardMachinePicker({ targets, choose, close, opener }: {
 
 function StatusBoardDialog({ target, close, opener }: { target: SessionBoardTarget; close: () => void; opener: HTMLElement | null }) {
   const list = useBoardList(target.source, true)
-  return <BoardDialog source={target.source} initial="" candidates={target.candidates} close={close} opener={opener} {...list} />
+  return <BoardDialog source={target.source} initial="" candidates={target.candidates} preferredLead={target.preferredLead} close={close} opener={opener} {...list} />
 }
 
 function BoardRefresh({ refresh, disabled }: { refresh: () => void; disabled?: boolean }) {
@@ -410,9 +410,9 @@ function BoardRefresh({ refresh, disabled }: { refresh: () => void; disabled?: b
   </button>
 }
 
-function BoardDialog({ source, initial, boards, loaded, problem, candidates, refresh, close, opener }: {
+function BoardDialog({ source, initial, boards, loaded, problem, candidates, preferredLead, refresh, close, opener }: {
   source: SessionBoardSource; initial: string; boards: Board[]; loaded: boolean; problem: boolean
-  candidates: Actor[]; refresh: () => Promise<void>; close: () => void; opener?: HTMLElement | null
+  candidates: Actor[]; preferredLead?: string; refresh: () => Promise<void>; close: () => void; opener?: HTMLElement | null
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const heading = useId()
@@ -434,66 +434,107 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, ref
   const candidateMap = new Map(candidates.map(actor => [actor.id, actor]))
   const projectIcon = selectedBoard && boardProjectIcon(selectedBoard, candidateMap)
   const view = useRef<HTMLDivElement>(null)
-  const switchBoard = (id: string) => {
+  const [createdBoard, setCreatedBoard] = useState("")
+  const switchBoard = (id: string, focusMessage = false) => {
+    setCreatedBoard(focusMessage ? id : "")
     select(id)
     void refresh()
     if (view.current) view.current.scrollTop = 0
   }
   const [expanded, expand] = useState(false)
   const [creating, create] = useState(false)
+  const changeCreateView = (show: boolean) => {
+    if (!show && dialog.current?.querySelector(".session-board-create[aria-busy=true]")) return
+    create(show)
+    if (view.current) view.current.scrollTop = 0
+  }
   useEffect(() => { dialog.current?.showModal(); motion.capture(opener); motion.open() }, [])
   useEffect(() => {
     if (dialog.current?.open) title.current?.focus({ preventScroll: true })
-  }, [selected])
+  }, [selected, creating])
   const headingAction = t(initial ? "sessionBoardClose" : "sessionBoardBack")
-  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-expanded={expanded} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close} onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
+  const first = !selected && loaded && !problem && boards.length === 0
+  const setup = creating ? "create" : first ? "first" : undefined
+  return <dialog ref={dialog} className="session-board-dialog session-board-reader" data-setup={setup}
+    data-expanded={expanded && !setup} data-board={Boolean(selected) || undefined} aria-labelledby={heading} onClose={close}
+    onCancel={event => { event.preventDefault(); dismiss() }} {...backdrop}>
     <header>
-      {selected && <button type="button" className="session-board-icon-button" aria-label={headingAction}
-        title={headingAction} onClick={initial ? dismiss : () => switchBoard("")}>
+      {(selected || creating) && <button type="button" className="session-board-icon-button" aria-label={headingAction}
+        title={headingAction} onClick={initial ? dismiss : () => creating ? changeCreateView(false) : switchBoard("")}>
         <BoardChevron direction={initial ? "down" : "back"} />
       </button>}
       <div className="session-board-heading">
-        <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t("sessionBoards")}</h2>
+        <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t(creating ? "sessionBoardCreate" : "sessionBoards")}</h2>
         {selectedBoard && <BoardPurpose key={selectedBoard.id} text={selectedBoard.purpose} />}
       </div>
-      <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>{t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}</button>
+      {!setup && <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>
+        {t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}
+      </button>}
       <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
     </header>
     <div className="session-board-scroll" ref={view}>
     {selected ? <BoardMessages key={selected} source={source} id={selected} indexedBoard={indexedBoard}
-      refreshIndex={refresh} candidates={candidateMap} onRead={setOpened} />
-    : <div className="session-board-body">
-      <div className="session-board-actions session-board-index-actions">
-        {source.writable && candidates.length > 0 && <button type="button" className="session-board-primary"
-          aria-expanded={creating} onClick={() => create(!creating)}>{t("sessionBoardCreate")}</button>}
-        <BoardRefresh refresh={() => void refresh()} />
-      </div>
-      {creating && source.writable && <BoardCreate source={source} candidates={candidates} onCreated={id => {
-        create(false); switchBoard(id)
-      }} />}
-      {problem && <p role="alert">{t("sessionBoardReadError")}</p>}
-      {!loaded && <LoadingSkeleton id="SK-36" label={t("sessionBoardsLoading")} />}
-      {loaded && boards.length === 0 && !problem && <p>{t("sessionBoardsEmpty")}</p>}
-      <ul className="session-board-index">{boards.map(board => {
-        const unread = unreadFor(source, board)
-        return <li key={board.id}>
-          <button type="button" className="session-board-index-card" onClick={() => switchBoard(board.id)}>
-            <span className="session-board-index-mark"><BoardGlyph /></span>
-            <span className="session-board-index-content">
-              <strong>{board.name}</strong>
-              <span className="session-board-index-purpose">{board.purpose}</span>
-              <span className="session-board-index-meta">
-                {board.archived_at ? t("sessionBoardArchived") : t("sessionBoardMemberCount", { count: board.members?.length ?? 0 })}
-                {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
-              </span>
-            </span>
-            <BoardChevron direction="forward" />
-          </button>
-        </li>
-      })}</ul>
-    </div>}
+      refreshIndex={refresh} candidates={candidateMap} onRead={setOpened} focusMessage={selected === createdBoard} />
+    : creating ? <div className="session-board-body">
+      <BoardCreate source={source} candidates={candidates} preferredLead={preferredLead} onCreated={id => {
+        create(false)
+        switchBoard(id, true)
+      }} />
+    </div> : <BoardIndex source={source} boards={boards} loaded={loaded} problem={problem}
+      hasCandidates={candidates.length > 0} refresh={refresh} onCreate={() => changeCreateView(true)} onOpen={switchBoard} />}
     </div>
   </dialog>
+}
+
+function BoardIndex({ source, boards, loaded, problem, hasCandidates, refresh, onCreate, onOpen }: {
+  source: SessionBoardSource; boards: Board[]; loaded: boolean; problem: boolean; hasCandidates: boolean
+  refresh: () => Promise<void>; onCreate: () => void; onOpen: (id: string) => void
+}) {
+  const active = boards.filter(board => !board.archived_at)
+  const archived = boards.filter(board => board.archived_at)
+  const empty = loaded && !problem && active.length === 0
+  const first = empty && archived.length === 0
+  const createButton = source.writable && hasCandidates && <button type="button"
+    className={empty ? "session-board-create-action" : "session-board-primary"} onClick={onCreate}>
+    {t(first ? "sessionBoardCreateFirst" : "sessionBoardCreate")}
+  </button>
+  const list = (items: Board[]) => <ul className="session-board-index">{items.map(board => {
+    const unread = unreadFor(source, board)
+    return <li key={board.id}>
+      <button type="button" className="session-board-index-card" onClick={() => onOpen(board.id)}>
+        <span className="session-board-index-mark"><BoardGlyph /></span>
+        <span className="session-board-index-content">
+          <strong>{board.name}</strong>
+          <span className="session-board-index-purpose">{board.purpose}</span>
+          <span className="session-board-index-meta">
+            {board.archived_at ? t("sessionBoardArchived") : t("sessionBoardMemberCount", { count: board.members?.length ?? 0 })}
+            {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
+          </span>
+        </span>
+        <BoardChevron direction="forward" />
+      </button>
+    </li>
+  })}</ul>
+  return <div className="session-board-body">
+    {!empty && <div className="session-board-actions session-board-index-actions">
+      {loaded && !problem && createButton}
+      <BoardRefresh refresh={() => void refresh()} />
+    </div>}
+    {problem && <p role="alert">{t("sessionBoardReadError")}</p>}
+    {!loaded && <LoadingSkeleton id="SK-36" label={t("sessionBoardsLoading")} />}
+    {empty && <div className="session-board-empty">
+      <span className="session-board-index-mark"><BoardGlyph /></span>
+      <h3>{t(first ? "sessionBoardsEmpty" : "sessionBoardsNoActive")}</h3>
+      {first && <p>{t("sessionBoardsIntro")}</p>}
+      {source.writable && !hasCandidates && <p>{t("sessionBoardOpenSessionFirst")}</p>}
+      {createButton}
+    </div>}
+    {active.length > 0 && list(active)}
+    {archived.length > 0 && <details className="session-board-archived">
+      <summary><BoardChevron direction="forward" />{t("sessionBoardArchived")}</summary>
+      {list(archived)}
+    </details>}
+  </div>
 }
 
 function BoardPurpose({ text }: { text: string }) {
@@ -541,27 +582,43 @@ function useBoardChange(source: SessionBoardSource) {
   return { busy, error, send }
 }
 
-function BoardCreate({ source, candidates, onCreated }: { source: SessionBoardSource; candidates: Actor[]; onCreated: (id: string) => void }) {
+function BoardCreate({ source, candidates, preferredLead, onCreated }: {
+  source: SessionBoardSource; candidates: Actor[]; preferredLead?: string; onCreated: (id: string) => void
+}) {
   const change = useBoardChange(source)
-  return <form onSubmit={e => {
+  const leadHelp = useId()
+  const [name, setName] = useState("")
+  const [purpose, setPurpose] = useState("")
+  const [lead, setLead] = useState(() => candidates.some(actor => actor.id === preferredLead) ? preferredLead ?? "" : "")
+  const eligibleLead = candidates.some(actor => actor.id === lead) ? lead : ""
+  const ready = source.writable && !!(name.trim() && purpose.trim() && eligibleLead)
+  return <form className="session-board-create" aria-busy={change.busy} onSubmit={e => {
     e.preventDefault()
-    const data = new FormData(e.currentTarget)
-    void change.send({ action: "create", name: String(data.get("name")), text: String(data.get("purpose")),
-      target: String(data.get("lead")) }, r => onCreated(r.id))
+    if (ready) void change.send({ action: "create", name, text: purpose, target: eligibleLead }, r => onCreated(r.id))
   }}>
-    <label>{t("sessionBoardName")}<input name="name" required /></label>
-    <label>{t("sessionBoardPurpose")}<textarea name="purpose" required rows={3} /></label>
-    <label>{t("sessionBoardLead")}<select name="lead" aria-label={t("sessionBoardLead")} required><option value="">{t("sessionBoardChoose")}</option>
-      {candidates.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-    </select></label>
-    <button type="submit" disabled={change.busy}>{t("sessionBoardCreate")}</button>
+    <label>{t("sessionBoardName")}<input name="name" value={name} onChange={e => setName(e.currentTarget.value)}
+      placeholder={t("sessionBoardNameExample")} required disabled={change.busy} /></label>
+    <label>{t("sessionBoardPurpose")}<textarea name="purpose" value={purpose} onChange={e => setPurpose(e.currentTarget.value)}
+      placeholder={t("sessionBoardPurposeExample")} required rows={3} disabled={change.busy} /></label>
+    <div>
+      <label>{t("sessionBoardLead")}<select name="lead" aria-describedby={leadHelp} value={eligibleLead}
+        onChange={e => setLead(e.currentTarget.value)} required disabled={change.busy}>
+        <option value="">{t("sessionBoardChoose")}</option>
+        {candidates.map(a => <option key={a.id} value={a.id}>
+          {a.id === preferredLead ? t("sessionBoardCurrentLead", { name: a.label }) : a.label}
+        </option>)}
+      </select></label>
+      <p id={leadHelp}>{t("sessionBoardLeadHelp")}</p>
+      {source.writable && candidates.length === 0 && <p>{t("sessionBoardOpenSessionFirst")}</p>}
+    </div>
+    <button type="submit" className="session-board-create-action" disabled={change.busy || !ready}>{t("sessionBoardCreate")}</button>
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
   </form>
 }
 
-function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onRead }: {
+function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onRead, focusMessage }: {
   source: SessionBoardSource; id: string; indexedBoard?: Board; refreshIndex: () => Promise<void>
-  candidates: ReadonlyMap<string, Actor>; onRead: (board: Board) => void
+  candidates: ReadonlyMap<string, Actor>; onRead: (board: Board) => void; focusMessage: boolean
 }) {
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
@@ -604,7 +661,15 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
   const b = page?.board
   const personas = usePersonas(source.machine)
-  const allowed = source.writable && b && !b.archived_at
+  const allowed = source.writable && !!b && !b.archived_at
+  const messageField = useRef<HTMLTextAreaElement>(null)
+  const focusedMessage = useRef(false)
+  useEffect(() => {
+    if (focusMessage && allowed && !focusedMessage.current && messageField.current) {
+      focusedMessage.current = true
+      messageField.current.focus()
+    }
+  }, [focusMessage, allowed])
   const action = (cmd: Command, done?: () => void) => {
     void change.send({ ...cmd, board: id }, () => {
       done?.(); void load()
@@ -692,7 +757,7 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
       {page.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardEarlier")}</button>}
       {allowed && <form onSubmit={post}>
         {reply && <div>{t("sessionBoardReplyTo", { seq: reply })} <button type="button" onClick={() => setReply(undefined)}>{t("sessionBoardCancel")}</button></div>}
-        <label>{t("sessionBoardMessage")}<textarea value={draft} onChange={e => setDraft(e.currentTarget.value)} rows={3} required /></label>
+        <label>{t("sessionBoardMessage")}<textarea ref={messageField} value={draft} onChange={e => setDraft(e.currentTarget.value)} rows={3} required /></label>
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
     </>}

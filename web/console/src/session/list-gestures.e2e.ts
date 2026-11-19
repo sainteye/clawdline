@@ -79,6 +79,9 @@ const shortBoardPurpose = "Review the Session console"
 let boardPurpose = shortBoardPurpose
 let boardTreeFixture = false
 let boardReviewerLeft = false
+let firstBoardFixture: "empty" | "no-sessions" | "archived" | undefined
+let createdBoardFixture: { name: string; text: string; target: string } | undefined
+let failBoardIndex = false
 let boardReviewerTitle = "Reviewer"
 let holdBoardIndex: Promise<void> | undefined
 let holdBoardThread: Promise<void> | undefined
@@ -396,7 +399,7 @@ function snapshot() {
       ] : [],
     },
     // The daemon's own answer moves; the page's order is the page's business.
-    sessions: rows(),
+    sessions: firstBoardFixture === "no-sessions" ? [] : rows(),
   }
 }
 
@@ -467,11 +470,32 @@ function daemon(): Server {
             presence: boardPresenceUnverified ? undefined : "not_listed" }] : []),
         ],
       }
+      if (firstBoardFixture && req.method === "POST") {
+        let body = ""
+        req.on("data", part => { body += part })
+        req.on("end", () => {
+          const command = JSON.parse(body)
+          if (command.action !== "create") return json(res, 400, { error: "session_board_invalid" })
+          createdBoardFixture = { name: command.name, text: command.text, target: command.target }
+          return json(res, 200, { id: "first" })
+        })
+        return
+      }
       const currentBoard = boardReviewerLeft ? { ...board, members: board.members.slice(0, 1) } : board
       const thread = url.searchParams.has("board")
       const hold = thread ? holdBoardThread : holdBoardIndex
       const send = () => {
         if (res.destroyed) return
+        if (!thread && failBoardIndex) return json(res, 503, { error: "session_board_unavailable" })
+        if (firstBoardFixture) {
+          const prior = { ...board, archived_at: 1 }
+          const created = createdBoardFixture && { ...board, id: "first", latest: 0, name: createdBoardFixture.name,
+            purpose: createdBoardFixture.text, lead: createdBoardFixture.target,
+            members: board.members.filter(member => member.id === createdBoardFixture?.target) }
+          const boards = [...(created ? [created] : []), ...(firstBoardFixture === "archived" ? [prior] : [])]
+          return thread ? json(res, 200, { board: boards.find(item => item.id === url.searchParams.get("board")),
+            posts: [], more: false }) : json(res, 200, { boards })
+        }
         if (thread && failBoardThread) return json(res, 503, { error: "session_board_unavailable" })
         return json(res, 200, thread ? {
           board: currentBoard, posts: [
@@ -1711,6 +1735,103 @@ test("an open Session board follows Session titles and removes a member who left
   } finally {
     boardFixture = boardTreeFixture = boardReviewerLeft = false
     boardReviewerTitle = "Reviewer"
+  }
+})
+
+test("first Session message board opens a dedicated form and focuses the new board's composer", async () => {
+  boardFixture = true
+  const dialog = ".session-board-dialog[open]"
+  const form = dialog + " .session-board-create"
+  const submit = form + " button[type=submit]"
+  const content = { name: "First review", text: "Record the outcome", target: "claude:conversation-" + NEEDS_ATTESTATION }
+  try {
+    for (const desktop of [true, false]) {
+      firstBoardFixture = "empty"
+      createdBoardFixture = undefined
+      await inTab(async tab => {
+        if (desktop) await tab.desktop()
+        await tab.go(desktop ? "/#session=" + encodeURIComponent(SAFE) : "/")
+        await shortcutUntil(tab, '!!document.querySelector(".session-board-dock")')
+        if (desktop) await shortcutUntil(tab, `document.querySelector('#rows .row.open')?.dataset.id === ${JSON.stringify(SAFE)}`)
+        await tab.press(".session-board-dock")
+        const create = dialog + " .session-board-empty button"
+        await shortcutUntil(tab, `document.querySelector('${create}')?.textContent === "建立第一個留言板"`)
+        await tab.press(create)
+        assert.equal(await tab.run(`document.querySelector('${dialog} h2').textContent`), "建立留言板")
+        assert.equal(await tab.run(`document.querySelector('${form} select').value`), desktop ? "claude:conversation-" + SAFE : "")
+        assert.equal(await tab.run(`document.querySelector('${submit}').disabled`), true)
+        await tab.run(`(() => {
+          const form = document.querySelector('${form}')
+          const name = form.elements.name
+          const purpose = form.elements.purpose
+          const lead = form.elements.lead
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(name, ${JSON.stringify(content.name)})
+          name.dispatchEvent(new Event('input', { bubbles: true }))
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(purpose, ${JSON.stringify(content.text)})
+          purpose.dispatchEvent(new Event('input', { bubbles: true }))
+          lead.value = ${JSON.stringify(content.target)}
+          lead.dispatchEvent(new Event('change', { bubbles: true }))
+        })()`)
+        await shortcutUntil(tab, `!document.querySelector('${submit}').disabled`)
+        await tab.press(submit)
+        const composer = dialog + "[data-board] textarea"
+        await shortcutUntil(tab, `document.activeElement.matches('${composer}')`)
+        assert.deepEqual(createdBoardFixture, content)
+        assert.equal(await tab.run(`document.querySelector('${dialog} h2').textContent`), content.name)
+        await tab.press(dialog + " > header > .session-board-icon-button")
+        await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-index-card')`)
+        await tab.press(dialog + " .session-board-index-card")
+        await shortcutUntil(tab, `!!document.querySelector('${composer}')`)
+        assert.ok(await tab.run(`document.activeElement.matches('${dialog} h2')`))
+        firstBoardFixture = "archived"
+        await tab.press(dialog + " > header > .session-board-icon-button")
+        await shortcutUntil(tab, `!!document.querySelector('${dialog} .session-board-archived summary')`)
+        assert.equal(await tab.run(`document.querySelectorAll('${dialog} .session-board-body > .session-board-index li').length`), 1)
+      })
+    }
+  } finally {
+    boardFixture = false
+    firstBoardFixture = createdBoardFixture = undefined
+  }
+})
+
+test("Session message board index distinguishes a failed read, an empty archive, and no eligible Lead", async () => {
+  boardFixture = true
+  firstBoardFixture = "archived"
+  failBoardIndex = true
+  try {
+    await inTab(async tab => {
+      const dialog = ".session-board-dialog[open]"
+      await tab.go("/")
+      await shortcutUntil(tab, '!!document.querySelector(".session-board-dock")')
+      await tab.press(".session-board-dock")
+      await shortcutUntil(tab, `!!document.querySelector('${dialog} [role=alert]')`)
+      assert.equal(await tab.run(`!!document.querySelector('${dialog} .session-board-empty')`), false)
+      failBoardIndex = false
+      await tab.press(dialog + " .session-board-index-actions button")
+      const archived = dialog + " .session-board-archived"
+      await shortcutUntil(tab, `!!document.querySelector('${archived}')`)
+      assert.equal(await tab.run(`document.querySelector('${dialog} .session-board-empty h3').textContent`), "目前沒有使用中的留言板")
+      assert.equal(await tab.run(`document.querySelector('${dialog} .session-board-empty button').textContent`), "建立留言板")
+      assert.equal(await tab.run(`document.querySelector('${archived}').open`), false)
+      await tab.press(archived + " summary")
+      await tab.press(archived + " button")
+      await shortcutUntil(tab, `document.querySelector('${dialog} h2')?.textContent === "Review board"`)
+      await shortcutUntil(tab, `!document.querySelector('${dialog} .loading-skeleton')`)
+      assert.equal(await tab.run(`!!document.querySelector('${dialog} textarea')`), false)
+    })
+    firstBoardFixture = "no-sessions"
+    await inTab(async tab => {
+      await tab.go("/")
+      await shortcutUntil(tab, '!!document.querySelector(".session-board-dock")')
+      await tab.press(".session-board-dock")
+      const empty = ".session-board-dialog[open] .session-board-empty"
+      await shortcutUntil(tab, `document.querySelector('${empty}')?.textContent.includes("先開啟一個 Session")`)
+      assert.equal(await tab.run(`!!document.querySelector('${empty} button')`), false)
+    })
+  } finally {
+    boardFixture = failBoardIndex = false
+    firstBoardFixture = undefined
   }
 })
 

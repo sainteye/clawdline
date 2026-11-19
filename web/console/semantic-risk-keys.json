@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13339,
+  "englishKeys": 13347,
   "counts": {
-    "negation": 3512,
-    "state": 2249,
+    "negation": 3513,
+    "state": 2250,
     "permission": 813,
     "deletion": 312,
     "uncertainty": 544
   },
-  "unionCount": 5743,
+  "unionCount": 5745,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2787,6 +2787,7 @@
       "next.sessionBoardReadError",
       "next.sessionBoardWriteError",
       "next.sessionBoardsEmpty",
+      "next.sessionBoardsNoActive",
       "next.sessionCountNotStarted",
       "next.sessionGone",
       "next.sessionNotStarted",
@@ -5267,6 +5268,7 @@
       "next.sendQueueFull",
       "next.sendQueuedHeld",
       "next.sendQueuedHere",
+      "next.sessionBoardOpenSessionFirst",
       "next.sessionNotStartedShort",
       "next.sessionStateFilterAttentionHint",
       "next.sessionStateFilterIdleHint",
@@ -11873,10 +11875,12 @@
     "next.sessionBoardInboxEmpty",
     "next.sessionBoardInboxReadError",
     "next.sessionBoardNoPosts",
+    "next.sessionBoardOpenSessionFirst",
     "next.sessionBoardReadError",
     "next.sessionBoardRestore",
     "next.sessionBoardWriteError",
     "next.sessionBoardsEmpty",
+    "next.sessionBoardsNoActive",
     "next.sessionCountNotStarted",
     "next.sessionGone",
     "next.sessionNotStarted",

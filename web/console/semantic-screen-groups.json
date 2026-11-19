@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13339,
-  "riskKeys": 5743,
-  "nonRiskCount": 7596,
+  "englishContentKeys": 13347,
+  "riskKeys": 5745,
+  "nonRiskCount": 7602,
   "groups": [
     {
       "name": "acp / other",
@@ -4148,7 +4148,7 @@
     },
     {
       "name": "next / other",
-      "count": 1264,
+      "count": 1270,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4992,6 +4992,8 @@
         "next.sessionBoardChoose",
         "next.sessionBoardClose",
         "next.sessionBoardCreate",
+        "next.sessionBoardCreateFirst",
+        "next.sessionBoardCurrentLead",
         "next.sessionBoardEarlier",
         "next.sessionBoardExpand",
         "next.sessionBoardFull",
@@ -5002,6 +5004,7 @@
         "next.sessionBoardInboxSession",
         "next.sessionBoardInvalid",
         "next.sessionBoardLead",
+        "next.sessionBoardLeadHelp",
         "next.sessionBoardManage",
         "next.sessionBoardMemberCount",
         "next.sessionBoardMemberNotListed",
@@ -5010,9 +5013,11 @@
         "next.sessionBoardMessage",
         "next.sessionBoardMessagesLoading",
         "next.sessionBoardName",
+        "next.sessionBoardNameExample",
         "next.sessionBoardPerson",
         "next.sessionBoardPost",
         "next.sessionBoardPurpose",
+        "next.sessionBoardPurposeExample",
         "next.sessionBoardRefresh",
         "next.sessionBoardReply",
         "next.sessionBoardReplyTo",
@@ -5022,6 +5027,7 @@
         "next.sessionBoardTransfer",
         "next.sessionBoardUnread",
         "next.sessionBoards",
+        "next.sessionBoardsIntro",
         "next.sessionBoardsLoading",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",

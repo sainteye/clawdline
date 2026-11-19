@@ -122,6 +122,37 @@
 .session-board-dialog .session-board-primary {
   border-color: var(--session-board-edge); color: var(--session-board-accent); background: var(--session-board-tint);
 }
+.session-board-index-actions > :last-child { margin-inline-start: auto; }
+.session-board-empty {
+  display: grid; justify-items: start; gap: 10px; padding: 20px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card-hi);
+}
+.session-board-empty > .session-board-index-mark { width: 44px; height: 44px; }
+.session-board-empty h3 { margin: 2px 0 0; font-size: 1.1rem; }
+.session-board-empty p { margin: 0; max-width: 40ch; color: var(--dim); }
+.session-board-dialog .session-board-create-action {
+  justify-self: start; border-color: transparent; padding-inline: 14px;
+  color: var(--card); background: var(--session-board-accent); font-weight: 650;
+}
+.session-board-empty .session-board-create-action { margin-block-start: 4px; }
+.session-board-reader[data-setup="first"] .session-board-empty {
+  justify-items: center; gap: 14px; padding: 26px 10px 24px;
+  border: 0; background: transparent; text-align: center;
+}
+.session-board-reader[data-setup="first"] .session-board-empty > .session-board-index-mark {
+  width: 54px; height: 54px; border: 1px solid var(--session-board-edge); border-radius: 11px;
+}
+.session-board-reader[data-setup="first"] .session-board-empty h3 { font-size: 1.45rem; }
+.session-board-reader[data-setup="first"] .session-board-create-action { justify-self: center; }
+.session-board-archived { margin-block-start: 12px; }
+.session-board-archived > summary {
+  display: flex; align-items: center; gap: 6px; min-height: 44px; padding-inline: 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card-hi);
+  list-style: none; cursor: pointer;
+}
+.session-board-archived > summary::-webkit-details-marker { display: none; }
+.session-board-archived[open] > summary .session-board-chevron { transform: rotate(90deg); }
+.session-board-archived .session-board-index { margin-block-start: 8px; }
 .session-board-index, .session-board-posts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .session-board-index button { width: 100%; text-align: start; }
 .session-board-index .session-board-index-card {
@@ -197,6 +228,16 @@
   color: var(--ink); background: var(--card-hi); font: inherit;
 }
 
+.session-board-reader[data-setup="create"] .session-board-body { padding-inline: 20px; }
+.session-board-dialog .session-board-create { gap: 16px; }
+.session-board-create label { font-weight: 600; }
+.session-board-create label :is(input, select, textarea) { font-weight: normal; }
+.session-board-dialog .session-board-create > .session-board-create-action { justify-self: end; }
+.session-board-dialog .session-board-create-action:disabled {
+  border-color: var(--session-board-edge); color: var(--dim); background: var(--session-board-tint); opacity: 1;
+}
+.session-board-create p { margin: 6px 0 0; color: var(--dim); font-size: .875em; }
+
 @media (max-width: 700px) {
   .session-board-dialog, .session-board-dialog[data-board], .session-board-dialog[data-expanded="true"] {
     inset: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0;
@@ -216,4 +257,5 @@
 @media (width > 700px) {
   .session-board-reader { height: 94dvh; max-height: none; }
   .session-board-reader[data-expanded="true"] { height: 97dvh; }
+  .session-board-reader[data-setup] { height: fit-content; max-height: 90dvh; }
 }

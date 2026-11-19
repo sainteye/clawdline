@@ -622,13 +622,21 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en")
   const localBoards = useLocalSessionBoards(fleet.live)
   const boardSource = sessionBoardSource ?? localBoards
-  const boardTargets = sessionBoardTargets ?? (boardSource ? [{
+  const availableBoardTargets = sessionBoardTargets ?? (boardSource ? [{
     source: boardSource, machine: fleetReaderMachine ?? undefined, label: quotaMachineName ?? "",
     candidates: rows.flatMap(row => {
       const actor = sessionBoardActor(row.assistant, row.sessionId, detailSessionName(row), row.persona, row.icon)
       return actor ? [actor] : []
     }),
   }] : [])
+  const detailID = sessionDetailID(openId, fleetList ? fleetTarget : null, fleetReaderMachine, rows)
+  const detailShown = page === "sessions" && (phone() ? view === "detail" : paneOpen)
+  const currentSession = detailID && detailShown ? rows.find(row => row.id === detailID) : undefined
+  const currentLead = currentSession && sessionBoardActor(currentSession.assistant, currentSession.sessionId, "")?.id
+  const boardTargets = availableBoardTargets.map(target => ({
+    ...target,
+    preferredLead: (!fleetList || (fleetTarget && target.machine === fleetTarget.machineID)) ? currentLead : undefined,
+  }))
   const copilotBoardTargets = useRef(boardTargets)
   copilotBoardTargets.current = boardTargets
   useEffect(() => {
@@ -1369,7 +1377,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
         filter={filter}
         onFilter={setFilter}
         selected={selected}
-        openId={sessionDetailID(openId, fleetList ? fleetTarget : null, fleetReaderMachine, rows)}
+        openId={detailID}
         onOpen={(id) => openSession(id)}
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
