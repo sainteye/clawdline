@@ -55,6 +55,25 @@ func paWireInstructionSnapshot(value pa.InstructionSnapshot) contract.ProjectAss
 	return out
 }
 
+func paDomainRosterEdit(value *contract.ProjectAssistantRosterEdit) (*pa.RosterEdit, error) {
+	if value == nil {
+		return nil, nil
+	}
+	edit := &pa.RosterEdit{DesignateLead: value.DesignateLead, NewSession: value.FreshContext}
+	switch value.Pinned {
+	case "":
+	case contract.ProjectAssistantSidebarPinPinned, contract.ProjectAssistantSidebarPinUnpinned:
+		pinned := value.Pinned == contract.ProjectAssistantSidebarPinPinned
+		edit.Pinned = &pinned
+	default:
+		return nil, paHTTPFailure(pa.Invalid, "sidebar_pin")
+	}
+	if value.Section != nil {
+		edit.Section = &value.Section.Name
+	}
+	return edit, nil
+}
+
 func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	var out contract.ProjectAssistantBot
 	out.Key = paWireBotKey(value.Key)
@@ -84,6 +103,14 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 		out.RuntimeSettings = &contract.ProjectAssistantRuntimeSettings{Model: value.RuntimeSettings.Model, Options: options}
 	}
 	out.Hidden = value.Hidden
+	out.Lead = value.Lead
+	out.SidebarSection = value.SidebarSection
+	if value.SidebarPinned != nil {
+		out.SidebarPinned = contract.ProjectAssistantSidebarPinUnpinned
+		if *value.SidebarPinned {
+			out.SidebarPinned = contract.ProjectAssistantSidebarPinPinned
+		}
+	}
 	out.ManageTeam = value.ManageTeam
 	if value.CreatedBy != nil {
 		key := paWireBotKey(*value.CreatedBy)

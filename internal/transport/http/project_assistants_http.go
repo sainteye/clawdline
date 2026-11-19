@@ -615,7 +615,11 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		settings := request.Settings
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		roster, err := paDomainRosterEdit(settings.Roster)
+		if err != nil {
+			return nil, err
+		}
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)

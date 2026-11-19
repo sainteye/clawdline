@@ -106,6 +106,7 @@ export interface SourceClient {
   setHidden?(request: W.ProjectAssistantVisibilityRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   deleteBot?(request: W.ProjectAssistantDeleteRequest, signal: AbortSignal): Promise<unknown>
   canManage?(): boolean
+  canRosterActions?(): boolean
   canRoutineEvents?(): boolean
   routineHook?(request: W.ProjectAssistantRoutineHookRequest, signal: AbortSignal): Promise<W.ProjectAssistantRoutineHookResponse>
   canRoutines?(): boolean

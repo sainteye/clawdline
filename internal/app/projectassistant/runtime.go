@@ -1008,6 +1008,10 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		binding.NativeSessionID = ""
 		binding.Revoked = false
 	}
+	// A person's new-session boundary invalidates every earlier native binding.
+	if export.Conversation.SessionResetGeneration > 0 && binding.Fence.Generation <= export.Conversation.SessionResetGeneration {
+		binding.NativeSessionID = ""
+	}
 	// Check the selected history, including a parked fallback, before an
 	// adapter can attempt a load or fall back to a fresh open in the same
 	// history directory. Isolated routines, Forget and changed instructions
@@ -2107,6 +2111,9 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 	x, err := r.o.Repository.Export(ctx, key)
 	if err != nil {
 		return err
+	}
+	if x.Conversation.SessionResetGeneration > 0 && t.Fence.Generation <= x.Conversation.SessionResetGeneration {
+		return nil
 	}
 	if interruptedPermission(t, x.Permissions) {
 		return nil

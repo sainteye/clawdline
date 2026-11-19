@@ -123,7 +123,10 @@ type Bot struct {
 	Mode string `json:"mode,omitempty"`
 	// Hidden keeps the Bot out of the list and its badge, as Codync's Hide
 	// from list does; its chat, memory and settings stay.
-	Hidden bool `json:"hidden,omitempty"`
+	Hidden         bool   `json:"hidden,omitempty"`
+	SidebarPinned  *bool  `json:"sidebar_pinned,omitempty"`
+	SidebarSection string `json:"sidebar_section,omitempty"`
+	Lead           bool   `json:"lead,omitempty"`
 	// ManageTeam is Codync's "Manage the team": off by default, written
 	// only by the person's own settings (CreateBot/EditBot), never by a
 	// manager tool or a model.
@@ -153,7 +156,15 @@ type CreateBot struct {
 }
 
 // EditBot preserves optional settings omitted by older clients; Project is fixed.
+type RosterEdit struct {
+	NewSession    bool    `json:"new_session,omitempty"`
+	Pinned        *bool   `json:"pinned,omitempty"`
+	Section       *string `json:"section,omitempty"`
+	DesignateLead bool    `json:"designate_lead,omitempty"`
+}
+
 type EditBot struct {
+	Roster          *RosterEdit         `json:"roster,omitempty"`
 	Extensions      *ExtensionSelection `json:"extensions,omitempty"`
 	LoginProfile    *string             `json:"login_profile,omitempty"`
 	Agent           Agent               `json:"agent,omitempty"`
@@ -175,15 +186,17 @@ type EditBot struct {
 }
 
 type Conversation struct {
-	MainBindingID  string `json:"main_binding_id,omitempty"`
-	Key            BotKey `json:"key"`
-	ID             string `json:"id"`
-	Generation     int64  `json:"generation"`
-	BindingID      string `json:"binding_id"`
-	LastMessageSeq int64  `json:"last_message_seq"`
-	MemoryRevision int64  `json:"memory_revision"`
-	ActiveTurnID   string `json:"active_turn_id"`
-	Version        int64  `json:"version"`
+	SessionResetGeneration int64  `json:"session_reset_generation,omitempty"`
+	SessionResetAfter      int64  `json:"session_reset_after,omitempty"`
+	MainBindingID          string `json:"main_binding_id,omitempty"`
+	Key                    BotKey `json:"key"`
+	ID                     string `json:"id"`
+	Generation             int64  `json:"generation"`
+	BindingID              string `json:"binding_id"`
+	LastMessageSeq         int64  `json:"last_message_seq"`
+	MemoryRevision         int64  `json:"memory_revision"`
+	ActiveTurnID           string `json:"active_turn_id"`
+	Version                int64  `json:"version"`
 }
 
 type TurnState string

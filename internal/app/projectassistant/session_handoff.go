@@ -160,7 +160,7 @@ func sessionContinuation(x Export, turn pa.Turn, memory pa.MemoryRevision) ([]Se
 func sessionContinuationBefore(x Export, turn pa.Turn, memory pa.MemoryRevision, before int64) ([]SessionContinuation, *SessionRecap, error) {
 	var chat []pa.Message
 	for _, m := range x.Messages {
-		if m.Seq > 0 && m.Seq < before && m.TurnID != turn.ID && m.Exchange == nil && (m.Kind == pa.UserMessage || m.Kind == pa.AssistantMessage) {
+		if m.Seq > x.Conversation.SessionResetAfter && m.Seq < before && m.TurnID != turn.ID && m.Exchange == nil && (m.Kind == pa.UserMessage || m.Kind == pa.AssistantMessage) {
 			chat = append(chat, m)
 		}
 	}

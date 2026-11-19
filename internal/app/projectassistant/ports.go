@@ -83,6 +83,8 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
+	StartFreshSession bool
+	DesignateLead     bool
 	ArtifactTitle     *pa.ArtifactDisplayTitle
 	AgentRest         *pa.AgentRest
 	ClearAgentRest    pa.Agent

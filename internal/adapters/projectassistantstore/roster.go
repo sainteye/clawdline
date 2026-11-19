@@ -207,6 +207,31 @@ func (s *ViewStore) ReadRoster(ctx context.Context, q app.RosterQuery) (app.Rost
 // active and last eligible admitted turn, one anchor message and pending controls.
 // Histories, instructions on old turns, trace payloads and permission options
 // never cross into Go. SQL checks bytes BEFORE returning a projected string.
+// replaceRosterLead demotes the previous lead inside the same write transaction.
+func replaceRosterLead(ctx context.Context, tx *sql.Tx, next aggregate) error {
+	if !next.Bot.Lead || next.BackgroundOwner != nil {
+		return failure(pa.ScopeDenied, "lead_sidebar")
+	}
+	key := next.Bot.Key
+	var prior string
+	err := tx.QueryRowContext(ctx, `SELECT bot FROM project_assistant_bots WHERE machine=? AND bot<>? AND json_extract(CAST(data AS TEXT),'$.Bot.lead')=1`, key.MachineID, key.BotID).Scan(&prior)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	previous, err := load(ctx, tx, pa.BotKey{MachineID: key.MachineID, BotID: prior})
+	if err != nil {
+		return err
+	}
+	expected := previous.Bot.Version
+	previous.Bot.Lead = false
+	previous.Bot.Version++
+	previous.Bot.UpdatedAt = next.Bot.UpdatedAt
+	return persist(ctx, tx, previous, expected)
+}
+
 // JSONB is query-local only. The pinned SQLite supports it; parsing the same
 // large text aggregate inside each correlated scalar would retain the reader
 // snapshot for seconds. Stored bytes and returned projections remain JSON.

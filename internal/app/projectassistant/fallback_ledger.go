@@ -64,7 +64,7 @@ func parkedAttempt(x Export, turn pa.Turn, agent pa.Agent, profiles ...string) (
 			binding = b
 		}
 	}
-	if binding.NativeSessionID == "" {
+	if binding.NativeSessionID == "" || x.Conversation.SessionResetGeneration > 0 && binding.Fence.Generation <= x.Conversation.SessionResetGeneration {
 		return binding, 0, false
 	}
 	clean := false

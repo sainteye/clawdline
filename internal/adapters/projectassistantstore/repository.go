@@ -301,6 +301,11 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if err = applyAgentRest(ctx, tx, a, m); err != nil {
 		return pa.Receipt{}, err
 	}
+	if m.StartFreshSession {
+		if err = withdrawDraftForNewSession(ctx, tx, a.Bot.Key); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
 	if err = settleHandoffInput(ctx, tx, m.Turn); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -332,6 +337,11 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 			if err = s.CompletionIntent(ctx, tx, a.Bot, *m.Turn); err != nil {
 				return pa.Receipt{}, err
 			}
+		}
+	}
+	if m.DesignateLead {
+		if err = replaceRosterLead(ctx, tx, a); err != nil {
+			return pa.Receipt{}, err
 		}
 	}
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
@@ -392,6 +402,12 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		if m.ExpectedVersion > 0 && m.Conversation.BindingID != a.Conversation.BindingID && m.Conversation.Generation <= a.Conversation.Generation {
 			return failure(pa.StaleGeneration, "binding_generation")
+		}
+		if m.Conversation.SessionResetGeneration < a.Conversation.SessionResetGeneration ||
+			m.Conversation.SessionResetGeneration > m.Conversation.Generation ||
+			m.Conversation.SessionResetAfter < a.Conversation.SessionResetAfter ||
+			m.Conversation.SessionResetAfter > m.Conversation.LastMessageSeq {
+			return failure(pa.StaleGeneration, "session_boundary")
 		}
 		a.Conversation = *m.Conversation
 	}

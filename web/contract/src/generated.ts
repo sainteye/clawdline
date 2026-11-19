@@ -5276,6 +5276,7 @@ export interface ProjectAssistantBot {
   hidden?: boolean
   instructions: ProjectAssistantInstructions
   key: ProjectAssistantBotKey
+  lead?: boolean
   login_profile?: string
   manage_team?: boolean
 
@@ -5289,6 +5290,8 @@ export interface ProjectAssistantBot {
   permission_policy: ProjectAssistantPermissionPolicy
   project: ProjectAssistantProjectScope
   runtime_settings?: ProjectAssistantRuntimeSettings
+  sidebar_pinned?: ProjectAssistantSidebarPin
+  sidebar_section?: string
   updated_at: string
   version: number
 }
@@ -5563,6 +5566,7 @@ export interface ProjectAssistantEditSettings {
    * Empty leaves the permission setting unchanged (API level 65).
    */
   permission_policy?: ProjectAssistantPermissionPolicy
+  roster?: ProjectAssistantRosterEdit
   runtime_settings?: ProjectAssistantRuntimeSettings
 }
 
@@ -7116,6 +7120,13 @@ export interface ProjectAssistantRosterChange {
   summary?: ProjectAssistantBotSummary
 }
 
+export interface ProjectAssistantRosterEdit {
+  designate_lead?: boolean
+  fresh_context?: boolean
+  pinned?: ProjectAssistantSidebarPin
+  section?: ProjectAssistantSidebarSection
+}
+
 /**
  * Bounded SSE data. Apply all changes before saving its signed cursor. Initial
  * pages pin their first machine frontier; only snapshot-complete establishes a
@@ -7346,6 +7357,16 @@ export type ProjectAssistantShape =
   | "teardrop"
 
 export const ProjectAssistantShapeValues: readonly ProjectAssistantShape[] = ["blob", "squircle", "wedge", "pebble", "tablet", "hex", "cloud", "teardrop"] as const
+
+export type ProjectAssistantSidebarPin =
+    "pinned"
+  | "unpinned"
+
+export const ProjectAssistantSidebarPinValues: readonly ProjectAssistantSidebarPin[] = ["pinned", "unpinned"] as const
+
+export interface ProjectAssistantSidebarSection {
+  name: string
+}
 
 export type ProjectAssistantSourceState =
     "online"

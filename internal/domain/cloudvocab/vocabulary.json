@@ -3190,6 +3190,16 @@
                   "max": "cloud.MaxSafeInteger"
                 }
               },
+              "roster": {
+                "type": "object",
+                "closed": true,
+                "properties": {
+                  "pinned": {"type":"string","enum":["pinned","unpinned"]},
+                  "section": {"type":"object","closed":true,"properties":{"name":{"type":"string"}},"required":["name"]},
+                  "designate_lead": {"type":"bool"},
+                  "fresh_context": {"type":"bool"}
+                }
+              },
               "name": {
                 "type": "string"
               },

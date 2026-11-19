@@ -264,6 +264,15 @@ func (s *Store) ClaimHandoffText(ctx context.Context, expected pa.HandoffCard) (
 	return text, nil
 }
 
+func withdrawDraftForNewSession(ctx context.Context, tx *sql.Tx, key pa.BotKey) error {
+	card, err := loadHandoffCard(ctx, tx, key)
+	if err != nil || card == nil || card.State != pa.HandoffDraft {
+		return err
+	}
+	card.State, card.Text, card.BookmarkMessageID = pa.HandoffWithdrawn, "", ""
+	return writeHandoffCard(ctx, tx, *card)
+}
+
 func forgetHandoffCard(ctx context.Context, tx *sql.Tx, key pa.BotKey) error {
 	card, err := loadHandoffCard(ctx, tx, key)
 	if err != nil || card == nil {

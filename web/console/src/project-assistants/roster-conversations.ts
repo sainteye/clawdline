@@ -11,7 +11,7 @@ import {projectKey,pinnedGroupKey} from "./roster-groups.ts"
 export type RosterRoom = W.ProjectAssistantGroup & {last_entry?:W.ProjectAssistantRoomEntry & {at?:string};room?:W.ProjectAssistantRoomState}
 export type GroupRosterEntry = {source:SourceClient;group:RosterRoom;status:W.ProjectAssistantSourceStatus}
 export type RosterConversation = {kind:"bot";key:string;machineID:string;projectID:string;item:W.ProjectAssistantBotSummary}|{kind:"group";key:string;machineID:string;projectID:string;entry:GroupRosterEntry}
-export type ConversationSection = {key:string;kind:"pinned"|"project";machineID:string;items:RosterConversation[]}
+export type ConversationSection = {key:string;kind:"pinned"|"project"|"custom";name?:string;machineID:string;items:RosterConversation[]}
 // A group and a Bot may have the same source-qualified ID without sharing preferences.
 export const groupConversationKey=(key:W.ProjectAssistantBotKey)=>JSON.stringify(["group",key.machine_id,key.bot_id])
 export const GroupPreviewAvatars=4
@@ -31,18 +31,25 @@ export function conversations(items:readonly W.ProjectAssistantBotSummary[],room
 export function conversationSections(rows:readonly RosterConversation[],state:RosterState):ConversationSection[]{
   const byKey=new Map(rows.map(row=>[row.key,row])),sections=new Map<string,ConversationSection>()
   const pinned:ConversationSection={key:pinnedGroupKey,kind:"pinned",machineID:"",items:[]}
-  // Input order remains stable when an old source has no last-message timestamp.
-  for(const row of rows){
-    if(state.pinnedBotKeys.includes(row.key))continue
-    const key=projectKey(row.machineID,row.projectID)
-    if(!sections.has(key))sections.set(key,{key,kind:"project",machineID:row.machineID,items:[]})
+  const sectionFor=(row:RosterConversation):ConversationSection=>{
+    const bot=row.kind==="bot"?row.item.bot:null
+    if((bot?.sidebar_pinned ? bot.sidebar_pinned==="pinned" : state.pinnedBotKeys.includes(row.key)))return pinned
+    const name=bot?.sidebar_section
+    const key=name?JSON.stringify(["sidebar-section",row.machineID,name]):projectKey(row.machineID,row.projectID)
+    const existing=sections.get(key)
+    if(existing)return existing
+    const section:ConversationSection={key,kind:name?"custom":"project",name,machineID:row.machineID,items:[]}
+    sections.set(key,section)
+    return section
   }
+  // Input order remains stable when an old source has no last-message timestamp.
+  rows.forEach(sectionFor)
   for(const key of orderedKeys([...byKey.keys()],state.botSortOrder)){
     const row=byKey.get(key)!
-    if(state.pinnedBotKeys.includes(key))pinned.items.push(row)
-    else sections.get(projectKey(row.machineID,row.projectID))!.items.push(row)
+    sectionFor(row).items.push(row)
   }
-  return [...(pinned.items.length?[pinned]:[]),...orderedKeys([...sections.keys()],state.projectSortOrder).map(key=>sections.get(key)!)]
+  return [pinned,...orderedKeys([...sections.keys()],state.projectSortOrder).map(key=>sections.get(key)!)].filter(section=>section.items.length)
+
 }
 
 export function groupLastSpeaker(group:RosterRoom,bots:readonly W.ProjectAssistantBot[],person:string):{speaker:string;text:string}|null{

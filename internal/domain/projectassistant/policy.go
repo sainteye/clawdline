@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -135,6 +136,26 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	}
 	return validateSettings(in.Name, in.Appearance, in.Instructions)
 }
+func applyRosterEdit(bot *Bot, edit RosterEdit) error {
+	if edit.Section != nil {
+		name := strings.TrimSpace(*edit.Section)
+		if !utf8.ValidString(name) || utf8.RuneCountInString(name) > MaxNameRunes || strings.ContainsFunc(name, unicode.IsControl) {
+			return fail(Invalid, "sidebar_section")
+		}
+		bot.SidebarSection = name
+	}
+	if edit.Pinned != nil {
+		bot.SidebarPinned = edit.Pinned
+	}
+	if edit.DesignateLead {
+		if bot.Hidden {
+			return fail(ScopeDenied, "lead_sidebar")
+		}
+		bot.Lead = true
+	}
+	return nil
+}
+
 func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	previous := bot
 	if in.Agent != "" && in.Agent != bot.Agent {
@@ -175,6 +196,11 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	}
 	if in.ExpectedVersion != bot.Version {
 		return bot, fail(StaleVersion, "bot")
+	}
+	if in.Roster != nil {
+		if err := applyRosterEdit(&bot, *in.Roster); err != nil {
+			return previous, err
+		}
 	}
 	if err := validateSettings(in.Name, in.Appearance, in.Instructions); err != nil {
 		return bot, err

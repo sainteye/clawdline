@@ -447,6 +447,15 @@
           "type": "string",
           "description": "The agent mode the Bot works in: auto (or empty) for the agent's Auto mode, otherwise one the agent offers (API level 65)."
         },
+        "sidebar_pinned": {
+          "$ref": "#/$defs/ProjectAssistantSidebarPin"
+        },
+        "sidebar_section": {
+          "type": "string"
+        },
+        "lead": {
+          "type": "boolean"
+        },
         "hidden": {
           "type": "boolean",
           "description": "Kept out of the Bot list and its badge (API level 67)."
@@ -565,6 +574,9 @@
       "additionalProperties": false,
       "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Project remains fixed; qualified sources may change the primary Agent for the next idle turn.",
       "properties": {
+        "roster": {
+          "$ref": "#/$defs/ProjectAssistantRosterEdit"
+        },
         "expected_version": {
           "type": "integer"
         },
@@ -628,6 +640,36 @@
         "appearance",
         "instructions"
       ]
+    },
+    "ProjectAssistantSidebarPin": {
+      "type": "string",
+      "enum": ["pinned", "unpinned"]
+    },
+    "ProjectAssistantSidebarSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"}
+      },
+      "required": ["name"]
+    },
+    "ProjectAssistantRosterEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pinned": {
+          "$ref": "#/$defs/ProjectAssistantSidebarPin"
+        },
+        "section": {
+          "$ref": "#/$defs/ProjectAssistantSidebarSection"
+        },
+        "fresh_context": {
+          "type": "boolean"
+        },
+        "designate_lead": {
+          "type": "boolean"
+        }
+      }
     },
     "ProjectAssistantFence": {
       "type": "object",

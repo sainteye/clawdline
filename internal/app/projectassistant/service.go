@@ -266,6 +266,26 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
 	}
+	if settings.Roster != nil && settings.Roster.NewSession {
+		if settings.Roster.DesignateLead || settings.Roster.Pinned != nil || settings.Roster.Section != nil {
+			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Invalid, "new_session")
+		}
+		resetter, ok := s.opts.Runtime.(interface {
+			newSession(context.Context, pa.Command, int64) (pa.Receipt, error)
+		})
+		if !ok {
+			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Unsupported, "new_session")
+		}
+		if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+		r, err := resetter.newSession(ctx, c, settings.ExpectedVersion)
+		if err != nil {
+			return pa.Bot{}, pa.Receipt{}, err
+		}
+		bot, err := s.opts.Repository.Bot(ctx, c.Key)
+		return bot, r, err
+	}
 	next, err := pa.ApplyEdit(bot, settings)
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
@@ -310,7 +330,7 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 	var r pa.Receipt
 	commit := func() error {
 		var e error
-		r, e = s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next,
+		r, e = s.opts.Repository.Commit(ctx, Mutation{Command: c, ExpectedVersion: bot.Version, Bot: &next, DesignateLead: settings.Roster != nil && settings.Roster.DesignateLead,
 			Receipt: pa.Receipt{ID: s.opts.ID(), Command: c, State: pa.EffectAccepted, ResourceID: bot.Key.BotID},
 			Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), Fence: fence, Kind: pa.BotUpdated, At: next.UpdatedAt, Bot: &summary}}})
 		return e
@@ -771,6 +791,9 @@ func (s *Service) SetHidden(ctx context.Context, c pa.Command, hidden bool) (pa.
 	bot, err := s.opts.Repository.Bot(ctx, c.Key)
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
+	}
+	if bot.Lead && hidden {
+		return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "lead_sidebar")
 	}
 	next := bot
 	next.Hidden = hidden

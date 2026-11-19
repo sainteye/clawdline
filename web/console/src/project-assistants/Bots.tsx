@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { authorized, command, errorCode, projectChoices, botFromFragment } from "./client"
+import { markConversationRead, canMarkConversationRead } from "./conversation-read"
+import { rosterIcon } from "./roster-icons"
+import { RosterActionDialog, type RosterPrompt } from "./RosterActionDialog"
+import type { PaMenuItem } from "./PaMenu"
 import { BotRoster } from "./BotRoster"
 import { FallbackSourceScope } from "./FallbackSettings"
 import { BotCreate } from "./BotCreate"
@@ -36,6 +40,9 @@ interface SourcePage {revision:string;query:string;requestQuery:string;items:W.P
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,manageHistory=false,onSelectionChange}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
+  const [rosterPrompt,setRosterPrompt]=useState<RosterPrompt|null>(null)
+  const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean}|null>(null)
+  const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
   const [groupOpen,setGroupOpen]=useState(false)
   const [groupRoute,setGroupRoute]=useState<string|null>(null)
   const [destination,setDestination]=useState(()=>botFromFragment(location.hash))
@@ -163,6 +170,71 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
       writeHistory(id,group,previous?.paView===historyID.current&&!!(previous.paBot||previous.paGroup&&!fromGroup))
     }
   }
+  const removeFromList=(key:W.ProjectAssistantBotKey)=>{
+    const id=botIdentity(key)
+    if(selected===id)back()
+    setPages(old=>Object.fromEntries(Object.entries(old).map(([machine,p])=>[machine,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==id)}])))
+  }
+  const updateBot=(bot:W.ProjectAssistantBot)=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))
+  const withBot=<T,>(item:W.ProjectAssistantBotSummary,action:(source:SourceClient,signal:AbortSignal)=>Promise<T>,signal?:AbortSignal)=>{
+    const source=sources.find(client=>client.machineID===item.bot.key.machine_id)
+    if(!source)return Promise.reject(new Error("Source unavailable"))
+    return authorized(source,current,s=>action(source,s),signal??new AbortController().signal)
+  }
+  const changeRoster=async(item:W.ProjectAssistantBotSummary,roster:W.ProjectAssistantRosterEdit,signal?:AbortSignal)=>{
+    const result=await withBot(item,async(source,s)=>{
+      const {bot}=await authorized(source,current,s=>source.get(item.bot.key,s),s)
+      // The source checks the version captured by this read at publication.
+      return authorized(source,current,s=>source.edit({command:command(item.bot.key,"edit"),settings:{
+        expected_version:bot.version,name:bot.name,appearance:bot.appearance,instructions:bot.instructions.text,roster
+      }},s),s)
+    },signal)
+    updateBot(result.bot)
+    setRosterNotice({text:roster.fresh_context?w.rosterNewSession:w.rosterUpdated})
+  }
+  const runRoster=(action:()=>Promise<void>)=>{
+    setRosterNotice(null)
+    void Promise.resolve().then(action).catch(error=>setRosterNotice({text:`${w.unavailable} (${errorCode(error)})`,error:true}))
+  }
+  const updateSidebar=(item:W.ProjectAssistantBotSummary,roster:W.ProjectAssistantRosterEdit)=>runRoster(()=>changeRoster(item,roster))
+  const applyPrompt=async(prompt:RosterPrompt,name:string,signal:AbortSignal)=>{
+    switch(prompt.action){
+      case "section": await changeRoster(prompt.item,{section:{name}},signal);break
+      case "new-session": await changeRoster(prompt.item,{fresh_context:true},signal);break
+      case "delete":
+        await withBot(prompt.item,(source,s)=>source.deleteBot!({command:command(prompt.item.bot.key,"delete")},s),signal)
+        removeFromList(prompt.item.bot.key)
+    }
+  }
+  const botActions=(item:W.ProjectAssistantBotSummary):PaMenuItem[]=>{
+    const {bot}=item, id=botIdentity(bot.key), source=sources.find(client=>client.machineID===bot.key.machine_id)
+    const writable=!!source&&canWrite(item.source), modern=writable&&source.canRosterActions?.()===true
+    const manage=writable&&source.canManage?.()===true
+    return [
+      {id:"read",label:w.rosterMarkRead,icon:rosterIcon("read"),disabled:!source||!readerID||!item.unread_count||!canMarkConversationRead(item.source),onSelect:()=>runRoster(async()=>{
+        await withBot(item,(source,s)=>markConversationRead(source,current,bot,readerID!,s))
+        await refreshAfterRead(source!)
+        setRosterNotice({text:w.readMarked})
+      })},
+      {id:"profile",label:w.rosterEditProfile,icon:rosterIcon("edit"),disabled:!writable,onSelect:()=>{
+        if(selected!==id)select(item)
+        setProfileRequest(old=>({id,count:(old?.count??0)+1}))
+      }},
+      {id:"copy",label:w.rosterCopyID,icon:rosterIcon("copy"),disabled:!navigator.clipboard,onSelect:()=>{
+        // Start the clipboard operation while the pointer or key activation is current.
+        void navigator.clipboard.writeText(bot.conversation_id).then(()=>setRosterNotice({text:w.rosterCopiedID}),error=>setRosterNotice({text:`${w.unavailable} (${errorCode(error)})`,error:true}))
+      }},
+      {id:"session",label:w.rosterNewSession,icon:rosterIcon("renew"),disabled:!modern,onSelect:()=>setRosterPrompt({item,action:"new-session"})},
+      ...(!bot.lead?[{id:"lead",label:w.rosterSetLead,icon:rosterIcon("lead"),disabled:!modern,onSelect:()=>updateSidebar(item,{designate_lead:true})}]:[]),
+      ...(!bot.lead?[{id:"hide",label:w.rosterHide,icon:rosterIcon("hide"),disabled:!manage||!source?.setHidden,onSelect:()=>runRoster(async()=>{
+        const result=await withBot(item,(source,s)=>source.setHidden!({command:command(bot.key,"visibility"),hidden:true},s))
+        updateBot(result.bot)
+        if(selected===id)back()
+        setRosterNotice({text:w.rosterUpdated})
+      })}]:[]),
+      {id:"delete",label:w.deleteBot,icon:rosterIcon("delete"),danger:true,disabled:!manage||!source?.deleteBot,onSelect:()=>setRosterPrompt({item,action:"delete"})}
+    ]
+  }
   const groupOpened=(key:W.ProjectAssistantBotKey)=>{
     lastSelected.current=null
     setGroupOpen(true);setDestination(null);setSelected(null);selectRef.current?.(null)
@@ -229,8 +301,12 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[creating])
   useEffect(()=>{if(!selected&&!groupOpen&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>('[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected,groupOpen])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
-    <BotRoster key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
-    <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen} backLabel={groupOpen?w.backToGroup:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>{const gone=selected;back();setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==gone)}])))}} onBotChanged={bot=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))}/></FallbackSourceScope>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
+    {rosterNotice&&<div className="pa-roster-notice" role={rosterNotice.error?"alert":"status"}>
+      <span>{rosterNotice.text}</span><button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
+    </div>}
+    {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
+    <BotRoster botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen} backLabel={groupOpen?w.backToGroup:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} onBotChanged={updateBot}/></FallbackSourceScope>:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>
 }

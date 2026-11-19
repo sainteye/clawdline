@@ -4502,6 +4502,7 @@ type ProjectAssistantBot struct {
 	Hidden       bool                         `json:"hidden,omitempty"`
 	Instructions ProjectAssistantInstructions `json:"instructions"`
 	Key          ProjectAssistantBotKey       `json:"key"`
+	Lead         bool                         `json:"lead,omitempty"`
 	LoginProfile string                       `json:"login_profile,omitempty"`
 	ManageTeam   bool                         `json:"manage_team,omitempty"`
 
@@ -4513,6 +4514,8 @@ type ProjectAssistantBot struct {
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	Project          ProjectAssistantProjectScope     `json:"project"`
 	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
+	SidebarPinned    ProjectAssistantSidebarPin       `json:"sidebar_pinned,omitempty"`
+	SidebarSection   string                           `json:"sidebar_section,omitempty"`
 	UpdatedAt        string                           `json:"updated_at"`
 	Version          int64                            `json:"version"`
 }
@@ -4759,6 +4762,7 @@ type ProjectAssistantEditSettings struct {
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
+	Roster           *ProjectAssistantRosterEdit      `json:"roster,omitempty"`
 	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 }
 
@@ -6199,6 +6203,13 @@ type ProjectAssistantRosterChange struct {
 	Summary  *ProjectAssistantBotSummary `json:"summary,omitempty"`
 }
 
+type ProjectAssistantRosterEdit struct {
+	DesignateLead bool                            `json:"designate_lead,omitempty"`
+	FreshContext  bool                            `json:"fresh_context,omitempty"`
+	Pinned        ProjectAssistantSidebarPin      `json:"pinned,omitempty"`
+	Section       *ProjectAssistantSidebarSection `json:"section,omitempty"`
+}
+
 // Bounded SSE data. Apply all changes before saving its signed cursor. Initial
 // pages pin their first machine frontier; only snapshot-complete establishes a
 // complete initial roster. hello has no cursor. resync/closure/EOF never
@@ -6416,6 +6427,20 @@ const (
 
 // ProjectAssistantShapeValues is every value the contract allows, in contract order.
 var ProjectAssistantShapeValues = []ProjectAssistantShape{ProjectAssistantShapeBlob, ProjectAssistantShapeSquircle, ProjectAssistantShapeWedge, ProjectAssistantShapePebble, ProjectAssistantShapeTablet, ProjectAssistantShapeHex, ProjectAssistantShapeCloud, ProjectAssistantShapeTeardrop}
+
+type ProjectAssistantSidebarPin string
+
+const (
+	ProjectAssistantSidebarPinPinned   ProjectAssistantSidebarPin = "pinned"
+	ProjectAssistantSidebarPinUnpinned ProjectAssistantSidebarPin = "unpinned"
+)
+
+// ProjectAssistantSidebarPinValues is every value the contract allows, in contract order.
+var ProjectAssistantSidebarPinValues = []ProjectAssistantSidebarPin{ProjectAssistantSidebarPinPinned, ProjectAssistantSidebarPinUnpinned}
+
+type ProjectAssistantSidebarSection struct {
+	Name string `json:"name"`
+}
 
 type ProjectAssistantSourceState string
 
