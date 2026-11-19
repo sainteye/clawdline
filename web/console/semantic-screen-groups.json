@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13361,
-  "riskKeys": 5751,
-  "nonRiskCount": 7610,
+  "englishContentKeys": 13435,
+  "riskKeys": 5781,
+  "nonRiskCount": 7654,
   "groups": [
     {
       "name": "acp / other",
@@ -378,6 +378,27 @@
       ]
     },
     {
+      "name": "botCall / other",
+      "count": 12,
+      "sources": [
+        "src/project-assistants/bot-call-words.ts"
+      ],
+      "keys": [
+        "botCall.disconnected",
+        "botCall.end",
+        "botCall.interrupt",
+        "botCall.language",
+        "botCall.listening",
+        "botCall.mute",
+        "botCall.muted",
+        "botCall.opening",
+        "botCall.sending",
+        "botCall.speaking",
+        "botCall.start",
+        "botCall.unsupported"
+      ]
+    },
+    {
       "name": "botExchange / other",
       "count": 19,
       "sources": [
@@ -403,6 +424,31 @@
         "botExchange.sent",
         "botExchange.state",
         "botExchange.title"
+      ]
+    },
+    {
+      "name": "botHandoff / other",
+      "count": 16,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "botHandoff.cancel",
+        "botHandoff.changed",
+        "botHandoff.draft",
+        "botHandoff.edit",
+        "botHandoff.hide",
+        "botHandoff.history",
+        "botHandoff.keep",
+        "botHandoff.kept",
+        "botHandoff.limit",
+        "botHandoff.load",
+        "botHandoff.open",
+        "botHandoff.prepare",
+        "botHandoff.save",
+        "botHandoff.summary",
+        "botHandoff.title",
+        "botHandoff.withdrawn"
       ]
     },
     {
@@ -505,7 +551,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 688,
+      "count": 691,
       "sources": [
         null
       ],
@@ -618,7 +664,6 @@
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
-        "capacityRow.bots.permission_action_bytes.full",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.reaction_emoji_bytes.what",
@@ -655,6 +700,10 @@
         "capacityRow.bots.rpc_ms.what",
         "capacityRow.bots.rules_file_bytes.what",
         "capacityRow.bots.send_body_bytes.what",
+        "capacityRow.bots.server_caller_receipts.what",
+        "capacityRow.bots.server_log_bytes.what",
+        "capacityRow.bots.server_probe_readers.what",
+        "capacityRow.bots.server_processes.what",
         "capacityRow.bots.skill_asset_files.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",
@@ -6003,7 +6052,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 384,
+      "count": 397,
       "sources": [
         null
       ],
@@ -6232,6 +6281,7 @@
         "projectAssistants.permissionRead",
         "projectAssistants.permissionSearch",
         "projectAssistants.permissionShortened",
+        "projectAssistants.permissionSourceAuthority",
         "projectAssistants.permissionSwitchMode",
         "projectAssistants.picture",
         "projectAssistants.pictureLoading",
@@ -6312,6 +6362,18 @@
         "projectAssistants.send",
         "projectAssistants.sendNow",
         "projectAssistants.sending",
+        "projectAssistants.serverActions",
+        "projectAssistants.serverAddressCopied",
+        "projectAssistants.serverCopyAddress",
+        "projectAssistants.serverLocalOnly",
+        "projectAssistants.serverLogs",
+        "projectAssistants.serverRefresh",
+        "projectAssistants.serverRestart",
+        "projectAssistants.serverStart",
+        "projectAssistants.serverStarting",
+        "projectAssistants.serverStop",
+        "projectAssistants.serverStopping",
+        "projectAssistants.serversTitle",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.settingsAccess",

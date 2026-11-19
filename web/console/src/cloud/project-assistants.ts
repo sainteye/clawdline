@@ -33,6 +33,7 @@ export const PROJECT_ASSISTANTS_BROWSER_API_LEVEL = 74
 export const PROJECT_ASSISTANTS_GROUPS_API_LEVEL = 76
 export const PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL = 88
 export const PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL = 90
+export const PROJECT_ASSISTANTS_HANDOFF_API_LEVEL = 93
 export const PROJECT_ASSISTANTS_ROUTINE_EVENTS_API_LEVEL = 75
 export const PROJECT_ASSISTANTS_ROUTINES_API_LEVEL = 73
 export const PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL = 72
@@ -50,6 +51,8 @@ export const PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL = 63
 export const PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL = 64
 // Listing and revoking a Claude Bot's standing rules arrived at 66; this machine's own console only.
 export const PROJECT_ASSISTANTS_RULES_API_LEVEL = 66
+// Source-owned server tools and exact rules arrive at 92; earlier sources keep native rules only.
+export const PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL = 92
 // Hiding and deleting a Bot arrived at 67; this machine's own console only, until the Cloud relay carries them.
 export const PROJECT_ASSISTANTS_MANAGE_API_LEVEL = 67
 const base = "/v1/project-assistants"
@@ -164,6 +167,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
     if (!live.paired) throw failure("pa_unpaired")
     if (live.apiLevel === undefined || live.apiLevel < minimum) throw failure("pa_unsupported")
     if (!live.online) throw failure("pa_offline")
+    if (minimum === PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL) {
+      const status = this.lastStatus
+      if (status?.dev_servers_supported !== true || !status.fresh || status.state !== "online") throw failure("pa_unsupported")
+      if (status.machine_id !== this.machineID || !status.readable || status.access === "hidden") throw failure("pa_scope_denied")
+    }
     if (write && content && (!live.writable || this.access !== "interactive" || !this.lastStatus?.writable || !this.lastStatus.fresh)) throw failure("pa_read_only")
     if (write && !content) {
       if (!this.lastStatus?.fresh || this.lastStatus.state !== "online") throw failure("pa_offline")
@@ -171,16 +179,16 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand }, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
-    try { this.check(signal,write,content,minimum); if (body) this.key(body.command.key) } catch (error) { throw notSent(error) }
+    try { this.check(signal,write,content,minimum); if (body) this.key("command" in body ? body.command.key : body.key) } catch (error) { throw notSent(error) }
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
     let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
-        ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":body.command.idempotency_key}} : {})})
+        ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":"command" in body ? body.command.idempotency_key : body.idempotency_key}} : {})})
       this.recheck(signal,write,content,minimum,response)
       const answer: unknown = await response.json()
       this.recheck(signal,write,content,minimum,answer)
@@ -359,7 +367,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.access=answer.source.access;this.lastStatus=answer.source
     return answer
   }
-  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.handoff?PROJECT_ASSISTANTS_HANDOFF_API_LEVEL:r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
   canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
   upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
   input(r:W.ProjectAssistantInputRequest,s:AbortSignal) { this.key(r.key);const {key,...fields}=r;return this.request<W.ProjectAssistantInputResponse>(endpoint(key,"/input")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
@@ -424,6 +432,28 @@ export class ProjectAssistantSourceClient implements SourceClient {
   // Hide and delete are carried over Cloud too, so a phone can remove a Bot.
   canManage() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_MANAGE_API_LEVEL }
   canRules() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_RULES_API_LEVEL }
+  canSourceRules() { try {this.check(this.lifetime.signal,false,true,PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL);return true} catch {return false} }
+  canDevServers() { return this.canSourceRules() }
+  devServers(key:W.ProjectAssistantBotKey,s:AbortSignal){this.key(key);return this.request<W.ProjectAssistantDevServersResponse>(endpoint(key,"/dev-servers")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL)}
+  devServerLogs(key:W.ProjectAssistantBotKey,id:string,s:AbortSignal){this.key(key);return this.request<W.ProjectAssistantDevServersResponse>(endpoint(key,"/dev-servers/"+encodeURIComponent(id)+"/logs")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL)}
+  controlDevServer(action:"start"|"restart"|"stop"|"remove",r:W.ProjectAssistantDevServerControlRequest,s:AbortSignal){this.key(r.key);if(!["start","restart","stop","remove"].includes(action))throw notSent(failure("pa_invalid"));return this.request<W.ProjectAssistantDevServersResponse>(endpoint(r.key,"/dev-servers/"+encodeURIComponent(r.id)+"/"+action),s,r,"POST",true,PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL)}
+  canHandoff() {
+    try {
+      this.check(new AbortController().signal,true,true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+      return true
+    } catch { return false }
+  }
+  async handoff(key: W.ProjectAssistantBotKey, conversation: string, signal: AbortSignal) {
+    this.key(key)
+    this.check(signal,true,true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+    return this.request<W.ProjectAssistantHandoffResponse>(
+      endpoint(key,"/handoff-card")+query({machine_id:this.machineID,conversation_id:conversation}),
+      signal,undefined,"GET",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+  }
+  writeHandoff(r: W.ProjectAssistantHandoffRequest, signal: AbortSignal) {
+    return this.request<W.ProjectAssistantHandoffResponse>(
+      endpoint(r.command.key,"/handoff-card"),signal,r,"POST",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
+  }
   canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
   answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
@@ -527,6 +557,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if (bot === "status" && !tail) return {word:"project-assistants.status",kind:"read" as const,fields:{},id:""}
     if (!bot) return {word:"project-assistants.list",kind:"read" as const,fields:{...q,page_size:Number(q.page_size)},id:""}
     const key = {machine_id:q.machine_id,bot_id:bot}
+    if(tail==="/handoff-card") {
+      if(init?.body!=null||url.searchParams.size!==2||!q.machine_id||!q.conversation_id)throw failure("pa_invalid")
+      return {word:"project-assistants.handoff-card",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id},id:""}
+    }
     if(tail==="/team-plans") {
       if(init?.body!=null||url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid")
       return {word:"project-assistants.team-plans",kind:"read" as const,fields:{key},id:""}
@@ -575,6 +609,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const command = fields.command
   if (!command || typeof command !== "object" || !("idempotency_key" in command) || typeof command.idempotency_key !== "string") throw failure("pa_invalid")
   if (new Headers(init.headers).get("Idempotency-Key") !== command.idempotency_key) throw failure("pa_invalid")
+  if(tail==="/handoff-card") {
+    if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
+    return {word:"project-assistants.handoff-card-write",kind:"action" as const,fields,id:command.idempotency_key}
+  }
   if(tail==="/team-answer"||tail==="/team-settings") {
     if(method!=="POST"||url.search||!("key" in command)||!command.key||typeof command.key!=="object"||!("bot_id" in command.key)||command.key.bot_id!==bot)throw failure("pa_invalid")
     return {word:"project-assistants."+(tail==="/team-answer"?"team-answer":"team-settings"),kind:"action" as const,fields,id:command.idempotency_key}

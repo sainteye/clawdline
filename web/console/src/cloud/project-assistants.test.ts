@@ -82,7 +82,7 @@ test("explicit output reads keep their captured scope and distinct Cloud word be
   for(const offset of ["-1","1.5","104857601"]){const url=new URL(paths[0],"http://source.invalid");url.searchParams.set("offset",offset);assert.throws(()=>assistantRelayRequest(url.pathname+url.search),e=>errorCode(e)==="pa_invalid")}
 })
 const grant = (machineID = "one"): AssistantGrant => ({accountKey:"account",readerID:"trusted-reader",machineID,authorizationRevision:"grant-1",apiLevel:60,paired:true,online:true,writable:true})
-const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[]}]})
+const sourceStatus = (access: W.ProjectAssistantAccess = "interactive"): W.ProjectAssistantSourcesResponse => ({contract_version:"project-assistants.v1",sources:[{machine_id:"one",access,state:"online",fresh:true,readable:true,writable:access === "interactive",observed_at:"",capabilities:[],dev_servers_supported:true}]})
 const viewWire=():W.ProjectAssistantReadViewResponse=>{
   const project:W.ProjectAssistantProjectScope={machine_id:"one",project_id:"project",canonical_id:"canonical",kind:"repository"}
   const fence:W.ProjectAssistantFence={key,project,conversation_id:"chat",binding_id:"",generation:0}
@@ -385,7 +385,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -864,4 +864,132 @@ test("topic memory writes require API89 before transport while short facts retai
  await assert.rejects(old.saveMemory({...request,entry:{...request.entry,kind:"",title:undefined,summary:undefined}},signal()),error=>errorCode(error)==="pa_unsupported");assert.equal(writes,1,"empty new metadata was sent to an old closed decoder")
  const plain={...request,entry:{...request.entry,kind:undefined,title:undefined,summary:undefined}}
  await old.saveMemory(plain,signal());assert.equal(writes,2)
+})
+
+
+test("source command rules stay hidden on machines with only native rule support", async () => {
+ const registry=new ProjectAssistantRegistry("account","trusted-reader")
+ const transport=()=>async()=>Response.json(sourceStatus())
+ for(const [level,expected] of [[undefined,false],[66,false],[89,false],[90,false],[91,false],[92,true],[91,false]] as const){
+  registry.sync([{...grant(),apiLevel:level}],transport)
+  const source=registry.getSnapshot()[0] as ProjectAssistantSourceClient
+  await source.status(signal())
+  assert.equal(source.canSourceRules(),expected)
+ }
+ registry.revoke()
+})
+
+test("known server controls keep source identity and refuse old or foreign sources before transport",async()=>{
+  const sent:{path:string;body:unknown}[]=[]
+  const transport:AssistantFetch=async(path,init)=>{if(!path.endsWith("/status"))sent.push({path,body:init?.body?JSON.parse(String(init.body)):undefined});return Response.json(path.endsWith("/status")?sourceStatus():{contract_version:"project-assistants.v1",servers:[]})}
+  const local:AssistantGrant={...grant(),accountKey:"local",readerID:"local",apiLevel:92}
+  const source=make(transport,local).source
+  await source.status(signal())
+  const request:W.ProjectAssistantDevServerControlRequest={key,id:"known/id",idempotency_key:"known-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2}
+  assert.equal(source.canDevServers(),true)
+  await source.devServers(key,signal());await source.devServerLogs(key,request.id,signal());await source.controlDevServer("stop",request,signal())
+  assert.equal(sent.length,3);assert.ok(sent[0].path.includes("dev-servers?machine_id=one"));assert.ok(sent[1].path.includes("known%2Fid/logs"));assert.deepEqual(sent[2].body,request)
+  let calls=0;const blocked:AssistantFetch=async()=>{calls++;return Response.json({})}
+  const old=make(blocked,{...local,apiLevel:91}).source
+  assert.equal(old.canDevServers(),false);assert.equal(old.canSourceRules(),false)
+  await assert.rejects(old.devServers(key,signal()),e=>errorCode(e)==="pa_unsupported")
+  await assert.rejects(old.devServerLogs(key,request.id,signal()),e=>errorCode(e)==="pa_unsupported")
+  await assert.rejects(old.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.throws(()=>source.devServers({...key,machine_id:"foreign"},signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.throws(()=>assistantRelayRequest(sent[0].path),e=>errorCode(e)==="pa_invalid")
+  assert.equal(calls,0)
+})
+
+test("an invalid server write reply stays unknown without a new application transport call",async()=>{
+  let calls=0
+  const transport:AssistantFetch=async(path)=>{
+    if(path.endsWith("/status"))return Response.json(sourceStatus())
+    calls++;return new Response('{"contract_version":',{headers:{"Content-Type":"application/json"}})
+  }
+  const source=make(transport,{...grant(),accountKey:"local",readerID:"local",apiLevel:92}).source
+  await source.status(signal())
+  await assert.rejects(source.controlDevServer("stop",{key,id:"known",idempotency_key:"synthetic-stop",fingerprint:"f".repeat(64),attempt:"attempt",revision:2},signal()),e=>errorCode(e)==="pa_outcome_unknown")
+  assert.equal(calls,1)
+})
+
+
+test("server support requires the actual source signal as well as its API level",async()=>{
+ for(const [level,supported,expected] of [[91,true,false],[92,undefined,false],[92,false,false],[92,true,true],[93,undefined,false]] as const){
+  let calls=0
+  const status=sourceStatus()
+  if(supported===undefined)delete status.sources[0].dev_servers_supported
+  else status.sources[0].dev_servers_supported=supported
+  const source=make(async path=>{if(path.endsWith("/status"))return Response.json(status);calls++;return Response.json({contract_version:"project-assistants.v1",servers:[]})},{...grant(),apiLevel:level}).source
+  assert.equal(source.canDevServers(),false,"unobserved support must stay unavailable")
+  await source.status(signal())
+  assert.equal(source.canDevServers(),expected);assert.equal(source.canSourceRules(),expected)
+  const request={key,id:"known",idempotency_key:"synthetic-support",fingerprint:"f".repeat(64),attempt:"attempt",revision:2}
+  if(expected){await source.devServers(key,signal());assert.equal(calls,1)}
+  else{
+   await assert.rejects(source.devServers(key,signal()),e=>errorCode(e)==="pa_unsupported")
+   await assert.rejects(source.devServerLogs(key,"known",signal()),e=>errorCode(e)==="pa_unsupported")
+   await assert.rejects(source.controlDevServer("stop",request,signal()),e=>errorCode(e)==="pa_unsupported")
+   assert.equal(calls,0)
+  }
+ }
+})
+
+test("server support stays source-bound and permits read-only inspection without writes",async()=>{
+ let calls=0
+ const local={...grant(),apiLevel:92,writable:false},status=sourceStatus("history_only")
+ const source=make(async path=>{if(path.endsWith("/status"))return Response.json(status);calls++;return Response.json({contract_version:"project-assistants.v1",servers:[]})},local).source
+ await source.status(signal());assert.equal(source.canDevServers(),true)
+ await source.devServers(key,signal());await source.devServerLogs(key,"known",signal())
+ await assert.rejects(source.controlDevServer("stop",{key,id:"known",idempotency_key:"synthetic-readonly",fingerprint:"f".repeat(64),attempt:"attempt",revision:2},signal()),e=>errorCode(e)==="pa_read_only")
+ assert.equal(calls,2)
+ const otherStatus=sourceStatus();otherStatus.sources[0].machine_id="other";delete otherStatus.sources[0].dev_servers_supported
+ const other=make(async()=>Response.json(otherStatus),{...local,machineID:"other"}).source
+ await other.status(signal());assert.equal(other.canDevServers(),false);assert.equal(source.canDevServers(),true)
+ assert.throws(()=>source.devServers({machine_id:"other",bot_id:key.bot_id},signal()),e=>errorCode(e)==="pa_scope_denied");assert.equal(calls,2)
+})
+
+
+test("withdrawing server support discards an in-flight body and keeps a write outcome unknown",async()=>{
+ for(const write of [false,true]){
+  let supported=true,calls=0
+  let source:ProjectAssistantSourceClient
+  source=make(async path=>{
+   if(path.endsWith("/status")){const status=sourceStatus();status.sources[0].dev_servers_supported=supported;return Response.json(status)}
+   calls++;supported=false;await source.status(signal())
+   return Response.json({contract_version:"project-assistants.v1",servers:[]})
+  },{...grant(),apiLevel:92}).source
+  await source.status(signal())
+  const pending=write?source.controlDevServer("stop",{key,id:"known",idempotency_key:"synthetic-withdraw",fingerprint:"f".repeat(64),attempt:"attempt",revision:2},signal()):source.devServers(key,signal())
+  await assert.rejects(pending,e=>errorCode(e)===(write?"pa_outcome_unknown":"pa_unsupported"))
+  assert.equal(calls,1);assert.equal(source.canDevServers(),false)
+ }
+})
+
+test("handoff routes and send versions require the captured API 93 source", async () => {
+  const fence = viewWire().head.current_fence
+  const ref = {id: "synthetic-card", revision: 2}
+  const edit: W.ProjectAssistantHandoffRequest = {command: command(key, "edit", "handoff-edit"), fence, action: "edit", ref, text: "Reviewed summary"}
+  const send: W.ProjectAssistantSendRequest = {command: command(key, "send", "handoff-send"), fence, text: "New input", quote_message_id: "", handoff: ref}
+  const readPath = "/v1/project-assistants/" + encodeURIComponent(key.bot_id) + "/handoff-card?machine_id=one&conversation_id=chat"
+  for (const apiLevel of [90, 91, 92]) {
+    const paths: string[] = []
+    const {source} = make(async path => {paths.push(path); return Response.json(sourceStatus())}, {...grant(), apiLevel})
+    await source.status(signal())
+    assert.equal(source.canHandoff(), false)
+    await assert.rejects(source.handoff(key, "chat", signal()), error => errorCode(error) === "pa_unsupported")
+    await assert.rejects(source.writeHandoff(edit, signal()), error => errorCode(error) === "pa_unsupported")
+    await assert.rejects(source.send(send, signal()), error => errorCode(error) === "pa_unsupported")
+    assert.deepEqual(paths, ["/v1/project-assistants/status"])
+    await source.send({...send, handoff: undefined}, signal())
+    assert.deepEqual(paths, ["/v1/project-assistants/status", "/v1/project-assistants/same%2Fid/messages"])
+  }
+  assert.deepEqual(assistantRelayRequest(readPath), {word: "project-assistants.handoff-card", kind: "read", fields: {...key, conversation_id: "chat"}, id: ""})
+  assert.throws(() => assistantRelayRequest(readPath + "&conversation_id=duplicate"), error => errorCode(error) === "pa_invalid")
+  const writePath = readPath.split("?")[0]
+  const forwarded = assistantRelayRequest(writePath, {method: "POST", body: JSON.stringify(edit),
+    headers: {"Idempotency-Key": edit.command.idempotency_key}})
+  assert.deepEqual(forwarded, {word: "project-assistants.handoff-card-write", kind: "action", fields: edit, id: "handoff-edit"})
+  const sendForwarded = assistantRelayRequest(writePath.replace(/handoff-card$/, "messages"),
+    {method: "POST", body: JSON.stringify(send), headers: {"Idempotency-Key": send.command.idempotency_key}})
+  assert.deepEqual(sendForwarded.fields, send)
 })

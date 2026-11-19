@@ -220,6 +220,8 @@ export const CARRIED = {
   "project-assistants.group-send": "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/messages",
   "project-assistants.group-stop": "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/stop",
   "project-assistants.groups": "captured Bot source GET /v1/project-assistants/rooms/groups",
+  "project-assistants.handoff-card": "captured Bot source GET /v1/project-assistants/{bot_id}/handoff-card",
+  "project-assistants.handoff-card-write": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/handoff-card",
   "project-assistants.history": "captured Bot source GET /v1/project-assistants/{key.bot_id}/messages",
   "project-assistants.input": "captured Bot source GET /v1/project-assistants/{bot_id}/input",
   "project-assistants.list": "captured Bot source GET /v1/project-assistants",

@@ -39,6 +39,9 @@ type ProcessOptions struct {
 	Configuration Configuration
 	Directory     string
 	Limits        Limits
+	// CombinedOutput is for owned foreground commands only. ACP keeps its
+	// protocol stdout separate from bounded diagnostic stderr by default.
+	CombinedOutput bool
 	// A package-private fault-injection barrier lets tests force child exit
 	// before the initial inventory without racing a sleep against Wait.
 	beforeInitialCapture func(*Process)
@@ -62,6 +65,7 @@ type Process struct {
 	rootObserved   bool
 	rootStamp      string
 	censusOverride func(context.Context) ([]processIdentity, error)
+	tcp            *tcpObserver
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -221,6 +225,9 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 	cmd.Stdin = inRead
 	cmd.Stdout = outWrite
 	cmd.Stderr = errWrite
+	if o.CombinedOutput {
+		cmd.Stderr = outWrite
+	}
 	p := &Process{cmd: cmd, stdin: inWrite, stdout: outRead, stderrReader: errRead, limits: o.Limits, write: make(chan struct{}, 1), done: make(chan struct{}), surveyDone: make(chan struct{}), owned: map[int]string{}}
 	err = cmd.Start()
 	inRead.Close()
@@ -231,6 +238,14 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 		outRead.Close()
 		errRead.Close()
 		return nil, err
+	}
+	if o.CombinedOutput {
+		// Pin while the direct child cannot yet be reaped or its PID reused.
+		// A missing optional observation capability never grants ownership or
+		// prevents the existing command owner from retaining its process.
+		observe, cancel := context.WithTimeout(context.Background(), o.Limits.CleanupTimeout)
+		p.tcp = newTCPObserver(observe, cmd.Process.Pid, o.Limits, p.tcpIdentities)
+		cancel()
 	}
 	go func() {
 		defer errRead.Close()
@@ -302,6 +317,9 @@ func (p *Process) Stderr() string {
 }
 func (p *Process) Close(ctx context.Context) error {
 	p.closeOnce.Do(func() {
+		if p.tcp != nil && p.tcp.root != nil {
+			defer p.tcp.root.close()
+		}
 		defer p.stdout.Close()
 		defer p.stderrReader.Close()
 		cleanup, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)

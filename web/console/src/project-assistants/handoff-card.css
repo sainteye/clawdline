@@ -1,0 +1,45 @@
+.project-assistants .pa-handoff-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--pa-line);
+  border-radius: 12px;
+  background: var(--pa-card);
+  padding: 12px;
+}
+.project-assistants .pa-handoff-card h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.project-assistants .pa-handoff-card p {
+  margin: 6px 0 0;
+}
+.project-assistants .pa-handoff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-block-size: 16rem;
+  overflow: auto;
+}
+.project-assistants .pa-handoff-summary {
+  margin-block: 10px;
+}
+.project-assistants .pa-handoff-summary label {
+  display: grid;
+  gap: 6px;
+}
+.project-assistants .pa-handoff-summary textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.project-assistants .pa-handoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+@media (max-width: 680px) {
+  .project-assistants .pa-handoff-actions button {
+    min-height: 44px;
+  }
+}
