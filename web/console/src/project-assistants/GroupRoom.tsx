@@ -243,11 +243,14 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     <div className="pa-chat-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;if(el&&activeRef.current){const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;position.current={top:el.scrollTop,following:end};setFollowing(end)}}}><div className="pa-chat-content">
       <TeamApprovals sources={[source]} bots={source.canGroupContext?.()?members.filter(bot=>activity.some(turn=>identity(turn.member)===identity(bot.key))):page?.room.running?members:[]}/>
       {more?.hasMore&&<button type="button" disabled={paging||busy} onClick={()=>void refresh.current(true)}>{paging?w.earlierLoading:groupWord("groupOlder")}</button>}
-      {lines.map(line=>{const member=botFor(line.author),person=line.kind==="person";return <article key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}
+      {lines.map((line,index)=>{
+        const previous=lines[index-1],member=botFor(line.author),person=line.kind==="person"
+        const continued=previous?.kind===line.kind&&(person||!!line.author&&!!previous.author&&identity(previous.author)===identity(line.author))
+        return <article data-continued={continued||undefined} aria-label={continued&&!person?author(line.author):undefined} key={line.seq} className={`pa-room-message${person?" pa-room-person":""}`} data-room-seq={line.seq}
         data-arrival={motion.arrivals.has(String(line.seq))||undefined} onAnimationEnd={event=>{if(event.animationName==="pa-bubble-enter")motion.finish(String(line.seq))}}>
-        {!person&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{author(line.author)}</strong></div>}
+        {!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{author(line.author)}</strong></div>}
         <div className="pa-room-bubble">{line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}<p>{line.text}</p></div>
-        {canQuote&&(line.kind==="member"||person)&&<button className="pa-room-reply" type="button" aria-label={`${groupWord("groupReply")} · ${author(line.author)}`} disabled={!writable||busy||unknown} onClick={()=>replyTo(line)}>{groupWord("groupReply")}</button>}
+        {canQuote&&(line.kind==="member"||person)&&<button className="pa-room-reply" type="button" aria-label={`${groupWord("groupReply")} · ${author(line.author)}`} disabled={!writable||busy||unknown} title={groupWord("groupReply")} onClick={()=>replyTo(line)}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 5-6 6 6 6M3 11h9a8 8 0 0 1 8 8"/></svg></button>}
       </article>})}
       {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
       {sending&&<article key={sending.command.idempotency_key} data-local-entrance className="pa-room-message pa-room-person pa-sending" aria-live="polite">

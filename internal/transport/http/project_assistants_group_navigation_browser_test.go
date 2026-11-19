@@ -656,6 +656,17 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    await room.locator('[data-room-seq]').last().waitFor()
    if(process.env.BOTS_EXPECT_NO_REPLY){await room.locator('.pa-room-unanswered').waitFor();assert.match(await room.locator('.pa-room-unanswered').innerText(),/目前沒有成員回覆/);assert.equal(await room.locator('.pa-room-author').count(),0);assert.equal(await room.locator('.pa-room-unanswered').getAttribute('role'),'status')}
    await page.waitForFunction(()=>document.querySelector('.pa-window').getAnimations().every(a=>a.playState==='finished'))
+   if(!baseline){
+    const spacing=await room.locator('[data-room-seq]').evaluateAll(rows=>rows.slice(1).map((row,index)=>{
+     const previous=rows[index],bubble=previous.querySelector('.pa-room-bubble'),first=row.querySelector('.pa-room-author,.pa-room-bubble')
+     const gap=first.getBoundingClientRect().top-bubble.getBoundingClientRect().bottom
+     const reply=previous.querySelector('.pa-room-reply')?.getBoundingClientRect(),box=bubble.getBoundingClientRect()
+     const author=message=>message.querySelector('.pa-room-reply')?.getAttribute('aria-label')
+     return {gap,expected:author(row)===author(previous)?4:12,beside:!reply||reply.right<=box.left||reply.left>=box.right}
+    }))
+    assert.ok(spacing.every(row=>row.beside&&Math.abs(row.gap-row.expected)<1),JSON.stringify(spacing))
+    results.push({tag,state:'room-spacing',spacing})
+   }
    const columns=await room.evaluate(el=>{
     const shell=el.parentElement,roster=shell.querySelector('.pa-roster'),row=roster.querySelector('[data-group-key][aria-current=true]'),box=row.getBoundingClientRect()
     return {shell:shell.getBoundingClientRect().toJSON(),roster:roster.getBoundingClientRect().toJSON(),room:el.getBoundingClientRect().toJSON(),rowHit:row.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2))}
@@ -683,7 +694,7 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
     await page.evaluate(()=>{document.querySelector('.pa-window').style.removeProperty('transform');window.restoreGroupPan();delete window.restoreGroupPan;for(const k of ['height','offsetTop','pageTop'])delete visualViewport[k];visualViewport.dispatchEvent(new Event('resize'))})
    }
    if(baseline)continue
-   assert.equal(await room.locator('.pa-room-reply').last().innerText(),'回覆')
+   assert.match(await room.locator('.pa-room-reply').last().getAttribute('aria-label'),/^回覆 · /)
    await click(room.locator('.pa-room-reply').last());await room.locator('.pa-room-draft-quote').waitFor();await page.waitForFunction(()=>document.activeElement===document.querySelector('.pa-room-layout textarea'))
    if(width<700){await click(page.locator('.pa-source-summary'));await inspect('expanded');await click(page.locator('.pa-source-summary'))
     for(const [state,height,top,scale] of [['keyboard',420,0,1],['zoom',500,26,1.5],['restored',780,0,1],['keyboard-reopened',420,0,1],['restored-again',780,0,1]]){
