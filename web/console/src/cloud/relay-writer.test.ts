@@ -3350,8 +3350,8 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
 
   // Detailed question analysis follows the selected Session machine and preserves its context.
   client.calls.length = 0
-  await reader.fetch("/v1/voice/copilot-question", post({session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant",extra:"discard"}, {"Idempotency-Key":"question-1","X-Clawdline-Unopened-Machine":"mac-c"}))
-  assert.deepEqual(client.calls[0].slice(1,5),["question-1","mac-c","copilot-question",{question:{session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant"}}])
+  await reader.fetch("/v1/voice/copilot-question", post({session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant",allow_source_fallback:true,extra:"discard"}, {"Idempotency-Key":"question-1","X-Clawdline-Unopened-Machine":"mac-c"}))
+  assert.deepEqual(client.calls[0].slice(1,5),["question-1","mac-c","copilot-question",{question:{session:"%7",conversation:"c7",question:"Why option A?",replies:3,context:"source-context",language:"zh-Hant",allow_source_fallback:true}}])
 
   // A late final receipt keeps the old call's machine even after routing changes.
   client.calls.length=0

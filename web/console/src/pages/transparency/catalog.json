@@ -4597,19 +4597,19 @@
       "sources": [
         {
           "path": "web/console/src/realtime/copilot-questions.ts",
-          "line": 22
+          "line": 26
         },
         {
           "path": "web/console/src/realtime/realtime-copilot.ts",
-          "line": 436
+          "line": 606
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 2117
+          "line": 2160
         },
         {
           "path": "web/console/src/realtime/copilot-live.ts",
-          "line": 96
+          "line": 101
         },
         {
           "path": "internal/transport/http/copilot_question.go",
@@ -4624,6 +4624,7 @@
         "The person clicked a read-only question in the call window.",
         "Read that target with that tool before answering. Do not first generate a summary for an explicit detail question.",
         "Never send a message, approve, or execute a mutation for this question.",
+        "預設直接讀原文；只有需要綜合多則回覆、核對表格、或追查審查者原始回饋時用 analyze=true。",
         "Answer the person's actual question using only the supplied Session messages and recorded review results.",
         "Sources with role review contain the reviewer's own recorded summary.",
         "Quotes must be literal substrings of the referenced message."
@@ -5165,9 +5166,9 @@
     "skills/workflow.go": "4c01da1f86769d43e1e8b40b191d96b04a5dac9f03d1a3fb2822a286ed2d952e",
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/project-assistants.ts": "10590e35a409af61f53bc2d7eb44f4134d939eeddfe9c241a77cb5b3f584fb79",
-    "web/console/src/cloud/relay-writer.ts": "cc349fe2d705b24ad54a5dd5b592417139df90c2fd8a6e6c7a7096e3bc66ff33",
+    "web/console/src/cloud/relay-writer.ts": "7d78b8a2964cac7efae7690f242b140ecf9700827bb64090a20019392e921941",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "34c446abf215369caf47d8e3e5211772188892f58520dc5859ee8cf696890abb",
+    "web/console/src/next-strings.ts": "122d6dcb3305e6207eec4d8a945e3068ab55ecaf16b0947871798069f12df02a",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
@@ -5193,21 +5194,21 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/realtime/CopilotToolHistory.tsx": "0b94600f61c332fb3e6cdebefbc8963346cd4df31bf7413ecb9a7e90ae30b43b",
+    "web/console/src/realtime/CopilotToolHistory.tsx": "63ee516d876ef09bfa1905b5e7cd1e2116ff2829616cd0624ce3454c81225824",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "f917de1b8f1237dfe28a4e381a632f690b4702f31c6b5b771614bf3994bcdae5",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
     "web/console/src/realtime/copilot-feedback.ts": "af6f7146ebe90f9502d7483873e2c5210ffd03873a8ba54c7b9aa3873a1fc54d",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
-    "web/console/src/realtime/copilot-history.ts": "ac9aa94eabbf5b0418af38510429660bdd0ad9531ebad0ccecd93febc81a419e",
-    "web/console/src/realtime/copilot-live.ts": "4e42aac9c1293dffaa0c122749808714a3088d9258d2970c9df01e23ade4d2d6",
-    "web/console/src/realtime/copilot-meter.ts": "e74cc9709ab4f88ab2842b2a9208162cc603435f00da762b1bca88dee8a6b188",
-    "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
+    "web/console/src/realtime/copilot-history.ts": "58f3832156dc2d20610b15a25a3b7a32054caae18697e37b7b74a60acfd9cb19",
+    "web/console/src/realtime/copilot-live.ts": "c26e07b4ddbef44857cb6e6016efb5596324addf89b478d63665013db37fd7f3",
+    "web/console/src/realtime/copilot-meter.ts": "37ea246463df5a67a2b4c95ab2486f3c03ff13be23476da8b6cbfcc905c44642",
+    "web/console/src/realtime/copilot-questions.ts": "1ce4d5e6996c3139a0fc359b607ca6f112317a5497ebdab26edf43afb31ca6bc",
     "web/console/src/realtime/copilot-reports.ts": "61a6bb220a23c0798b3ae2477971c552276ec8e3b79c91dd1d5b342f808d0355",
     "web/console/src/realtime/copilot-session-boards.ts": "8962c2e0af6ac22983092a136422ba0b5a3dc86e4efe2c89655bbc2be54d668c",
     "web/console/src/realtime/copilot-speech.ts": "2558a06d674f7158bea43dfc0c051dff1c4b0d9c01fe9054da174202d042bb01",
-    "web/console/src/realtime/copilot-tools.ts": "b682599fb039445b8744ab1ef9b2c56e82df929bc0f97b651ec2a7e4a0459943",
-    "web/console/src/realtime/realtime-copilot.ts": "865b96acc28eee42263b99db471330e7e1c6bdc59d500305cf0b539c527dcd48",
+    "web/console/src/realtime/copilot-tools.ts": "4a9e9694c432de0de53b5d6161ae092680b665b037fa3a507d295f38ae88a1c4",
+    "web/console/src/realtime/realtime-copilot.ts": "ef9babe3f194f59483420b30b09e7aa0e453e3a6033681ab511ce1c8879fe824",
     "web/console/src/session/Composer.tsx": "20285a8ce50481f403995d3342847ea4df771371c85cceab806403a13fa23b11",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
@@ -5223,7 +5224,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "569aafa7acd7de00c88604289d4ec3278811c0e0ef6a963f11f569f90e91a4b9",
-    "zh-Hant": "900ac1848cc6089bbc9fe24e5f155dcf8162199a33b7a155826343781a5060e6"
+    "en": "e8509494d068935aba1b22b1a25fd0b221539807cd67b4e3b212cbbedfe96962",
+    "zh-Hant": "62c0b9e4a494bad3bd2180555484d4e46578ef4a96ae4bd1c448a5b2a54188f5"
   }
 }
