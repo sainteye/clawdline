@@ -15,7 +15,7 @@ import { dashboardFetch } from "./dashboard-reader.js"
 import { readMachineUsage } from "../machine/read.js"
 import { Start } from "../session/Start.js"
 import { SurveyCoordinator } from "../onboarding/Survey.js"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { MachineSheet } from "../pages/devices/AccountMachines.js"
 import { machineManager } from "./machine-manager.js"
 import { createPortal, flushSync } from "react-dom"
@@ -73,7 +73,7 @@ import {
   durablePairViewerFromInvitation,
   resumePendingPairing,
 } from "./pair-pending.js"
-import { PairPanel, type PairDevice, type PairRequest } from "./PairPanel.js"
+import { PairingOverlay, PairingProgressButton, type PairDevice, type PairRequest, type PairTarget } from "./PairPanel.js"
 import { FleetUpdateRow } from "./FleetUpdateRow.js"
 import { FleetUpdateNotice } from "./FleetUpdateNotice.js"
 import { readPairAgentComparison, type PairAgentProgress, type PairAgentReply } from "./pair-agent.js"
@@ -515,6 +515,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // Pairing (`pair.ts`): what was asked, how far it got, and the account's
   // names for the machines this browser cannot name itself.
   const [pairRequest, setPairRequest] = useState<PairRequest | null>(null)
+  const [pairHidden, setPairHidden] = useState(false)
+  const pairHiddenRef = useRef(false)
+  function showPairing() {
+    pairHiddenRef.current = false
+    setPairHidden(false)
+  }
+  function hidePairing() {
+    pairHiddenRef.current = true
+    setPairHidden(true)
+  }
   const [pairState, setPairState] = useState<PairState>({ phase: "idle" })
   const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
   const [registered, setRegistered] = useState<ReadonlyMap<string, AccountName>>(new Map())
@@ -569,6 +579,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<RecoveringCloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  const startCloudInstallRef = useRef<() => boolean>(() => false)
   const readPairHelperQuota = useCallback(async (helper: string) => {
     const connection = client.current
     return connection?._machineRequestAs?.(crypto.randomUUID(), helper, "provider-quotas", {}, "read", 30_000)
@@ -1098,7 +1109,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
 
   /** Show this browser's code for `machine`, or for whichever machine runs it. */
   const pairOffer = useCallback(
-    (machine: { id: string; name: string } | null) => {
+    (machine: PairTarget | null) => {
       const current = session.current
       if (!current) return
       pair({ mode: "offer", machine }, durablePairViewer(current, pairingStore))
@@ -1107,14 +1118,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   )
 
   /** Open the guide first; choosing the browser-first path is what mints an offer. */
-  const openPairing = useCallback((machine: { id: string; name: string } | null) => {
+  const openPairing = useCallback((machine: PairTarget | null) => {
+    showPairing()
+    if (pairHidden && pairRequest) return
     run.current?.stop()
     run.current = null
     setAsking(null)
     setNaming(null)
     setPairState({ phase: "idle" })
     setPairRequest({ mode: "offer", machine, startLocal: nativePairingAvailable() })
-  }, [])
+  }, [pairHidden, pairRequest])
 
   /** Answer the machine's link this page was opened with, once the person has said so. */
   const pairInvitation = useCallback(() => {
@@ -1131,6 +1144,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (pairRequest?.mode === "invitation") dropInvitation(sessionStorage)
     invitation.current = null
     setPairRequest(null)
+    showPairing()
     setPairState({ phase: "idle" })
     recoverPairing()
   }, [pairRequest, recoverPairing])
@@ -1157,6 +1171,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
    * is read, taken out of the address, and waits for a press.
    */
   const readInvitation = useCallback((raw: string) => {
+    showPairing()
     run.current?.stop()
     run.current = null
     setPairState({ phase: "idle" })
@@ -1243,12 +1258,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       },
       invited: () => Boolean((session.current as { invited?: unknown } | null)?.invited),
       headerMachine: () => headerMachine.current,
-      pair: (id, approvedName) => {
+      pair: (id, approvedName, instaBox) => {
         if (id === null) { openPairingRef.current(null); return }
         const known = machinesRef.current?.find((m) => m.id === id)
         const named = known ? withAccountNames([known], namesRef.current, present)[0] : null
-        openPairingRef.current({ id, name: approvedName || named?.name || named?.label || id })
+        openPairingRef.current({ id, name: approvedName || named?.name || named?.label || id, instaBox })
       },
+      startCloudInstall: () => startCloudInstallRef.current(),
     })
     // The owner-diagnostics reader's authority, read from the session at each call: the account
     // and device, this device's signing key, and the epochs its last device token was minted
@@ -1801,6 +1817,15 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setPendingTool({ machineID, machineName: machine.name || machine.label || machine.id, action, at: Date.now() })
     if (toolMovesConsole(action)) switchMachine(machine)
   }
+  startCloudInstallRef.current = () => {
+    const ready = quickMachines.filter((machine) => machine.freshness === "current" &&
+      machine.pairing === "paired" && machine.operationAllowed !== false &&
+      client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("start"))
+    const target = ready.find((machine) => machine.kind === "macos") ?? ready[0]
+    if (!target) return false
+    runMachineTool(target.id, "cloud_setup")
+    return true
+  }
 
   const openAllSessions = () => {
     closeSwitcher()
@@ -2053,6 +2078,25 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         </div>
     </div>
   )
+  const readPairAgentStatus = useCallback(async (helper: string, task: string): Promise<PairAgentProgress> => {
+    const request = client.current?._machineRequestAs
+    if (!request) throw new Error("helper_unavailable")
+    const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-status",
+      { task_id: task }, "read", 30_000) as Record<string, unknown>
+    const states = ["starting", "dialog", "working", "done", "failed"] as const
+    if (!states.some((state) => state === answer?.state)) throw new Error("unreadable_helper_status")
+    return {
+      stage: answer.state as PairAgentProgress["stage"],
+      summary: typeof answer.summary === "string" ? answer.summary : "",
+      failedReason: typeof answer.failed_reason === "string" ? answer.failed_reason : "",
+      comparison: readPairAgentComparison(answer.comparison),
+    }
+  }, [])
+
+  const pairingTarget = pairRequest?.mode === "offer" ? pairRequest.machine : null
+  const pairingMachine = pairingTarget && shown.phase === "ready"
+    ? shown.machines.find(machine => machine.id === pairingTarget.id) : undefined
+  const pairingPlatform = pairingTarget ? registered.get(pairingTarget.id)?.platform : undefined
   // A pairing is drawn over whatever is on screen, the console included, but
   // only once this browser is signed in with a device key: a link opened
   // before signing in waits in this tab's storage for the round trip.
@@ -2079,6 +2123,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           onStop: () => run.current?.stop(),
           onAgain: () => pairOffer(pairRequest.mode === "offer" ? pairRequest.machine : null),
           onClose: closePairing,
+          onHide: hidePairing,
+          visible: !pairHidden,
           // Pairing already reconnected the line and bootstrapped the row from
           // the authenticated handover. Closing reveals that updated list;
           // comparison remains until the person or the trusted helper verifies it.
@@ -2097,6 +2143,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             readsQuota: client.current?.machineDescriptor?.(machine.id)?.machine?.commands?.includes("provider-quotas"),
           })),
           readHelperQuota: readPairHelperQuota,
+          wakeOrigin: transport.kind === "cloud" && !(session.current as { invited?: unknown } | null)?.invited &&
+            (pairingTarget?.instaBox || pairingMachine?.kind === "linux" ||
+              pairingMachine?.kind === "linux_aws" || pairingPlatform === "linux")
+            ? transport.config.apiOrigin : undefined,
+          targetOnline: pairingMachine?.freshness === "current",
           onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex"): Promise<PairAgentReply> => {
             const request = client.current?._machineRequestAs
             if (!request) return { ok: false, error: "helper_unavailable" }
@@ -2107,7 +2158,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                 // The helper owns the new AI Session. Keep its Console mounted
                 // behind the pairing card so the person can see its activity.
                 const helperMachine = quickMachines.find((machine) => machine.id === helper)
-                if (helperMachine) choose(helperMachine, false)
+                if (helperMachine && !pairHiddenRef.current) choose(helperMachine, false)
                 return { ok: true, mode: "agent", taskID: answer.task_id, trust: typeof answer.trust === "string" ? answer.trust : "" }
               }
               return { ok: false, error: "unreadable_helper_answer" }
@@ -2116,20 +2167,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
                 ? (error as { code: string }).code : error instanceof Error ? error.message : String(error) }
             }
           },
-          onAgentStatus: async (helper: string, task: string): Promise<PairAgentProgress> => {
-            const request = client.current?._machineRequestAs
-            if (!request) throw new Error("helper_unavailable")
-            const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-status",
-              { task_id: task }, "read", 30_000) as Record<string, unknown>
-            const states = ["starting", "dialog", "working", "done", "failed"] as const
-            if (!states.some((state) => state === answer?.state)) throw new Error("unreadable_helper_status")
-            return {
-              stage: answer.state as PairAgentProgress["stage"],
-              summary: typeof answer.summary === "string" ? answer.summary : "",
-              failedReason: typeof answer.failed_reason === "string" ? answer.failed_reason : "",
-              comparison: readPairAgentComparison(answer.comparison),
-            }
-          },
+          onAgentStatus: readPairAgentStatus,
           device: pairDevice(),
           onScan: readInvitation,
           viewerID: session.current?.deviceID ?? "",
@@ -2141,6 +2179,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // Once drawn, the console stays: the copied modules bind to the document
   // once, so a refusal after that (a revoked device, a line that gave up) is
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
+  const pairingProgress = pairHidden && pairing ? <PairingProgressButton onShow={showPairing} /> : null
   const fleetTargetRow = useMemo(() => {
     if (!fleetScope || !fleetTarget) return null
     const presentation = fleetPresentations.current.get(destinationKey(fleetTarget))
@@ -2209,6 +2248,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       {chosen && who && transport.kind === "cloud" && screen.at === "console" && (
         <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
           <App cloudOperationsAccess={operationsAccess} cloudOperationsAttention={operationsAttention} key={fleetScope ? "fleet" : reading ?? chosen.id} aside={aside} hideSessionCounts={fleetScope}
+            cloudPairingProgress={pairingProgress}
             projectAssistants={assistantRegistry} viewPluginSources={viewSources}
             onOpenAssistantWork={openAssistantWork} assistantWorkIntent={assistantWorkIntent} onAssistantWorkOpened={assistantWorkOpened}
             onChooseDashboardMachine={() => {
@@ -2328,7 +2368,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         </CloudAccountContext.Provider>
       )}
       {words && screen.at !== "console" ? <a className="help-entry" href="/help/questions">{supportWord("mine")}</a> : null}
-      {words && (screen.at !== "console" || pairing) && (
+      {words && (!pairing || pairHidden) && screen.at !== "console" && (
         <GateCard
           screen={screen.at === "machines" && !managingMachines &&
             (rosterPending || machineList.phase === "loading" || opening?.at === "console") ? { at: "checking" }
@@ -2358,9 +2398,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           renamed={renamed}
           onName={setNaming}
           onRename={rename}
-          pairing={pairing}
+          pairingProgress={pairingProgress}
           onPair={openPairing}
         />
+      )}
+      {words && pairing && (
+        <PairingOverlay pairing={pairing} overConsole={screen.at === "console"} />
       )}
     </>
   )
@@ -2392,12 +2435,12 @@ function GateCard(props: {
   renamed: { machine: string; outcome: RenameOutcome } | null
   onName: (machine: CloudMachine | null) => void
   onRename: (machine: CloudMachine, name: string) => void
-  pairing: Parameters<typeof PairPanel>[0] | null
-  onPair: (machine: { id: string; name: string } | null) => void
+  pairingProgress?: ReactNode
+  onPair: (machine: PairTarget | null) => void
 }) {
   const { screen, who, machineList, updateClient, onRetryMachineList, onSignIn, problem, onChoose, onRetry, recovery } = props
   const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave, onCloseMachinePicker } = props
-  const { naming, renaming, renamed, onName, onRename, pairing, onPair } = props
+  const { naming, renaming, renamed, onName, onRename, pairingProgress, onPair } = props
   const mark = useRef<HTMLCanvasElement>(null)
   const card = useRef<HTMLDivElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
@@ -2422,33 +2465,30 @@ function GateCard(props: {
   // The question belongs to the list it was asked from. A line that drops
   // while it is open puts its own screen back, rather than leaving an
   // irreversible button over a card that is now saying something else.
-  const question = !pairing && asking && screen.at === "machines" ? asking : null
-  const nameQuestion = !pairing && !question && naming && screen.at === "machines" ? naming : null
-  const open = pairing ? "pair" : question ? "forget" : nameQuestion ? "rename" : screen.at
+  const question = asking && screen.at === "machines" ? asking : null
+  const nameQuestion = !question && naming && screen.at === "machines" ? naming : null
+  const open = question ? "forget" : nameQuestion ? "rename" : screen.at
   const backdrop = useModalBackdrop(() => {
     if (open === "machines" && reading && !forgotten.includes(reading)) onCloseMachinePicker()
   })
   return (
-    <div className="door" data-step="cloud" data-cloud-screen={open}
-      data-pair-console={pairing && screen.at === "console" ? "true" : undefined} {...backdrop}>
+    <div className="door" data-step="cloud" data-cloud-screen={open} {...backdrop}>
       <div
         className="door-card"
         ref={card}
         role={question || nameQuestion ? "alertdialog" : "dialog"}
         aria-modal="true"
-        aria-label={pairing ? undefined : "clawdline"}
-        aria-labelledby={pairing ? "cloud-pair-title" : undefined}
+        aria-label="clawdline"
         aria-busy={forgetting || renaming ? "true" : undefined}
         aria-describedby={question ? "cloud-forget-say" : nameQuestion ? "cloud-rename-say" : undefined}
       >
         <div className="door-head">
           <canvas ref={mark} />
           <b>clawdline</b>
+          {pairingProgress}
         </div>
         <section data-step="cloud">
-          {pairing ? (
-            <PairPanel {...pairing} />
-          ) : question ? (
+          {question ? (
             forgetQuestion(question)
           ) : nameQuestion ? (
             renameQuestion(nameQuestion)

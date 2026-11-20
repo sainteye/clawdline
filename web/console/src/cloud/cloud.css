@@ -463,8 +463,33 @@
    whole thing, in the gate's primary `.go` style (door.css), full width. The
    copy path folds under `.cloud-pair-manual` below it. */
 .cloud-pair-agent { margin-top: 12px; }
-.cloud-pair-helper { display: grid; gap: 5px; margin: 9px 0; font-size: 12px; }
-.cloud-pair-helper select { width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--card); }
+.door .cloud-pair-helper {
+    position: relative; display: grid; gap: 6px; margin: 12px 0; font-size: 13px; line-height: 1.4;
+    letter-spacing: normal; text-transform: none; color: var(--dim);
+}
+.cloud-pair-helper::after {
+    content: ""; position: absolute; pointer-events: none;
+    inset-inline-end: 14px; bottom: 20px; width: 7px; height: 7px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+}
+.cloud-pair-helper select {
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box; width: 100%; min-width: 0; height: 44px;
+    padding-inline: 10px 28px; border: 1px solid var(--line); border-radius: 9px;
+    font: inherit; font-size: 16px; color: var(--ink); background: var(--card-hi);
+}
+.cloud-pair-helper select:focus-visible,
+.cloud-pair-resume:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cloud-pair-resume.chip {
+    flex: none; min-height: 44px; padding-inline: 9px;
+    border: 1px solid var(--accent-ed); border-radius: 10px;
+    color: var(--ink); background: var(--card-hi); white-space: nowrap;
+}
+.door-head .cloud-pair-resume { margin-inline-start: auto; }
+.door[data-cloud-screen="pair"] .door-card {
+    max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain;
+}
 .cloud-pair-agent > .fine { margin: 6px 0 0 0; }
 .cloud-pair-agent-said { margin: 6px 0 0 0; font-size: 12px; color: var(--ink); }
 .cloud-pair-agent-said[data-agent="refused"] { color: var(--warn, var(--ink)); }

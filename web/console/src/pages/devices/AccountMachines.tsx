@@ -16,6 +16,7 @@ import { machineSeenWord } from "../../cloud/machine-seen.js"
 import { OwnerDiagnostics } from "../../cloud/health-owner/OwnerDiagnostics.js"
 import { MachineAccess, cloudAccessSource } from "./MachineAccess.js"
 import { CloudMachineSetup } from "./CloudMachineSetup.js"
+import { InstaBoxWake } from "./InstaBoxWake.js"
 import "./account-machines.css"
 
 /**
@@ -136,7 +137,8 @@ export function AccountMachines({ shown, onStart }: { shown: boolean; onStart: (
         <span aria-hidden="true">+</span> {nextWord("msSetupCloud")}
       </button>}
       {shown && cloudSetup && manager && !manager.invited?.() && createPortal(<CloudMachineSetup apiOrigin={manager.apiOrigin} machines={rows ?? []} refresh={load}
-        pair={(id, name) => { setCloudSetup(false); manager.pair(id, name) }} close={() => setCloudSetup(false)} />, document.body)}
+        pair={(id, name) => { setCloudSetup(false); manager.pair(id, name, true) }}
+        start={() => manager.startCloudInstall?.() ?? false} close={() => setCloudSetup(false)} />, document.body)}
       {accessSource && (
         <MachineAccess source={accessSource} picker={paired.length > 1 ? (
           <div className="access-chips" role="radiogroup" aria-label={nextWord("accessMachineLabel")}>
@@ -335,6 +337,8 @@ function ConnectionTab({ machine, manager, onStart }: { machine: Row; manager: M
         <h3 className={"am-road-title" + (road === "direct" ? " good" : "")}>{words.title}</h3>
         <p className="am-say">{words.body}</p>
       </div>
+      {!manager.invited?.() && (machine.kind === "linux" || machine.kind === "linux_aws") &&
+        <InstaBoxWake key={machine.id} origin={manager.apiOrigin} machine={machine.id} online={machine.freshness === "current"} />}
       {road !== "offline" && (
         <div className="am-lanes" role="img" aria-label={nextWord("msLanes", { machine: name })}>
           <div className={"am-lane" + (road === "direct" ? " on" : road === "failing" ? " broken" : attempt === "trying" ? " trying" : "")}>

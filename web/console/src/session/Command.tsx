@@ -73,7 +73,8 @@ function sayStatus(words: string, waiting = false): void {
 function paint(): void {
   const b = busy()
   el("command-sheet").setAttribute("aria-busy", b ? "true" : "false")
-  el<HTMLButtonElement>("voice-go").disabled = b
+  const voice = el<HTMLButtonElement>("voice-go")
+  if (voice) voice.disabled = b
   el<HTMLButtonElement>("command-mic").disabled = b
   el<HTMLTextAreaElement>("command-text").disabled = phase !== "idle"
   el<HTMLTextAreaElement>("command-instructions").disabled = b
@@ -395,6 +396,36 @@ async function reviewProjectSetup(place: string, instructions: string): Promise<
   }
 }
 
+/** Start a Session for instructions the person has already chosen. */
+async function startPrepared(instructions: string): Promise<void> {
+  if (busy() || openedID) { open(); return }
+  open()
+  reset()
+  const mine = ++run
+  phase = "thinking"
+  sayStatus(T().webLoading, true)
+  paint()
+  try {
+    await ensurePlaces()
+    if (mine !== run) return
+    chosenPlace = places?.[0]?.id ?? null
+    const usable = assistants.filter(row => row.installed !== false && row.availability !== "exhausted" &&
+      row.authState !== "required" && row.authState !== "unsupported_account")
+    chosenAssistant = usable.find(({ id }) => id === "codex")?.id ?? usable[0]?.id ?? null
+    el<HTMLTextAreaElement>("command-instructions").value = instructions
+    el("command-draft").hidden = false
+    drawWith()
+    drawList()
+    if (chosenPlace && chosenAssistant) {
+      await openIt(chosenPlace, chosenAssistant, "", instructions)
+      return
+    }
+    finish(chosenPlace ? nextWord("firstSessionAgentMissing") : nextWord("startNoProject"))
+  } catch (error) {
+    if (mine === run) finish(whyStart(error))
+  }
+}
+
 function close(): void {
   run += 1
   V.cancel()
@@ -453,6 +484,7 @@ export const Command = {
     listen()
   },
   reviewProjectSetup,
+  startPrepared,
   close,
   press,
   repaint: paint,

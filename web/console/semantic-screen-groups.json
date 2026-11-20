@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13569,
-  "riskKeys": 5820,
-  "nonRiskCount": 7749,
+  "englishContentKeys": 13596,
+  "riskKeys": 5831,
+  "nonRiskCount": 7765,
   "groups": [
     {
       "name": "acp / other",
@@ -4216,7 +4216,7 @@
     },
     {
       "name": "next / other",
-      "count": 1296,
+      "count": 1312,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4861,6 +4861,22 @@
         "next.msHistoryOk",
         "next.msHistoryStart",
         "next.msHistoryTitle",
+        "next.msInstaApproval",
+        "next.msInstaCooldown",
+        "next.msInstaFreeSummary",
+        "next.msInstaInProgress",
+        "next.msInstaKey",
+        "next.msInstaKeyMissing",
+        "next.msInstaKeySave",
+        "next.msInstaLaunch",
+        "next.msInstaLink",
+        "next.msInstaManualStart",
+        "next.msInstaOnline",
+        "next.msInstaRelink",
+        "next.msInstaSelectMachine",
+        "next.msInstaSessionHelp",
+        "next.msInstaWake",
+        "next.msInstaWaking",
         "next.msLaneDirect",
         "next.msLaneRelay",
         "next.msLanes",

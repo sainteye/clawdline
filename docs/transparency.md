@@ -1066,3 +1066,10 @@ explanations distinguish selected-chat observation from a Host background
 stream, preserve stale and uncertain outcomes, and keep installed/Cloud
 acceptance separate. The controller, hook and Chat mount are included in the
 reviewed source receipts; the native Bot instructions themselves are unchanged.
+
+The assisted Cloud pairing briefing uses existing remote access and checks the
+target's Cloud machine ID before sending its one-time offer. An already
+configured InstaBox CLI can wake an auto-paused target. The browser can also
+use the account's explicit InstaBox binding to wake the target before it makes
+an offer. Both language explanations and the original briefing excerpt were
+reviewed. A wake response alone does not verify an offer or its fingerprints.
