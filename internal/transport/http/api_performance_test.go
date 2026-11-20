@@ -122,7 +122,9 @@ func TestAPIPerformanceCountsFullHandlerTimeAndSanitizesRoutes(t *testing.T) {
 	})
 	h := s.routeStatsTable().countRoutes(mux, mux)
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://127.0.0.1/v1/sessions/private-session/info?token=private-token", nil))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://127.0.0.1/v1/project-assistants/private-bot/view?cursor=private-cursor", nil))
+	for _, query := range []string{"mode=snapshot", "mode=history", "mode=events", "mode=permissions", "mode=traces", "mode=detail", "mode=private-mode", "mode=snapshot&mode=events", "cursor=private-cursor"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://127.0.0.1/v1/project-assistants/private-bot/view?"+query, nil))
+	}
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://127.0.0.1/v1/events", nil))
 	rt := s.routeStatsTable().performance.Load()
 	var v apiperformance.Reading
@@ -136,7 +138,7 @@ func TestAPIPerformanceCountsFullHandlerTimeAndSanitizesRoutes(t *testing.T) {
 		for _, p := range v.RecentMinutes {
 			completed += p.Totals.Completed
 		}
-		if completed == 3 {
+		if completed == 11 {
 			break
 		}
 		time.Sleep(time.Millisecond)
@@ -150,28 +152,34 @@ func TestAPIPerformanceCountsFullHandlerTimeAndSanitizesRoutes(t *testing.T) {
 		}
 		sum.StreamLifetime.Count += p.Totals.StreamLifetime.Count
 	}
-	if sum.Completed != 3 || sum.Finite.Count != 2 || sum.StreamLifetime.Count != 1 || sum.Finite.MaxMS < 10 {
+	if sum.Completed != 11 || sum.Finite.Count != 10 || sum.StreamLifetime.Count != 1 || sum.Finite.MaxMS < 10 {
 		t.Fatalf("wall time/stream isolation: %+v", sum)
 	}
 	payload, _ := json.Marshal(v)
 	if !strings.Contains(string(payload), "GET /v1/sessions/:id/info") {
 		t.Fatal("the test did not reach route summaries")
 	}
-	var botCount uint64
+	botCounts := map[string]uint64{}
+	const prefix = "GET /v1/project-assistants/:id/view "
 	for _, row := range v.RecentSlowRoutes {
-		if row.Route == "GET /v1/project-assistants/:id/view" {
-			botCount += row.Totals.Status4xx
+		if mode, ok := strings.CutPrefix(row.Route, prefix); ok {
+			botCounts[mode] = row.Totals.Status4xx
 		}
 	}
-	if botCount != 1 {
-		t.Fatalf("expected one attributed Bot refusal, got %d", botCount)
+	for _, mode := range []string{"snapshot", "history", "events", "permissions", "traces", "detail"} {
+		if botCounts["["+mode+"]"] != 1 {
+			t.Fatalf("missing independent %s counter: %v", mode, botCounts)
+		}
 	}
-	if strings.Contains(string(payload), "private-session") || strings.Contains(string(payload), "private-token") || strings.Contains(string(payload), "private-bot") || strings.Contains(string(payload), "private-cursor") {
+	if len(botCounts) != 7 || botCounts["[unclassified]"] != 3 {
+		t.Fatalf("malformed modes did not share one safe bucket: %v", botCounts)
+	}
+	if strings.Contains(string(payload), "private-session") || strings.Contains(string(payload), "private-token") || strings.Contains(string(payload), "private-bot") || strings.Contains(string(payload), "private-cursor") || strings.Contains(string(payload), "private-mode") {
 		t.Fatal("raw request data reached API history")
 	}
 	// Cumulative diagnostic counters still use their existing contract.
 	reading := s.routeStatsTable().reading()
-	if len(reading.Routes) != 3 || reading.Overflow != 0 {
+	if len(reading.Routes) != 9 || reading.Overflow != 0 {
 		t.Fatalf("cumulative contract changed: %+v", reading)
 	}
 }

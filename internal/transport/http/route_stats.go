@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/apiperformance"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
@@ -25,8 +26,8 @@ import (
 // **A key is a route's shape, never its spelling.** The method, the pattern
 // the mux matched, and below a prefix pattern only approved route words.
 // Bot routes use their dispatcher and mask identifiers by position. Generic
-// routes replace any segment outside routeWords with `:id`. The query is
-// never read.
+// routes replace any segment outside routeWords with `:id`. Only the fixed
+// Bot read mode can affect the route key beyond the path.
 //
 // Counters run from the daemon's start and are never reset: two readings are
 // compared by subtracting them, which a reset would make wrong for every other
@@ -342,12 +343,42 @@ func (t *routeStats) countRoutes(mux *http.ServeMux, next http.Handler) http.Han
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, pattern := mux.Handler(r)
 		key := routeKey(r.Method, pattern, r.URL.EscapedPath())
+		if key == "GET /v1/project-assistants/:id/view" {
+			key += botReadModeLabel(r.URL.RawQuery)
+		}
 		caller := callerAnonymous
 		if cloud.ViaCloud(r.Context()) {
 			caller = callerCloud
 		}
 		t.countRoute(key, caller, w, r, next)
 	})
+}
+
+// Count the requested view operation even when the request is refused. Skip
+// decoding unrelated values, which can contain cursor and source identifiers.
+func botReadModeLabel(query string) string {
+	var mode pa.ReadViewMode
+	for field := range strings.SplitSeq(query, "&") {
+		key, value, _ := strings.Cut(field, "=")
+		name, err := url.QueryUnescape(key)
+		if err != nil || name != "mode" {
+			continue
+		}
+		if mode != "" {
+			return " [unclassified]"
+		}
+		decoded, err := url.QueryUnescape(value)
+		if err != nil || decoded == "" {
+			return " [unclassified]"
+		}
+		mode = pa.ReadViewMode(decoded)
+	}
+	switch mode {
+	case pa.ReadViewSnapshot, pa.ReadViewHistory, pa.ReadViewEvents, pa.ReadViewPermissions, pa.ReadViewTraces, pa.ReadViewDetail:
+		return " [" + string(mode) + "]"
+	default:
+		return " [unclassified]"
+	}
 }
 
 func (t *routeStats) countRoute(key, caller string, w http.ResponseWriter, r *http.Request, next http.Handler) {

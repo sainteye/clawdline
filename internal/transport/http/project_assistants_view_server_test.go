@@ -158,14 +158,18 @@ func paViewServerBridgeContext(ctx context.Context, t *testing.T, f *paServerFix
 }
 
 func TestProjectAssistantViewServerLongHistoryFitsExistingCloudReadDeadline(t *testing.T) {
-	paViewServerHistory(t, 9001, 600, "synthetic visible fact")
+	paViewServerHistory(t, 9001, 600, "synthetic visible fact", false)
 }
 
 func TestProjectAssistantViewServerRichHistory(t *testing.T) {
-	paViewServerHistory(t, 200, 1, strings.Repeat("Bot <code> & 台灣\n", 400))
+	paViewServerHistory(t, 200, 1, strings.Repeat("Bot <code> & 台灣\n", 400), false)
 }
 
-func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText string) {
+func TestProjectAssistantViewServerBoundEventReplay(t *testing.T) {
+	paViewServerHistory(t, 9001, 100, "synthetic visible fact", true)
+}
+
+func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText string, replayBoundEvents bool) {
 	t.Helper()
 	started := time.Now()
 	f := newPAServerFixture(t, true)
@@ -174,7 +178,20 @@ func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText
 	g := f.get(t, f.local)
 	fence := pa.Fence{Key: f.key, Project: paDomainProjectScope(g.Bot.Project), ConversationID: g.Conversation.ID}
 	t.Logf("fixture server/enable/create/get elapsed=%s", time.Since(started))
-	paViewServerEvents(t, f, f.key, fence, eventCount)
+	eventFence := fence
+	if replayBoundEvents {
+		eventFence.BindingID, eventFence.Generation = "fixture-binding", 1
+		binding, err := json.Marshal(pa.ExecutionBinding{Fence: eventFence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = f.s.store.ProjectAssistantDatabase().Exec(`UPDATE project_assistant_bots
+ SET data=json_set(data,'$.Bindings',json_object(?,json(?)),'$.Conversation.binding_id',?,'$.Conversation.generation',?) WHERE machine=? AND bot=?`,
+			eventFence.BindingID, string(binding), eventFence.BindingID, eventFence.Generation, f.key.MachineID, f.key.BotID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paViewServerEvents(t, f, f.key, eventFence, eventCount)
 	other := f.create()
 	other.Command.Key.BotID, other.Command.IdempotencyKey = "other-bot", "create-other"
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, other))
@@ -251,6 +268,19 @@ func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText
 	}
 	if len(envelope.Body.Items) != 0 || envelope.Body.NextSeq != snapshot.Head.EventFrontier {
 		t.Fatal("long history replayed initial source events")
+	}
+	if replayBoundEvents {
+		q.AfterSeq = 1
+		a = read(q)
+		if !a.OK() || json.Unmarshal(a.Payload, &envelope) != nil || len(envelope.Body.Items) != eventCount || envelope.Body.NextSeq != snapshot.Head.EventFrontier-1 || envelope.Body.HasMore {
+			t.Fatalf("bound event replay: status=%d items=%d cursor=%d", a.Status, len(envelope.Body.Items), envelope.Body.NextSeq)
+		}
+		for i, row := range envelope.Body.Items {
+			e := row.Event
+			if e == nil || e.Seq != int64(i+2) || e.Fence.BindingID != eventFence.BindingID || e.Fence.Generation != eventFence.Generation {
+				t.Fatalf("event changed at position %d", i)
+			}
+		}
 	}
 }
 

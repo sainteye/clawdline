@@ -8,9 +8,10 @@ response through their existing end-to-end encrypted machine connection.
 
 The outer HTTP handler observes every request, including authentication
 refusals, redirects, unmatched routes and static resources. It reuses
-`routeKey`: an approved route shape is recorded, never a body, query value,
-header, token, IP address, terminal, message, account/session identifier,
-command line or environment. Shape overflow keeps a single aggregate row.
+`routeKey` for an approved route shape. The Bot view mode can add a fixed
+operation label. Bodies, raw queries, headers, tokens, IP addresses, terminals,
+messages, account/session identifiers, command lines and environments stay
+out of observations. Shape overflow keeps a single aggregate row.
 An observation records completion wall time, not time to first header.
 
 ## Permission and request contract
@@ -283,8 +284,11 @@ Once the last retained bucket for a route expires, its history slot can be
 reused. Startup also removes stale registry names loaded from older
 checkpoints. The route cap remains 128. When all slots still have retained
 observations, unseen routes enter overflow until a slot expires. Previously
-aggregated overflow cannot be broken back into its original routes. For Bot
-read views the summary combines the snapshot, history and events query modes.
+aggregated overflow cannot be broken back into its original routes. Bot view
+keys carry one fixed operation suffix: `[snapshot]`, `[history]`, `[events]`,
+`[permissions]`, `[traces]`, or `[detail]`. Unknown, missing or multiple mode
+values share `[unclassified]`. No other query field influences the key.
+Previously aggregated view observations remain in the earlier, unsuffixed row.
 Five alternating saturated-history aggregation runs on the same machine
 (`-test.bench '^BenchmarkBoundedAggregation$' -test.benchtime=200ms
 -test.benchmem`) measured 3.439/3.529 µs baseline and 3.533/3.696 µs candidate

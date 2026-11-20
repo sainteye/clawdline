@@ -231,3 +231,39 @@ Run both from `internal/transport/http`, alternating order and repeating five ti
 "$BOT_TEST_BINARY" -test.v \
   -test.run '^TestProjectAssistantViewServer(LongHistoryFitsExistingCloudReadDeadline|RichHistory)$'
 ```
+
+### Reuse event validation inside a read transaction
+
+An event page can contain many updates with the same persisted binding or
+trace turn. Verify a binding once per `(binding ID, generation)` and a trace
+turn once per `(binding ID, generation, turn ID)`. Each result belongs to the
+current SQLite transaction and page. The per-page row limit bounds both maps.
+All event envelopes, nested facts, foreign-source checks and publication
+authority are checked as before. Different bindings and generations still
+require independent checks, and no result survives the read transaction.
+
+`TestProjectAssistantViewServerBoundEventReplay` uses a 9,001-message Bot,
+100 source events referencing one real stored binding, and a later machine
+frontier from another Bot. It asserts that every event keeps its sequence and
+binding, with no phantom continuation. Through the in-process Cloud Bridge,
+100-event replay fell from **7,391 to 988 ms** median and from **19,776 to
+1,575 ms** nearest-rank P95. Five alternating runs per binary on an Apple
+M4 Pro (24 GB, darwin/arm64, Go 1.27.1) under shared machine load supplied the
+samples. The preceding integrated source was `641717fab`. An empty event page
+and the conversation snapshot and history checks showed variable times. Those
+operations do not reuse validation across a page of events. They establish
+no performance gain for these cases or for relay/browser transit.
+
+To repeat, build both trees with this same test fixture, using
+`go test -c -o /tmp/bot-replay.test ./internal/transport/http`. For the baseline,
+use `-overlay` with `read_view.go` and `route_stats.go` from `641717fab`.
+Invoke both binaries five times, in alternating order, from
+`internal/transport/http`:
+
+```sh
+"$BOT_TEST_BINARY" -test.v -test.run '^TestProjectAssistantViewServerBoundEventReplay$'
+```
+
+Use the `mode=events after_seq=1` completion for the backlog read. A separate
+trial that slimmed snapshot metadata and timeline relation SQL did not produce
+a consistent improvement on both complete-page fixtures and was reverted.

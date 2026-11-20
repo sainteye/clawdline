@@ -345,6 +345,7 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		return err
 	}
 	defer rows.Close()
+	var checks viewEventFactChecks
 	for rows.Next() {
 		if len(out.Items) == q.Request.PageSize {
 			out.HasMore = true
@@ -374,7 +375,7 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		if err = viewEventPayload(e, out.Head); err != nil {
 			return err
 		}
-		if err = viewEventFacts(ctx, tx, e, out.Head); err != nil {
+		if err = checks.verify(ctx, tx, e, out.Head); err != nil {
 			return err
 		}
 		// Replay the stored metadata patch. Current own-chat activity belongs
@@ -427,11 +428,29 @@ func viewEventPayload(e pa.Event, h app.ReadViewHead) error {
 	return nil
 }
 
-func viewEventFacts(ctx context.Context, tx *sql.Tx, e pa.Event, h app.ReadViewHead) error {
+type viewEventBinding struct {
+	id         string
+	generation int64
+}
+
+type viewEventTrace struct {
+	binding viewEventBinding
+	turnID  string
+}
+
+// These positive results belong to one page and its SQLite read transaction.
+// Repeated trace chunks and events often name the same binding and turn.
+type viewEventFactChecks struct {
+	bindings map[viewEventBinding]bool
+	traces   map[viewEventTrace]bool
+}
+
+func (c *viewEventFactChecks) verify(ctx context.Context, tx *sql.Tx, e pa.Event, h app.ReadViewHead) error {
 	// Scalar existence checks borrow the same transaction. In particular,
 	// checking Trace against its stored Turn does not deserialize that Turn's
 	// potentially large captured instructions or the enclosing aggregate.
-	if e.Fence.BindingID != "" {
+	binding := viewEventBinding{id: e.Fence.BindingID, generation: e.Fence.Generation}
+	if binding.id != "" && !c.bindings[binding] {
 		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Bindings') b
  WHERE b.type='object' AND b.key=? AND b.key=json_extract(b.value,'$.fence.binding_id')
  AND json_extract(b.value,'$.fence.generation')=? AND ` + viewFenceSQL("b.value", false) + `)`
@@ -442,8 +461,16 @@ func viewEventFacts(ctx context.Context, tx *sql.Tx, e pa.Event, h app.ReadViewH
 		if !valid {
 			return failure(pa.ScopeDenied, "read_view_event_binding")
 		}
+		if c.bindings == nil {
+			c.bindings = make(map[viewEventBinding]bool)
+		}
+		c.bindings[binding] = true
 	}
 	if e.Trace != nil {
+		trace := viewEventTrace{binding: binding, turnID: e.Trace.TurnID}
+		if c.traces[trace] {
+			return nil
+		}
 		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Turns') t
  WHERE t.type='object' AND t.key=? AND t.key=json_extract(t.value,'$.id') AND json_extract(t.value,'$.fence.generation')=?
  AND json_extract(t.value,'$.fence.binding_id')=? AND ` + viewFenceSQL("t.value", false) + `)`
@@ -454,6 +481,10 @@ func viewEventFacts(ctx context.Context, tx *sql.Tx, e pa.Event, h app.ReadViewH
 		if !valid {
 			return failure(pa.ScopeDenied, "read_view_event_trace")
 		}
+		if c.traces == nil {
+			c.traces = make(map[viewEventTrace]bool)
+		}
+		c.traces[trace] = true
 	}
 	return nil
 }
