@@ -30,7 +30,7 @@ export type TowerLayout = "floor" | "building"
 const layoutKey = "clawdline.bots.towerLayout", floorKey = "clawdline.bots.towerFloor"
 const readPref = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const writePref = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* This page keeps the choice only. */ } }
-const BotSize = 74, SectionBotSize = 44
+const BotSize = 74, SectionBotSize = 44, WalkMs = 1000
 /** The cross-section is a view of its own, beside the four floors. */
 const Section = -1
 /** A building is offered only when one floor would be crowded: more Bots than
@@ -147,6 +147,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const scenery = useRef({ bots, running, scene, locate, size })
   scenery.current = { bots, running, scene, locate, size }
   const drawRef = useRef<(t: number) => void>(() => {})
+  // Where each Bot was last drawn and where it is heading: a change of spot
+  // (allowed, finished, woke) walks there for WalkMs instead of jumping.
+  const trail = useRef(new Map<string, { sig: string, from: readonly [number, number], to: readonly [number, number], start: number, drawn: readonly [number, number] }>())
   useEffect(() => {
     const el = sceneRef.current, canvas = canvasRef.current
     if (!el || !canvas) return
@@ -163,7 +166,21 @@ export default function BotTower({ items, w, language, paused = false, highlight
       const { bots, running, scene, locate, size } = scenery.current
       const k = canvas.width / scene.width, still = !running
       g.clearRect(0, 0, canvas.width, canvas.height)
-      const placed = bots.map(b => ({ b, ...locate(b, t, still) })).sort((a, z) => a.at[1] - z.at[1])
+      const placed = bots.map(b => {
+        const spot = locate(b, t, still), sig = `${scene.picture}:${b.mood === "idle" && scene.picture !== "building" ? "stroll" : `${spot.at[0]},${spot.at[1]}`}`
+        const prev = trail.current.get(b.key)
+        if (!prev || prev.sig.split(":")[0] !== scene.picture || still) {
+          trail.current.set(b.key, { sig, from: spot.at, to: spot.at, start: t, drawn: spot.at })
+          return { b, ...spot }
+        }
+        if (prev.sig !== sig) { prev.sig = sig; prev.from = prev.drawn; prev.start = t }
+        const k = Math.min(1, (t - prev.start) / WalkMs)
+        if (k >= 1 || prev.from === spot.at) { prev.drawn = spot.at; return { b, ...spot } }
+        const e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
+        const at: readonly [number, number] = [prev.from[0] + (spot.at[0] - prev.from[0]) * e, prev.from[1] + (spot.at[1] - prev.from[1]) * e]
+        prev.drawn = at
+        return { b, at, moving: true }
+      }).sort((a, z) => a.at[1] - z.at[1])
       for (const { b, at, moving } of placed) {
         drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
         const button = buttons.current.get(b.key)
@@ -257,7 +274,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
           {bots.map(b => {
             const mood = b.unread ? `${w[moodWord[b.mood]]}, ${w.towerMoodUnread}` : w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
             const label = w.towerBotLabel.replace("{name}", b.item.bot.name).replace("{state}", mood)
-            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-highlight={highlight === b.key || undefined} aria-label={label}
+            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={!section && (b.mood === "wait" || b.mood === "error") || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}
               style={{ width: `${size / scene.width * 100}%`, height: `${(size + 6) / scene.height * 100}%` }}
               onClick={() => onSelect(b.item)}>

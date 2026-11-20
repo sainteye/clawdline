@@ -76,7 +76,18 @@
 .project-assistants .pa-tower-bot:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
 .project-assistants .pa-tower-tip { position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);display:none;flex-direction:column;gap:1px;padding:6px 9px;border:1px solid var(--pa-line);border-radius:8px;background:rgba(20,20,20,.94);color:#fafafa;font-size:12px;line-height:1.4;text-align:left;white-space:nowrap;max-width:260px;pointer-events:none;z-index:2; }
 .project-assistants .pa-tower-tip > span,.project-assistants .pa-tower-tip > small { color:var(--pa-dim);overflow:hidden;text-overflow:ellipsis; }
-.project-assistants .pa-tower-bot:hover .pa-tower-tip,.project-assistants .pa-tower-bot:focus-visible .pa-tower-tip,.project-assistants .pa-tower-bot[data-highlight] .pa-tower-tip { display:flex; }
+.project-assistants .pa-tower-bot:hover .pa-tower-tip,.project-assistants .pa-tower-bot:focus-visible .pa-tower-tip,.project-assistants .pa-tower-bot[data-highlight] .pa-tower-tip,.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { display:flex; }
+/* The tag points at its Bot. A pinned tag (waiting, failed) is compact: name and
+   one line of what it needs, truncated; hovering any other Bot still shows its tag. */
+.project-assistants .pa-tower-tip::after { content:"";position:absolute;left:50%;bottom:-5px;width:8px;height:8px;margin-left:-4px;background:inherit;border-right:1px solid var(--pa-line);border-bottom:1px solid var(--pa-line);transform:rotate(45deg); }
+.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { max-width:220px;padding:5px 8px;gap:0; }
+.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip > span { display:none; }
+.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip > small { color:#cfc8c0;font:11px/1.35 ui-monospace,"SF Mono",Menlo,monospace; }
+.project-assistants .pa-tower-bot[data-mood="wait"][data-pinned] .pa-tower-tip { border-color:rgba(227,149,103,.7); }
+.project-assistants .pa-tower-bot[data-mood="wait"][data-pinned] .pa-tower-tip::after { border-color:rgba(227,149,103,.7); }
+.project-assistants .pa-tower-bot[data-mood="error"][data-pinned] .pa-tower-tip { border-color:rgba(214,92,92,.7); }
+.project-assistants .pa-tower-bot[data-mood="error"][data-pinned] .pa-tower-tip::after { border-color:rgba(214,92,92,.7); }
+.project-assistants .pa-tower-bot[data-pinned]:hover .pa-tower-tip > span { display:block; }
 .project-assistants .pa-tower-bot[data-highlight] { outline:1px dashed rgba(250,250,250,.7);outline-offset:3px;z-index:3; }
 .project-assistants .pa-tower-fallback { display:grid;place-items:center;gap:12px;height:100%;color:var(--pa-dim);text-align:center;padding:20px; }
 
@@ -89,3 +100,5 @@
   .project-assistants .pa-tower-elevator { position:sticky;left:0;width:max-content;margin-bottom:8px; }
   .project-assistants .pa-tower-bot { min-width:44px;min-height:44px; }
 }
+/* A waiting Bot's tag clears the "!" drawn above its head. */
+.project-assistants .pa-tower-bot[data-mood="wait"] .pa-tower-tip { bottom:calc(100% + 22px); }
