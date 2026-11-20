@@ -142,7 +142,12 @@ func (n InstalledLoginNative) Status(ctx context.Context, agent pa.Agent, env []
 }
 
 func InstalledProviderWithProfiles(state string, profiles app.LoginProfiles) app.Provider {
-	return &installedAgents{claude: &installedClaude{state: state, profiles: profiles}, codex: &installedCodex{state: state, profiles: profiles}, grok: newInstalledGrok(state)}
+	return &installedAgents{
+		claude: &installedClaude{state: state, profiles: profiles},
+		codex:  &installedCodex{state: state, profiles: profiles},
+		grok:   newInstalledGrok(state),
+		gemini: newInstalledGemini(state),
+	}
 }
 
 func (n InstalledLoginNative) SignOut(ctx context.Context, agent pa.Agent, env []string) error {

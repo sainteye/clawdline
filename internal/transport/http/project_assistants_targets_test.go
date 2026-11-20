@@ -117,6 +117,12 @@ func TestProjectAssistantTargetsMetadataAndSelectedResolution(t *testing.T) {
 	if !reflect.DeepEqual(page.Agents, []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex, contract.ProjectAssistantAgentGrok}) {
 		t.Fatal(page.Agents)
 	}
+	gemini := f.request(t, "GET", paTargetsURL(f.key.MachineID, "", 100)+"&include_gemini=true", f.readonly, nil)
+	paServerOK(t, gemini)
+	var expanded contract.ProjectAssistantProjectsResponse
+	if err := json.Unmarshal(gemini.Body.Bytes(), &expanded); err != nil || !reflect.DeepEqual(expanded.Agents, contract.ProjectAssistantAgentValues) {
+		t.Fatalf("expanded catalog agents: %v (%v)", expanded.Agents, err)
+	}
 	seen := map[string]bool{}
 	for _, item := range page.Items {
 		if seen[item.Target.ProjectID] || item.Target.MachineID != f.key.MachineID {

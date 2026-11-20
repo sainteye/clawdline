@@ -82,26 +82,28 @@ type Client struct {
 	traceTools     map[string]nativeToolTrace
 	// reply segments, as Codync's text segments: a tool call or a new message
 	// closes one, and the next starts after a blank line.
-	segmentStart      int
-	segmentClosed     bool
-	messageID         string
-	steering          bool
-	sequence          uint64
-	ctx               context.Context
-	cancel            context.CancelFunc
-	agent             pa.Agent
-	adapterVersion    string
-	promptImages      bool
-	sessionFailures   bool
-	ownedMCP          *OwnedMCP
-	mcpMu             sync.Mutex
-	mcpRevoked        bool
-	permissionsSealed bool
-	cancelled         bool
-	promptID          string
-	promptDeadline    time.Time
-	answerMu          sync.Mutex
-	rpcSlots          chan struct{}
+	segmentStart        int
+	segmentClosed       bool
+	messageID           string
+	steering            bool
+	sequence            uint64
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	agent               pa.Agent
+	adapterVersion      string
+	geminiSettings      string
+	openingInstructions string
+	promptImages        bool
+	sessionFailures     bool
+	ownedMCP            *OwnedMCP
+	mcpMu               sync.Mutex
+	mcpRevoked          bool
+	permissionsSealed   bool
+	cancelled           bool
+	promptID            string
+	promptDeadline      time.Time
+	answerMu            sync.Mutex
+	rpcSlots            chan struct{}
 }
 
 func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool) (*Client, error) {
@@ -182,7 +184,11 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
 	}
-	if q.Bot.Agent != pa.Grok && c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterPackage(q.Bot.Agent)) {
+	adapterName := adapterPackage(q.Bot.Agent)
+	if q.Bot.Agent == pa.Gemini {
+		adapterName = "Antigravity ACP Server"
+	}
+	if q.Bot.Agent != pa.Grok && c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterName) {
 		return refusal(pa.ProviderVersionUnsupported, "acp_adapter_identity")
 	}
 	if !maintenance && q.Bot.Agent == pa.Codex && !hasCapability(initialized.AgentCapabilities.SessionCapabilities["systemPrompt"]) {
@@ -199,6 +205,15 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 			return err
 		}
 		c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
+	}
+	if q.Bot.Agent == pa.Gemini {
+		if err := c.authenticateGemini(ctx, b); err != nil {
+			return err
+		}
+		c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
+		if !c.discovery {
+			c.openingInstructions = systemPrompt(q)
+		}
 	}
 	if q.Resume && q.PersistNativeSession && !nativeSessionUUID.MatchString(q.Binding.NativeSessionID) {
 		return refusal(pa.ScopeDenied, "native_session_id")
@@ -220,6 +235,9 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 				return refusal(pa.ResumeUnsupported, "native_resume")
 			}
 			method = "session/resume"
+		case q.Bot.Agent == pa.Gemini && hasCapability(initialized.AgentCapabilities.SessionCapabilities["resume"]):
+			// Resume without replaying native transcript text into the Bot.
+			method = "session/resume"
 		case initialized.AgentCapabilities.LoadSession:
 			method = "session/load"
 		default:
@@ -230,9 +248,18 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 		c.sessionID = q.Binding.NativeSessionID
 		c.mu.Unlock()
 	}
+	if q.Bot.Agent == pa.Gemini {
+		if err := checkGeminiSettings(c.geminiSettings); err != nil {
+			return err
+		}
+	}
 	b, err = c.call(ctx, method, params)
 	if err != nil {
 		var f *pa.Failure
+		var provider *app.ProviderFailure
+		if q.Bot.Agent == pa.Gemini && errors.As(err, &provider) && provider.Reason == app.ProviderSignedOut {
+			return geminiSignIn()
+		}
 		if q.Resume && errors.As(err, &f) && strings.HasPrefix(f.Field, "rpc_") {
 			// The native side answered that it cannot load this session, for
 			// example after its transcript moved. The caller starts anew.
@@ -279,6 +306,9 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	// Grok's session modes are a separate control from its launch-level
 	// permission mode. The Bot's permission mode is set on the command line.
+	if session.Modes == nil && q.Bot.Agent == pa.Gemini {
+		return refusal(pa.Unsupported, "agent_mode")
+	}
 	if q.Bot.Agent == pa.Grok || session.Modes == nil {
 		return nil
 	}
@@ -319,6 +349,36 @@ func (c *Client) authenticateGrok(ctx context.Context, initialized []byte) error
 	return nil
 }
 
+func geminiSignIn() error {
+	return &app.ProviderFailure{Reason: app.ProviderSignedOut, Cause: refusal(pa.AuthRejected, "gemini_login")}
+}
+
+func (c *Client) authenticateGemini(ctx context.Context, initialized []byte) error {
+	if err := checkGeminiSettings(c.geminiSettings); err != nil {
+		return err
+	}
+	var offer struct {
+		Methods []struct {
+			ID string `json:"id"`
+		} `json:"authMethods"`
+	}
+	if json.Unmarshal(initialized, &offer) != nil {
+		return refusal(pa.ProviderVersionUnsupported, "gemini_cli")
+	}
+	for _, method := range offer.Methods {
+		if method.ID != "oauth-personal" {
+			continue
+		}
+		_, err := c.call(ctx, "authenticate", map[string]string{"methodId": method.ID})
+		var provider *app.ProviderFailure
+		if errors.As(err, &provider) && provider.Reason == app.ProviderSignedOut {
+			return geminiSignIn()
+		}
+		return err
+	}
+	return refusal(pa.ProviderVersionUnsupported, "gemini_cli")
+}
+
 // applyMode puts the session in the Bot's mode, as Codync does with
 // session/set_mode. Claude's adapter already falls back from Auto to Accept
 // edits on a model without Auto, so that session is left as it is; any other
@@ -327,6 +387,13 @@ func (c *Client) applyMode(ctx context.Context, bot pa.Bot, sid, current string,
 	want := pa.NativeMode(bot.Agent, bot.Mode)
 	if current == want {
 		return nil
+	}
+	if bot.Agent == pa.Gemini && want == pa.AutoMode && !offered(want) {
+		// Where the native terminal sandbox is unavailable, ask for review.
+		want = "default"
+		if current == want {
+			return nil
+		}
 	}
 	if !offered(want) {
 		if bot.Agent == pa.ClaudeCode && want == "auto" && current == "acceptEdits" {
@@ -482,8 +549,13 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return nil, err
 	}
-	if c.agent == pa.Grok && len(q.Images) > 0 && !c.promptImages {
+	if (c.agent == pa.Grok || c.agent == pa.Gemini) && len(q.Images) > 0 && !c.promptImages {
 		return nil, refusal(pa.Unsupported, "images")
+	}
+	if c.agent == pa.Gemini {
+		if err := checkGeminiSettings(c.geminiSettings); err != nil {
+			return nil, err
+		}
 	}
 	var ids []string
 	for _, file := range q.Files {
@@ -539,8 +611,11 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	c.promptDeadline = deadline
 	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
 	c.traceSegment, c.traceTools = pa.Trace{}, nil
-	sid := c.sessionID
+	sid, instructions := c.sessionID, c.openingInstructions
 	c.mu.Unlock()
+	if instructions != "" {
+		text = "<clawdline_instructions>\n" + instructions + "\n</clawdline_instructions>\n\n" + text
+	}
 	// Only fresh filtered context is sent. Displayed history is never implicit
 	// model input. Instructions belong to this turn's immutable snapshot.
 	blocks := []any{}
@@ -562,6 +637,9 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err != nil {
 		return nil, err
 	}
+	c.mu.Lock()
+	c.openingInstructions = ""
+	c.mu.Unlock()
 	return &promptPending{rpc: p, deadline: deadline}, nil
 }
 
@@ -600,7 +678,7 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_stopped")
 	}
-	if p.rpc.c.agent == pa.Grok && result.StopReason != "end_turn" {
+	if (p.rpc.c.agent == pa.Grok && result.StopReason != "end_turn") || (p.rpc.c.agent == pa.Gemini && result.StopReason == "") {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_result")
 	}
 	if p.rpc.c.sessionFailures {
@@ -761,9 +839,9 @@ func (c *Client) handle(f frame) error {
 		if err := json.Unmarshal(f.Params, &p); err != nil {
 			return refusal(pa.Invalid, "update")
 		}
-		// Grok can publish initial session metadata before session/new replies.
+		// Native agents can publish initial session metadata before session/new replies.
 		// Nothing is routed to the Bot until the native session is bound.
-		if c.agent == pa.Grok && c.SessionID() == "" {
+		if (c.agent == pa.Grok || c.agent == pa.Gemini) && c.SessionID() == "" {
 			return nil
 		}
 		if p.Update.SessionUpdate == "usage_update" || p.Update.SessionUpdate == "available_commands_update" {

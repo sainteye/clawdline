@@ -62,6 +62,12 @@ func TestACPTestPeer(t *testing.T) {
 		if json.Unmarshal(scanner.Bytes(), &f) != nil {
 			os.Exit(3)
 		}
+		if strings.HasPrefix(mode, "gemini-") {
+			if !geminiTestPeer(mode, f, scanner.Bytes(), send) {
+				os.Exit(16)
+			}
+			continue
+		}
 		if strings.HasPrefix(mode, "grok-") {
 			const sessionID = "00000000-0000-4000-8000-000000000042"
 			switch f.Method {

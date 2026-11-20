@@ -21,13 +21,14 @@ import (
 
 // InstalledProvider is the production factory for installed Bot agents. Construction is inert.
 func InstalledProvider(state string) app.Provider {
-	return &installedAgents{claude: &installedClaude{state: state}, codex: &installedCodex{state: state}, grok: newInstalledGrok(state)}
+	return InstalledProviderWithProfiles(state, nil)
 }
 
 type installedAgents struct {
 	claude *installedClaude
 	codex  *installedCodex
 	grok   *installedGrok
+	gemini *installedGemini
 }
 
 func (p *installedAgents) pick(agent pa.Agent) (app.Provider, error) {
@@ -38,6 +39,8 @@ func (p *installedAgents) pick(agent pa.Agent) (app.Provider, error) {
 		return p.codex, nil
 	case pa.Grok:
 		return p.grok, nil
+	case pa.Gemini:
+		return p.gemini, nil
 	}
 	return nil, refusal(pa.AdapterNotFound, "native_provider")
 }

@@ -17,9 +17,10 @@ import (
 // Configuration comes exclusively from the trusted host. There is no registry
 // resolution, shell expansion, automatic installation or npx fallback.
 type Configuration struct {
-	Executable  string
-	Arguments   []string
-	Environment []string
+	Executable     string
+	Arguments      []string
+	Environment    []string
+	geminiSettings string
 }
 
 type ProviderOptions struct {
@@ -148,6 +149,7 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 		return nil, errors.Join(err, proc.Close(cleanup))
 	}
 	client.adapterVersion = caps.AdapterVersion
+	client.geminiSettings = c.geminiSettings
 	client.extensionFiles = assets
 	if caps.SendMessage || len(q.Extensions.Connectors) > 0 {
 		var lease OwnedMCP
@@ -175,10 +177,10 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 			// succeeds. Returning nil would discard the partial resource.
 			return client, errors.Join(refusal(pa.ExecutionEffectUnknown, "owned_cleanup"), err, cleanupErr)
 		}
-		if q.Bot.Agent == pa.Grok && pa.Code(err) == pa.AuthRejected && client.SessionID() == "" {
+		if (q.Bot.Agent == pa.Grok || q.Bot.Agent == pa.Gemini) && pa.Code(err) == pa.AuthRejected && client.SessionID() == "" {
 			return nil, &app.OpenNotStarted{Cause: err}
 		}
-		if q.Bot.Agent == pa.Grok && pa.Code(err) != pa.ResumeUnsupported {
+		if (q.Bot.Agent == pa.Grok || q.Bot.Agent == pa.Gemini) && pa.Code(err) != pa.ResumeUnsupported {
 			// Return the closed handle so the runtime can release its slot
 			// without treating an unclassified Open as safe to replay.
 			return client, err

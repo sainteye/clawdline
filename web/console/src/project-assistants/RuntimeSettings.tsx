@@ -3,7 +3,7 @@ import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
 import type {Words} from "./words"
-import {botFailureText,grokSetupFailure,retryableSourceError} from "./source-errors"
+import {botFailureText,providerSetupFailure,retryableSourceError} from "./source-errors"
 
 export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string,loginState:string,active:boolean){
   const {machine_id,bot_id}=bot.key,conversation=bot.conversation_id
@@ -48,7 +48,7 @@ export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssis
 }
 
 export function configurationError(code:string,w:Words,field?:string):string{
-  const setup=grokSetupFailure(field,w)
+  const setup=providerSetupFailure(field,w)
   if(setup)return setup
   if(code==="pa_capacity_full")return field&&field!=="configuration_discovery"?w.failFull:w.nativeBusy
   if(code==="pa_auth_rejected")return w.loginUnavailable
@@ -64,7 +64,7 @@ export function RuntimeSettings({discovery,editable,reason,value,onChange,w}:{di
     <h3>{w.nativeSettings}</h3>
     {!editable?<p role="status">{reason||w.cannotEdit}</p>:error?<div>
       <p role="status">{configurationError(error,w,field)} <small>({error})</small></p>
-      {(error!=="pa_auth_rejected"||field==="grok_login")&&retryableSourceError(error)&&<button type="button" onClick={retry}>{w.nativeRetry}</button>}
+      {(error!=="pa_auth_rejected"||(field==="grok_login"||field==="gemini_login"))&&retryableSourceError(error)&&<button type="button" onClick={retry}>{w.nativeRetry}</button>}
       {(value.model||Object.keys(value.options).length>0)&&<button type="button" onClick={()=>onChange({model:"",options:{}})}>{w.nativeDefault}</button>}
     </div>:pending?<p role="status">{w.nativeLoading}</p>:catalog&&<>
       {model?<label>{w.model}<select aria-label={w.model} value={value.model} onChange={e=>onChange({model:e.target.value,options:{}})}><option value="">{w.nativeDefault}</option>{model.choices.map(c=><option key={c.value} value={c.value}>{c.name}</option>)}</select></label>:<p>{w.nativeNoModels}</p>}

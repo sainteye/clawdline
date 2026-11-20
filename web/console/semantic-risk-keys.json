@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13816,
+  "englishKeys": 13820,
   "counts": {
-    "negation": 3564,
+    "negation": 3565,
     "state": 2342,
-    "permission": 830,
+    "permission": 833,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5902,
+  "unionCount": 5905,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3103,6 +3103,7 @@
       "projectAssistants.fallbackUnknownAgent",
       "projectAssistants.filesLost",
       "projectAssistants.foldersUnsupported",
+      "projectAssistants.geminiSettings",
       "projectAssistants.grokAccountRestricted",
       "projectAssistants.groupMembersMissing",
       "projectAssistants.groupNoMatch",
@@ -6565,6 +6566,9 @@
       "projectAssistants.failSignedOut",
       "projectAssistants.fallbackReason_signed_out",
       "projectAssistants.fixAgent",
+      "projectAssistants.geminiLogin",
+      "projectAssistants.geminiSettings",
+      "projectAssistants.geminiUsesExistingLogin",
       "projectAssistants.grokUsesExistingLogin",
       "projectAssistants.groupEmpty",
       "projectAssistants.history_only",
@@ -12664,6 +12668,9 @@
     "projectAssistants.fixAgent",
     "projectAssistants.fixOffline",
     "projectAssistants.foldersUnsupported",
+    "projectAssistants.geminiLogin",
+    "projectAssistants.geminiSettings",
+    "projectAssistants.geminiUsesExistingLogin",
     "projectAssistants.gmailOpen",
     "projectAssistants.gmailSafari",
     "projectAssistants.gmailWeb",

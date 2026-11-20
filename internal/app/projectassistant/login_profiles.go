@@ -135,7 +135,7 @@ func (s *Service) loginProfileAction(ctx context.Context, q pa.LoginProfileActio
 }
 
 func (s *Service) validateLoginSelection(ctx context.Context, b pa.Bot) error {
-	if b.Agent == pa.Grok && b.LoginProfile != "" {
+	if (b.Agent == pa.Grok || b.Agent == pa.Gemini) && b.LoginProfile != "" {
 		return serviceFailure(pa.Unsupported, "login_profile_agent")
 	}
 	if s.opts.LoginProfiles == nil {

@@ -3847,11 +3847,15 @@ func genDecodeProjectAssistantsOutput(b body) (plan, LocalRequest, bool) {
 // genDecodeProjectAssistantsProjects is the `project-assistants.projects` row's decode.
 func genDecodeProjectAssistantsProjects(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
+		[]string{"type", "cursor", "include_gemini", "machine_id", "page_size", "request", "session"},
 		[]string{"type", "cursor", "machine_id", "page_size", "request", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("cursor", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("include_gemini", genRule{kind: "bool"}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
@@ -3866,7 +3870,7 @@ func genDecodeProjectAssistantsProjects(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/project-assistant-targets"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "machine_id"}, "page_size": genValue{from: "page_size"}})
+	req.Query = b.genQuery(map[string]genValue{"cursor": genValue{from: "cursor"}, "include_gemini": genValue{from: "include_gemini"}, "machine_id": genValue{from: "machine_id"}, "page_size": genValue{from: "page_size"}})
 	req.Header = asDevice()
 	return p, req, true
 }

@@ -3610,7 +3610,8 @@
       "agents": [
         "claude",
         "codex",
-        "grok"
+        "grok",
+        "antigravity"
       ],
       "stages": [
         "turn"
@@ -3623,7 +3624,11 @@
       "sources": [
         {
           "path": "internal/adapters/projectassistantacp/client.go",
-          "line": 496
+          "line": 548
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/installation_gemini.go",
+          "line": 17
         },
         {
           "path": "internal/adapters/projectassistantacp/client_context.go",
@@ -5116,27 +5121,28 @@
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
     "internal/adapters/planner/recap.go": "b3ebf0eaf6db01552c2a1050b1ddcf04a1c4a5f754a7afcc96eb4580574bde31",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
-    "internal/adapters/projectassistantacp/capabilities.go": "ba5c6332ac3dbe433ac3d5008544d27312a1d45dfe140cab8d16e10b2cfdcd92",
-    "internal/adapters/projectassistantacp/client.go": "9506718396a1bd3b458151d1343e17364523b6552e4f5cb45b4886a3eae9503d",
+    "internal/adapters/projectassistantacp/capabilities.go": "3a6adb41cafc7074db0f447da01b735ac30a1c551ba2b3329ba6b8c11eaeba6a",
+    "internal/adapters/projectassistantacp/client.go": "33dca5fe26d24737d4de71d1624dce7fa96f1c92b6f1b31cca2b9d23083ea020",
     "internal/adapters/projectassistantacp/client_compaction.go": "894b3e795cf3d5c9e97a688241988e659bb3028f4e4731e1a07628299226f3d5",
     "internal/adapters/projectassistantacp/client_context.go": "e27df8e1523ccd395bf6275d445a20e7dd061908736021346adcabf633b017a4",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/fallback_error.go": "1eaf2cc231f8ff22dc8a14cfc850906ccf7ff9b9bf2908312bbb51ade1afad06",
     "internal/adapters/projectassistantacp/installation.go": "f7b4c0c601e0328e9807417a560f6c7f8b58dc107eee157c0b3f404323db7da2",
-    "internal/adapters/projectassistantacp/installation_codex.go": "633ca77e3ca17d374e4fcd4d298ebe1728934ea65be02ccba2d5c4144dddedb7",
+    "internal/adapters/projectassistantacp/installation_codex.go": "9a37efdead9a72e75f1546806ced47570e2a9df570ea5d2f42e5cf184d3e1bef",
+    "internal/adapters/projectassistantacp/installation_gemini.go": "02f6188563f20c666857f14ecdeb3308bc657c70f5ed72151fc624c85f974ebe",
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
-    "internal/adapters/projectassistantacp/login_profiles.go": "e54de506b8e5f975b7a24ebd13b6dfee788b7e6f2ef807e487057b5b7f3aba9d",
+    "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
     "internal/adapters/projectassistantacp/mcp.go": "485585215e099cfd9a65c06e348ac2ea122d1419d3b9adf6e6a4b5ea9d262c0b",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
-    "internal/adapters/projectassistantacp/model_configuration.go": "15795673988fa014973cfeb596697c82712d6210b83b5de77aa5fe8f0135a941",
-    "internal/adapters/projectassistantacp/native_history.go": "cf4cd4968caee505decc161df8650ff16c69d4fcd3aa6570d17c68e93a072e4a",
+    "internal/adapters/projectassistantacp/model_configuration.go": "c4d19a53355a3d5d21a29266e1fcc30809a91d5f1870d5ca5594861453ecd9c9",
+    "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "3b802530d9d5032276e4c561d0a3e1c9d96d5d98c0148cb169ae449ed3f9d145",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "3bcee6becb42e3a53dfa0cf3fc6c054870097e2f66aa2a41fd395242f5076eab",
+    "internal/adapters/projectassistantacp/session_configuration.go": "a84490e2c49a43d7988b2f72927439a0708bf0e926a5b4caedde27ff4cad51eb",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
     "internal/adapters/projectassistantacp/tcp_darwin.go": "a2bce0740704ba649ce41fcd7198d3e956273fb0725c52cf837eebb09fb05616",
     "internal/adapters/projectassistantacp/tcp_linux.go": "9848170c19f9cae199b6bf234ba47bfdd69020b6c46beb555aa23570a0f1990b",
@@ -5218,12 +5224,12 @@
     "internal/app/projectassistant/handoff_card.go": "226fbd47b11d4b24c06a7172ed317cdc07f2ae08671740042400b5379815a477",
     "internal/app/projectassistant/inputs.go": "42d237758dbfc3aeb23098e0f90513532e6ed1191e0cc49525d8d585c50e79e7",
     "internal/app/projectassistant/lifecycle.go": "bb8ca789fa3537c590aff1ca4baaeb04027081732a44c485b5eee7164cacf3bc",
-    "internal/app/projectassistant/login_profiles.go": "03d639e93ca2f441b2e9e89a76d73ab25ce94c8f5b713691bc7438ebc151d15d",
+    "internal/app/projectassistant/login_profiles.go": "cdd55f707f0fb58746ba88d3b88689713fcd6afa6fa9db91cc6b4c051e40ce1f",
     "internal/app/projectassistant/memory_tools.go": "0659e2bb4c855c78bcb3ea3bfb56271be01e302c2ebc17453bc671855c3fae3e",
     "internal/app/projectassistant/memory_view.go": "056ecb5c8d4aa2ec987043815f687c9fc64e1556222173f7d331fddf25c050b9",
     "internal/app/projectassistant/native_context.go": "cb0c132727ba585b55d69dda59c627e67c9785089503ef22d72d96047631f99c",
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
-    "internal/app/projectassistant/provider_failure.go": "78144f0cb250d2fcc41c58d26607f9dcfc707fe7f9a69df71ac19295afdbb2f8",
+    "internal/app/projectassistant/provider_failure.go": "b3fc1925622e3a63dd566bc9711b4d04c9ccfed5a766f7ea4d92338d48a0b244",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "77efc46f565f53223bbd56cb848a2b026d972f07a2a71ee746c69f3949989681",
@@ -5311,7 +5317,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "54cc4d0290f80251e7974f994acfe3e6e76b2eb6ba6bf1429bc6b06319064315",
+    "web/console/src/cloud/project-assistants.ts": "d0e257fb2be58635d018fac3d48fb1b37a7765fd8d5b62e43c0648baf9d99724",
     "web/console/src/cloud/relay-writer.ts": "d72f7e625f9ae501a006a34b4a6993880c295fe506288ab91294d16d5af393a6",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "75fc2c9f0fef1aeb92f26cde942e9efa369ff5095cc61b1630dc67cde52da489",
@@ -5319,7 +5325,7 @@
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
-    "web/console/src/project-assistants/Chat.tsx": "b19790d0e0a9d596d039a4dc3b6df0c514f6eb9d4a1f9cc75f36fb5fed0c405b",
+    "web/console/src/project-assistants/Chat.tsx": "c94cbc9f7775814255c25299ff53be6f23952b0fec981328eab88987d5833ee7",
     "web/console/src/project-assistants/ChatRows.tsx": "4d6e323e6b3dbca5a1a3640494b757057d35ec0491d435d6c148664866d0cf2b",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
@@ -5370,7 +5376,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "c112ca6b9f2aee401eaf9952964324d40b42c8b06d6f25df9318e1b9d6de8758",
-    "zh-Hant": "486061f3ff4291fe40e93bd6d9ec4bf0120c8140e595bb1a92f7973daa61106a"
+    "en": "e632f405a9f32ef4184ed651af723abe3436359de7b99e7203383ceb34e0531f",
+    "zh-Hant": "8aaf94c24f7f30aae4da7efcae0684283dc67e3bccc9fd4f84410477aac20281"
   }
 }

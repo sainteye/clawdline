@@ -12,6 +12,13 @@ it. It uses an already signed-in personal Google account, with **AI Credits off*
 Keep those settings when using the preview. Free-account quota can still run out;
 Clawdline does not switch to an API key or a paid fallback.
 
+## Use Gemini with a Bot
+
+In **Bots**, choose **Add → Create Bot**, pick the Project, and select
+**Gemini**. The selected computer needs Antigravity CLI and a personal Google
+sign-in. The Bot keeps its own history and uses no AI Credits. You can also
+select Gemini as an existing Bot’s primary agent in its settings.
+
 ## Start and send
 
 1. On the Session list, choose the machine, then press **Start a session**.

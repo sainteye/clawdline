@@ -1,8 +1,8 @@
 # Persistent Bots: getting started
 
-A Bot is a long-lived Claude assistant bound to one Project. You chat with
+A Bot is a long-lived assistant bound to one Project. You chat with
 it in the console; it remembers what you tell it, works in the Project with
-Claude Code's own tools, and can hand larger changes to an isolated worker
+its agent’s own tools, and can hand larger changes to an isolated worker
 through Clawdline's Broker. The worker's result comes back to the same chat.
 
 Bots are off by default.
@@ -13,7 +13,11 @@ Bots are off by default.
 - For a Claude Code Bot: Claude Code 2.1.323 or newer, signed in as you
   normally use it. For a Codex Bot: Codex 0.166.0 or newer, signed in, with
   its memories feature off (the default; `codex features list`).
-- Node 22 or newer with npm.
+- For a Gemini Bot: Antigravity CLI (`agy`) on macOS or Linux, signed in to
+  a personal Google account. The Bot uses an isolated native profile with
+  AI Credits off and retains that profile for the Bot's current conversation
+  and memory epoch. Choose **Gemini** in the Bot's agent picker.
+- Node 22 or newer with npm for Claude Code and Codex.
 
 Clawdline finds both programs itself, including installs from nvm, mise,
 asdf, fnm, Volta or Homebrew. You do not place any files. On the first

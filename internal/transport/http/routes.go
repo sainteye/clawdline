@@ -46,7 +46,8 @@ import (
 // Project memory management and explicit review arrive at API 99.
 // Grok Build as a Bot agent arrives at API 100.
 // Group descriptions (what a group works on) arrive at API 101.
-const APILevel = 101
+// Gemini as a Bot agent arrives at API 102.
+const APILevel = 102
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

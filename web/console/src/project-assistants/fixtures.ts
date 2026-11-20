@@ -105,7 +105,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       if(r.cursor&&!r.cursor.startsWith(`${projectRevision}:`))throw failure("pa_cursor_expired")
       const items=Array.from({length:projectCount},(_,i)=>({target:{machine_id:machineID,project_id:i?`project-${i}`:"project"},label:i<2?"Clawdline":`Project ${i+1}`})).slice(offset,offset+r.page_size)
       const more=offset+items.length<projectCount
-      const answer:W.ProjectAssistantProjectsResponse={contract_version:contractVersion,source:status(),agents:["claude","codex"],revision:String(projectRevision),items,next_cursor:more?`${projectRevision}:${offset+items.length}`:"",has_more:more}
+      const answer:W.ProjectAssistantProjectsResponse={contract_version:contractVersion,source:status(),agents:["claude","codex","antigravity"],revision:String(projectRevision),items,next_cursor:more?`${projectRevision}:${offset+items.length}`:"",has_more:more}
       if(projectInvalid==="foreign"&&items[0])items[0].target.machine_id="foreign"
       if(projectInvalid==="duplicate"&&items[0])items.push(items[0])
       if(projectInvalid==="cursor"){answer.next_cursor=r.cursor;answer.has_more=true}

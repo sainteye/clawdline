@@ -68,12 +68,13 @@ type ProjectResolution struct {
 
 type Agent string
 
-func (a Agent) Valid() bool { return a == ClaudeCode || a == Codex || a == Grok }
+func (a Agent) Valid() bool { return a == ClaudeCode || a == Codex || a == Grok || a == Gemini }
 
 const (
 	ClaudeCode Agent = "claude"
 	Codex      Agent = "codex"
 	Grok       Agent = "grok"
+	Gemini     Agent = "antigravity"
 )
 
 // Shape values preserve Codync's character vocabulary, rendered as outlines.

@@ -26,6 +26,13 @@ func AgentModes(agent Agent) []AgentMode {
 			{ID: "acceptEdits", Name: "Accept edits", Description: "Automatically accept all file edits"},
 			{ID: "plan", Name: "Plan", Description: "Create a plan before making changes"},
 		}
+	case Gemini:
+		return []AgentMode{
+			{ID: AutoMode, Name: "Auto", Description: "Gemini handles permission decisions when Auto is available"},
+			{ID: "default", Name: "Manual", Description: "Ask before actions that require approval"},
+			{ID: "accept-edits", Name: "Accept edits", Description: "Automatically accept workspace file edits"},
+			{ID: "plan", Name: "Plan", Description: "Create a plan before making changes"},
+		}
 	case Grok:
 		return []AgentMode{
 			{ID: AutoMode, Name: "Auto", Description: "Grok handles permission decisions"},

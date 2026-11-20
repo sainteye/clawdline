@@ -5173,8 +5173,9 @@ export type ProjectAssistantAgent =
     "claude"
   | "codex"
   | "grok"
+  | "antigravity"
 
-export const ProjectAssistantAgentValues: readonly ProjectAssistantAgent[] = ["claude", "codex", "grok"] as const
+export const ProjectAssistantAgentValues: readonly ProjectAssistantAgent[] = ["claude", "codex", "grok", "antigravity"] as const
 
 export interface ProjectAssistantAppearance {
   color: string

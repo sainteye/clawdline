@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13816,
-  "riskKeys": 5902,
-  "nonRiskCount": 7914,
+  "englishContentKeys": 13820,
+  "riskKeys": 5905,
+  "nonRiskCount": 7915,
   "groups": [
     {
       "name": "acp / other",
@@ -6145,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 518,
+      "count": 519,
       "sources": [
         null
       ],
@@ -6277,6 +6277,7 @@
         "projectAssistants.forget",
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
+        "projectAssistants.geminiInstall",
         "projectAssistants.grokInstall",
         "projectAssistants.grokLogin",
         "projectAssistants.groupAbout",

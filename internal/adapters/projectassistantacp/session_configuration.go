@@ -103,6 +103,8 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 		}
 	case pa.Grok:
 		params["_meta"] = map[string]string{"rules": systemPrompt(q)}
+	case pa.Gemini:
+		// The Bot prompt carries the instructions as text for this runtime.
 	case "":
 		// Only package-internal transport fixtures omit a Bot. Provider.Open
 		// cannot reach this branch because capability admission rejects it.
@@ -140,6 +142,8 @@ func systemPrompt(q app.OpenRequest) string {
 		engine = "Codex"
 	case pa.Grok:
 		engine = "Grok Build"
+	case pa.Gemini:
+		engine = "Gemini"
 	}
 	lines := []string{"Agent profile:"}
 	if name != "" {

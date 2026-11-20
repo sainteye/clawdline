@@ -191,9 +191,17 @@ func (s *Server) projectAssistantTargetsReply(r *http.Request) ([]byte, error) {
 	if r.Method != http.MethodGet || r.URL.Path != "/v1/project-assistant-targets" {
 		return nil, paHTTPFailure(pa.Invalid, "route")
 	}
-	query, err := paHTTPQuery(r, "machine_id", "cursor", "page_size")
+	fields := []string{"machine_id", "cursor", "page_size"}
+	includeGemini := r.URL.Query().Has("include_gemini")
+	if includeGemini {
+		fields = append(fields, "include_gemini")
+	}
+	query, err := paHTTPQuery(r, fields...)
 	if err != nil {
 		return nil, err
+	}
+	if includeGemini && query.Get("include_gemini") != "true" {
+		return nil, paHTTPFailure(pa.Invalid, "include_gemini")
 	}
 	size, err := paHTTPNumber(query, "page_size")
 	if err != nil || size < 1 || size > pa.MaxPageRows {
@@ -226,8 +234,13 @@ func (s *Server) projectAssistantTargetsReply(r *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	agents := []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex, contract.ProjectAssistantAgentGrok}
+	// Earlier consoles reject the entire catalog when they encounter an unknown agent.
+	if includeGemini {
+		agents = contract.ProjectAssistantAgentValues
+	}
 	response := contract.ProjectAssistantProjectsResponse{ContractVersion: pa.ContractVersion, Source: source,
-		Agents:   contract.ProjectAssistantAgentValues,
+		Agents:   agents,
 		Revision: revision, Items: []contract.ProjectAssistantProjectOption{}, PersonalWorkspace: true}
 	var encoded []byte
 	if start == len(items) {

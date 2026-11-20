@@ -10,6 +10,12 @@ Antigravity ACP CLI 執行。Gemini CLI 與 Antigravity 是不同產品，安裝
 帳號，並維持 **AI Credits 關閉**。免費帳號仍有額度限制；額度用完時，Clawdline
 不會自行切換到 API key 或付費備援。
 
+## 在 Bots 使用 Gemini
+
+打開 **Bots**，選擇 **新增 → 新增 Bot**，選定 Project 後選擇 **Gemini**。執行 Bot 的電腦須安裝
+Antigravity CLI 並登入個人 Google 帳號。Bot 保有自己的對話紀錄，並關閉 AI Credits。
+你也可以在現有 Bot 的設定將主要助理改為 Gemini。
+
 ## 開啟與傳訊
 
 1. 在 Session 清單選擇機器，按 **開一個 session**。

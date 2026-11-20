@@ -36,8 +36,11 @@ export function botFailureText(code: string, w: Record<string, string>): string 
   return w.failGeneric
 }
 
-export function grokSetupFailure(field: string | undefined, w: Record<string,string>): string | undefined {
+export function providerSetupFailure(field: string | undefined, w: Record<string,string>): string | undefined {
   switch (field) {
+    case "gemini_cli": return w.geminiInstall
+    case "gemini_login": return w.geminiLogin
+    case "gemini_settings": return w.geminiSettings
     case "grok_cli": return w.grokInstall
     case "grok_login":
     case "grok_auth_mode_unsupported": return w.grokLogin
@@ -55,7 +58,7 @@ export function botTurnOutcome(turn:{state:string;failure_code:string;failure_fi
     provider_usage_limit:"failUsage",provider_out_of_credits:"failCredits",provider_rate_limited:"failRate",
     provider_overloaded:"failOverloaded",provider_signed_out:"failSignedOut",provider_model_missing:"failModel",
   }
-  const reason=grokSetupFailure(turn.failure_field,w)??w[fields[turn.failure_field??""]]
+  const reason=providerSetupFailure(turn.failure_field,w)??w[fields[turn.failure_field??""]]
   if(turn.state==="unknown")return [reason,w.turnUnknownNext].filter(Boolean).join(" ")
   return reason||botFailureText(turn.failure_code,w)
 }

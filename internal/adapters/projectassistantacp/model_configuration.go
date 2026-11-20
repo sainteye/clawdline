@@ -271,6 +271,7 @@ func probeConfiguration(ctx context.Context, config Configuration, caps pa.Capab
 		defer faults[0](c)
 	}
 	c.adapterVersion = caps.AdapterVersion
+	c.geminiSettings = config.geminiSettings
 	c.discovery = true
 	c.discoveryApply = len(bot.RuntimeSettings.Options) > 0
 	err = c.initialize(ctx, app.OpenRequest{Bot: bot, Binding: pa.ExecutionBinding{Fence: fence, Agent: bot.Agent, InstructionRevision: bot.Instructions.Revision}, Directory: dir})

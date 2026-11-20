@@ -60,10 +60,15 @@ try {
           assert.equal(hit, true, "the machine connection footer must not cover the Create button")
         }
         await open()
+        await dialog.getByRole("radio", {name: "Gemini", exact: true}).click()
+        assert.equal(await dialog.getByRole("radio", {name: "Gemini", exact: true}).getAttribute("aria-checked"), "true")
+        await dialog.getByText(zh ? /個人 Google 登入/ : /personal Google sign-in/).waitFor()
         await page.evaluate(() => window.botsFixture.a.loseCreateReply())
         await button.click()
         await dialog.waitFor({ state: "hidden" })
-        assert.equal((await requests("create")).length, 1)
+        const creates = await requests("create")
+        assert.equal(creates.length, 1)
+        assert.equal(creates[0].request.settings.agent, "antigravity")
         assert.equal((await requests("get")).length, 1, "look up the original Bot id to recover a lost reply")
 
         await open()

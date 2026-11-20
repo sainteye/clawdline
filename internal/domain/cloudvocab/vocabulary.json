@@ -6370,11 +6370,29 @@
       "example": {
         "machine_id": "source-one",
         "cursor": "",
+        "include_gemini": true,
         "page_size": 100,
         "session": "__clawdline_machine__",
         "request": "stable-projects"
       },
       "shapes": [
+        {
+          "body": [
+            "cursor",
+            "include_gemini",
+            "machine_id",
+            "page_size",
+            "request",
+            "session"
+          ],
+          "path": "/v1/project-assistant-targets",
+          "query": [
+            "cursor",
+            "include_gemini",
+            "machine_id",
+            "page_size"
+          ]
+        },
         {
           "body": [
             "cursor",
@@ -6398,6 +6416,9 @@
             "type": "string",
             "non_empty": true
           },
+          "include_gemini": {
+            "type": "bool"
+          },
           "cursor": {
             "type": "string"
           },
@@ -6415,6 +6436,9 @@
           "query": {
             "machine_id": {
               "from": "machine_id"
+            },
+            "include_gemini": {
+              "from": "include_gemini"
             },
             "cursor": {
               "from": "cursor"

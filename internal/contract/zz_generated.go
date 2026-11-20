@@ -4417,13 +4417,14 @@ var ProjectAssistantAccessValues = []ProjectAssistantAccess{ProjectAssistantAcce
 type ProjectAssistantAgent string
 
 const (
-	ProjectAssistantAgentClaude ProjectAssistantAgent = "claude"
-	ProjectAssistantAgentCodex  ProjectAssistantAgent = "codex"
-	ProjectAssistantAgentGrok   ProjectAssistantAgent = "grok"
+	ProjectAssistantAgentClaude      ProjectAssistantAgent = "claude"
+	ProjectAssistantAgentCodex       ProjectAssistantAgent = "codex"
+	ProjectAssistantAgentGrok        ProjectAssistantAgent = "grok"
+	ProjectAssistantAgentAntigravity ProjectAssistantAgent = "antigravity"
 )
 
 // ProjectAssistantAgentValues is every value the contract allows, in contract order.
-var ProjectAssistantAgentValues = []ProjectAssistantAgent{ProjectAssistantAgentClaude, ProjectAssistantAgentCodex, ProjectAssistantAgentGrok}
+var ProjectAssistantAgentValues = []ProjectAssistantAgent{ProjectAssistantAgentClaude, ProjectAssistantAgentCodex, ProjectAssistantAgentGrok, ProjectAssistantAgentAntigravity}
 
 type ProjectAssistantAppearance struct {
 	Color string                `json:"color"`

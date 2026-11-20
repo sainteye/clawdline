@@ -537,6 +537,23 @@ test("Grok appears from the owning machine's catalog and requires its API level 
   const request={command:command(key,"create"),settings:{agent:"grok"}} as W.ProjectAssistantCreateRequest
   await assert.rejects(old.create(request,signal()),e=>errorCode(e)==="pa_unsupported")
 })
+test("Gemini catalog negotiation preserves older machines and gates changes",async()=>{
+  const requests:string[]=[]
+  const answer=catalog()
+  answer.agents.push("antigravity")
+  const modern=make(async path=>{requests.push(path);return Response.json(answer)},{...grant(),apiLevel:102}).source
+  assert.equal(modern.canGemini(),true)
+  assert.deepEqual((await modern.projects(projectsRequest,signal())).agents,["claude","codex","antigravity"])
+  assert.deepEqual(assistantRelayRequest(requests[0]).fields,{...projectsRequest,include_gemini:true})
+
+  const old=make(async path=>{requests.push(path);return Response.json(catalog())},{...grant(),apiLevel:101}).source
+  assert.equal(old.canGemini(),false)
+  assert.deepEqual((await old.projects(projectsRequest,signal())).agents,["claude","codex"])
+  assert.deepEqual(assistantRelayRequest(requests[1]).fields,projectsRequest)
+  const request={command:command(key,"create"),settings:{agent:"antigravity"}} as W.ProjectAssistantCreateRequest
+  await assert.rejects(old.create(request,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.equal(requests.length,2)
+})
 test("Project catalogs accept fresh read-only metadata and require fresh interactive status for create",async()=>{
   let writes=0
   const response=catalog();response.source={...response.source,access:"history_only",writable:false}

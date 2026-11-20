@@ -30,6 +30,8 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 		policy = "codex-owned-history.v1"
 	case pa.Grok:
 		policy = "grok-owned-history.v1"
+	case pa.Gemini:
+		policy = "gemini-owned-history.v1"
 	default:
 		return nativeHistory{}, refusal(pa.ScopeDenied, "native_history_agent")
 	}

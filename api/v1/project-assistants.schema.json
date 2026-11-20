@@ -89,7 +89,8 @@
       "enum": [
         "claude",
         "codex",
-        "grok"
+        "grok",
+        "antigravity"
       ],
       "description": ""
     },
