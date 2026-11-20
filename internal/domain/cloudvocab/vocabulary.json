@@ -2903,7 +2903,8 @@
                 "enum": [
                   "claude",
                   "codex",
-                  "grok"
+                  "grok",
+                  "antigravity"
                 ]
               },
               "permission_policy": {
@@ -3259,7 +3260,8 @@
                 "enum": [
                   "claude",
                   "codex",
-                  "grok"
+                  "grok",
+                  "antigravity"
                 ]
               },
               "notify": {
@@ -8975,7 +8977,8 @@
                 "enum": [
                   "claude",
                   "codex",
-                  "grok"
+                  "grok",
+                  "antigravity"
                 ]
               },
               "notify": {

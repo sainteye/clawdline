@@ -197,15 +197,18 @@ await assert.rejects(missing.source.view(request("main"),signal()),error=>errorC
 assert.equal(trace.length,beforeMissing,"unadvertised View must refuse before transport")
 checks.push("JRV-07")
 
-const createSource=sourceFor("create","owner",{apiLevel:101}).source
+const createSource=sourceFor("create","owner",{apiLevel:102}).source
 await createSource.status(signal())
 const target={machine_id:boot.fixtures.create.key.machine_id,project_id:boot.fixtures.create.project.project_id}
+const geminiCatalog=await createSource.projects({machine_id:target.machine_id,cursor:"",page_size:100},signal())
+assert.ok(geminiCatalog.agents.includes("antigravity"))
 for(const [index,agent,choice] of [
  [1,"codex","approve"],
  [2,"codex","mode:read-only"],
  [3,"claude","mode:acceptEdits"],
  [4,"codex","mode:auto"],
  [5,"grok","mode:auto"],
+ [6,"antigravity","mode:accept-edits"],
 ]){
  const key={machine_id:target.machine_id,bot_id:"created-through-cloud-"+index}
  const approval=withApproval(choice)
@@ -222,7 +225,7 @@ for(const [index,agent,choice] of [
  assert.equal(created.bot.permission_policy,approval.permission_policy)
  assert.equal(created.bot.mode??"",approval.mode??"")
  assert.equal(created.bot.agent,agent)
- if(index===1||agent==="grok"){
+ if(index===1||agent==="grok"||agent==="antigravity"){
   const replay=await createSource.create(input,signal())
   assert.equal(replay.bot.conversation_id,created.bot.conversation_id)
   assert.deepEqual(replay.receipt,created.receipt)
@@ -232,13 +235,13 @@ for(const [index,agent,choice] of [
  assert.equal(latest.bot.agent,agent)
  assert.equal(latest.bot.permission_policy,approval.permission_policy)
  assert.equal(latest.bot.mode??"",approval.mode??"")
- if(agent==="grok"){
-  const settings={expected_version:latest.bot.version,name:"Renamed Grok Bot",appearance:latest.bot.appearance,
+ if(agent==="grok"||agent==="antigravity"){
+  const settings={expected_version:latest.bot.version,name:"Renamed "+agent+" Bot",appearance:latest.bot.appearance,
    instructions:latest.bot.instructions.text,agent,...approval}
-  const edited=await createSource.edit({command:command(key,"edit","joint-edit-grok"),settings},signal())
+  const edited=await createSource.edit({command:command(key,"edit","joint-edit-"+agent),settings},signal())
   assert.equal(edited.bot.name,settings.name)
-  const team=await createSource.edit({command:command(key,"edit","joint-team-grok"),settings:{...settings,expected_version:edited.bot.version,manage_team:true}},signal())
-  assert.equal(team.bot.agent,"grok")
+  const team=await createSource.edit({command:command(key,"edit","joint-team-"+agent),settings:{...settings,expected_version:edited.bot.version,manage_team:true}},signal())
+  assert.equal(team.bot.agent,agent)
   assert.equal(team.bot.manage_team,true)
  }
 }
@@ -267,7 +270,10 @@ await legacySource.status(signal())
 for(const row of rows){
  const suffix=row.op.split(".").at(-1);if(suffix==="status")continue
  const {request:_request,session:_session,...fields}=row.example
- if(suffix==="projects")fields.machine_id="source-one"
+ if(suffix==="projects"){
+  fields.machine_id="source-one"
+  delete fields.include_gemini
+ }
  // Current examples include an optional API93 handoff. API60 must refuse it
  // before transport, then keep accepting the original unversioned send shape.
  if(suffix==="send"){
