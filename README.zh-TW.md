@@ -52,7 +52,7 @@ Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使�
 
 打給語音助理，聽它回報哪裡需要你、查詢 Session 進度或留言板目前的 Lead，並開啟相關對話。送訊息前，它會先念出收件 Session 與完整內容，等你同意才送出。綠色膠囊保留當通工具紀錄，常用指令在同區右側，下方顯示時間與金額。
 
-<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-zh-tw.jpg" width="390" alt="語音助理回報示範 Session，顯示綠色工具膠囊、右側常用指令、通話時間與金額。" /></a>
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-zh-tw.png" width="390" alt="語音助理回報示範 Session，顯示綠色工具膠囊、右側常用指令、通話時間與金額。" /></a>
 
 *目前 Cloud／dev 介面，使用合成示範資料。語音通話使用你自己的 OpenAI API key。*
 

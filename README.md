@@ -54,7 +54,7 @@ Official [Grok Build coding Sessions](docs/grok-cli.md) also support native file
 
 Call the voice copilot to hear what needs you, ask about a Session's progress or a message board's current Lead, and open the relevant conversation. It reads the full recipient and message back for your agreement before sending. Green capsules keep the call's tool activity, with quick commands beside them and duration and amount below.
 
-<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-en.jpg" width="390" alt="Voice copilot reporting on sample Sessions, with green tool-history capsules, Quick commands, call duration and amount." /></a>
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-en.png" width="390" alt="Voice copilot reporting on sample Sessions, with green tool-history capsules, Quick commands, call duration and amount." /></a>
 
 *Current Cloud/dev interface with synthetic example data. Voice calls use your own OpenAI API key.*
 
