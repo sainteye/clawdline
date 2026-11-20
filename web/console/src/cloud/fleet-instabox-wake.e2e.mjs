@@ -31,13 +31,20 @@ await loadStrings(async () => ({}));
 const root = createRoot(document.getElementById("root"));
 const noop = () => {};
 const owner = id => ({ id, name: id, platform: "Linux", freshness: "stale", instaBoxWakeOrigin: location.origin });
+const source = {
+  subscribe: () => noop,
+  readMachine: id => id === "relay-offline"
+    ? Promise.resolve({ kind: "unavailable", reason: "offline" })
+    : new Promise(() => {}),
+};
 function render(online = false) {
   root.render(<FleetSessionList machines={[
-    { ...owner("eligible"), freshness: online ? "current" : "stale" },
+    { ...owner("eligible"), freshness: online ? "current" : "unknown" },
+    { ...owner("relay-offline"), freshness: "current" },
     owner("unbound"), owner("no-key"), owner("denied"),
     { ...owner("online"), freshness: "current" },
     { ...owner("guest"), instaBoxWakeOrigin: undefined },
-  ]} source={null} target={null} filter="" onFilter={noop} onOpen={noop}
+  ]} source={source} target={null} filter="" onFilter={noop} onOpen={noop}
     onConnection={noop} onCloseRequest={noop} onArchiveRequest={noop} />);
 }
 window.reconnect = () => render(true);
@@ -55,9 +62,9 @@ render();`)
       vite.stderr.on("data", data => process.stderr.write(data))
       vite.once("exit", code => { clearTimeout(timeout); reject(new Error("Vite exited: " + code)) })
     })
-    for (const [engine, lang, wakeLabel, wakingLabel, accepted, cooldown] of [
-      [chromium, "en", "Wake machine", "Waking the machine…", "InstaBox accepted the request.", "InstaBox is in cooldown."],
-      [webkit, "zh-Hant", "喚醒機器", "正在喚醒機器……", "InstaBox 已接受請求", "InstaBox 正在冷卻"],
+    for (const [engine, lang, wakeLabel, wakingLabel, accepted, cooldown, unconfirmed, offline] of [
+      [chromium, "en", "Wake machine", "Waking the machine…", "InstaBox accepted the request.", "InstaBox is in cooldown.", "Not reported yet", "Offline"],
+      [webkit, "zh-Hant", "喚醒機器", "正在喚醒機器……", "InstaBox 已接受請求", "InstaBox 正在冷卻", "尚未回報", "離線"],
     ]) {
       const browser = await engine.launch({ headless: true, ...(engine === chromium ? {
         executablePath: process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -87,22 +94,29 @@ render();`)
         }
         return route.fulfill({ json: { wake: "accepted" } })
       })
-      const checked = ["eligible", "unbound", "no-key", "denied"].map(id =>
-        page.waitForResponse(response => response.url().endsWith(`/machines/${id}/instabox-wake`)))
+      const checked = ["eligible", "relay-offline", "unbound", "no-key", "denied"].map(id =>
+        page.waitForResponse(response => response.url().endsWith(`/machines/${id}/instabox-wake`), { timeout: 8000 }))
       await page.goto(`${origin}/${basename(fixture)}/?lang=${lang}`)
       await Promise.all(checked)
-      const wake = page.getByRole("button", { name: wakeLabel, exact: true })
+      const eligible = page.getByRole("region", { name: /^eligible eligible/ })
+      const disconnected = page.getByRole("region", { name: /^relay-offline relay-offline/ })
+      const wake = eligible.getByRole("button", { name: wakeLabel, exact: true })
       await wake.waitFor()
-      assert.equal(await wake.count(), 1)
-      assert.deepEqual(lookups.sort(), ["denied", "eligible", "no-key", "unbound"])
+      await eligible.getByRole("status").filter({ hasText: unconfirmed }).waitFor()
+      await disconnected.getByRole("status").filter({ hasText: offline }).waitFor()
+      for (const group of [eligible, disconnected]) {
+        assert.equal(await group.locator('[data-loading-id="SK-02"]').count(), 0)
+      }
+      assert.equal(await disconnected.getByRole("button", { name: wakeLabel, exact: true }).isVisible(), true)
+      assert.equal(await page.getByRole("button", { name: wakeLabel, exact: true }).count(), 2)
+      assert.deepEqual(lookups.sort(), ["denied", "eligible", "no-key", "relay-offline", "unbound"])
       assert.deepEqual(posts, [])
       const box = await wake.boundingBox()
       assert.ok(box.height >= 44 && box.x + box.width <= 368, JSON.stringify(box))
-      const eligible = page.getByRole("region", { name: /^eligible eligible/ })
       await eligible.locator('button[aria-expanded="true"]').click()
       assert.equal(await wake.isVisible(), true)
       await wake.tap()
-      const waking = page.getByRole("button", { name: wakingLabel, exact: true })
+      const waking = eligible.getByRole("button", { name: wakingLabel, exact: true })
       await waking.waitFor()
       assert.equal(await waking.isDisabled(), true)
       await wakeStarted

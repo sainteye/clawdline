@@ -17,7 +17,7 @@ import { useSwipeToEnd } from "../session/use-swipe.js"
 import type { OrderHold } from "../session/order.js"
 import { SessionToolbar } from "../session/SessionToolbar.js"
 import { ScheduleSection, scheduleMachineReady } from "../pages/schedules.js"
-import { destinationKey, displayedPresentationStatus, fleetRowTitle, presentationPass, projectionRefreshAt, settleProjection,
+import { destinationKey, displayedPresentationStatus, fleetMachineOffline, fleetRowTitle, presentationPass, projectionRefreshAt, settleProjection,
   shownDestinationKeys, mergeListPresentation,
   type MachineSessionProjection, type ProjectionProblem, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource, type FleetMachine,
@@ -267,7 +267,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
 
   const presentationMachines = machines.flatMap((machine) => {
     const reading = readings[machine.id]
-    return reading?.phase === "settled" && reading.value.kind === "ready" &&
+    return machine.freshness !== "stale" && reading?.phase === "settled" && reading.value.kind === "ready" &&
       reading.value.rows.some((row) => row.freshness === "current")
       ? [{ machineID: machine.id, pass: presentationPass(reading.value) }] : []
   })
@@ -344,15 +344,23 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
     const reading = readings[machine.id]
-    const pass = reading?.phase === "settled" && reading.value.kind === "ready"
-      ? reading.value.snapshotGeneration ?? String(reading.value.observedAt) : ""
-    const missingTitle = reading?.phase === "settled" && reading.value.kind === "ready" &&
-      reading.value.rows.some((row) => row.freshness === "current" &&
-        !presentations.current.has(destinationKey(row.destination)))
+    const projection = reading?.phase === "settled" ? reading.value : undefined
+    const offline = fleetMachineOffline(machine.freshness, projection)
+    const waitingForStatus = !projection || projection.kind === "unavailable" &&
+      (projection.reason === "unknown" || projection.reason === "stale" ||
+        projection.reason === "event_gap" || projection.reason === "unresponsive")
+    const unconfirmed = !!machine.instaBoxWakeOrigin && machine.freshness === "unknown" && waitingForStatus
+    const unavailable = offline || unconfirmed
+    const pass = projection?.kind === "ready" ? presentationPass(projection) : ""
+    const missingTitle = !unavailable && projection?.kind === "ready" && projection.rows.some((row) =>
+      row.freshness === "current" && !presentations.current.has(destinationKey(row.destination)))
     const presentationFailed = !!missingTitle && presentationFailures.current.get(machine.id) === pass
     const presentationLoading = !!missingTitle && !presentationFailed
     const filtered = reading?.phase === "settled" && reading.value.rows
-      ? reading.value.rows.filter((row) => isVisible(row) && matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
+      ? reading.value.rows.filter((row) => isVisible(row) &&
+        (!unavailable || row.machineScope || presentations.current.has(destinationKey(row.destination)) ||
+          confirmedTitles?.has(destinationKey(row.destination))) &&
+        matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
         (!search || `${machine.name} ${machine.id} ${machine.platform} ${row.machineScope ? "Clawdfather" : (confirmedTitles?.get(destinationKey(row.destination)) ?? presentations.current.get(destinationKey(row.destination))?.title ?? "")} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search))) : []
     const shown = filtered.map((row) => {
@@ -369,7 +377,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (hold && hold.waiting !== waitingKey)
       orderHolds.current.delete(machine.id)
     const rows = arrangeFleetRows(shown, titles, orderHolds.current.get(machine.id) ?? null)
-    return { machine, reading, rows, waitingKey, presentationFailed, presentationLoading }
+    return { machine, reading, rows, waitingKey, offline, unconfirmed, unavailable, presentationFailed, presentationLoading }
   }).filter(({ machine, rows }) => (statusFilter === "all" || rows.length > 0) && (!search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
   useEffect(() => {
@@ -438,12 +446,8 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           pullWord === "busy" ? L.strings.webPullBusy : L.strings.webPull}</span>
       </div>
       <div className="cloud-all-groups">
-        {groups.map(({ machine, reading, rows, presentationFailed, presentationLoading }) => {
-          const carrier = machineLight(machine.freshness, carrierOf?.(machine.id) ?? null)
-          // The roster has heard nothing from it inside its window: say that, and when,
-          // instead of the reading's own reason, which for a machine that is off is a
-          // retry that never ends ("reading this machine again").
-          const offline = machine.freshness === "stale"
+        {groups.map(({ machine, reading, rows, offline, unconfirmed, unavailable, presentationFailed, presentationLoading }) => {
+          const carrier = machineLight(offline ? "stale" : machine.freshness, carrierOf?.(machine.id) ?? null)
           const isCollapsed = collapsed[machine.id] ?? emptyMachine(reading)
           const boardTarget = sessionBoardTargets?.find(target => target.machine === machine.id)
           return <section key={machine.id} className="cloud-all-group"
@@ -463,9 +467,10 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               onClick={() => setCollapsed((before) => ({ ...before, [machine.id]: !isCollapsed }))}>
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
             </button></h2>
-          {offline && !isCollapsed && <p role="status" className="cloud-all-offline">{nextWord("cloudAllMachineOffline",
-            { seen: machineSeenWord(machine.seenAt ?? null) })}</p>}
-          {offline && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
+          {unavailable && <p role="status" className="cloud-all-offline">{offline
+            ? [nextWord("msOffline"), machine.seenAt ? machineSeenWord(machine.seenAt) : null].filter(Boolean).join(" · ")
+            : nextWord("msNotReported")}</p>}
+          {unavailable && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
             machine={machine.id} origin={machine.instaBoxWakeOrigin} />}
           <div className="cloud-all-group-body" data-open={!isCollapsed}
             inert={isCollapsed} aria-hidden={isCollapsed}>
@@ -474,19 +479,19 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               freshness changes. Its own completeness and row freshness are the
               authority here; an unrelated roster state must not leave a
               permanent "checking connection" banner above settled results. */}
-          {!reading || reading.phase === "loading" ? !offline && <LoadingSkeleton id="SK-02" label={nextWord("cloudAllLoading")} /> : <>
+          {!reading || reading.phase === "loading" ? !unavailable && <LoadingSkeleton id="SK-02" label={nextWord("cloudAllLoading")} /> : <>
             {/* // refusal-ok: Background verification keeps its reason and scheduled retry without announcing transient recovery above retained rows. */}
-            {reading.value.kind === "unavailable" && !offline && (reading.value.reason === "unknown" ||
+            {reading.value.kind === "unavailable" && !unavailable && (reading.value.reason === "unknown" ||
               reading.value.reason === "stale" || reading.value.reason === "event_gap"
               ? !reading.value.rows?.length && <p role="status">{nextWord("cloudAllLoading")}</p>
               : <p role="status">{problemWord(reading.value.reason)}</p>)}
-            {reading.value.kind === "ready" && !reading.value.complete && !offline &&
+            {reading.value.kind === "ready" && !reading.value.complete && !unavailable &&
               <p role="status">{nextWord("cloudAllPartialMachine")}</p>}
             {presentationLoading && <LoadingSkeleton id="SK-02" label={nextWord("cloudAllLoading")} />}
             {presentationFailed && <p role="alert">{nextWord("cloudAllNameUnavailable")} <button type="button"
               onClick={() => { presentationPasses.current.delete(machine.id); presentationFailures.current.delete(machine.id)
                 refreshPresentation((revision) => revision + 1) }}>{nextWord("cloudAllTryAgain")}</button></p>}
-            {presentationLoading || presentationFailed ? null : rows.length === 0 ? reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
+            {presentationLoading || presentationFailed ? null : rows.length === 0 ? unavailable || reading.value.unknownTargets ? null : reading.value.kind === "ready" ?
               <p>{reading.value.rows.length === 0 ? nextWord(reading.value.complete ? "cloudAllEmptyMachine" : "cloudAllPartialEmpty") : nextWord("cloudAllNoMatch")}</p> : null
               : <ul className="rows" role="listbox" aria-label={`${machine.name} ${nextWord("cloudSingleSessions")}`}>
                 <SessionBoardRows source={isCollapsed ? undefined : boardTarget?.source} candidates={boardTarget?.candidates}
@@ -495,7 +500,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   const status = displayedPresentationStatus(row, presentation)
                   const title = fleetRowTitle(row, presentation, nextWord("cloudAllUnknown"),
                     confirmedTitles?.get(destinationKey(row.destination)))
-                  const actions = sessionSwipeActions(row.freshness,
+                  const actions = sessionSwipeActions(unavailable ? "stale" : row.freshness,
                     status?.sessionId, row.backend)
                   return {
                     id: row.destination.sessionID, parent,
@@ -524,7 +529,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     onOpen={() => onOpen(row.destination)} /> }
                 })} /></ul>}
           </>}
-          {reading?.phase === "settled" && !!reading.value.unknownTargets &&
+          {!unavailable && reading?.phase === "settled" && !!reading.value.unknownTargets &&
             <p role="status">{nextWord("cloudAllUnknownTargets", { count: reading.value.unknownTargets })}</p>}
           </div></div>
         </section>

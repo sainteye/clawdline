@@ -8,7 +8,7 @@ import { words as assistantWords } from "../project-assistants/words.js"
 import { errorCode as assistantErrorCode } from "../project-assistants/client.js"
 import { nativePairingAvailable } from "./native-pairing.js"
 import { LocalMachineSetup } from "./LocalMachineSetup.js"
-import { accessProblemAfterRead, readProblemOffersPairing } from "./state.js"
+import { accessProblemAfterRead, readProblemIsTransient, readProblemOffersPairing } from "./state.js"
 import { toast } from "../overlays/toast.js"
 import { CloudReadProblem } from "./CloudReadProblem.js"
 import { dashboardFetch } from "./dashboard-reader.js"
@@ -97,7 +97,7 @@ import { CarrierDot } from "./CarrierDot.js"
 import { carrierReading, machineLight, type CarrierReading } from "./carrier-state.js"
 import { CloudSessionSheets, type PendingMachineAction } from "./CloudSessionSheets.js"
 import { PeerAccessPage } from "./PeerAccessPage.js"
-import { copilotFleetRows, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, fleetRowTitle,
+import { fleetMachineOffline, copilotFleetRows, destinationAvailable, destinationFragment, destinationFromFragment, destinationKey, fleetRowTitle,
   SessionExecutionRecovery, supersedingDestination, type FleetDetailProblem, type MachineListPresentation,
   type MachineSessionProjection, type ProjectedSession, type SessionContent, type SessionDestination,
   type SessionListPresentation, type SessionProjectionSource } from "./all-machine-sessions.js"
@@ -2332,6 +2332,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         const row = machinesRef.current?.find((machine) => machine.id === problem.machine)
         const name = row?.label ?? problem.machine
         const pair = readProblemOffersPairing(problem.code)
+        // The fleet already explains a machine's disconnection next to its recovery action.
+        if (fleetScope && readProblemIsTransient(problem.code) && quickMachines.some((machine) =>
+          machine.id === problem.machine && fleetMachineOffline(machine.freshness,
+            fleetProjections.current.get(machine.id)?.reading))) return null
         return <CloudReadProblem key={problem.machine + ":" + problem.code}
           message={nextWord(pair ? "cloudReadNeedsPairing" : "cloudReadUnknownFailure", { machine: name })}
           code={problem.code} trace={problem.trace} retryLabel={nextWord("cloudRetry")}

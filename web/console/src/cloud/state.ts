@@ -142,7 +142,10 @@ export function accessProblemAfterRead(held: AccessProblem | null, event: Access
   if (event.type === "read") return null
   // A live Session publication disproves a machine-wide refresh warning, but
   // cannot prove that the machine still authorizes this viewer's requests.
-  const transient = held.code === "cloud_read_timeout" || held.code === "cloud_read_unavailable" ||
-    held.code === "offline" || held.code === "socket_error"
-  return transient && (event.type === "sessions" || event.type === "session_status") ? null : held
+  return readProblemIsTransient(held.code) && (event.type === "sessions" || event.type === "session_status") ? null : held
+}
+
+export function readProblemIsTransient(code: string): boolean {
+  return code === "cloud_read_timeout" || code === "cloud_read_unavailable" ||
+    code === "offline" || code === "socket_error"
 }

@@ -33,6 +33,10 @@ export interface FleetMachine {
   instaBoxWakeOrigin?: string
 }
 
+export function fleetMachineOffline(freshness: FleetMachine["freshness"], reading?: MachineSessionProjection): boolean {
+  return freshness === "stale" || reading?.kind === "unavailable" && reading.reason === "offline"
+}
+
 /** Metadata from a pinned, read_transcript-authorized list read. */
 export interface SessionListPresentation {
   title: string
