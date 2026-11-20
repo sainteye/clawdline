@@ -2425,6 +2425,7 @@ const ScheduleHistory = (() => {
     }
     el("schedule-history-close").textContent = T().webClose
     drawStarted()
+    drawWebhook()
     el<HTMLButtonElement>("schedule-history-close").disabled = !!pressing || runningNow
 
     const buttons = el("schedule-run-rows").querySelectorAll<HTMLButtonElement>(".schedule-run-button")
