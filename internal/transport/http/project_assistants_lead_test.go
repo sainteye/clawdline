@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -46,8 +47,31 @@ func TestPersonalBotWorkspaceIsSourceOwnedAndRetryStable(t *testing.T) {
 	tampered.Command.Key.BotID = "other"
 	tampered.Settings.Target.ProjectID = scope.ProjectID
 	paAssertHTTPFailure(t, f.request(t, http.MethodPost, "/v1/project-assistants", f.lan, tampered), 403, pa.ScopeDenied)
+	edit := contract.ProjectAssistantEditRequest{
+		Command: f.command(pa.EditOperation, "rename-personal"),
+		Settings: contract.ProjectAssistantEditSettings{
+			ExpectedVersion: bot.Version, Name: "Renamed workspace Bot", Appearance: bot.Appearance,
+			Instructions: bot.Instructions.Text,
+		},
+	}
+	paServerOK(t, f.request(t, http.MethodPatch, "/v1/project-assistants/"+f.key.BotID, f.lan, edit))
+	if err = f.s.StopProjectAssistants(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(f.s.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = restarted.StopProjectAssistants(context.Background()); _ = restarted.store.Close() })
+	f.s, f.h = restarted, restarted.Handler()
+	if after := f.get(t, f.lan).Bot; after.Name != edit.Settings.Name || after.Project != bot.Project || after.ConversationID != bot.ConversationID {
+		t.Fatal("rename or host restart changed the personal Bot's workspace or conversation")
+	}
+	if data, err := os.ReadFile(file); err != nil || string(data) != "persistent" {
+		t.Fatalf("workspace content after restart: %q %v", data, err)
+	}
 	if f.providerCalls.Load() != 0 {
-		t.Fatal("create initialized a model")
+		t.Fatal("workspace setup, rename or restart initialized a model")
 	}
 }
 

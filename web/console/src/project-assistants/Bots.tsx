@@ -17,6 +17,8 @@ import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type View
 import { words } from "./words"
 import { retryableSourceError, shownSourceError } from "./source-errors"
 import { matchesRosterQuery, snapshotRosterQuery } from "./roster-search"
+import { firstCallableBot } from "./roster-conversations"
+import { emptyRosterState, getRosterState } from "./roster-state"
 import { TowerSlot, savedBotsView, saveBotsView, type BotsView } from "./tower/TowerSlot"
 import "./styles.css"
 
@@ -264,12 +266,17 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const groupOpenChanged=useCallback((open:boolean)=>{setGroupOpen(open);if(!open)lastSelected.current=null},[])
   useEffect(()=>{
     if(!voiceShortcut||handledShortcut.current===voiceShortcut||rosterLoading)return
-    const target=selectedItem&&canWrite(selectedItem.source)?selectedItem:availableLead
+    let target: W.ProjectAssistantBotSummary|undefined=selectedItem&&canWrite(selectedItem.source)?selectedItem:availableLead
+    if(!target&&!narrow){
+      let order=emptyRosterState()
+      try{order=getRosterState(namespace,window.localStorage)}catch{/* The list still has its default order. */}
+      target=firstCallableBot(allItems,order)
+    }
     handledShortcut.current=voiceShortcut
     if(!target){changeView("list");return}
     if(selected!==botIdentity(target.bot.key))select(target)
     setCallTarget({key:botIdentity(target.bot.key),request:voiceShortcut})
-  },[voiceShortcut,rosterLoading,selected,selectedItem,availableLead])
+  },[voiceShortcut,rosterLoading,selected,selectedItem,availableLead,narrow,namespace,allItems])
   const back=()=>{
     setDestination(null)
     if(manageHistory&&history.state?.paView===historyID.current&&history.state?.paBot){history.back();return}
