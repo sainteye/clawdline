@@ -1172,6 +1172,12 @@ class Tab {
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
   }
 
+  async reduceMotion(): Promise<void> {
+    await this.b.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    }, this.session)
+  }
+
   async phoneWidth(width: number, height = PHONE.height): Promise<void> {
     await this.b.send("Emulation.setDeviceMetricsOverride", { width, height, mobile: true, deviceScaleFactor: 2 }, this.session)
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, this.session)
@@ -4199,7 +4205,16 @@ test("a confirmed close immediately leaves detail and allows another close befor
       await tab.press("#detail-actions-trigger")
       await tab.press("#session-end")
       await tab.until("the first confirmation is ready", (s) => s.confirmDisabled === false)
-      await tab.press("#action-confirm-go")
+      const returning = await tab.run(`new Promise(resolve => {
+        document.getElementById("action-confirm-go").click()
+        requestAnimationFrame(() => {
+          const list = document.querySelector(".pane-list")
+          resolve({ view: document.getElementById("app").dataset.view,
+            fading: list.getAnimations().some(motion => motion.effect.getKeyframes().some(frame => Number(frame.opacity) < 1)),
+            visibility: getComputedStyle(list).visibility })
+        })
+      })`)
+      assert.deepEqual(returning, { view: "list", fading: true, visibility: "visible" })
       await tab.until("the first close reaches the server", () => answers.has(SAFE))
       await tab.until("the sheet, detail and row go before the server answers", (s) =>
         s.sheet === null && s.open === null && !s.order.includes(SAFE), 1800)
@@ -4229,6 +4244,42 @@ test("a confirmed close immediately leaves detail and allows another close befor
         }
         read()
       })`)
+    } finally {
+      holdClose = undefined
+      for (const answer of answers.values()) if (!answer.writableEnded) json(answer, 200, { ok: true })
+    }
+  }))
+
+for (const reduced of [false, true]) test(`a desktop close ${reduced ? "honors reduced motion" : "lets the row fade out without blocking other rows"}`, () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    if (reduced) await tab.reduceMotion()
+    const answers = new Map<string, ServerResponse>()
+    holdClose = (id, res) => { answers.set(id, res); return true }
+    try {
+      await list(tab)
+      await tab.press(`li.row[data-id="${SAFE}"]`)
+      await tab.until("the Session detail is open", (state) => state.open === SAFE)
+      await tab.press("#detail-actions-trigger")
+      await tab.press("#session-end")
+      await tab.until("the close confirmation is ready", (state) => state.confirmDisabled === false)
+      const exit = await tab.run(`new Promise(resolve => {
+        document.getElementById("action-confirm-go").click()
+        requestAnimationFrame(() => {
+          const ghost = document.querySelector(".session-close-visual")
+          resolve({
+            gone: !document.querySelector('li[role="option"][data-id="${SAFE}"]'),
+            visual: ghost ? { inert: ghost.inert, pointer: getComputedStyle(ghost).pointerEvents,
+              fading: ghost.getAnimations().some(motion => motion.effect.getKeyframes().some(frame => frame.opacity === "0")) } : null,
+          })
+        })
+      })`)
+      assert.deepEqual(exit, { gone: true, visual: reduced ? null : { inert: true, pointer: "none", fading: true } })
+      await tab.press(`li.row[data-id="${SPARE}"]`)
+      await tab.until("another detail opens before the close answers", (state) => state.open === SPARE && answers.has(SAFE))
+      await tab.run(`Promise.all(document.getAnimations().filter(motion => motion.effect?.target?.closest(".session-close-visual"))
+        .map(motion => motion.finished))`)
+      assert.equal(await tab.run(`document.querySelector(".session-close-visual") === null`), true)
     } finally {
       holdClose = undefined
       for (const answer of answers.values()) if (!answer.writableEnded) json(answer, 200, { ok: true })

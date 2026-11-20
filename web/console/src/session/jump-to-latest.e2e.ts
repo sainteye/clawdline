@@ -22,7 +22,7 @@ import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const dist = resolve(dirname(fileURLToPath(import.meta.url)), "../../dist")
+const dist = resolve(process.env.CLAWDLINE_DIST || resolve(dirname(fileURLToPath(import.meta.url)), "../../dist"))
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const shots = process.env.JUMP_SHOTS || ""
 const reportTo = process.env.JUMP_REPORT || ""
@@ -56,6 +56,8 @@ let structured = false
 // How long the fixture takes to answer an older page; a fling keeps going meanwhile.
 let olderDelayMs = 0
 let toolDone = false
+let openingProbe = false
+let probeOlderAnswers = 0
 function transcript(before = false) {
   const entries = Array.from({ length: turns }, (_, i) => ({
     ...(structured ? { id: "acp2:history-generation:" + (i + 1) } : {}),
@@ -108,6 +110,15 @@ function daemon(): Server {
       JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     if (path === "/v1/transcript") {
       const older = new URL(req.url ?? "/", "http://fixture").searchParams.has("before")
+      if (openingProbe) {
+        const text = older ? "Earlier fixture message" : "Newest fixture message"
+        setTimeout(() => {
+          if (older) probeOlderAnswers++
+          json(res, 200, { entries: [{ role: "assistant", text }], evidence: "transcript",
+            id: ID, signature: "opening-probe", ...(!older ? { nextBefore: 12345 } : {}) })
+        }, older ? 1250 : 250)
+        return
+      }
       if (older && olderDelayMs) { setTimeout(() => json(res, 200, transcript(true)), olderDelayMs); return }
       return json(res, 200, transcript(older))
     }
@@ -302,7 +313,6 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
       await shot("far-up")
 
       // A turn lands below the reader: it says so.
-      toolDone = true
       turns = 61
       await until("the new turn is read", `/Turn 61\\./.test(document.getElementById("tx").textContent)`, 10_000)
       await until("it says something is new", `document.querySelector(".tx-jump")?.dataset.fresh === "on"`)
@@ -335,6 +345,65 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
     }
   })
 }
+
+test("phone: opening shows the newest message while the older page is still arriving", async (t) => {
+  const measurements: { ms: number; olderAnswered: boolean }[] = []
+  openingProbe = true
+  try {
+    for (let sample = 0; sample < 3; sample++) {
+      const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+      const { sessionId } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+      const run = async (expression: string) => {
+        const { result, exceptionDetails } = await browser.send("Runtime.evaluate",
+          { expression, returnByValue: true, awaitPromise: true }, sessionId)
+        if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+        return result.value
+      }
+      try {
+        await browser.send("Page.enable", {}, sessionId)
+        await browser.send("Runtime.enable", {}, sessionId)
+        await browser.send("Emulation.setDeviceMetricsOverride", { ...PHONE, deviceScaleFactor: 2 }, sessionId)
+        const mark = browser.loadCount
+        await browser.send("Page.navigate", { url: origin + "/" }, sessionId)
+        await browser.loaded(sessionId, mark)
+        const before = probeOlderAnswers
+        const ms = await run(`new Promise((resolve, reject) => {
+          const deadline = performance.now() + 8000
+          const visible = (text) => [...document.querySelectorAll("#tx .entry")].some(entry =>
+            entry.textContent.includes(text) && getComputedStyle(entry).visibility === "visible" &&
+            entry.getClientRects().length > 0)
+          let pressed = 0
+          const frame = () => {
+            const now = performance.now()
+            if (now > deadline) return reject(new Error("Newest message did not become visible"))
+            const row = document.querySelector('li.row[data-id="${ID}"]')
+            if (!pressed && row) { pressed = now; row.click() }
+            if (pressed && visible("Newest fixture message")) return resolve(Math.round(now - pressed))
+            requestAnimationFrame(frame)
+          }
+          requestAnimationFrame(frame)
+        })`)
+        measurements.push({ ms, olderAnswered: probeOlderAnswers !== before })
+        await run(`new Promise((resolve, reject) => {
+          const deadline = performance.now() + 5000
+          const frame = () => {
+            if (document.querySelector("#tx").textContent.includes("Earlier fixture message")) return resolve()
+            if (performance.now() > deadline) return reject(new Error("Earlier message did not arrive"))
+            requestAnimationFrame(frame)
+          }
+          frame()
+        })`)
+      } finally {
+        await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
+      }
+    }
+    t.diagnostic(`click to visible newest message: ${JSON.stringify(measurements)}`)
+    assert.ok(measurements.every(({ olderAnswered }) => !olderAnswered), "the newest message waited for the older page")
+  } finally {
+    report.opening = measurements
+    openingProbe = false
+  }
+})
 
 for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an older page keeps the current turn in place", async () => {
   turns = 60
@@ -387,6 +456,10 @@ for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an
     assert.ok(Math.abs(await run(turnTop) - before) <= 3, "Turn 31 stayed after scrolling came back")
     assert.equal(await run(`document.querySelector(".tx-older") === null`), true)
     if (structured) {
+      const retainedTool = 'document.querySelector("#tx .toolline")'
+      assert.equal(await run(`${retainedTool}?.getAttribute("aria-expanded")`), "false")
+      await run(`${retainedTool}.click()`)
+      assert.equal(await run(`document.getElementById("tx").textContent.includes("COMPLETE EARLIER RESULT")`), false)
       toolDone = true
       turns = 61
       while (!(await run(`document.getElementById("tx").textContent.includes("Turn 61.")`))) {

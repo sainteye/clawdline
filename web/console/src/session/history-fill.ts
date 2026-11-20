@@ -28,7 +28,7 @@ export function historyAdvanced(before: number, nextBefore?: number): boolean {
 }
 
 /**
- * Only a pane's first fill hides the conversation behind a skeleton. Once the
+ * The first readable entries replace the opening skeleton. Once the
  * conversation has been shown, later reads (load earlier, an automatic fill
  * after a resize, a restarted history) load in place under the inline "loading
  * earlier" control, so the page never flashes or drops the reader's focus.
