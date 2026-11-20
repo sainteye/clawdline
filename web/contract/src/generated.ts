@@ -7536,6 +7536,38 @@ export interface ProjectAssistantTeamSettingsRequest {
 }
 
 /**
+ * One of this machine's Projects placed on a Bots tower floor, counted from the top
+ * (0 is 4F, 3 is B1).
+ */
+export interface ProjectAssistantTowerFloor {
+  floor: number
+  project_id: string
+}
+
+/**
+ * Place one Project while the document is still at expected_version. A repeated
+ * write that already took effect answers the current document.
+ */
+export interface ProjectAssistantTowerFloorRequest {
+  expected_version: number
+  floor: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * The machine's tower floor placements. Version 0 means none were ever made;
+ * Projects without a placement follow the console's default rule.
+ */
+export interface ProjectAssistantTowerFloorsResponse {
+  contract_version: string
+  floors: ProjectAssistantTowerFloor[]
+  machine_id: string
+  version: number
+}
+
+/**
  * Trace is not a visible message and never advances unread. Secrets and raw
  * provider credentials are redacted by source.
  */

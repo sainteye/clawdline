@@ -194,6 +194,9 @@
 | `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.tool_probe_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floor_project_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floor_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floors` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |

@@ -263,6 +263,8 @@ export const CARRIED = {
   "project-assistants.team-answer": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-answer",
   "project-assistants.team-plans": "captured Bot source GET /v1/project-assistants/{key.bot_id}/team-plans",
   "project-assistants.team-settings": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-settings",
+  "project-assistants.tower-floor-save": "captured Bot source POST /v1/project-assistant-floors",
+  "project-assistants.tower-floors": "captured Bot source GET /v1/project-assistant-floors",
   "project-assistants.upload": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/upload",
   "project-assistants.view": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
   "project-assistants.visibility": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/visibility",

@@ -37,6 +37,12 @@ func (s *Server) projectAssistantTargetsRoute(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) projectAssistantTargetsAuthority(ctx context.Context, machine string) (app.Authority, error) {
+	return s.projectAssistantMachineAuthority(ctx, machine, false)
+}
+
+// projectAssistantMachineAuthority is a person's authority over this machine's
+// Bots as a whole, for metadata that belongs to no single Bot.
+func (s *Server) projectAssistantMachineAuthority(ctx context.Context, machine string, write bool) (app.Authority, error) {
 	i, err := s.projectAssistantIdentity()
 	if err != nil {
 		return app.Authority{}, err
@@ -59,11 +65,11 @@ func (s *Server) projectAssistantTargetsAuthority(ctx context.Context, machine s
 		// anything. Retained history uses the existing Source access policy.
 		return app.Authority{}, paHTTPFailure(pa.Disabled, "source_feature")
 	}
-	authority, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: machine}, false)
+	authority, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: machine}, write)
 	if err != nil {
 		return authority, err
 	}
-	if err = pa.CheckSource(authority.Source, false); err != nil {
+	if err = pa.CheckSource(authority.Source, write); err != nil {
 		return authority, err
 	}
 	if authority.Source.MachineID != machine || authority.PrincipalID == "" || authority.ReaderID == "" || authority.AuthorizationRevision == "" {

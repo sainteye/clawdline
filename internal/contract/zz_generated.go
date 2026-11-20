@@ -6587,6 +6587,32 @@ type ProjectAssistantTeamSettingsRequest struct {
 	Settings ProjectAssistantTeamEditSettings `json:"settings"`
 }
 
+// One of this machine's Projects placed on a Bots tower floor, counted from the
+// top (0 is 4F, 3 is B1).
+type ProjectAssistantTowerFloor struct {
+	Floor     int64  `json:"floor"`
+	ProjectID string `json:"project_id"`
+}
+
+// Place one Project while the document is still at expected_version. A repeated
+// write that already took effect answers the current document.
+type ProjectAssistantTowerFloorRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	Floor           int64  `json:"floor"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+}
+
+// The machine's tower floor placements. Version 0 means none were ever made;
+// Projects without a placement follow the console's default rule.
+type ProjectAssistantTowerFloorsResponse struct {
+	ContractVersion string                       `json:"contract_version"`
+	Floors          []ProjectAssistantTowerFloor `json:"floors"`
+	MachineID       string                       `json:"machine_id"`
+	Version         int64                        `json:"version"`
+}
+
 // Trace is not a visible message and never advances unread. Secrets and raw
 // provider credentials are redacted by source.
 type ProjectAssistantTrace struct {
