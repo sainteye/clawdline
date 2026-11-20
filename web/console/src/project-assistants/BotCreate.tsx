@@ -12,6 +12,7 @@ import { ProjectMark } from "./ProjectMark"
 import { AgentMark, agentName } from "./AgentMark"
 import { botFailureText } from "./source-errors"
 import { withApproval } from "./approvals"
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 
 interface CatalogPage {source:SourceClient;answer:W.ProjectAssistantProjectsResponse;cursors:string[]}
 interface CreateAttempt {
@@ -130,20 +131,35 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   const backdrop = useModalBackdrop(() => {
     if (!busy && !pending.current && !name && !instructions) close()
   })
-  return <div className="pa-form-scrim" {...backdrop}><section className="pa-form-panel" role="dialog" aria-modal="true" aria-label={w.create}>
-    <header className="pa-toolbar"><button onClick={close}>{uncertain?w.close:w.cancel}</button><h2>{w.create}</h2><button disabled={actionDisabled} onClick={action}>{actionText}</button></header>
-    <div className="pa-form-body"><div className="pa-form-avatar"><BotAvatar appearance={appearance} size={70}/></div><fieldset disabled={busy||!!pending.current}>
-      <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
-      {sources.length>1&&<PaSelect label={w.machine} value={machine} onChange={value=>{setProject("");setCatalog(null);setMachine(value)}} options={sources.map(s=>({value:s.machineID,label:s.machineName||w.thisMachine}))}/>}
-      <div className="pa-field" role="radiogroup" aria-label={w.agent}><span>{w.agent}</span><div className="pa-agent-choices">{(own?.agents??["claude","codex"]).map(a=><button key={a} type="button" role="radio" aria-checked={agent===a} className="pa-agent-choice" disabled={!own?.agents.includes(a)} onClick={()=>{setAgent(a);setMode(undefined)}}><AgentMark agent={a}/><span>{agentName(a)}</span></button>)}</div>{agent==="grok"&&<small className="pa-approval-detail">{w.grokUsesExistingLogin}</small>}</div>
+  // Codync's NewBotView: the face, a centred name, the looks, then where it
+  // works; the rest keeps its defaults and changes later in Bot settings.
+  return <div className="pa-form-scrim" {...backdrop}><section className="pa-form-panel pa-create-sheet" role="dialog" aria-modal="true" aria-label={w.create}>
+    <header className="pa-create-header"><h2>{w.create}</h2></header>
+    <div className="pa-form-body pa-create-body"><fieldset disabled={busy||!!pending.current}>
+      <div className="pa-create-identity"><BotAvatar appearance={appearance} size={96}/>
+        <input className="pa-create-name" autoFocus aria-label={w.name} placeholder={w.createNamePlaceholder} required value={name} onChange={e=>setName(e.target.value)}
+          onKeyDown={event=>{if(event.key==="Enter"&&!event.nativeEvent.isComposing&&event.keyCode!==229){event.preventDefault();if(!actionDisabled)action()}}}/>
+      </div>
+      <AppearancePicker value={appearance} onChange={setAppearance} w={w}/>
       <PaSelect label={own?.personal_workspace?w.workspace:w.project} value={project} busy={loading} disabled={loading||!!error||!own} placeholder={w.chooseProject} onChange={setProject} options={[...(own?.personal_workspace?[{value:"",label:w.personalWorkspace}]:[]),...(own?.items.map(p=>({value:p.target.project_id,label:p.label,icon:<ProjectMark icon={p.icon} size={16}/>}))??[])]}/>
-      {loading&&<p role="status">{w.projectsLoading}</p>}
-      {own?.has_more&&!loading&&!error&&<button type="button" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}
-      {error&&!pending.current&&<button type="button" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.reloadProjects}</button>}
-      <ApprovalSelect agent={agent} policy={policy} mode={mode} w={w} onChange={id=>{const next=withApproval(id);setPolicy(next.permission_policy);setMode(next.mode)}}/>
-      <label>{w.instructions}<textarea value={instructions} onChange={e=>setInstructions(e.target.value)}/></label>
-    </fieldset><p>{w.createHint}</p>{error&&<p role="alert" className="pa-form-error">{w.projectsFailed} <small>({error})</small></p>}
+      {loading&&<p role="status" className="pa-create-note">{w.projectsLoading}</p>}
+      {own?.has_more&&!loading&&!error&&<button type="button" className="pa-create-link" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}
+      {error&&!pending.current&&<button type="button" className="pa-create-link" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.reloadProjects}</button>}
+      <div className="pa-field" role="radiogroup" aria-label={w.agent}><span>{w.agent}</span><div className="pa-agent-choices">{(own?.agents??["claude","codex"]).map(a=><button key={a} type="button" role="radio" aria-checked={agent===a} className="pa-agent-choice" disabled={!own?.agents.includes(a)} onClick={()=>{setAgent(a);setMode(undefined)}}><AgentMark agent={a}/><span>{agentName(a)}</span></button>)}</div>{agent==="grok"&&<small className="pa-approval-detail">{w.grokUsesExistingLogin}</small>}</div>
+      <details className="pa-create-more" open={!!instructions||undefined}><summary><span>{w.createMore}</span><small>{w.createMoreHint}</small><ChevronIcon className="pa-settings-chevron"/></summary>
+        <div className="pa-create-more-body">
+          <ApprovalSelect agent={agent} policy={policy} mode={mode} w={w} onChange={id=>{const next=withApproval(id);setPolicy(next.permission_policy);setMode(next.mode)}}/>
+          <label>{w.instructions}<textarea value={instructions} onChange={e=>setInstructions(e.target.value)}/></label>
+        </div>
+      </details>
+    </fieldset><p className="pa-create-note">{w.createHint}</p>{error&&<p role="alert" className="pa-form-error">{w.projectsFailed} <small>({error})</small></p>}
       {createError&&!busy&&<p role="alert" className="pa-form-error">{uncertain&&createError==="pa_not_found"?w.createCheckMissing:wantsCheck?w.createCheckUnknown:botFailureText(createError,w as unknown as Record<string,string>)} <small>({createError})</small></p>}
-      <button type="button" className="pa-create-bottom" disabled={actionDisabled} onClick={action}>{actionText}</button></div>
+    </div>
+    <footer className="pa-create-footer">
+      {sources.length>1&&<div className="pa-create-machine"><span>{w.createOn}</span><PaSelect compact ariaLabel={w.machine} value={machine} disabled={busy||!!pending.current} onChange={value=>{setProject("");setCatalog(null);setMachine(value)}} options={sources.map(s=>({value:s.machineID,label:s.machineName||w.thisMachine}))}/></div>}
+      <span className="pa-create-spacer"/>
+      <button type="button" className="pa-create-cancel" onClick={close}>{uncertain?w.close:w.cancel}</button>
+      <button type="button" className="pa-create-bottom" disabled={actionDisabled} onClick={action}>{actionText}</button>
+    </footer>
   </section></div>
 }

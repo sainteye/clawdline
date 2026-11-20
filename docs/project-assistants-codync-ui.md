@@ -53,6 +53,16 @@ description) is a centred field under the name and a line under the name in the 
 the next paragraph. Adding members from the inspector
 keeps existing members fixed, as before.
 
+Creating a Bot follows Codync's `NewBotView` and its shared create sheet: the face at 96 px, a
+centred name field (focused, Enter creates), the shape and colour choices, then where it works and
+which Agent runs it. Codync has neither choice in its sheet; here a Bot is bound to one Project and
+the source offers several Agents, so both stay. Approval and standing instructions keep their
+defaults behind one More settings row, since Bot settings changes them later. The single Create
+button sits with Cancel and the machine choice (shown with more than one source) in a footer that
+stays in view; the top toolbar's second Create was removed. On a wide screen the sheet is a card that
+fits its form. Unlike Codync, the name is still required: the source has no automatic naming. The
+create command, lost-reply lookup and same-command retry are unchanged.
+
 The group description arrives at API 101. `ProjectAssistantGroup.description` and the create
 setting carry it; an edit sends `description: {text}`, where an empty text clears it and an omitted
 object keeps it, so a console from before API 101 cannot erase it. The strict request decoder

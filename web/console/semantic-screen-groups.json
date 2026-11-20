@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13812,
+  "englishContentKeys": 13816,
   "riskKeys": 5902,
-  "nonRiskCount": 7910,
+  "nonRiskCount": 7914,
   "groups": [
     {
       "name": "acp / other",
@@ -6145,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 514,
+      "count": 518,
       "sources": [
         null
       ],
@@ -6209,6 +6209,10 @@
         "projectAssistants.createCheckMissing",
         "projectAssistants.createCheckUnknown",
         "projectAssistants.createHint",
+        "projectAssistants.createMore",
+        "projectAssistants.createMoreHint",
+        "projectAssistants.createNamePlaceholder",
+        "projectAssistants.createOn",
         "projectAssistants.createSaving",
         "projectAssistants.createSubmit",
         "projectAssistants.decisionActivity",
