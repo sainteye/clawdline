@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../../next-strings.js"
-import { InstaBoxKey } from "./InstaBoxWake.js"
+import { InstaBoxKey, InstaBoxWake } from "./InstaBoxWake.js"
 import type { CloudMachine } from "../../cloud/copied.js"
 
 export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, start, close }: {
@@ -14,8 +14,10 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, start, c
   const dialog = useRef<HTMLDialogElement>(null)
   const [started, setStarted] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [credentialRevision, setCredentialRevision] = useState(0)
   const [approved, setApproved] = useState<{ id: string; name: string } | null>(null)
-  const paired = approved && machines.some(row => row.id === approved.id && row.pairing === "paired")
+  const machine = approved && machines.find(row => row.id === approved.id)
+  const paired = machine && machine.pairing === "paired"
   useEffect(() => { dialog.current?.showModal() }, [])
 
   return <dialog ref={dialog} className="am-cloud-setup" aria-labelledby="am-cloud-setup-title" onClose={close}>
@@ -37,12 +39,13 @@ export function CloudMachineSetup({ apiOrigin, machines, refresh, pair, start, c
         </div>
         <p>{nextWord("msInstaSessionHelp")}</p>
       </article>
-      <InstaBoxKey origin={apiOrigin} />
+      <InstaBoxKey origin={apiOrigin} onChange={() => setCredentialRevision(value => value + 1)} />
       <details className="am-cloud-option">
         <summary>{nextWord("msInstaApproval")}</summary>
         <div className="am-stack">
           <CloudMachineEnrollment apiOrigin={apiOrigin} onRegistered={(id, name) => { setApproved({ id, name }); void refresh() }} />
           {approved && <p className="am-say"><strong>{approved.name}</strong></p>}
+          {approved && !paired && <InstaBoxWake key={approved.id + ":" + credentialRevision} origin={apiOrigin} machine={approved.id} online={!!machine && machine.freshness === "current"} linkOnly />}
           {approved && !paired && <button type="button" className="am-ghost" onClick={() => pair(approved.id, approved.name)}>{nextWord("msPair")}</button>}
         </div>
       </details>

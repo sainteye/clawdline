@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13509,
+  "englishKeys": 13511,
   "counts": {
     "negation": 3530,
-    "state": 2290,
-    "permission": 820,
+    "state": 2291,
+    "permission": 822,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5807,
+  "unionCount": 5809,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5107,6 +5107,7 @@
       "next.cloudPairFromBrowserSuccess",
       "next.cloudPairFromMachineSuccess",
       "next.cloudPairFromMachineWhenPwa",
+      "next.cloudPairHelperBackground",
       "next.cloudPairHelperKeepOpen",
       "next.cloudPairLinkExpired",
       "next.cloudPairLinkWaiting",
@@ -6214,6 +6215,7 @@
       "next.cloudPairAgentStarting",
       "next.cloudPairAgentWindow",
       "next.cloudPairAsking",
+      "next.cloudPairBackgroundProgress",
       "next.cloudPairCliCopy",
       "next.cloudPairCloudHand",
       "next.cloudPairCloudHandWhen",
@@ -6233,6 +6235,7 @@
       "next.cloudPairFromMachineSuccess",
       "next.cloudPairGenerate",
       "next.cloudPairHelperAssistant",
+      "next.cloudPairHelperBackground",
       "next.cloudPairHelperPreparing",
       "next.cloudPairHelperStart",
       "next.cloudPairHowItWorks",
@@ -11314,6 +11317,7 @@
     "next.cloudPairAgentWindow",
     "next.cloudPairAsking",
     "next.cloudPairAutoManual",
+    "next.cloudPairBackgroundProgress",
     "next.cloudPairCliCopy",
     "next.cloudPairCloudHand",
     "next.cloudPairCloudHandWhen",
@@ -11337,6 +11341,7 @@
     "next.cloudPairFromMachineWhenPwa",
     "next.cloudPairGenerate",
     "next.cloudPairHelperAssistant",
+    "next.cloudPairHelperBackground",
     "next.cloudPairHelperKeepOpen",
     "next.cloudPairHelperPreparing",
     "next.cloudPairHelperStart",

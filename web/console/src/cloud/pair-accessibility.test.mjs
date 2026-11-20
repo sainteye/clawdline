@@ -9,7 +9,7 @@ const english = JSON.parse(readFileSync(new URL("../../public/catalogs/en.json",
 const taiwan = JSON.parse(readFileSync(new URL("../../public/catalogs/zh-Hant.json", import.meta.url), "utf8"))
 
 test("pairing dialog names its current title and leads with one way for the device", () => {
-  assert.match(gate, /aria-labelledby=\{pairing \? "cloud-pair-title" : undefined\}/)
+  assert.match(panel, /role="dialog" aria-modal="true" aria-labelledby="cloud-pair-title"/)
   assert.match(panel, /<h2[^>]*id="cloud-pair-title"[^>]*ref=\{titleRef\}/)
   // A phone scans the machine's QR; a computer is offered the code instead.
   const steps = panel.indexOf('nextWord("cloudPairOutcome")')

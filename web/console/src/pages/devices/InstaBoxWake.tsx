@@ -1,36 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { nextWord } from "../../next-strings.js"
 
-const providerPath = "/v1/cloud-providers/instabox"
-const wakePath = (machine: string) => `/v1/machines/${encodeURIComponent(machine)}/instabox-wake`
+import {
+  instaBoxProviderPath, instaBoxRequest, instaBoxWakePath, instaBoxWakeReason,
+  readInstaBoxBinding, wakeInstaBox, type InstaBoxBinding,
+} from "../../cloud/instabox-wake.js"
 
-async function request<T>(origin: string, path: string, method = "GET", body?: object, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(new URL(path, origin), {
-    method, credentials: "include", cache: "no-store", signal,
-    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
-  })
-  const result = await response.json().catch(() => null)
-  if (!response.ok || !result) throw new Error(typeof result?.error?.code === "string" ? result.error.code : "instabox_unavailable")
-  return result
-}
-
-function reason(error: unknown) {
-  switch (error instanceof Error ? error.message : "") {
-    case "wake_cooldown": return nextWord("msInstaCooldown")
-    case "wake_in_progress": return nextWord("msInstaInProgress")
-    case "wake_unconfirmed": return nextWord("msInstaUnconfirmed")
-    case "wake_manual_required": return nextWord("msInstaManualStart")
-    case "wake_key_missing":
-    case "wake_key_relink": return nextWord("msInstaKeyMissing")
-    case "instabox_key_invalid":
-    case "instabox_key_too_broad":
-    case "instabox_key_refused": return nextWord("msInstaKeyRefused")
-    case "instabox_machine_not_found": return nextWord("msInstaMachineGone")
-    default: return nextWord("msInstaFailed")
-  }
-}
-
-export function InstaBoxKey({ origin }: { origin: string }) {
+export function InstaBoxKey({ origin, onChange }: { origin: string; onChange?: () => void }) {
   const [status, setStatus] = useState<{ configured: boolean; hint: string | null } | null>(null)
   const [key, setKey] = useState("")
   const [message, setMessage] = useState("")
@@ -39,8 +15,8 @@ export function InstaBoxKey({ origin }: { origin: string }) {
 
   useEffect(() => {
     const read = new AbortController()
-    void request<NonNullable<typeof status>>(origin, providerPath, "GET", undefined, read.signal)
-      .then(setStatus, (error) => { if (!read.signal.aborted) setMessage(reason(error)) })
+    void instaBoxRequest<NonNullable<typeof status>>(origin, instaBoxProviderPath, "GET", undefined, read.signal)
+      .then(setStatus, (error) => { if (!read.signal.aborted) setMessage(instaBoxWakeReason(error)) })
     return () => read.abort()
   }, [origin])
 
@@ -56,10 +32,11 @@ export function InstaBoxKey({ origin }: { origin: string }) {
     setBusy(true)
     setMessage("")
     try {
-      const next = await request<NonNullable<typeof status>>(origin, providerPath, method, data)
+      const next = await instaBoxRequest<NonNullable<typeof status>>(origin, instaBoxProviderPath, method, data)
       setStatus(next)
       setKey("")
-    } catch (error) { setMessage(reason(error)) }
+      onChange?.()
+    } catch (error) { setMessage(instaBoxWakeReason(error)) }
     finally { pending.current = false; setBusy(false) }
   }
 
@@ -79,12 +56,16 @@ export function InstaBoxKey({ origin }: { origin: string }) {
   </details>
 }
 
-type Binding = { configured: boolean; credential_ready: boolean }
 type MachineChoice = { id: string; name: string }
 
-export function InstaBoxWake({ origin, machine, online }: { origin: string; machine: string; online: boolean }) {
-  const path = wakePath(machine)
-  const [binding, setBinding] = useState<Binding | null>(null)
+export function InstaBoxWake({ origin, machine, online, linkOnly = false }: {
+  origin: string
+  machine: string
+  online: boolean
+  linkOnly?: boolean
+}) {
+  const path = instaBoxWakePath(machine)
+  const [binding, setBinding] = useState<InstaBoxBinding | null>(null)
   const [choices, setChoices] = useState<MachineChoice[] | null>(null)
   const [selected, setSelected] = useState("")
   const [editing, setEditing] = useState(false)
@@ -94,9 +75,9 @@ export function InstaBoxWake({ origin, machine, online }: { origin: string; mach
 
   useEffect(() => {
     const read = new AbortController()
-    void request<Binding>(origin, path, "GET", undefined, read.signal).then(setBinding, () => {})
+    void readInstaBoxBinding(origin, machine, read.signal).then(setBinding, () => {})
     return () => read.abort()
-  }, [origin, path])
+  }, [origin, machine])
 
   async function act(action: "checking" | "binding" | "waking") {
     if (!binding || pending.current) return
@@ -105,27 +86,27 @@ export function InstaBoxWake({ origin, machine, online }: { origin: string; mach
     setState(action)
     try {
       if (action === "checking") {
-        const { machines } = await request<{ machines: MachineChoice[] }>(origin, `${providerPath}/machines`)
+        const { machines } = await instaBoxRequest<{ machines: MachineChoice[] }>(origin, `${instaBoxProviderPath}/machines`)
         setChoices(machines)
         setSelected(machines.length === 1 ? machines[0]!.id : "")
         setEditing(true)
       } else if (action === "binding") {
-        await request(origin, path, "PUT", { provider_machine_id: selected })
+        await instaBoxRequest(origin, path, "PUT", { provider_machine_id: selected })
         setBinding({ ...binding, configured: true })
         setEditing(false)
       } else {
-        await request(origin, `${path}/wake`, "POST")
+        await wakeInstaBox(origin, machine)
         setState("accepted")
         return
       }
       setState("idle")
-    } catch (error) { setMessage(reason(error)); setState("idle") }
+    } catch (error) { setMessage(instaBoxWakeReason(error)); setState("idle") }
     finally { pending.current = false }
   }
   if (!binding?.credential_ready && !binding?.configured) return null
   const busy = state === "checking" || state === "binding" || state === "waking"
   return <div className="am-stack">
-    {binding.configured && !online && !editing && <button type="button" className="am-primary am-wide"
+    {!linkOnly && binding.configured && !online && !editing && <button type="button" className="am-primary am-wide"
       disabled={busy || !binding.credential_ready} aria-busy={state === "waking"} onClick={() => void act("waking")}>
       {nextWord(state === "waking" ? "msInstaWaking" : "msInstaWake")}
     </button>}

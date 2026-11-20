@@ -76,21 +76,45 @@ From Clawdline Cloud, the person asked for the machine named %[1]s
 (Cloud machine id ` + "`%[2]s`" + `) to be paired with their browser, and confirmed it on
 this computer. Nobody is watching this tab: do the steps below and nothing else.
 
-1. Reach that machine with the access this computer already has — an ssh host alias, a
-   cloud provider's session manager (for example ` + "`aws ssm start-session`" + ` or
-   ` + "`aws ssm send-command`" + `), whichever this computer's own configuration (~/.ssh/config,
-   known hosts, the cloud CLI's profiles) shows reaches a machine of that name or id.
-   Do not install anything, create credentials, or change any configuration to get there.
+1. Resolve the target using access already configured on this helper.
 
-2. On that machine, as the user that runs Clawdline there, run exactly this one command:
+   InstaBox: If instabox is already installed, with an existing CLI login or
+   INSTABOX_API_KEY, use instabox get <exact-name-or-configured-ID> --json
+   to look up this target only. Use an existing explicit mapping or an exact name
+   match in the configured account. A similar name, a different workspace, or an
+   ambiguous response is not a match. Do not enumerate accounts, print credentials,
+   or attempt a new login. If an existing connection identifies the target as an
+   InstaBox but this credential or lookup fails, report that and stop.
 
-       clawdline cloud pair -offer '%[3]s'
+   For a matched InstaBox, use its returned immutable ID for every subsequent call.
+   If it is running, connect directly. If it auto-paused, call instabox wake <id>
+   once. This calls the provider's wake API and waits for the resume. If the API says a
+   resume is in progress, use read-only instabox get <id> --json checks at five-second
+   intervals for up to one minute, stopping as soon as the machine is running.
+   A provider cooldown, manually paused/stopped machine, or a rejected wake stops the
+   flow. Report the provider's reason and any retry time without restarting the machine
+   or retrying the wake. For a running InstaBox, use instabox ssh <id> -- <command>
+   with the existing account. The provider's machine ID is not the Cloud machine ID.
 
-   If ` + "`clawdline`" + ` is not on that machine's PATH, find the binary first — ` + "`command -v clawdline`" + `,
-   then ~/.local/bin/clawdline and /usr/local/bin/clawdline, then the ExecStart= line of
-   ` + "`systemctl --user cat clawdline-next`" + ` or ` + "`systemctl cat clawdline-next`" + ` — and run the same
-   command with that full path. Change nothing else on that machine, and do not run the
-   command on this computer.
+   For other machines, use an existing SSH alias or an existing provider session
+   manager (for example AWS SSM) which the helper's configuration ties to the target.
+   Do not install anything, create credentials, or change configuration. If none
+   of the known connections identifies the target, report the missing access and stop.
+
+2. On that machine, as the user that runs Clawdline there, locate its binary.
+   Use command -v clawdline, then ~/.local/bin/clawdline and /usr/local/bin/clawdline,
+   then the ExecStart= line of systemctl --user cat clawdline-next or
+   systemctl cat clawdline-next. Run clawdline --lang en cloud status with the
+   resolved binary and check that its machine line is exactly the Cloud machine id
+   above. If it differs or the identity is unreadable, stop before sending the code.
+
+   After this check, run exactly this one pairing command with the resolved binary
+   on the same target as the same user. For InstaBox, send the command over SSH.
+   InstaBox exec can retain its arguments in the provider's command history.
+
+       CLAWDLINE_LANG=en clawdline cloud pair -offer '%[3]s'
+
+   Change nothing else on that machine. Do not run this command on the helper itself.
 
 3. Report the ` + "`browser`" + ` and ` + "`machine`" + ` fingerprint lines the command prints, word for
    word. In result.json, also include this structured field, copying only fingerprints
@@ -102,8 +126,10 @@ this computer. Nobody is watching this tab: do the steps below and nothing else.
    invent, complete, or substitute values. If either line is missing, omit the field;
    the browser will keep manual comparison. Do not operate the browser yourself.
 
-If the machine cannot be reached, or the command fails, say so with what it printed and
-stop. Do not try other ways in that would change anything.
+If a step fails, report which step failed (lookup, wake, connection, identity, or
+pairing), with the relevant refusal and any retry time. Remove the pairing code
+and credentials from reports. An uncertain pairing result must not trigger a second
+pairing command.
 
 The code in that command is a one-time pairing secret. Do not write it anywhere — a file,
 a note, a log, a message — except into that one command.
