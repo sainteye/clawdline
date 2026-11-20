@@ -338,7 +338,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 【深入解釋最近回覆（explain_session_reply）】
 - 需要根據最近原文解答問題時，將使用者真正的問題放入 question，不需要固定口令；摘要不足、原因、比較、取捨、洞見與針對內容的追問都走此工具。
 - 詳解不受一般三句回答限制；先講結論與影響，再分段解釋原因和選項，讓使用者能隨時插話。
-- 結果有 analysis 時，是小型文字模型針對問題整理的 answer、evidence、unknowns、needs_older。用 answer 回答，保留條件與未知，不要再縮成泛用進度摘要。需要時以來源 ref 說明依據，勿逐字念技術識別。needs_older 時可在原先只讀一或三則的情況增加 replies 到五則；仍不足就說明缺口，不自動無限往前翻。error 時說分析未完成，不要假裝已看過。
+- 結果有 analysis 時，直接用 answer 回答，保留條件、來源與未知。source_fallback 或 replies 是已讀到的來源。用其中能證實的內容回答，並說明缺少的資料。驗收者的回報與主 Session 的修正紀錄要分開說。分析失敗或資料有限時，先用已讀到的資料回覆。同一輪不要重跑或改寫成另一句分析。只有 error 且沒有來源時，才說這次無法查到。
 - user_question 是使用者真正想解決的問題；question 是 Session 目前待回答的問題，兩者分開。以 user_question 為目標從原文抽取答案、依據與未知；追問優先沿用已讀資料，不足才重新讀取或改變範圍。
 - replies 是由舊到新的助理回覆及各自的 asked。依使用者指定的則數讀；「最近幾則」預設三則；「最後五則」用五則。只讀一則時用一。不要把工具紀錄算一則回覆。
 - 以原文區分事實、原作者主張與你的推論；表格要對齊欄名、數字與條件。跨訊息的更正以較新者為準。評分或成本缺少來源與測量條件就說明，不可宣稱已驗證。coverage.complete 為 false 時交代讀了幾則與缺少或截短的部分。
@@ -2170,10 +2170,14 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, cou
   }
   const { row } = found
   deps.focus?.set(row.id)
+  const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
+  let analysisError: string | undefined
   if (deps.analyzeQuestion) {
-    const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
     const analysis = await observedRead(deps,'analyze_session_question',row,()=>deps.analyzeQuestion!(row,requested,count))
-    if (analysis) return { session_id: row.id, label: row.label, state: row.state, user_question: requested, ...analysis }
+    if (analysis) {
+      if (analysis.error === 'copilot_question_unusable' || analysis.error === 'copilot_question_failed') analysisError = analysis.error
+      else return { session_id: row.id, label: row.label, state: row.state, user_question: requested, ...analysis }
+    }
   }
 
   const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
@@ -2234,7 +2238,8 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, cou
     ...(asked ? { asked } : {}),
     reply,
     replies: selected,
-    user_question: clipKeepingLines(question, REPLY_CHARS),
+    user_question: clipKeepingLines(requested, REPLY_CHARS),
+    ...(analysisError ? { analysis_error: analysisError } : {}),
     source: { machine: row.machine, session_id: row.id, conversation: row.conversation },
     requested_replies: count,
     read_replies: selected.length,
@@ -3134,8 +3139,8 @@ async function observedRead<T>(deps:ToolDeps,name:string,row:CopilotSessionRow|u
    try{const response=await deps.fetch(path,init);if(!response.ok)failed=true;return response}
    catch(error){failed=true;cancelled=init?.signal?.aborted===true;throw error}
   }})
-  const value=result as {error?:unknown;reused?:boolean}|undefined
-  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
+  const value=result as {error?:unknown;analysis_error?:unknown;reused?:boolean}|undefined
+  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error||value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
   return result
  }catch(error){span?.end({outcome:error instanceof Error&&error.name==='AbortError'?'cancelled':'failed'});throw error}
 }

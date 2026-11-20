@@ -70,9 +70,11 @@ Generated from typed refusal calls in the current Go source. It lists directly d
 | `copilot_briefing_failed` | `internal/transport/http/copilot_briefing.go` |
 | `copilot_briefing_off` | `internal/transport/http/copilot_briefing.go` |
 | `copilot_key_missing` | `internal/transport/http/copilot.go`, `internal/transport/http/copilot_decide.go`, `internal/transport/http/copilot_live.go`, `internal/transport/http/copilot_question.go`, `internal/transport/http/copilot_recap.go` |
+| `copilot_key_rejected` | `internal/transport/http/copilot_question.go` |
 | `copilot_live_bad_instructions` | `internal/transport/http/copilot_live.go` |
 | `copilot_live_bad_offer` | `internal/transport/http/copilot_live.go` |
 | `copilot_question_busy` | `internal/transport/http/copilot_question.go` |
+| `copilot_question_failed` | `internal/transport/http/copilot_question.go` |
 | `copilot_question_identity_changed` | `internal/transport/http/copilot_question.go` |
 | `copilot_question_invalid` | `internal/transport/http/copilot_question.go` |
 | `copilot_question_unusable` | `internal/transport/http/copilot_question.go` |

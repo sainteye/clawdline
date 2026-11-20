@@ -4598,7 +4598,8 @@
         "The person clicked a read-only question in the call window.",
         "Read that target with that tool before answering. Do not first generate a summary for an explicit detail question.",
         "Never send a message, approve, or execute a mutation for this question.",
-        "Answer the person's actual question using only the supplied recent Session messages.",
+        "Answer the person's actual question using only the supplied Session messages and recorded review results.",
+        "Sources with role review contain the reviewer's own recorded summary.",
         "Quotes must be literal substrings of the referenced message."
       ]
     },
@@ -5098,7 +5099,7 @@
     "internal/transport/http/codegraph.go": "c2f88e6495724bd5e48254669f62274e72d613e2c4757c32e0fbae909c65954c",
     "internal/transport/http/codegraph_guidance.go": "8a8270387e51712efeb14d484514bb96f3935f9be3193734702495f2812b9c0b",
     "internal/transport/http/coordinator.go": "21ae3a467eb3601187e6773ceef73c6edc6f80ba96dd537864782018ae31b7a6",
-    "internal/transport/http/copilot_question.go": "ad6b3539ee0caf670dc9675288141f55f58a182efb162b22d7afbc9680650d4f",
+    "internal/transport/http/copilot_question.go": "80adeb36f6844305bb57ebfe638721d3b95b9e2dff4dd3a57669ded957f30714",
     "internal/transport/http/copilot_work.go": "41ee101b71e06a8901a56d1eb2095791435976d854c63954a35e3d12bb76a9c8",
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
     "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
@@ -5173,14 +5174,14 @@
     "web/console/src/realtime/copilot-feedback.ts": "af6f7146ebe90f9502d7483873e2c5210ffd03873a8ba54c7b9aa3873a1fc54d",
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
     "web/console/src/realtime/copilot-history.ts": "ac9aa94eabbf5b0418af38510429660bdd0ad9531ebad0ccecd93febc81a419e",
-    "web/console/src/realtime/copilot-live.ts": "99f9288d63199094f228ac17d58f2d0e8a4313ef8fb6f170b3c7d522a8bd4e5d",
+    "web/console/src/realtime/copilot-live.ts": "4e42aac9c1293dffaa0c122749808714a3088d9258d2970c9df01e23ade4d2d6",
     "web/console/src/realtime/copilot-meter.ts": "e74cc9709ab4f88ab2842b2a9208162cc603435f00da762b1bca88dee8a6b188",
     "web/console/src/realtime/copilot-questions.ts": "5067c0c6191fd497d5aef033a49413080387c6b26a7246eb106f2f372184cd60",
     "web/console/src/realtime/copilot-reports.ts": "61a6bb220a23c0798b3ae2477971c552276ec8e3b79c91dd1d5b342f808d0355",
     "web/console/src/realtime/copilot-session-boards.ts": "8962c2e0af6ac22983092a136422ba0b5a3dc86e4efe2c89655bbc2be54d668c",
     "web/console/src/realtime/copilot-speech.ts": "2558a06d674f7158bea43dfc0c051dff1c4b0d9c01fe9054da174202d042bb01",
-    "web/console/src/realtime/copilot-tools.ts": "839b3807ed1d489e8e16b904c854d8ac6a052a9096bce45dcc18c2a1a41c0566",
-    "web/console/src/realtime/realtime-copilot.ts": "ab0f7c5a3d619f0b46878b52898e11dbdcdfa3b1f5df47976e5762ff7d2e0209",
+    "web/console/src/realtime/copilot-tools.ts": "b682599fb039445b8744ab1ef9b2c56e82df929bc0f97b651ec2a7e4a0459943",
+    "web/console/src/realtime/realtime-copilot.ts": "865b96acc28eee42263b99db471330e7e1c6bdc59d500305cf0b539c527dcd48",
     "web/console/src/session/Composer.tsx": "20285a8ce50481f403995d3342847ea4df771371c85cceab806403a13fa23b11",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
@@ -5196,7 +5197,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "092378a869f66457bf92fe2f903e6678ea8d2ffb9fd75e07c817a6533b4e4bda",
-    "zh-Hant": "0d0fa07df8f9b6d665f4015161a9e4a9aee485e33f97dca05619136a6bd6e5f0"
+    "en": "7805b0fe266d4fa3fe63bf480230331dc7b7569e541d36ffd2d82500b2214527",
+    "zh-Hant": "d8afd4684090b14880bb8c3b17fe1df5c3f747e9c36d0fc0e3e425179da8436a"
   }
 }
