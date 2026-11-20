@@ -162,6 +162,78 @@ func TestGroupsRootWiringManagerApprovalRechecksTheRealGrant(t *testing.T) {
 		})
 	}
 }
+func TestGroupsRootWiringLeadManagesTeamByRole(t *testing.T) {
+	for _, transfer := range []bool{false, true} {
+		t.Run(fmt.Sprintf("transfer=%v", transfer), func(t *testing.T) {
+			f, p := groupsManagerFixture(t, false)
+			designate := func(bot contract.ProjectAssistantBot) {
+				t.Helper()
+				command := f.command(pa.EditOperation, "lead-"+bot.Key.BotID)
+				command.Key = bot.Key
+				settings := contract.ProjectAssistantEditSettings{
+					ExpectedVersion: bot.Version, Name: bot.Name, Appearance: bot.Appearance,
+					Instructions: bot.Instructions.Text, Roster: &contract.ProjectAssistantRosterEdit{DesignateLead: true},
+				}
+				paServerOK(t, f.request(t, "PATCH", "/v1/project-assistants/"+bot.Key.BotID, f.local,
+					contract.ProjectAssistantEditRequest{Command: command, Settings: settings}))
+			}
+			designate(f.get(t, f.local).Bot)
+			if bot := f.get(t, f.local).Bot; !bot.Lead || !bot.ManageTeam {
+				t.Fatal("the lead's default grant was not visible to the approval UI")
+			}
+
+			paServerOK(t, f.send(t, f.local, "start"))
+			plan := groupsManagerPlan(t, f)
+			if len(groupsManagerBots(t, f)) != 1 {
+				t.Fatal("a pending proposal created a Bot before approval")
+			}
+			if transfer {
+				q := f.create()
+				q.Command.Key.BotID = "other-lead"
+				q.Command.IdempotencyKey = "create-other-lead"
+				paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, q))
+				for _, bot := range groupsManagerBots(t, f) {
+					if bot.Key == q.Command.Key {
+						designate(bot)
+					}
+				}
+				if bot := f.get(t, f.local).Bot; bot.Lead || bot.ManageTeam {
+					t.Fatal("the former lead kept the role's grant")
+				}
+			}
+			answer := contract.ProjectAssistantTeamAnswerRequest{Command: f.command(pa.AnswerOperation, "decide"), PlanID: plan.ID, Allow: true}
+			r := f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/team-answer", f.local, answer)
+			if transfer {
+				if r.Code < 400 {
+					t.Fatal("the former lead's pending card applied")
+				}
+			} else {
+				paServerOK(t, r)
+			}
+			select {
+			case err := <-p.outcome:
+				if (err != nil) != transfer {
+					t.Fatalf("manager outcome: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("manager tool never settled")
+			}
+			routineHumanIdle(t, f)
+			bots := groupsManagerBots(t, f)
+			if len(bots) != 2 {
+				t.Fatal("unexpected Bot count after decision", len(bots))
+			}
+			if !transfer {
+				for _, bot := range bots {
+					if bot.Key != paWireBotKey(f.key) && (bot.ManageTeam || bot.CreatedBy == nil || *bot.CreatedBy != paWireBotKey(f.key)) {
+						t.Fatal("the helper inherited the role's grant or lost its creator")
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestGroupsRootWiringManagerOffAndCrossProjectRefuseWithoutACard(t *testing.T) {
 	for _, scenario := range []string{"off", "other-project", "authority-field"} {
 		t.Run(scenario, func(t *testing.T) {

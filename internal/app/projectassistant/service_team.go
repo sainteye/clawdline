@@ -201,7 +201,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		}
 		out := []TeamMember{}
 		for _, b := range bots {
-			out = append(out, TeamMember{ID: b.Key.BotID, Name: b.Name, Instructions: b.Instructions.Text, Agent: b.Agent, Appearance: b.Appearance, Hidden: b.Hidden, ManageTeam: b.ManageTeam, CreatedBy: b.CreatedBy})
+			out = append(out, TeamMember{ID: b.Key.BotID, Name: b.Name, Instructions: b.Instructions.Text, Agent: b.Agent, Appearance: b.Appearance, Hidden: b.Hidden, ManageTeam: b.CanManageTeam(), CreatedBy: b.CreatedBy})
 		}
 		if _, err = t.o.Check(ctx, fence, turn); err != nil {
 			return nil, err

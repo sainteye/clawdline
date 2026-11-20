@@ -138,9 +138,8 @@ type Bot struct {
 	SidebarPinned  *bool  `json:"sidebar_pinned,omitempty"`
 	SidebarSection string `json:"sidebar_section,omitempty"`
 	Lead           bool   `json:"lead,omitempty"`
-	// ManageTeam is Codync's "Manage the team": off by default, written
-	// only by the person's own settings (CreateBot/EditBot), never by a
-	// manager tool or a model.
+	// ManageTeam records the explicit team management grant independently of
+	// the lead role. Managed creation can inherit this explicit grant.
 	ManageTeam        bool `json:"manage_team,omitempty"`
 	BackgroundThreads int  `json:"background_threads,omitempty"`
 	// CreatedBy names the manager Bot that created this one. Only the host

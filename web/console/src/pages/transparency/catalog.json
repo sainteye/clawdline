@@ -4439,7 +4439,7 @@
       ],
       "original": [
         "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。",
-        "Propose a Bot in your Project. It inherits your agent, approval policy, mode and team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 建立 Bot，繼承你的代理、允許方式、模式及管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。",
+        "Propose a Bot in your Project. It inherits your agent, approval policy, mode and any explicit team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 建立 Bot，繼承你的代理、允許方式、模式及明確授予的管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。",
         "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。"
       ]
     },
@@ -5133,7 +5133,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "485585215e099cfd9a65c06e348ac2ea122d1419d3b9adf6e6a4b5ea9d262c0b",
+    "internal/adapters/projectassistantacp/mcp.go": "22e41c7c243428af662a5946749ae02f3df6b205330e65e081446b6308efcdeb",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5175,7 +5175,7 @@
     "internal/adapters/projectassistantstore/roster.go": "47383ecf812553f8551deb4b78b0b26a20bf1887df069f86c3bd652822f118cc",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
     "internal/adapters/projectassistantstore/schema.go": "ad81942e0354af633dba3b3b945ab12bf92167791c888f38f51b6b4c4f4b1321",
-    "internal/adapters/projectassistantstore/team.go": "58dbafc531786727a2c365344f5dc840223875ad45aeb5df8f3bfb79ca94f99f",
+    "internal/adapters/projectassistantstore/team.go": "166f210908293272841ce47107089f8784ab0805de6729930ed78e5337a5d1c4",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -5236,7 +5236,7 @@
     "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "b3c4d24a289eca6bb4faf0ef28cb8da024245e6c95e9550fb6137142b8611320",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
-    "internal/app/projectassistant/service_team.go": "386653b8a0a0c3130973ae8f5da95cef944ab30dd06c99d86a2082198f5a2819",
+    "internal/app/projectassistant/service_team.go": "22e449ea0b861895c69aee606ca68299f6c231a31b5371e69e42a509d57765db",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
@@ -5317,7 +5317,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "d0e257fb2be58635d018fac3d48fb1b37a7765fd8d5b62e43c0648baf9d99724",
+    "web/console/src/cloud/project-assistants.ts": "f02efe4d175dc8c4fb5a95a1240ee83f0005e4bf3b932f92e5469a1f2d8f88fc",
     "web/console/src/cloud/relay-writer.ts": "d72f7e625f9ae501a006a34b4a6993880c295fe506288ab91294d16d5af393a6",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "75fc2c9f0fef1aeb92f26cde942e9efa369ff5095cc61b1630dc67cde52da489",
@@ -5376,7 +5376,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "e632f405a9f32ef4184ed651af723abe3436359de7b99e7203383ceb34e0531f",
-    "zh-Hant": "8aaf94c24f7f30aae4da7efcae0684283dc67e3bccc9fd4f84410477aac20281"
+    "en": "c3f85cd785634762d63f635a82ab27a21847d6973c564162c2cb414af51cc6ea",
+    "zh-Hant": "5e724237d7f5fc9562be57be115c90e324b15e63433b6503bc1d706c7291be2f"
   }
 }

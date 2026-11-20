@@ -21,11 +21,11 @@ type TeamManagerGrant struct {
 	CreatedBy *pa.BotKey `json:"created_by,omitempty"`
 }
 
-// GrantFor is the stored Bot's grant: its ManageTeam switch under its
+// GrantFor is the Bot's effective grant under its
 // aggregate version, which moves on every settings change, so a decision made
 // under one version cannot be applied under another.
 func GrantFor(b pa.Bot) TeamManagerGrant {
-	return TeamManagerGrant{Bot: b.Key, Enabled: b.ManageTeam, Revision: b.Version, CreatedBy: b.CreatedBy}
+	return TeamManagerGrant{Bot: b.Key, Enabled: b.CanManageTeam(), Revision: b.Version, CreatedBy: b.CreatedBy}
 }
 
 // ManagerContext is what the host derives for a manage tool call: the calling
@@ -107,8 +107,8 @@ type ManagerLimits struct {
 }
 
 // PlanManagedCreate mirrors Codync's create_bot: the new Bot works in the
-// manager's Project, approves the way the manager does, works in the
-// manager's mode and manages the team too. A requested policy or mode other
+// manager's Project, approves the way the manager does and works in the
+// manager's mode. Only the explicit team grant is inherited. A policy or mode other
 // than the manager's own is refused rather than ordered, since no ordering of
 // policies across agents is proved. Another agent is refused unless the
 // manager asks first and works in Auto mode: a native mode is its agent's,
@@ -151,7 +151,7 @@ func PlanManagedCreate(m ManagerContext, req ManagedCreate, createdLive int, l M
 	if err := pa.ValidateAppearance(req.Appearance); err != nil {
 		return ManagedBotPlan{}, err
 	}
-	return ManagedBotPlan{Project: m.Project, Name: req.Name, Instructions: req.Instructions, Appearance: req.Appearance, Agent: agent, PermissionPolicy: src.PermissionPolicy, Mode: src.Mode, ManageTeam: true, CreatedBy: src.Key, Under: m.Grant}, nil
+	return ManagedBotPlan{Project: m.Project, Name: req.Name, Instructions: req.Instructions, Appearance: req.Appearance, Agent: agent, PermissionPolicy: src.PermissionPolicy, Mode: src.Mode, ManageTeam: src.ManageTeam, CreatedBy: src.Key, Under: m.Grant}, nil
 }
 
 // ManagedEdit is what a manager may change on a Bot, itself included.

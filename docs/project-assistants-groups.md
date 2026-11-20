@@ -249,15 +249,19 @@ Host without a live occupancy measurement reports that gap rather than zero.
 `internal/app/projectassistant/team_management_policy.go` is a pure guard
 mirroring Codync's `manage_team`:
 
-- the person's switch (`Bot.ManageTeam`, read as a grant by `GrantFor`
-  under the Bot's version) is off by default and only the person's settings
-  change it; `Bot.CreatedBy` is set only by the host; every call checks that the caller's own grant
-  is enabled and that the caller is in the current full Project;
+- the designated lead can manage its team from API 103. Other Bots use
+  the person's explicit switch (`Bot.ManageTeam`), which defaults to off.
+  `GrantFor` checks both under the Bot's version. The console hides the
+  switch for a lead on a source that grants access by role and shows pending
+  approval cards using the effective grant in the Bot response. Every call
+  checks the grant and the current full Project. Only the host sets
+  `Bot.CreatedBy`;
 - argument names are allowlisted (name, instructions, color, shape, hidden);
   authority fields — manage switch, creator, approval policy, mode, agent,
   folder, model, fallbacks, routines, deletion — are refused before a card;
-- a created Bot inherits the manager's Project, approval policy and mode,
-  manages the team too and records the manager as its creator. A different
+- a created Bot inherits the manager's Project, approval policy, mode and
+  explicit team grant. The lead's role grant applies only to the lead. The
+  new Bot records the manager as its creator. A different
   policy or mode is refused, not ordered: no ordering of policies across
   agents is proved. Another agent is allowed only when the manager works in
   Auto mode under Ask; `auto_read` is not Codync's Auto;

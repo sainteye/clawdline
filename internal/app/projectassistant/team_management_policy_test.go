@@ -8,9 +8,9 @@ import (
 
 func managerFixture() (ManagerContext, pa.Bot) {
 	scope := pa.ProjectScope{MachineID: "m", ProjectID: "p", CanonicalID: "repo", Kind: pa.RepositoryProject}
-	caller := pa.Bot{Key: pa.BotKey{MachineID: "m", BotID: "lead"}, Project: scope, Name: "Lead", Agent: pa.ClaudeCode, PermissionPolicy: pa.Ask, Mode: pa.AutoMode}
+	caller := pa.Bot{Key: pa.BotKey{MachineID: "m", BotID: "lead"}, Project: scope, Name: "Lead", Agent: pa.ClaudeCode, PermissionPolicy: pa.Ask, Mode: pa.AutoMode, ManageTeam: true, Version: 1}
 	target := pa.Bot{Key: pa.BotKey{MachineID: "m", BotID: "mate"}, Project: scope, Name: "Mate", Agent: pa.ClaudeCode}
-	return ManagerContext{Caller: caller, Grant: TeamManagerGrant{Bot: caller.Key, Enabled: true, Revision: 1}, Project: scope}, target
+	return ManagerContext{Caller: caller, Grant: GrantFor(caller), Project: scope}, target
 }
 
 var look = pa.Appearance{Shape: pa.Hex, Color: "#336699"}

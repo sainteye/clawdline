@@ -46,6 +46,7 @@ export interface SourceClient {
   /** Account-scoped identity for persisting uncertain metadata commands. */
   readonly intentAccount?: string
   canGroups?(): boolean
+  canLeadTeamDefault?(): boolean
   canGroupContext?(): boolean
   canGroupDescription?(): boolean
   canGroupReactions?(): boolean

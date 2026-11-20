@@ -111,7 +111,7 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 			out.SidebarPinned = contract.ProjectAssistantSidebarPinPinned
 		}
 	}
-	out.ManageTeam = value.ManageTeam
+	out.ManageTeam = value.CanManageTeam()
 	out.BackgroundThreads = int64(value.BackgroundConcurrency())
 	if value.CreatedBy != nil {
 		key := paWireBotKey(*value.CreatedBy)

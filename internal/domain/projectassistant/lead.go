@@ -8,6 +8,9 @@ import (
 
 const LeadCheckInID = "default-lead-check-in"
 
+// CanManageTeam keeps the lead's role grant separate from the saved setting.
+func (b Bot) CanManageTeam() bool { return b.Lead || b.ManageTeam }
+
 func IsLeadCheckIn(routineID string) bool { return routineID == LeadCheckInID }
 
 // Only the source-owned call entry produces a turn with this origin.

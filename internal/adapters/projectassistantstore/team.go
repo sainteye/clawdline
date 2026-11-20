@@ -76,7 +76,7 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 			return failure(pa.ScopeDenied, "manager_target_project")
 		}
 		if m.ExpectedVersion == 0 {
-			if target.Bot.CreatedBy == nil || *target.Bot.CreatedBy != manager.Bot.Key || !target.Bot.ManageTeam || target.Bot.Agent != manager.Bot.Agent || target.Bot.PermissionPolicy != manager.Bot.PermissionPolicy || target.Bot.Mode != manager.Bot.Mode || target.Bot.FallbackAgents != (pa.FallbackConfig{}) || target.Bot.FallbackSteps != (pa.FallbackStepConfig{}) {
+			if target.Bot.CreatedBy == nil || *target.Bot.CreatedBy != manager.Bot.Key || target.Bot.Lead || target.Bot.ManageTeam != manager.Bot.ManageTeam || target.Bot.Agent != manager.Bot.Agent || target.Bot.PermissionPolicy != manager.Bot.PermissionPolicy || target.Bot.Mode != manager.Bot.Mode || target.Bot.FallbackAgents != (pa.FallbackConfig{}) || target.Bot.FallbackSteps != (pa.FallbackStepConfig{}) {
 				return failure(pa.ScopeDenied, "manager_inheritance")
 			}
 			rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot<>?`, manager.Bot.Key.MachineID, target.Bot.Key.BotID)

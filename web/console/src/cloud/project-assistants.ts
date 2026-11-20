@@ -24,6 +24,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // daemon has 60, so base routes and the view route stay distinct tiers.
 export const PROJECT_ASSISTANTS_GROK_API_LEVEL = 100
 export const PROJECT_ASSISTANTS_GEMINI_API_LEVEL = 102
+const PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL = 103
 export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
@@ -105,6 +106,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly grant: Readonly<AssistantGrant>
   readonly machineName?: string
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
+  canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
   canGroupDescription() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL }
   canGroupReactions() { try { this.check(new AbortController().signal,true,true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL);return true } catch { return false } }

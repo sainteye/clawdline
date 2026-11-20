@@ -96,7 +96,7 @@ func TestManagedStoreTransactionCapsCreationAndRollsBackRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	managedStoreNoEffect(t, s, second)
-	for _, reason := range []string{"created-by", "policy", "project"} {
+	for _, reason := range []string{"created-by", "policy", "project", "lead"} {
 		t.Run(reason, func(t *testing.T) {
 			m := managedStoreCreate(manager, reason)
 			switch reason {
@@ -107,6 +107,8 @@ func TestManagedStoreTransactionCapsCreationAndRollsBackRefusals(t *testing.T) {
 				m.Bot.PermissionPolicy = pa.Approve
 			case "project":
 				m.Bot.Project.ProjectID = "other"
+			case "lead":
+				m.Bot.Lead = true
 			}
 			if _, err := s.CommitManaged(testContext, execution, m, 20); err == nil {
 				t.Fatal("authority field committed")
