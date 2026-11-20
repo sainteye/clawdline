@@ -134,12 +134,15 @@ export function strollPoint(spots: readonly Point[], seed: number, now: number, 
 /** Project identity across machines, as the roster groups it. */
 export const projectOf = (item: W.ProjectAssistantBotSummary) => JSON.stringify([item.bot.key.machine_id, item.bot.project.project_id])
 
-/** Each Project's floor index, from a sort of the Projects themselves, so every
- * device showing the same Bots picks the same floors and nothing depends on a
- * particular person's Project names. Beyond `floors`, Projects share from the top. */
-export function assignFloors(items: readonly W.ProjectAssistantBotSummary[], floors: number): Map<string, number> {
+/** Each Project's floor index. A Project the person placed keeps its floor;
+ * the others follow a sort of the Projects themselves, so every device showing
+ * the same Bots picks the same floors and nothing depends on a particular
+ * person's Project names. Beyond `floors`, Projects share from the top. */
+export function assignFloors(items: readonly W.ProjectAssistantBotSummary[], floors: number, placed: ReadonlyMap<string, number> = new Map()): Map<string, number> {
   const projects = [...new Set(items.map(projectOf))].sort()
-  return new Map(projects.map((p, i) => [p, i % floors]))
+  const fixed = (p: string) => { const f = placed.get(p); return f !== undefined && Number.isInteger(f) && f >= 0 && f < floors ? f : undefined }
+  const free = projects.filter(p => fixed(p) === undefined)
+  return new Map(projects.map(p => [p, fixed(p) ?? free.indexOf(p) % floors]))
 }
 
 /** Bots waiting for the person, longest quiet first. A summary carries no

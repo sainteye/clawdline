@@ -4984,6 +4984,41 @@
         "local",
         "remote"
       ]
+    },
+    "ProjectAssistantTowerFloor": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One of this machine's Projects placed on a Bots tower floor, counted from the top (0 is 4F, 3 is B1).",
+      "properties": {
+        "project_id": {"type": "string"},
+        "floor": {"type": "integer", "minimum": 0, "maximum": 3}
+      },
+      "required": ["project_id", "floor"]
+    },
+    "ProjectAssistantTowerFloorsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The machine's tower floor placements. Version 0 means none were ever made; Projects without a placement follow the console's default rule.",
+      "properties": {
+        "contract_version": {"type": "string"},
+        "machine_id": {"type": "string"},
+        "version": {"type": "integer", "minimum": 0},
+        "floors": {"type": "array", "items": {"$ref": "#/$defs/ProjectAssistantTowerFloor"}}
+      },
+      "required": ["contract_version", "machine_id", "version", "floors"]
+    },
+    "ProjectAssistantTowerFloorRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Place one Project while the document is still at expected_version. A repeated write that already took effect answers the current document.",
+      "properties": {
+        "machine_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "expected_version": {"type": "integer", "minimum": 0},
+        "project_id": {"type": "string"},
+        "floor": {"type": "integer", "minimum": 0, "maximum": 3}
+      },
+      "required": ["machine_id", "idempotency_key", "expected_version", "project_id", "floor"]
     }
   }
 }

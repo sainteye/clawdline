@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13673,
-  "riskKeys": 5868,
-  "nonRiskCount": 7805,
+  "englishContentKeys": 13691,
+  "riskKeys": 5876,
+  "nonRiskCount": 7815,
   "groups": [
     {
       "name": "acp / other",
@@ -567,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 698,
+      "count": 700,
       "sources": [
         null
       ],
@@ -732,6 +732,8 @@
         "capacityRow.bots.survey_ms.what",
         "capacityRow.bots.tool_probe_bytes.what",
         "capacityRow.bots.tool_probe_ms.what",
+        "capacityRow.bots.tower_floor_project_bytes.what",
+        "capacityRow.bots.tower_floors.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -6120,7 +6122,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 473,
+      "count": 481,
       "sources": [
         null
       ],
@@ -6556,8 +6558,16 @@
         "projectAssistants.towerCardUnread",
         "projectAssistants.towerElevator",
         "projectAssistants.towerEnterFloor",
+        "projectAssistants.towerFloorAuto",
         "projectAssistants.towerFloorEmpty",
+        "projectAssistants.towerFloorsClose",
+        "projectAssistants.towerFloorsEdit",
+        "projectAssistants.towerFloorsFor",
         "projectAssistants.towerFloorsMenu",
+        "projectAssistants.towerFloorsPick",
+        "projectAssistants.towerFloorsStale",
+        "projectAssistants.towerFloorsTitle",
+        "projectAssistants.towerFloorsUnsupported",
         "projectAssistants.towerHelpers",
         "projectAssistants.towerLatest",
         "projectAssistants.towerLayout",

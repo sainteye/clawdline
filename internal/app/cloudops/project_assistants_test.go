@@ -137,7 +137,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 68 {
+	if len(out) != 70 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -733,5 +733,13 @@ func projectAssistantServerOperationCases() []operationCase {
 		c.body = fields
 		rows = append(rows, c)
 	}
-	return rows
+	floors := `{"contract_version":"project-assistants.v1","machine_id":"mac-01","version":1,"floors":[{"project_id":"project","floor":2}]}`
+	rows = append(rows, operationCase{word: "project-assistants.tower-floors", method: "GET", path: "/v1/project-assistant-floors",
+		query: map[string]string{"machine_id": "mac-01"}, session: MachineReplySession, name: "read:case-tower-floors", answers: &router{body: floors},
+		body: map[string]any{"type": "project-assistants.tower-floors", "session": MachineReplySession, "request": "case-tower-floors", "machine_id": "mac-01"}})
+	save := map[string]any{"machine_id": "mac-01", "idempotency_key": "case-tower-floor-save", "expected_version": 0, "project_id": "project", "floor": 2}
+	raw, _ := json.Marshal(save)
+	save["type"], save["session"], save["request"] = "project-assistants.tower-floor-save", MachineReplySession, "case-tower-floor-save"
+	return append(rows, operationCase{word: "project-assistants.tower-floor-save", method: "POST", path: "/v1/project-assistant-floors",
+		session: MachineReplySession, name: "action:case-tower-floor-save", answers: &router{body: floors}, body2: string(raw), body: save})
 }

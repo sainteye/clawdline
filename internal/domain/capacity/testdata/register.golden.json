@@ -3784,6 +3784,66 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.tower_floor_project_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxTowerFloorProjectBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.tower_floor_projects",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxTowerFloorProjects"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.tower_floors",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxTowerFloors"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.write_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

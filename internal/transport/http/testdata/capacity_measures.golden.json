@@ -933,6 +933,21 @@
     "Note": true
   },
   {
+    "Name": "bots.tower_floor_project_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.tower_floor_projects",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.tower_floors",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.write_ms",
     "Known": true,
     "Note": true

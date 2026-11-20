@@ -91,6 +91,22 @@ test("floors follow a stable sort of Projects and wrap past the last floor", () 
   assert.deepEqual(assignFloors([...items].reverse(), 4), floors)
 })
 
+test("a placed Project keeps its floor and the others still follow the sort", () => {
+  const at = (machine: string, project: string, id: string) => ({ ...(bot(id) as object), bot: { key: { machine_id: machine, bot_id: id }, name: id, project: { machine_id: machine, project_id: project } } }) as never
+  const items = [at("m", "zeta", "1"), at("m", "alpha", "2"), at("m", "mid", "3"), at("n", "alpha", "4")]
+  const auto = assignFloors(items, 4)
+  const placed = new Map([[projectOf(items[0]), 3], [projectOf(items[3]), 1]])
+  const floors = assignFloors(items, 4, placed)
+  assert.equal(floors.get(projectOf(items[0])), 3)
+  assert.equal(floors.get(projectOf(items[3])), 1, "the same Project id on another machine is a different Project")
+  // The unplaced Projects take the default rule among themselves, in sort order.
+  assert.deepEqual([floors.get(projectOf(items[1])), floors.get(projectOf(items[2]))], [0, 1])
+  // A placement outside the building is ignored rather than drawn nowhere.
+  assert.deepEqual(assignFloors(items, 4, new Map([[projectOf(items[0]), 4]])), auto)
+  // A placement for a Project with no Bots here changes nothing.
+  assert.deepEqual(assignFloors(items, 4, new Map([[JSON.stringify(["m", "gone"]), 2]])), auto)
+})
+
 test("the waiting list holds only waiting Bots, longest quiet first", () => {
   const at = (min: number) => new Date(now - min * 60_000).toISOString()
   const list = waitingList(towerBots([

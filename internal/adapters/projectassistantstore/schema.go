@@ -51,6 +51,8 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 	}
 	for _, statement := range []string{
 		networkSettingsSchema,
+		towerFloorsSchema,
+		towerFloorVersionsSchema,
 		reactionsSchema,
 		handoffCardSchema,
 		handoffReceiptSchema,
