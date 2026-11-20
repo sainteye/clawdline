@@ -65,7 +65,10 @@ func (s *Store) AdmitBackgroundTask(ctx context.Context, command pa.Command, tas
 	if err = writeReceipt(ctx, tx, pa.Receipt{ID: task.ID, Command: command, State: pa.EffectAccepted, ResourceID: task.ID}); err != nil {
 		return pa.BackgroundTask{}, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = noteBackgroundOwner(ctx, tx, command.Key); err != nil {
+		return pa.BackgroundTask{}, err
+	}
+	if err = s.commitRoster(ctx, tx, command.Key.MachineID); err != nil {
 		return pa.BackgroundTask{}, err
 	}
 	return task, nil
@@ -210,7 +213,10 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 		WHERE machine=? AND bot=? AND task=?`, worker.Bot.Key.BotID, now, key.MachineID, key.BotID, task.ID); err != nil {
 		return pa.BotKey{}, err
 	}
-	return worker.Bot.Key, tx.Commit()
+	if err = noteBackgroundOwner(ctx, tx, key); err != nil {
+		return pa.BotKey{}, err
+	}
+	return worker.Bot.Key, s.commitRoster(ctx, tx, key.MachineID)
 }
 
 func backgroundWorkerID(taskID string) string { return "thread-" + taskID }
@@ -258,10 +264,16 @@ func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.M
 	match := []any{owner.MachineID, owner.BotID, id, a.Bot.Key.BotID}
 	switch m.Turn.State {
 	case pa.TurnAccepted, pa.TurnQueued:
-		_, err := tx.ExecContext(ctx, `UPDATE project_assistant_background_tasks
+		result, err := tx.ExecContext(ctx, `UPDATE project_assistant_background_tasks
 			SET state='active', started_at=?, ended_at=NULL
 			WHERE machine=? AND bot=? AND task=? AND worker=? AND state<>'active'`, append([]any{a.Bot.UpdatedAt}, match...)...)
-		return err
+		if err != nil {
+			return err
+		}
+		if n, err := result.RowsAffected(); err != nil || n == 0 {
+			return err
+		}
+		return noteBackgroundOwner(ctx, tx, owner)
 	case pa.TurnSucceeded, pa.TurnFailed, pa.TurnCancelled, pa.TurnUnknown:
 	default:
 		return nil
@@ -284,8 +296,14 @@ func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.M
 		return err
 	}
 	n, err := result.RowsAffected()
-	if err != nil || n == 0 || state != pa.TurnSucceeded || m.Turn.Origin == pa.BotRequestOrigin {
+	if err != nil || n == 0 {
 		return err
+	}
+	if err = noteBackgroundOwner(ctx, tx, owner); err != nil {
+		return err
+	}
+	if state != pa.TurnSucceeded || m.Turn.Origin == pa.BotRequestOrigin {
+		return nil
 	}
 	for i := len(a.Messages) - 1; i >= 0; i-- {
 		message := a.Messages[i]

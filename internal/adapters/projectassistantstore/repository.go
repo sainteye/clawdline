@@ -881,7 +881,18 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 		}
 		out.Items = append(out.Items, summary(a, readerID))
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return out, err
+	}
+	rows.Close()
+	background, err := activeBackground(ctx, s.db, q.MachineID)
+	if err != nil {
+		return out, err
+	}
+	for i := range out.Items {
+		out.Items[i].ActiveWork += background[out.Items[i].Bot.Key]
+	}
+	return out, nil
 }
 func summary(a aggregate, reader string) pa.BotSummary {
 	r := pa.ReadCursor{Key: a.Bot.Key, ConversationID: a.Conversation.ID, ReaderID: reader}
@@ -914,6 +925,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			out.PendingPermissions++
 		}
 	}
+	out.ActiveWork = activeWorkLinks(a)
 	projectRosterActivity(a, &out)
 	return out
 }

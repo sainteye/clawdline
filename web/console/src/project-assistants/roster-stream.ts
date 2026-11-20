@@ -46,6 +46,7 @@ function summary(value: unknown, change: W.ProjectAssistantBotKey, request: W.Pr
     typeof v.latest_message !== "string" || typeof v.activity !== "string" || typeof v.activity_at !== "string" || !Number.isFinite(Date.parse(v.activity_at)) ||
     !integer(v.unread_count) || !integer(v.pending_permissions) || !integer(v.version, 1) || v.version !== b.version ||
     v.completed_turn_id !== undefined && typeof v.completed_turn_id !== "string" ||
+    v.active_work !== undefined && !integer(v.active_work) ||
     v.status !== undefined && !["idle", "working", "needsInput", "error"].includes(v.status) ||
     !object(r) || !key(r.key) || !text(r.conversation_id) || !text(r.reader_id) || !integer(r.message_seq)) throw failure("pa_invalid")
   if (!sameKey(r.key, change) || r.conversation_id !== b.conversation_id) throw failure("pa_scope_denied")

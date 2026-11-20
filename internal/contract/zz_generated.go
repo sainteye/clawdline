@@ -4532,6 +4532,10 @@ type ProjectAssistantBotResponse struct {
 }
 
 type ProjectAssistantBotSummary struct {
+	// Unfinished work this Bot handed elsewhere: Board work links still accepted,
+	// waiting for the person or executing, plus background tasks still waiting or
+	// active. Absent on older sources and when there is none.
+	ActiveWork int64               `json:"active_work,omitempty"`
 	Activity   string              `json:"activity"`
 	ActivityAt string              `json:"activity_at"`
 	Bot        ProjectAssistantBot `json:"bot"`

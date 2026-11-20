@@ -276,11 +276,13 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
  coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.created_at')) activity_at,
  (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)) unread,
- (SELECT count(*) FROM json_each(j,'$.Permissions') WHERE json_extract(value,'$.state')='pending') pending FROM a
+ (SELECT count(*) FROM json_each(j,'$.Permissions') WHERE json_extract(value,'$.state')='pending') pending,
+ (SELECT count(*) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `)+
+ (SELECT count(*) FROM project_assistant_background_tasks WHERE machine=json_extract(j,'$.Bot.key.machine_id') AND bot=json_extract(j,'$.Bot.key.bot_id') AND state IN ` + activeBackgroundStatesSQL + `) work FROM a
 ), guarded AS MATERIALIZED (
  SELECT *,length(CAST(projected AS BLOB))+length(CAST(read_cursor AS BLOB))+length(CAST(latest AS BLOB))+length(CAST(activity_at AS BLOB))<=? fits FROM projection
 )
-SELECT CASE WHEN fits THEN projected END,CASE WHEN fits THEN read_cursor ELSE '' END,CASE WHEN fits THEN latest ELSE '' END,CASE WHEN fits THEN activity_at ELSE '' END,unread,pending,
+SELECT CASE WHEN fits THEN projected END,CASE WHEN fits THEN read_cursor ELSE '' END,CASE WHEN fits THEN latest ELSE '' END,CASE WHEN fits THEN activity_at ELSE '' END,unread,pending,work,
  (SELECT coalesce(max(seq),0) FROM project_assistant_roster_changes WHERE machine=? AND bot=?) FROM guarded`
 
 func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string, budget int) (pa.BotSummary, app.RosterIdentity, int64, error) {
@@ -288,8 +290,8 @@ func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string
 	var id app.RosterIdentity
 	var projected sql.NullString
 	var read, latest, at string
-	var unread, pending, revision int64
-	err := tx.QueryRowContext(ctx, rosterProjectionSQL, key.MachineID, key.BotID, reader, reader, budget, key.MachineID, key.BotID).Scan(&projected, &read, &latest, &at, &unread, &pending, &revision)
+	var unread, pending, work, revision int64
+	err := tx.QueryRowContext(ctx, rosterProjectionSQL, key.MachineID, key.BotID, reader, reader, budget, key.MachineID, key.BotID).Scan(&projected, &read, &latest, &at, &unread, &pending, &work, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, id, 0, failure(pa.NotFound, "roster_bot")
 	}
@@ -303,7 +305,7 @@ func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string
 	if json.Unmarshal([]byte(projected.String), &a) != nil || a.Bot.Key != key || a.Bot.ConversationID != a.Conversation.ID || pa.ValidateScope(a.Bot.Project) != nil {
 		return row, id, 0, failure(pa.Invalid, "roster_projection")
 	}
-	row = pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, LatestMessage: latest, UnreadCount: unread, PendingPermissions: pending, ReadCursor: pa.ReadCursor{Key: key, ConversationID: a.Conversation.ID, ReaderID: reader}}
+	row = pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, LatestMessage: latest, UnreadCount: unread, PendingPermissions: pending, ActiveWork: work, ReadCursor: pa.ReadCursor{Key: key, ConversationID: a.Conversation.ID, ReaderID: reader}}
 	if read != "" && json.Unmarshal([]byte(read), &row.ReadCursor) != nil {
 		return row, id, 0, failure(pa.Invalid, "roster_reader")
 	}

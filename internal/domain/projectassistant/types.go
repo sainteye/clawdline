@@ -488,16 +488,20 @@ type BotSummary struct {
 	Bot             Bot    `json:"bot"`
 	// Status is the current roster presentation; unread and source connection
 	// are independent. Activity carries a live tool title or a localized key.
-	Status             string       `json:"status,omitempty"`
-	Failure            *Failure     `json:"failure,omitempty"`
-	LatestMessage      string       `json:"latest_message"`
-	Activity           string       `json:"activity"`
-	ActivityAt         time.Time    `json:"activity_at"`
-	UnreadCount        int64        `json:"unread_count"`
-	ReadCursor         ReadCursor   `json:"read_cursor"`
-	PendingPermissions int64        `json:"pending_permissions"`
-	Version            int64        `json:"version"`
-	Source             SourceStatus `json:"source"`
+	Status             string     `json:"status,omitempty"`
+	Failure            *Failure   `json:"failure,omitempty"`
+	LatestMessage      string     `json:"latest_message"`
+	Activity           string     `json:"activity"`
+	ActivityAt         time.Time  `json:"activity_at"`
+	UnreadCount        int64      `json:"unread_count"`
+	ReadCursor         ReadCursor `json:"read_cursor"`
+	PendingPermissions int64      `json:"pending_permissions"`
+	// ActiveWork counts work this Bot handed elsewhere that has not finished:
+	// Board work links still accepted, waiting for the person or executing,
+	// plus background tasks still waiting or active. Absent means none.
+	ActiveWork int64        `json:"active_work,omitempty"`
+	Version    int64        `json:"version"`
+	Source     SourceStatus `json:"source"`
 }
 type ListBots struct {
 	MachineID string `json:"machine_id"`

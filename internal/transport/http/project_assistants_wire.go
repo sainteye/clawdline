@@ -406,6 +406,7 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.ReadCursor = paWireReadCursor(cursor)
 	out.PendingPermissions = value.PendingPermissions
+	out.ActiveWork = value.ActiveWork
 	out.Version = value.Version
 	convertedSource, err := paWireSourceStatus(value.Source)
 	if err != nil {

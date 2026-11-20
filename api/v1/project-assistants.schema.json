@@ -1248,6 +1248,11 @@
         "pending_permissions": {
           "type": "integer"
         },
+        "active_work": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unfinished work this Bot handed elsewhere: Board work links still accepted, waiting for the person or executing, plus background tasks still waiting or active. Absent on older sources and when there is none."
+        },
         "version": {
           "type": "integer"
         },

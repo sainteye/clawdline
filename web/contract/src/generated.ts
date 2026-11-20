@@ -5308,6 +5308,12 @@ export interface ProjectAssistantBotResponse {
 }
 
 export interface ProjectAssistantBotSummary {
+  /**
+   * Unfinished work this Bot handed elsewhere: Board work links still accepted,
+   * waiting for the person or executing, plus background tasks still waiting or
+   * active. Absent on older sources and when there is none.
+   */
+  active_work?: number
   activity: string
   activity_at: string
   bot: ProjectAssistantBot
