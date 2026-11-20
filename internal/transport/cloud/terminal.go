@@ -670,6 +670,12 @@ func (l *Link) refuseTerminalBusy(ctx context.Context, in Inbound) {
 		return
 	}
 	l.logTerminalBusy(in.Sender, req.Operation, "the terminal lanes are full")
+	if req.Operation == carrierOfferOperation {
+		// A carrier has no terminal connection. Its waiter receives the
+		// refusal on the same machine reply channel as a successful answer.
+		l.publishCarrierAnswer(ctx, req.RequestID, nil, 503, string(terminal.CodeBusy))
+		return
+	}
 	c := l.getTerminalConnection(in.Sender, req.Connection)
 	if c == nil && (req.Operation == "open_connection" || req.Operation == "rekey_connection") {
 		key, err := parseConnectionKey(req)

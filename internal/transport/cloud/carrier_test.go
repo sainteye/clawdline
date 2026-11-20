@@ -269,6 +269,77 @@ func TestACarrierClosesOnlyWhenItsDeviceIsDenied(t *testing.T) {
 	}
 }
 
+func TestFullTerminalIngressAnswersCarrierOfferWithBusy(t *testing.T) {
+	f := newDirectFixture(t)
+	f.l.terminalRequests = make(chan Inbound, CloudTerminalIngressLimit)
+	f.l.terminalRefusals = make(chan Inbound, CloudTerminalRefusalsLimit)
+	for i := 0; i < cap(f.l.terminalRequests); i++ {
+		f.l.terminalRequests <- Inbound{}
+	}
+	_, offer := newTestBrowser(t)
+	body, _ := json.Marshal(carrierOfferBody{SDP: offer})
+	data, err := json.Marshal(terminalRequest{
+		V: 1, Type: "terminal_request", RequestID: testRequestID, Connection: carrierID(t),
+		Operation: carrierOfferOperation, KeyID: "rk-" + carrierID(t),
+		Key: base64.StdEncoding.EncodeToString(f.key.Bytes()), Body: body,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.l.deliverTerminal(Inbound{Channel: "termi/machine/viewer", Class: string(domaincloud.ClassCtl),
+		Sender: "viewer", Plaintext: data, VerifiedKey: f.viewer.PublicKey()})
+	select {
+	case in := <-f.l.terminalRefusals:
+		f.l.refuseTerminalBusy(context.Background(), in)
+	default:
+		t.Fatal("the full ingress did not route the offer to its refusal lane")
+	}
+	if _, ok := f.spool.Row(0); !ok {
+		t.Fatal("the full ingress left the carrier offer unanswered")
+	}
+	reply := f.answerAt(t, 0)
+	errBody, _ := reply["error"].(map[string]any)
+	if reply["read"] != "read:"+testRequestID || reply["status"] != float64(503) || errBody["code"] != "terminal_busy" {
+		t.Fatalf("the refused offer did not receive its busy answer: %v", reply)
+	}
+}
+
+func TestRateLimitedCarrierOfferKeepsTheOpenChannel(t *testing.T) {
+	f := newDirectFixture(t)
+	b, _, _ := f.carrier(t)
+
+	f.l.directMu.Lock()
+	for len(f.l.directOffers["viewer"]) < CloudTerminalDirectOffersPerMinuteLimit {
+		f.l.directOffers["viewer"] = append(f.l.directOffers["viewer"], f.l.opts.Now())
+	}
+	f.l.directMu.Unlock()
+
+	_, offer := newTestBrowser(t)
+	key, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(carrierOfferBody{SDP: offer})
+	f.l.handleCarrierOffer(context.Background(), f.svc, f.p, terminalRequest{
+		V: 1, Type: "terminal_request", RequestID: testRequestID, Connection: carrierID(t),
+		Operation: carrierOfferOperation, KeyID: "rk-" + carrierID(t),
+		Key: base64.StdEncoding.EncodeToString(key.Bytes()), Body: body,
+	})
+	refusal := f.answerAt(t, 1)
+	errBody, _ := refusal["error"].(map[string]any)
+	if refusal["status"] != float64(503) || errBody["code"] != "terminal_busy" {
+		t.Fatalf("the first offer beyond the limit should be refused: %v", refusal)
+	}
+	if err := f.l.sendCarrierEnvelope("viewer", "t/machine/session", domaincloud.ClassStream,
+		[]byte(`{"read":"still-open","status":200}`)); err != nil {
+		t.Fatalf("a rate-limited offer took away the existing carrier: %v", err)
+	}
+	_, reply := f.openMaster(t, b.next(t))
+	if reply["read"] != "still-open" {
+		t.Fatalf("the active carrier did not deliver the Session read: %v", reply)
+	}
+}
+
 // A page whose carrier died without this machine hearing it opens another.
 //
 // The machine keeps one carrier per viewer and gives it no idle bound, so a

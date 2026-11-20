@@ -25,7 +25,7 @@ function carrierClient(carrier) {
     readWaiters: new Map(), pinnedReadProofs: new Map(), pendingBySequence: new Map(),
     carrierReads: new Map(), carrierSequences: new Map(), carrierCapabilities: new Map(),
     carrierRowSequences: new Map(),
-    carrierWatched: new WeakSet(), carrierMachines: new Set(),
+    carrierWatched: new WeakMap(), carrierMachines: new Set(),
     machineOffline: new Map(), machineLacks: new Map(),
     orchestratorSnapshots: new Map(), machineDescriptors: new Map(), macCapabilities: new Map(),
     socketSubscriptions: new Map(), subscriptionHolds: new Map(), pendingSubscriptions: new Set(),

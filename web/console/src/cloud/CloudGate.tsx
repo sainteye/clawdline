@@ -569,6 +569,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // the machine's retained envelopes and `viewerVerified` can take over.
   const claimedPairings = useRef(new Set<string>())
   const run = useRef<PairingRun | null>(null)
+  const claimingPairing = useRef<Promise<PairState> | null>(null)
   const recoveringPairing = useRef<Promise<void> | null>(null)
   const invitation = useRef<PairingInvitation | null>(null)
   const namesRef = useRef(names)
@@ -1047,6 +1048,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     [transport, renaming],
   )
 
+  const pairingClaimed = useCallback((machine: string) => {
+    claimedPairings.current.add(machine)
+    listMachines()
+    machinePaired(machine)
+    setConnectionVersion((version) => version + 1)
+  }, [listMachines])
+
   /**
    * Finish a pairing whose waiting card went away. The X25519 private half is
    * in IndexedDB, not in this component; after the handover opens, reconnect
@@ -1054,15 +1062,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
    */
   const recoverPairing = useCallback(() => {
     const current = session.current
-    const active = run.current?.state.phase
-    if (!current || recoveringPairing.current || active === "asking" || active === "waiting") return
+    // A stop can leave an HTTP claim in flight. Wait for that claim before
+    // recovering the same offer, which the control plane delivers only once.
+    if (!current || claimingPairing.current || recoveringPairing.current) return
     const recovery = resumePendingPairing(current, pairingStore)
       .then((opened) => {
-        if (opened) {
-          claimedPairings.current.add(opened.machineID)
-          machinePaired(opened.machineID)
-          setConnectionVersion((version) => version + 1)
-        }
+        if (opened) pairingClaimed(opened.machineID)
       })
       .catch((error: unknown) => {
         // A live untyped interruption stays durable for the next reconnect.
@@ -1073,7 +1078,20 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         if (recoveringPairing.current === recovery) recoveringPairing.current = null
       })
     recoveringPairing.current = recovery
-  }, [pairingStore])
+  }, [pairingClaimed, pairingStore])
+
+  useEffect(() => {
+    if (!pairingRecoveryActive) return
+    const resume = () => { if (!document.hidden) recoverPairing() }
+    document.addEventListener("visibilitychange", resume)
+    window.addEventListener("pageshow", resume)
+    window.addEventListener("online", resume)
+    return () => {
+      document.removeEventListener("visibilitychange", resume)
+      window.removeEventListener("pageshow", resume)
+      window.removeEventListener("online", resume)
+    }
+  }, [pairingRecoveryActive, recoverPairing])
 
   /**
    * Start one pairing. It is only ever called from a press — a row, a card,
@@ -1090,22 +1108,18 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     })
     run.current = next
     setPairState(next.state)
-    void next.begin().then((state) => {
+    const claiming = next.begin()
+    claimingPairing.current = claiming
+    void claiming.then((state) => {
+      if (claimingPairing.current === claiming) claimingPairing.current = null
       // A machine's link is good for one answer, whatever the answer was.
       if (request.mode === "invitation") dropInvitation(sessionStorage)
-      // The active card used to stop here and require a reload. Treat its
-      // authenticated handover as the bootstrap capability immediately, then
-      // reconnect so the relay replays the machine's retained snapshots.
-      if (state.phase === "paired") {
-        claimedPairings.current.add(state.machineID)
-        machinePaired(state.machineID)
-        setConnectionVersion((version) => version + 1)
-      }
-      // Stopping only puts the card away. The offer and its private claim key
-      // remain live, so settle them without requiring this UI to stay open.
+      if (state.phase === "paired") pairingClaimed(state.machineID)
+      // Stopping only puts the card away. Settle the still-live offer after
+      // the previous claim has finished.
       if (state.phase === "stopped") recoverPairing()
     })
-  }, [recoverPairing])
+  }, [pairingClaimed, recoverPairing])
 
   /** Show this browser's code for `machine`, or for whichever machine runs it. */
   const pairOffer = useCallback(
@@ -1367,6 +1381,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             }
           })
           recoverPairing()
+          listMachines()
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
@@ -1378,7 +1393,6 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             setScreen((current) => screenAfterConnected(current, true))
             return
           }
-          listMachines()
           setScreen((current) => screenAfterConnected(current, false))
           return
         }

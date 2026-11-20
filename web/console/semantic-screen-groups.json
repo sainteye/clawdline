@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13620,
+  "englishContentKeys": 13627,
   "riskKeys": 5842,
-  "nonRiskCount": 7778,
+  "nonRiskCount": 7785,
   "groups": [
     {
       "name": "acp / other",
@@ -6113,7 +6113,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 452,
+      "count": 459,
       "sources": [
         null
       ],
@@ -6537,12 +6537,19 @@
         "projectAssistants.towerBack",
         "projectAssistants.towerBackToList",
         "projectAssistants.towerBots",
+        "projectAssistants.towerElevator",
+        "projectAssistants.towerEnterFloor",
+        "projectAssistants.towerFloorEmpty",
         "projectAssistants.towerLatest",
+        "projectAssistants.towerLayout",
+        "projectAssistants.towerLayoutBuilding",
+        "projectAssistants.towerLayoutFloor",
         "projectAssistants.towerLoading",
         "projectAssistants.towerMoodIdle",
         "projectAssistants.towerMoodSleep",
         "projectAssistants.towerMoodUnread",
         "projectAssistants.towerMoodWork",
+        "projectAssistants.towerSection",
         "projectAssistants.towerStale",
         "projectAssistants.towerUnread",
         "projectAssistants.towerView",

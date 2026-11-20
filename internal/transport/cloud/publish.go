@@ -156,6 +156,9 @@ type Publisher struct {
 	// sends every change at once, which is how a test measures what the
 	// coalescing saves.
 	VolatileEvery time.Duration
+	// DirectWatching reports a direct peer or an offer in progress. Its
+	// mirror still wants the normal cadence even without a Relay subscriber.
+	DirectWatching func() bool
 
 	// published is each row's identity bytes as last sent, so an unchanged row
 	// is skipped. Keyed by session id; the inventory and the descriptor have
@@ -224,10 +227,8 @@ type Publisher struct {
 	// out, so the log says it when it changes rather than every pass.
 	omitted int
 
-	// mu guards the two fields below and nothing else. They are written by
-	// Seen, which runs on the socket's read loop, and read by pass, which runs
-	// on the publisher's own goroutine; every other field here belongs to the
-	// publisher's goroutine alone.
+	// mu guards audience observations, pending restatements, and snapshot
+	// requests shared between the socket's read loop and the publisher.
 	mu sync.Mutex
 	// audience is the viewer devices this publisher has stated its channels to
 	// since this socket came up. It is bounded by the account's paired devices
@@ -236,6 +237,9 @@ type Publisher struct {
 	// (`internal/adapters/cloud.(*Transport).handleEnvelope`), so a stranger
 	// cannot put a name in here.
 	audience map[string]bool
+	// Rich-row receipts are separate from the machine-wide status audience.
+	// Only the last sequence per channel is useful, within the inventory bound.
+	richAudiences map[string]richAudience
 	// restate is set when a device that is not in the audience has been heard
 	// from, and cleared by the pass that re-states everything for it.
 	restate bool
@@ -309,6 +313,11 @@ type heldRow struct {
 	identity []byte
 	steady   []byte
 	body     []byte
+}
+
+type richAudience struct {
+	sequence uint64
+	fanout   int
 }
 
 // snapshotResult is what one re-statement pass tells everybody who asked for
@@ -830,6 +839,36 @@ func (p *Publisher) Acked(ch string, fanout int) {
 	}
 }
 
+func (p *Publisher) richRowAcked(ch string, seq uint64, fanout int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	prior, exists := p.richAudiences[ch]
+	if (exists && seq <= prior.sequence) || (!exists && len(p.richAudiences) >= InventoryLimit) {
+		return
+	}
+	if p.richAudiences == nil {
+		p.richAudiences = make(map[string]richAudience)
+	}
+	p.richAudiences[ch] = richAudience{seq, fanout}
+}
+
+func (p *Publisher) richRowWindow(ch string, direct bool) time.Duration {
+	window := p.volatileEvery()
+	if direct || window < 0 {
+		return window
+	}
+	p.mu.Lock()
+	receipt, seen := p.richAudiences[ch]
+	p.mu.Unlock()
+	if seen && receipt.fanout == 0 {
+		// A new subscriber can arrive before the next receipt. Use the
+		// existing probe interval so stale audience evidence can only delay
+		// changes to volatile fields briefly.
+		return max(window, UnwatchedProbe)
+	}
+	return window
+}
+
 // The sessions are read before the descriptor goes out and published after it:
 // which finished tasks the descriptor's task list carries depends on which
 // sessions a viewer will hold, and the descriptor still has to arrive first.
@@ -1071,6 +1110,8 @@ func owningSource(id string, row inventoriedRow) string {
 // the marker will name are decided before this runs (inventoryIDs), because
 // the task list is projected over that same set.
 func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading, ids []string) {
+	direct := p.DirectWatching != nil && p.DirectWatching()
+	prefix := "s/" + cloudops.ChannelSegment(p.MachineID) + "/"
 	for _, session := range reading.sessions {
 		id, _ := session["id"].(string)
 		if id == "" || id == InventorySessionID {
@@ -1099,10 +1140,11 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 			identity, steady = prior.identity, prior.steady
 		}
 		p.held[id] = heldRow{identity: identity, steady: steady, body: row}
-		if !p.changedCoalesced(id, identity, steady) {
+		channel := prefix + cloudops.ChannelSegment(id)
+		if !p.changedInWindow(id, identity, steady, p.richRowWindow(channel, direct)) {
 			continue
 		}
-		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), row, "session "+id)
+		p.send(ctx, id, channel, row, "session "+id)
 	}
 	// An id the marker carries although this pass could not read it
 	// (inventoryIDs) goes out as the row it was last published with. Without
@@ -1114,10 +1156,11 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 			continue
 		}
 		held, ok := p.held[id]
-		if !ok || !p.changedCoalesced(id, held.identity, held.steady) {
+		channel := prefix + cloudops.ChannelSegment(id)
+		if !ok || !p.changedInWindow(id, held.identity, held.steady, p.richRowWindow(channel, direct)) {
 			continue
 		}
-		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), held.body, "session "+id)
+		p.send(ctx, id, channel, held.body, "session "+id)
 	}
 	if len(ids) > InventoryLimit {
 		// The bound is the Swift bridge's and is a refusal rather than a
@@ -1246,11 +1289,14 @@ func (p *Publisher) rememberInventory(reading sessionReading, ids []string) int 
 		kept[id] = p.inventoried[id]
 	}
 	p.inventoried = kept
+	p.mu.Lock()
 	for id := range p.held {
 		if _, still := kept[id]; !still {
 			delete(p.held, id)
+			delete(p.richAudiences, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id))
 		}
 	}
+	p.mu.Unlock()
 	return retained
 }
 
@@ -1279,6 +1325,10 @@ func (p *Publisher) changed(key string, identity []byte) bool {
 // out; the next pass after that carries the newest value. Any change to steady
 // goes at once, and every send starts the window again.
 func (p *Publisher) changedCoalesced(key string, identity, steady []byte) bool {
+	return p.changedInWindow(key, identity, steady, p.volatileEvery())
+}
+
+func (p *Publisher) changedInWindow(key string, identity, steady []byte, window time.Duration) bool {
 	sum := sha256.Sum256(identity)
 	steadySum := sha256.Sum256(steady)
 	now := p.now()
@@ -1286,7 +1336,7 @@ func (p *Publisher) changedCoalesced(key string, identity, steady []byte) bool {
 	if p.published[key] == sum && now.Sub(last) < Heartbeat {
 		return false
 	}
-	if sent && p.steady[key] == steadySum && now.Sub(last) < p.volatileEvery() {
+	if sent && p.steady[key] == steadySum && now.Sub(last) < window {
 		return false
 	}
 	if p.steady == nil {
@@ -1498,6 +1548,7 @@ func (p *Publisher) forgetAudience() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.audience = map[string]bool{}
+	p.richAudiences = nil
 	p.restate = false
 	p.viewerAt, p.emptyAt = time.Time{}, time.Time{}
 }

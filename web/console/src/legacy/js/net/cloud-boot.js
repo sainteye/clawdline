@@ -751,13 +751,22 @@ export class CloudViewerSession {
      * PROTOCOL §3's "held locally, not trusted from the cloud".
      */
     async claimPairing(pending) {
-        var claimed = await json(this.fetch, this.config.apiOrigin + "/v1/pairing/claim", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-                pairing_id: pending.pairingID, claim_nonce: pending.claimNonce
-            })
-        });
+        var claimed;
+        try {
+            claimed = await json(this.fetch, this.config.apiOrigin + "/v1/pairing/claim", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    pairing_id: pending.pairingID, claim_nonce: pending.claimNonce
+                })
+            });
+        } catch (error) {
+            if (!(error instanceof TypeError)) throw error;
+            throw pairingError("pairing_claim_unavailable", "the pairing claim connection was interrupted");
+        }
+        if (claimed.status === 502 || claimed.status === 503 || claimed.status === 504) {
+            throw pairingError("pairing_claim_unavailable", "the pairing claim gateway is temporarily unavailable");
+        }
         if (claimed.status !== 200 || !claimed.body || typeof claimed.body.ciphertext !== "string") {
             // The control plane's refusals are typed and one of them is not a refusal at all:
             // `202 pairing_pending` is what `POST /v1/pairing/claim` answers for as long as the

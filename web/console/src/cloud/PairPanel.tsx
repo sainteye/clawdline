@@ -802,7 +802,6 @@ export function PairPanel(props: {
         <p className="cloud-pair-progress-said" id="cloud-pair-agent-said" role="status" aria-live="polite">
           {progressSaid(progress, machine, nextWord)}
         </p>
-        {stage === "done" && progress?.summary && <p className="cloud-pair-progress-summary">{progress.summary}</p>}
         {!ended && startedAt !== null && (
           <p className="fine cloud-pair-elapsed">{elapsedSaid((now - startedAt) / 1000, nextWord)}</p>
         )}

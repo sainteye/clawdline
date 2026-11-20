@@ -210,7 +210,7 @@ test("candidate counts read only a candidate's type and the family of its addres
   for (const secret of traceSecrets) assert.ok(!text.includes(secret), `counts carry ${secret}`)
 })
 
-test("an attempt that opens reports one summary with its pair and no address, port or SDP", async () => {
+test("an open peer reports its pair and its later close without an address, port or SDP", async () => {
   let peer!: TracedPeer
   const reports: Array<Record<string, unknown>> = []
   const link = new DirectLink((config) => (peer = new TracedPeer(config)), () => undefined, () => undefined,
@@ -227,10 +227,19 @@ test("an attempt that opens reports one summary with its pair and no address, po
   peer.ice("connected")
   await link.answer(traceAnswer)
   await new Promise((resolve) => setTimeout(resolve, 0))
+  peer.ice("disconnected")
+  peer.connectionState = "failed"; peer.onconnectionstatechange?.()
   link.close("terminal_direct_released")
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.equal(reports.length, 1)
-  const report = reports[0]
+  assert.equal(reports.length, 2)
+  const [report, close] = reports
+  assert.equal(close.attempt, report.attempt)
+  assert.equal(close.stage, "closed")
+  assert.equal(close.source, "peer_state")
+  assert.equal(close.code, "terminal_direct_ice_failed")
+  assert.equal(close.ice, "disconnected")
+  assert.equal(close.pc, "failed")
+  assert.ok(Number(close.open_ms) >= 0)
   assert.equal(report.attempt, "AAAAAAAAAAAAAAAAAAAAAA")
   assert.equal(report.kind, "terminal")
   assert.equal(report.stage, "open")
@@ -242,7 +251,7 @@ test("an attempt that opens reports one summary with its pair and no address, po
   assert.equal(report.pair, "srflx/ipv4>srflx/ipv4")
   assert.match(String(report.ice), /^checking@\d+ms,connected@\d+ms$/)
   assert.match(String(report.pc), /^connecting@\d+ms$/)
-  const text = JSON.stringify(report)
+  const text = JSON.stringify(reports)
   for (const secret of traceSecrets) assert.ok(!text.includes(secret), `the summary carries ${secret}: ${text}`)
 })
 

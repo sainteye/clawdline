@@ -1082,3 +1082,8 @@ one-time offer and fingerprint evidence from the verified Cloud machine.
 The provider terminal and the person's Cloud pairing page have distinct roles.
 The reviewed inventory includes the setup entry, both language explanations,
 and the original instructions.
+
+A pairing helper reports the target machine's acceptance and observed fingerprints.
+The originating browser owns final confirmation after opening the handover and
+checking the fingerprints. The reviewed briefing and both languages distinguish
+these two outcomes.

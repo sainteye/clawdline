@@ -9,6 +9,11 @@ const pathOf = (shape: string) => {
   return p
 }
 
+function hexRgb(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  return `${n >> 16},${n >> 8 & 255},${n & 255}`
+}
+
 function lighten(hex: string, f: number) {
   const n = parseInt(hex.slice(1), 16)
   const c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * f))
@@ -35,6 +40,15 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     else if (b.mood === "recent") lift = Math.abs(Math.sin(now / 900)) * size * .05
   }
   const sleeping = b.mood === "sleep", dim = sleeping ? .7 : b.mood === "idle" ? .9 : 1
+  // A pool of the Bot's own light on the floor, brighter while it works, so it
+  // stands in the scene rather than on top of the picture. Asleep, none.
+  if (!sleeping) {
+    const r = size * (b.mood === "work" ? .95 : .75), pool = g.createRadialGradient(x, y, 0, x, y, r)
+    const rgb = hexRgb(color), a = (b.mood === "work" ? .42 : .26) * alpha
+    pool.addColorStop(0, `rgba(${rgb},${a})`); pool.addColorStop(1, `rgba(${rgb},0)`)
+    g.save(); g.globalCompositeOperation = "lighter"; g.fillStyle = pool
+    g.beginPath(); g.ellipse(x, y, r, r * .32, 0, 0, Math.PI * 2); g.fill(); g.restore()
+  }
   g.save()
   g.globalAlpha = alpha * dim
   g.fillStyle = "rgba(0,0,0,.5)"
@@ -64,6 +78,18 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
   }
   g.stroke()
   g.restore()
+  // Working: a few pixels drift up from the keyboard and fade, a pure function of time.
+  if (b.mood === "work" && !still) {
+    const px = Math.max(2, size * .045)
+    g.save(); g.fillStyle = lighten(color, .35)
+    for (let i = 0; i < 4; i++) {
+      const phase = (now / 1100 + i / 4 + (b.seed % 7) / 7) % 1
+      const dx = (((b.seed >>> (i * 3)) % 9) / 8 - .5) * size * .7
+      g.globalAlpha = alpha * (1 - phase) * .9
+      g.fillRect(Math.round(x + dx), Math.round(y - lift - size * (.95 + phase * .55)), px, px)
+    }
+    g.restore()
+  }
   if (b.mood === "wait") {
     const s = Math.max(10, size * .3)
     g.save(); g.globalAlpha = alpha; g.fillStyle = "#e39567"; g.fillRect(x + size * .25, y - lift - size - s * .9, s, s)

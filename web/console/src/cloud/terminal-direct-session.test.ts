@@ -13,7 +13,8 @@ import type { DirectChannelLike, DirectPeerLike } from "./terminal-direct.js"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { DirectLink } from "./terminal-direct.ts"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
-import { DirectCarrier } from "./direct-carrier.ts"
+import { DirectCarrier, directCarriers, type CarrierOffer, type CarrierClient } from "./direct-carrier.ts"
+import { StatusCloudClient } from "./status-client.js"
 
 // The session and the transport together, against a machine played by the test: the real
 // verification, carrier and ack paths, with only the relay socket and the DC faked.
@@ -376,10 +377,91 @@ test("a terminal that finds the page's carrier already open borrows it instead o
   } finally { session.dispose(); m.transport.dispose() }
 })
 
-test("a terminal that negotiated the channel itself hands it to the page, and keeps it when the terminal goes", async () => {
+async function fixtureCarrierAnswer(offer: Pick<CarrierOffer, "connection" | "key">) {
+  const nonce = crypto.getRandomValues(new Uint8Array(12))
+  const key = await crypto.subtle.importKey("raw", offer.key.slice().buffer, "AES-GCM", false, ["encrypt"])
+  const data = new TextEncoder().encode("v=0 answer")
+  const aad = new TextEncoder().encode("clawdline-direct-answer-v1/" + offer.connection)
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: aad }, key, data)
+  return { sdpSealed: bytesBase64(Uint8Array.of(...nonce, ...new Uint8Array(ct))), directReceipts: true, directLocalNetwork: undefined }
+}
+
+test("a proven viewer-token renewal keeps the same direct peer and sends later reads to the replacement client", async () => {
+  const peer = new FakePeer()
+  const options = { relayURL: "https://relay.test", account: "account", deviceID: viewer }
+  const old = new StatusCloudClient({ ...options, deviceToken: "previous" })
+  Object.assign(old, { ready: true, framesHeard: 2, carrierSupported: () => true })
+  const offers: CarrierOffer[] = []
+  old.publishCarrierOffer = async (_machine, offer) => { offers.push(offer); return fixtureCarrierAnswer(offer) }
+  old.useDirectCarriers(directCarriers(old as unknown as CarrierClient, () => peer))
+  try {
+    assert.equal((await old.tryDirect(machine)).kind, "open")
+    const previous = old._carrierFor(machine)
+    const channelGeneration = previous.channelGeneration
+    old.carrierSequences.set(machine, { channel: channelGeneration, seq: 12 })
+    old.carrierRowSequences.set(`s/${machine}/earlier`, 30)
+    const next = new StatusCloudClient({ ...options, deviceToken: "current", resumeFrom: old })
+    next.renewalProbe = 1
+    next.useDirectCarriers(directCarriers(next as unknown as CarrierClient, () => { throw new Error("the renewal negotiated a second peer") }))
+    next._armViewerEvents = () => {}
+    const received: unknown[] = []
+    next.receiveCarrierEnvelope = async (...args) => { received.push(args) }
+    try {
+      next._becameReady({ v: 1, role: "viewer", account: options.account, device: viewer })
+      old.retire()
+      assert.equal(next._carrierFor(machine), previous, "the authenticated renewal tore down the working carrier")
+      assert.equal(peer.channel.readyState, "open")
+      assert.equal(offers.length, 1)
+      assert.deepEqual(next.carrierSequences.get(machine), { channel: channelGeneration, seq: 12 })
+      assert.equal(next.carrierRowSequences.get(`s/${machine}/earlier`), 30)
+      const reply = { v: 1, ch: `t/${machine}/next_session`, seq: 13, ts: 1, class: "stream",
+        key_id: "ms-1", nonce: "", ct: "", sender: machine, sig: "" }
+      peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: reply }) })
+      assert.deepEqual(received, [[machine, reply, channelGeneration]])
+    } finally { next.stop() }
+  } finally { old.stop() }
+})
+
+for (const scenario of [
+  { name: "a suspended page without continuity", resumed: true, pending: false, code: "carrier_page_resumed" },
+  { name: "a renewal with unfinished authentication", resumed: false, pending: true, code: "carrier_credentials_renewed" },
+]) {
+  test(scenario.name + " closes the old carrier and records why", async () => {
+    const peer = new FakePeer()
+    const options = { relayURL: "https://relay.test", account: "account", deviceID: viewer }
+    const old = new StatusCloudClient({ ...options, deviceToken: "previous" })
+    Object.assign(old, { ready: true, framesHeard: 2, carrierSupported: () => true, continuityUnproven: scenario.resumed })
+    old.publishCarrierOffer = async (_machine, offer) => fixtureCarrierAnswer(offer)
+    old.useDirectCarriers(directCarriers(old as unknown as CarrierClient, () => peer))
+    const closes: unknown[] = []
+    old.viewerEvents.record = (event: string, data: { code: string }) => { if (event === "cloud.direct.closed") closes.push(data.code) }
+    const next = new StatusCloudClient({ ...options, deviceToken: "current", resumeFrom: old })
+    next.renewalProbe = 1
+    next._armViewerEvents = () => {}
+    next.useDirectCarriers(directCarriers(next as unknown as CarrierClient, () => new FakePeer()))
+    try {
+      assert.equal((await old.tryDirect(machine)).kind, "open")
+      if (scenario.pending) {
+        const generation = old._carrierFor(machine).channelGeneration
+        old.carrierReceiveQueues = new Map([[JSON.stringify([machine, generation]), Promise.resolve()]])
+      }
+      next._becameReady({ v: 1, role: "viewer", account: options.account, device: viewer })
+      old.retire()
+      assert.equal(peer.channel.readyState, "closed")
+      assert.equal(next.carrierFacts(machine).open, false)
+      assert.deepEqual(closes, [scenario.code])
+    } finally { next.stop(); old.stop() }
+  })
+}
+
+test("a terminal that opens direct first uses the machine carrier that survives leaving the Session", async () => {
   const m = await machineFixture()
+  let offers = 0
   const client = { deviceID: viewer, ready: true, retired: false,
-    publishCarrierOffer: async () => { throw new Error("a page with an open carrier offered a second") },
+    publishCarrierOffer: async (_machine: string, offer: { connection: string; key: Uint8Array }) => {
+      offers++
+      return fixtureCarrierAnswer(offer)
+    },
     receiveCarrierEnvelope: (_machine: string, envelope: TerminalEnvelope) => { m.sessionEnvelopes.push(envelope) },
     carrierSupported: () => true }
   const carrier = DirectCarrier.for(client, machine, () => m.peer)
@@ -397,21 +479,23 @@ test("a terminal that negotiated the channel itself hands it to the page, and ke
     await acquiring
     await m.frame((session as unknown as { connection: string }).connection, false)
     await serve(m, () => false, () => session.snapshot.carrier === "direct")
-    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 1,
-      "a page with no carrier yet must offer one")
-    assert.equal(carrier.open, true, "the terminal's own channel did not become the page's carrier")
+    assert.equal(offers, 1, "no machine-wide offer was sent")
+    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 0,
+      "a terminal-owned peer would close when the machine retires this Session's terminal")
+    assert.equal(carrier.open, true)
     assert.equal(carrier.directReceipts, true)
 
-    // The terminal goes. The channel is the page's now, and reads keep taking it.
-    m.transport.dispose()
-    assert.equal(carrier.open, true, "disposing the terminal closed the page's carrier")
-
-    // Closing the terminal view releases the terminal's own offer. Releasing a
-    // terminal releases the terminal: the channel it handed to the carrier is
-    // what every later read travels on, and closing it would leave this page
-    // reading over the relay with the machine still holding the carrier.
     session.dispose()
-    assert.equal(carrier.open, true, "closing the terminal closed the page's carrier")
+    m.transport.dispose()
+    assert.equal(carrier.open, true, "leaving the Session closed the machine carrier")
+    assert.equal(await carrier.ensure(), true, "the next Session cannot use the open carrier")
+    assert.equal(offers, 1, "switching Sessions negotiated again")
+
+    m.peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: { v: 1,
+      ch: `t/${machine}/next_session`, seq: 1, ts: 1, class: "stream",
+      key_id: "ms-1", nonce: "", ct: "", sender: machine, sig: "" } }) })
+    await settle()
+    assert.deepEqual(m.sessionEnvelopes.map((envelope) => envelope.ch), [`t/${machine}/next_session`])
   } finally { session.dispose() }
 })
 

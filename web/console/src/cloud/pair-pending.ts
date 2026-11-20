@@ -119,7 +119,8 @@ async function claim(
       await store.remove(scope, pending.pairingID)
       return opened
     } catch (error) {
-      if (codeOf(error) !== "pairing_unfinished") {
+      const code = codeOf(error)
+      if (code !== "pairing_unfinished" && code !== "pairing_claim_unavailable") {
         await removeTerminal(store, scope, pending, error, session.now())
         throw error
       }

@@ -163,6 +163,17 @@ func TestADirectAttemptThatOpensIsTracedOnce(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	f.l.closeDirectPeerOf("viewer", "test over")
+	mu.Lock()
+	matched := false
+	for _, line := range lines {
+		if strings.Contains(line, "cloud terminal carrier=direct closed: test over attempt="+f.c.id+" kind=terminal") {
+			matched = true
+		}
+	}
+	mu.Unlock()
+	if !matched {
+		t.Fatal("closing an open peer did not log the same attempt id")
+	}
 	got := traced()
 	if len(got) != 1 {
 		t.Fatalf("traced %d lines, want 1: %q", len(got), got)

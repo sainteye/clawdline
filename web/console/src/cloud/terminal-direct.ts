@@ -142,7 +142,7 @@ export interface DirectAttemptTrace {
   /** The connection id the offer was made under; the machine keys its line by the same id. */
   attempt: string
   kind: "terminal" | "carrier"
-  /** Records the finished summary. It is called once, and nothing it throws reaches the link. */
+  /** Records the attempt and, if it opened, its eventual close. */
   report(data: Record<string, unknown>): void
 }
 
@@ -237,7 +237,8 @@ export function directAttemptRecorder(client: unknown, machine: string): ((data:
   // The failure log is delivered to one paired machine, which need not be the one this attempt was
   // made to, so the row names it.
   return (data) => {
-    log.record!("cloud.direct.attempt", { ...data, machine }, ["cloud.direct.attempt", data.kind, data.stage].join("|"))
+    const event = data.stage === "closed" ? "cloud.direct.closed" : "cloud.direct.attempt"
+    log.record!(event, { ...data, machine }, [event, data.kind, data.source ?? data.stage].join("|"))
   }
 }
 
@@ -280,6 +281,15 @@ export function browserDirectPeers(): DirectPeerFactory | null {
  * One browser ↔ machine peer and its data channel. It carries envelopes and acks, and calls
  * `onDown` once when the DC closes, fails, breaks a message rule or never opens.
  */
+type DirectCloseSource = "application" | "channel_close" | "channel_error" | "peer_state" | "receive" | "send"
+const DIRECT_RTC_STATES = new Set(["new", "checking", "connecting", "connected", "completed", "disconnected", "failed", "closed"])
+const DIRECT_CLOSE_CODES = new Set([
+  "carrier_client_retired", "carrier_client_stopped", "carrier_page_resumed", "carrier_credentials_renewed", "carrier_page_left", "carrier_replaced",
+  "carrier_closed", "carrier_unusable", "carrier_receive_full", "machine_pairing_required",
+  "terminal_direct_closed", "terminal_direct_ice_failed", "terminal_direct_chunk_timeout",
+  "terminal_direct_violation", "terminal_direct_replaced", "terminal_direct_released",
+])
+
 export class DirectLink {
   private readonly peer: DirectPeerLike
   private readonly channel: DirectChannelLike
@@ -287,7 +297,7 @@ export class DirectLink {
   private readonly onEnvelope: (envelope: TerminalEnvelope) => void
   private readonly onDown: (code: string) => void
   private nextChunk = 0
-  private opened = false
+  private openedAt: number | null = null
   private closed = false
   private opening: { resolve: () => void; reject: (error: Error) => void } | null = null
   private readonly trace: DirectAttemptTrace | null
@@ -299,6 +309,9 @@ export class DirectLink {
   private answered = false
   private timedOut = false
   private traced = false
+  private readonly pageHidden = (event: PageTransitionEvent) => {
+    if (!event.persisted) this.close("carrier_page_left")
+  }
 
   constructor(factory: DirectPeerFactory, onEnvelope: (envelope: TerminalEnvelope) => void, onDown: (code: string) => void,
     trace: DirectAttemptTrace | null = null) {
@@ -307,25 +320,26 @@ export class DirectLink {
     this.trace = trace
     this.peer = factory({ iceServers: DIRECT_STUN.map((urls) => ({ urls })) })
     this.channel = this.peer.createDataChannel(DIRECT_LABEL, { ordered: true })
-    this.reassembler = new DirectReassembler(() => this.close("terminal_direct_chunk_timeout"))
+    this.reassembler = new DirectReassembler(() => this.close("terminal_direct_chunk_timeout", "receive"))
     this.channel.onopen = () => {
       if (this.closed) return
-      this.opened = true
+      this.openedAt = Date.now()
+      globalThis.addEventListener?.("pagehide", this.pageHidden)
       this.report("open", null)
       this.opening?.resolve()
     }
-    this.channel.onclose = () => this.close("terminal_direct_closed")
-    this.channel.onerror = () => this.close("terminal_direct_closed")
+    this.channel.onclose = () => this.close("terminal_direct_closed", "channel_close")
+    this.channel.onerror = () => this.close("terminal_direct_closed", "channel_error")
     this.channel.onmessage = (event) => {
       if (this.closed) return
       let envelope: TerminalEnvelope | null
       try { envelope = this.reassembler.push(event.data) }
-      catch (error) { this.close((error as Error).message); return }
+      catch (error) { this.close((error as Error).message, "receive"); return }
       if (envelope) this.onEnvelope(envelope)
     }
     this.peer.onconnectionstatechange = () => {
       this.state("pc", this.peer.connectionState)
-      if (this.peer.connectionState === "failed" || this.peer.connectionState === "closed") this.close("terminal_direct_ice_failed")
+      if (this.peer.connectionState === "failed" || this.peer.connectionState === "closed") this.close("terminal_direct_ice_failed", "peer_state")
     }
     this.peer.oniceconnectionstatechange = () => this.state("ice", this.peer.iceConnectionState)
   }
@@ -367,7 +381,7 @@ export class DirectLink {
     }, () => undefined).finally(send)
   }
 
-  get open(): boolean { return this.opened && !this.closed && this.channel.readyState === "open" }
+  get open(): boolean { return this.openedAt !== null && !this.closed && this.channel.readyState === "open" }
 
   /** The offer SDP once ICE gathering completes, or what was gathered after DIRECT_GATHER_MS. */
   async offer(): Promise<string> {
@@ -400,7 +414,7 @@ export class DirectLink {
     if (this.trace) { this.answered = true; this.remote = directCandidateCounts(sdp) }
     try {
       await this.peer.setRemoteDescription({ type: "answer", sdp })
-      if (this.opened) return
+      if (this.openedAt !== null) return
       await open
     } catch (error) {
       this.close("terminal_direct_ice_failed")
@@ -413,20 +427,31 @@ export class DirectLink {
     const messages = directMessages(envelope, this.nextChunk)
     if (messages.length > 1) this.nextChunk++
     try { for (const message of messages) this.channel.send(message) }
-    catch { this.close("terminal_direct_closed"); throw fail("terminal_direct_closed") }
+    catch { this.close("terminal_direct_closed", "send"); throw fail("terminal_direct_closed") }
   }
 
   /** The carrier acknowledgement of a verified, decrypted and drawn DC frame. */
   ack(connection: string, frameSeq: number): void {
     if (!this.open) return
     try { this.channel.send(JSON.stringify({ t: "ack", connection, frame_seq: frameSeq })) }
-    catch { this.close("terminal_direct_closed") }
+    catch { this.close("terminal_direct_closed", "send") }
   }
 
-  close(code = "terminal_direct_closed"): void {
+  close(code = "terminal_direct_closed", source: DirectCloseSource = "application"): void {
     if (this.closed) return
     this.closed = true
-    this.report("closed", code)
+    globalThis.removeEventListener?.("pagehide", this.pageHidden)
+    if (this.trace && this.openedAt !== null) {
+      const state = (value: string | undefined) => value && DIRECT_RTC_STATES.has(value) ? value : "-"
+      try {
+        this.trace.report({
+          attempt: this.trace.attempt, kind: this.trace.kind, stage: "closed", source,
+          code: DIRECT_CLOSE_CODES.has(code) ? code : "other",
+          open_ms: Math.max(0, Date.now() - this.openedAt),
+          ice: state(this.peer.iceConnectionState), pc: state(this.peer.connectionState),
+        })
+      } catch { /* a recorder cannot fail the link it records */ }
+    } else this.report("closed", code)
     this.reassembler.reset()
     this.opening?.reject(fail(code))
     try { this.channel.close() } catch { /* already closed */ }

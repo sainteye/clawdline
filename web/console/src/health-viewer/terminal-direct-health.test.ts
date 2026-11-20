@@ -67,7 +67,7 @@ async function terminal(peers: () => FakePeer, options: { carrier?: boolean } = 
   const carrierClient = {
     deviceID: "viewer", ready: true, retired: false,
     publishCarrierOffer: async () => { throw Object.assign(new Error("unused"), { code: "carrier_failed" }) },
-    receiveCarrierEnvelope: () => {}, carrierSupported: () => true,
+    receiveCarrierEnvelope: () => {}, carrierSupported: () => false,
   }
   const carrier = options.carrier ? DirectCarrier.for(carrierClient, machine, () => new FakePeer()) : null
   const client: TerminalCloudClient = {
@@ -170,7 +170,7 @@ test("fault injection: a terminal-held channel that stops carrying is a failure;
   } finally { remove() }
 })
 
-test("a channel the page's carrier adopted is recorded once, by the carrier, when it stops carrying", async () => {
+test("a legacy terminal channel the page adopted reports its loss once", async () => {
   const { seen, remove } = observe()
   try {
     const peers: FakePeer[] = []

@@ -203,6 +203,7 @@ export function Detail({
   }, [outputIdentity, row?.id])
   const [screenOpen, setScreenOpen] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
+  const activityScope = JSON.stringify([readerMachine ?? null, row?.id ?? null, row?.execution_generation ?? null])
   const [nativeTerminalOpen,setNativeTerminalOpen] = useState(false)
   useEffect(() => {
     const open = (event: Event) => {
@@ -482,6 +483,8 @@ export function Detail({
       />
 
       <BrowserPanel
+        key={activityScope}
+        activityScope={activityScope}
         row={row}
         open={browserOpen}
         onClose={(restore) => {
@@ -512,7 +515,7 @@ export function Detail({
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} row={row} agentId={selectedAgent?.id} onAgent={chooseAgent}
+          {row ? <Transcript id={row.id} row={row} activityScope={activityScope} agentId={selectedAgent?.id} onAgent={chooseAgent}
             messageSenders={messageSenders} onOpenMessageSender={onOpenMessageSender}
             messageSenderNeedsGeneration={messageSenderNeedsGeneration} /> :
             emptyProblem ? <div className="cloud-detail-problem" role="status">

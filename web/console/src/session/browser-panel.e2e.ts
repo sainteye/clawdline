@@ -37,6 +37,8 @@ let replaced: string[] = []
 let muted = false
 let layout = "desktop"
 let frames = 0
+let activityReads = 0
+let statusReads = 0
 let heldControl: (() => void) | null = null
 let holdControl = false
 let holdType = false
@@ -99,12 +101,15 @@ function fixture(): Server {
     if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
     if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
     if (path === "/__fixture/mangle-next") { mangleNext = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { opened, navigated, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
-    if (path === "/v1/browser/activity") return json(res, 200, { ok: true, rows: [
-      { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
-      { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
-      ...["release", "release", "close", "read", "screenshot", "takeover", "handback"].map((op, i) => ({ id: "quiet-"+i, at: activityAt-i-10, op, site:"example.com", ok:true, thumb:"" })),
-    ] })
+    if (path === "/__fixture/log") return json(res, 200, { opened, navigated, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, activityReads, statusReads, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
+    if (path === "/v1/browser/activity") {
+      activityReads++
+      return json(res, 200, { ok: true, rows: [
+        { at: activityAt, op: "click", target: "Continue", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+        { at: activityAt - 5, op: "open", site: "example.com", url: "https://www.console.example.com/sign-in", ok: true, thumb: page.toString("base64") },
+        ...["release", "release", "close", "read", "screenshot", "takeover", "handback"].map((op, i) => ({ id: "quiet-"+i, at: activityAt-i-10, op, site:"example.com", ok:true, thumb:"" })),
+      ] })
+    }
     if (req.method === "POST" && path === "/v1/browser/mute") { const b = await body(req); muted = !!b.muted; return json(res, 200, { ok: true, conversation: b.conversation, muted }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { authed: true, version: "fixture", api_level: 99 })
@@ -120,6 +125,7 @@ function fixture(): Server {
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "transcript", id: SESSION, signature: "fixture" })
     if (path === "/__fixture/navigation") { navigationAvailable = url.searchParams.get("on") !== "false"; return json(res, 200, {}) }
     if (path === "/v1/browser/status") {
+      statusReads++
       // Without a tab the stand-in answers as a machine whose agents try
       // native tools first: the person may still open a tab in Chrome.
       const value = { ok: true, ...(navigationAvailable ? {person_navigate:true} : {}), mode: noTab ? "native" : channelMode, enabled: !noTab, person_open: channelMode, notify_new_site: true,
@@ -285,6 +291,20 @@ for (const [name, width, height, ui] of [["desktop",1280,800,"zh-Hant"],["phone"
       await run(`document.getElementById('session-more').click()`)
       await run(`document.getElementById('session-browser').click()`)
       await until(`document.querySelector('.browser-shot')?.getBoundingClientRect().width>0`)
+      if (name === "desktop" && ui === "zh-Hant") {
+        const counts = async () => {
+          const { activityReads, statusReads, frames } = await (await fetch(origin + "/__fixture/log")).json()
+          return { activityReads, statusReads, frames }
+        }
+        // The fixture controls visibility without opening a second tab.
+        await run(`Object.defineProperty(document, "hidden", { configurable: true, value: true }); document.dispatchEvent(new Event("visibilitychange"))`)
+        const hidden = await counts()
+        await new Promise(resolve => setTimeout(resolve, 3300))
+        assert.deepEqual(await counts(), hidden, "activity, status and frames stop while hidden")
+        await run(`delete document.hidden; document.dispatchEvent(new Event("visibilitychange"))`)
+        await until(`fetch('/__fixture/log').then(r=>r.json()).then(log=>log.activityReads>${hidden.activityReads} && log.frames>${hidden.frames} && log.statusReads>${hidden.statusReads})`)
+        assert.equal((await counts()).activityReads, hidden.activityReads + 1, "both surfaces resume using one activity read")
+      }
       assert.equal(await run(`document.querySelector('.browser-host').textContent`), "www.console.example.com")
       assert.ok(await run(`document.querySelector('.browser-composer-input').getBoundingClientRect().height>=44`),"a visible native draft stays in the footer")
       assert.equal(await run(`document.getElementById('browser-tools').hidden`),true)
