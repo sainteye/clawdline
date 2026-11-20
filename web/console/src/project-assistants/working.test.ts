@@ -2,7 +2,7 @@ import type * as W from "@clawdline/contract"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { activityOf, elapsed, rowActivity, rosterActivity, chatMood } from "./working.ts"
+import { activityOf, elapsed, rowActivity, rosterActivity, botRosterActivity, chatMood } from "./working.ts"
 // @ts-expect-error Node executes source extensions.
 import {words} from "./words.ts"
 const trace = (category: string, text: string) => ({ turn_id: "t", category, text, complete: false })
@@ -22,6 +22,26 @@ test("roster state is independent of unread and cached source activity",()=>{
   for(const source of [{...base.source,fresh:false},{...base.source,state:"offline"},{...base.source,access:"hidden"},{...base.source,readable:false}]) {
     assert.deepEqual(rosterActivity({...base,source} as never,w),{state:"idle",caption:"Last reply",live:false})
   }
+})
+
+test("background work replaces the Bot row preview while the chat is idle", () => {
+  const w = words("zh-Hant")
+  const row = {
+    status:"idle", activity:"", latest_message:"Last reply",
+    active_work:5, pending_permissions:0,
+    source:{fresh:true,state:"online",readable:true,access:"interactive"},
+  } as W.ProjectAssistantBotSummary
+  const queued = {...row,background_work:{working:0,waiting:1,needs_input:0}}
+  assert.deepEqual(botRosterActivity(queued,w),{state:"working",caption:"1 等待中",live:true,queuedOnly:true})
+  const working = {...row,background_work:{working:2,waiting:1,needs_input:0}}
+  assert.deepEqual(botRosterActivity(working,w),{state:"working",caption:"2 進行中 · 1 等待中",live:true,queuedOnly:false})
+  assert.equal(botRosterActivity({...working,status:"working",activity:"Thinking"},w).caption,"Thinking")
+  const waiting = {...working,status:"working",activity:"Thinking",background_work:{...working.background_work,needs_input:1}}
+  assert.deepEqual(botRosterActivity(waiting,w),{state:"needsInput",caption:"需要你",live:true,queuedOnly:false})
+  assert.equal(botRosterActivity({...waiting,status:"needsInput",activity:"Needs approval: Run tests"},w).caption,"需要允許：Run tests")
+  assert.equal(botRosterActivity({...working,source:{...row.source,fresh:false}},w).caption,"Last reply")
+  assert.equal(botRosterActivity(row,w).caption,"Last reply", "a legacy total can include unrelated Board work")
+  assert.equal(chatMood(row.source,undefined,0),"idle")
 })
 
 test("older daemons keep a localized state fallback and unknown effects stay explicit",()=>{

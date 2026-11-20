@@ -1218,6 +1218,16 @@
         "message_seq"
       ]
     },
+    "ProjectAssistantBackgroundWork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["working", "waiting", "needs_input"],
+      "properties": {
+        "working": { "type": "integer", "minimum": 0 },
+        "waiting": { "type": "integer", "minimum": 0 },
+        "needs_input": { "type": "integer", "minimum": 0 }
+      }
+    },
     "ProjectAssistantBotSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -1248,6 +1258,10 @@
         "pending_permissions": {
           "type": "integer"
         },
+        "background_work": {
+          "$ref": "#/$defs/ProjectAssistantBackgroundWork",
+          "description": "Unfinished background work for the roster, separate from the Bot's own chat activity. Absent when there is none or the source is older."
+        },
         "active_work": {
           "type": "integer",
           "minimum": 0,
@@ -1267,7 +1281,7 @@
             "needsInput",
             "error"
           ],
-          "description": "Roster activity; unread count and source connection are independent. Optional for older daemons."
+          "description": "The Bot’s own chat activity, independent of background work, unread count and source connection. Optional for older daemons."
         },
         "failure": {
           "$ref": "#/$defs/ProjectAssistantFailure"

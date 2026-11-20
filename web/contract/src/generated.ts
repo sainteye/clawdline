@@ -5265,6 +5265,12 @@ export interface ProjectAssistantBackgroundTaskSummary {
   worker?: ProjectAssistantBotKey
 }
 
+export interface ProjectAssistantBackgroundWork {
+  needs_input: number
+  waiting: number
+  working: number
+}
+
 export interface ProjectAssistantBot {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
@@ -5326,6 +5332,12 @@ export interface ProjectAssistantBotSummary {
   active_work?: number
   activity: string
   activity_at: string
+
+  /**
+   * Unfinished background work for the roster, separate from the Bot's own chat
+   * activity. Absent when there is none or the source is older.
+   */
+  background_work?: ProjectAssistantBackgroundWork
   bot: ProjectAssistantBot
 
   /**
@@ -5340,8 +5352,8 @@ export interface ProjectAssistantBotSummary {
   source: ProjectAssistantSourceStatus
 
   /**
-   * Roster activity; unread count and source connection are independent. Optional
-   * for older daemons.
+   * The Bot’s own chat activity, independent of background work, unread count and
+   * source connection. Optional for older daemons.
    */
   status?: string
   unread_count: number

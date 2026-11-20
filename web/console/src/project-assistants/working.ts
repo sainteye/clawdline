@@ -66,3 +66,21 @@ export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<str
   else if (shown === "error") caption = item.failure ? botFailureText(item.failure.code,w) : w.failed
   return {state:shown,caption,live}
 }
+
+export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<string, string>) {
+  const chat = rosterActivity(item, w)
+  const work = item.background_work
+  if (chat.live && work && chat.state !== "needsInput") {
+    if (work.needs_input > 0) {
+      return {state:"needsInput", caption:w.rosterBackgroundNeedsYou, live:true, queuedOnly:false}
+    }
+    if (chat.state !== "working" && (work.working > 0 || work.waiting > 0)) {
+      const counts = [
+        work.working > 0 ? w.rosterBackgroundWorking.replace("{count}", String(work.working)) : "",
+        work.waiting > 0 ? w.rosterBackgroundWaiting.replace("{count}", String(work.waiting)) : "",
+      ].filter(Boolean)
+      return {state:"working", caption:counts.join(" · "), live:true, queuedOnly:work.working === 0}
+    }
+  }
+  return {...chat, queuedOnly:false}
+}

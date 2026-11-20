@@ -4493,6 +4493,12 @@ type ProjectAssistantBackgroundTaskSummary struct {
 	Worker          *ProjectAssistantBotKey `json:"worker,omitempty"`
 }
 
+type ProjectAssistantBackgroundWork struct {
+	NeedsInput int64 `json:"needs_input"`
+	Waiting    int64 `json:"waiting"`
+	Working    int64 `json:"working"`
+}
+
 type ProjectAssistantBot struct {
 	Agent          ProjectAssistantAgent               `json:"agent"`
 	Appearance     ProjectAssistantAppearance          `json:"appearance"`
@@ -4543,10 +4549,14 @@ type ProjectAssistantBotSummary struct {
 	// Unfinished work this Bot handed elsewhere: Board work links still accepted,
 	// waiting for the person or executing, plus background tasks still waiting or
 	// active. Absent on older sources and when there is none.
-	ActiveWork int64               `json:"active_work,omitempty"`
-	Activity   string              `json:"activity"`
-	ActivityAt string              `json:"activity_at"`
-	Bot        ProjectAssistantBot `json:"bot"`
+	ActiveWork int64  `json:"active_work,omitempty"`
+	Activity   string `json:"activity"`
+	ActivityAt string `json:"activity_at"`
+
+	// Unfinished background work for the roster, separate from the Bot's own chat
+	// activity. Absent when there is none or the source is older.
+	BackgroundWork *ProjectAssistantBackgroundWork `json:"background_work,omitempty"`
+	Bot            ProjectAssistantBot             `json:"bot"`
 
 	// The latest committed successful main-chat task. Empty or absent on older
 	// sources.
@@ -4557,8 +4567,8 @@ type ProjectAssistantBotSummary struct {
 	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
 	Source             ProjectAssistantSourceStatus `json:"source"`
 
-	// Roster activity; unread count and source connection are independent. Optional
-	// for older daemons.
+	// The Bot’s own chat activity, independent of background work, unread count and
+	// source connection. Optional for older daemons.
 	Status      string `json:"status,omitempty"`
 	UnreadCount int64  `json:"unread_count"`
 	Version     int64  `json:"version"`

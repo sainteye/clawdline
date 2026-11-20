@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13781,
-  "riskKeys": 5895,
-  "nonRiskCount": 7886,
+  "englishContentKeys": 13784,
+  "riskKeys": 5896,
+  "nonRiskCount": 7888,
   "groups": [
     {
       "name": "acp / other",
@@ -6139,7 +6139,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 496,
+      "count": 498,
       "sources": [
         null
       ],
@@ -6426,6 +6426,8 @@
         "projectAssistants.roomOutcomeLate",
         "projectAssistants.roomOutcomePublished",
         "projectAssistants.roomTarget",
+        "projectAssistants.rosterBackgroundNeedsYou",
+        "projectAssistants.rosterBackgroundWorking",
         "projectAssistants.rosterCopiedID",
         "projectAssistants.rosterCopyID",
         "projectAssistants.rosterCreate",

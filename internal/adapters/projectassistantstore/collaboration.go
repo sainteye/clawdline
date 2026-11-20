@@ -514,6 +514,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: message.ID, At: at, Fence: message.Fence, Kind: pa.MessageCreated, Message: message})
 		}
 		m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: x.ID + "-complete-trace", At: at, Fence: t.Fence, Kind: pa.TraceUpdated, Trace: &pa.Trace{TurnID: t.ID, Category: "bot_request", Text: x.Reply, Complete: true}})
+		wasWaiting := a.backgroundNeedsInput()
 		if err = exchangeApply(ctx, tx, &a, m); err != nil {
 			return x, err
 		}
@@ -529,7 +530,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			if err = exchangeApply(ctx, tx, &owner, exchangeMutation(owner, x.ID+"-finish-target", at, nil, []pa.Message{msg})); err != nil {
 				return x, err
 			}
-			if err = projectBackgroundTurn(ctx, tx, a, m); err != nil {
+			if err = projectBackgroundTurn(ctx, tx, a, m, wasWaiting); err != nil {
 				return x, err
 			}
 		}

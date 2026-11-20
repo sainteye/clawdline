@@ -54,6 +54,10 @@ function summary(value: unknown, change: W.ProjectAssistantBotKey, request: W.Pr
   if (v.source.state === "revoked") throw failure("pa_revoked")
   if (!v.source.fresh || v.source.state !== "online") throw failure("pa_offline")
   if (!v.source.readable || v.source.access === "hidden") throw failure("pa_scope_denied")
+  const work = v.background_work
+  if (work !== undefined && (!object(work) || !integer(work.working) || !integer(work.waiting) || !integer(work.needs_input))) {
+    throw failure("pa_invalid")
+  }
   if (v.failure !== undefined) validateFailure(v.failure)
 }
 

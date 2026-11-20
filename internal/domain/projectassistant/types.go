@@ -483,11 +483,17 @@ func NotifiableCompletion(bot Bot, turn Turn) bool {
 	return (bot.Notify != "off") && !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && !IsLeadCallTurn(turn) && turn.Room == nil && turn.JoinedTurnID == ""
 }
 
+type BackgroundWork struct {
+	Working    int64 `json:"working"`
+	Waiting    int64 `json:"waiting"`
+	NeedsInput int64 `json:"needs_input"`
+}
+
 type BotSummary struct {
 	CompletedTurnID string `json:"completed_turn_id,omitempty"`
 	Bot             Bot    `json:"bot"`
-	// Status is the current roster presentation; unread and source connection
-	// are independent. Activity carries a live tool title or a localized key.
+	// Status describes the Bot’s own chat. Activity carries a live tool title
+	// or a localized key. BackgroundWork describes independent workers.
 	Status             string     `json:"status,omitempty"`
 	Failure            *Failure   `json:"failure,omitempty"`
 	LatestMessage      string     `json:"latest_message"`
@@ -499,9 +505,10 @@ type BotSummary struct {
 	// ActiveWork counts work this Bot handed elsewhere that has not finished:
 	// Board work links still accepted, waiting for the person or executing,
 	// plus background tasks still waiting or active. Absent means none.
-	ActiveWork int64        `json:"active_work,omitempty"`
-	Version    int64        `json:"version"`
-	Source     SourceStatus `json:"source"`
+	ActiveWork     int64           `json:"active_work,omitempty"`
+	BackgroundWork *BackgroundWork `json:"background_work,omitempty"`
+	Version        int64           `json:"version"`
+	Source         SourceStatus    `json:"source"`
 }
 type ListBots struct {
 	MachineID string `json:"machine_id"`

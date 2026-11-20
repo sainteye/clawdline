@@ -289,6 +289,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 			return pa.Receipt{}, failure(pa.StaleVersion, "bot")
 		}
 	}
+	wasWaiting := a.backgroundNeedsInput()
 	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
@@ -354,7 +355,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
 		return pa.Receipt{}, err
 	}
-	if err = projectBackgroundTurn(ctx, tx, a, m); err != nil {
+	if err = projectBackgroundTurn(ctx, tx, a, m, wasWaiting); err != nil {
 		return pa.Receipt{}, err
 	}
 	if err = writeReceipt(ctx, tx, result); err != nil {
@@ -836,6 +837,11 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 	if err := pa.CheckPage(q.PageSize, false); err != nil {
 		return out, err
 	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
 	cursor := listCursor{Machine: q.MachineID, Query: q.Query}
 	if q.Cursor != "" {
 		raw, e := base64.RawURLEncoding.DecodeString(q.Cursor)
@@ -846,14 +852,14 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 			return out, failure(pa.CursorExpired, "list_cursor")
 		}
 		var n int
-		if e = s.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_bots WHERE machine=? AND bot=?`, cursor.LastMachine, cursor.LastBot).Scan(&n); e != nil {
+		if e = tx.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_bots WHERE machine=? AND bot=?`, cursor.LastMachine, cursor.LastBot).Scan(&n); e != nil {
 			return out, e
 		}
 		if n != 1 {
 			return out, failure(pa.CursorExpired, "list_cursor")
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT machine,bot,data FROM project_assistant_bots WHERE (?='' OR machine=?) AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL AND (machine>? OR (machine=? AND bot>?)) ORDER BY machine,bot`, q.MachineID, q.MachineID, cursor.LastMachine, cursor.LastMachine, cursor.LastBot)
+	rows, err := tx.QueryContext(ctx, `SELECT machine,bot,data FROM project_assistant_bots WHERE (?='' OR machine=?) AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL AND (machine>? OR (machine=? AND bot>?)) ORDER BY machine,bot`, q.MachineID, q.MachineID, cursor.LastMachine, cursor.LastMachine, cursor.LastBot)
 	if err != nil {
 		return out, err
 	}
@@ -885,14 +891,14 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 		return out, err
 	}
 	rows.Close()
-	background, err := activeBackground(ctx, s.db, q.MachineID)
+	background, err := activeBackground(ctx, tx, q.MachineID)
 	if err != nil {
 		return out, err
 	}
 	for i := range out.Items {
-		out.Items[i].ActiveWork += background[out.Items[i].Bot.Key]
+		addRosterBackground(&out.Items[i], background[out.Items[i].Bot.Key])
 	}
-	return out, nil
+	return out, tx.Commit()
 }
 func summary(a aggregate, reader string) pa.BotSummary {
 	r := pa.ReadCursor{Key: a.Bot.Key, ConversationID: a.Conversation.ID, ReaderID: reader}

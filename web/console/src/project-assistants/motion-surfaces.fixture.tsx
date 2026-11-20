@@ -13,12 +13,14 @@ import "./styles.css"
 const source=fixtureSource("motion"),baseList=source.list.bind(source),baseView=source.view!.bind(source)
 const failureField=new URL(location.href).searchParams.get("failure")??""
 let phase:"idle"|"working"|"needsInput"|"error"=failureField?"error":"working",revision=1
+let background:"waiting"|"active"|"waiting_permission"|undefined
 const listeners=new Set<(frame:W.ProjectAssistantRosterFrame)=>void>()
 const disconnects=new Set<()=>void>()
 const query={machine_id:source.machineID,cursor:"",query:"",page_size:100}
 source.list=async(r,s)=>{
   const page=await baseList(r,s)
-  return {...page,items:page.items.map((item,i)=>({...item,status:i===0?phase:i===1&&phase!=="idle"?"working":"idle",activity:i===0&&phase==="working"?"Read notes.md":"",pending_permissions:i===0&&phase==="needsInput"?1:0}))}
+  return {...page,items:page.items.map((item,i)=>({...item,status:i===0?phase:i===1&&phase!=="idle"?"working":"idle",activity:i===0&&phase==="working"?"Read notes.md":"",pending_permissions:i===0&&phase==="needsInput"?1:0,
+    background_work:i===0&&background?{working:Number(background==="active"),waiting:Number(background==="waiting"),needs_input:Number(background==="waiting_permission")}:undefined}))}
 }
 source.view=async(r,s)=>{
   const page=await baseView(r,s)
@@ -27,6 +29,12 @@ source.view=async(r,s)=>{
   page.head.conversation.active_turn_id=terminal?"":"motion-turn"
   page.head.unknown_turn_count=phase==="error"?1:0
   page.head.pending_permission_count=phase==="needsInput"?1:0
+  if(background){
+    page.head.background_tasks=[{
+      id:"fixture-background", title:"Check the notes", origin_message_id:"motion-message", state:background,
+      ...(background==="waiting"?{}:{started_at:new Date().toISOString(),worker:{...r.key,bot_id:"thread-fixture-background"}}),
+    }]
+  }
   if(page.snapshot){
     const turn:W.ProjectAssistantReadTurnSummary={id:"motion-turn",message_id:"motion-message",fence:page.head.current_fence,state:phase==="error"?"unknown":phase==="idle"?"succeeded":phase==="needsInput"?"waiting_permission":"running",started_at:"2026-11-16T00:00:00Z",failure_code:phase==="error"?"execution_effect_unknown":"",failure_field:failureField}
     page.snapshot.pending_turns=terminal?[]:[turn]
@@ -48,12 +56,14 @@ source.subscribeRoster=async(r,receive,signal)=>{
   })
 }
 const sources=[source],registry={accountKey:"motion",readerID:"motion",viewState:createViewState(),subscribe:()=>()=>{},getSnapshot:()=>sources}
+async function publish(){
+  revision++
+  const page=await source.list(query,new AbortController().signal)
+  for(const receive of listeners)receive({type:"changes",source_epoch:"motion",cursor:String(revision),changes:page.items.map(summary=>({key:summary.bot.key,revision,removed:false,summary}))})
+}
 const fixture={
-  async phase(next:typeof phase){
-    phase=next;revision++
-    const page=await source.list(query,new AbortController().signal)
-    for(const receive of listeners)receive({type:"changes",source_epoch:"motion",cursor:String(revision),changes:page.items.map(summary=>({key:summary.bot.key,revision,removed:false,summary}))})
-  },
+  phase(next:typeof phase){phase=next;return publish()},
+  background(next:typeof background){background=next;return publish()},
   offline(){source.setState("offline");for(const disconnect of [...disconnects])disconnect()},
   subscribers:()=>listeners.size,
   writes:()=>source.log.filter(row=>["send","stop","answer","create"].includes(row.method)).length,

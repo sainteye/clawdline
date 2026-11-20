@@ -253,13 +253,27 @@ func newBackgroundWorker(parent aggregate, task pa.BackgroundTask, now time.Time
 	}
 }
 
+func (a aggregate) backgroundNeedsInput() bool {
+	return a.BackgroundOwner != nil && a.Turns[a.Conversation.ActiveTurnID].State == pa.TurnWaitingPermission
+}
+
 // projectBackgroundTurn keeps queue admission and final publication in the
 // worker's transaction. A terminal turn with queued input leaves work active.
-func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation) error {
-	if a.BackgroundOwner == nil || m.Turn == nil {
+func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation, wasWaiting bool) error {
+	if a.BackgroundOwner == nil {
 		return nil
 	}
 	owner := *a.BackgroundOwner
+	attentionChanged := wasWaiting != a.backgroundNeedsInput()
+	notifyAttention := func() error {
+		if attentionChanged {
+			return noteBackgroundOwner(ctx, tx, owner)
+		}
+		return nil
+	}
+	if m.Turn == nil {
+		return notifyAttention()
+	}
 	id := a.Conversation.ID
 	match := []any{owner.MachineID, owner.BotID, id, a.Bot.Key.BotID}
 	switch m.Turn.State {
@@ -270,18 +284,22 @@ func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.M
 		if err != nil {
 			return err
 		}
-		if n, err := result.RowsAffected(); err != nil || n == 0 {
+		n, err := result.RowsAffected()
+		if err != nil {
 			return err
+		}
+		if n == 0 {
+			return notifyAttention()
 		}
 		return noteBackgroundOwner(ctx, tx, owner)
 	case pa.TurnSucceeded, pa.TurnFailed, pa.TurnCancelled, pa.TurnUnknown:
 	default:
-		return nil
+		return notifyAttention()
 	}
 	for _, turn := range a.Turns {
 		switch turn.State {
 		case pa.TurnQueued, pa.TurnAccepted, pa.TurnRunning, pa.TurnWaitingPermission:
-			return nil
+			return notifyAttention()
 		}
 	}
 	state := m.Turn.State
@@ -402,7 +420,7 @@ func backgroundTaskSummaries(ctx context.Context, tx *sql.Tx, key pa.BotKey) ([]
 		t.task, t.worker, t.state, t.started_at, t.ended_at,
 		json_extract(CAST(t.data AS TEXT),'$.title'),
 		json_extract(CAST(t.data AS TEXT),'$.origin_message_id'),
-		json_extract(CAST(b.data AS TEXT),'$.Turns.'||json_quote(json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id'))||'.state'),
+		`+backgroundWorkerTurnStateSQL+`,
 		CASE WHEN json_extract(CAST(b.data AS TEXT),'$.RosterTrace.trace.turn_id')=json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id')
 		  AND json_extract(CAST(b.data AS TEXT),'$.RosterTrace.trace.complete')=0
 		  THEN json_extract(CAST(b.data AS TEXT),'$.RosterTrace.trace') END
