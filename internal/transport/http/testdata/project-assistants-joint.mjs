@@ -197,7 +197,7 @@ await assert.rejects(missing.source.view(request("main"),signal()),error=>errorC
 assert.equal(trace.length,beforeMissing,"unadvertised View must refuse before transport")
 checks.push("JRV-07")
 
-const createSource=sourceFor("create","owner",{apiLevel:96}).source
+const createSource=sourceFor("create","owner",{apiLevel:101}).source
 await createSource.status(signal())
 const target={machine_id:boot.fixtures.create.key.machine_id,project_id:boot.fixtures.create.project.project_id}
 for(const [index,agent,choice] of [
@@ -205,30 +205,42 @@ for(const [index,agent,choice] of [
  [2,"codex","mode:read-only"],
  [3,"claude","mode:acceptEdits"],
  [4,"codex","mode:auto"],
+ [5,"grok","mode:auto"],
 ]){
  const key={machine_id:target.machine_id,bot_id:"created-through-cloud-"+index}
  const approval=withApproval(choice)
  const input={command:command(key,"create","joint-create-"+index),settings:{
-  target,name:"Synthetic Bot "+index,appearance:{shape:"blob",color:"#e39567"},agent,
+  target:agent==="grok"?{...target,project_id:""}:target,name:"Synthetic Bot "+index,appearance:{shape:"blob",color:"#e39567"},agent,
   instructions:"Synthetic standing instructions.",role_snapshot_ref:"",...approval
  }}
  const created=await createSource.create(input,signal()).catch(error=>{
   const reply=trace.at(-1)
-  throw Error(choice+" create failed at the bridge: "+JSON.stringify({status:reply.status,body:reply.body}),{cause:error})
+  throw Error(agent+" "+choice+" create failed at the bridge: "+JSON.stringify({status:reply.status,body:reply.body}),{cause:error})
  })
  assert.equal(trace.at(-1).status,200,JSON.stringify(trace.at(-1).body))
  assert.deepEqual(created.bot.key,key)
  assert.equal(created.bot.permission_policy,approval.permission_policy)
  assert.equal(created.bot.mode??"",approval.mode??"")
- if(index===1){
+ assert.equal(created.bot.agent,agent)
+ if(index===1||agent==="grok"){
   const replay=await createSource.create(input,signal())
   assert.equal(replay.bot.conversation_id,created.bot.conversation_id)
   assert.deepEqual(replay.receipt,created.receipt)
  }
  const latest=await createSource.get(key,signal())
  assert.equal(latest.bot.conversation_id,created.bot.conversation_id)
+ assert.equal(latest.bot.agent,agent)
  assert.equal(latest.bot.permission_policy,approval.permission_policy)
  assert.equal(latest.bot.mode??"",approval.mode??"")
+ if(agent==="grok"){
+  const settings={expected_version:latest.bot.version,name:"Renamed Grok Bot",appearance:latest.bot.appearance,
+   instructions:latest.bot.instructions.text,agent,...approval}
+  const edited=await createSource.edit({command:command(key,"edit","joint-edit-grok"),settings},signal())
+  assert.equal(edited.bot.name,settings.name)
+  const team=await createSource.edit({command:command(key,"edit","joint-team-grok"),settings:{...settings,expected_version:edited.bot.version,manage_team:true}},signal())
+  assert.equal(team.bot.agent,"grok")
+  assert.equal(team.bot.manage_team,true)
+ }
 }
 checks.push("Cloud create approval settings")
 
@@ -272,7 +284,7 @@ for(const row of rows){
 assert.equal(captured.length,16)
 assert.equal(new Set(captured.map(row=>row.word)).size,16)
 const allMethods=new Set([...captured.map(row=>row.word),...trace.map(row=>row.word)])
-assert.equal(allMethods.size,18)
+assert.equal(allMethods.size,19)
 assert.equal(trace.filter(row=>row.word==="project-assistants.export").length,0,"View scenarios must not use archive fallback")
 assert.deepEqual(new Set(trace.filter(row=>row.word==="project-assistants.view"&&row.status===200).map(row=>row.fields.mode)),new Set(["snapshot","history","events","permissions","traces","detail"]))
 checks.push("JRV-08")
