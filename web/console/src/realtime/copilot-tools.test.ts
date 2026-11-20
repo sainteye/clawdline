@@ -2136,16 +2136,44 @@ test('the user analysis question stays separate from the Session pending questio
 })
 
 
-test('focused explanations use the shared analyzer while summaries keep their existing fast path',async()=>{
+test('plain explanations read originals and only explicit analysis starts the shared analyzer',async()=>{
  const m=fakeMachine({}, {transcripts:{'%2':{entries:[{role:'user',text:'Compare options'},{role:'assistant',text:'A is faster.'}]}}})
  const asked:unknown[]=[]
  const deps:ToolDeps={...m.deps,analyzeQuestion:async(row,question,replies)=>{asked.push({id:row.id,question,replies});return {analysis:{answer:'A is faster; the cost is unknown.',evidence:[{ref:2,quote:'A is faster'}],unknowns:['cost'],needs_older:false}}}}
- const answer=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',question:'Why A?',replies:3}),deps)).output)
+ const direct=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',question:'What did it say?',replies:1}),deps)).output)
+ assert.equal(direct.reply,'A is faster.')
+ assert.deepEqual(asked,[])
+ m.calls.length=0
+ const answer=JSON.parse((await runCopilotTool('explain_session_reply',JSON.stringify({session_id:'%2',question:'Why A?',replies:3,analyze:true}),deps)).output)
  assert.equal(answer.analysis.answer,'A is faster; the cost is unknown.')
  assert.deepEqual(asked,[{id:'%2',question:'Why A?',replies:3}])
  assert.equal(m.calls.filter(c=>c.path.startsWith('/v1/transcript')).length,0,'the analyzer owns detailed reads')
  await runCopilotTool('get_session_summary',JSON.stringify({session_id:'%2'}),deps)
  assert.equal(asked.length,1,'ordinary summaries never start focused analysis')
+
+ const selected = { id: '%2', label: 'Prepare screenshots' }
+ for (const analyze of [false, true]) {
+   const before: number = asked.length
+   await runCopilotTool('explain_session_reply', JSON.stringify({session_id:'%2',analyze:!analyze}), {
+     ...deps, selectedReadTarget:{...selected,analyze},
+   })
+   assert.equal(asked.length-before, Number(analyze), 'the menu choice controls analysis on its selected target')
+ }
+})
+
+test('a returned source fallback completes the question and records the analysis fallback', async () => {
+  const m = fakeMachine({})
+  const outcomes: string[] = []
+  const sources = [{role:'review', text:'Two stop controls.'}]
+  const out = JSON.parse((await runCopilotTool('explain_session_reply', '{"session_id":"%2","analyze":true}', {
+    ...m.deps,
+    observe: spec => ({id:spec.name,end: result => outcomes.push(`${spec.name}:${result.outcome}`)}),
+    analyzeQuestion: async () => ({analysis_error:'copilot_question_unusable',source_fallback:sources}),
+  })).output)
+  assert.deepEqual(out.source_fallback,sources)
+  assert.ok(outcomes.includes('analyze_session_question:fallback'))
+  assert.ok(outcomes.includes('explain_session_reply:done'))
+  assert.equal(m.calls.filter(c=>c.path.startsWith('/v1/transcript')).length,0)
 })
 
 test('a rejected analysis answers from the same Session’s saved replies on an older machine', async () => {
@@ -2158,7 +2186,7 @@ test('a rejected analysis answers from the same Session’s saved replies on an 
     analyses++
     return { error: 'copilot_question_unusable', analysis_unavailable: true }
   } }
-  const out = JSON.parse((await runCopilotTool('explain_session_reply', '{"session_id":"%2","question":"What did the reviewer find?"}', deps)).output)
+  const out = JSON.parse((await runCopilotTool('explain_session_reply', '{"session_id":"%2","question":"What did the reviewer find?","analyze":true}', deps)).output)
   assert.equal(out.analysis_error, 'copilot_question_unusable')
   assert.equal(out.error, undefined)
   assert.equal(out.reply, 'The reviewer found two stop controls.')

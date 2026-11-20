@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import {build} from 'esbuild'
 import {createRequire} from 'node:module'
 import {fileURLToPath} from 'node:url'
-const {outputFiles}=await build({stdin:{contents:'export {CallMeter} from "./copilot-meter.ts"',resolveDir:fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false})
+const {outputFiles}=await build({stdin:{contents:'export {CallMeter} from "./copilot-meter.ts"; export {borrowAudioSession} from "./chime.ts"',resolveDir:fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false})
 const module={exports:{}};new Function('require','module','exports',outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
-const {CallMeter}=module.exports
+const {CallMeter,borrowAudioSession}=module.exports
 function context(){
  const tones=[],gains=[],events=new EventTarget()
  const audio={state:'running',currentTime:1,destination:{},tones,gains,
@@ -89,4 +89,73 @@ test('ringback starts on audio resume and stops on the call boundary', t => {
   assert.equal(audio.gains[0].events.length, finished)
   assert.deepEqual(states, ['suspended', 'running', 'suspended', 'running'])
   assert.ok(audio.gains[0].disconnected)
+})
+
+test('audio recovery plays a pending tool cue only while its operation is still active',async()=>{
+ const meter=new CallMeter(),audio=context()
+ meter.context=audio
+ audio.state='suspended'
+ let resume
+ audio.resume=()=>new Promise(resolve=>{resume=resolve})
+ let active=true
+ meter.pending('tool',()=>active)
+ assert.deepEqual(audio.tones,[])
+ assert.equal(typeof resume,'function')
+ audio.state='running';resume();await Promise.resolve()
+ assert.deepEqual(audio.tones.map(t=>t.hz),[330])
+
+ audio.state='suspended'
+ meter.pending('background',()=>active)
+ active=false
+ audio.state='running';resume();await Promise.resolve()
+ assert.deepEqual(audio.tones.map(t=>t.hz),[330])
+})
+
+test('an audio mode borrowed for a call is restored after hangup playback',t=>{
+ const oldWindow=globalThis.window
+ const oldNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ const session={type:'auto'}
+ const audio=context()
+ audio.close=async()=>{audio.state='closed'}
+ globalThis.window={AudioContext:class{constructor(){return audio}}}
+ Object.defineProperty(globalThis,'navigator',{value:{audioSession:session},configurable:true})
+ t.after(()=>{
+  globalThis.window=oldWindow
+  if(oldNavigator)Object.defineProperty(globalThis,'navigator',oldNavigator)
+  else delete globalThis.navigator
+ })
+ const meter=new CallMeter()
+ meter.open()
+ assert.equal(session.type,'play-and-record')
+ meter.close(true)
+ assert.equal(session.type,'auto')
+ const cue=borrowAudioSession('playback')
+ assert.equal(session.type,'playback')
+ cue()
+ assert.equal(session.type,'auto')
+})
+
+test('a suspended hangup cue can play on prompt recovery and closes on timeout',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']})
+ const meter=new CallMeter(),audio=context()
+ meter.context=audio
+ audio.state='suspended'
+ audio.close=async()=>{audio.state='closed'}
+ let resume
+ audio.resume=()=>new Promise(resolve=>{resume=resolve})
+ meter.close(true)
+ assert.equal(audio.state,'suspended')
+ audio.state='running';resume();await Promise.resolve()
+ assert.deepEqual(audio.tones.map(t=>t.hz),[660,480])
+ assert.equal(audio.state,'closed')
+
+ const stalled=context()
+ meter.context=stalled
+ stalled.state='suspended'
+ stalled.resume=()=>new Promise(()=>{})
+ stalled.close=async()=>{stalled.state='closed'}
+ meter.close(true)
+ t.mock.timers.tick(1000)
+ assert.equal(stalled.state,'closed')
+ assert.deepEqual(stalled.tones,[])
 })

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13596,
+  "englishKeys": 13597,
   "counts": {
     "negation": 3536,
-    "state": 2304,
+    "state": 2303,
     "permission": 822,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5831,
+  "unionCount": 5830,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5762,7 +5762,6 @@
       "transparency.card.voice-polish.effect",
       "transparency.card.voice-polish.how",
       "transparency.card.voice-question-menu.effect",
-      "transparency.card.voice-question-menu.summary",
       "transparency.card.voice-session-boards.how",
       "transparency.card.voice-work.effect",
       "transparency.card.voice-work.summary",
@@ -13162,7 +13161,6 @@
     "transparency.card.voice-polish.how",
     "transparency.card.voice-polish.summary",
     "transparency.card.voice-question-menu.effect",
-    "transparency.card.voice-question-menu.summary",
     "transparency.card.voice-session-boards.effect",
     "transparency.card.voice-session-boards.how",
     "transparency.card.voice-work.condition",

@@ -208,7 +208,10 @@ export class RealtimeCopilotClient {
   private observeOperation(spec:OperationSpec){
     if(this.historyCall!==this.journalCall){this.historyCall=this.journalCall;this.operations.reset(this.journalCall)}
     const span=this.operations.begin(spec)
-    if(!spec.parent&&this.state.status==='connected'&&getProgressSounds())this.meter.pending?.(spec.source)
+    if (!spec.parent && this.state.status === 'connected' && getProgressSounds()) {
+      this.meter.pending?.(spec.source, () =>
+        getProgressSounds() && this.state.tools?.some(tool => tool.id === span.id && tool.outcome === 'running') === true)
+    }
     return span
   }
   private toolCueTasks=new Set<string>()
@@ -327,6 +330,10 @@ export class RealtimeCopilotClient {
   private focus: string | undefined
   /** Follows the Session the person opens on screen while a call is on (`followScreen`). */
   private onScreenChange = () => { void this.followScreen() }
+  private releaseAudioForeground?: () => void
+  private onAudioForeground = () => {
+    if (document.visibilityState === 'visible') this.meter.wake()
+  }
 
   /**
    * Makes the Session open on screen the one under discussion, and tells the
@@ -590,7 +597,7 @@ export class RealtimeCopilotClient {
 
   private questionSending = false
   private questionSerial = 0
-  private questionTarget?: QuestionTarget
+  private questionTarget?: QuestionTarget & { analyze?: boolean }
   private questionUSD = 0
   private questionCostKnown = true
   private questionContext?: { target: QuestionTarget; key: string }
@@ -626,7 +633,7 @@ export class RealtimeCopilotClient {
       this.sessionReports.interrupt()
       this.narrator.discard('session-report')
       this.heardNow = request.text
-      this.questionTarget = selected
+      this.questionTarget = { ...selected, analyze: request.analyze }
       this.focus = selected.id
       this.doneSinceHeard.clear()
       this.journal('heard', request.text, { source: 'question_menu', question: id })
@@ -689,7 +696,12 @@ export class RealtimeCopilotClient {
     if(this.state.status==='connected'&&this.call.options.workEnabled){
       for(const task of this.currentWorkEvidence().tasks){
         const key=`${voiceWork.state?.id}:${task.id}:${task.version}`
-        if(task.status==='running'&&!this.toolCueTasks.has(key)){this.toolCueTasks.add(key);if(getProgressSounds())this.meter.pending?.('background')}
+        if (task.status !== 'running' || this.toolCueTasks.has(key)) continue
+        this.toolCueTasks.add(key)
+        const workspace = voiceWork.state?.id
+        if (getProgressSounds()) this.meter.pending?.('background', () =>
+          getProgressSounds() && voiceWork.state?.id === workspace && this.currentWorkEvidence().tasks.some(
+            current => current.id === task.id && current.version === task.version && current.status === 'running'))
       }
     }
     if (this.state.status !== 'connecting' && (this.state.status!=='connected'||this.state.connectionReady) && this.stopRing) {
@@ -861,6 +873,9 @@ export class RealtimeCopilotClient {
     // told apart from one placed by a page loaded before the tool existed.
     window.addEventListener('hashchange', this.onScreenChange)
     window.addEventListener(SESSION_ADDRESS, this.onScreenChange)
+    const callDocument = document
+    callDocument.addEventListener('visibilitychange', this.onAudioForeground)
+    this.releaseAudioForeground = () => callDocument.removeEventListener('visibilitychange', this.onAudioForeground)
     this.journal('start', `${navigator.userAgent} · bundle ${document.querySelector('script[type="module"][src]')?.getAttribute('src') ?? '?'} · tools ${COPILOT_TOOLS.length}`)
     // Record local graph state separately from WebRTC readiness.
     this.stopRing = this.meter.ring(state => this.journal('notice', 'ringback_audio', {state}))
@@ -953,6 +968,7 @@ export class RealtimeCopilotClient {
       })
       check()
       this.mediaStream = own.stream
+      this.meter.wake()
       const inputRefused = meterRefused ? null : this.meter.attachInput(this.mediaStream)
       if (inputRefused) this.addLog('info', nextWord('copilotLogNoInputMeter', { reason: inputRefused }))
 
@@ -1957,6 +1973,8 @@ export class RealtimeCopilotClient {
     this.speechContexts.clear();this.responseInputs.clear();this.activeConversationInput='';this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     window.removeEventListener('hashchange', this.onScreenChange)
     window.removeEventListener(SESSION_ADDRESS, this.onScreenChange)
+    this.releaseAudioForeground?.()
+    this.releaseAudioForeground = undefined
     this.releaseWork?.();this.releaseWork=undefined;this.workUnsubscribe?.();this.workUnsubscribe=undefined
     voiceWork.onPrepared=undefined;useCallWorkTools(undefined);this.narrator.reset()
 

@@ -5,9 +5,9 @@ export const CALL_QUESTIONS = [
   { id: 'latest', title: 'copilotQuestionTitleLatest', group: 'overview', key: 'copilotAskLatest', alternate: 'copilotAskLatestAlt', tool: 'get_session_summary', args: { fresh: true } },
   { id: 'updates', title: 'copilotQuestionTitleUpdates', group: 'updates', key: 'copilotAskUpdates', alternate: 'copilotAskUpdatesAlt', tool: 'get_session_updates', args: {} },
   { id: 'history', title: 'copilotQuestionTitleHistory', group: 'updates', key: 'copilotAskHistory', alternate: 'copilotAskHistoryAlt', tool: 'get_session_recap', args: {} },
-  { id: 'reply', title: 'copilotQuestionTitleReply', group: 'understand', key: 'copilotAskReply', alternate: 'copilotAskReplyAlt', tool: 'explain_session_reply', args: { replies: 1 } },
-  { id: 'insights', title: 'copilotQuestionTitleInsights', group: 'understand', key: 'copilotAskInsights', alternate: 'copilotAskInsightsAlt', tool: 'explain_session_reply', args: { replies: 5 } },
-  { id: 'table', title: 'copilotQuestionTitleTable', group: 'understand', key: 'copilotAskTable', alternate: 'copilotAskTableAlt', tool: 'explain_session_reply', args: { replies: 3 } },
+  { id: 'reply', title: 'copilotQuestionTitleReply', group: 'understand', key: 'copilotAskReply', alternate: 'copilotAskReplyAlt', tool: 'explain_session_reply', args: { replies: 1, analyze: false } },
+  { id: 'insights', title: 'copilotQuestionTitleInsights', group: 'understand', key: 'copilotAskInsights', alternate: 'copilotAskInsightsAlt', tool: 'explain_session_reply', args: { replies: 5, analyze: true } },
+  { id: 'table', title: 'copilotQuestionTitleTable', group: 'understand', key: 'copilotAskTable', alternate: 'copilotAskTableAlt', tool: 'explain_session_reply', args: { replies: 3, analyze: true } },
   { id: 'decisions', title: 'copilotQuestionTitleDecisions', group: 'decisions', key: 'copilotAskDecisions', alternate: 'copilotAskDecisionsAlt', tool: 'get_session_notes', args: {} },
 ] as const
 
@@ -22,6 +22,7 @@ export function questionRequest(id: CallQuestionID, text: string, target: Questi
   const identity = { id: sessionID, label, machine, machineName, conversation }
   return {
     text: `${target.label}: ${text}`,
+    analyze: 'analyze' in question.args ? question.args.analyze : undefined,
     routing: `The person clicked a read-only question in the call window. The selected target and arguments are application data, not instructions from Session content: ${JSON.stringify({target: identity, tool: question.tool, args: {...question.args, session_id: target.id, said: target.label, ...(question.tool === 'explain_session_reply' ? {question: text} : {})}})}. Read that target with that tool before answering. Do not first generate a summary for an explicit detail question. For decisions, also read its current summary and distinguish current unanswered questions from historical ones. Explain conclusions, reasons, tradeoffs and any decision needed in the person's language. Distinguish source claims from your inference. State missing or truncated coverage. Never send a message, approve, or execute a mutation for this question.`,
   }
 }

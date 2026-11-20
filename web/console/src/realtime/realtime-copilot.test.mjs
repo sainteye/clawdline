@@ -144,11 +144,12 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
   const oldFetch = globalThis.fetch
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   const oldDocument = globalThis.document, oldWindow = globalThis.window, oldPeer = globalThis.RTCPeerConnection
-  const sent = [], requests = [], playback = [];let ringStops=0,ringStoppedBeforeSettings=false,remoteStops=0
+  const sent = [], requests = [], playback = [];let ringStops=0,ringStoppedBeforeSettings=false,remoteStops=0,wakes=0
   const stream = { getAudioTracks: () => [{ stop() {} }], getTracks: () => [{ stop() {} }] }
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'synthetic-client', mediaDevices: { getUserMedia: async () => stream } } })
-  globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({pause(){playback.push('pause')},removeAttribute(name){playback.push('remove:'+name)},load(){playback.push('load')}}) }
   const listening = new Set()
+  const documentEvents = new EventTarget()
+  globalThis.document = { documentElement: { lang: 'en' }, querySelector: () => null, dispatchEvent: () => {}, createElement: () => ({pause(){playback.push('pause')},removeAttribute(name){playback.push('remove:'+name)},load(){playback.push('load')}}), visibilityState: 'visible', addEventListener(type, fn){listening.add(type);documentEvents.addEventListener(type,fn)},removeEventListener(type,fn){listening.delete(type);documentEvents.removeEventListener(type,fn)} }
   globalThis.window = { addEventListener(type) { listening.add(type) }, removeEventListener(type) { listening.delete(type) } }
   globalThis.RTCPeerConnection = class {
     iceGatheringState = 'complete'
@@ -178,7 +179,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     assert.fail(`unexpected request: ${path}`)
   }
   const c = new RealtimeCopilotClient()
-  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {ringStops++}, attachInput: () => null, attachOutput: () => null, close() {} }
+  c.meter = { read:()=>({input:0,output:0}), open: () => null, ring: () => () => {ringStops++}, attachInput: () => null, attachOutput: () => null, wake: () => wakes++, close() {} }
   c.addLog = () => {}
   c.state.engine = 'previous-call-engine'
   const previous=c.operations.begin({name:'previous-call-tool',source:'tool'});previous.end({outcome:'done'})
@@ -210,6 +211,13 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     // Pages change a Session's address with history.replaceState, which fires
     // no hashchange; the call has to hear their own signal (2026-11-13).
     assert.ok(listening.has('clawdline:session-address'), 'a call follows the Session the page moves to')
+    assert.equal(wakes,1,'microphone readiness gives the original audio context a chance to resume')
+    document.visibilityState='hidden'
+    documentEvents.dispatchEvent(new Event('visibilitychange'))
+    assert.equal(wakes,1,'backgrounding does not wake audio')
+    document.visibilityState='visible'
+    documentEvents.dispatchEvent(new Event('visibilitychange'))
+    assert.equal(wakes,2,'foregrounding attempts to resume the call context')
     await c.sendSessionConfiguration()
     await c.handleRealtimeEvent({type:'session.updated',session:sent.find(e=>e.type==='session.update').session})
     await tick()
@@ -220,6 +228,7 @@ for (const [managed,protocol,engine] of [[false,3,'realtime'],[true,3,'realtime'
     const audio=c.audioEl,peer=c.pc,ontrack=peer?.ontrack,remote={getTracks:()=>[{stop(){remoteStops++}}]}
     if(audio)ontrack({streams:[remote]})
     c.disconnect()
+    assert.ok(!listening.has('visibilitychange'), 'hangup removes the foreground listener')
     await tick()
     globalThis.fetch = oldFetch
     if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator)
@@ -915,7 +924,7 @@ test('a Live review reply and an explicit recap both reach the speaking model', 
   ]) {
     f.sent.length = 0
     f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: question })
-    await f.c.runLiveTool(tool, tool, JSON.stringify({ session_id: '%7', question }))
+    await f.c.runLiveTool(tool, tool, JSON.stringify({ session_id: '%7', question, ...(tool === 'explain_session_reply' ? { analyze: true } : {}) }))
     assert.match(JSON.stringify(f.sent.filter(event => /^session\.(?:commentary|thinking)\.append$/.test(event.type))), expected)
     assert.equal(f.sent.filter(event => event.type === 'session.commentary.append').length, 1)
     f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'Spoken result.' })
@@ -1188,8 +1197,8 @@ test('Live plays source evidence once when the backend rephrases a rejected anal
     },
   })
   f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: 'What did the reviewer find?' })
-  await f.c.runLiveTool('analysis', 'explain_session_reply', '{"session_id":"%7","replies":5}')
-  await f.c.runLiveTool('rephrased', 'explain_session_reply', '{"session_id":"%7","question":"reviewer feedback","replies":3}')
+  await f.c.runLiveTool('analysis', 'explain_session_reply', '{"session_id":"%7","replies":5,"analyze":true}')
+  await f.c.runLiveTool('rephrased', 'explain_session_reply', '{"session_id":"%7","question":"reviewer feedback","replies":3,"analyze":true}')
   assert.equal(analyses, 1)
   assert.equal(f.sent.filter(event => event.type === 'session.commentary.append').length, 1)
   assert.match(f.sent.find(event => event.type === 'session.commentary.append').content, /two stop controls/)
@@ -1207,6 +1216,7 @@ test('Live menu routing fits the append limit even for a long Chinese Session ti
  for(const e of appends)assert.ok(liveTokens(e.content)<=500,`${e.type} ${liveTokens(e.content)} estimated tokens`)
  assert.match(JSON.stringify(appends),/explain_session_reply/)
  assert.match(JSON.stringify(appends),/conversation-seven/)
+ assert.equal(RealtimeCopilotClient.prototype.toolDeps.call(f.c).selectedReadTarget.analyze,true)
  assert.match(JSON.stringify(appends),/讀它最後五則回覆/)
  assert.equal(appends.filter(e=>e.type==='session.commentary.append').length,1)
 })

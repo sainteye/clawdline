@@ -94,14 +94,17 @@ spoken/audio acceptance or measured startup latency.
 
 ### Question-focused analysis
 
-Both voice engines use the same demand-only question endpoint (API level 77). The selected
-Session's machine reads recent originals and the related user questions, then the existing small
-text model answers the actual question with exact quoted source references and explicit unknowns.
+Both voice engines read the original replies by default. They request focused analysis
+(`explain_session_reply`, `analyze: true`) to synthesize multiple replies, check a table, or look
+up original reviewer feedback. The Ways to ask menu selects this mode for insights and tables.
+For focused analysis, the Session's machine uses the shared question endpoint (API level 77).
+It gives the existing small text model the question, recent originals, and the related user
+questions. The model returns an answer, exact quoted source references, and explicit unknowns.
 When you ask what a reviewer found, the read also looks for recorded reviews dispatched by that
 Session, so the findings can be distinguished from fixes described in later replies.
 The voice model receives the focused answer and source metadata. If the analysis fails, the
-machine can return bounded source excerpts for the voice model to answer from. The full read
-window stays on the machine. No question-analysis request runs for an opening or normal summary.
+machine can return bounded source excerpts for the voice model to answer from. The tool history
+shows that the answer used the source fallback. The full analysis window stays on the machine. No question-analysis request runs for an opening or normal summary.
 Existing five-minute latest-summary and background recap policies are unchanged.
 
 Follow-ups can reuse the selected context for up to five minutes. The machine first checks the

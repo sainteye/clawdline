@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13596,
-  "riskKeys": 5831,
-  "nonRiskCount": 7765,
+  "englishContentKeys": 13597,
+  "riskKeys": 5830,
+  "nonRiskCount": 7767,
   "groups": [
     {
       "name": "acp / other",
@@ -4216,7 +4216,7 @@
     },
     {
       "name": "next / other",
-      "count": 1312,
+      "count": 1313,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4545,6 +4545,7 @@
         "next.copilotHistoryPast",
         "next.copilotHistoryProgress",
         "next.copilotHistoryQuestion",
+        "next.copilotHistorySourceFallback",
         "next.copilotHistorySummary",
         "next.copilotHistoryTimingHint",
         "next.copilotHistoryTitle",
@@ -7840,7 +7841,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 212,
+      "count": 213,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8016,6 +8017,7 @@
         "transparency.card.voice-polish.title",
         "transparency.card.voice-question-menu.condition",
         "transparency.card.voice-question-menu.how",
+        "transparency.card.voice-question-menu.summary",
         "transparency.card.voice-question-menu.title",
         "transparency.card.voice-session-boards.condition",
         "transparency.card.voice-session-boards.summary",
