@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13753,
+  "englishKeys": 13756,
   "counts": {
     "negation": 3561,
-    "state": 2339,
-    "permission": 830,
+    "state": 2338,
+    "permission": 831,
     "deletion": 318,
     "uncertainty": 554
   },
-  "unionCount": 5891,
+  "unionCount": 5892,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5148,7 +5148,6 @@
       "next.cloudPairFromBrowserSuccess",
       "next.cloudPairFromMachineSuccess",
       "next.cloudPairFromMachineWhenPwa",
-      "next.cloudPairHelperBackground",
       "next.cloudPairHelperKeepOpen",
       "next.cloudPairLinkExpired",
       "next.cloudPairLinkWaiting",
@@ -6294,7 +6293,8 @@
       "next.cloudPairAgentStarting",
       "next.cloudPairAgentWindow",
       "next.cloudPairAsking",
-      "next.cloudPairBackgroundProgress",
+      "next.cloudPairBackgroundAttention",
+      "next.cloudPairBackgroundWorking",
       "next.cloudPairCliCopy",
       "next.cloudPairCloudHand",
       "next.cloudPairCloudHandWhen",
@@ -11424,7 +11424,8 @@
     "next.cloudPairAgentWindow",
     "next.cloudPairAsking",
     "next.cloudPairAutoManual",
-    "next.cloudPairBackgroundProgress",
+    "next.cloudPairBackgroundAttention",
+    "next.cloudPairBackgroundWorking",
     "next.cloudPairCliCopy",
     "next.cloudPairCloudHand",
     "next.cloudPairCloudHandWhen",

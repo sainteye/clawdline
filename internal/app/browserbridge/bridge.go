@@ -51,6 +51,8 @@ const (
 // Refusal is a typed reason a command was not carried out.
 type Refusal string
 
+const tabClosedMessage = "the tab was closed"
+
 const (
 	WrongMode         Refusal = "browser_wrong_mode"
 	Closing           Refusal = "browser_tab_closing"
@@ -636,10 +638,11 @@ func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.Raw
 		return nil, QueueFull
 	}
 	controlEpoch, permissionEpoch := b.controlEpoch[tab], b.permissionEpoch
+	ownerAtStart := b.owner[tab]
 	c := Command{ID: newID(), Op: op, Tab: tab, Args: args, Person: true, conversation: ""}
 	ch := make(chan Result, 1)
 	b.waiting[c.ID] = ch
-	b.inflight[c.ID] = b.owner[tab]
+	b.inflight[c.ID] = ownerAtStart
 	b.queue = append(b.queue, c)
 	b.signal()
 	b.mu.Unlock()
@@ -669,12 +672,20 @@ func (b *Bridge) personDo(ctx context.Context, op string, tab int, args json.Raw
 	} else if !scope.allows(b.owner[tab]) {
 		// The tab was forgotten or reassigned while the picture was on its way.
 		res = Result{Error: string(OtherSessionsTab)}
+	} else if !res.OK && res.Tab == tab && res.Error == tabClosedMessage &&
+		ownerAtStart != "" && b.owner[tab] == ownerAtStart && b.closing[tab] == "" {
+		b.forgetLocked(tab)
+		res.Error = string(NoTab)
+		if b.saveTabs() != nil {
+			res.Error = string(StateWriteFailed)
+		}
 	}
 	b.mu.Unlock()
 	if res.OK {
 		return res.Value, nil
 	}
-	if Refusal(res.Error) == TimedOut || Refusal(res.Error) == NotTakenOver || Refusal(res.Error) == Disabled || Refusal(res.Error) == WrongMode || Refusal(res.Error) == OtherSessionsTab {
+	switch Refusal(res.Error) {
+	case TimedOut, NotTakenOver, Disabled, WrongMode, OtherSessionsTab, NoTab, StateWriteFailed:
 		return nil, Refusal(res.Error)
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
@@ -986,7 +997,7 @@ func (b *Bridge) run(ctx context.Context, conversation, op string, args json.Raw
 		}
 	}
 	b.mu.Unlock()
-	if !res.OK && tab != 0 && res.Error == "the tab was closed" {
+	if !res.OK && tab != 0 && res.Error == tabClosedMessage {
 		b.Forget(tab)
 	}
 	// The daemon also protects results from an older or stale worker.
@@ -1098,7 +1109,7 @@ func (b *Bridge) deliver(r Result) error {
 		// reservation. The caller's timeout never passes through deliver.
 		owner, current, person, epoch := b.owner[tab], b.current[b.owner[tab]], b.person[tab], b.controlEpoch[tab]
 		delete(b.closing, tab)
-		if r.OK || (r.Tab == tab && r.Error == "the tab was closed") {
+		if r.OK || (r.Tab == tab && r.Error == tabClosedMessage) {
 			b.forgetLocked(tab)
 			for other, conversation := range b.owner {
 				if conversation == owner && other > b.current[owner] {

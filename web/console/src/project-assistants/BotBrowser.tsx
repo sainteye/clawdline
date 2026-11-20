@@ -17,6 +17,7 @@ export function BotBrowserChip({source,current,bot,hidden,paused,onOpen}:{source
   const [owned,setOwned]=useState<{source:SourceClient;conversation:string;tab:number}|null>(null)
   const chip=useRef<HTMLSpanElement>(null)
   const suspended=useRef(paused);suspended.current=paused
+  const refresh=useRef<()=>void>(()=>{})
   useEffect(()=>{
     setOwned(null)
     if(hidden||!botBrowserSupported(source))return
@@ -30,11 +31,13 @@ export function BotBrowserChip({source,current,bot,hidden,paused,onOpen}:{source
       }catch{if(!controller.signal.aborted)setOwned(null)}
       finally{inFlight=false}
     }
+    refresh.current=read
     void read()
     const timer=window.setInterval(()=>void read(),15_000)
     document.addEventListener("visibilitychange",read)
-    return()=>{controller.abort();window.clearInterval(timer);document.removeEventListener("visibilitychange",read)}
+    return()=>{controller.abort();refresh.current=()=>{};window.clearInterval(timer);document.removeEventListener("visibilitychange",read)}
   },[source,current,bot.key.machine_id,bot.key.bot_id,bot.conversation_id,hidden])
+  useEffect(()=>{if(!paused)refresh.current()},[paused])
   if(hidden||owned?.source!==source||owned?.conversation!==bot.conversation_id||!botBrowserSupported(source))return null
   return <span ref={chip}><Suspense fallback={null}><BrowserChip onOpen={()=>{
     const opener=chip.current?.querySelector("button")

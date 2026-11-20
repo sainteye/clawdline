@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	nethttp "net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -260,6 +262,7 @@ func TestBotChatBrowserPanelE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	shot := scriptedJPEG(t)
+	var closedTab atomic.Bool
 	ctx, stop := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
@@ -273,7 +276,11 @@ func TestBotChatBrowserPanelE2E(t *testing.T) {
 					result.Tab = nextTab
 				}
 				if c.Op == "screenshot" {
-					result.Value, _ = json.Marshal(map[string]any{"data": shot, "url": "https://synthetic.example/form", "title": "Synthetic browser page", "width": 320, "height": 240, "layout": "desktop"})
+					if c.Tab == 42 && closedTab.Load() {
+						result = browserbridge.Result{ID: c.ID, Tab: c.Tab, Error: "the tab was closed"}
+					} else {
+						result.Value, _ = json.Marshal(map[string]any{"data": shot, "url": "https://synthetic.example/form", "title": "Synthetic browser page", "width": 320, "height": 240, "layout": "desktop"})
+					}
 				}
 				if err := bridge.Deliver([]browserbridge.Result{result}); err != nil {
 					t.Errorf("host deliver: %v", err)
@@ -290,7 +297,13 @@ func TestBotChatBrowserPanelE2E(t *testing.T) {
 	if _, err := f.s.projectAssistantBrowser().Command(t.Context(), owner, app.BrowserCommand{Op: "open", Args: json.RawMessage(`{"url":"https://synthetic.example/form"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(f.h)
+	mux := nethttp.NewServeMux()
+	mux.Handle("/", f.h)
+	mux.HandleFunc("POST /__fixture/close-browser-tab", func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		closedTab.Store(true)
+		w.WriteHeader(nethttp.StatusNoContent)
+	})
+	server := httptest.NewServer(mux)
 	defer server.Close()
 	root, err := filepath.Abs("../../..")
 	if err != nil {

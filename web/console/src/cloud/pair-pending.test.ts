@@ -94,6 +94,14 @@ test("a stopped card leaves enough state for the next page to claim", async () =
       assert.equal(ms, 2_000)
       next.advance(ms)
     },
+    onOffer(saved) {
+      assert.equal(saved.pairingID, pending.pairingID)
+    },
+    onOpened(saved, handover) {
+      assert.equal(saved.pairingID, pending.pairingID)
+      assert.deepEqual(handover, opened)
+      assert.equal(memory.kept(), pending, "the handover can be recorded before the claim is removed")
+    },
   })
   assert.deepEqual(answer, opened)
   assert.equal(memory.kept(), null)

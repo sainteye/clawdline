@@ -60,3 +60,15 @@ test("the desktop call fallback follows sidebar order and skips hidden or read-o
   assert.equal(firstCallableBot([recent,hidden,unavailable],state)?.bot.name,"recent")
   assert.equal(firstCallableBot([hidden,unavailable],state),undefined)
 })
+test("each machine's lead stays above pinned Bots and every Project, whatever its activity",()=>{
+  const lead={...bot("Lead","2026-11-01T00:00:00Z"),bot:{...bot("Lead").bot,lead:true}} as W.ProjectAssistantBotSummary
+  const other={...bot("Other","2026-11-01T00:00:00Z"),bot:{...bot("Other").bot,key:key("Other","n"),lead:true}} as W.ProjectAssistantBotSummary
+  const rows=conversations([bot("Fresh","2026-11-19T00:00:00Z"),lead,bot("Pinned"),other],[])
+  const state=pinRosterBot(emptyRosterState(),rows.find(r=>r.kind==="bot"&&r.item.bot.name==="Pinned")!.key,true)
+  const groups=conversationSections(rows,state)
+  assert.deepEqual(groups.map(g=>[g.kind,g.items.map(r=>r.kind==="bot"?r.item.bot.name:"")]),[["lead",["Lead","Other"]],["pinned",["Pinned"]],["project",["Fresh"]]])
+  // Pinning the lead too does not move it out of its own section.
+  const both=pinRosterBot(state,groups[0].items[0].key,true)
+  assert.equal(conversationSections(rows,both)[0].kind,"lead")
+  assert.deepEqual(conversationSections(rows,both)[0].items.map(r=>r.kind==="bot"?r.item.bot.name:""),["Lead","Other"])
+})

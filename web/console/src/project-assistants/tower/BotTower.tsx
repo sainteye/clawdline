@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
-import { assignFloors, portalHelpers, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
+import { assignFloors, floorOfBot, leadPlace, portalHelpers, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
 import { ramenScene, sectionScene, towerFloors, type TowerScene } from "./tower-scene"
 import { drawBot } from "./tower-draw"
 import { TowerAllowCard, type TowerAllow } from "./TowerAllowCard"
@@ -83,6 +83,9 @@ function useReducedMotion() {
 
 /** Feet position of a Bot at time `now`, in background-image pixels. */
 function place(scene: TowerScene, b: TowerBot, index: number, now: number, still: boolean): { at: readonly [number, number], moving: boolean } {
+  // The lead patrols before the screen; waiting, failing or without motion it
+  // stands at the middle of its beat so its tag and ring can be read.
+  if (b.lead) return leadPlace(scene.lead, b, index, now, still)
   if (b.mood === "idle") return strollPoint(scene.zones.lounge, b.seed, now, still)
   return { at: slotPoint(scene.zones[b.zone], index), moving: false }
 }
@@ -141,8 +144,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const placed = useMemo(() => placedFloors(docs.values()), [docs])
   const floorOf = useMemo(() => assignFloors(items, towerFloors.length, placed), [items, placed])
   const floors = towerFloors.map((f, i) => {
-    const here = allBots.filter(b => floorOf.get(projectOf(b.item)) === i)
-    const names = [...new Set(here.map(b => projectName(b.item) || w.unnamedProject))]
+    const here = allBots.filter(b => floorOfBot(b, floorOf) === i)
+    // The floor's plate names the Projects placed there, not a visiting lead's.
+    const names = [...new Set(here.filter(b => !b.lead || floorOf.get(projectOf(b.item)) === i).map(b => projectName(b.item) || w.unnamedProject))]
     return { ...f, index: i, bots: here, names, wait: here.filter(b => b.mood === "wait").length }
   })
   // The chosen floor, or else the first floor someone waits on, or else the first lived-in floor.
@@ -176,8 +180,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const slots = useMemo(() => {
     const seen = new Map<string, number>(), index = new Map<string, number>()
     for (const b of bots) {
-      if (!section && b.mood === "idle") continue
-      const group = section ? `${floorOf.get(projectOf(b.item))}:${sectionGroup(b)}` : b.zone
+      if (!section && b.mood === "idle" && !b.lead) continue
+      const group = section ? `${floorOfBot(b, floorOf)}:${sectionGroup(b)}` : b.lead ? "lead" : b.zone
       const n = seen.get(group) ?? 0
       index.set(b.key, n); seen.set(group, n + 1)
     }
@@ -185,7 +189,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   }, [bots, section, floorOf])
   const locate = (b: TowerBot, t: number, still: boolean): { at: readonly [number, number], moving: boolean } => {
     if (!section) return place(scene as TowerScene, b, slots.get(b.key) ?? 0, t, still)
-    const f = sectionScene.floors[floorOf.get(projectOf(b.item)) ?? 0]
+    const f = sectionScene.floors[floorOfBot(b, floorOf)]
     return { at: slotPoint(f[sectionGroup(b)], slots.get(b.key) ?? 0), moving: false }
   }
   const running = !paused && visible && pageShown && !reduced
@@ -287,7 +291,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
         return { b, at, moving: true }
       }).sort((a, z) => a.at[1] - z.at[1])
       for (const { b, at, moving } of placed) {
-        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
+        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread, lead: b.lead }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
         const button = buttons.current.get(b.key)
         if (button) {
           button.style.left = `${(at[0] - size / 2) / scene.width * 100}%`
@@ -359,7 +363,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     onKeyDown={e => { if (e.key === "Escape") setWaitOpen(false) }}>
     <header><b>{w.towerWaitList}</b><button type="button" aria-label={w.towerWaitListClose} onClick={() => setWaitOpen(false)}>×</button></header>
     <ol>{waiting.map(b => {
-      const at = floorOf.get(projectOf(b.item)) ?? 0, project = projectName(b.item) || w.unnamedProject, when = ago(b.item.activity_at, now, language)
+      const at = floorOfBot(b, floorOf), project = projectName(b.item) || w.unnamedProject, when = ago(b.item.activity_at, now, language)
       const elsewhere = building && at !== floor
       return <li key={b.key} data-bot-key={b.key}>
         <p><strong>{b.item.bot.name}</strong><span>{building ? `${floors[at].label} · ${project}` : project}</span></p>
@@ -431,7 +435,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     const line = (busy ? b.caption : b.item.latest_message).split("\n").find(l => l.trim()) ?? ""
     return <div ref={cardRef} className="pa-tower-card" data-mood={b.mood} role="dialog" aria-label={b.item.bot.name}
       onKeyDown={e => { if (e.key === "Escape") setPicked(null) }}>
-      <header><strong>{b.item.bot.name}</strong><button type="button" aria-label={w.towerCardClose} onClick={() => setPicked(null)}>×</button></header>
+      <header><strong>{b.item.bot.name}{b.lead && <small className="pa-tower-card-lead">★ {w.rosterLead}</small>}</strong><button type="button" aria-label={w.towerCardClose} onClick={() => setPicked(null)}>×</button></header>
       <p className="pa-tower-card-state"><i aria-hidden="true"/>{w[moodWord[b.mood]]}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
       <p className="pa-tower-card-project">{projectName(b.item) || w.unnamedProject}</p>
       {line && <p className="pa-tower-card-line">{line}</p>}

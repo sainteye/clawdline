@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13753,
-  "riskKeys": 5891,
-  "nonRiskCount": 7862,
+  "englishContentKeys": 13756,
+  "riskKeys": 5892,
+  "nonRiskCount": 7864,
   "groups": [
     {
       "name": "acp / other",
@@ -3885,7 +3885,7 @@
     },
     {
       "name": "next / cloud",
-      "count": 256,
+      "count": 258,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4022,6 +4022,8 @@
         "next.cloudPairAgentTrustAsk",
         "next.cloudPairAgentWorking",
         "next.cloudPairAutoChecking",
+        "next.cloudPairBackgroundChecking",
+        "next.cloudPairBackgroundConfirm",
         "next.cloudPairCodeCopy",
         "next.cloudPairCompareFine",
         "next.cloudPairCompareTitle",

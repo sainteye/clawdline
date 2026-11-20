@@ -28,6 +28,8 @@ export interface TowerBot {
   seed: number
   /** Unfinished work handed elsewhere (work links and background tasks); 0 on older sources. */
   work: number
+  /** The machine's lead Bot: it keeps its own spot on the top floor. */
+  lead: boolean
 }
 
 export const zoneOf: Record<TowerMood, TowerZone> = {
@@ -62,7 +64,7 @@ export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Re
 export function towerBots(items: readonly W.ProjectAssistantBotSummary[], now: number, w: Record<string, string>): TowerBot[] {
   return items.map(item => {
     const key = botIdentity(item.bot.key) as string, m = towerMood(item, now, w)
-    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key), work: activeWork(item) }
+    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key), work: activeWork(item), lead: item.bot.lead === true }
   }).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
 
@@ -143,6 +145,27 @@ export function assignFloors(items: readonly W.ProjectAssistantBotSummary[], flo
   const fixed = (p: string) => { const f = placed.get(p); return f !== undefined && Number.isInteger(f) && f >= 0 && f < floors ? f : undefined }
   const free = projects.filter(p => fixed(p) === undefined)
   return new Map(projects.map(p => [p, fixed(p) ?? free.indexOf(p) % floors]))
+}
+
+/** The floor a Bot stands on: a lead Bot is always on the top floor, whatever
+ * floor its Project has. */
+export function floorOfBot(b: TowerBot, floorOf: ReadonlyMap<string, number>): number {
+  return b.lead ? 0 : floorOf.get(projectOf(b.item)) ?? 0
+}
+
+/** Where the n-th lead Bot on a floor stands: its scene's spot, then side by
+ * side for a second machine's lead. Presentation spacing, not a bound. */
+export function leadPoint(spot: Point, n: number): Point {
+  const step = Math.ceil(n / 2) * 84 * (n % 2 ? -1 : 1)
+  return [spot[0] + step, spot[1]]
+}
+
+/** Where a lead Bot is now: patrolling its beat before the screen, or, when it
+ * waits, fails, sleeps or motion is reduced, standing at the beat's middle so
+ * its tag and ring can be read. A pure function of time, like strollPoint. */
+export function leadPlace(beat: readonly Point[], b: TowerBot, index: number, now: number, still: boolean): { at: Point, moving: boolean } {
+  if (still || b.mood === "wait" || b.mood === "error" || b.mood === "sleep") return { at: leadPoint(beat[Math.floor(beat.length / 2)], index), moving: false }
+  return strollPoint(beat, b.seed + index * 977, now, false)
 }
 
 /** Bots waiting for the person, longest quiet first. A summary carries no

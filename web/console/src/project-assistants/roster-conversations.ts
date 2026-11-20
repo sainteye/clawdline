@@ -11,10 +11,11 @@ import {projectKey,pinnedGroupKey} from "./roster-groups.ts"
 export type RosterRoom = W.ProjectAssistantGroup & {last_entry?:W.ProjectAssistantRoomEntry & {at?:string};room?:W.ProjectAssistantRoomState}
 export type GroupRosterEntry = {source:SourceClient;group:RosterRoom;status:W.ProjectAssistantSourceStatus}
 export type RosterConversation = {kind:"bot";key:string;machineID:string;projectID:string;item:W.ProjectAssistantBotSummary}|{kind:"group";key:string;machineID:string;projectID:string;entry:GroupRosterEntry}
-export type ConversationSection = {key:string;kind:"pinned"|"project"|"custom";name?:string;machineID:string;items:RosterConversation[]}
+export type ConversationSection = {key:string;kind:"lead"|"pinned"|"project"|"custom";name?:string;machineID:string;items:RosterConversation[]}
 // A group and a Bot may have the same source-qualified ID without sharing preferences.
 export const groupConversationKey=(key:W.ProjectAssistantBotKey)=>JSON.stringify(["group",key.machine_id,key.bot_id])
 export const personalRosterProject = "personal"
+export const leadSectionKey = "lead-section"
 export const GroupPreviewAvatars=4
 export function groupPreviewMembers<T>(all:readonly T[]){
   const members=all.slice(0,GroupPreviewAvatars)
@@ -32,8 +33,11 @@ export function conversations(items:readonly W.ProjectAssistantBotSummary[],room
 export function conversationSections(rows:readonly RosterConversation[],state:RosterState):ConversationSection[]{
   const byKey=new Map(rows.map(row=>[row.key,row])),sections=new Map<string,ConversationSection>()
   const pinned:ConversationSection={key:pinnedGroupKey,kind:"pinned",machineID:"",items:[]}
+  // Each machine's lead stays above everything, pinned or not.
+  const lead:ConversationSection={key:leadSectionKey,kind:"lead",machineID:"",items:[]}
   const sectionFor=(row:RosterConversation):ConversationSection=>{
     const bot=row.kind==="bot"?row.item.bot:null
+    if(bot?.lead)return lead
     if((bot?.sidebar_pinned ? bot.sidebar_pinned==="pinned" : state.pinnedBotKeys.includes(row.key)))return pinned
     const name=bot?.sidebar_section
     const key=name?JSON.stringify(["sidebar-section",row.machineID,name]):projectKey(row.machineID,row.projectID)
@@ -49,7 +53,7 @@ export function conversationSections(rows:readonly RosterConversation[],state:Ro
     const row=byKey.get(key)!
     sectionFor(row).items.push(row)
   }
-  return [pinned,...orderedKeys([...sections.keys()],state.projectSortOrder).map(key=>sections.get(key)!)].filter(section=>section.items.length)
+  return [lead,pinned,...orderedKeys([...sections.keys()],state.projectSortOrder).map(key=>sections.get(key)!)].filter(section=>section.items.length)
 
 }
 
