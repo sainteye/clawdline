@@ -11678,6 +11678,7 @@
   "projectAssistants.traceToolCompleted": "Tool completed",
   "projectAssistants.traceToolFailed": "Tool failed",
   "projectAssistants.unverifiedSave": "Save old draft",
+  "projectAssistants.chatReconnecting": "Reconnecting to the conversation…",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
