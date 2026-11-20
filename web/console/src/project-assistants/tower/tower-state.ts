@@ -7,8 +7,10 @@ import { botIdentity } from "../view-state.ts"
 /** Where a Bot stands in the tower and why. The daemon's `status` decides the
  * busy states (via rosterActivity, which also covers older daemons); `activity`
  * is a running caption such as a tool title and never decides placement. */
-export type TowerMood = "wait" | "work" | "error" | "unread" | "recent" | "idle" | "sleep"
-export type TowerZone = "queue" | "desk" | "repair" | "snack" | "lounge" | "bed"
+/** Unread replies do not move a Bot: they accumulate for days, and would park
+ * nearly every Bot in one spot. They show as a dot instead (`unread`). */
+export type TowerMood = "wait" | "work" | "error" | "recent" | "idle" | "sleep"
+export type TowerZone = "queue" | "desk" | "repair" | "lounge" | "bed"
 
 /** Presentation thresholds for an idle Bot's last activity, not capacity bounds. */
 export const TowerRecentMs = 30 * 60_000
@@ -20,13 +22,14 @@ export interface TowerBot {
   mood: TowerMood
   zone: TowerZone
   caption: string
+  unread: boolean
   /** False when the source is not fresh: the pose is a cached guess. */
   live: boolean
   seed: number
 }
 
 export const zoneOf: Record<TowerMood, TowerZone> = {
-  wait: "queue", work: "desk", error: "repair", unread: "snack", recent: "lounge", idle: "lounge", sleep: "bed",
+  wait: "queue", work: "desk", error: "repair", recent: "lounge", idle: "lounge", sleep: "bed",
 }
 
 /** A stable small integer per Bot, so routes and blinks repeat across reloads. */
@@ -50,7 +53,6 @@ export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Re
   if (shown.state === "needsInput") return { mood: "wait", caption: shown.caption, live: shown.live }
   if (shown.state === "working") return { mood: "work", caption: shown.caption, live: shown.live }
   if (shown.state === "error") return { mood: "error", caption: shown.caption, live: shown.live }
-  if (item.unread_count > 0) return { mood: "unread", caption: item.latest_message, live: shown.live }
   // An unknown status is idle, as the roster shows it.
   return { mood: idleMood(item.activity_at, now), caption: item.latest_message, live: shown.live }
 }
@@ -58,7 +60,7 @@ export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Re
 export function towerBots(items: readonly W.ProjectAssistantBotSummary[], now: number, w: Record<string, string>): TowerBot[] {
   return items.map(item => {
     const key = botIdentity(item.bot.key) as string, m = towerMood(item, now, w)
-    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, live: m.live, seed: seedOf(key) }
+    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key) }
   }).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
 
@@ -80,7 +82,7 @@ export function towerSummary(bots: readonly TowerBot[]): TowerSummary {
     const at = Date.parse(b.item.activity_at)
     if (Number.isFinite(at) && at > 0 && at > best) { best = at; latest = b }
   }
-  return { total: bots.length, wait: count("wait"), work: count("work"), error: count("error"), unread: count("unread"), stale: bots.some(b => !b.live), latest }
+  return { total: bots.length, wait: count("wait"), work: count("work"), error: count("error"), unread: bots.filter(b => b.unread).length, stale: bots.some(b => !b.live), latest }
 }
 
 type Point = readonly [number, number]

@@ -21,7 +21,7 @@ const ramen = new URL("./ramen.webp", import.meta.url).href
 const BotSize = 74
 const RecomputeMs = 60_000
 const moodWord: Record<TowerMood, keyof Words> = {
-  wait: "towerMoodWait", work: "towerMoodWork", error: "towerMoodError", unread: "towerMoodUnread",
+  wait: "towerMoodWait", work: "towerMoodWork", error: "towerMoodError",
   recent: "towerMoodRecent", idle: "towerMoodIdle", sleep: "towerMoodSleep",
 }
 
@@ -110,7 +110,7 @@ export default function BotTower({ items, w, language, paused = false, projectNa
       g.clearRect(0, 0, canvas.width, canvas.height)
       const placed = bots.map(b => ({ b, ...place(b, slots.get(b.key) ?? 0, t, still) })).sort((a, z) => a.at[1] - z.at[1])
       for (const { b, at, moving } of placed) {
-        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed }, at[0] * k, at[1] * k, BotSize * k, moving, t, still, dpr, b.live ? 1 : .55)
+        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread }, at[0] * k, at[1] * k, BotSize * k, moving, t, still, dpr, b.live ? 1 : .55)
         const button = buttons.current.get(b.key)
         if (button) {
           button.style.left = `${(at[0] - BotSize / 2) / scene.width * 100}%`
@@ -132,7 +132,7 @@ export default function BotTower({ items, w, language, paused = false, projectNa
   if (summary.work) parts.push(w.towerWorking.replace("{count}", String(summary.work)))
   if (summary.error) parts.push(w.towerErrors.replace("{count}", String(summary.error)))
   if (summary.unread) parts.push(w.towerUnread.replace("{count}", String(summary.unread)))
-  if (summary.total && !summary.wait && !summary.work && !summary.error && !summary.unread) parts.push(w.towerAllIdle)
+  if (summary.total && !summary.wait && !summary.work && !summary.error) parts.push(w.towerAllIdle)
   if (summary.latest) {
     const when = ago(summary.latest.item.activity_at, now, language)
     if (when) parts.push(w.towerLatest.replace("{time}", when).replace("{name}", summary.latest.item.bot.name))
@@ -149,7 +149,7 @@ export default function BotTower({ items, w, language, paused = false, projectNa
           <img src={ramen} alt="" draggable={false} decoding="async"/>
           <canvas ref={canvasRef} aria-hidden="true"/>
           {bots.map(b => {
-            const mood = w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
+            const mood = b.unread ? `${w[moodWord[b.mood]]}, ${w.towerMoodUnread}` : w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
             const label = w.towerBotLabel.replace("{name}", b.item.bot.name).replace("{state}", mood)
             return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}

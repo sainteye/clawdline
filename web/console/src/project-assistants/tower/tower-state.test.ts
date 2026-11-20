@@ -20,7 +20,7 @@ test("placement follows the daemon status, not the running caption", () => {
   assert.equal(towerMood(bot("a", { status: "working", activity: "writing" }), now, w).mood, "work")
   assert.equal(towerMood(bot("a", { status: "needsInput", activity: "Needs approval: git push" }), now, w).mood, "wait")
   assert.equal(towerMood(bot("a", { status: "error" }), now, w).mood, "error")
-  assert.equal(towerMood(bot("a", { status: "idle", unread_count: 2 }), now, w).mood, "unread")
+  assert.equal(towerMood(bot("a", { status: "idle", unread_count: 2 }), now, w).mood, "recent")
 })
 
 test("older daemons without status keep the state-word fallback", () => {
@@ -73,4 +73,11 @@ test("a stroll is a pure function of time and stands still under reduced motion"
   let moved = false
   for (let t = 0; t < 40_000; t += 500) if (strollPoint(spots, 12345, now + t, false).moving) moved = true
   assert.equal(moved, true)
+})
+
+test("unread replies mark a Bot without moving it", () => {
+  const [b] = towerBots([bot("a", { unread_count: 101, activity_at: new Date(now - 3 * 3600_000).toISOString() })], now, w)
+  assert.equal(b.mood, "idle")
+  assert.equal(b.unread, true)
+  assert.equal(towerSummary([b]).unread, 1)
 })

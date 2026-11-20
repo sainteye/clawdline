@@ -20,6 +20,7 @@ export interface DrawBot {
   color: string
   mood: TowerMood
   seed: number
+  unread?: boolean
 }
 
 /** One neon BR-06 Bot standing on (x, y) in canvas pixels; size is its height. */
@@ -31,7 +32,6 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     if (moving) { const p = Math.abs(Math.sin(now / 120)); lift = p * size * .2; sy = 1 - .1 * (1 - p); sx = 1 + .08 * (1 - p) }
     else if (b.mood === "work") { rot = Math.sin(now / 170) * .06; lift = Math.abs(Math.sin(now / 170)) * size * .04 }
     else if (b.mood === "wait") lift = Math.abs(Math.sin(now / 260)) * size * .14
-    else if (b.mood === "unread") lift = (Math.sin(now / 650) + 1) * size * .03
     else if (b.mood === "recent") lift = Math.abs(Math.sin(now / 900)) * size * .05
   }
   const sleeping = b.mood === "sleep", dim = sleeping ? .7 : b.mood === "idle" ? .9 : 1
@@ -69,6 +69,11 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     g.save(); g.globalAlpha = alpha; g.fillStyle = "#e39567"; g.fillRect(x + size * .25, y - lift - size - s * .9, s, s)
     g.fillStyle = "#120a26"; g.font = `700 ${Math.round(s * .8)}px -apple-system, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"
     g.fillText("!", x + size * .25 + s / 2, y - lift - size - s * .4); g.restore()
+  }
+  if (b.unread && b.mood !== "wait") {
+    const r = Math.max(3, size * .07)
+    g.save(); g.globalAlpha = alpha; g.fillStyle = "#fafafa"; g.strokeStyle = "#080808"; g.lineWidth = Math.max(1, r * .45)
+    g.beginPath(); g.arc(x + size * .36, y - lift - size * .92, r, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore()
   }
   if (sleeping) {
     const z = still ? 1 : Math.floor((now + b.seed) / 550) % 3
