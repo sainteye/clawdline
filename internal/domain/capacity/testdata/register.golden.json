@@ -1838,6 +1838,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.group_description_runes",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxGroupDescriptionRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.group_history_lines",
     "Class": "buffer",
     "Unit": "rows",

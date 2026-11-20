@@ -4389,7 +4389,7 @@
         }
       ],
       "original": [
-        "You are %s, one participant in a group chat (%q) with the user and %s.\n",
+        "You are %s, one participant in a group chat (\"<group name>\" — \"<what the group works on, on one line, when described>\") with the user and %s.\n",
         "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is the one message the room sees. Keep it short and conversational. After this round, only the participants someone @-mentions answer again: @-mention another participant when you need their answer or action, and only then. If you have nothing new worth adding, reply exactly %q. Never reveal private one-on-one context.\n",
         "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
         "[Clawdline: this replies to %s: %q] %s",
@@ -5227,7 +5227,7 @@
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "77efc46f565f53223bbd56cb848a2b026d972f07a2a71ee746c69f3949989681",
-    "internal/app/projectassistant/runtime_groups.go": "edef2c5e156a6151e63c26c771ceb49d30facd21f056867f3211c180fcb8d772",
+    "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "b3c4d24a289eca6bb4faf0ef28cb8da024245e6c95e9550fb6137142b8611320",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
     "internal/app/projectassistant/service_team.go": "386653b8a0a0c3130973ae8f5da95cef944ab30dd06c99d86a2082198f5a2819",
@@ -5311,7 +5311,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "cfb5367671d7bc1da06e6cc5abf7c59379f7ae2d45653b7264744f4d867edd9d",
+    "web/console/src/cloud/project-assistants.ts": "54cc4d0290f80251e7974f994acfe3e6e76b2eb6ba6bf1429bc6b06319064315",
     "web/console/src/cloud/relay-writer.ts": "d72f7e625f9ae501a006a34b4a6993880c295fe506288ab91294d16d5af393a6",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "75fc2c9f0fef1aeb92f26cde942e9efa369ff5095cc61b1630dc67cde52da489",
@@ -5370,7 +5370,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "563fc0325ad34d0b71b23234a523da1e8b31cbf4fe52e0fdecb98c4faab6cf13",
-    "zh-Hant": "d6b1e87fb1909390c7b0ae6b53e2cac41809194601cc08097cd8fde537650ae3"
+    "en": "c112ca6b9f2aee401eaf9952964324d40b42c8b06d6f25df9318e1b9d6de8758",
+    "zh-Hant": "486061f3ff4291fe40e93bd6d9ec4bf0120c8140e595bb1a92f7973daa61106a"
   }
 }

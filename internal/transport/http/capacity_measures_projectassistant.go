@@ -220,6 +220,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsOwnedDescendants:      unobserved,
 		capacity.BotsReadViewCursorBytes:   pure,
 		capacity.BotsNameRunes:             pure,
+		capacity.BotsGroupDescriptionRunes: pure,
 		capacity.BotsInstructionBytes:      pure,
 		capacity.BotsMessageBytes:          pure,
 		capacity.BotsUserMessageBytes:      pure,

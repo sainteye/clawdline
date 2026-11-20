@@ -86,3 +86,8 @@
   .project-assistants .pa-group-member-row .pa-group-row-icon { opacity:0;transition:opacity 120ms ease; }
   .project-assistants .pa-group-member-row:hover .pa-group-row-icon,.project-assistants .pa-group-member-row:focus-within .pa-group-row-icon { opacity:1; }
 }
+/* Codync's group-about: what the group works on, centred under its name. */
+.project-assistants .pa-group-about { width:min(100%,360px);min-height:2.6em;max-height:7em;padding:4px 8px;border:0;border-radius:10px;background:transparent;color:var(--pa-dim);font:inherit;font-size:14px;line-height:1.4;text-align:center;resize:none;field-sizing:content; }
+.project-assistants .pa-group-about:hover,.project-assistants .pa-group-about:focus { background:#141414; }
+.project-assistants .pa-group-about::placeholder { color:#66666c; }
+.project-assistants .pa-group-about-fixed { max-width:360px;margin:0;color:var(--pa-dim);font-size:14px;line-height:1.4;text-align:center;overflow-wrap:anywhere;white-space:pre-wrap; }

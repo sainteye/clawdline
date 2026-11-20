@@ -279,7 +279,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     <aside ref={membersPanel} id={membersID} hidden={!membersOpen} inert={!membersOpen} tabIndex={-1} className="pa-room-members pa-side-inspector" aria-label={groupWord("groupMembers")}>
       <header className="pa-room-members-identity">
         <button className="pa-room-members-close pa-circle" type="button" aria-label={w.closeInformation} onClick={()=>showMembers(false)}>×</button>
-        <GroupAvatar keys={memberKeys} bots={bots} size={64}/><h2>{group.name}</h2><small>{memberCount}</small>
+        <GroupAvatar keys={memberKeys} bots={bots} size={64}/><h2>{group.name}</h2>{group.description&&<p className="pa-room-members-about">{group.description}</p>}<small>{memberCount}</small>
       </header>
       <ul className="pa-room-member-list">
         {group.members.map(member=>{

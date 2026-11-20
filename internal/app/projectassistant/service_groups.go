@@ -26,9 +26,11 @@ func (s *Service) CreatePersonGroup(ctx context.Context, c pa.Command, in Create
 // CreateGroup is the person's new group. The command's key is the new
 // group's host-generated key; the conversation ID is host-generated too.
 type CreateGroup struct {
-	Target  pa.ProjectSelection `json:"target"`
-	Name    string              `json:"name"`
-	Members []pa.BotKey         `json:"members"`
+	Target pa.ProjectSelection `json:"target"`
+	Name   string              `json:"name"`
+	// Description says what the group works on; empty when none was given.
+	Description string      `json:"description,omitempty"`
+	Members     []pa.BotKey `json:"members"`
 }
 
 // GroupHistoryQuery pages the room's lines, newest page first: BeforeSeq 0
@@ -92,7 +94,7 @@ func (s *Service) createGroup(ctx context.Context, c pa.Command, in CreateGroup,
 	if err = pa.ValidateTarget(in.Target, resolved); err != nil {
 		return pa.Group{}, pa.Receipt{}, err
 	}
-	d := pa.GroupDraft{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: in.Name, Members: in.Members}
+	d := pa.GroupDraft{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: in.Name, Description: in.Description, Members: in.Members}
 	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
 		return pa.Group{}, pa.Receipt{}, err
 	}

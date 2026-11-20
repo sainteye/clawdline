@@ -5150,10 +5150,15 @@ type ProjectAssistantGetResponse struct {
 }
 
 type ProjectAssistantGroup struct {
-	ConversationID string                 `json:"conversation_id"`
-	CreatedAt      string                 `json:"created_at"`
-	Deleted        bool                   `json:"deleted"`
-	Key            ProjectAssistantBotKey `json:"key"`
+	ConversationID string `json:"conversation_id"`
+	CreatedAt      string `json:"created_at"`
+	Deleted        bool   `json:"deleted"`
+
+	// What the group works on, as Codync's group description. The person writes it and
+	// each member reads it in its room prompt. Omitted when empty and by sources below
+	// API 101.
+	Description string                 `json:"description,omitempty"`
+	Key         ProjectAssistantBotKey `json:"key"`
 
 	// Optional latest stored room line; omitted when unavailable within the existing
 	// read budget.
@@ -5175,14 +5180,22 @@ type ProjectAssistantGroupCreateRequest struct {
 }
 
 type ProjectAssistantGroupCreateSettings struct {
-	Members []ProjectAssistantBotKey         `json:"members"`
-	Name    string                           `json:"name"`
-	Target  ProjectAssistantProjectSelection `json:"target"`
+	// What the group works on. Trimmed; at most MaxGroupDescriptionRunes characters.
+	// Requires API 101.
+	Description string                           `json:"description,omitempty"`
+	Members     []ProjectAssistantBotKey         `json:"members"`
+	Name        string                           `json:"name"`
+	Target      ProjectAssistantProjectSelection `json:"target"`
 }
 
 type ProjectAssistantGroupDeleteRequest struct {
 	Command         ProjectAssistantCommand `json:"command"`
 	ExpectedVersion int64                   `json:"expected_version"`
+}
+
+type ProjectAssistantGroupDescriptionEdit struct {
+	// The new description, trimmed; an empty string clears it.
+	Text string `json:"text"`
 }
 
 type ProjectAssistantGroupEditRequest struct {
@@ -5191,9 +5204,12 @@ type ProjectAssistantGroupEditRequest struct {
 }
 
 type ProjectAssistantGroupEditSettings struct {
-	ExpectedVersion int64                    `json:"expected_version"`
-	Members         []ProjectAssistantBotKey `json:"members"`
-	Name            string                   `json:"name"`
+	// Replaces what the group works on. Omitted keeps the stored description, so a
+	// console from before API 101 cannot erase it. Requires API 101 when sent.
+	Description     *ProjectAssistantGroupDescriptionEdit `json:"description,omitempty"`
+	ExpectedVersion int64                                 `json:"expected_version"`
+	Members         []ProjectAssistantBotKey              `json:"members"`
+	Name            string                                `json:"name"`
 }
 
 type ProjectAssistantGroupHistoryRequest struct {

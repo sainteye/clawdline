@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13807,
+  "englishKeys": 13812,
   "counts": {
     "negation": 3564,
-    "state": 2341,
+    "state": 2342,
     "permission": 830,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5901,
+  "unionCount": 5902,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3735,6 +3735,7 @@
       "capacityRow.bots.follow_up_seconds.full",
       "capacityRow.bots.follow_up_tokens.full",
       "capacityRow.bots.frame_bytes.full",
+      "capacityRow.bots.group_description_runes.full",
       "capacityRow.bots.group_preview_avatars.full",
       "capacityRow.bots.hook_enroll_bytes.full",
       "capacityRow.bots.hook_event_bytes.full",
@@ -8006,6 +8007,7 @@
     "capacityRow.bots.follow_up_tokens.full",
     "capacityRow.bots.frame_bytes.full",
     "capacityRow.bots.frame_bytes.what",
+    "capacityRow.bots.group_description_runes.full",
     "capacityRow.bots.group_late_turns.full",
     "capacityRow.bots.group_preview_avatars.full",
     "capacityRow.bots.group_rounds.full",

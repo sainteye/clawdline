@@ -5971,6 +5971,13 @@ export interface ProjectAssistantGroup {
   conversation_id: string
   created_at: string
   deleted: boolean
+
+  /**
+   * What the group works on, as Codync's group description. The person writes it
+   * and each member reads it in its room prompt. Omitted when empty and by sources
+   * below API 101.
+   */
+  description?: string
   key: ProjectAssistantBotKey
 
   /**
@@ -5997,6 +6004,11 @@ export interface ProjectAssistantGroupCreateRequest {
 }
 
 export interface ProjectAssistantGroupCreateSettings {
+  /**
+   * What the group works on. Trimmed; at most MaxGroupDescriptionRunes characters.
+   * Requires API 101.
+   */
+  description?: string
   members: ProjectAssistantBotKey[]
   name: string
   target: ProjectAssistantProjectSelection
@@ -6007,12 +6019,24 @@ export interface ProjectAssistantGroupDeleteRequest {
   expected_version: number
 }
 
+export interface ProjectAssistantGroupDescriptionEdit {
+  /**
+   * The new description, trimmed; an empty string clears it.
+   */
+  text: string
+}
+
 export interface ProjectAssistantGroupEditRequest {
   command: ProjectAssistantCommand
   settings: ProjectAssistantGroupEditSettings
 }
 
 export interface ProjectAssistantGroupEditSettings {
+  /**
+   * Replaces what the group works on. Omitted keeps the stored description, so a
+   * console from before API 101 cannot erase it. Requires API 101 when sent.
+   */
+  description?: ProjectAssistantGroupDescriptionEdit
   expected_version: number
   members: ProjectAssistantBotKey[]
   name: string

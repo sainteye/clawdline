@@ -707,19 +707,20 @@ func Register() []Entry {
 }
 
 const (
-	BotsRosterSubscribers   = "bots.roster_subs"
-	BotsRosterWakeups       = "bots.roster_wakes"
-	BotsRosterLifetime      = "bots.roster_seconds"
-	BotsRosterRecheck       = "bots.roster_check_ms"
-	BotsRosterClientRows    = "bots.roster_client_rows"
-	BotsReadViewCursorBytes = "bots.read_view_cursor_bytes"
-	BotsNameRunes           = "bots.name_runes"
-	BotsInstructionBytes    = "bots.instruction_bytes"
-	BotsMessageBytes        = "bots.message_bytes"
-	BotsUserMessageBytes    = "bots.user_message_bytes"
-	BotsAutomationBacklog   = "bots.automation_backlog"
-	BotsPageRows            = "bots.page_rows"
-	BotsEventRows           = "bots.event_rows"
+	BotsRosterSubscribers     = "bots.roster_subs"
+	BotsRosterWakeups         = "bots.roster_wakes"
+	BotsRosterLifetime        = "bots.roster_seconds"
+	BotsRosterRecheck         = "bots.roster_check_ms"
+	BotsRosterClientRows      = "bots.roster_client_rows"
+	BotsReadViewCursorBytes   = "bots.read_view_cursor_bytes"
+	BotsNameRunes             = "bots.name_runes"
+	BotsGroupDescriptionRunes = "bots.group_description_runes"
+	BotsInstructionBytes      = "bots.instruction_bytes"
+	BotsMessageBytes          = "bots.message_bytes"
+	BotsUserMessageBytes      = "bots.user_message_bytes"
+	BotsAutomationBacklog     = "bots.automation_backlog"
+	BotsPageRows              = "bots.page_rows"
+	BotsEventRows             = "bots.event_rows"
 )
 
 // Default is a registered row's default limit, and 0 for a name that is not

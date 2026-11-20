@@ -96,6 +96,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.follow_up_seconds` | 2592000 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.follow_up_tokens` | 500 | `tokens` | `refuse` | `diagnostics, sender` | — |
 | `bots.frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.group_description_runes` | 500 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.group_history_lines` | 24 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_late_turns` | 3 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.group_member_wait_seconds` | 600 | `seconds` | `coalesce` | `diagnostics` | — |

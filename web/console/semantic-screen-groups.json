@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13807,
-  "riskKeys": 5901,
-  "nonRiskCount": 7906,
+  "englishContentKeys": 13812,
+  "riskKeys": 5902,
+  "nonRiskCount": 7910,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 706,
+      "count": 707,
       "sources": [
         null
       ],
@@ -650,6 +650,7 @@
         "capacityRow.bots.follow_up_pending.what",
         "capacityRow.bots.follow_up_seconds.what",
         "capacityRow.bots.follow_up_tokens.what",
+        "capacityRow.bots.group_description_runes.what",
         "capacityRow.bots.group_history_lines.full",
         "capacityRow.bots.group_history_lines.what",
         "capacityRow.bots.group_late_turns.what",
@@ -6144,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 511,
+      "count": 514,
       "sources": [
         null
       ],
@@ -6274,6 +6275,9 @@
         "projectAssistants.forgotten",
         "projectAssistants.grokInstall",
         "projectAssistants.grokLogin",
+        "projectAssistants.groupAbout",
+        "projectAssistants.groupAboutPlaceholder",
+        "projectAssistants.groupAboutTooLong",
         "projectAssistants.groupAddMember",
         "projectAssistants.groupAddNamed",
         "projectAssistants.groupBack",

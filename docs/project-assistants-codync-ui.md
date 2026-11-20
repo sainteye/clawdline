@@ -48,9 +48,22 @@ Edit group are rows of the same list. The editor shows the name as a centred tit
 members as rows with a remove button, and Add member opening a search with the Project's
 remaining Bots; Enter adds the first match. It is hidden when every eligible Bot is already a
 member. Delete group sits at the end of the editor and opens the room's existing delete
-confirmation, closing the inspector so the confirmation is visible on a phone. Codync's group
-description has no field in this contract and was not added. Adding members from the inspector
+confirmation, closing the inspector so the confirmation is visible on a phone. What the group works on (Codync's group
+description) is a centred field under the name and a line under the name in the inspector; see
+the next paragraph. Adding members from the inspector
 keeps existing members fixed, as before.
+
+The group description arrives at API 101. `ProjectAssistantGroup.description` and the create
+setting carry it; an edit sends `description: {text}`, where an empty text clears it and an omitted
+object keeps it, so a console from before API 101 cannot erase it. The strict request decoder
+compares keys with the typed value, which is why an optional object rather than a nullable string
+carries this: a nullable key would have to be present and would refuse older edits. It is trimmed,
+refused above `MaxGroupDescriptionRunes` (500 characters, registered as
+`bots.group_description_runes`) and stored in the existing group JSON row, so no migration is
+needed; a build from before API 101 drops it if it rewrites the group. Each member's room prompt
+names the room as Codync's `member_prompt` does, `"name" — "description"`, quoted on one line so
+a line break in the person's text cannot open a prompt section. The console shows the field only
+for sources at API 101 or later and refuses a description before transport on older ones.
 
 The room contract contains author and reply-to-author identities, but no quoted message ID or
 quoted message text. The UI therefore identifies the reply recipient without inventing a

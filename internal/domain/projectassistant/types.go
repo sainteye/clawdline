@@ -5,12 +5,15 @@ package projectassistant
 import "time"
 
 const (
-	ContractVersion     = "project-assistants.v1"
-	FixtureVersion      = 1
-	SchemaVersion       = 15
-	MaxNameRunes        = 128
-	MaxInstructionBytes = 16 << 10
-	MaxMessageBytes     = 32 << 10
+	ContractVersion = "project-assistants.v1"
+	FixtureVersion  = 1
+	SchemaVersion   = 15
+	MaxNameRunes    = 128
+	// What a group works on, as Codync's group description: shown to the
+	// person and quoted to each member in its room prompt.
+	MaxGroupDescriptionRunes = 500
+	MaxInstructionBytes      = 16 << 10
+	MaxMessageBytes          = 32 << 10
 	// A single user message must fit an escaped history/event record inside
 	// the Cloud read envelope, alongside its identity and control metadata.
 	MaxUserMessageBytes = 512 << 10

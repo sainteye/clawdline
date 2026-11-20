@@ -445,6 +445,11 @@
     "Note": true
   },
   {
+    "Name": "bots.group_description_runes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.group_history_lines",
     "Known": true,
     "Note": true

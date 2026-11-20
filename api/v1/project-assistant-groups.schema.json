@@ -34,6 +34,10 @@
         "name": {
           "type": "string"
         },
+        "description": {
+          "type": "string",
+          "description": "What the group works on, as Codync's group description. The person writes it and each member reads it in its room prompt. Omitted when empty and by sources below API 101."
+        },
         "members": {
           "type": "array",
           "items": {
@@ -302,6 +306,10 @@
         "name": {
           "type": "string"
         },
+        "description": {
+          "type": "string",
+          "description": "What the group works on. Trimmed; at most MaxGroupDescriptionRunes characters. Requires API 101."
+        },
         "members": {
           "type": "array",
           "items": {
@@ -332,6 +340,17 @@
       ],
       "additionalProperties": false
     },
+    "ProjectAssistantGroupDescriptionEdit": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The new description, trimmed; an empty string clears it."
+        }
+      },
+      "required": ["text"],
+      "additionalProperties": false
+    },
     "ProjectAssistantGroupEditSettings": {
       "type": "object",
       "properties": {
@@ -340,6 +359,10 @@
         },
         "name": {
           "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/ProjectAssistantGroupDescriptionEdit",
+          "description": "Replaces what the group works on. Omitted keeps the stored description, so a console from before API 101 cannot erase it. Requires API 101 when sent."
         },
         "members": {
           "type": "array",

@@ -116,6 +116,8 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
 
 // Match the existing group-name limit in internal/domain/projectassistant.
 const GroupNameRunes=128
+// The source's MaxGroupDescriptionRunes, counted in characters as it counts them.
+const GroupDescriptionRunes=500
 
 export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,addMembers=false,onSaved,onClose,onDelete}:{onDelete?:()=>void;sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;addMembers?:boolean;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null)
@@ -141,7 +143,10 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
   // Codync's member list: who is in, a remove button each, then a search to add more.
   const [adding,setAdding]=useState(addMembers||!group),[query,setQuery]=useState("")
-  const draft = JSON.stringify([project, name, members])
+  // Codync's "What this group works on": sent only to a source that stores it.
+  const [about,setAbout]=useState(group?.description??"")
+  const aboutTooLong=Array.from(about.trim()).length>GroupDescriptionRunes
+  const draft = JSON.stringify([project, name, members, about])
   const initialDraft = useRef(draft)
   const pending=useRef<{fingerprint:string;request:W.ProjectAssistantGroupCreateRequest|W.ProjectAssistantGroupEditRequest}|null>(null)
   const source=sources.find(s=>s.source.machineID===project?.machine_id&&canWrite(s.status))?.source
@@ -152,7 +157,7 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const memberNames=selection.flatMap(key=>{const bot=eligible.find(bot=>identity(bot.key)===identity(key));return bot?[bot.name]:[]})
   const defaultName=Array.from(new Intl.ListFormat(currentCatalogTag(),{type:"unit"}).format(memberNames)).slice(0,GroupNameRunes).join("").trimEnd()
   const savedName=name.trim()||(group?"":defaultName)
-  const canSave=!!source&&!!project&&!busy&&!unknown&&!closing&&!!savedName&&selection.length>0&&complete&&(!addMembers||selection.length>existing.length)
+  const canSave=!aboutTooLong&&!!source&&!!project&&!busy&&!unknown&&!closing&&!!savedName&&selection.length>0&&complete&&(!addMembers||selection.length>existing.length)
   const picked=selection.flatMap(key=>eligible.filter(bot=>identity(bot.key)===identity(key)))
   const needle=query.trim().toLocaleLowerCase()
   const candidates=eligible.filter(bot=>!members.includes(identity(bot.key))&&(!needle||bot.name.toLocaleLowerCase().includes(needle)))
@@ -162,10 +167,12 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const close=()=>{if(!busy&&!closing)setClosing(()=>onClose)}
   async function save(){
     if(!source||!project||!canSave)return
+    const describes=!!source.canGroupDescription?.(),text=about.trim()
+    const edited=describes&&!addMembers&&text!==(group?.description??"")
     const settings={name:savedName,members:selection}
-    const fingerprint=JSON.stringify([project,settings])
+    const fingerprint=JSON.stringify([project,settings,edited||!group?text:null])
     let request=pending.current?.fingerprint===fingerprint?pending.current.request:null
-    if(!request){const key=group?.key??{machine_id:project.machine_id,bot_id:crypto.randomUUID()};request=group?{command:command(key,"edit"),settings:{...settings,expected_version:group.version}}:{command:command(key,"create"),settings:{...settings,target:{machine_id:project.machine_id,project_id:project.project_id}}};pending.current={fingerprint,request}}
+    if(!request){const key=group?.key??{machine_id:project.machine_id,bot_id:crypto.randomUUID()};request=group?{command:command(key,"edit"),settings:{...settings,expected_version:group.version,...(edited?{description:{text}}:{})}}:{command:command(key,"create"),settings:{...settings,target:{machine_id:project.machine_id,project_id:project.project_id},...(describes&&text?{description:text}:{})}};pending.current={fingerprint,request}}
     setBusy(true);setError("")
     try {
       const answer=await authorized(source,current,signal=>group?source.editGroup!(request as W.ProjectAssistantGroupEditRequest,signal):source.createGroup!(request as W.ProjectAssistantGroupCreateRequest,signal),new AbortController().signal)
@@ -182,6 +189,10 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
             <GroupAvatar keys={selection} bots={eligible} size={84}/>
             {addMembers?<strong className="pa-group-name-fixed">{group?.name}</strong>:<input className="pa-group-name" aria-label={groupWord("groupName")} value={name} placeholder={!group&&defaultName?defaultName:groupWord("groupName")} onChange={e=>setName(e.target.value)}
               onKeyDown={event=>{if(event.key==="Enter"&&(event.nativeEvent.isComposing||event.keyCode===229))event.preventDefault()}}/>}
+            {addMembers?group?.description&&<p className="pa-group-about-fixed">{group.description}</p>
+              :sources.find(s=>s.source.machineID===project?.machine_id)?.source.canGroupDescription?.()&&<textarea className="pa-group-about" rows={1} value={about} aria-invalid={aboutTooLong||undefined}
+                aria-label={groupWord("groupAbout")} placeholder={groupWord("groupAboutPlaceholder")} onChange={e=>setAbout(e.target.value)}/>}
+            {aboutTooLong&&<p className="pa-group-note" role="alert">{groupWord("groupAboutTooLong").replace("{count}",String(GroupDescriptionRunes))}</p>}
           </div>
           {!group&&<PaSelect label={groupWord("groupProject")} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{
             const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]),source=sources.find(s=>s.source.machineID===b.key.machine_id)?.source

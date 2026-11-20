@@ -147,6 +147,30 @@ const make = (transport: AssistantFetch, first = grant()) => {
   const source = new ProjectAssistantSourceClient(first,transport,() => current)
   return {source,setGrant(next: AssistantGrant | null) {current = next}}
 }
+test("a group description requires API101 and keeps older edits sendable",async()=>{
+  const sent: {path:string;body:unknown}[]=[]
+  const transport:AssistantFetch=async(path,init)=>{
+    if(init?.method!=="GET")sent.push({path,body:JSON.parse(String(init?.body))})
+    return Response.json(path.endsWith("/status")?sourceStatus():{})
+  }
+  const settings={expected_version:2,name:"Review room",members:[key]}
+  const plain:W.ProjectAssistantGroupEditRequest={command:command(key,"edit","stable-group-edit"),settings}
+  const described:W.ProjectAssistantGroupEditRequest={...plain,settings:{...settings,description:{text:"Reviews pull requests"}}}
+  const old=make(transport,{...grant(),apiLevel:100}).source
+  await old.status(signal())
+  assert.equal(old.canGroupDescription(),false)
+  await assert.rejects(old.editGroup(described,signal()),e=>errorCode(e)==="pa_unsupported")
+  assert.equal(sent.length,0,"an unsupported description must be refused before transport")
+  await old.editGroup(plain,signal())
+  assert.deepEqual(sent[0].body,plain,"an edit without a description still reaches an older source unchanged")
+  const fresh=make(transport,{...grant(),apiLevel:101}).source
+  await fresh.status(signal());assert.equal(fresh.canGroupDescription(),true)
+  await fresh.editGroup(described,signal())
+  assert.deepEqual(sent[1].body,described)
+  const carried=assistantRelayRequest(sent[1].path,{method:"PATCH",body:JSON.stringify(described),headers:{"Idempotency-Key":described.command.idempotency_key}})
+  assert.equal(carried.word,"project-assistants.group-edit")
+  assert.deepEqual(carried.fields,described)
+})
 test("exact group quotes require API88 without disabling plain groups on API76",async()=>{
   const sent: {path:string;body:unknown}[]=[]
   const transport:AssistantFetch=async(path,init)=>{

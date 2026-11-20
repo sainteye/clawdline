@@ -13,11 +13,14 @@ import (
 // execution fence; the room only decides who speaks and whether an answer is
 // still wanted. Key is source-qualified like a BotKey and never equals a Bot's.
 type Group struct {
-	Key            BotKey        `json:"key"`
-	Project        ProjectScope  `json:"project"`
-	ConversationID string        `json:"conversation_id"`
-	Name           string        `json:"name"`
-	Members        []GroupMember `json:"members"`
+	Key            BotKey       `json:"key"`
+	Project        ProjectScope `json:"project"`
+	ConversationID string       `json:"conversation_id"`
+	Name           string       `json:"name"`
+	// Description says what the group works on (Codync's group description).
+	// The person writes it; each member reads it in its room prompt.
+	Description string        `json:"description,omitempty"`
+	Members     []GroupMember `json:"members"`
 	// MembershipRevision moves whenever the member set changes. A member
 	// added at revision n carries JoinedRevision n, so leaving and joining
 	// again invalidates what was asked of it before it left.
@@ -151,6 +154,16 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 	return nil
 }
 
+// groupDescription trims what the person typed, as Codync does, and refuses
+// text that is not UTF-8 or longer than MaxGroupDescriptionRunes.
+func groupDescription(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > MaxGroupDescriptionRunes {
+		return "", fail(Invalid, "group_description")
+	}
+	return text, nil
+}
+
 func validGroupName(name string) error {
 	if !utf8.ValidString(name) || strings.TrimSpace(name) == "" || utf8.RuneCountInString(name) > MaxNameRunes {
 		return fail(Invalid, "group_name")
@@ -165,6 +178,7 @@ type GroupDraft struct {
 	Project        ProjectScope `json:"project"`
 	ConversationID string       `json:"conversation_id"`
 	Name           string       `json:"name"`
+	Description    string       `json:"description,omitempty"`
 	Members        []BotKey     `json:"members"`
 }
 
@@ -178,21 +192,27 @@ func NewGroup(d GroupDraft, catalog GroupCatalog, limits GroupLimits, at time.Ti
 	if err := validGroupName(d.Name); err != nil {
 		return Group{}, err
 	}
+	description, err := groupDescription(d.Description)
+	if err != nil {
+		return Group{}, err
+	}
 	if err := ValidateGroupMembers(d.Key, d.Project, d.Members, catalog, limits); err != nil {
 		return Group{}, err
 	}
 	deduped := DeduplicateGroupMembers(d.Members)
-	g := Group{Key: d.Key, Project: d.Project, ConversationID: d.ConversationID, Name: d.Name, MembershipRevision: 1, Version: 1, CreatedAt: at, UpdatedAt: at}
+	g := Group{Key: d.Key, Project: d.Project, ConversationID: d.ConversationID, Name: d.Name, Description: description, MembershipRevision: 1, Version: 1, CreatedAt: at, UpdatedAt: at}
 	for _, k := range deduped {
 		g.Members = append(g.Members, GroupMember{Key: k, JoinedRevision: 1})
 	}
 	return g, nil
 }
 
-// GroupEdit replaces the name and the whole member list.
+// GroupEdit replaces the name and the whole member list. A nil Description
+// keeps the stored one; an empty one clears it.
 type GroupEdit struct {
 	ExpectedVersion int64    `json:"expected_version"`
 	Name            string   `json:"name"`
+	Description     *string  `json:"description,omitempty"`
 	Members         []BotKey `json:"members"`
 }
 
@@ -206,11 +226,19 @@ func EditGroup(g Group, e GroupEdit, catalog GroupCatalog, limits GroupLimits, a
 	if err := validGroupName(e.Name); err != nil {
 		return g, err
 	}
+	description := g.Description
+	if e.Description != nil {
+		var err error
+		if description, err = groupDescription(*e.Description); err != nil {
+			return g, err
+		}
+	}
 	if err := ValidateGroupMembers(g.Key, g.Project, e.Members, catalog, limits); err != nil {
 		return g, err
 	}
 	deduped := DeduplicateGroupMembers(e.Members)
 	next := g
+	next.Description = description
 	next.Name, next.Version, next.UpdatedAt = e.Name, g.Version+1, at
 	next.Members = nil
 	if !SameMembers(g.MemberKeys(), deduped) {

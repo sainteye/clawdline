@@ -140,7 +140,7 @@ func paGroupRoute(r *http.Request) (paHTTPRoute, bool) {
 }
 
 func paWireGroup(g pa.Group) contract.ProjectAssistantGroup {
-	out := contract.ProjectAssistantGroup{Key: paWireBotKey(g.Key), Project: paWireProjectScope(g.Project), ConversationID: g.ConversationID, Name: g.Name, MembershipRevision: g.MembershipRevision, Version: g.Version, Deleted: g.Deleted, CreatedAt: paRoutineTime(g.CreatedAt), UpdatedAt: paRoutineTime(g.UpdatedAt), Members: []contract.ProjectAssistantGroupMember{}}
+	out := contract.ProjectAssistantGroup{Key: paWireBotKey(g.Key), Project: paWireProjectScope(g.Project), ConversationID: g.ConversationID, Name: g.Name, Description: g.Description, MembershipRevision: g.MembershipRevision, Version: g.Version, Deleted: g.Deleted, CreatedAt: paRoutineTime(g.CreatedAt), UpdatedAt: paRoutineTime(g.UpdatedAt), Members: []contract.ProjectAssistantGroupMember{}}
 	for _, m := range g.Members {
 		out.Members = append(out.Members, contract.ProjectAssistantGroupMember{Key: paWireBotKey(m.Key), JoinedRevision: m.JoinedRevision})
 	}
@@ -382,6 +382,15 @@ func paPackGroupHistory(out contract.ProjectAssistantGroupHistoryResponse, check
 	return best, nil
 }
 
+// paGroupDescription keeps the stored description when an edit omits it.
+func paGroupDescription(edit *contract.ProjectAssistantGroupDescriptionEdit) *string {
+	if edit == nil {
+		return nil
+	}
+	text := edit.Text
+	return &text
+}
+
 func paGroupKeys(keys []contract.ProjectAssistantBotKey) []pa.BotKey {
 	out := make([]pa.BotKey, len(keys))
 	for i, k := range keys {
@@ -400,7 +409,7 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return nil, err
 		}
-		g, receipt, err := h.options.Service.CreatePersonGroup(r.Context(), c, app.CreateGroup{Target: paDomainProjectSelection(v.Settings.Target), Name: v.Settings.Name, Members: paGroupKeys(v.Settings.Members)})
+		g, receipt, err := h.options.Service.CreatePersonGroup(r.Context(), c, app.CreateGroup{Target: paDomainProjectSelection(v.Settings.Target), Name: v.Settings.Name, Description: v.Settings.Description, Members: paGroupKeys(v.Settings.Members)})
 		if err != nil {
 			return nil, err
 		}
@@ -414,7 +423,7 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return nil, err
 		}
-		g, receipt, err := h.options.Service.EditGroup(r.Context(), c, pa.GroupEdit{ExpectedVersion: v.Settings.ExpectedVersion, Name: v.Settings.Name, Members: paGroupKeys(v.Settings.Members)})
+		g, receipt, err := h.options.Service.EditGroup(r.Context(), c, pa.GroupEdit{ExpectedVersion: v.Settings.ExpectedVersion, Name: v.Settings.Name, Description: paGroupDescription(v.Settings.Description), Members: paGroupKeys(v.Settings.Members)})
 		if err != nil {
 			return nil, err
 		}

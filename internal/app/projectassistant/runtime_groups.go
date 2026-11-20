@@ -642,7 +642,13 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 	if len(peers) > 0 {
 		peerNames = strings.Join(peers, ", ")
 	}
-	out := []string{fmt.Sprintf("You are %s, one participant in a group chat (%q) with the user and %s.", me.Name, g.Name, peerNames)}
+	// Codync names the room `"name" — description`. The description is the
+	// person's text, quoted on one line so it cannot open a prompt section.
+	room := fmt.Sprintf("%q", g.Name)
+	if about := strings.Join(strings.Fields(g.Description), " "); about != "" {
+		room += fmt.Sprintf(" — %q", about)
+	}
+	out := []string{fmt.Sprintf("You are %s, one participant in a group chat (%s) with the user and %s.", me.Name, room, peerNames)}
 	if len(peers) > 0 {
 		out = append(out, "Other participants in the room:")
 		for _, p := range peers {

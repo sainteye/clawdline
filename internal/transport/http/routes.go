@@ -45,7 +45,8 @@ import (
 // On-demand Project memory pages in Bots arrive at API 98.
 // Project memory management and explicit review arrive at API 99.
 // Grok Build as a Bot agent arrives at API 100.
-const APILevel = 100
+// Group descriptions (what a group works on) arrive at API 101.
+const APILevel = 101
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
