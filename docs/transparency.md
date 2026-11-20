@@ -1073,3 +1073,12 @@ configured InstaBox CLI can wake an auto-paused target. The browser can also
 use the account's explicit InstaBox binding to wake the target before it makes
 an offer. Both language explanations and the original briefing excerpt were
 reviewed. A wake response alone does not verify an offer or its fingerprints.
+
+The InstaBox installation Session receives a prepared first message after the
+person chooses the setup action. Its instructions keep the verified provider
+terminal through registration and first device pairing. The pairing helper can
+also use a signed-in provider dashboard terminal, with hidden input for the
+one-time offer and fingerprint evidence from the verified Cloud machine.
+The provider terminal and the person's Cloud pairing page have distinct roles.
+The reviewed inventory includes the setup entry, both language explanations,
+and the original instructions.

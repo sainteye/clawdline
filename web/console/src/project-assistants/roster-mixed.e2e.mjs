@@ -82,6 +82,78 @@ try{
    }
    assert.deepEqual(errors,[])
    if(variant==="after"){
+    await page.goto(`${origin}/after/?lang=${language}&actions`)
+    const candidate=page.locator(".pa-bot-row").filter({has:page.getByText("Code review",{exact:true})})
+    const lead=page.getByRole("menuitem",{name:language==="en"?"Set as lead assistant":"設為主助理",exact:true})
+    const deleteLabel=language==="en"?"Delete Bot":"刪除 Bot"
+    const remove=page.getByRole("menuitem",{name:deleteLabel,exact:true})
+    await candidate.click({button:"right"})
+    await remove.waitFor()
+    // A menu behind the Bots window is in the DOM but cannot receive input.
+    const hit=await remove.evaluate(button=>{
+     const box=button.getBoundingClientRect()
+     return button.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2))
+    })
+    assert.ok(hit,"the real Bot window must not cover its context menu")
+    await page.screenshot({path:path.join(artifacts,`${engine}-${language}-bot-context.png`)})
+    await lead.click()
+    await candidate.locator(".pa-roster-lead").waitFor()
+    await candidate.focus();await page.keyboard.press("Shift+F10")
+    await remove.waitFor();assert.equal(await lead.count(),0,"the current lead no longer needs the promotion action")
+    await remove.click()
+    const confirm=page.getByRole("dialog",{name:deleteLabel,exact:true})
+    await confirm.getByRole("button",{name:language==="en"?"Cancel":"取消",exact:true}).click()
+    assert.equal(await page.evaluate(()=>window.fixture.writes),0)
+    await candidate.click({button:"right"});await remove.click()
+    await confirm.getByRole("button",{name:deleteLabel,exact:true}).click()
+    await candidate.waitFor({state:"detached"})
+    assert.equal(await page.evaluate(()=>window.fixture.writes),1)
+    result.rosterActions={rightClick:true,keyboardMenu:true,promoted:true,deleteConfirmed:true}
+    const openAssistant=()=>page.locator(".pa-bot-row").filter({has:page.getByText("Project assistant",{exact:true})}).click()
+    const startCall=page.locator(".pa-bot-call-start button")
+    await page.evaluate(()=>{
+     for(const name of ["SpeechRecognition","webkitSpeechRecognition"])Object.defineProperty(window,name,{configurable:true,value:undefined})
+    })
+    await openAssistant()
+    await page.locator(".pa-composer textarea:not(:disabled)").waitFor()
+    await startCall.waitFor({state:"detached",timeout:2000})
+    await page.goto(`${origin}/after/?lang=${language}&actions`)
+    await page.evaluate(()=>{
+     const voice={pack:false,localVoice:false,checks:0,opened:0,closed:0,say:null}
+     const synth=new EventTarget()
+     synth.getVoices=()=>voice.localVoice?[{lang:"en-US",localService:true},{lang:"zh-TW",localService:true}]:[]
+     voice.update=()=>synth.dispatchEvent(new Event("voiceschanged"))
+     class Recognition {
+      processLocally=false
+      static async available(){voice.checks++;return voice.pack?"available":"downloadable"}
+      start(){voice.say=text=>this.onresult?.({resultIndex:0,results:[{isFinal:true,0:{transcript:text}}]})}
+      abort(){voice.say=null}
+     }
+     Object.defineProperty(Recognition.prototype,"processLocally",{value:false})
+     const track=Object.assign(new EventTarget(),{readyState:"live",enabled:false,stop:()=>voice.closed++})
+     Object.defineProperty(window,"SpeechRecognition",{configurable:true,value:Recognition})
+     Object.defineProperty(window,"speechSynthesis",{configurable:true,value:synth})
+     Object.defineProperty(window,"SpeechSynthesisUtterance",{configurable:true,value:class {}})
+     Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia:async()=>{
+      voice.opened++;return {getAudioTracks:()=>[track],getTracks:()=>[track]}
+     }}})
+     window.fixtureVoice=voice
+    })
+    await openAssistant()
+    await page.waitForFunction(()=>window.fixtureVoice.checks>0)
+    await startCall.waitFor({state:"detached",timeout:2000})
+    await page.evaluate(()=>{window.fixtureVoice.pack=true;window.fixtureVoice.update()})
+    await page.waitForFunction(()=>window.fixtureVoice.checks>1)
+    await startCall.waitFor({state:"detached",timeout:2000})
+    await page.evaluate(()=>{window.fixtureVoice.localVoice=true;window.fixtureVoice.update()})
+    await startCall.click()
+    await page.locator(".pa-bot-call-status").filter({hasText:language==="en"?"Listening":"正在聆聽"}).waitFor()
+    const spoken="A synthetic spoken request"
+    await page.evaluate(text=>window.fixtureVoice.say(text),spoken)
+    await page.locator(".pa-chat-content").getByText(spoken,{exact:true}).waitFor()
+    await page.getByRole("button",{name:language==="en"?"Hang up":"掛斷",exact:true}).click()
+    assert.deepEqual(await page.evaluate(()=>[window.fixtureVoice.opened,window.fixtureVoice.closed]),[1,1])
+    result.botCall={hiddenWithoutSupport:true,hiddenWithoutLanguageOrVoice:true,heardAndSent:true,microphoneReleased:true}
     await page.goto(`${origin}/after/?lang=${language}&delayMembers`)
     const avatar=group.locator(".pa-group-avatars")
     const many=page.locator("[data-group-key]").filter({has:page.getByText("Six member room",{exact:true})})
