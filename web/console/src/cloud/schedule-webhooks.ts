@@ -1,3 +1,5 @@
+import { InstaBoxRequestError, instaBoxRequest, instaBoxWakePath, readInstaBoxBinding } from "./instabox-wake.js"
+import type { ScheduleClock, ScheduleClockRule } from "./schedule-clock.js"
 import {
   ScheduleWebhookClient,
   type ScheduleWebhookClientAPI,
@@ -40,6 +42,11 @@ export interface ScheduleWebhookManagement {
   /** Cloud's move to `machine`; a null revision is read first. */
   move(hookID: string, machine: string, revision: number | null): Promise<ScheduleWebhookHook>
   copy(value: string): Promise<void>
+  clockReady(machine: string): Promise<boolean>
+  clocks(machine: string): Promise<ScheduleClock[]>
+  clock(hook: string): Promise<ScheduleClock | null>
+  clockBinding(machine: string, scheduleID: string, existing?: string): Promise<ScheduleWebhookHook>
+  saveClock(hook: ScheduleWebhookHook, scheduleID: string, rule: ScheduleClockRule | null, enabled: boolean): Promise<void>
 }
 
 let installed: ScheduleWebhookManagement | null = null
@@ -58,7 +65,41 @@ export function installScheduleWebhookManagement(options: {
   copy?: (value: string) => Promise<void>
 }): () => void {
   const client = new ScheduleWebhookClient({ origin: options.apiOrigin })
+  const clockPath = (hook: string) => "/v1/schedule-webhooks/" + encodeURIComponent(hook) + "/clock"
   const management: ScheduleWebhookManagement = {
+    async clockReady(machine) {
+      return (await readInstaBoxBinding(options.apiOrigin, machine)).schedule_clock_ready === true
+    },
+    async clocks(machine) {
+      return (await instaBoxRequest<{ clocks: ScheduleClock[] }>(
+        options.apiOrigin, instaBoxWakePath(machine) + "/clocks",
+      )).clocks
+    },
+    async clock(hook) {
+      try {
+        return (await instaBoxRequest<{ clock: ScheduleClock | null }>(options.apiOrigin, clockPath(hook))).clock
+      } catch (error) {
+        if (error instanceof InstaBoxRequestError && error.status === 404) return null
+        throw error
+      }
+    },
+    async clockBinding(machine, scheduleID, existing) {
+      const current = existing ? hookOf(await client.read(existing)) : null
+      if (current?.state === "active") return current
+      const made = current?.state === "pending_binding" ? current : hookOf(await client.send(
+        "POST", "/v1/schedule-webhooks", { machine_id: machine, clock_only: true }, true,
+        "instabox-clock:" + machine + ":" + scheduleID + (current ? ":" + current.hook_id : ""),
+      ))
+      // Creation receipts remain pending even when the machine completed the binding.
+      const observed = hookOf(await client.read(made.hook_id))
+      if (observed.state === "active") return observed
+      return management.bindOn(machine, scheduleID, observed.hook_id, existing === observed.hook_id ? null : existing ?? null)
+    },
+    async saveClock(hook, scheduleID, rule, enabled) {
+      await instaBoxRequest(options.apiOrigin, clockPath(hook.hook_id), "PUT", {
+        schedule_id: scheduleID, expected_revision: hook.revision, enabled, rule,
+      })
+    },
     client,
     // A schedule listed from another machine is bound on that machine: the
     // binding lives beside the schedule, in the store that fires it.

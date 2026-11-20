@@ -3,7 +3,9 @@ import { nextWord } from "../next-strings.js"
 export const instaBoxProviderPath = "/v1/cloud-providers/instabox"
 export const instaBoxWakePath = (machine: string) => `/v1/machines/${encodeURIComponent(machine)}/instabox-wake`
 
-class InstaBoxRequestError extends Error {}
+export class InstaBoxRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
 
 export async function instaBoxRequest<T>(origin: string, path: string, method = "GET", body?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch(new URL(path, origin), {
@@ -13,7 +15,7 @@ export async function instaBoxRequest<T>(origin: string, path: string, method = 
   const result = await response.json().catch(() => null)
   if (!response.ok || !result) {
     const code = typeof result?.error?.code === "string" ? result.error.code : "instabox_unavailable"
-    throw new InstaBoxRequestError(code)
+    throw new InstaBoxRequestError(code, response.status)
   }
   return result
 }
@@ -34,7 +36,7 @@ export function instaBoxWakeReason(error: unknown) {
   }
 }
 
-export type InstaBoxBinding = { configured: boolean; credential_ready: boolean; schedule_webhook_wake_enabled?: boolean; schedule_webhook_wake_status?: string | null }
+export type InstaBoxBinding = { schedule_clock_ready?: boolean; configured: boolean; credential_ready: boolean; schedule_webhook_wake_enabled?: boolean; schedule_webhook_wake_status?: string | null }
 
 export function readInstaBoxBinding(origin: string, machine: string, signal?: AbortSignal) {
   return instaBoxRequest<InstaBoxBinding>(origin, instaBoxWakePath(machine), "GET", undefined, signal)

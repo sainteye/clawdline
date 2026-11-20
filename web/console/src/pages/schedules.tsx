@@ -44,6 +44,7 @@ import {
   strings,
   tint,
   unansweredSentence,
+  uuid,
   type ScheduleAssistant,
   type ScheduleBody,
   type ScheduleFailure,
@@ -54,6 +55,7 @@ import {
   type ScheduleRecord,
   type ScheduleRun,
 } from "../legacy/schedules-bridge.js"
+import { clockExecutor, clockRule, clockScheduleRecord, type ScheduleClock } from "../cloud/schedule-clock.js"
 import { scheduleWebhookManagement } from "../cloud/schedule-webhooks.js"
 import {
   choosesMachine,
@@ -177,7 +179,26 @@ function result(value: unknown): { state: string; label: string } {
   return { state: "none", label: "—" }
 }
 
+const clocksByMachine = new Map<string, Map<string, ScheduleClock>>()
+
+function linuxClockTarget(machine?: string): boolean {
+  return !!machine && /^linux(?:_aws)?$/i.test(machineNamed(machine)?.platform || "")
+}
+
+async function loadClockRows(machine: string | undefined) {
+  const management = scheduleWebhookManagement()
+  if (!management || !machine || !linuxClockTarget(machine)) return
+  try {
+    const clocks = await management.clocks(machine)
+    clocksByMachine.set(machine, new Map(clocks.map(clock => [clock.schedule_id, clock])))
+  } catch {
+    // The cloud-only metadata is optional to the machine's schedule inventory.
+  }
+}
+
 function validRow(schedule: ScheduleListRow, at?: number): string {
+  const clock = clocksByMachine.get(schedule.machine ?? scheduleFleet()?.current ?? "")?.get(schedule.id ?? "")
+  if (clock) schedule = clockScheduleRecord({ ...schedule, id: clock.schedule_id }, clock)
   const outcome = result(schedule.last_run && schedule.last_run.state)
   const next = schedule.next_fire ? relativeTime(schedule.next_fire, at) : ""
   const nextTitle = schedule.next_fire ? new Date(schedule.next_fire * 1000).toLocaleString() : ""
@@ -188,6 +209,7 @@ function validRow(schedule: ScheduleListRow, at?: number): string {
     noNext: T().webScheduleNoNext,
     triggerOnly: nextWord("scheduleTriggerOnlyNext"),
   })
+  if (clock) nextLine = nextWord("scheduleClockHosted") + " · " + nextLine
   if (schedule.when?.every_days) nextLine = nextWord("scheduleIntervalSummary", { days: schedule.when.every_days, at: schedule.when.at || "" }) + " · " + nextLine
   const missed = schedule.last_missed_at
     ? '<time class="schedule-missed" title="' +
@@ -458,6 +480,11 @@ const Schedules = (() => {
         renderSchedules(lastAnswer.schedules, at, unanswered)
         paintReadState()
         const version = ++answerVersion
+        void loadClockRows(scheduleFleet()?.current).then(() => {
+          if (requestedMachines === machineKey() && version === answerVersion && lastAnswer) {
+            renderSchedules(lastAnswer.schedules, at, unanswered)
+          }
+        })
         // Labels are optional. A slow project read must not hold the inventory
         // lane open when another machine becomes readable.
         void loadProjects(schedules).then((withProjects) => {
@@ -534,6 +561,7 @@ const Schedules = (() => {
     paint()
     void Promise.all(fleet.machines.map(async (machine) => {
       try {
+        void loadClockRows(machine.id).then(paint)
         const data = await scheduleApi.schedules(machine.id)
         if (requestedMachines !== machineKey()) return
         const missing = data.unanswered?.find((row) => row.machine === machine.id)
@@ -747,6 +775,31 @@ const Schedule = (() => {
   let machine: string | undefined
   let ownerMachine: string | undefined
   let editRecord: ScheduleRecord | null = null
+  let savedClock: ScheduleClock | null = null
+  let clockEligible = false
+  let clockProbe = 0
+  let clockDraftKey: string | undefined
+
+  const clockMachine = () => machine ?? scheduleFleet()?.current
+  function describeClock(): void {
+    const note = el("schedule-clock-note")
+    note.hidden = triggerOnly || (!clockEligible && !savedClock)
+    note.textContent = nextWord("scheduleClockExplanation")
+  }
+
+  function loadClockEligibility(): void {
+    const management = scheduleWebhookManagement()
+    const target = clockMachine()
+    const version = ++clockProbe
+    clockEligible = false
+    describeClock()
+    if (!management || !target || !linuxClockTarget(target)) return
+    void management.clockReady(target).then(ready => {
+      if (version !== clockProbe) return
+      clockEligible = ready
+      describeClock()
+    }, () => {})
+  }
   // The owner's places, kept when the form turns to another machine: the move
   // disables the source by its own place id.
   let ownerPlaces: SchedulePlace[] | null = null
@@ -813,6 +866,7 @@ const Schedule = (() => {
     row.innerHTML = ""
     const fleet = scheduleFleet()
     block.hidden = !choosesMachine(fleet)
+    loadClockEligibility()
     if (!choosesMachine(fleet)) return
     fleet.machines.forEach((m) => {
       const chip = document.createElement("button")
@@ -1037,6 +1091,7 @@ const Schedule = (() => {
     el("schedule-at-block").hidden = triggerOnly
     el("schedule-days-block").hidden = triggerOnly
     el("schedule-interval-fields").hidden = triggerOnly || !intervalOn
+    describeClock()
     paint()
   }
 
@@ -1247,6 +1302,8 @@ const Schedule = (() => {
     machine = choosesMachine(fleet) ? fleet.current : undefined
     ownerMachine = undefined
     editRecord = null
+    savedClock = null
+    clockDraftKey = undefined
     ownerPlaces = null
     placesTicket += 1
     places = null
@@ -1364,9 +1421,16 @@ const Schedule = (() => {
     paint()
     scheduleApi
       .schedule(id, ownerMachine)
-      .then((d) => {
-        editRecord = (d && d.schedule) || null
-        fillFromRecord((d && d.schedule) || ({} as ScheduleRecord))
+      .then(async (d) => {
+        const record = d.schedule
+        if (!record) throw new Error("schedule_not_found")
+        const management = scheduleWebhookManagement()
+        const clock = record.webhook_hook_id && management
+          ? await management.clock(record.webhook_hook_id) : null
+        if (editingId !== id) return
+        savedClock = clock
+        editRecord = clockScheduleRecord(record, clock)
+        fillFromRecord(editRecord)
       })
       .catch((e: ScheduleFailureLike) => {
         loadingEdit = false
@@ -1469,8 +1533,11 @@ const Schedule = (() => {
     const id = editingId
     deleteBusy = true
     paintDeleteConfirm()
-    scheduleApi
-      .deleteSchedule(id, ownerMachine)
+    const management = scheduleWebhookManagement()
+    const stopClock = savedClock && management
+      ? management.saveClock({ ...savedClock, state: "active" }, id, null, false)
+      : Promise.resolve()
+    stopClock.then(() => scheduleApi.deleteSchedule(id, ownerMachine))
       .then(() => {
         deleteBusy = false
         el("schedule-delete-confirm").hidden = true
@@ -1566,6 +1633,10 @@ const Schedule = (() => {
     }
 
     if (moving()) {
+      if (savedClock) {
+        said(nextWord("scheduleClockMove"))
+        return
+      }
       move(payload)
       return
     }
@@ -1573,10 +1644,7 @@ const Schedule = (() => {
     creating = true
     said("")
     paint()
-    const request = editing
-      ? scheduleApi.updateSchedule(editingId!, payload, ownerMachine)
-      : scheduleApi.createSchedule(payload)
-    request
+    saveSchedule(payload)
       .then((d) => {
         creating = false
         close()
@@ -1589,9 +1657,49 @@ const Schedule = (() => {
       })
       .catch((e: ScheduleFailureLike) => {
         creating = false
-        said(why(e, editing ? T().webRequestFailed : T().webScheduleFailed))
+        const code = e?.code || (e instanceof Error ? e.message : "")
+        said(code.startsWith("instabox_clock") || code === "invalid_schedule_clock"
+          ? nextWord("scheduleClockSaveFailed") : why(e, editing ? T().webRequestFailed : T().webScheduleFailed))
         paint()
       })
+  }
+
+  async function saveSchedule(payload: ScheduleBody) {
+    const management = scheduleWebhookManagement()
+    const target = clockMachine()
+    const id = editingId
+    // One-shot schedules written by an older daemon keep their own clock.
+    if (savedClock && (!management || !target)) throw new Error("instabox_clock_unavailable")
+    const useClock = management && target && !payload.trigger_only &&
+      (savedClock || (!editingOnce && linuxClockTarget(target) && await management.clockReady(target)))
+    if (!management || !target || !useClock) {
+      const answer = id
+        ? await scheduleApi.updateSchedule(id, payload, ownerMachine)
+        : await scheduleApi.createSchedule(payload)
+      if (savedClock && management && id) {
+        await management.saveClock({ ...savedClock, state: "active" }, id, null, false)
+      }
+      return answer
+    }
+
+    const rule = clockRule(payload)
+    const local = clockExecutor(payload)
+    if (id) {
+      const hook = await management.clockBinding(target, id, savedClock?.hook_id ?? editRecord?.webhook_hook_id)
+      const answer = await scheduleApi.updateSchedule(id, local, ownerMachine)
+      await management.saveClock(hook, id, rule, payload.enabled)
+      return answer
+    }
+
+    // Keep the same local idempotency key if the machine's answer was lost.
+    // Once the executor exists, Save resumes from that id instead of creating another.
+    const answer = await scheduleApi.createSchedule(local, clockDraftKey ??= uuid())
+    if (!answer.schedule?.id) throw new Error("instabox_clock_schedule_missing")
+    editingId = answer.schedule.id
+    ownerMachine = machine
+    const hook = await management.clockBinding(target, editingId)
+    await management.saveClock(hook, editingId, rule, payload.enabled)
+    return answer
   }
 
   /** A refusal of a move, before anything was written, as the sentence to act on. */
@@ -1867,7 +1975,7 @@ export function openScheduleFrom(draft: SpokenScheduleDraft, instructions: strin
 
 /* ---- input/schedule-history.js: one schedule as work that happened ----------- */
 
-type WebhookHook = { hook_id: string; state: string; revision: number; availability?: string } | null
+type WebhookHook = { hook_id: string; state: string; revision: number; availability?: string; clock_only?: boolean } | null
 
 const ScheduleHistory = (() => {
   const historyPageRows = 10
@@ -1884,6 +1992,7 @@ const ScheduleHistory = (() => {
   // there, so each reads as the value it holds rather than as a constant null.
   let webhook = scheduleWebhookManagement()
   let hook: WebhookHook = null
+  let historyClock: ScheduleClock | null = null
   const deliveries: unknown[] = []
   let ephemeralURL: string | null = null
   let effectiveTier: string | null = null
@@ -2070,8 +2179,9 @@ const ScheduleHistory = (() => {
     const state = webhookNode("schedule-webhook-state")
     if (state) {
       state.hidden = !hook
-      state.dataset.state = hook && hook.state === "active" ? "on" : "off"
-      state.textContent = hook ? nextWord(hook.state === "active" ? "scheduleWebhookStateOn" : "scheduleWebhookStateOff") : ""
+      const publicHook = hook?.state === "active" && !hook.clock_only
+      state.dataset.state = publicHook ? "on" : "off"
+      state.textContent = hook ? nextWord(publicHook ? "scheduleWebhookStateOn" : "scheduleWebhookStateOff") : ""
     }
     webhookNode("schedule-webhook-note")!.textContent = ephemeralURL ? words.once : words.idempotency
     const managementContext = {
@@ -2093,16 +2203,16 @@ const ScheduleHistory = (() => {
       webhookNode("schedule-webhook-help-copy-example")!.textContent = words.copyExample
     }
     const current = hook
-    webhookNode("schedule-webhook-generate")!.hidden = !(!current || current.state === "disabled")
+    webhookNode("schedule-webhook-generate")!.hidden = !!current && current.state !== "disabled" && !current.clock_only
     ;(webhookNode("schedule-webhook-generate") as HTMLButtonElement).disabled = !scheduleWebhookCanGenerate(
-      hook,
+      hook?.clock_only ? null : hook,
       managementContext,
     )
     drawWebhookURL()
-    webhookNode("schedule-webhook-rotate")!.hidden = !current || current.state !== "active"
+    webhookNode("schedule-webhook-rotate")!.hidden = !current || current.state !== "active" || !!current.clock_only
     ;(webhookNode("schedule-webhook-rotate") as HTMLButtonElement).disabled =
       effectiveTier === null || effectiveTier === "free"
-    webhookNode("schedule-webhook-disable")!.hidden = !current || current.state === "disabled"
+    webhookNode("schedule-webhook-disable")!.hidden = !current || current.state === "disabled" || !!current.clock_only
     webhookNode("schedule-webhook-timeline")!.innerHTML = scheduleWebhookTimelineHTML(deliveries, observedReceipts, lang())
     observeVisibleTimeline()
   }
@@ -2138,15 +2248,20 @@ const ScheduleHistory = (() => {
     const hookRead = hookID ? webhook.client.read(hookID) : Promise.resolve(null)
     const deliveryRead = hookID ? webhook.client.deliveries(hookID) : Promise.resolve({ deliveries: [] })
     const entitlementRead = webhook.client.entitlements().catch(() => null)
-    return Promise.all([hookRead, deliveryRead, entitlementRead]).then(
+    const requested = ticket
+    const clockRead = hookID ? webhook.clock(hookID).catch(() => null) : Promise.resolve(null)
+    return Promise.all([hookRead, deliveryRead, entitlementRead, clockRead]).then(
       (answers) => {
+        if (ticket !== requested) return
+        historyClock = answers[3]
+        if (record) record = clockScheduleRecord(record, historyClock)
         const read = answers[0]
         hook = read && "hook" in read && read.hook ? read.hook : (read as WebhookHook)
         deliveries.splice(0, deliveries.length, ...((answers[1] && answers[1].deliveries) || []))
         effectiveTier = answers[2]
-        drawWebhook()
+        draw()
       },
-      webhookFailed,
+      () => { if (ticket === requested) webhookFailed() },
     )
   }
 
@@ -2155,6 +2270,7 @@ const ScheduleHistory = (() => {
     webhookNode("schedule-webhook-status")!.textContent = ""
     if (action === "copy" && ephemeralURL) return copyWebhookURL(ephemeralURL)
     urlCopied = ""
+    if (action === "generate" && hook?.clock_only) action = "rotate"
     if (action === "generate") {
       return generateAndBindScheduleWebhook(
         webhook.client,
@@ -2273,7 +2389,16 @@ const ScheduleHistory = (() => {
       : record && record.next_fire
         ? new Date(record.next_fire * 1000).toLocaleString()
         : ""
-    el("schedule-history-meta").textContent = [path, next].filter(Boolean).join(" · ")
+    el("schedule-history-meta").textContent = [path, historyClock && nextWord("scheduleClockHosted"), next].filter(Boolean).join(" · ")
+    const clockStatus = el("schedule-history-clock")
+    const state = historyClock?.delivery_state || historyClock?.last_state
+    const word = state === "expired" ? "scheduleClockExpired" :
+      state === "blocked" || state === "canceled" || state === "dispatch_refused" ? "scheduleClockBlocked" :
+      state === "terminal" ? (historyClock?.outcome === "success" ? "scheduleClockComplete" : "scheduleClockBlocked") :
+      state === "dispatch_accepted" ? "scheduleClockRunning" :
+      state ? "scheduleClockWaiting" : null
+    clockStatus.textContent = word ? nextWord(word) : ""
+    clockStatus.hidden = !word
     const assistant = record?.task?.assistant
     const agent = el("schedule-history-agent")
     agent.hidden = !record
@@ -2378,6 +2503,7 @@ const ScheduleHistory = (() => {
     pressing = null
     runningNow = false
     hook = null
+    historyClock = null
     deliveries.length = 0
     ephemeralURL = null
     started = false
@@ -2444,7 +2570,7 @@ const ScheduleHistory = (() => {
     scheduleApi.schedule(id, scheduleOwner(id)).then(
       (answer) => {
         if (scheduleId !== id || ticket !== startedTicket) return
-        record = (answer && answer.schedule) || record
+        if (answer?.schedule) record = clockScheduleRecord(answer.schedule, historyClock)
         const fresh = ((record && record.runs) || [])
           .filter((candidate) => candidate && candidate.task_id && !before.has(candidate.task_id))
           .sort((a, b) => (b.created || 0) - (a.created || 0))[0]

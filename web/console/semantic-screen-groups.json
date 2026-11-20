@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13798,
-  "riskKeys": 5896,
-  "nonRiskCount": 7902,
+  "englishContentKeys": 13807,
+  "riskKeys": 5901,
+  "nonRiskCount": 7906,
   "groups": [
     {
       "name": "acp / other",
@@ -5635,13 +5635,17 @@
     },
     {
       "name": "next / schedule",
-      "count": 33,
+      "count": 37,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
         "next.scheduleAntigravityEffortField",
         "next.scheduleArchiveCodex",
+        "next.scheduleClockExplanation",
+        "next.scheduleClockHosted",
+        "next.scheduleClockMove",
+        "next.scheduleClockRunning",
         "next.scheduleEffortField",
         "next.scheduleEveryDays",
         "next.scheduleExecutionAgent",

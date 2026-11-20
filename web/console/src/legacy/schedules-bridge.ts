@@ -169,6 +169,7 @@ export interface ScheduleBody {
   time_zone?: string
   /** `at` and `days`, or `trigger_only` alone: never both (`schedule-when.ts`). */
   at?: string
+  on?: string
   every_days?: number
   start?: string
   days?: string | string[]
@@ -283,8 +284,8 @@ export const scheduleApi = {
     })
     return asked
   },
-  createSchedule: (schedule: ScheduleBody | Record<string, unknown>) =>
-    jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() })),
+  createSchedule: (schedule: ScheduleBody | Record<string, unknown>, key = uuid()) =>
+    jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": key })),
   updateSchedule: (id: string, schedule: ScheduleBody | Record<string, unknown>, machine?: string) => {
     knownDetails.delete(detailKey(id, machine))
     const opts = post(schedule, { "Idempotency-Key": uuid() })
@@ -378,6 +379,7 @@ export const scheduleWebhookTimelineHTML = (
 ): string => machineWording(scheduleWebhookTimelineHTMLOriginal(deliveries, observed, language), language)
 
 export interface ScheduleWebhookHook {
+  clock_only?: boolean
   hook_id: string
   state: string
   revision: number
@@ -397,7 +399,7 @@ export interface ScheduleWebhookClientAPI {
   rotate(hookID: string, revision: number): Promise<ScheduleWebhookSecretResult>
   disable(hookID: string, revision: number): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
   /** The copied client's own request seam: session cookie, JSON, an `Idempotency-Key` when `mutate`. */
-  send(method: string, path: string, body: unknown, mutate: boolean): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
+  send(method: string, path: string, body: unknown, mutate: boolean, exactIdempotencyKey?: string): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
   observe(hookID: string, deliveryID: string, receiptVersion: number): Promise<Record<string, unknown>>
 }
 export const ScheduleWebhookClient = ScheduleWebhookClientOriginal as unknown as new (options: {

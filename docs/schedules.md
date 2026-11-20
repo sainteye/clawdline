@@ -169,6 +169,19 @@ Allow time for resume and claim in `deliver_within_seconds`. A short deadline ca
 resume or a provider cooldown, and accepting the wake never extends the deadline. Manual pauses
 and stopped machines still need to be resumed or started through InstaBox.
 
+**Timed schedules on InstaBox.** When a linked InstaBox can wake for Schedule Webhooks and the
+Cloud account can use Schedule Webhooks, the hosted schedule editor keeps the time, calendar,
+and time zone in Clawdline Cloud. The machine stores the project, assistant, and first message as
+a trigger-only schedule. At the scheduled time the Cloud worker submits a delivery through the
+same durable queue and requests wake. New clock-only bindings have no public URL. An already
+bound Webhook can still trigger the same task with its current URL.
+
+The next time and latest delivery are visible in the hosted schedule list and history. A delayed
+occurrence can run only within its catch-up window, with a five-minute minimum for waking. On a
+backward clock change the first instance of a repeated local time wins. A skipped wall-clock
+minute is skipped. The local daemon remains the clock for ordinary schedules and existing
+one-time schedules it already owns.
+
 **What the caller gets.** The `202 clawdline.schedule_webhook.accepted.v1` answer names the delivery
 (`delivery_id`, `deliver_by`), and
 `GET /v1/schedule-webhook-trigger/<token>/deliveries/<delivery_id>` — authorised by the same token —
