@@ -95,7 +95,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const towerItems=allItems.filter(i=>!i.bot.hidden&&(!machine||i.bot.key.machine_id===machine))
   // Until the person chooses, a desktop with Bots opens on the tower; a phone opens on the list.
   const botsView:BotsView=savedView??(!narrow&&towerItems.length>0?"tower":"list")
-  const tower=botsView==="tower"?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} projectName={item=>item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
+  const tower=botsView==="tower"?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} loading={rosterLoading} sources={sources} current={current} projectName={item=>item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
   const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])

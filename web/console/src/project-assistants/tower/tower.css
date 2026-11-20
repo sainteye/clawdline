@@ -76,10 +76,27 @@
 .project-assistants .pa-tower-waitlist li strong,.project-assistants .pa-tower-waitlist li small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0; }
 .project-assistants .pa-tower-waitlist li span,.project-assistants .pa-tower-waitlist li time { flex:none;color:#99999f;font-weight:500; }
 .project-assistants .pa-tower-waitlist li small { color:#cfc8c0;font-size:11px;font-weight:500; }
-.project-assistants .pa-tower-waitlist li div { display:flex;gap:6px;margin-top:2px; }
+.project-assistants .pa-tower-waitlist li > div:not(.pa-tower-allow) { display:flex;flex-wrap:wrap;gap:6px;margin-top:2px; }
 .project-assistants .pa-tower-waitlist li div button { min-height:28px;padding:0 10px;border:0;border-radius:0;cursor:pointer;font:inherit;color:#efe6dc;background:transparent;box-shadow:inset 0 0 0 1px rgba(156,166,179,.45); }
-.project-assistants .pa-tower-waitlist li div button:first-child { color:#120a10;background:#e39567;box-shadow:none; }
+.project-assistants .pa-tower-waitlist li > div:not(.pa-tower-allow) > button:first-child:not([aria-expanded]) { color:#120a10;background:#e39567;box-shadow:none; }
+.project-assistants .pa-tower-waitlist li > div > button[aria-expanded="true"] { color:#120a10;background:#cfc8c0;box-shadow:none; }
 .project-assistants .pa-tower-waitlist button:focus-visible { outline:2px solid #e39567;outline-offset:1px; }
+/* The full request behind a waiting Bot, read in place. */
+.project-assistants .pa-tower-allow { display:grid;gap:6px;margin-top:4px;padding:8px 10px;background:rgba(255,255,255,.03);box-shadow:inset 0 0 0 1px rgba(156,166,179,.25);font-weight:500; }
+.project-assistants .pa-tower-waitlist li .pa-tower-allow p { margin:0;display:block;color:#cfc8c0;white-space:normal; }
+.project-assistants .pa-tower-waitlist li .pa-tower-allow p.pa-tower-allow-title { color:#efe6dc;font-weight:700; }
+.project-assistants .pa-tower-allow pre { margin:0;max-height:160px;overflow:auto;padding:6px 8px;background:rgba(0,0,0,.35);color:#efe6dc;font:11px/1.45 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere; }
+.project-assistants .pa-tower-allow-diff { display:grid;gap:2px; }
+.project-assistants .pa-tower-allow-diff code { color:#99999f;font-size:11px;overflow-wrap:anywhere; }
+.project-assistants .pa-tower-allow-diff pre[data-old] { color:#99999f;text-decoration:line-through; }
+.project-assistants .pa-tower-waitlist li .pa-tower-allow p.pa-tower-allow-options { color:#99999f;font-size:11px; }
+.project-assistants .pa-tower-allow small { color:#99999f; }
+.project-assistants .pa-tower-waitlist li .pa-tower-allow p[role="alert"] { color:#e39567; }
+.project-assistants .pa-tower-waitlist li .pa-tower-allow p.pa-tower-allow-done { color:#75c6a5; }
+.project-assistants .pa-tower-waitlist .pa-tower-allow-actions { display:flex;flex-wrap:wrap;gap:6px; }
+.project-assistants .pa-tower-waitlist .pa-tower-allow-actions button { min-height:28px;padding:0 10px;border:0;border-radius:0;cursor:pointer;font:inherit;color:#efe6dc;background:transparent;box-shadow:inset 0 0 0 1px rgba(156,166,179,.45); }
+.project-assistants .pa-tower-waitlist .pa-tower-allow-actions .pa-tower-allow-once { color:#120a10;background:#e39567;box-shadow:none; }
+.project-assistants .pa-tower-waitlist .pa-tower-allow-actions button:disabled { opacity:.6;cursor:default; }
 /* Wide screens fit the whole floor in the pane; a phone pans it instead (below). */
 @media(min-width:701px) {
   .project-assistants .pa-tower-stage { flex:1;min-height:0;display:grid;place-items:center;container-type:size; }
@@ -142,6 +159,7 @@
   /* Below the picture on a phone, so the floor stays in view. */
   .project-assistants .pa-tower-waitlist { margin-top:8px;max-height:46vh; }
   .project-assistants .pa-tower-waitlist li div button { min-height:40px;padding:0 14px; }
+  .project-assistants .pa-tower-allow pre { max-height:120px; }
 }
 /* A waiting Bot's tag clears the "!" drawn above its head. */
 .project-assistants .pa-tower-bot[data-mood="wait"] .pa-tower-tip { bottom:calc(100% + 22px); }

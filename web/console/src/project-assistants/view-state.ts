@@ -12,6 +12,17 @@ export const sameFence = (a: W.ProjectAssistantFence, b: W.ProjectAssistantFence
   && a.binding_id === b.binding_id && a.generation === b.generation
 export const canRead = (source: W.ProjectAssistantSourceStatus) => source.readable && source.access !== "hidden" && source.state !== "revoked" && source.state !== "unpaired"
 export const canWrite = (source: W.ProjectAssistantSourceStatus) => canRead(source) && source.writable && source.access === "interactive" && source.state === "online" && source.fresh
+
+export type PermissionIdentity = Pick<W.ProjectAssistantReadPermissionSummary, "id" | "fence" | "turn_id">
+export type PermissionStatus = Pick<W.ProjectAssistantReadPermissionSummary, "state" | "expires_at">
+/** One offer: the same id, turn and fence. */
+export function samePermission(a: PermissionIdentity, b: PermissionIdentity) {
+  return a.id === b.id && a.turn_id === b.turn_id && sameFence(a.fence, b.fence)
+}
+/** A pending offer past its deadline reads as expired, whatever the source last said. */
+export function permissionState(value: PermissionStatus, now = Date.now()) {
+  return value.state === "pending" && !(Date.parse(value.expires_at) > now) ? "expired" : value.state
+}
 export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSummary[])[]): W.ProjectAssistantBotSummary[] {
   const byKey = new Map<string, W.ProjectAssistantBotSummary>()
   for (const item of pages.flat()) {

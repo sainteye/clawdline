@@ -4,6 +4,9 @@ import type { Words } from "../words"
 import { assignFloors, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
 import { ramenScene, sectionScene, towerFloors, type TowerScene } from "./tower-scene"
 import { drawBot } from "./tower-draw"
+import { TowerAllowCard, type TowerAllow } from "./TowerAllowCard"
+import { allowOnce, readWaiting, AllowError, type AllowReason } from "./tower-allow"
+import type { SourceClient } from "../client"
 import "./tower.css"
 
 export interface BotTowerProps {
@@ -16,6 +19,12 @@ export interface BotTowerProps {
   highlight?: string | null
   projectName: (item: W.ProjectAssistantBotSummary) => string | undefined
   onSelect: (item: W.ProjectAssistantBotSummary) => void
+  /** The Bots' sources, to read and answer a waiting offer in place; without
+   * them the waiting list is read-only. */
+  sources?: readonly SourceClient[]
+  current?: () => readonly SourceClient[]
+  /** The roster is still loading: an empty tower is not yet known to be empty. */
+  loading?: boolean
 }
 
 // URLs rather than imports keep test bundlers that have no image loader working; Vite still emits the files.
@@ -71,7 +80,7 @@ function place(scene: TowerScene, b: TowerBot, index: number, now: number, still
   return { at: slotPoint(scene.zones[b.zone], index), moving: false }
 }
 
-export default function BotTower({ items, w, language, paused = false, highlight = null, projectName, onSelect }: BotTowerProps) {
+export default function BotTower({ items, w, language, paused = false, highlight = null, projectName, onSelect, sources, current, loading = false }: BotTowerProps) {
   const [tick, setTick] = useState(() => Date.now())
   const reduced = useReducedMotion()
   const [visible, setVisible] = useState(true)
@@ -81,6 +90,21 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const [panelOpen, setPanelOpen] = useState(false)
   // The waiting list opens from the HUD's waiting chip and closes once nobody waits.
   const [waitOpen, setWaitOpen] = useState(false)
+  // The row showing its full request, and every offer already sent from here.
+  const [shown, setShown] = useState<string | null>(null)
+  const attempted = useRef(new Map<string, AllowReason | "allowed">())
+  // Each offer is read and answered through its own Bot's source, never another.
+  const sourceRef = useRef(sources); sourceRef.current = sources
+  const allow = useMemo<TowerAllow | undefined>(() => !current ? undefined : {
+    read(item, signal) {
+      const source = sourceRef.current?.find(s => s.machineID === item.bot.key.machine_id)
+      return source ? readWaiting(source, current, item, signal) : Promise.reject(new AllowError("revoked"))
+    },
+    send(waiting, signal) {
+      const source = sourceRef.current?.find(s => s.machineID === waiting.scope.key.machine_id)
+      return source ? allowOnce(source, current, waiting, signal) : Promise.reject(new AllowError("revoked"))
+    },
+  }, [current])
   const buttons = useRef(new Map<string, HTMLButtonElement>())
   // Item changes place Bots at once; the idle tiers also age once a minute.
   const now = useMemo(() => Date.now(), [items, tick])
@@ -258,7 +282,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <p className="pa-hud-facts" role="status">
       {summary.total ? chips.map(c => c.key === "wait"
         ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
-        : <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
+        : <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{loading ? w.loading : w.towerEmpty}</span>}
     </p>
   </div>
   // Read-only: each row says who waits, where, on what, and since when; it
@@ -273,9 +297,11 @@ export default function BotTower({ items, w, language, paused = false, highlight
         <p><strong>{b.item.bot.name}</strong><span>{building ? `${floors[at].label} · ${project}` : project}</span></p>
         <p>{b.caption && <small>{b.caption}</small>}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
         <div>
-          <button type="button" onClick={() => onSelect(b.item)}>{w.towerOpenChat}</button>
+          {allow && <button type="button" aria-expanded={shown === b.key} onClick={() => setShown(s => s === b.key ? null : b.key)}>{w.towerAllowShow}</button>}
+          {shown !== b.key && <button type="button" onClick={() => onSelect(b.item)}>{w.towerOpenChat}</button>}
           {elsewhere && <button type="button" aria-label={w.towerRideTo.replace("{floor}", floors[at].label)} onClick={() => { setWaitOpen(false); goFloor(at) }}>{w.towerRide}</button>}
         </div>
+        {allow && shown === b.key && <TowerAllowCard key={b.key} item={b.item} allow={allow} attempted={attempted.current} w={w} onChat={() => onSelect(b.item)}/>}
       </li>
     })}</ol>
   </div>
