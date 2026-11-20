@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -692,8 +693,11 @@ var _ = store.Reclaim{}
 
 // A new Claude Code session is opened in a project folder recorded as trusted
 // first, so its first screen is a composer rather than the workspace-trust
-// dialog nothing may answer. Codex carries its answer on the command line and
-// records nothing.
+// dialog nothing may answer. The broker's own package folder handed to it with
+// --add-dir is trusted through its parent too: Claude Code 2.1.329 otherwise
+// asks "Adding a new directory … trust?" with "No, exit" selected, which held a
+// milestone handoff on 2026-11-20. Codex carries its answer on the command line
+// and records nothing.
 func TestANewClaudeRootIsOpenedInATrustedFolder(t *testing.T) {
 	for _, assistant := range []string{"claude", "codex"} {
 		b, ctx := newTestBroker(t)
@@ -718,9 +722,9 @@ func TestANewClaudeRootIsOpenedInATrustedFolder(t *testing.T) {
 		}
 		want := []string{}
 		if assistant == "claude" {
-			want = []string{project}
+			want = []string{project, b.AssignmentRoot()}
 		}
-		if len(trusted) != len(want) || (len(want) == 1 && trusted[0] != want[0]) {
+		if fmt.Sprint(trusted) != fmt.Sprint(want) {
 			t.Fatalf("%s: trusted %v, want %v", assistant, trusted, want)
 		}
 	}

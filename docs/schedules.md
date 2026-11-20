@@ -162,6 +162,13 @@ already declared expired. A `schedule_dispatch_refused` receipt carries a stable
 `TestEveryTerminalTaskStateHasAWebhookOutcome` fails if the broker grows a terminal state with no
 outcome.
 
+**Waking an InstaBox target.** In the device's InstaBox settings, the account owner can allow
+new Schedule Webhook deliveries to wake an auto-paused machine. The Cloud API records wake demand
+with the existing delivery; the source claims it and returns the same receipts after reconnect.
+Allow time for resume and claim in `deliver_within_seconds`. A short deadline can expire during
+resume or a provider cooldown, and accepting the wake never extends the deadline. Manual pauses
+and stopped machines still need to be resumed or started through InstaBox.
+
 **What the caller gets.** The `202 clawdline.schedule_webhook.accepted.v1` answer names the delivery
 (`delivery_id`, `deliver_by`), and
 `GET /v1/schedule-webhook-trigger/<token>/deliveries/<delivery_id>` — authorised by the same token —

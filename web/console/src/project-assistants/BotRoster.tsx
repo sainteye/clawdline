@@ -216,7 +216,8 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
           {view!=="tower"&&<label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>}
           {several&&<div className="pa-roster-filter"><span>{w.total} {(loading&&!items.length||unavailable&&!shown.length)?"…":shown.length}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
           <div className="pa-roster-scroll">
-            {skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
+            {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
+            {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
             {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
             {group.content}
             {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}

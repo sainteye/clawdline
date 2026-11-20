@@ -1,19 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import {errorCode} from "./client"
-import {sameFence} from "./view-state"
+import {permissionState,samePermission,type PermissionStatus} from "./view-state"
 import type { Words } from "./words"
 
-type PermissionIdentity=Pick<W.ProjectAssistantReadPermissionSummary,"id"|"fence"|"turn_id">
-type PermissionStatus=Pick<W.ProjectAssistantReadPermissionSummary,"state"|"expires_at">
-
-export function samePermission(a:PermissionIdentity,b:PermissionIdentity) {
-  return a.id===b.id&&a.turn_id===b.turn_id&&sameFence(a.fence,b.fence)
-}
-
-export function permissionState(value:PermissionStatus,now=Date.now()) {
-  return value.state==="pending"&&!(Date.parse(value.expires_at)>now)?"expired":value.state
-}
+// The tower answers offers too, so the identity and expiry rules live in view-state.
+export {permissionState,samePermission}
 
 // Codync's sortedOptions: allow before deny, once before persistent options.
 export function sortedOptions(options:readonly W.ProjectAssistantPermissionOption[]) {

@@ -880,7 +880,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/handoffs.go",
-          "line": 848
+          "line": 860
         },
         {
           "path": "internal/transport/http/work_v2_brief.go",
@@ -2037,7 +2037,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/handoffs.go",
-          "line": 303
+          "line": 315
         },
         {
           "path": "internal/app/orchestrator/handoff_pack.go",
@@ -5189,7 +5189,7 @@
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/dispatch.go": "f8f4c93385fa6c7b6f0e06f8209eff22946e1104e20ef149a8e975b6bcb51001",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
-    "internal/app/orchestrator/handoffs.go": "08812f4ed07abf7a7cda6993fa1589c36143ba57322a3c0e1fa60999a90a51f9",
+    "internal/app/orchestrator/handoffs.go": "e3d2c18486a12abfb7139edb28549c3387b750eab46bd3fd92098aaa6247a8a6",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
     "internal/app/orchestrator/milestone_name.go": "590d98d9d1842636dc58613f86c4e088483f860c098aba0ab9f82eb292a7c641",
     "internal/app/orchestrator/notice.go": "3261eecc450916a8575529eb4b9f753426b1c56b9b1320e3f5860f8bea9c956d",
@@ -5306,7 +5306,7 @@
     "web/console/src/cloud/project-assistants.ts": "93caeda4a288661c40f8b709440e2f1c8e6c1753b65c283bead65d4721b4178f",
     "web/console/src/cloud/relay-writer.ts": "39cedab8efae1d1ed91b979c26e4cbb3af3867417764a7d5d332739fa5f1f580",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "3c7e098efe93e439917f8c4c171967492f83717c61d62225c603c59db1288bc6",
+    "web/console/src/next-strings.ts": "d07ea1609882150ee63288b261d08d7d2c821b3ce2886561b53cb458260edb21",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
