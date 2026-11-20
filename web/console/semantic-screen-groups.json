@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13670,
-  "riskKeys": 5866,
-  "nonRiskCount": 7804,
+  "englishContentKeys": 13673,
+  "riskKeys": 5868,
+  "nonRiskCount": 7805,
   "groups": [
     {
       "name": "acp / other",
@@ -4163,11 +4163,12 @@
     },
     {
       "name": "next / end",
-      "count": 12,
+      "count": 13,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.endBackgroundFailure",
         "next.endNamedTitle",
         "next.endProcessRecoveryGo",
         "next.endWorkBoardLabel",

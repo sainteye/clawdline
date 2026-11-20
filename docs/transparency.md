@@ -1097,3 +1097,9 @@ The Bot review panel resolves participant profiles by their recorded Project
 and reads exchange notices through the existing paginated chat view. The
 English and Taiwan Traditional Chinese Bot review and turn context explanations
 still describe the same prompts, tools, memory access and execution authority.
+
+Closing a Session now dismisses its detail and hides the row while the terminal
+receipt is pending. The Cloud writer captures the selected execution before the
+detail changes and uses the closeability version from the confirmation. The
+English and Taiwan Traditional Chinese Session rotation and CodeGraph entries
+still describe the same handoff request, safety check and message guidance.

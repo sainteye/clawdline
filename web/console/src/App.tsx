@@ -30,6 +30,7 @@ import { askHealthNow, healthPace, publishHealth, setHealthAsker } from "./healt
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
 import { conversationNotStarted } from "./session/readiness.js"
+import { closingRowKey, observeClosingRows, useClosingRows } from "./session/closing-rows.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
 import { drawerEntries, pageNeedsUpdate, pageReady } from "./pages/registry.js"
@@ -75,7 +76,6 @@ import {
   OPEN_INFO,
   Overlays,
   closeKeys,
-  endedIfGone,
   getClosingId,
   hostConfirm,
   hostInfo,
@@ -515,7 +515,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   const pendingRow = started ?? cloudStartedRow
   const availableRows = pendingRow && !receivedRows.some((row) => row.id === pendingRow.id)
     ? [pendingRow, ...receivedRows] : receivedRows
-  const rows = useMemo(() => withConfirmedFleetTitle(identifyOpenedFleetRow(fleetTarget && fleetReaderMachine === fleetTarget.machineID && fleetTargetRow &&
+  const unfilteredRows = useMemo(() => withConfirmedFleetTitle(identifyOpenedFleetRow(fleetTarget && fleetReaderMachine === fleetTarget.machineID && fleetTargetRow &&
     fleetTargetRow.id === fleetTarget.sessionID &&
     fleetTargetRow.execution_generation === fleetTarget.executionGeneration &&
     !availableRows.some((row) => row.id === fleetTarget.sessionID &&
@@ -524,6 +524,16 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
     fleetTarget, fleetReaderMachine, confirmedTitle),
   [availableRows, fleetTarget && destinationKey(fleetTarget), fleetReaderMachine, fleetTargetRow,
     fleetTargetIdentity?.machineScope, fleetTargetIdentity?.coordinatorBound, confirmedTitle])
+  const closingRows = useClosingRows()
+  const closeScope = fleetReaderMachine ?? null
+  const rows = useMemo(() => closingRows.size
+    ? unfilteredRows.filter((row) => !closingRows.has(closingRowKey(closeScope, row)))
+    : unfilteredRows, [unfilteredRows, closeScope, closingRows])
+  useEffect(() => {
+    if (!fleetList && fleet.snapshot?.scan.complete && closingRows.size) {
+      observeClosingRows(closeScope, new Set(unfilteredRows.map((row) => closingRowKey(closeScope, row))))
+    }
+  }, [fleetList, fleet.snapshot, closeScope, unfilteredRows, closingRows])
   // The opened fleet Session, waiting for its own row. The pane has nothing to
   // draw until the row is here, and the cloud layer decides how long that may
   // go on without being said (`cloud/opened-row.ts`).
@@ -577,10 +587,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
     select(ids[nextIndex(at, ids.length)])
   }
 
-  // While a session is being ended, and until that settles, the open session is
-  // not given back or replaced (`closingSelectionKey`). The confirmation owns
-  // the close and is asked first; the header's own flag is read as well while
-  // the header still runs a close of its own.
+  // Keep the detail in place while the archive is saving its durable record.
   const closing = () =>
     getClosingId() !== null || document.getElementById("detail-head")?.dataset.closing === "on"
 
@@ -742,8 +749,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // replaced rather than pushed so it adds no Back step. On a desk the list
   // never went, and only a `#session=…` address goes: one naming another page
   // is where the reader is.
-  // `settled` is the close's own call: it gives the detail back once the close
-  // has settled, a frame before the header has been redrawn to say so.
+  // The action's own call can give the detail back before the header redraws.
   const closeDetail = (settled = false) => {
     if (!settled && openRef.current && closing()) return
     setOpen(null)
@@ -773,9 +779,6 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // gone, never by opening a default row in its place.
   const firstList = useRef(true)
   useEffect(() => {
-    // A list without the session being closed is that close's answer
-    // (`SessionActions.gone`), and it settles before the detail is given back.
-    endedIfGone(new Set(rows.map((r) => r.id)))
     if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
     if (openRef.current && !rows.some((r) => r.id === openRef.current)) {
       if (fleetList && fleetTarget) setOpen(null)
@@ -804,8 +807,15 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
 
   // The phone's back gesture (`input/action-confirm.js`), and a window that
   // changes width under an open session (`input/edges.js`).
-  const layoutRef = useRef({ closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
-  layoutRef.current = { closeDetail, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }
+  const closeTarget = (id: string) => {
+    if (fleetTarget && (fleetTarget.machineID !== closeScope || fleetTarget.sessionID !== id)) return null
+    const row = unfilteredRows.find((row) => row.id === id &&
+      (!fleetTarget || row.execution_generation === fleetTarget.executionGeneration) &&
+      (!("machine" in row) || row.machine === closeScope))
+    return row ? { machine: closeScope, row, title: detailSessionName(row) } : null
+  }
+  const layoutRef = useRef({ closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
+  layoutRef.current = { closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }
 
   // What the overlays ask of the page. `writable` is the original's `S.write`,
   // which comes from `/v1/health`; this daemon's health does not carry it, and
@@ -821,6 +831,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
       openId: () => openRef.current,
       writable: () => true,
       closeDetail: () => layoutRef.current.closeDetail(true),
+      closeTarget: (id) => layoutRef.current.closeTarget(id),
       refresh: () => layoutRef.current.refresh(),
     })
   }, [])

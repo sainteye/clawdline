@@ -104,10 +104,8 @@ export function closeExecutionChanged(id: string, kind: "end" | "archive"): void
 }
 
 /**
- * Which session is being closed, as `closingSelectionKey()` is there: the
- * detail head says "closing" (`data-closing="on"`) only while the session it
- * shows is the one going away. The confirmation owns the close now, so it
- * owns this too, and the header reads it with `useClosingId`.
+ * Which Session the archive sheet is waiting on. Its detail is locked until
+ * the archive receipt arrives, even if the terminal close appears first.
  */
 let closingId: string | null = null
 const watchers = new Set<() => void>()
