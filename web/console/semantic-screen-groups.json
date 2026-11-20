@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13598,
-  "riskKeys": 5830,
-  "nonRiskCount": 7768,
+  "englishContentKeys": 13603,
+  "riskKeys": 5833,
+  "nonRiskCount": 7770,
   "groups": [
     {
       "name": "acp / other",
@@ -7842,7 +7842,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 213,
+      "count": 215,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7924,6 +7924,8 @@
         "transparency.card.html-report.how",
         "transparency.card.html-report.summary",
         "transparency.card.html-report.title",
+        "transparency.card.instabox-setup.condition",
+        "transparency.card.instabox-setup.title",
         "transparency.card.investigation.condition",
         "transparency.card.investigation.title",
         "transparency.card.machine-codegraph.condition",
