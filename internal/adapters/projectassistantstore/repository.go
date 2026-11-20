@@ -916,7 +916,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			}
 		}
 		out.ActivityAt = msg.At
-		if reader != "" && msg.Seq > r.MessageSeq {
+		if reader != "" && msg.Seq > r.MessageSeq && (msg.Exchange == nil || msg.Exchange.Target.Key != a.Bot.Key) {
 			out.UnreadCount++
 		}
 	}

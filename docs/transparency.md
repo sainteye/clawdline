@@ -1109,3 +1109,8 @@ at a time. Review of the English and Taiwan Traditional Chinese persistent-Bot
 memory explanations confirmed that Project files remain a read-only display
 and do not enter the Bot's model context. The source receipts follow the
 reviewed read projection and UI.
+
+The Bot roster leaves incoming Bot exchange notices out of the recipient's
+unread count. The English and Taiwan Traditional Chinese Lead explanations
+still describe the same handoff, execution authority and prompts. The reviewed
+source receipt follows the roster projection.

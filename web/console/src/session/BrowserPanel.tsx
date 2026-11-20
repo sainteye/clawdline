@@ -201,7 +201,15 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
       // relay, so it is asked for at a lower quality there.
       call<{ value: Shot }>("GET", "/v1/browser/screenshot?tab=" + tabID + "&quality=" + (relay ? "45" : "55") + (browserMode ? "&browser_mode=" + encodeURIComponent(browserMode) : "")).then(
         (r) => { if (alive) { setShotRecord({ value: r.value, tab: tabID, mode: browserMode, scope: scopeKey }); setShotError(null) } },
-        (e: unknown) => { if (alive) setShotError(e) },
+        (e: unknown) => {
+          if (!alive) return
+          const code = (e as { code?: string } | null)?.code
+          if (code === "browser_no_tab" || code === "browser_tab_other_session") {
+            setShotRecord(null)
+            setStatusTick(x => x + 1)
+          }
+          setShotError(e)
+        },
       ).finally(() => { inFlight = false })
     }
     read()
