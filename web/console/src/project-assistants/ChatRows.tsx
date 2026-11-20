@@ -4,13 +4,14 @@ import {MessageReactions} from "./MessageReactions"
 import { botReplyHasBrowser } from "./bot-browser-entry"
 import { catalogWord } from "../catalog"
 import {InputCard} from "./InputCard"
-import type {ArtifactComposerAccess} from "./ArtifactWorkspace"
+import {ArtifactIcon,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {OutputCard} from "./OutputCard"
+import {OutputViewer} from "./OutputViewer"
 import { BotMessageMarkdown } from "./BotMessageMarkdown"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
 import type * as W from "@clawdline/contract"
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import type React from "react"
 import { buildTimelineChat } from "./chat-items"
 import { WorkResultCard } from "./WorkResultCard"
@@ -25,6 +26,29 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   const byID=new Map(messages.map(m=>[m.id,m]))
   const artifacts=new Map<string,W.ProjectAssistantMessage>();for(const m of messages){if(m.output?.artifact_id)artifacts.set(m.output.artifact_id,m)}
+  const chat=buildTimelineChat(timeline.filter(item=>!item.message?.output?.quiet))
+  // A reply can follow a publication by several bubbles. Keep the original
+  // card in sequence and make its latest version reachable from that reply.
+  const lastReplyByTurn=new Map<string,W.ProjectAssistantMessage>()
+  for(const item of chat){
+    if(item.kind!=="message")continue
+    const m=item.message
+    if(m.kind==="assistant"&&m.turn_id&&m.text.trim()&&!m.output&&!m.exchange)lastReplyByTurn.set(m.turn_id,m)
+  }
+  const artifactsByReply=new Map<string,Map<string,W.ProjectAssistantMessage>>()
+  for(const item of chat){
+    if(item.kind!=="message")continue
+    const m=item.message,id=m.output?.artifact_id,reply=lastReplyByTurn.get(m.turn_id)
+    if(!id||!reply||m.seq>=reply.seq||!sameConversation(reply.fence,m.fence))continue
+    const links=artifactsByReply.get(reply.id)??new Map<string,W.ProjectAssistantMessage>()
+    links.set(id,artifacts.get(id)??m)
+    artifactsByReply.set(reply.id,links)
+  }
+  const [openArtifact,setOpenArtifact]=useState<{source:SourceClient;revision:string;id:string}|null>(null)
+  const closeArtifact=useCallback(()=>setOpenArtifact(null),[])
+  const canOpenArtifact=!!source?.output&&source.canOutputs?.()!==false
+  const selectedArtifact=openArtifact&&openArtifact.source===source&&openArtifact.revision===source?.authorizationRevision&&canOpenArtifact
+    ?artifacts.get(openArtifact.id):undefined
   const [copied,setCopied]=useState<string|null>(null)
   const [exchange,setExchange]=useState<{message:W.ProjectAssistantMessage;source:SourceClient}|null>(null)
   const exchangeWord=exchangeWords(language)
@@ -51,7 +75,7 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
 
   }
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
-  return <>{buildTimelineChat(timeline.filter(item=>!item.message?.output?.quiet)).map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} onOpen={onOpenWork}/>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
+  return <>{chat.map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} onOpen={onOpenWork}/>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)
@@ -65,10 +89,19 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
       </button>
     </div>
   })():<Fragment key={JSON.stringify([item.kind,item.id])}><article data-arrival={arrivals?.has(item.id)||undefined} onAnimationEnd={e=>{if(e.animationName==="pa-bubble-enter")onArrivalEnd?.(item.id)}} data-message-id={item.id} data-message-seq={item.message.seq} onClick={(e:React.MouseEvent)=>onArticleClick(e)} tabIndex={0} onKeyDown={(e:React.KeyboardEvent)=>{if((e.key==="Enter"||e.key===" ")&&e.target===e.currentTarget){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}}} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}} className={`pa-message ${item.message.kind==="user"?"pa-mine":""} ${item.message.kind==="notice"?"pa-notice":""} ${item.groupStart?"pa-group-start":""}`}>
-    <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}{item.message.text&&!item.message.output&&(item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:<p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:item.message.text}</p>)}{onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}</div>
+    <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}{item.message.text&&!item.message.output&&(item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:<p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:item.message.text}</p>)}{onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}
+    {source&&artifactsByReply.has(item.id)&&<div className="pa-reply-artifacts">
+      {Array.from(artifactsByReply.get(item.id)!,([id,publication])=><button type="button" key={id} aria-haspopup="dialog" disabled={!canOpenArtifact}
+        onClick={()=>setOpenArtifact({source,revision:source.authorizationRevision,id})}>
+        <ArtifactIcon size={18}/><span>{publication.output!.name}</span><span aria-hidden="true">›</span>
+      </button>)}
+    </div>}</div>
     <MessageReactions key={JSON.stringify([source?.machineID,source?.authorizationRevision,item.message.id])} message={item.message} source={onQuote?source:undefined} dismissKey={dismissActionsKey} onQuote={onQuote?()=>onQuote(item.message):undefined} onCopy={item.message.text?()=>copy(item.message):undefined} copyLabel={copied===item.id?w.copiedMessage:w.copyMessage}/>
 
-  </article>{afterMessage?.(item.message)}</Fragment>)}{exchangeMessage?.exchange&&source&&botKey&&exchangeMessage.fence.key.machine_id===botKey.machine_id&&exchangeMessage.fence.key.bot_id===botKey.bot_id&&<ExchangePanel key={JSON.stringify([source.authorizationRevision,exchangeMessage.fence.key,exchangeMessage.fence.conversation_id,exchangeMessage.exchange.id])} source={source} scope={exchangeMessage.fence} reference={exchangeMessage.exchange} entries={entries} roster={participants} language={language} w={w} onClose={()=>setExchange(null)}/>}</>
+  </article>{afterMessage?.(item.message)}</Fragment>)}
+    {selectedArtifact&&source&&<OutputViewer artifactComposer={artifactComposer} item={{kind:"output",key:selectedArtifact.output!.artifact_id,message:selectedArtifact}}
+      source={source} w={w} onClose={closeArtifact}/>}
+    {exchangeMessage?.exchange&&source&&botKey&&exchangeMessage.fence.key.machine_id===botKey.machine_id&&exchangeMessage.fence.key.bot_id===botKey.bot_id&&<ExchangePanel key={JSON.stringify([source.authorizationRevision,exchangeMessage.fence.key,exchangeMessage.fence.conversation_id,exchangeMessage.exchange.id])} source={source} scope={exchangeMessage.fence} reference={exchangeMessage.exchange} entries={entries} roster={participants} language={language} w={w} onClose={()=>setExchange(null)}/>}</>
 }
 
 /** Resolve peers outside the loaded roster with one captured read in flight. */

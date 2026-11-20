@@ -135,6 +135,8 @@ func TestBotOutputMCPPeer(t *testing.T) {
 			artifact["idempotency_key"] = "artifact-two"
 			call("publish_artifact", artifact, false)
 			call("publish_artifact", artifact, false)
+			call("send_message", map[string]any{"idempotency_key": "summary", "text": "The report is ready.\n\n" + strings.Repeat("The report includes an example you can try.\n\n", 18)}, false)
+			call("send_message", map[string]any{"idempotency_key": "follow-up", "text": "You can open it here."}, false)
 			var listed []app.ArtifactInfo
 			if json.Unmarshal(call("list_artifacts", map[string]any{}, false), &listed) != nil || len(listed) != 1 {
 				os.Exit(28)

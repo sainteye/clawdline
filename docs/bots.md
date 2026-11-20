@@ -164,8 +164,10 @@ Bot's latest artifact descriptors, newest first, including their stable
 copy, rather than modifying stored snapshots.
 
 Click a file card to download its verified snapshot. An artifact card opens the
-newest published HTML, including when opened from an earlier card. **Library**
-in the conversation menu lists Bot outputs, files sent with messages and picture
+newest published HTML, including when opened from an earlier card. When a Bot
+follows an artifact with text in the same turn, its last reply includes a button
+to open that artifact. **Library** in the conversation menu lists Bot outputs,
+files sent with messages and picture
 attachments, grouped by the viewer's local calendar date, newest first. Multiple
 revisions of an artifact occupy one library row. Shared-content changes in the
 chat refresh the snapshot; already loaded earlier rows remain available within

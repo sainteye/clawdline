@@ -47,6 +47,14 @@ try{
     const zh=language!=="en",close=zh?"關閉":"Close"
     try{await page.locator(".pa-output-card").first().waitFor({timeout:10000})}catch(e){console.log("page errors",errors,"body",await page.locator("body").innerText());await page.screenshot({path:path.join(artifacts,"failure.png"),fullPage:true});throw e}
     assert.equal(await page.locator(".pa-output-card").count(),3,"one file and two artifact publish cards; retries create none")
+    const reply=page.locator("article").filter({hasText:"You can open it here."})
+    const openReport=reply.getByRole("button",{name:"Interactive report",exact:true})
+    assert.equal(await openReport.count(),1,"the last reply has one shortcut for both versions of its artifact")
+    await page.waitForFunction(() => {
+      const bounds = document.querySelector(".pa-reply-artifacts button")?.getBoundingClientRect()
+      return bounds && bounds.top >= 0 && bounds.bottom <= innerHeight
+    })
+    assert.equal(await page.locator("article").filter({hasText:"The report is ready."}).getByRole("button",{name:"Interactive report",exact:true}).count(),0)
     await page.screenshot({path:path.join(artifacts,language+"-chat.png"),fullPage:true})
     await page.locator(".pa-output-card>button").filter({hasText:"result.bin"}).click()
     const dialog=page.locator(".pa-output-overlay")
@@ -64,7 +72,7 @@ try{
     await preview.waitFor({state:"attached"})
     assert.match(await preview.getAttribute("srcdoc"),/Interactive report/)
     assert.equal(await preview.evaluate(el=>getComputedStyle(el).pointerEvents),"none")
-    await page.locator(".pa-output-card>button").filter({hasText:"Interactive report"}).first().click()
+    await openReport.click()
     try {
       await page.frameLocator(".pa-artifact-frame").frameLocator("iframe").getByRole("button",{name:"Try interaction",exact:true}).waitFor({timeout:9000})
     } catch(error) {

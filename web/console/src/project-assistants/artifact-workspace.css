@@ -65,3 +65,13 @@
 .pa-artifact-title-edit form input { max-width:100%; }
 .project-assistants .pa-chat-surface .pa-message:has(.pa-artifact-card) { width:min(500px,88%); }
 .project-assistants .pa-chat-surface .pa-message-bubble:has(>.pa-artifact-card) { width:100%; padding:0; background:transparent; }
+.project-assistants .pa-reply-artifacts { display:grid; gap:6px; margin-block-start:8px; }
+.project-assistants .pa-reply-artifacts > button {
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:9px;
+  min-height:44px; padding:7px 10px; border:1px solid var(--pa-line,#303033); border-radius:10px;
+  background:var(--pa-card,#19191a); color:inherit; text-align:start; font:inherit; cursor:pointer;
+}
+.project-assistants .pa-reply-artifacts > button > span { overflow-wrap:anywhere; }
+.project-assistants .pa-reply-artifacts > button > :is(svg,span[aria-hidden]) { color:var(--pa-dim,#aaa); }
+.project-assistants .pa-reply-artifacts > button:hover:enabled { border-color:var(--pa-dim,#aaa); }
+.project-assistants .pa-reply-artifacts > button:disabled { opacity:.6; cursor:default; }
