@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13656,
+  "englishKeys": 13658,
   "counts": {
-    "negation": 3550,
+    "negation": 3551,
     "state": 2322,
     "permission": 829,
     "deletion": 315,
     "uncertainty": 553
   },
-  "unionCount": 5859,
+  "unionCount": 5860,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3113,6 +3113,7 @@
       "projectAssistants.hideBotHint",
       "projectAssistants.invalidFileName",
       "projectAssistants.leadRole",
+      "projectAssistants.leadStarterHint",
       "projectAssistants.loginHint",
       "projectAssistants.loginKeyHint",
       "projectAssistants.loginKeyStored",
@@ -12635,6 +12636,7 @@
     "projectAssistants.history_only",
     "projectAssistants.invalidFileName",
     "projectAssistants.leadRole",
+    "projectAssistants.leadStarterHint",
     "projectAssistants.libraryCancelled",
     "projectAssistants.libraryOpenBrowser",
     "projectAssistants.loginAccepted",

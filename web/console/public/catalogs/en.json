@@ -11798,6 +11798,8 @@
   "projectAssistants.towerAllowUnknown": "Sent, but the result is unknown. Check the chat before answering again.",
   "projectAssistants.towerAllowFailed": "The machine refused this answer.",
   "projectAssistants.towerAllowInvalid": "The machine sent something this page can't read.",
+  "projectAssistants.leadStarterHint": "Not sure where to start? Try asking:",
+  "projectAssistants.leadStarterMessage": "Hi, could you introduce yourself and tell me what you can help me with?",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

@@ -115,3 +115,9 @@
 
 .project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
 @media(prefers-reduced-motion:reduce) { .project-assistants .pa-settings-disclosure>summary>.pa-settings-chevron { transition:none; } }
+
+/* The lead's first-message suggestion: quiet text, one tappable message shaped like the person's own bubble. */
+.project-assistants .pa-lead-starter { display:grid;justify-items:end;gap:8px;margin:24px 0 8px; }
+.project-assistants .pa-lead-starter p { margin:0;font-size:12px;color:var(--pa-dim); }
+.project-assistants .pa-lead-starter button { max-width:min(85%, 520px);min-height:44px;padding:10px 16px;border:1px dashed var(--pa-line);border-radius:18px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer; }
+.project-assistants .pa-lead-starter button:hover,.project-assistants .pa-lead-starter button:focus-visible { background:var(--pa-card); }
