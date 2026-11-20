@@ -3,7 +3,7 @@ import type { TowerZone } from "./tower-state"
 type Point = readonly [number, number]
 export interface TowerScene {
   /** Which picture; BotTower maps it to the image file. */
-  picture: "skyline" | "rain" | "ramen" | "platform"
+  picture: "skyline" | "rain" | "ramen" | "platform" | "building"
   width: number
   height: number
   /** Feet positions in the background image's own pixels. */
@@ -81,3 +81,30 @@ export const towerFloors = [
   { label: "2F", scene: ramenScene },
   { label: "B1", scene: platformScene },
 ] as const
+
+type Band = readonly [number, number]
+/** The building cross-section (building.webp): each floor's strip, its busy
+ * spots (desks, the queue, the failure corner), its rest spots, and the
+ * elevator lamp that lights when someone on that floor waits. */
+export interface TowerSectionFloor {
+  band: Band
+  desk: readonly Point[]
+  queue: readonly Point[]
+  repair: readonly Point[]
+  rest: readonly Point[]
+  lamp: Point
+}
+export const sectionScene = {
+  picture: "building" as const,
+  width: 1672,
+  height: 941,
+  /** Plates and frames span this many pixels from the shaft to the outer wall. */
+  left: 345,
+  right: 1570,
+  floors: [
+    { band: [60, 262], desk: [[580, 238], [750, 238], [905, 238]], queue: [[665, 248], [830, 248], [990, 248]], repair: [[420, 245]], rest: [[1150, 242], [1230, 242], [1440, 236], [1050, 245]], lamp: [230, 158] },
+    { band: [270, 465], desk: [[585, 432], [750, 432], [905, 432], [1075, 432]], queue: [[665, 448], [830, 448], [990, 448]], repair: [[400, 445]], rest: [[1270, 440], [1325, 440], [470, 448], [1180, 448]], lamp: [230, 358] },
+    { band: [480, 677], desk: [[590, 652], [755, 652], [910, 652]], queue: [[670, 660], [835, 660], [990, 660]], repair: [[420, 640]], rest: [[1085, 652], [1400, 618], [1455, 618], [1240, 655]], lamp: [230, 565] },
+    { band: [700, 912], desk: [[710, 868], [875, 868], [1040, 868]], queue: [[790, 880], [955, 880], [1110, 880]], repair: [[580, 880]], rest: [[1300, 872], [1385, 872], [480, 878], [1200, 880]], lamp: [230, 787] },
+  ] as readonly TowerSectionFloor[],
+}

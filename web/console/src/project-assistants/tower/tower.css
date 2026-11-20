@@ -22,6 +22,26 @@
 .project-assistants .pa-tower-elevator button[aria-pressed="true"] b { color:#e39567;text-shadow:0 0 6px #e39567; }
 .project-assistants .pa-tower-elevator button[data-wait]::after { content:"";position:absolute;right:-4px;top:6px;width:6px;height:6px;background:#e39567;box-shadow:0 0 6px #e39567;animation:pa-hud-blink 1.2s steps(2,jump-none) infinite; }
 .project-assistants .pa-tower-elevator button:disabled { opacity:.4;cursor:default; }
+.project-assistants .pa-elevator-all { display:flex;align-items:center;gap:8px;height:28px;padding:0;margin-bottom:4px;color:#cfc8c0; }
+.project-assistants .pa-elevator-all svg { width:96px;height:22px;fill:none;stroke:#9ca6b3;stroke-width:1.4;filter:drop-shadow(0 0 2px rgba(156,166,179,.6)); }
+.project-assistants .pa-elevator-all b { min-width:22px;font-size:14px;color:#efe6dc;text-align:right; }
+.project-assistants .pa-elevator-all[aria-pressed="true"] svg { stroke:#e39567;filter:drop-shadow(0 0 6px #e39567); }
+.project-assistants .pa-elevator-all[aria-pressed="true"] b { color:#e39567;text-shadow:0 0 6px #e39567; }
+/* Cross-section: each floor strip carries a plate; a waiting floor gets a thin
+   orange frame and its elevator lamp lights. */
+.project-assistants .pa-section-floor { position:absolute;pointer-events:none;border:1px solid transparent; }
+.project-assistants .pa-section-floor[data-wait] { border-color:rgba(227,149,103,.75);background:rgba(227,149,103,.05);box-shadow:inset 0 0 18px rgba(227,149,103,.18); }
+.project-assistants .pa-section-plate { position:absolute;left:8px;bottom:8px;display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:2px;align-items:center;padding:6px 10px;max-width:46%;pointer-events:auto;cursor:pointer;border:0;border-radius:0;text-align:left;color:#efe6dc;background:rgba(12,9,20,.86);box-shadow:inset 0 0 0 2px rgba(156,166,179,.35);font:600 12px/1.25 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace; }
+.project-assistants .pa-section-plate b { grid-row:1 / 3;font-size:16px; }
+.project-assistants .pa-section-plate span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-section-plate small { color:#99999f; }
+.project-assistants .pa-section-floor[data-wait] .pa-section-plate { box-shadow:inset 0 0 0 2px #e39567; }
+.project-assistants .pa-section-floor[data-wait] .pa-section-plate small,.project-assistants .pa-section-floor[data-wait] .pa-section-plate b { color:#e39567; }
+.project-assistants .pa-section-plate:hover { box-shadow:inset 0 0 0 2px #efe6dc; }
+.project-assistants .pa-section-plate:focus-visible { outline:2px solid #e39567;outline-offset:1px; }
+.project-assistants .pa-section-plate:disabled { opacity:.5;cursor:default; }
+.project-assistants .pa-section-lamp { position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%; }
+.project-assistants .pa-section-floor[data-wait] .pa-section-lamp { background:#e39567;box-shadow:0 0 14px 4px #e39567;animation:pa-hud-blink 1.2s steps(2,jump-none) infinite; }
 /* Elevator doors close and open over the floor when it changes. */
 .project-assistants .pa-tower-doors { position:absolute;inset:0;pointer-events:none;z-index:2; }
 .project-assistants .pa-tower-doors::before,.project-assistants .pa-tower-doors::after { content:"";position:absolute;top:0;bottom:0;width:50%;background:repeating-linear-gradient(90deg,#16121c 0 14px,#1d1824 14px 16px);animation:pa-door .55s steps(8,end) both; }

@@ -11768,6 +11768,8 @@
   "projectAssistants.towerLayoutBuilding": "Building",
   "projectAssistants.towerElevator": "Elevator",
   "projectAssistants.towerFloorEmpty": "Empty",
+  "projectAssistants.towerSection": "Whole building",
+  "projectAssistants.towerEnterFloor": "Go to {floor}",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
