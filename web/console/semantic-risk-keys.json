@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13597,
+  "englishKeys": 13602,
   "counts": {
     "negation": 3536,
     "state": 2304,
-    "permission": 822,
+    "permission": 825,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5831,
+  "unionCount": 5834,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6611,6 +6611,9 @@
       "transparency.card.child.summary",
       "transparency.card.gate-review.how",
       "transparency.card.grok-acp-context.how",
+      "transparency.card.instabox-setup.effect",
+      "transparency.card.instabox-setup.how",
+      "transparency.card.instabox-setup.summary",
       "transparency.card.investigation.how",
       "transparency.card.machine-codegraph.effect",
       "transparency.card.machine-codegraph.how",
@@ -13073,6 +13076,9 @@
     "transparency.card.handoff-auto-name.effect",
     "transparency.card.handoff-auto-name.how",
     "transparency.card.handoff.summary",
+    "transparency.card.instabox-setup.effect",
+    "transparency.card.instabox-setup.how",
+    "transparency.card.instabox-setup.summary",
     "transparency.card.investigation.effect",
     "transparency.card.investigation.how",
     "transparency.card.investigation.summary",

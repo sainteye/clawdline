@@ -45,6 +45,9 @@ func TestAPairingHandOffIsAdmittedAsADetachedTask(t *testing.T) {
 	}
 	for _, want := range []string{
 		"clawdline cloud pair -offer '" + testPairingOffer + "'",
+		"https://dashboard.instabox.sh/ using the Clawdline browser tool",
+		`clawdline browser type --tab "$PAIR_TAB" --stdin`,
+		"The person's Clawdline pairing page belongs to them.",
 		`the machine named "build-host-01"`,
 		"`mac_build-host-01`",
 	} {
