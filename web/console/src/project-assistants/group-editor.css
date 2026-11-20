@@ -60,3 +60,29 @@
 @media(prefers-reduced-motion:reduce) {
   .project-assistants dialog.pa-group-editor,.project-assistants dialog.pa-group-editor::backdrop { transition:none; }
 }
+
+/* Codync's group editor: the name as a centred title, members as rows, add by search. */
+.project-assistants .pa-group-form .pa-form-body>fieldset { display:flex;flex-direction:column;gap:24px;min-width:0;margin:0;padding:0;border:0; }
+.project-assistants .pa-group-name { width:min(100%,360px);padding:4px 8px;border:0;border-radius:10px;background:transparent;color:#fafafa;font-size:20px;font-weight:600;text-align:center; }
+.project-assistants .pa-group-name:hover,.project-assistants .pa-group-name:focus { background:#141414; }
+.project-assistants .pa-group-name::placeholder { color:#77777d; }
+.project-assistants .pa-group-name-fixed { font-size:20px;font-weight:600; }
+.project-assistants .pa-group-members { display:flex;flex-direction:column;min-width:0; }
+.project-assistants .pa-group-members>h3 { margin:0 0 4px;padding-left:2px;color:var(--pa-dim);font-size:13px;font-weight:600; }
+.project-assistants .pa-group-members ul { margin:0;padding:0;list-style:none; }
+.project-assistants .pa-group-member-row { display:flex;align-items:center;gap:14px;width:calc(100% + 16px);min-height:48px;margin:0 -8px;padding:4px 8px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;text-align:start; }
+.project-assistants .pa-group-member-row>span:not([class]) { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants button.pa-group-member-row:hover { background:#171717; }
+.project-assistants .pa-group-candidate>span:not([class]),.project-assistants .pa-group-add>span:not([class]) { color:var(--pa-dim); }
+.project-assistants .pa-group-add-icon,.project-assistants .pa-group-plus { display:grid;place-items:center;flex:none;width:32px;color:var(--pa-dim);font-size:20px;line-height:1; }
+.project-assistants .pa-group-plus { width:22px;height:22px;border:1.5px solid currentColor;border-radius:50%;font-size:15px; }
+.project-assistants .pa-group-row-icon { display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--pa-dim);font-size:18px; }
+.project-assistants .pa-group-row-icon:hover { background:#242426;color:#fafafa; }
+.project-assistants .pa-group-search { width:100%;box-sizing:border-box;margin:6px 0;padding:9px 12px;border:0;border-radius:10px;background:#141414; }
+.project-assistants .pa-group-form .pa-group-note { margin:10px 2px 0;color:#77777d;font-size:12px;line-height:1.45; }
+.project-assistants .pa-group-delete { align-self:flex-start;margin-top:12px;padding:8px 0;border:0;background:transparent;color:#f08a7e;font-size:14px; }
+.project-assistants .pa-group-delete:disabled { opacity:.45; }
+@media (hover:hover) and (pointer:fine) {
+  .project-assistants .pa-group-member-row .pa-group-row-icon { opacity:0;transition:opacity 120ms ease; }
+  .project-assistants .pa-group-member-row:hover .pa-group-row-icon,.project-assistants .pa-group-member-row:focus-within .pa-group-row-icon { opacity:1; }
+}

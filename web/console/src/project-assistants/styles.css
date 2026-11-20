@@ -739,3 +739,14 @@
 
 @keyframes pa-sheet-in { from { transform:translateY(24%);opacity:.4 } to { transform:none;opacity:1 } }
 @media(prefers-reduced-motion:reduce) { .project-assistants.pa-tower-sheet .pa-main { animation:none; } }
+/* Codync's group members: quiet rows, then Add member and Edit group as rows of the same list. */
+.project-assistants .pa-room-member>.pa-room-mention { display:grid;place-items:center;flex:none;width:32px;min-width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--pa-dim);font-size:14px; }
+.project-assistants .pa-room-member>.pa-room-mention:not(:disabled):hover { background:#242426;color:#fafafa; }
+.project-assistants .pa-room-member-actions { display:flex;flex-direction:column;align-items:stretch;gap:0;margin-top:4px; }
+.project-assistants .pa-room-member-actions>button { display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:4px 8px;border:0;border-radius:8px;background:transparent;color:var(--pa-dim);font-size:14px;text-align:start; }
+.project-assistants .pa-room-member-actions>button:not(:disabled):hover { background:#171717;color:#fafafa; }
+.project-assistants .pa-room-row-icon { display:grid;place-items:center;flex:none;width:36px; }
+@media (hover:hover) and (pointer:fine) {
+  .project-assistants .pa-room-member>.pa-room-mention { opacity:0;transition:opacity 120ms ease; }
+  .project-assistants .pa-room-member:hover>.pa-room-mention,.project-assistants .pa-room-member:focus-within>.pa-room-mention { opacity:1; }
+}

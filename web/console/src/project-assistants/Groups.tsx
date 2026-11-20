@@ -117,7 +117,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
 // Match the existing group-name limit in internal/domain/projectassistant.
 const GroupNameRunes=128
 
-export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,addMembers=false,onSaved,onClose}:{sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;addMembers?:boolean;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
+export function GroupEditor({sources,bots,projectNames,projectIcons,current,group,addMembers=false,onSaved,onClose,onDelete}:{onDelete?:()=>void;sources:readonly GroupSource[];bots:readonly W.ProjectAssistantBot[];projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;current:()=>readonly SourceClient[];group?:W.ProjectAssistantGroup;addMembers?:boolean;onSaved:(source:SourceClient,group:W.ProjectAssistantGroup)=>void;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null)
   const opener=useRef<HTMLElement|null>(null)
   const [closing,setClosing]=useState<(()=>void)|null>(null)
@@ -139,6 +139,8 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   },[closing])
   const choices=bots.filter(b=>sources.some(s=>s.source.machineID===b.key.machine_id&&canWrite(s.status))).filter((b,i,all)=>all.findIndex(other=>sameGroupProject(b.project,other.project))===i)
   const [project,setProject]=useState(group?.project??choices[0]?.project),[name,setName]=useState(group?.name??""),[members,setMembers]=useState<string[]>(group?.members.map(m=>identity(m.key))??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[unknown,setUnknown]=useState(false)
+  // Codync's member list: who is in, a remove button each, then a search to add more.
+  const [adding,setAdding]=useState(addMembers||!group),[query,setQuery]=useState("")
   const draft = JSON.stringify([project, name, members])
   const initialDraft = useRef(draft)
   const pending=useRef<{fingerprint:string;request:W.ProjectAssistantGroupCreateRequest|W.ProjectAssistantGroupEditRequest}|null>(null)
@@ -151,6 +153,11 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
   const defaultName=Array.from(new Intl.ListFormat(currentCatalogTag(),{type:"unit"}).format(memberNames)).slice(0,GroupNameRunes).join("").trimEnd()
   const savedName=name.trim()||(group?"":defaultName)
   const canSave=!!source&&!!project&&!busy&&!unknown&&!closing&&!!savedName&&selection.length>0&&complete&&(!addMembers||selection.length>existing.length)
+  const picked=selection.flatMap(key=>eligible.filter(bot=>identity(bot.key)===identity(key)))
+  const needle=query.trim().toLocaleLowerCase()
+  const candidates=eligible.filter(bot=>!members.includes(identity(bot.key))&&(!needle||bot.name.toLocaleLowerCase().includes(needle)))
+  const toggle=(id:string)=>{setMembers(old=>old.includes(id)?old.filter(key=>key!==id):[...old,id]);setQuery("")}
+  const named=(key:string,value:string)=>groupWord(key).replace("{name}",value)
   const formTitle=groupWord(addMembers?"groupMembers":group?"groupEdit":"groupCreate")
   const close=()=>{if(!busy&&!closing)setClosing(()=>onClose)}
   async function save(){
@@ -172,9 +179,9 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
       <div className="pa-form-body">
         <fieldset disabled={busy||unknown}>
           <div className="pa-group-form-identity">
-            <GroupAvatar keys={selection} bots={eligible} size={88}/>
-            {addMembers?<strong>{group?.name}</strong>:<label>{groupWord("groupName")}<input value={name} placeholder={!group?defaultName:undefined} onChange={e=>setName(e.target.value)}
-              onKeyDown={event=>{if(event.key==="Enter"&&(event.nativeEvent.isComposing||event.keyCode===229))event.preventDefault()}}/></label>}
+            <GroupAvatar keys={selection} bots={eligible} size={84}/>
+            {addMembers?<strong className="pa-group-name-fixed">{group?.name}</strong>:<input className="pa-group-name" aria-label={groupWord("groupName")} value={name} placeholder={!group&&defaultName?defaultName:groupWord("groupName")} onChange={e=>setName(e.target.value)}
+              onKeyDown={event=>{if(event.key==="Enter"&&(event.nativeEvent.isComposing||event.keyCode===229))event.preventDefault()}}/>}
           </div>
           {!group&&<PaSelect label={groupWord("groupProject")} value={project?JSON.stringify(project):""} onChange={val=>{setProject(JSON.parse(val));setMembers([])}} options={choices.map(b=>{
             const keyStr=JSON.stringify([b.key.machine_id,b.project.project_id]),source=sources.find(s=>s.source.machineID===b.key.machine_id)?.source
@@ -182,22 +189,31 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
             const machineSuffix=sources.length>1?` · ${source?.machineName??b.key.machine_id}`:""
             return {value:JSON.stringify(b.project),label:`${pName}${machineSuffix}`,icon:<ProjectMark icon={icon} size={16}/>}
           })}/>}
-          <fieldset className="pa-group-choice-field">
-            <legend>{groupWord("groupMembers")}</legend>
-            <div className="pa-group-choices">{eligible.map(bot=>{
-              const id=identity(bot.key),checked=members.includes(id)
-              const fixed=addMembers&&existing.some(key=>identity(key)===id)
-              return <label className="pa-group-choice" key={id}>
-                <input type="checkbox" disabled={fixed} checked={checked} onChange={e=>setMembers(old=>e.target.checked?[...old,id]:old.filter(key=>key!==id))}/>
-                <span className="pa-group-choice-face"><BotAvatar appearance={bot.appearance} size={42}/><span className="pa-group-choice-check" aria-hidden="true">✓</span></span>
-                <span className="pa-group-choice-name" title={bot.name}>{bot.name}</span>
-              </label>
-            })}</div>
-          </fieldset>
+          <section className="pa-group-members" aria-label={groupWord("groupMembers")}>
+            <h3>{groupWord("groupMembers")}</h3>
+            {picked.length>0&&<ul>{picked.map(bot=>{
+              const id=identity(bot.key),fixed=addMembers&&existing.some(key=>identity(key)===id)
+              return <li className="pa-group-member-row" key={id}><BotAvatar appearance={bot.appearance} size={32}/><span>{bot.name}</span>
+                {!fixed&&<button type="button" className="pa-group-row-icon" aria-label={named("groupRemoveMember",bot.name)} title={named("groupRemoveMember",bot.name)} onClick={()=>toggle(id)}>×</button>}</li>
+            })}</ul>}
+            {adding?<>
+              {(candidates.length>0||!!needle)&&<input className="pa-group-search" type="search" value={query} aria-label={groupWord("groupSearchBots")} placeholder={groupWord("groupSearchBots")} onChange={e=>setQuery(e.target.value)}
+                onKeyDown={event=>{
+                  const composing=event.nativeEvent.isComposing||event.keyCode===229
+                  if(event.key==="Enter"){event.preventDefault();if(!composing&&candidates[0])toggle(identity(candidates[0].key))}
+                  if(event.key==="Escape"&&!composing&&group){event.preventDefault();event.stopPropagation();setAdding(false);setQuery("")}
+                }}/>}
+              {candidates.map(bot=><button type="button" key={identity(bot.key)} className="pa-group-member-row pa-group-candidate" aria-label={named("groupAddNamed",bot.name)} onClick={()=>toggle(identity(bot.key))}>
+                <BotAvatar appearance={bot.appearance} size={32}/><span>{bot.name}</span><span className="pa-group-plus" aria-hidden="true">+</span></button>)}
+              {!candidates.length&&needle&&<p className="pa-group-note">{groupWord("groupNoMatch")}</p>}
+            </>:candidates.length>0&&<button type="button" className="pa-group-member-row pa-group-add" onClick={()=>setAdding(true)}><span className="pa-group-add-icon" aria-hidden="true">+</span><span>{groupWord("groupAddMember")}</span></button>}
+            <p className="pa-group-note">{groupWord("groupMentionHint")}</p>
+          </section>
         </fieldset>
-        {!group&&<p>{groupWord("groupSameProject")}</p>}
+        {!group&&<p className="pa-group-note">{groupWord("groupSameProject")}</p>}
         {!complete&&<p role="status">{groupWord("groupMembersMissing")}</p>}
         {error&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} ({error})</p>}
+        {group&&!addMembers&&onDelete&&<button type="button" className="pa-group-delete" disabled={!source||busy||unknown||!!closing} onClick={()=>setClosing(()=>onDelete)}>{groupWord("groupDelete")}</button>}
       </div>
     </form>
   </dialog>

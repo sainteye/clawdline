@@ -45,6 +45,10 @@ try{
     const openPanel=async()=>{await click(row);await room.waitFor({state:'visible'});await click(room.locator('.pa-room-identity'))}
     const open=async()=>{await openPanel();await click(room.getByRole('button',{name:editLabel,exact:true}));await dialog.waitFor()}
     const back=async()=>{await click(room.getByRole('button',{name:language==='en'?'Close information':'關閉資訊',exact:true}));await click(room.getByRole('button',{name:language==='en'?'Back':'返回',exact:true}));await room.waitFor({state:'detached'});await row.waitFor({state:'visible'})}
+    // Codync's member rows: who is in, a remove button each, Add member opening the remaining Bots.
+    const zh=language!=='en',memberNames=d=>d.locator('.pa-group-members li > span').allTextContents()
+    const remove=(d,n)=>click(d.getByRole('button',{name:(zh?'移除 ':'Remove ')+n,exact:true}))
+    const addBot=async(d,n)=>{const more=d.getByRole('button',{name:zh?'新增成員':'Add member',exact:true});if(await more.count())await click(more);await click(d.getByRole('button',{name:(zh?'加入 ':'Add ')+n,exact:true}))}
     const avatars=()=>row.locator('.pa-group-avatars .pa-avatar').evaluateAll(nodes=>nodes.map(svg=>svg.querySelector('linearGradient stop:nth-child(2)')?.getAttribute('stop-color')))
     const verify=async(expected,label)=>{
      const state=await readState();assert.deepEqual(idKeys(state.group),expected,label+' changed saved member order');assert.deepEqual(state.first_round.map(key=>key.bot_id),expected,label+' changed first-round @all selection');assert.equal(state.history_lines,0)
@@ -55,11 +59,12 @@ try{
     }
     try{
      await page.goto(origin+'/?'+new URLSearchParams({mode,lang:language}));await row.waitFor();await open()
-     const candidates=await dialog.locator('.pa-group-choice-name').allTextContents()
-     assert.deepEqual(candidates,['Alice','Bob','Charlie']);assert.notDeepEqual(candidates.filter(name=>name!=='Charlie').map(name=>name.toLowerCase()),['bob','alice'],'fixture did not exercise different candidate order')
+     // The Project lists Alice, Bob, Charlie; the rows keep the saved order instead.
+     const candidates=await memberNames(dialog)
+     assert.deepEqual(candidates,['Bob','Alice'],'editor rows follow the saved order, not the Project order')
      await dialog.getByRole('textbox').fill('Renamed '+name)
      // Removing and reselecting a retained member is not an order request.
-     await click(dialog.getByRole('checkbox',{name:'Bob',exact:true}));await click(dialog.getByRole('checkbox',{name:'Bob',exact:true}))
+     await remove(dialog,'Bob');await addBot(dialog,'Bob')
      await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
      const rename=await verify(['bob','alice'],'name-only')
      await openPanel()
@@ -69,24 +74,21 @@ try{
      assert.equal(await addDialog.getByRole('textbox').count(),0)
      const saveMembers=addDialog.getByRole('button',{name:saveLabel,exact:true})
      assert.equal(await saveMembers.isDisabled(),true)
-     for(const name of ['Alice','Bob']){
-      const current=addDialog.getByRole('checkbox',{name,exact:true})
-      assert.equal(await current.isChecked(),true)
-      assert.equal(await current.isDisabled(),true)
-     }
-     await click(addDialog.getByRole('checkbox',{name:'Charlie',exact:true}))
+     assert.deepEqual(await memberNames(addDialog),['Bob','Alice'])
+     for(const name of ['Alice','Bob'])assert.equal(await addDialog.getByRole('button',{name:(zh?'移除 ':'Remove ')+name,exact:true}).count(),0,'adding keeps existing members fixed')
+     await addBot(addDialog,'Charlie')
      await page.screenshot({path:path.join(artifacts,name+'-add-members.png')})
      await click(saveMembers);await addDialog.waitFor({state:'detached'})
      const added=await verify(['bob','alice','charlie'],'add member');assert.equal(added.group.members.at(-1).joined_revision,rename.group.membership_revision+1)
      assert.equal(added.group.name,rename.group.name)
-     await open();assert.equal(await dialog.getByRole('checkbox',{name:'Charlie',exact:true}).isChecked(),true);await click(dialog.getByRole('checkbox',{name:'Charlie',exact:true}));await dialog.getByRole('textbox').fill('Review room');await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
+     await open();assert.ok((await memberNames(dialog)).includes('Charlie'));await remove(dialog,'Charlie');await dialog.getByRole('textbox').fill('Review room');await click(dialog.getByRole('button',{name:saveLabel,exact:true}));await dialog.waitFor({state:'detached'})
      const removed=await verify(['bob','alice'],'remove new member'),beforeCancel=writes(start).length
-     await open();await dialog.getByRole('textbox').fill('Unsaved order draft');await click(dialog.getByRole('checkbox',{name:'Charlie',exact:true}));await click(dialog.getByRole('button',{name:cancelLabel,exact:true}));await dialog.waitFor({state:'detached'});await back()
-     await open();assert.equal(await dialog.getByRole('textbox').inputValue(),'Review room');assert.equal(await dialog.getByRole('checkbox',{name:'Charlie',exact:true}).isChecked(),false);await click(dialog.getByRole('button',{name:cancelLabel,exact:true}));await dialog.waitFor({state:'detached'});await back()
+     await open();await dialog.getByRole('textbox').fill('Unsaved order draft');await addBot(dialog,'Charlie');await click(dialog.getByRole('button',{name:cancelLabel,exact:true}));await dialog.waitFor({state:'detached'});await back()
+     await open();assert.equal(await dialog.getByRole('textbox').inputValue(),'Review room');assert.equal((await memberNames(dialog)).includes('Charlie'),false);await click(dialog.getByRole('button',{name:cancelLabel,exact:true}));await dialog.waitFor({state:'detached'});await back()
      assert.equal(writes(start).length,beforeCancel,'Cancel wrote group data');assert.equal(beforeCancel,3);assert.deepEqual((await readState()).group,removed.group)
      assert.equal(traffic.slice(start).filter(r=>r.word==='project-assistants.group-send'||r.path.endsWith('/messages')).length,0)
      assert.deepEqual(errors,[]);await page.screenshot({path:path.join(artifacts,name+'-preserved-order.png')})
-     evidence.push({engine,mode,language,width,height,candidateOrder:candidates,renamedOrder:idKeys(rename.group),addedOrder:idKeys(added.group),removedOrder:idKeys(removed.group),writeCount:3,cancelWrites:0,avatarOrderVerified:true,firstRoundOrderVerified:true,externalModelCalls:0})
+     evidence.push({engine,mode,language,width,height,memberRowOrder:candidates,renamedOrder:idKeys(rename.group),addedOrder:idKeys(added.group),removedOrder:idKeys(removed.group),writeCount:3,cancelWrites:0,avatarOrderVerified:true,firstRoundOrderVerified:true,externalModelCalls:0})
     }catch(error){await page.screenshot({path:path.join(artifacts,name+'-failure.png')});await writeFile(path.join(artifacts,name+'-failure.json'),JSON.stringify({error:String(error),state:await readState(),text:await page.locator('body').innerText(),traffic:traffic.slice(start),errors},null,2));throw error}
     finally{await context.close()}
    }

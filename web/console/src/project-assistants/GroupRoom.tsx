@@ -41,7 +41,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const author=(key?:W.ProjectAssistantBotKey)=>key?(botFor(key)?.name??key.bot_id):groupWord("groupPerson")
   const members=group.members.flatMap(member=>{const bot=botFor(member.key);return bot?[bot]:[]})
   const memberKeys=group.members.map(member=>member.key)
-  const memberCount=`${groupWord("groupMembers")} (${memberKeys.length})`
+  const memberCount=groupWord(memberKeys.length===1?"groupBotsOne":"groupBots").replace("{count}",String(memberKeys.length))
   const options=dismissed===text?[]:groupMentionOptions(text,caret,members)
   const picked=Math.min(highlight,Math.max(0,options.length-1))
   const writable=active&&!!page&&canWrite(page.source)&&source.current?.()!==false&&!group.deleted
@@ -286,16 +286,16 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
           const bot=botFor(member.key)
           return <li className="pa-room-member" key={identity(member.key)}>
             <button type="button" disabled={!readable||busy||!bot||!onOpenMember} onClick={event=>{lastFocus.current=event.currentTarget;onOpenMember?.(member.key)}}>{bot&&<BotAvatar appearance={bot.appearance} size={36}/>}<strong>{author(member.key)}</strong></button>
-            <button type="button" aria-label={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false,false)}}>@</button>
+            <button type="button" className="pa-room-mention" aria-label={`@${author(member.key)}`} title={`@${author(member.key)}`} disabled={!writable||busy||unknown||!bot} onClick={()=>{if(bot)mention(bot,false);showMembers(false,false)}}>@</button>
           </li>
         })}
       </ul>
       <div className="pa-room-member-actions">
-        <button className="pa-room-add-member" type="button" disabled={!canAdd||busy||unknown} onClick={event=>openEditor(event.currentTarget,"add")}><GroupActionIcon/>{groupWord("rosterCreate")}</button>
-        <button className="pa-room-member-edit" type="button" disabled={!writable||busy||unknown} onClick={event=>openEditor(event.currentTarget)}>{groupWord("groupEdit")}</button>
+        <button className="pa-room-add-member" type="button" disabled={!canAdd||busy||unknown} onClick={event=>openEditor(event.currentTarget,"add")}><span className="pa-room-row-icon" aria-hidden="true"><GroupActionIcon/></span>{groupWord("groupAddMember")}</button>
+        <button className="pa-room-member-edit" type="button" disabled={!writable||busy||unknown} onClick={event=>openEditor(event.currentTarget)}><span className="pa-room-row-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg></span>{groupWord("groupEdit")}</button>
       </div>
     </aside>
-    {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} addMembers={editing==="add"} onClose={()=>setEditing(null)} onSaved={(_,changed)=>{setGroup(changed);setEditing(null);changedRef.current(changed);void refresh.current()}}/>}
+    {editing&&page&&<GroupEditor sources={[{source,groups:[group],status:page.source}]} bots={bots} current={current} projectNames={projectNames} group={group} addMembers={editing==="add"} onDelete={()=>{setEditing(null);showMembers(false,false);setDeleting(true)}} onClose={()=>setEditing(null)} onSaved={(_,changed)=>{setGroup(changed);setEditing(null);changedRef.current(changed);void refresh.current()}}/>}
   </section>
   return <><span ref={anchor} hidden/>{host&&createPortal(body,host)}</>
 }

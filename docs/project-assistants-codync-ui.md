@@ -41,6 +41,17 @@ inspector and composer target picker select the actual `reply_to_author` identit
 focuses the composer. Its compact input grows with the text, sends on Enter, and keeps Shift/Alt+Enter for a newline without acting on an IME composition. The target picker and send button stay in the same row; edit, stop and delete are in the secondary actions menu. Group
 selection keys the room component by its complete machine/Bot identity.
 
+The group inspector and editor follow Codync's `DetailsPanel` member list and `GroupEditorView`.
+The inspector shows the group avatar, name and Bot count, then one row per member that opens its
+own chat; the @ mention control is quiet and appears on hover with a fine pointer. Add member and
+Edit group are rows of the same list. The editor shows the name as a centred title field, the
+members as rows with a remove button, and Add member opening a search with the Project's
+remaining Bots; Enter adds the first match. It is hidden when every eligible Bot is already a
+member. Delete group sits at the end of the editor and opens the room's existing delete
+confirmation, closing the inspector so the confirmation is visible on a phone. Codync's group
+description has no field in this contract and was not added. Adding members from the inspector
+keeps existing members fixed, as before.
+
 The room contract contains author and reply-to-author identities, but no quoted message ID or
 quoted message text. The UI therefore identifies the reply recipient without inventing a
 quotation. Message-level quotations and direct navigation from a room member to its own chat
