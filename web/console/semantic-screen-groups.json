@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13596,
+  "englishContentKeys": 13597,
   "riskKeys": 5831,
-  "nonRiskCount": 7765,
+  "nonRiskCount": 7766,
   "groups": [
     {
       "name": "acp / other",
@@ -6112,7 +6112,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 444,
+      "count": 445,
       "sources": [
         null
       ],
@@ -6527,6 +6527,7 @@
         "projectAssistants.thisMachine",
         "projectAssistants.total",
         "projectAssistants.towerAllIdle",
+        "projectAssistants.towerBack",
         "projectAssistants.towerBackToList",
         "projectAssistants.towerBots",
         "projectAssistants.towerLatest",

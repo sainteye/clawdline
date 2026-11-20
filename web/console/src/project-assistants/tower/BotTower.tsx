@@ -12,6 +12,8 @@ export interface BotTowerProps {
   language: string
   /** Something covers the tower (a group room); drawing stops. */
   paused?: boolean
+  /** A Bot pointed at elsewhere (the roster); its tag shows as if hovered here. */
+  highlight?: string | null
   projectName: (item: W.ProjectAssistantBotSummary) => string | undefined
   onSelect: (item: W.ProjectAssistantBotSummary) => void
 }
@@ -54,7 +56,7 @@ function place(b: TowerBot, index: number, now: number, still: boolean): { at: r
   return { at: slotPoint(scene.zones[b.zone], index), moving: false }
 }
 
-export default function BotTower({ items, w, language, paused = false, projectName, onSelect }: BotTowerProps) {
+export default function BotTower({ items, w, language, paused = false, highlight = null, projectName, onSelect }: BotTowerProps) {
   const [tick, setTick] = useState(() => Date.now())
   const reduced = useReducedMotion()
   const [visible, setVisible] = useState(true)
@@ -151,7 +153,7 @@ export default function BotTower({ items, w, language, paused = false, projectNa
           {bots.map(b => {
             const mood = b.unread ? `${w[moodWord[b.mood]]}, ${w.towerMoodUnread}` : w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
             const label = w.towerBotLabel.replace("{name}", b.item.bot.name).replace("{state}", mood)
-            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} aria-label={label}
+            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-highlight={highlight === b.key || undefined} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}
               style={{ width: `${BotSize / scene.width * 100}%`, height: `${(BotSize + 6) / scene.height * 100}%` }}
               onClick={() => onSelect(b.item)}>

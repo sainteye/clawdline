@@ -11761,6 +11761,7 @@
   "projectAssistants.towerMoodRecent": "Just finished",
   "projectAssistants.towerMoodIdle": "Idle",
   "projectAssistants.towerMoodSleep": "Asleep",
+  "projectAssistants.towerBack": "Back to the tower",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

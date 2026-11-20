@@ -45,9 +45,10 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean}|null>(null)
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
   const [groupOpen,setGroupOpen]=useState(false)
-  const [botsView,setBotsView]=useState<BotsView>(savedBotsView)
-  const changeView=(next:BotsView)=>{setBotsView(next);saveBotsView(next)}
+  const [savedView,setSavedView]=useState<BotsView|null>(savedBotsView)
+  const changeView=(next:BotsView)=>{setSavedView(next);saveBotsView(next)}
   const narrow=useNarrow()
+  const [rosterHover,setRosterHover]=useState<string|null>(null)
   const [groupRoute,setGroupRoute]=useState<string|null>(null)
   const [destination,setDestination]=useState(()=>botFromFragment(location.hash))
   const reconnects=useRef(new Map<string,()=>void>())
@@ -76,7 +77,9 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   // The tower shows every visible Bot of the chosen machine; search narrows only the list.
   const towerItems=allItems.filter(i=>!i.bot.hidden&&(!machine||i.bot.key.machine_id===machine))
-  const tower=botsView==="tower"?<TowerSlot items={towerItems} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} projectName={item=>projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
+  // Until the person chooses, a desktop with Bots opens on the tower; a phone opens on the list.
+  const botsView:BotsView=savedView??(!narrow&&towerItems.length>0?"tower":"list")
+  const tower=botsView==="tower"?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} projectName={item=>projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
   const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
@@ -306,6 +309,17 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     dialog.addEventListener("keydown",key)
     return()=>{dialog.removeEventListener("keydown",key);if(opener?.isConnected)opener.focus({preventScroll:true})}
   },[creating])
+  // Pointing at or focusing a roster row raises that Bot's tag in the tower beside it.
+  useEffect(()=>{
+    const root=host.current
+    if(!root)return
+    const row=(t:EventTarget|null)=>t instanceof Element?t.closest<HTMLElement>(".pa-roster [data-bot-key]")?.dataset.botKey??null:null
+    const enter=(e:Event)=>setRosterHover(row(e.target))
+    const leave=(e:Event)=>{const next=row((e as PointerEvent|FocusEvent).relatedTarget);setRosterHover(next)}
+    root.addEventListener("pointerover",enter);root.addEventListener("pointerout",leave)
+    root.addEventListener("focusin",enter);root.addEventListener("focusout",leave)
+    return()=>{root.removeEventListener("pointerover",enter);root.removeEventListener("pointerout",leave);root.removeEventListener("focusin",enter);root.removeEventListener("focusout",leave)}
+  },[])
   useEffect(()=>{if(!selected&&!groupOpen&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>(botsView==="tower"?'.pa-tower [data-bot-key]':'[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected,groupOpen])
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
     {rosterNotice&&<div className="pa-roster-notice" role={rosterNotice.error?"alert":"status"}>
@@ -313,7 +327,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     </div>}
     {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
     <BotRoster botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} errors={rosterErrors} status={<SourceStatusPanel health={health} w={w} errors={errors} retrying={{...snapshotPending,...livePending}} onRetry={retrySource} machineNames={machineNames}/>} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
-    <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen} backLabel={groupOpen?w.backToGroup:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} onBotChanged={updateBot}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
+    <main className="pa-main">{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} onBotChanged={updateBot}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
   </div>
 }

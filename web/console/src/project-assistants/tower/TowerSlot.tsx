@@ -24,8 +24,9 @@ export function TowerSlot(props: BotTowerProps & { onList: () => void }) {
 
 const preference = "clawdline.bots.view"
 export type BotsView = "list" | "tower"
-export function savedBotsView(): BotsView {
-  try { return localStorage.getItem(preference) === "tower" ? "tower" : "list" } catch { return "list" }
+/** The person's own choice, or null before they have made one. */
+export function savedBotsView(): BotsView | null {
+  try { const v = localStorage.getItem(preference); return v === "tower" || v === "list" ? v : null } catch { return null }
 }
 export function saveBotsView(view: BotsView) {
   try { localStorage.setItem(preference, view) } catch { /* A storage refusal keeps this page's choice only. */ }
