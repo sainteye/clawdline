@@ -372,6 +372,87 @@ Set the existing `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_BROWSERS_PATH` and a task-owne
 mobile-dimension Chromium acceptance. This is local browser evidence, not production
 Cloud acceptance or a real-phone test. No provider/model requests are made.
 
+## The Bots tower
+
+The building button in the Bots toolbar switches the roster between the list
+and the tower: a pixel-art building where each Bot stands according to its
+roster state. A wide screen opens on the tower until the person chooses; a phone
+opens on the list. The choice, the layout, the last floor, the Bot look and the
+name-tag switch are this browser's (`localStorage`, read and written inside
+`try`/`catch`); the code is in `web/console/src/project-assistants/tower/`.
+
+**Where a Bot stands.** Working Bots sit at desks, waiting ones queue, failing
+ones go to the repair corner, recently active ones and idle ones stroll the
+lounge, and those quiet for a day sleep. Placement follows the roster status
+(`working.ts`), never the raw activity text. Each zone draws at most three Bots
+(`bots.tower_zone_shown`); the rest are counted as "N more", which opens a list
+whose names open that Bot's chat. Waiting and failing Bots keep a drawn place
+first, then the most recently active. Name tags stay pinned for working,
+waiting and failing Bots; the Name tags switch turns them off, after which a tag
+shows on hover or keyboard focus while the canvas still marks who waits.
+
+**Floors.** Four floors (4F, 3F, 2F, B1) each have a picture and coordinates in
+`tower-scene.ts`. The building layout is offered from seven Bots across two
+Projects. Each machine keeps a versioned document of floor placements in its
+Bots database, served at `/v1/project-assistant-floors` (API 97) and carried
+over Cloud as `project-assistants.tower-floors` and
+`project-assistants.tower-floor-save`. A write names the version it read:
+another device's change first is refused as stale and the panel reads the
+floors again; a retried write whose reply was lost finds its own effect; an
+unknown outcome reads again rather than resending. Projects nobody placed are
+spread over the floors by a sort of their identities, so every device agrees.
+A removed Project keeps its row, so registering it again does not move its Bots.
+Open devices read placements when the tower mounts and when the panel opens;
+they are not pushed live.
+
+**The lead.** Each machine's lead Bot (the one marked with a star) wears a cape
+and a gold star, always stands on 4F whatever floor its Project has, and
+patrols a short beat before each floor's big screen. Waiting, failing, asleep or
+with reduced motion it stands at the beat's middle. In the roster each lead has
+its own section above Pinned.
+
+**Helpers.** When a Bot hands work elsewhere (Board work links still accepted,
+waiting for the person or executing, plus background tasks still waiting or
+active; `active_work` on the Bot summary), translucent helpers in its shape
+stand on the floor's portal. The HUD's Helpers chip and the portal itself open a
+list of whose they are.
+
+**Waiting and allowing in place.** The HUD's waiting chip lists every waiting
+Bot across the building. A row can show the full request and, when the offer
+has an allow-once option and the source may be written, allow it once: the
+offer is read again and its fence, turn and deadline are checked before sending,
+and an answer already sent from here is never sent again.
+
+**Pictures.** The floor pictures are WebP, loaded only when the tower first
+opens. A page opened before a hosted deployment may ask for the previous
+deployment's removed files, which Pages answers with its HTML; the building
+therefore fetches every floor's picture when it shows, requests a failed one
+once more with a fresh query, and only then shows a Reload note. The elevator
+doors rest open, because under reduced motion every animation is removed and
+doors that only opened by animating stayed shut over the floor.
+
+**Phone.** The picture pans inside its own frame and centres on a busy Bot; the
+HUD keeps one row and the layout, look and floor controls fold behind one floor
+button; panels open below the picture. A chat opened from the tower rises as a
+bottom sheet with the floor still visible above, and another Bot can be tapped
+from there.
+
+**Browser check.** `tower/tower.e2e.mjs` serves the synthetic Bots fixture and
+the floor pictures, refuses any `/v1` request, and checks Chromium and WebKit at
+390 and 1440 wide in Taiwan Traditional Chinese and English: the building is
+offered, no phone control covers the wide HUD, the floor picture loads, the
+doors end open, opening "N more" does not move the floor, and a phone chat is a
+bottom sheet over the tower. It installs nothing and calls no model:
+
+```sh
+PLAYWRIGHT_MODULE=<existing-playwright-index.mjs> \
+BOTS_ARTIFACTS=<task-evidence-directory> \
+node web/console/src/project-assistants/tower/tower.e2e.mjs
+```
+
+This is local synthetic evidence, not acceptance on a real phone or on the
+hosted console.
+
 ## If something is missing
 
 - *This Bot needs Claude Code 2.1.323 or newer and Node 22 or newer*:

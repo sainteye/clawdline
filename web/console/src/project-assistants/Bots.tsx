@@ -338,7 +338,10 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     return()=>{root.removeEventListener("pointerover",enter);root.removeEventListener("pointerout",leave);root.removeEventListener("focusin",enter);root.removeEventListener("focusout",leave)}
   },[])
   useEffect(()=>{if(!selected&&!groupOpen&&lastSelected.current){const button=[...host.current?.querySelectorAll<HTMLButtonElement>(botsView==="tower"?'.pa-tower [data-bot-key]':'[data-bot-key]')??[]].find(b=>b.dataset.botKey===lastSelected.current);button?.focus({preventScroll:true})}},[selected,groupOpen])
-  return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}`} lang={language}>
+  // On a phone, a chat opened from the tower rises as a bottom sheet over it,
+  // so the floor stays in view and another Bot can be tapped from there.
+  const towerSheet=narrow&&botsView==="tower"&&!!selectedItem&&!groupOpen
+  return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}`} lang={language}>
     {rosterNotice&&<div className="pa-roster-notice" role={rosterNotice.error?"alert":"status"}>
       <span>{rosterNotice.text}</span><button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}

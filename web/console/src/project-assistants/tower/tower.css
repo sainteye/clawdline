@@ -44,7 +44,9 @@
 .project-assistants .pa-section-floor[data-wait] .pa-section-lamp { background:#e39567;box-shadow:0 0 14px 4px #e39567;animation:pa-hud-blink 1.2s steps(2,jump-none) infinite; }
 /* Elevator doors close and open over the floor when it changes. */
 .project-assistants .pa-tower-doors { position:absolute;inset:0;pointer-events:none;z-index:2; }
-.project-assistants .pa-tower-doors::before,.project-assistants .pa-tower-doors::after { content:"";position:absolute;top:0;bottom:0;width:50%;background:repeating-linear-gradient(90deg,#16121c 0 14px,#1d1824 14px 16px);animation:pa-door .55s steps(8,end) both; }
+.project-assistants .pa-tower-doors::before,.project-assistants .pa-tower-doors::after { content:"";position:absolute;top:0;bottom:0;width:50%;background:repeating-linear-gradient(90deg,#16121c 0 14px,#1d1824 14px 16px);transform:translateX(var(--from));animation:pa-door .55s steps(8,end) both; }
+/* The doors rest open: under reduced motion every animation is removed, and
+   doors that only opened by animating stayed shut over the floor. */
 .project-assistants .pa-tower-doors::before { left:0;box-shadow:inset -2px 0 0 #e39567;--from:-100%; }
 .project-assistants .pa-tower-doors::after { right:0;box-shadow:inset 2px 0 0 #e39567;--from:100%; }
 @keyframes pa-door { 0% { transform:translateX(0); } 100% { transform:translateX(var(--from)); } }
@@ -217,3 +219,9 @@
 /* A Project name carries its small icon, as in the list. */
 .project-assistants .pa-tower-project { display:inline-flex;align-items:center;gap:6px;min-width:0; }
 .project-assistants .pa-tower-project > :first-child:not(:only-child) { flex:none; }
+/* The portal is a target too: its helpers say whose they are. */
+.project-assistants .pa-tower-portal { position:absolute;z-index:2;width:12%;height:12%;transform:translate(-50%,-70%);padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer; }
+.project-assistants .pa-tower-portal:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
+.project-assistants .pa-tower-waitlist.pa-tower-helpers li > div > button:first-child { color:#120a10;background:#e39567;box-shadow:none; }
+@media(min-width:701px) { .project-assistants .pa-tower-helpers { position:absolute;left:12px;top:52px;width:min(340px, 60%);max-height:calc(100% - 64px); } }
+@media(max-width:700px) { .project-assistants .pa-tower-helpers { margin-top:8px;max-height:46vh; } .project-assistants .pa-tower-helpers li div button { min-height:40px;padding:0 14px; } }

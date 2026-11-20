@@ -141,6 +141,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // answer keeps the default rule for its Projects.
   const [docs, setDocs] = useState<ReadonlyMap<string, FloorDoc>>(() => new Map())
   const [floorsOpen, setFloorsOpen] = useState(false)
+  // Who the translucent helpers on the portal belong to, from the HUD chip or the portal itself.
+  const [helpersOpen, setHelpersOpen] = useState(false)
   const floorSources = (sources ?? []).filter(s => s.canTowerFloors?.() === true)
   const floorSourceKey = floorSources.map(s => `${s.machineID}:${s.authorizationRevision}`).join(",")
   const loadFloors = (source: SourceClient, signal: AbortSignal) => readFloors(source, current ?? (() => sourceRef.current ?? []), towerFloors.length, signal)
@@ -267,6 +269,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // roster frame) swaps the picture without restarting the loop or resizing
   // the canvas, since resizing clears it and showed as a flash of every Bot.
   const helpers = section ? [] : portalHelpers(present, PortalHelpers)
+  // Every Bot with work running elsewhere, across the building, most first.
+  const owners = useMemo(() => allBots.filter(b => b.work > 0).sort((a, z) => z.work - a.work || (a.key < z.key ? -1 : 1)), [allBots])
   const portal = section ? undefined : (scene as TowerScene).portal
   const scenery = useRef({ bots, running, scene, locate, size, helpers, portal, picked, look })
   scenery.current = { bots, running, scene, locate, size, helpers, portal, picked, look }
@@ -376,7 +380,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const hud = <div className="pa-tower-hud">
     <p className="pa-hud-facts" role="status">
       {summary.total ? chips.map(c => c.key === "wait"
-        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setFloorsOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
+        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setFloorsOpen(false); setHelpersOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
+        : c.key === "helpers"
+        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={helpersOpen} aria-controls="pa-tower-helpers" onClick={() => { setPanelOpen(false); setFloorsOpen(false); setWaitOpen(false); setHelpersOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
         : <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{loading ? w.loading : w.towerEmpty}</span>}
     </p>
   </div>
@@ -522,11 +528,14 @@ export default function BotTower({ items, w, language, paused = false, highlight
               </span>
             </button>
           })}
+          {portal && helpers.length > 0 && <button type="button" className="pa-tower-portal" aria-expanded={helpersOpen} aria-controls="pa-tower-helpers" aria-label={w.towerHelpersTitle}
+            style={{ left: `${portal[0] / scene.width * 100}%`, top: `${portal[1] / scene.height * 100}%` }}
+            onClick={() => { setPicked(null); setWaitOpen(false); setFloorsOpen(false); setHelpersOpen(o => !o) }}/>}
           {[...extra].map(([g, more]) => {
             const [x, y] = moreAt(g), names = list.format(more.map(b => b.item.bot.name))
             return <div key={g} className="pa-tower-more" style={{ left: `${x / scene.width * 100}%`, top: `${y / scene.height * 100}%` }}>
               <button type="button" aria-expanded={moreOpen === g} aria-label={w.towerMoreLabel.replace("{count}", String(more.length)).replace("{names}", names)}
-                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>+{more.length}</button>
+                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>{w.towerMore.replace("{count}", String(more.length))}</button>
               {moreOpen === g && <ul role="list" onKeyDown={e => { if (e.key === "Escape") setMoreOpen(null) }}>{more.map(b => <li key={b.key}>
                 <button type="button" onClick={() => { setMoreOpen(null); onSelect(b.item) }}><strong>{b.item.bot.name}</strong><span>{w[moodWord[b.mood]]}</span></button>
               </li>)}</ul>}
@@ -536,6 +545,22 @@ export default function BotTower({ items, w, language, paused = false, highlight
         </div>
         </div>
         {waitList}
+        {helpersOpen && owners.length > 0 && <div id="pa-tower-helpers" className="pa-tower-waitlist pa-tower-helpers" role="region" aria-label={w.towerHelpersTitle}
+          onKeyDown={e => { if (e.key === "Escape") setHelpersOpen(false) }}>
+          <header><b>{w.towerHelpersTitle}</b><button type="button" aria-label={w.towerHelpersClose} onClick={() => setHelpersOpen(false)}>×</button></header>
+          <p className="pa-tower-floorset-hint">{w.towerHelpersHint}</p>
+          <ol>{owners.map(b => {
+            const at = floorOfBot(b, floorOf), project = projectName(b.item) || w.unnamedProject
+            return <li key={b.key}>
+              <p><strong>{b.item.bot.name}</strong><span>{w.towerHelpersCount.replace("{count}", String(b.work))}</span></p>
+              <p><small className="pa-tower-project"><ProjectMark icon={projectIcon?.(b.item)} size={12}/>{building ? `${floors[at].label} · ${project}` : project}</small></p>
+              <div>
+                <button type="button" onClick={() => { setHelpersOpen(false); if (building && at !== floor) goFloor(at); setPicked(b.key) }}>{w.towerHelpersShow}</button>
+                <button type="button" onClick={() => { setHelpersOpen(false); onSelect(b.item) }}>{w.towerOpenChat}</button>
+              </div>
+            </li>
+          })}</ol>
+        </div>}
         {building && floorsOpen && <TowerFloorsPanel rows={floorRows} labels={towerFloors.map(f => f.label)} w={w} onPlace={placeRow} onClose={() => setFloorsOpen(false)}/>}
       </div>
     </div>
