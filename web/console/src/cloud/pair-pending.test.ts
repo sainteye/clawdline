@@ -1,5 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { CloudViewerSession } from "../legacy/js/net/cloud-boot.js"
 // @ts-expect-error -- a `.ts` path, for node's strip-types test runner.
 import { durablePairViewer, resumePendingPairing, type PairingScope, type PendingPairingStore } from "./pair-pending.ts"
 import type { PendingPairing } from "./copied.js"
@@ -113,4 +114,33 @@ test("a typed terminal answer removes a claim that cannot succeed", async () => 
   })
   assert.equal(memory.kept(), null)
   assert.deepEqual(memory.calls, ["get", "remove:pair-1"])
+})
+
+test("the browser keeps claiming the same offer after a transient gateway response", async () => {
+  const memory = memoryStore(pending)
+  const current = session([opened])
+  let posts = 0
+  const browser = new CloudViewerSession({
+    config: { apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test", relayAddress: "wss://relay.example.test", protocolVersion: 1 },
+    async fetch(url: string, init?: RequestInit) {
+      assert.equal(url, "https://api.example.test/v1/pairing/claim")
+      assert.equal(init?.method, "POST")
+      assert.deepEqual(JSON.parse(String(init?.body)), { pairing_id: "pair-1", claim_nonce: "nonce" })
+      posts++
+      return new Response(null, { status: 503 })
+    },
+  })
+  const claim = current.claimPairing
+  const answer = await resumePendingPairing({
+    ...current,
+    claimPairing: (offer) => posts === 0 ? browser.claimPairing(offer) : claim(),
+  }, memory.store, {
+    async sleep(ms) {
+      assert.equal(memory.kept(), pending)
+      current.advance(ms)
+    },
+  })
+  assert.deepEqual(answer, opened)
+  assert.equal(posts, 1)
+  assert.equal(memory.kept(), null)
 })
