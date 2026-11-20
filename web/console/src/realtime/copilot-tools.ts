@@ -81,7 +81,7 @@ export interface ToolDeps {
   /** Demand-only question analysis on the Session machine; undefined on older daemons. */
   analyzeQuestion?: (row: CopilotSessionRow, question: string, replies: number) => Promise<Record<string, unknown> | undefined>
   /** Exact identity selected in the call menu; a reused terminal must not redirect a read. */
-  selectedReadTarget?:SessionReference
+  selectedReadTarget?:SessionReference & { analyze?: boolean }
   summaryAttentionFirst?:boolean
   summaryLimit?:number
   summaryTargets?:readonly SessionReference[]
@@ -336,7 +336,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - last_reply 的結尾如果在問使用者（要不要做、選哪個、請他確認），即使狀態是閒置，也要說它在等使用者決定，並問要不要詳細解釋。
 
 【深入解釋最近回覆（explain_session_reply）】
-- 需要根據最近原文解答問題時，將使用者真正的問題放入 question，不需要固定口令；摘要不足、原因、比較、取捨、洞見與針對內容的追問都走此工具。
+- 需要根據最近原文解答問題時，將使用者真正的問題放入 question。預設直接讀原文，輸出依據已在一則回覆時直接解釋。只有需要綜合多則回覆、核對表格的欄位與數字、或查審查者的原始回饋時，才設 analyze=true；單純想聽最近幾則原文的重點不必開分析。
 - 詳解不受一般三句回答限制；先講結論與影響，再分段解釋原因和選項，讓使用者能隨時插話。
 - 結果有 analysis 時，直接用 answer 回答，保留條件、來源與未知。source_fallback 或 replies 是已讀到的來源。用其中能證實的內容回答，並說明缺少的資料。驗收者的回報與主 Session 的修正紀錄要分開說。分析失敗或資料有限時，先用已讀到的資料回覆。同一輪不要重跑或改寫成另一句分析。只有 error 且沒有來源時，才說這次無法查到。
 - user_question 是使用者真正想解決的問題；question 是 Session 目前待回答的問題，兩者分開。以 user_question 為目標從原文抽取答案、依據與未知；追問優先沿用已讀資料，不足才重新讀取或改變範圍。
@@ -443,6 +443,7 @@ export const COPILOT_TOOLS = [
       properties: {
         question: { type: 'string', description: '使用者這次想了解的實際問題；讀完 replies 後針對此問題找答案、依據與未知，不要另做泛用摘要。' },
         replies: { type: 'integer', minimum: 1, maximum: RECENT_REPLIES, description: '要詳讀的助理回覆則數；未指定最後幾則時用 3，明確只問最後一則用 1。工具與系統紀錄不占則數。' },
+        analyze: { type: 'boolean', description: '預設直接讀原文。需要綜合多則回覆、核對表格欄位和數字、或找審查者的原始回饋時才填 true。' },
         said: { type: 'string', description: '使用者這句話裡稱呼這個 Session 的原話，照他說的填（例如他講的主題、或聽起來像的名字）；他只說「它」「這個」就填那個字' },
         session_id: {
           type: 'string',
@@ -2156,7 +2157,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
   return out
 }
 
-async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, count = 1, question = ''): Promise<unknown> {
+async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, count = 1, question = '', analyze = false): Promise<unknown> {
   if (!Number.isInteger(count) || count < 1 || count > RECENT_REPLIES) return { error: 'voice_reply_count_invalid', maximum: RECENT_REPLIES }
   const read = await readRows(deps)
   if ('error' in read) {
@@ -2172,7 +2173,7 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, cou
   deps.focus?.set(row.id)
   const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
   let analysisError: string | undefined
-  if (deps.analyzeQuestion) {
+  if ((deps.selectedReadTarget?.analyze ?? analyze) && deps.analyzeQuestion) {
     const analysis = await observedRead(deps,'analyze_session_question',row,()=>deps.analyzeQuestion!(row,requested,count))
     if (analysis) {
       if (analysis.error === 'copilot_question_unusable' || analysis.error === 'copilot_question_failed') analysisError = analysis.error
@@ -3139,8 +3140,9 @@ async function observedRead<T>(deps:ToolDeps,name:string,row:CopilotSessionRow|u
    try{const response=await deps.fetch(path,init);if(!response.ok)failed=true;return response}
    catch(error){failed=true;cancelled=init?.signal?.aborted===true;throw error}
   }})
-  const value=result as {error?:unknown;analysis_error?:unknown;reused?:boolean}|undefined
-  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error||value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
+  const value=result as {error?:unknown;analysis_error?:unknown;source_fallback?:unknown;reused?:boolean}|undefined
+  const fallback = value?.analysis_error && Array.isArray(value.source_fallback) && value.source_fallback.length > 0
+  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error?'failed':fallback?'fallback':value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
   return result
  }catch(error){span?.end({outcome:error instanceof Error&&error.name==='AbortError'?'cancelled':'failed'});throw error}
 }
@@ -3175,7 +3177,7 @@ async function executeCopilotTool(name: string, argsJson: string, deps: ToolDeps
     else if (name === 'get_session_recap') result = await sessionRecap(deps, logs, str(args.session_id))
     else if (name === 'get_session_summary') result = await sessionSummary(deps, logs, str(args.session_id), args.fresh === true)
     else if (name === 'get_session_activity') result = await sessionActivity(deps, logs, str(args.session_id))
-    else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id), args.replies === undefined ? 1 : Number(args.replies), str(args.question))
+    else if (name === 'explain_session_reply') result = await explainReply(deps, logs, str(args.session_id), args.replies === undefined ? 1 : Number(args.replies), str(args.question), args.analyze === true)
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true, str(args.expected_question))

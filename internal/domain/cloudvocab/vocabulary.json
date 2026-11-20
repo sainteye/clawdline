@@ -359,6 +359,7 @@
           "session": "%1",
           "conversation": "c1",
           "question": "Why was option A proposed?",
+          "allow_source_fallback": true,
           "replies": 3,
           "context": "context1",
           "language": "en"
@@ -375,6 +376,7 @@
           ],
           "path": "/v1/voice/copilot-question",
           "local_body": [
+            "allow_source_fallback",
             "context",
             "conversation",
             "language",

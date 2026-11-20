@@ -2169,6 +2169,7 @@ export class RelayWriter {
         if (url.search) throw failure("invalid_query", "Question analysis has no query parameters.", 400)
         const sent = await bodyOf(init)
         const question = Object.fromEntries(['session','conversation','question','replies','context','language'].filter(key => Object.hasOwn(sent,key)).map(key => [key,sent[key]]))
+        if (typeof sent.allow_source_fallback === 'boolean') question.allow_source_fallback = sent.allow_source_fallback
         return this.machineWorkV2(client, route.word, { question }, headerOf(init,"idempotency-key"), unopenedMachine(init) ?? this.host.machine)
       }
       case "copilot-recap": {
