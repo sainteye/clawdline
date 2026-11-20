@@ -67,6 +67,10 @@
   .am-sheet { width: min(520px, calc(100% - 48px)); border: 1px solid #2e2e35; border-radius: 22px; padding-bottom: 22px; }
   .am-grab { display: none; }
 }
+@media (width < 720px) {
+  .am-layer[data-closing="false"] .am-sheet { translate: 0 var(--am-swipe-y, 0px); transition: translate 160ms ease-out; }
+  .am-layer[data-closing="false"] .am-sheet[data-dragging="true"] { transition: none; }
+}
 .am-grab { width: 40px; height: 5px; border-radius: 3px; background: #3a3a42; align-self: center; flex: none; }
 .am-sheet-head { display: flex; align-items: center; gap: 12px; }
 .am-sheet-name { min-width: 0; flex: 1; }
@@ -180,13 +184,14 @@
 @keyframes am-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes am-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes am-sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes am-sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes am-sheet-out { from { transform: translateY(var(--am-swipe-y, 0px)); } to { transform: translateY(100%); } }
 @media (min-width: 720px) {
   @keyframes am-sheet-in { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
   @keyframes am-sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(12px) scale(.98); } }
 }
 @media (prefers-reduced-motion: reduce) {
   .am-layer .am-sheet, .am-layer .am-scrim { animation-duration: 1ms; }
+  .am-layer[data-closing="false"] .am-sheet { transition: none; }
   @keyframes am-sheet-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes am-sheet-out { from { opacity: 1; } to { opacity: 0; } }
 }
