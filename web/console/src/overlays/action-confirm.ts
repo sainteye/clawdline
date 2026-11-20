@@ -6,6 +6,7 @@ import { playbookWord } from "../playbook-words.js"
 import { client } from "../client.js"
 import { captureMachineFetch } from "../cloud/install.js"
 import { beginClosingRow, closingRowKey, settleClosingRow, type ClosingRow } from "../session/closing-rows.js"
+import { playSessionCloseMotion } from "../session/close-motion.js"
 import { focusModalContainer } from "../modal-focus.js"
 import * as L from "../legacy/bridge.js"
 import { closeExecutionChanged, getClosingId, setClosingId } from "./events.js"
@@ -793,12 +794,18 @@ function endSession({ id, request, force, closeabilityVersion, target }: Pending
   const machine = captureMachineFetch()
   // Dispatch while the Cloud reader still has the exact fleet destination selected.
   const sent = client.close(id, force, request, closeabilityVersion ?? undefined)
-  if (host.openId() === id) host.closeDetail()
+  const leavingDetail = host.openId() === id
+  let cancelMotion: (() => void) | undefined
+  try {
+    cancelMotion = playSessionCloseMotion([key, L.selectionKey(target.row) ?? id], leavingDetail)
+  } catch { /* Motion support cannot hold up a close. */ }
+  if (leavingDetail) host.closeDetail()
   void sent.then(() => {
     settleClosingRow(key, true)
     if (machine.current()) host.refresh()
   }, async (error: unknown) => {
     const absent = error instanceof RefusalError && error.code === "session_not_found"
+    if (!absent) cancelMotion?.()
     settleClosingRow(key, absent)
     if (machine.current()) host.refresh()
     if (absent) return

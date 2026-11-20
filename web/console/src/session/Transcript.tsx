@@ -376,7 +376,11 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     const retained = [...earlier.pages].reverse().flatMap((page) => page.entries).concat(earlier.base.entries)
     return joinTranscript(retained, data.entries).map((e) => ({ ...e }))
   }, [data, earlier])
-  const skeleton = useWait(show === "loading")
+  const hasReadableEntries = !!data && readableTranscriptHistory(data) && entries.length > 0
+  useLayoutEffect(() => {
+    // The latest page can be read while earlier pages fill the viewport.
+    if (hasReadableEntries) onFilling(false)
+  }, [hasReadableEntries, onFilling])
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
@@ -439,7 +443,6 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
       onFilling(show === "loading")
       return
     }
-    if (skeleton) { onFilling(true); return }
     let frame = 0
     const fill = () => {
       cancelAnimationFrame(frame)
@@ -462,7 +465,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     observer?.observe(box)
     fill()
     return () => { observer?.disconnect(); cancelAnimationFrame(frame) }
-  }, [data, earlier, olderCursor, olderError, olderLoading, show, skeleton, loadOlder, onFilling])
+  }, [data, earlier, olderCursor, olderError, olderLoading, show, loadOlder, onFilling])
   useLayoutEffect(() => {
     const anchor = olderAnchor.current
     if (!anchor) return
@@ -546,7 +549,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
   // bottom when they pressed Send stays there to watch it.
   const pendingSignature = cards.map((card) => card.token + ":" + card.state).join(",")
   const drawnSignature =
-    skeleton || !data ? undefined : data.signature ? data.signature + "|" + pendingSignature + (working ? "|working" : "") : null
+    !data ? undefined : data.signature ? data.signature + "|" + pendingSignature + (working ? "|working" : "") : null
   const shownSignature = useRef<string | null | undefined>(undefined)
   const stick = useRef(false)
   const held = useRef(0)
@@ -666,7 +669,6 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
       {olderError && <span role="alert">{olderError}</span>}
     </div>
   ) : null
-  if (skeleton) return <Skeleton />
   // Newest end: the bottom, or the top when the transcript reads newest first.
   // A queued card waits for the turn to end idle. A turn that ended any other
   // way never sends it, so the card says so and offers sending it by hand.
@@ -2153,34 +2155,6 @@ function useSession(id: string, row?: SessionRow): SessionRow | undefined {
     }
   }, [id, missing])
   return shown ?? fetched
-}
-
-/**
- * `Waits.tx`: nothing for the first 150ms, and once the skeleton is up it stays
- * for at least 320ms, so a fast answer never strobes.
- */
-function useWait(waiting: boolean): boolean {
-  const [visible, setVisible] = useState(false)
-  const shown = useRef(0)
-  useEffect(() => {
-    if (waiting) {
-      if (visible) return
-      const timer = setTimeout(() => {
-        shown.current = Date.now()
-        setVisible(true)
-      }, 150)
-      return () => clearTimeout(timer)
-    }
-    if (!visible) return
-    const left = 320 - (Date.now() - shown.current)
-    if (left <= 0) {
-      setVisible(false)
-      return
-    }
-    const timer = setTimeout(() => setVisible(false), left)
-    return () => clearTimeout(timer)
-  }, [waiting, visible])
-  return visible
 }
 
 /** `txSkeleton`. */
