@@ -1466,3 +1466,81 @@ func TestHostHidesAndDeletesABot(t *testing.T) {
 		t.Fatalf("events left: %d %v", events, e)
 	}
 }
+
+func TestHostQueueEditRetainsOrderAndPausesUntilSaved(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "queue-edit")
+	ctx := t.Context()
+	if _, err := f.send(t, b, "first"); err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	running := fixtureReceive(t, f.p.sessions)
+	second, err := f.send(t, b, "original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.send(t, b, "third"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, c, _, err := s.Get(ctx, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
+	queued, err := f.h.store.Turn(ctx, b.Key, second.ResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin := app.QueueEditRequest{Command: pa.Command{Key: b.Key, Operation: pa.QueueEditOperation, IdempotencyKey: "edit-begin"},
+		Fence: fence, TurnID: second.ResourceID, Action: "begin"}
+	held, err := s.EditQueue(ctx, begin)
+	if err != nil || held.State != pa.EffectDelivered || held.ResourceID == "" {
+		t.Fatalf("begin: %+v %v", held, err)
+	}
+	if replay, err := s.EditQueue(ctx, begin); err != nil || replay != held {
+		t.Fatalf("begin replay: %+v %v", replay, err)
+	}
+	concurrent := begin
+	concurrent.Command.IdempotencyKey = "concurrent-begin"
+	if _, err := s.EditQueue(ctx, concurrent); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("another editor acquired the same hold: %v", err)
+	}
+	running.reply <- app.PromptResult{FinalText: "first finished"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	select {
+	case q := <-f.p.sent:
+		t.Fatalf("queue ran while held: %q", q.Text)
+	default:
+	}
+	if _, err := s.SendNow(ctx, app.SendNowRequest{Command: pa.Command{Key: b.Key, Operation: pa.SendNowOperation, IdempotencyKey: "held-steer"},
+		Fence: fence, TurnID: second.ResourceID}); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("Send now bypassed the hold: %v", err)
+	}
+	if err := app.QuiesceHistoryFor(ctx, f.h.store, f.o.Clock, f.o.ID, b.Key, app.RestartField); err != nil {
+		t.Fatal(err)
+	}
+	stillHeld, err := f.h.store.Turn(ctx, b.Key, queued.ID)
+	if err != nil || stillHeld.State != pa.TurnQueued || stillHeld.QueueEditID != held.ResourceID {
+		t.Fatalf("restart quiescence released the hold: %+v %v", stillHeld, err)
+	}
+	save := begin
+	save.Action, save.EditID, save.Text, save.Command.IdempotencyKey = "save", held.ResourceID, "revised instructions", "edit-save"
+	if _, err := s.EditQueue(ctx, save); err != nil {
+		t.Fatal(err)
+	}
+	prompt := fixtureReceive(t, f.p.sent)
+	if prompt.Turn.ID != queued.ID || prompt.Turn.MessageID != queued.MessageID ||
+		!strings.Contains(prompt.Text, "revised instructions") || strings.Contains(prompt.Text, "Hello original") {
+		t.Fatalf("the original delivery was not replaced in place: %+v", prompt)
+	}
+	if replay, err := s.EditQueue(ctx, save); err != nil || replay.ResourceID != held.ResourceID {
+		t.Fatalf("save replay: %+v %v", replay, err)
+	}
+}

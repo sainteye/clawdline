@@ -56,6 +56,14 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	if err != nil {
 		return nil, err
 	}
+	head := &result.View.Head
+	if h.options.NativeContext != nil && head.Conversation.ActiveTurnID != "" &&
+		(request.Mode == pa.ReadViewSnapshot || request.Mode == pa.ReadViewEvents) {
+		state, err := h.options.NativeContext(r.Context(), head.CurrentFence)
+		if err == nil && state.UsageKnown && state.Fence == head.CurrentFence && state.TurnID == head.Conversation.ActiveTurnID {
+			head.ContextUsage = &app.ReadContextUsage{Live: true, TurnID: state.TurnID, UsedTokens: state.UsedTokens, WindowTokens: state.WindowTokens}
+		}
+	}
 	encoded, err := paPackReadView(request, result)
 	if err != nil {
 		return nil, err

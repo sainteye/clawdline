@@ -164,7 +164,7 @@ func viewTurnProjection(value string) string {
 	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','restart','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
- 'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'))`
+ 'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'))`
 }
 
 func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
@@ -175,7 +175,7 @@ func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
 	if err := viewCheckFence(turn.Fence, h, false); err != nil {
 		return app.ReadTurnSummary{}, err
 	}
-	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts}
+	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts, QueueEditID: turn.QueueEditID}
 	if turn.StartedAt != nil {
 		summary.StartedAt = turn.StartedAt.UTC().Format(time.RFC3339)
 	}

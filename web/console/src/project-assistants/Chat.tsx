@@ -1,3 +1,4 @@
+import { ContextUsage } from "./ContextUsage"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
@@ -180,6 +181,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [stopStatus,setStopStatus]=useState<{turn:string;state:"sending"|"acknowledged"|"unknown"}|null>(null)
   const [queueAction,setQueueAction]=useState<{id:string;operation:"send_now"|"stop"}|null>(null)
   const queueInFlight=useRef(false)
+  const [queueEditor,setQueueEditor]=useState<{turnID:string;editID:string;text:string}|null>(null)
+  const [queueEditBusy,setQueueEditBusy]=useState(false)
+  const [queueEditError,setQueueEditError]=useState("")
   const [memoryNoteDraft,setMemoryNoteDraft]=useState<MemoryNoteDraft|null>(null)
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
@@ -238,7 +242,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const adoptHead=useCallback((page:W.ProjectAssistantReadViewResponse)=>{
     const before=headRef.current
     if(before&&(page.head.event_frontier<before.event_frontier||page.head.bot_version<before.bot_version))return
-    const nextHead=page.mode==="snapshot"||page.mode==="events"?page.head:{...page.head,background_tasks:before?.background_tasks}
+    const nextHead=page.mode==="snapshot"||page.mode==="events"?page.head:{...page.head,background_tasks:before?.background_tasks,context_usage:before&&sameFence(page.head.current_fence,before.current_fence)&&page.head.conversation.active_turn_id===before.conversation.active_turn_id?before.context_usage:undefined}
     headRef.current=nextHead;setHead(nextHead)
     const d=currentData.current
     if(d){const next={...d,bot:page.snapshot?.bot??d.bot,conversation:page.head.conversation,source:page.source};currentData.current=next;setData(next)}
@@ -344,8 +348,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           adoptHead(page);observation.apply(page)
           const rows=eventTimeline(timelineRef.current,page.items);timelineRef.current=rows;setTimeline(rows)
           for(const row of page.items){const event=row.event!
+            if(event.turn&&(event.turn.state==="queued"||sameFence(event.turn.fence,page.head.current_fence)))
+              setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
             if(!sameFence(event.fence,page.head.current_fence))continue
-            if(event.turn&&sameFence(event.turn.fence,page.head.current_fence))setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
             if(event.message?.kind==="assistant"&&event.message.turn_id){const id=event.message.turn_id;setActivity(old=>old[id]?{...old,[id]:""}:old)}
             if(event.trace){if(browserToolTrace(event.trace)){const trace=event.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}const now=visibleTrace(event.trace)?activityOf(event.trace):"",id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
             if(event.permission&&event.permission.state!=="pending"&&detailRows.current[event.permission.id]){
@@ -685,6 +690,34 @@ ${currentDraft}`:submitted)
       if(valid()&&attempted&&memoryOutcomeUnknown(e))setStopStatus({turn:active,state:"unknown"})
       else if(valid()){setStopStatus(null);fail(e)}
     }finally{stopping.current=false;if(valid())setBusy(false)}
+  }
+
+  const editQueued=async(action:"begin"|"save"|"cancel",turnID:string,editID:string,text:string)=>{
+    if(!source.editQueue||queueInFlight.current||busy||!valid()||recovery.current)return
+    queueInFlight.current=true
+    setQueueEditBusy(true)
+    setQueueEditError("")
+    const editCommand=command(key,"queue_edit")
+    try{
+      let original=text
+      const result=await mutate((d,s,page)=>{
+        const turn=page.snapshot!.pending_turns.find(row=>row.id===turnID&&row.state==="queued")
+        const message=page.snapshot!.queued_messages.find(row=>row.id===turn?.message_id)
+        if(!turn||!message||(turn.queue_edit_id??"")!==editID)throw failure("pa_stale_version")
+        original=message.text
+        return source.editQueue!({command:editCommand,fence:fence(d),turn_id:turnID,action,edit_id:editID,text:action==="save"?text:""},s)
+      })
+      if(!valid())return
+      const receipt=result.receipt
+      if(result.contract_version!=="project-assistants.v1"||receipt?.state!=="delivered"||!receipt.resource_id||
+        receipt.command?.idempotency_key!==editCommand.idempotency_key||receipt.command.operation!=="queue_edit"||
+        botIdentity(receipt.command.key)!==botIdentity(key)||action!=="begin"&&receipt.resource_id!==editID)throw failure("pa_outcome_unknown")
+      setQueueEditor(action==="begin"?{turnID,editID:receipt.resource_id,text:original}:null)
+    }catch(e){if(valid())setQueueEditError(errorCode(e))}
+    finally{
+      queueInFlight.current=false
+      if(valid()){setQueueEditBusy(false);void refresh(true)}
+    }
   }
 
   const actOnQueued=async(id:string,turnID:string,operation:"send_now"|"stop")=>{
@@ -1044,6 +1077,7 @@ ${currentDraft}`:submitted)
       details={details} more={more} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/>:null}</div>
   }
   const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
+  const queueEditorOpen=!!queueEditor&&turns.some(turn=>turn.id===queueEditor.turnID&&turn.queue_edit_id===queueEditor.editID)
   const queueLimited=(head?.queued_turn_count??0)>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
@@ -1207,21 +1241,38 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
-      return <div className="pa-queued" key={message.id} aria-busy={pending?true:undefined}>
-        <span>{w.queued}: {message.text||message.files?.map(file=>file.name).join(" · ")}</span>
-        {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&
+      const hold=queuedTurn?.queue_edit_id
+      const editor=queueEditor&&queueEditor.turnID===queuedTurn?.id&&queueEditor.editID===hold?queueEditor:null
+      const editable=!thread&&message.kind==="user"&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
+      return <div className="pa-queued" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
+        <span>{hold?w.queueHeld:w.queued}: {message.text||message.files?.map(file=>file.name).join(" · ")}</span>
+        {editable&&!editor&&<button className="pa-pill" type="button" disabled={!enabled||busy||queueEditBusy||queueEditorOpen}
+          onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>{w.editQueued}</button>}
+        {editor&&editable&&<div className="pa-queued-editor">
+          <textarea aria-label={w.editQueued} value={editor.text} disabled={!enabled||queueEditBusy}
+            onChange={event=>setQueueEditor({...editor,text:event.target.value})}/>
+          <div>
+            <button type="button" disabled={!enabled||busy||queueEditBusy||!editor.text.trim()&&!message.files?.length&&!message.attachments?.length}
+              onClick={()=>void editQueued("save",editor.turnID,editor.editID,editor.text)}>{w.save}</button>
+            <button type="button" disabled={!enabled||busy||queueEditBusy}
+              onClick={()=>void editQueued("cancel",editor.turnID,editor.editID,"")}>{w.queueKeepOriginal}</button>
+          </div>
+        </div>}
+        {queuedTurn&&!hold&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&
           <button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
-            disabled={!enabled||busy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
+            disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
             {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
           </button>}
         {queuedTurn&&source.canUnqueue?.()&&
           <button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued}
-            disabled={!enabled||busy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"stop")}>
+            disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"stop")}>
             {pending==="stop"?<span className="pa-send-spinner" aria-hidden="true"/>:"×"}
           </button>}
       </div>
     })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
+      {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
+      {!thread&&live&&head?.context_usage&&<ContextUsage usage={head.context_usage} w={w} language={language}/>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
       <Composer key={draftKey} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>

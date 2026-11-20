@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13820,
+  "englishKeys": 13826,
   "counts": {
-    "negation": 3565,
+    "negation": 3566,
     "state": 2342,
     "permission": 833,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5905,
+  "unionCount": 5906,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3132,6 +3132,7 @@
       "projectAssistants.noCapabilities",
       "projectAssistants.noInstructions",
       "projectAssistants.permissionAnswerFailed",
+      "projectAssistants.queueEditFailed",
       "projectAssistants.reactionsUnavailable",
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
@@ -12746,6 +12747,7 @@
     "projectAssistants.permissionDelete",
     "projectAssistants.pictureUnavailable",
     "projectAssistants.policy",
+    "projectAssistants.queueEditFailed",
     "projectAssistants.reactionFailed",
     "projectAssistants.reactionUnknown",
     "projectAssistants.reactionsUnavailable",

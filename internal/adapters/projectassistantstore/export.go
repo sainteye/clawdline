@@ -58,7 +58,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // validates both versions identically; the next export uses the current schema.
 // SupportsArchiveSchema identifies versions the feature archive decoder can restore.
 func SupportsArchiveSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 || version == 14 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 || version == 14 || version == 15 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {

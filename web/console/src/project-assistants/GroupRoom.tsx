@@ -118,7 +118,8 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     try {
       const answer=await authorized(source,currentRef.current,readSignal=>source.groupHistory!({key:initial.key,before_seq:before,page_size:100},readSignal),signal)
       if(signal.aborted||!activeRef.current)return
-      observing.current=!!answer.room.running||!!answer.activity?.length
+      observing.current=!!answer.room.running||!!answer.activity?.length||
+        !!answer.member_outcomes?.some(outcome=>outcome.work?.some(work=>work.state==="accepted"||work.state==="waiting_for_person"||work.state==="executing"))
       const previous=linesRef.current,last=previous.at(-1)?.seq??0
       const gap=!before&&previous.length>0&&answer.lines.length>0&&answer.lines[0].seq>last+1
       const next=gap?answer.lines:merge(previous,answer.lines)

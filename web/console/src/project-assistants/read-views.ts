@@ -63,6 +63,7 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   // started_at arrived with API level 63; an older daemon omits it.
   if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.failure_field!==undefined&&typeof t.failure_field!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
   own(t.fence,scope,current)
+  if(t.queue_edit_id!==undefined&&(!text(t.queue_edit_id)||t.state!=="queued"))throw failure("pa_invalid")
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
@@ -97,6 +98,9 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
   own(h.current_fence,scope)
   if(!sameConversation({key:h.key,project:h.project,conversation_id:c.id},scope)||h.project.machine_id!==h.key.machine_id||c.key.machine_id!==h.key.machine_id||c.key.bot_id!==h.key.bot_id)throw failure("pa_scope_denied")
   if(c.binding_id!==h.current_fence.binding_id||c.generation!==h.current_fence.generation||c.memory_revision>h.memory_revision)throw failure("pa_invalid")
+  const context=h.context_usage
+  if(context!==undefined&&(!object(context)||!text(context.turn_id)||typeof context.live!=="boolean"||
+    (context.live?context.turn_id!==c.active_turn_id:!!c.active_turn_id)||!integer(context.used_tokens)||!integer(context.window_tokens,1)))throw failure("pa_invalid")
   if(h.queued_turn_count!==undefined&&!integer(h.queued_turn_count))throw failure("pa_invalid")
   if(h.background_tasks!==undefined){
     if(!Array.isArray(h.background_tasks)||h.background_tasks.length>100)throw failure("pa_invalid")
@@ -140,7 +144,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       const e=row.event
       if(!text(e.id)||!integer(e.seq,1)||e.seq<=seq||e.seq!==row.observed_event_seq||e.version!=="project-assistants.v1"||!date(e.at)||!oneOf(e.kind,ProjectAssistantEventKindValues))throw failure("pa_invalid")
       const payloads=["bot","message","work","turn","permission","trace","source","memory","read"] as const
-      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",artifact_renamed:"message",reactions_changed:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
+      const expected={bot_created:"bot",bot_updated:"bot",message_created:"message",queued_message_edited:"message",artifact_renamed:"message",reactions_changed:"message",work_updated:"work",turn_updated:"turn",permission_offered:"permission",permission_answered:"permission",trace_updated:"trace",source_updated:"source",memory_changed:"memory",read_advanced:"read",feature_disabled:""}[e.kind]
       if(payloads.filter(k=>e[k]!==undefined).length!==(expected?1:0)||expected&&!(e as unknown as Record<string,unknown>)[expected])throw failure("pa_invalid")
       seq=e.seq;own(e.fence,scope)
       if(e.message)message(e.message,scope)
@@ -206,4 +210,4 @@ export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:
   if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
  }
 }
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",attempts:t.attempts}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts}}

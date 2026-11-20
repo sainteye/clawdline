@@ -25,6 +25,7 @@ import (
 // trusted request context. Constructing it installs nothing and starts no runtime.
 type projectAssistantHTTPOptions struct {
 	Service       *app.Service
+	NativeContext func(context.Context, pa.Fence) (app.NativeContextState, error)
 	HookPublicURL func(context.Context, string, string) string
 	MachineID     string
 	Status        func(context.Context) (pa.SourceStatus, error)
@@ -255,7 +256,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react", "handoff-card":
+					case "stop", "read", "observed", "memory", "send-now", "queue-edit", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react", "handoff-card":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -692,6 +693,21 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		return paHTTPReceipt(s.Stop(ctx, app.StopRequest{Command: command, Fence: fence, TurnID: request.TurnID}))
+	case "queue-edit":
+		request, err := paDecodeHTTPLimit[contract.ProjectAssistantQueueEditRequest](w, r, capacity.MaximumBotSendBodyBytes)
+		if err != nil {
+			return nil, err
+		}
+		command, err := h.command(r, route, request.Command, pa.QueueEditOperation)
+		if err != nil {
+			return nil, err
+		}
+		fence, err := paHTTPFence(command, request.Fence)
+		if err != nil {
+			return nil, err
+		}
+		return paHTTPReceipt(s.EditQueue(ctx, app.QueueEditRequest{Command: command, Fence: fence, TurnID: request.TurnID,
+			EditID: request.EditID, Action: request.Action, Text: request.Text}))
 	case "send-now":
 		request, err := paDecodeHTTP[contract.ProjectAssistantSendNowRequest](w, r)
 		if err != nil {

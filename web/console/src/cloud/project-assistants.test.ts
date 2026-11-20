@@ -171,6 +171,34 @@ test("a group description requires API101 and keeps older edits sendable",async(
   assert.equal(carried.word,"project-assistants.group-edit")
   assert.deepEqual(carried.fields,described)
 })
+test("queue edits require API104 while the lead team remains available at API103", async () => {
+  const bot = viewWire().snapshot!.bot
+  const request: W.ProjectAssistantQueueEditRequest = {
+    command: command(bot.key, "queue_edit", "begin-queue-edit"),
+    fence: {key: bot.key, project: bot.project, conversation_id: bot.conversation_id, binding_id: "", generation: 0},
+    action: "begin", turn_id: "queued-turn", edit_id: "", text: "",
+  }
+  const sent: unknown[] = []
+  const transport: AssistantFetch = async (path, init) => {
+    if (path.endsWith("/status")) return Response.json(sourceStatus())
+    sent.push(JSON.parse(String(init?.body)))
+    return Response.json({})
+  }
+  const lead = make(transport, {...grant(), apiLevel: 103}).source
+  await lead.status(signal())
+  assert.equal(lead.canLeadTeamDefault(), true)
+  assert.equal(lead.canEditQueue(), false)
+  await assert.rejects(lead.editQueue(request, signal()), error => errorCode(error) === "pa_unsupported")
+  assert.deepEqual(sent, [])
+
+  const queue = make(transport, {...grant(), apiLevel: 104}).source
+  await queue.status(signal())
+  assert.equal(queue.canLeadTeamDefault(), true)
+  assert.equal(queue.canEditQueue(), true)
+  await queue.editQueue(request, signal())
+  assert.deepEqual(sent, [request])
+})
+
 test("exact group quotes require API88 without disabling plain groups on API76",async()=>{
   const sent: {path:string;body:unknown}[]=[]
   const transport:AssistantFetch=async(path,init)=>{
@@ -462,7 +490,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility","queue-edit"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)

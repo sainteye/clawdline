@@ -156,6 +156,9 @@ func paWireRoomMemberOutcome(v pa.RoomMemberOutcome) contract.ProjectAssistantRo
 		State: contract.ProjectAssistantTurnState(v.State), Disposition: v.Disposition, ReplySeq: v.ReplySeq,
 		Late: v.Late, FailureCode: string(v.FailureCode), FailureField: v.FailureField,
 	}
+	for _, work := range v.Work {
+		out.Work = append(out.Work, contract.ProjectAssistantRoomWork{TaskID: work.TaskID, State: contract.ProjectAssistantWorkState(work.State)})
+	}
 	for _, attempt := range v.Attempts {
 		out.Attempts = append(out.Attempts, contract.ProjectAssistantRoomAttempt{
 			Ordinal: int64(attempt.Ordinal), Agent: contract.ProjectAssistantAgent(attempt.Agent), Stage: string(attempt.Stage),

@@ -757,10 +757,23 @@
       ],
       "additionalProperties": false
     },
+    "ProjectAssistantRoomWork": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {"type": "string"},
+        "state": {"$ref": "./project-assistants.schema.json#/$defs/ProjectAssistantWorkState"}
+      },
+      "required": ["task_id", "state"]
+    },
     "ProjectAssistantRoomMemberOutcome": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "work": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ProjectAssistantRoomWork"}
+        },
         "member": {
           "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
         },

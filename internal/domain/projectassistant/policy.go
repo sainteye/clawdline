@@ -454,7 +454,7 @@ func DecideReplay(command Command, receipt *Receipt) (ReplayDecision, error) {
 		return "", fail(Invalid, "content_hash")
 	}
 	switch command.Operation {
-	case ReactOperation, NetworkSettingsOperation, ConnectorCredentialOperation, LoginProfileOperation, RenameArtifactOperation, CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, RuleRemoveOperation, DeleteOperation, VisibilityOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
+	case ReactOperation, NetworkSettingsOperation, ConnectorCredentialOperation, LoginProfileOperation, RenameArtifactOperation, CreateOperation, EditOperation, SendOperation, StopOperation, SendNowOperation, QueueEditOperation, RuleRemoveOperation, DeleteOperation, VisibilityOperation, AnswerOperation, ReadOperation, ObserveOperation, ForgetOperation, MemorySaveOperation, DispatchOperation:
 	default:
 		return "", fail(Invalid, "operation")
 	}
@@ -610,7 +610,7 @@ func ValidateEvent(e Event) error {
 	switch e.Kind {
 	case BotCreated, BotUpdated:
 		valid = e.Bot != nil
-	case MessageCreated, ReactionsChanged:
+	case MessageCreated, QueuedMessageEdited, ReactionsChanged:
 		valid = e.Message != nil
 	case ArtifactRenamed:
 		valid = e.Message != nil && e.Message.Output != nil && e.Message.Output.ArtifactID != ""

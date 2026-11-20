@@ -442,6 +442,16 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 			if old.Origin != t.Origin || old.ExchangeID != t.ExchangeID || old.Hops != t.Hops {
 				return failure(pa.ScopeDenied, "turn_origin")
 			}
+			if m.Command.Operation == pa.QueueEditOperation {
+				if t.State != pa.TurnQueued || old.State != pa.TurnQueued || old.StartedAt != nil ||
+					(old.QueueEditID == "") == (t.QueueEditID == "") {
+					return failure(pa.StaleVersion, "queue_edit")
+				}
+			} else if t.State == pa.TurnQueued && t.QueueEditID != old.QueueEditID ||
+				t.State != pa.TurnQueued && t.QueueEditID != "" ||
+				old.QueueEditID != "" && (t.State == pa.TurnRunning || t.State == pa.TurnSucceeded) {
+				return failure(pa.StaleVersion, "queue_edit")
+			}
 			if err := checkAttemptAppend(old, t); err != nil {
 				return err
 			}
@@ -466,6 +476,20 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 			}
 		}
 		a.Turns[t.ID] = t
+	}
+	if msg := m.QueuedMessageEdit; msg != nil {
+		t := a.Turns[msg.TurnID]
+		if m.Command.Operation != pa.QueueEditOperation || m.Turn == nil || m.Turn.ID != t.ID ||
+			t.State != pa.TurnQueued || t.QueueEditID != "" || msg.ID != t.MessageID || msg.Kind != pa.UserMessage ||
+			msg.Seq < 1 || msg.Seq > int64(len(a.Messages)) {
+			return failure(pa.ScopeDenied, "queued_message")
+		}
+		old := a.Messages[msg.Seq-1]
+		old.Text = msg.Text
+		if !reflect.DeepEqual(old, *msg) {
+			return failure(pa.ScopeDenied, "queued_message")
+		}
+		a.Messages[msg.Seq-1] = *msg
 	}
 	for _, msg := range m.Messages {
 		for _, old := range a.Messages {
@@ -633,6 +657,9 @@ func validateAggregate(a aggregate) error {
 		if err := pa.ValidateTurnOrigin(t); err != nil {
 			return err
 		}
+		if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
+			return failure(pa.Invalid, "queue_edit")
+		}
 		// A turn joined by Send now never ran on its own, so it has no captured snapshot.
 		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed || t.JoinedTurnID != ""
 		if id == "" || id != t.ID || t.MessageID == "" || t.IdempotencyKey == "" || t.MemoryRevision < 0 || t.MemoryRevision > a.Memory.Revision || !queued && (t.MemoryRevision < 1 || t.Instructions.Revision < 1) {
@@ -731,6 +758,14 @@ func validateAggregate(a aggregate) error {
 		// after a restart cut the previous turn off.
 		if !ok || message.Kind != pa.UserMessage && message.Kind != pa.NoticeMessage || message.TurnID != t.ID {
 			return failure(pa.ScopeDenied, "turn_message")
+		}
+	}
+	if sample := c.ContextUsage; sample != (pa.ContextSample{}) {
+		t, ok := a.Turns[sample.TurnID]
+		if !ok || t.State != pa.TurnSucceeded || t.Room != nil || t.Fence.BindingID != sample.BindingID ||
+			t.Fence.Generation != sample.Generation || t.MemoryRevision != sample.MemoryRevision ||
+			sample.UsedTokens < 0 || sample.WindowTokens <= 0 {
+			return failure(pa.Invalid, "context_usage")
 		}
 	}
 	for id, p := range a.Permissions {

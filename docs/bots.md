@@ -146,6 +146,25 @@ rules are shown in this machine's own console; Codex keeps its own and
 Clawdline does not list them yet.) If a worker's terminal shows a question, such as whether to trust a
 folder, the work card tells you to answer it in that Session.
 
+### Edit a queued message
+
+Open **Edit queued message** on a message that has not started. The source
+pauses it at its queue position. Save replaces the text and resumes the queue;
+**Keep original and resume** releases the hold with the previous text. Files,
+pictures and the quoted message stay attached. A paused message remains
+visible to paired devices and survives a daemon restart. A paired device can
+reopen the editor or withdraw the message. Once the Bot has reserved the
+message for execution, the source refuses an edit.
+
+### See context usage and group work
+
+A Bot chat shows context tokens when its provider reports a valid reading.
+After a successful turn, the last reported reading stays visible for its
+current binding and memory revision until another turn starts. In group
+chats, the member's name shows who is queued, working or waiting for
+permission. Existing Broker tasks from that room turn show their current
+states under the same member.
+
 ## Files and interactive documents from a Bot
 
 A Bot explicitly shares an output with `send_file` and publishes self-contained

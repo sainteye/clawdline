@@ -114,6 +114,7 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 		if i == 0 {
 			m.Turn.State = pa.TurnRunning
 			m.Conversation.ActiveTurnID = m.Turn.ID
+			m.WorkLinks = []pa.WorkLink{{ID: "assigned", TaskID: "room-task", Fence: m.Turn.Fence, TurnID: m.Turn.ID, State: pa.WorkExecuting}}
 		}
 		if _, err = store.Commit(testContext, m); err != nil {
 			t.Fatal(err)
@@ -125,6 +126,10 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 	}
 	if len(page.MemberOutcomes) != 2 || page.MemberOutcomes[0].Name != a.Name || page.MemberOutcomes[1].Name != b.Name {
 		t.Fatalf("current turns do not have scoped member names: %+v", page.MemberOutcomes)
+	}
+	if work := page.MemberOutcomes[0].Work; len(work) != 1 || work[0] != (pa.RoomWork{TaskID: "room-task", State: pa.WorkExecuting}) ||
+		len(page.MemberOutcomes[1].Work) != 0 {
+		t.Fatalf("work was not attributed to the room turn's owner: %+v", page.MemberOutcomes)
 	}
 	// Removing and rejoining a member invalidates its previous ticket even
 	// though its original Bot turn remains queued in storage.

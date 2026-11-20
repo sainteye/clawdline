@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion = "project-assistants.v1"
 	FixtureVersion  = 1
-	SchemaVersion   = 15
+	SchemaVersion   = 16
 	MaxNameRunes    = 128
 	// What a group works on, as Codync's group description: shown to the
 	// person and quoted to each member in its room prompt.
@@ -197,18 +197,29 @@ type EditBot struct {
 	BackgroundThreads int   `json:"background_threads,omitempty"`
 }
 
+// ContextSample is the last provider-reported usage after a successful turn.
+type ContextSample struct {
+	TurnID         string `json:"turn_id"`
+	BindingID      string `json:"binding_id"`
+	Generation     int64  `json:"generation"`
+	MemoryRevision int64  `json:"memory_revision"`
+	UsedTokens     int64  `json:"used_tokens"`
+	WindowTokens   int64  `json:"window_tokens"`
+}
+
 type Conversation struct {
-	SessionResetGeneration int64  `json:"session_reset_generation,omitempty"`
-	SessionResetAfter      int64  `json:"session_reset_after,omitempty"`
-	MainBindingID          string `json:"main_binding_id,omitempty"`
-	Key                    BotKey `json:"key"`
-	ID                     string `json:"id"`
-	Generation             int64  `json:"generation"`
-	BindingID              string `json:"binding_id"`
-	LastMessageSeq         int64  `json:"last_message_seq"`
-	MemoryRevision         int64  `json:"memory_revision"`
-	ActiveTurnID           string `json:"active_turn_id"`
-	Version                int64  `json:"version"`
+	ContextUsage           ContextSample `json:"context_usage,omitzero"`
+	SessionResetGeneration int64         `json:"session_reset_generation,omitempty"`
+	SessionResetAfter      int64         `json:"session_reset_after,omitempty"`
+	MainBindingID          string        `json:"main_binding_id,omitempty"`
+	Key                    BotKey        `json:"key"`
+	ID                     string        `json:"id"`
+	Generation             int64         `json:"generation"`
+	BindingID              string        `json:"binding_id"`
+	LastMessageSeq         int64         `json:"last_message_seq"`
+	MemoryRevision         int64         `json:"memory_revision"`
+	ActiveTurnID           string        `json:"active_turn_id"`
+	Version                int64         `json:"version"`
 }
 
 type TurnState string
@@ -234,6 +245,9 @@ type Fence struct {
 	Generation     int64        `json:"generation"`
 }
 type Turn struct {
+	// QueueEditID identifies a paused, never-started human message. Only an
+	// explicit save, cancel, or turn withdrawal releases this hold.
+	QueueEditID    string              `json:"queue_edit_id,omitempty"`
 	Network        *NetworkWork        `json:"network,omitempty"`
 	Origin         TurnOrigin          `json:"origin,omitempty"`
 	ExchangeID     string              `json:"exchange_id,omitempty"`
@@ -536,19 +550,20 @@ type BotPage struct {
 type EventKind string
 
 const (
-	BotCreated         EventKind = "bot_created"
-	BotUpdated         EventKind = "bot_updated"
-	MessageCreated     EventKind = "message_created"
-	ArtifactRenamed    EventKind = "artifact_renamed"
-	TurnUpdated        EventKind = "turn_updated"
-	PermissionOffered  EventKind = "permission_offered"
-	PermissionAnswered EventKind = "permission_answered"
-	WorkUpdated        EventKind = "work_updated"
-	MemoryChanged      EventKind = "memory_changed"
-	ReadAdvanced       EventKind = "read_advanced"
-	TraceUpdated       EventKind = "trace_updated"
-	SourceUpdated      EventKind = "source_updated"
-	FeatureDisabled    EventKind = "feature_disabled"
+	BotCreated          EventKind = "bot_created"
+	BotUpdated          EventKind = "bot_updated"
+	MessageCreated      EventKind = "message_created"
+	QueuedMessageEdited EventKind = "queued_message_edited"
+	ArtifactRenamed     EventKind = "artifact_renamed"
+	TurnUpdated         EventKind = "turn_updated"
+	PermissionOffered   EventKind = "permission_offered"
+	PermissionAnswered  EventKind = "permission_answered"
+	WorkUpdated         EventKind = "work_updated"
+	MemoryChanged       EventKind = "memory_changed"
+	ReadAdvanced        EventKind = "read_advanced"
+	TraceUpdated        EventKind = "trace_updated"
+	SourceUpdated       EventKind = "source_updated"
+	FeatureDisabled     EventKind = "feature_disabled"
 )
 
 type Trace struct {
@@ -611,6 +626,7 @@ const (
 	SendOperation           Operation = "send"
 	StopOperation           Operation = "stop"
 	SendNowOperation        Operation = "send_now"
+	QueueEditOperation      Operation = "queue_edit"
 	RuleRemoveOperation     Operation = "rule_remove"
 	DeleteOperation         Operation = "delete"
 	VisibilityOperation     Operation = "visibility"

@@ -110,7 +110,7 @@ func TestHostNativeContextDoesNotStartRuntime(t *testing.T) {
 func TestHostNativeContextTraversesOwnedSessionAndCloses(t *testing.T) {
 	f, _, b, q, session := liveContextFixture(t)
 	state, err := readHostNativeContext(t, f.h, q.Turn.Fence)
-	if err != nil || state.Fence != q.Turn.Fence || state.NativeSessionID != session.SessionID() || !state.CommandsKnown || !state.CompactAdvertised || !state.UsageKnown || state.UsedTokens != 0 || state.WindowTokens != 1000 {
+	if err != nil || state.TurnID != q.Turn.ID || state.Fence != q.Turn.Fence || state.NativeSessionID != session.SessionID() || !state.CommandsKnown || !state.CompactAdvertised || !state.UsageKnown || state.UsedTokens != 0 || state.WindowTokens != 1000 {
 		t.Fatalf("live zero/command reading lost through Host composition: %+v %v", state, err)
 	}
 	session.reply <- app.PromptResult{FinalText: "finished"}
@@ -127,6 +127,11 @@ func TestHostNativeContextTraversesOwnedSessionAndCloses(t *testing.T) {
 	x, err := s.Export(context.Background(), b.Key)
 	if err != nil || len(x.Turns) != 1 || len(x.Messages) != 2 || x.Conversation.ActiveTurnID != "" {
 		t.Fatalf("read changed chat facts: %+v %v", x, err)
+	}
+	sample := x.Conversation.ContextUsage
+	if sample.TurnID != q.Turn.ID || sample.Generation != q.Turn.Fence.Generation ||
+		sample.BindingID != q.Turn.Fence.BindingID || sample.UsedTokens != 0 || sample.WindowTokens != 1000 {
+		t.Fatalf("successful close did not retain the last known reading: %+v", sample)
 	}
 }
 

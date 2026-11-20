@@ -164,6 +164,8 @@ try{
     await until(sessionId,"[...document.querySelectorAll('[data-working-member]')].some(row=>JSON.parse(row.dataset.workingMember)[1]==='alice'&&row.dataset.workingState==='running')")
     const workers=await evaluate(sessionId,"[...document.querySelectorAll('[data-working-member]')].map(row=>JSON.parse(row.dataset.workingMember)[1])")
     assert.deepEqual(workers,["alice"],"room activity guessed that every member was working")
+    const workingOutcome=await evaluate(sessionId,"document.querySelector('[data-room-member-outcome][data-outcome-state=running]')?.querySelector('strong')?.textContent")
+    assert.equal(workingOutcome,"Alice","a normal working turn should name the member performing it")
     const workingShot=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`group-working-${mode}-${lang}.png`),Buffer.from(workingShot.data,"base64"))
     await fetch(origin+"/fixture/release",{method:"POST"})
     await until(sessionId,"document.querySelectorAll('[data-room-seq]').length===3")

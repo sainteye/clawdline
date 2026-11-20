@@ -25,6 +25,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 export const PROJECT_ASSISTANTS_GROK_API_LEVEL = 100
 export const PROJECT_ASSISTANTS_GEMINI_API_LEVEL = 102
 const PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL = 103
+export const PROJECT_ASSISTANTS_QUEUE_EDIT_API_LEVEL = 104
 export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
@@ -478,6 +479,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   stop(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST") }
   unqueue(r: W.ProjectAssistantStopRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/stop"),s,r,"POST",true,PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL) }
   canUnqueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_UNQUEUE_API_LEVEL }
+  canEditQueue() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_QUEUE_EDIT_API_LEVEL }
+  editQueue(r: W.ProjectAssistantQueueEditRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/queue-edit"),s,r,"POST",true,PROJECT_ASSISTANTS_QUEUE_EDIT_API_LEVEL) }
   sendNow(r: W.ProjectAssistantSendNowRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/send-now"),s,r,"POST",true,PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL) }
   rules(key: W.ProjectAssistantBotKey,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(key,"/rules")+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
   removeRule(r: W.ProjectAssistantRuleRemoveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantRulesResponse>(endpoint(r.command.key,"/rules/remove"),s,r,"POST",true,PROJECT_ASSISTANTS_RULES_API_LEVEL) }
@@ -748,7 +751,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
   const action = !bot && method === "POST" ? "create" : bot && !tail && method === "PATCH" ? "edit" : method !== "POST" ? null :
     tail === "/messages" ? "send" : tail === "/upload" ? "upload" : tail === "/stop" ? "stop" : /^\/permissions\/[^/]+\/answer$/.test(tail) ? "answer" :
     tail === "/read" ? "read" : tail === "/observed" ? "observed" : tail === "/memory/forget" ? "forget" : tail === "/memory" ? "memory" :
-    tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
+    tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" : tail === "/queue-edit" ? "queue-edit" :
     tail === "/react" ? "react" : tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
   if(action==="send"&&fields.call_started===true){

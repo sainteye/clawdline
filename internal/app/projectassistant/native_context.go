@@ -62,6 +62,7 @@ func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck fu
 	if after != before {
 		return unknown, runtimeFailure(pa.StaleGeneration, "native_context_binding")
 	}
+	state.TurnID = a.turnID
 	state.CompactAdvertised = state.CommandsKnown && state.CompactAdvertised
 	if !state.UsageKnown || state.UsedTokens < 0 || state.WindowTokens <= 0 {
 		state.UsageKnown = false
@@ -104,7 +105,7 @@ func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fenc
 	if err != nil {
 		return empty, false, err
 	}
-	if turn.Fence != fence || (turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
+	if turn.Room != nil || turn.Fence != fence || (turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
 		return empty, false, nil
 	}
 	binding, err := r.o.Repository.Binding(ctx, fence.Key, fence.BindingID)
@@ -135,4 +136,23 @@ func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fenc
 		return empty, false, runtimeFailure(pa.ContextStale, "native_context_revision")
 	}
 	return binding, true, nil
+}
+
+// The terminal projection is captured only after a successful prompt and is
+// published only after the native session's cleanup and the turn commit.
+func completedContextSample(session ProviderSession, turn pa.Turn) pa.ContextSample {
+	if turn.Room != nil {
+		return pa.ContextSample{}
+	}
+	reader, ok := session.(NativeContextReader)
+	if !ok {
+		return pa.ContextSample{}
+	}
+	state := reader.NativeContext()
+	if !state.UsageKnown || state.Fence != turn.Fence || state.NativeSessionID == "" ||
+		state.NativeSessionID != session.SessionID() || state.UsedTokens < 0 || state.WindowTokens <= 0 {
+		return pa.ContextSample{}
+	}
+	return pa.ContextSample{TurnID: turn.ID, BindingID: turn.Fence.BindingID, Generation: turn.Fence.Generation,
+		MemoryRevision: turn.MemoryRevision, UsedTokens: state.UsedTokens, WindowTokens: state.WindowTokens}
 }

@@ -50,7 +50,7 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if t.State != pa.TurnQueued || a.turnID == t.ID || a.steering[t.ID] {
+	if t.State != pa.TurnQueued || t.QueueEditID != "" || a.turnID == t.ID || a.steering[t.ID] {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "send_now_turn")
 	}
 	running := a.turnID

@@ -28,7 +28,14 @@ type ReadViewQuery struct {
 // is the machine log high-water mark, never a message sequence. History pages
 // are live reads, not cross-request frozen snapshots: only snapshot mode may
 // replace the client's event cursor; later pages reconcile through events.
+type ReadContextUsage struct {
+	Live                     bool
+	TurnID                   string
+	UsedTokens, WindowTokens int64
+}
+
 type ReadViewHead struct {
+	ContextUsage           *ReadContextUsage
 	BackgroundTasks        []pa.BackgroundTaskSummary
 	Key                    pa.BotKey
 	Project                pa.ProjectScope
@@ -44,6 +51,7 @@ type ReadViewHead struct {
 }
 
 type ReadTurnSummary struct {
+	QueueEditID  string
 	ID           string
 	Fence        pa.Fence
 	MessageID    string

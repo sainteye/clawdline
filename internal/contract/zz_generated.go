@@ -4669,6 +4669,13 @@ type ProjectAssistantContextSnapshot struct {
 	Text               string                         `json:"text"`
 }
 
+type ProjectAssistantContextUsage struct {
+	Live         bool   `json:"live"`
+	TurnID       string `json:"turn_id"`
+	UsedTokens   int64  `json:"used_tokens"`
+	WindowTokens int64  `json:"window_tokens"`
+}
+
 type ProjectAssistantConversation struct {
 	ActiveTurnID   string                 `json:"active_turn_id"`
 	BindingID      string                 `json:"binding_id"`
@@ -4884,24 +4891,25 @@ type ProjectAssistantEvent struct {
 type ProjectAssistantEventKind string
 
 const (
-	ProjectAssistantEventKindBotCreated         ProjectAssistantEventKind = "bot_created"
-	ProjectAssistantEventKindBotUpdated         ProjectAssistantEventKind = "bot_updated"
-	ProjectAssistantEventKindMessageCreated     ProjectAssistantEventKind = "message_created"
-	ProjectAssistantEventKindTurnUpdated        ProjectAssistantEventKind = "turn_updated"
-	ProjectAssistantEventKindPermissionOffered  ProjectAssistantEventKind = "permission_offered"
-	ProjectAssistantEventKindPermissionAnswered ProjectAssistantEventKind = "permission_answered"
-	ProjectAssistantEventKindWorkUpdated        ProjectAssistantEventKind = "work_updated"
-	ProjectAssistantEventKindMemoryChanged      ProjectAssistantEventKind = "memory_changed"
-	ProjectAssistantEventKindReadAdvanced       ProjectAssistantEventKind = "read_advanced"
-	ProjectAssistantEventKindTraceUpdated       ProjectAssistantEventKind = "trace_updated"
-	ProjectAssistantEventKindSourceUpdated      ProjectAssistantEventKind = "source_updated"
-	ProjectAssistantEventKindFeatureDisabled    ProjectAssistantEventKind = "feature_disabled"
-	ProjectAssistantEventKindArtifactRenamed    ProjectAssistantEventKind = "artifact_renamed"
-	ProjectAssistantEventKindReactionsChanged   ProjectAssistantEventKind = "reactions_changed"
+	ProjectAssistantEventKindBotCreated          ProjectAssistantEventKind = "bot_created"
+	ProjectAssistantEventKindBotUpdated          ProjectAssistantEventKind = "bot_updated"
+	ProjectAssistantEventKindMessageCreated      ProjectAssistantEventKind = "message_created"
+	ProjectAssistantEventKindQueuedMessageEdited ProjectAssistantEventKind = "queued_message_edited"
+	ProjectAssistantEventKindTurnUpdated         ProjectAssistantEventKind = "turn_updated"
+	ProjectAssistantEventKindPermissionOffered   ProjectAssistantEventKind = "permission_offered"
+	ProjectAssistantEventKindPermissionAnswered  ProjectAssistantEventKind = "permission_answered"
+	ProjectAssistantEventKindWorkUpdated         ProjectAssistantEventKind = "work_updated"
+	ProjectAssistantEventKindMemoryChanged       ProjectAssistantEventKind = "memory_changed"
+	ProjectAssistantEventKindReadAdvanced        ProjectAssistantEventKind = "read_advanced"
+	ProjectAssistantEventKindTraceUpdated        ProjectAssistantEventKind = "trace_updated"
+	ProjectAssistantEventKindSourceUpdated       ProjectAssistantEventKind = "source_updated"
+	ProjectAssistantEventKindFeatureDisabled     ProjectAssistantEventKind = "feature_disabled"
+	ProjectAssistantEventKindArtifactRenamed     ProjectAssistantEventKind = "artifact_renamed"
+	ProjectAssistantEventKindReactionsChanged    ProjectAssistantEventKind = "reactions_changed"
 )
 
 // ProjectAssistantEventKindValues is every value the contract allows, in contract order.
-var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled, ProjectAssistantEventKindArtifactRenamed, ProjectAssistantEventKindReactionsChanged}
+var ProjectAssistantEventKindValues = []ProjectAssistantEventKind{ProjectAssistantEventKindBotCreated, ProjectAssistantEventKindBotUpdated, ProjectAssistantEventKindMessageCreated, ProjectAssistantEventKindQueuedMessageEdited, ProjectAssistantEventKindTurnUpdated, ProjectAssistantEventKindPermissionOffered, ProjectAssistantEventKindPermissionAnswered, ProjectAssistantEventKindWorkUpdated, ProjectAssistantEventKindMemoryChanged, ProjectAssistantEventKindReadAdvanced, ProjectAssistantEventKindTraceUpdated, ProjectAssistantEventKindSourceUpdated, ProjectAssistantEventKindFeatureDisabled, ProjectAssistantEventKindArtifactRenamed, ProjectAssistantEventKindReactionsChanged}
 
 // Durable source-local cursor, page size 1..256; expired cursor is
 // pa_cursor_expired and requires snapshot refresh.
@@ -5716,6 +5724,7 @@ const (
 	ProjectAssistantOperationSend                ProjectAssistantOperation = "send"
 	ProjectAssistantOperationStop                ProjectAssistantOperation = "stop"
 	ProjectAssistantOperationSendNow             ProjectAssistantOperation = "send_now"
+	ProjectAssistantOperationQueueEdit           ProjectAssistantOperation = "queue_edit"
 	ProjectAssistantOperationRuleRemove          ProjectAssistantOperation = "rule_remove"
 	ProjectAssistantOperationDelete              ProjectAssistantOperation = "delete"
 	ProjectAssistantOperationVisibility          ProjectAssistantOperation = "visibility"
@@ -5734,7 +5743,7 @@ const (
 )
 
 // ProjectAssistantOperationValues is every value the contract allows, in contract order.
-var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential, ProjectAssistantOperationNetworkSettings, ProjectAssistantOperationReact}
+var ProjectAssistantOperationValues = []ProjectAssistantOperation{ProjectAssistantOperationCreate, ProjectAssistantOperationEdit, ProjectAssistantOperationSend, ProjectAssistantOperationStop, ProjectAssistantOperationSendNow, ProjectAssistantOperationQueueEdit, ProjectAssistantOperationRuleRemove, ProjectAssistantOperationDelete, ProjectAssistantOperationVisibility, ProjectAssistantOperationAnswer, ProjectAssistantOperationRead, ProjectAssistantOperationObserve, ProjectAssistantOperationForget, ProjectAssistantOperationMemorySave, ProjectAssistantOperationDispatch, ProjectAssistantOperationUpload, ProjectAssistantOperationRenameArtifact, ProjectAssistantOperationLoginProfile, ProjectAssistantOperationConnectorCredential, ProjectAssistantOperationNetworkSettings, ProjectAssistantOperationReact}
 
 type ProjectAssistantOutput struct {
 	ArtifactID string `json:"artifact_id"`
@@ -5934,6 +5943,15 @@ type ProjectAssistantProjectsResponse struct {
 	Source            ProjectAssistantSourceStatus `json:"source"`
 }
 
+type ProjectAssistantQueueEditRequest struct {
+	Action  string                  `json:"action"`
+	Command ProjectAssistantCommand `json:"command"`
+	EditID  string                  `json:"edit_id"`
+	Fence   ProjectAssistantFence   `json:"fence"`
+	Text    string                  `json:"text"`
+	TurnID  string                  `json:"turn_id"`
+}
+
 type ProjectAssistantReactRequest struct {
 	Command          ProjectAssistantCommand `json:"command"`
 	Emoji            string                  `json:"emoji"`
@@ -6043,6 +6061,7 @@ type ProjectAssistantReadTurnSummary struct {
 	Fence        ProjectAssistantFence `json:"fence"`
 	ID           string                `json:"id"`
 	MessageID    string                `json:"message_id"`
+	QueueEditID  string                `json:"queue_edit_id,omitempty"`
 
 	// When the turn began running, RFC 3339; empty while it waits.
 	StartedAt string                    `json:"started_at"`
@@ -6054,6 +6073,7 @@ type ProjectAssistantReadTurnSummary struct {
 type ProjectAssistantReadViewHead struct {
 	BackgroundTasks []ProjectAssistantBackgroundTaskSummary `json:"background_tasks,omitempty"`
 	BotVersion      int64                                   `json:"bot_version"`
+	ContextUsage    *ProjectAssistantContextUsage           `json:"context_usage,omitempty"`
 	Conversation    ProjectAssistantConversation            `json:"conversation"`
 	CurrentFence    ProjectAssistantFence                   `json:"current_fence"`
 
@@ -6224,9 +6244,10 @@ type ProjectAssistantRoomMemberOutcome struct {
 	Name         string                 `json:"name"`
 
 	// Sequence of a published room reply. Absent for quiet or unverified completion.
-	ReplySeq int64                     `json:"reply_seq,omitempty"`
-	State    ProjectAssistantTurnState `json:"state"`
-	TurnID   string                    `json:"turn_id"`
+	ReplySeq int64                      `json:"reply_seq,omitempty"`
+	State    ProjectAssistantTurnState  `json:"state"`
+	TurnID   string                     `json:"turn_id"`
+	Work     []ProjectAssistantRoomWork `json:"work,omitempty"`
 }
 
 type ProjectAssistantRoomQuote struct {
@@ -6250,6 +6271,11 @@ type ProjectAssistantRoomState struct {
 	Revision  int64 `json:"revision"`
 	Running   int64 `json:"running"`
 	StoppedAt int64 `json:"stopped_at"`
+}
+
+type ProjectAssistantRoomWork struct {
+	State  ProjectAssistantWorkState `json:"state"`
+	TaskID string                    `json:"task_id"`
 }
 
 // Replace by key/revision; removed is a replayable tombstone. Unread is an
@@ -6684,6 +6710,9 @@ type ProjectAssistantTurn struct {
 	MemoryRevision int64  `json:"memory_revision"`
 	MessageID      string `json:"message_id"`
 	Origin         string `json:"origin,omitempty"`
+
+	// Current edit identity. The queued message will wait until the edit is resolved.
+	QueueEditID string `json:"queue_edit_id,omitempty"`
 
 	// When the turn began running, RFC 3339; absent while it waits.
 	StartedAt string                    `json:"started_at,omitempty"`

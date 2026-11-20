@@ -143,6 +143,9 @@ pendingTurns:
 		// A planned restart retains only the original queue identity whose
 		// execution has not started, or whose no-effect refusal was durably
 		// proved and cleaned up. Running/unknown work never takes this path.
+		if field == RestartField && t.State == pa.TurnQueued && t.QueueEditID != "" {
+			continue
+		}
 		if field == RestartField && t.State == pa.TurnQueued && t.RoutineRunID != "" {
 			for _, run := range x.RoutineRuns {
 				if run.ID == t.RoutineRunID && run.TurnID == t.ID && run.State == pa.TurnQueued && (t.StartedAt == nil || run.NotStartedProved) {
@@ -157,7 +160,7 @@ pendingTurns:
 		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
 			state = pa.TurnUnknown
 		}
-		t.State = state
+		t.State, t.QueueEditID = state, ""
 		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: field}
 		conversation := x.Conversation
 		if conversation.ActiveTurnID == t.ID {

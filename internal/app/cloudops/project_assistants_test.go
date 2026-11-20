@@ -83,6 +83,7 @@ func projectAssistantOperationCases() []operationCase {
 		{"delete", "POST", "/bot/delete", map[string]any{}, nil},
 		{"rules", "GET", "/bot/rules", key, map[string]string{"machine_id": "mac-01"}},
 		{"send-now", "POST", "/bot/send-now", map[string]any{"fence": fence, "turn_id": "turn"}, nil},
+		{"queue-edit", "POST", "/bot/queue-edit", map[string]any{"fence": fence, "turn_id": "turn", "action": "save", "edit_id": "edit", "text": "Revised message"}, nil},
 		{"rule-remove", "POST", "/bot/rules/remove", map[string]any{"rule": map[string]any{"behavior": "allow", "rule": "Bash(npm test:*)"}}, nil},
 	}
 	out := []operationCase{}
@@ -101,7 +102,7 @@ func projectAssistantOperationCases() []operationCase {
 			c.answers = &router{body: `{"contract_version":"project-assistants.v1","ok":true}`}
 		}
 		if r.method != "GET" {
-			op := map[string]string{"handoff-card-write": "edit", "network-settings-save": "network-settings", "connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "rule-remove": "rule_remove"}[r.word]
+			op := map[string]string{"handoff-card-write": "edit", "network-settings-save": "network-settings", "connector-secret": "connector-credential", "login-secret": "login-profile", "routine-save": "edit", "routine-enabled": "edit", "routine-delete": "edit", "routine-test": "edit", "routine-hook": "edit", "observed": "observe", "memory": "memory_save", "send-pictures": "send", "send-files": "send", "send-now": "send_now", "queue-edit": "queue_edit", "rule-remove": "rule_remove"}[r.word]
 			if op == "" {
 				op = r.word
 			}
@@ -137,7 +138,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 70 {
+	if len(out) != 71 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

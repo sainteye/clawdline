@@ -110,6 +110,7 @@ type paHTTPRuntime struct {
 	app.Runtime
 	submissions []app.Submission
 	stops       []app.StopRequest
+	queueEdits  []app.QueueEditRequest
 	answers     []app.AnswerRequest
 	err         error
 }
@@ -117,6 +118,13 @@ type paHTTPRuntime struct {
 func (r *paHTTPRuntime) Submit(_ context.Context, request app.Submission) (pa.Receipt, error) {
 	r.submissions = append(r.submissions, request)
 	return pa.Receipt{Command: request.Command, ID: "receipt-send", State: pa.EffectAccepted}, r.err
+}
+func (r *paHTTPRuntime) EditQueue(ctx context.Context, request app.QueueEditRequest, check func(context.Context) error) (pa.Receipt, error) {
+	if err := check(ctx); err != nil {
+		return pa.Receipt{}, err
+	}
+	r.queueEdits = append(r.queueEdits, request)
+	return pa.Receipt{Command: request.Command, ID: "receipt-queue-edit", ResourceID: "edit", State: pa.EffectDelivered}, r.err
 }
 func (r *paHTTPRuntime) SendNow(_ context.Context, request app.SendNowRequest) (pa.Receipt, error) {
 	return pa.Receipt{Command: request.Command, ID: "receipt-send-now", State: pa.EffectDelivered}, r.err
@@ -1092,4 +1100,24 @@ func paBodyLimit(operation string) int {
 		return capacity.MaximumBotSendBodyBytes
 	}
 	return commandBodyLimit
+}
+
+func TestProjectAssistantQueueEditHTTPValidatesTheMutation(t *testing.T) {
+	f := newPAHTTPFixture(t)
+	f.create(t)
+	path := "/v1/project-assistants/" + f.key.BotID + "/queue-edit"
+	request := contract.ProjectAssistantQueueEditRequest{
+		Command: f.command(pa.QueueEditOperation), Fence: f.fence(), TurnID: "queued", Action: "begin",
+	}
+	invalid := request
+	invalid.Text = "must be empty for begin"
+	paAssertHTTPFailure(t, f.request(t, http.MethodPost, path, invalid), 400, pa.Invalid)
+	if len(f.runtime.queueEdits) != 0 {
+		t.Fatal("invalid begin crossed into runtime")
+	}
+	rec := f.request(t, http.MethodPost, path, request)
+	paAssertHTTPContract(t, rec, 200, "ProjectAssistantReceiptResponse")
+	if len(f.runtime.queueEdits) != 1 || f.runtime.queueEdits[0].TurnID != "queued" || f.runtime.queueEdits[0].Command.ContentHash == "" {
+		t.Fatalf("missing validated queue edit: %+v", f.runtime.queueEdits)
+	}
 }

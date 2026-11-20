@@ -104,6 +104,8 @@ export interface SourceClient {
   unqueue?(request: W.ProjectAssistantStopRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   canUnqueue?(): boolean
   /** Sends one queued message into the running turn (Codync's steer). */
+  canEditQueue?(): boolean
+  editQueue?(request: W.ProjectAssistantQueueEditRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   sendNow?(request: W.ProjectAssistantSendNowRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   canSendNow?(): boolean
   /** A Claude Bot's standing rules for its Project (Always allow / Never), and revoking one. */
