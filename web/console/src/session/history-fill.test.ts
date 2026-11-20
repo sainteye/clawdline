@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node executes the source test with type stripping.
-import { HistoryFill, HISTORY_FILL_PAGES, firstFillCover, historyAdvanced } from "./history-fill.ts"
+import { HistoryFill, HISTORY_FILL_PAGES, firstFillCover, heldReadingTop, historyAdvanced } from "./history-fill.ts"
 
 const empty = { cursor: 100, contentHeight: 600, viewportHeight: 600, loading: false, failed: false }
 
@@ -85,4 +85,10 @@ test("only the first fill covers the conversation; later reads load in place", (
   assert.equal(cover(false), false)
   assert.equal(cover(true), false, "load earlier after the first reveal")
   assert.equal(cover(false), false)
+})
+
+test("an older page drawn above the reader keeps the message they were reading in place", () => {
+  assert.equal(heldReadingTop({ top: 40, height: 2000 }, 5000, false), 3040)
+  assert.equal(heldReadingTop({ top: -60, height: 2000 }, 5000, false), 3000, "a bounce past the top holds the top edge")
+  assert.equal(heldReadingTop({ top: 40, height: 2000 }, 5000, true), 40, "newest first: the older page lands below")
 })
