@@ -194,8 +194,11 @@
   /* A chat opened from the tower is a bottom sheet; the tower stays above it. */
   .project-assistants.pa-selected.pa-tower-sheet .pa-roster { display:flex; }
   .project-assistants.pa-tower-sheet .pa-main { position:fixed;left:0;right:0;bottom:0;z-index:30;height:min(64dvh,calc(100dvh - 300px));min-height:320px;display:flex;flex-direction:column;overflow:hidden;border-radius:18px 18px 0 0;background:var(--pa-bg,#0b0b0b);box-shadow:0 -14px 36px rgba(0,0,0,.62);animation:pa-sheet-in .22s ease-out; }
-  .project-assistants.pa-tower-sheet .pa-main::before { content:"";flex:none;align-self:center;width:40px;height:4px;margin:8px 0 0;border-radius:2px;background:rgba(250,250,250,.28); }
-  .project-assistants.pa-tower-sheet .pa-main > * { flex:1;min-height:0; }
+  /* The grip is a real strip to drag by; the header's empty space drags too. */
+  .project-assistants.pa-tower-sheet .pa-sheet-grip { flex:none;display:grid;place-items:center;height:22px;touch-action:none;cursor:grab; }
+  .project-assistants.pa-tower-sheet .pa-sheet-grip::before { content:"";width:40px;height:4px;border-radius:2px;background:rgba(250,250,250,.28); }
+  .project-assistants.pa-tower-sheet .pa-chat-header { touch-action:none; }
+  .project-assistants.pa-tower-sheet .pa-main > :not(.pa-sheet-grip) { flex:1;min-height:0; }
   .project-assistants.pa-tower-sheet .pa-chat-header { min-height:60px;padding-top:6px; }
   .project-assistants .pa-chat-back { display:grid; }
   .project-assistants .pa-chat-header { border:0;min-height:76px;padding:12px 16px;gap:10px; }

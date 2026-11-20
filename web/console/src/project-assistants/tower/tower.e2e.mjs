@@ -120,6 +120,17 @@ async function towerChecks(page, width, language, shot) {
     assert.ok(sheet && sheet.y > 60 && sheet.y + sheet.height <= viewport.height + 1, "the sheet leaves the tower in view")
     assert.equal(await page.locator(".pa-tower").isVisible(), true, "the tower is hidden behind the chat")
     checks.push("phone chat is a bottom sheet over the tower")
+    // A short slow drag springs back; a long one closes the sheet to the tower.
+    const grip = await box(page.locator(".pa-sheet-grip")), x = grip.x + grip.width / 2, y = grip.y + grip.height / 2
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 30, { steps: 10 }); await page.waitForTimeout(400); await page.mouse.up()
+    await page.waitForTimeout(300)
+    assert.equal(await page.getByRole("button", { name: w.towerBack }).isVisible(), true, "a short drag closed the sheet")
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 160, { steps: 12 }); await page.mouse.up()
+    await page.getByRole("button", { name: w.towerBack }).waitFor({ state: "hidden" })
+    await scene.waitFor()
+    checks.push("swiping the sheet down closes it")
+    await shot("tower-swiped")
+    return checks
   } else {
     assert.equal(await main.evaluate(el => getComputedStyle(el).position), "static")
     checks.push("wide chat in the main area")
