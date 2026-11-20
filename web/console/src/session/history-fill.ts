@@ -26,3 +26,17 @@ export class HistoryFill {
 export function historyAdvanced(before: number, nextBefore?: number): boolean {
   return !nextBefore || nextBefore > 0 && nextBefore < before
 }
+
+/**
+ * Only a pane's first fill hides the conversation behind a skeleton. Once the
+ * conversation has been shown, later reads (load earlier, an automatic fill
+ * after a resize, a restarted history) load in place under the inline "loading
+ * earlier" control, so the page never flashes or drops the reader's focus.
+ */
+export function firstFillCover(): (filling: boolean) => boolean {
+  let shown = false
+  return (filling) => {
+    if (!filling) shown = true
+    return filling && !shown
+  }
+}

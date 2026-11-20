@@ -68,7 +68,7 @@ import "./transcript-error.css"
 import "./activity.css"
 import { atNewest, jumpOffered } from "./jump.js"
 import { joinTranscript, pendingHistoryPages } from "./history.js"
-import { HistoryFill, historyAdvanced } from "./history-fill.js"
+import { HistoryFill, firstFillCover, historyAdvanced } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
@@ -158,10 +158,12 @@ export function Transcript(props: TranscriptProps) {
 
 function TranscriptFrame(props: TranscriptProps) {
   const [filling, setFilling] = useState(true)
+  const [cover] = useState(firstFillCover)
+  const onFilling = useCallback((next: boolean) => setFilling(cover(next)), [cover])
   return <div className="tx-history-wrap" aria-busy={filling}>
     {filling && <div className="tx-history-loading"><Skeleton /></div>}
     <div className="tx-history-body" style={{ visibility: filling ? "hidden" : undefined }} aria-hidden={filling || undefined}>
-      <TranscriptOf {...props} onFilling={setFilling} />
+      <TranscriptOf {...props} onFilling={onFilling} />
     </div>
   </div>
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node executes the source test with type stripping.
-import { HistoryFill, HISTORY_FILL_PAGES, historyAdvanced } from "./history-fill.ts"
+import { HistoryFill, HISTORY_FILL_PAGES, firstFillCover, historyAdvanced } from "./history-fill.ts"
 
 const empty = { cursor: 100, contentHeight: 600, viewportHeight: 600, loading: false, failed: false }
 
@@ -76,4 +76,13 @@ test("sixteen empty windows do not expose an incomplete conversation", () => {
   }
   assert.equal(reads, 17)
   assert.equal(state.contentHeight, 900)
+})
+
+test("only the first fill covers the conversation; later reads load in place", () => {
+  const cover = firstFillCover()
+  assert.equal(cover(true), true)
+  assert.equal(cover(true), true, "the first fill may take several pages")
+  assert.equal(cover(false), false)
+  assert.equal(cover(true), false, "load earlier after the first reveal")
+  assert.equal(cover(false), false)
 })

@@ -359,11 +359,19 @@ for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an
     }
     await run(`document.getElementById("tx-scroll").scrollTop = 0`)
     const before = await run(turnTop)
+    // Only the first read may cover the conversation with a skeleton. A later
+    // page loads in place: hiding the body would flash the screen and drop focus.
+    await run(`(() => {
+      const box = document.getElementById("tx"); window.__covered = false
+      const seen = () => { if (box.querySelector(".tx-history-loading") || box.querySelector(".tx-history-body")?.style.visibility === "hidden") window.__covered = true }
+      new MutationObserver(seen).observe(box, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] })
+    })()`)
     await run(`document.querySelector(".tx-older .go").click()`)
     while (!(await run(`document.getElementById("tx").textContent.includes("Turn 3.")`))) {
       if (Date.now() > deadline + 8_000) assert.fail("the older page did not appear")
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
+    assert.equal(await run(`window.__covered`), false, "loading an older page covered the conversation with a skeleton")
     const after = await run(turnTop)
     assert.ok(Math.abs(after - before) <= 3, `Turn 31 moved from ${before} to ${after}`)
     assert.equal(await run(`document.querySelector(".tx-older") === null`), true)
