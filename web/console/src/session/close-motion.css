@@ -1,0 +1,12 @@
+.rows.session-close-visual {
+    position: fixed;
+    z-index: 41;
+    pointer-events: none;
+}
+
+.session-close-visual > .row {
+    box-sizing: border-box;
+    height: 100%;
+    margin: 0;
+    pointer-events: none;
+}
