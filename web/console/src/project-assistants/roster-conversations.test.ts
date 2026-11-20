@@ -2,7 +2,7 @@ import {test} from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
-import {conversations,conversationSections,groupConversationKey,groupLastSpeaker,groupPreviewMembers,type GroupRosterEntry,type RosterRoom} from "./roster-conversations.ts"
+import {conversations,conversationSections,firstCallableBot,groupConversationKey,groupLastSpeaker,groupPreviewMembers,type GroupRosterEntry,type RosterRoom} from "./roster-conversations.ts"
 // @ts-expect-error Node executes source extensions.
 import {emptyRosterState,pinRosterBot,moveRosterBot} from "./roster-state.ts"
 const key=(bot_id:string,machine_id="m")=>({machine_id,bot_id})
@@ -47,4 +47,16 @@ test("same Project on another source, removed rooms and hidden saved identities 
   assert.deepEqual(sections.map(group=>group.machineID),["m","other"])
   assert.equal(sections.flatMap(group=>group.items).length,3)
   assert.deepEqual(state.pinnedBotKeys,["hidden"])
+})
+
+test("the desktop call fallback follows sidebar order and skips hidden or read-only Bots",()=>{
+  const source={state:"online",access:"interactive",fresh:true,readable:true,writable:true} as W.ProjectAssistantSourceStatus
+  const recent={...bot("recent","2026-11-18T03:00:00Z"),source}
+  const pinned={...bot("pinned"),source}
+  const unavailable={...bot("unavailable"),source:{...source,writable:false}}
+  const hidden={...bot("hidden"),source,bot:{...bot("hidden").bot,hidden:true}}
+  const state={...emptyRosterState(),pinnedBotKeys:["unavailable","hidden","pinned"].map(id=>JSON.stringify(["m",id]))}
+  assert.equal(firstCallableBot([recent,hidden,unavailable,pinned],state)?.bot.name,"pinned")
+  assert.equal(firstCallableBot([recent,hidden,unavailable],state)?.bot.name,"recent")
+  assert.equal(firstCallableBot([hidden,unavailable],state),undefined)
 })

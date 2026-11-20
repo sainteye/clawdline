@@ -1,7 +1,7 @@
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error Node executes source extensions.
-import {botIdentity} from "./view-state.ts"
+import {botIdentity,canWrite} from "./view-state.ts"
 // @ts-expect-error Node executes source extensions.
 import {orderedKeys, type RosterState} from "./roster-state.ts"
 // @ts-expect-error Node executes source extensions.
@@ -51,6 +51,12 @@ export function conversationSections(rows:readonly RosterConversation[],state:Ro
   }
   return [pinned,...orderedKeys([...sections.keys()],state.projectSortOrder).map(key=>sections.get(key)!)].filter(section=>section.items.length)
 
+}
+
+export function firstCallableBot(items:readonly W.ProjectAssistantBotSummary[],state:RosterState):W.ProjectAssistantBotSummary|undefined {
+  const sections=conversationSections(conversations(items.filter(item=>!item.bot.hidden),[]),state)
+  const first=sections.flatMap(section=>section.items).find(row=>row.kind==="bot"&&canWrite(row.item.source))
+  return first?.kind==="bot"?first.item:undefined
 }
 
 export function groupLastSpeaker(group:RosterRoom,bots:readonly W.ProjectAssistantBot[],person:string):{speaker:string;text:string}|null{

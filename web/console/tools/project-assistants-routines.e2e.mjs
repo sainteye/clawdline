@@ -1,7 +1,7 @@
 /** Production Chat + manager + SourceClient against the owned Go TCP fixture. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
-import {mkdir,writeFile} from "node:fs/promises"
+import {mkdir,readFile,writeFile} from "node:fs/promises"
 import {execFile} from "node:child_process"
 import {promisify} from "node:util"
 import {fileURLToPath} from "node:url"
@@ -20,9 +20,12 @@ import {Chat} from "./src/project-assistants/Chat";
 import {ProjectAssistantSourceClient} from "./src/cloud/project-assistants";
 import {createViewState} from "./src/project-assistants/view-state";
 import {en,zhHant} from "./src/project-assistants/words";
+import {activateCatalog} from "./src/catalog";
+import taiwan from "./public/catalogs/zh-Hant.json";
 import "./src/project-assistants/styles.css";
 const language=new URL(location.href).searchParams.get("lang")??"en";
-const grant={accountKey:"synthetic-account",readerID:"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:73,paired:true,online:true,writable:true};
+if(language==="zh-Hant")activateCatalog(taiwan,"zh-Hant");
+const grant={accountKey:"synthetic-account",readerID:"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:95,paired:true,online:true,writable:true};
 const source=new ProjectAssistantSourceClient(grant,(input,init)=>fetch(input,init),()=>grant);
 await source.status(new AbortController().signal);
 const list=await source.list({machine_id:grant.machineID,query:"",cursor:"",page_size:100},new AbortController().signal);
@@ -61,6 +64,7 @@ async function browser(op,...args) {
   const {stdout}=await exec("clawdline",["browser",op,...(tab&&op!=="open"&&op!=="audit"&&op!=="status"?["--tab",String(tab)]:[]),...args],{cwd:process.env.BOTS_BROWSER_CWD??taskDir,env:{...process.env,CLAWDLINE_NEXT_DIR:browserDir},timeout:20000,maxBuffer:2*1024*1024})
   const result=JSON.parse(stdout);operations.push({op,args,result});if(!result.ok)throw Error(stdout);return result.value??result
 }
+const controls=async language=>{const catalog=JSON.parse(await readFile(path.join(consoleRoot,"public/catalogs",language+".json"),"utf8"));return name=>catalog["botRoutineControls."+name]}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 async function waitText(text) { let last;for(let i=0;i<40;i++){last=await browser("read");if(last.text?.includes(text))return last;await pause(150)}throw Error(`Missing ${text}: ${JSON.stringify(last)}`) }
 try {
@@ -70,10 +74,10 @@ try {
   {
     const {en:copy}=await import("../src/project-assistants/words.ts")
     const opened=await browser("open",origin+"/?lang=en&journal=broken");tab=opened.tab
-    await waitText("Synthetic Bot");await browser("click","Synthetic Bot · "+copy.botInformation);await browser("click",copy.routines)
+    await waitText("Synthetic Bot");await browser("click","Synthetic Bot · "+copy.botInformation)
     await waitText(copy.routineJournalUnreadable??copy.unknown)
     const before=requests.filter(r=>r.method!=="GET").length
-    try{await browser("click",copy.routineNew)}catch(error){operations.push({op:"blocked-new-routine",detail:String(error)})}
+    try{await browser("click",(await controls("en"))("setUp"))}catch(error){operations.push({op:"blocked-new-routine",detail:String(error)})}
     const read=await browser("read")
     assert.ok(!read.text?.includes(copy.routineInstruction),"Unreadable original command must prevent a replacement form")
     assert.equal(requests.filter(r=>r.method!=="GET").length,before,"Unreadable journal must never send a new operation")
@@ -85,16 +89,17 @@ try {
   }
   for(const language of ["en","zh-Hant"]) {
     const zh=language!=="en",{en,zhHant}=await import("../src/project-assistants/words.ts"),copy=zh?zhHant:en
-    const w={identity:"Synthetic Bot · "+copy.botInformation,routines:copy.routines,create:copy.routineNew,name:copy.name,instructions:copy.routineInstruction,save:copy.save,edit:copy.routineEdit,test:copy.routineTest,refresh:copy.routineRefresh,pause:copy.routinePause,enable:copy.routineEnable,paused:copy.routinePaused,remove:copy.routineDelete,confirm:copy.routineConfirmDelete,empty:copy.routinesEmpty}
+    const control=await controls(language)
+    const w={identity:"Synthetic Bot · "+copy.botInformation,create:control("setUp"),name:copy.name,instructions:copy.routineInstruction,save:copy.save,edit:copy.routineEdit,test:copy.routineTest,pause:copy.routinePause,enable:copy.routineEnable,paused:copy.routinePaused,remove:copy.routineDelete,confirm:copy.routineConfirmDelete,empty:control("emptyRoutines")}
 
     const opened=await browser("open",origin+"/?lang="+language);tab=opened.tab
     await browser("viewport",zh?"mobile":"desktop")
-    await waitText("Synthetic Bot");await browser("click",w.identity);await browser("click",w.routines);await waitText(w.empty)
-    await browser("click",w.create);await browser("click",w.name);await browser("type","Browser interval "+language);await browser("click",w.instructions);await browser("type","Synthetic browser routine task "+language);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-editor.jpg`));await browser("click",w.save)
+    await waitText("Synthetic Bot");await browser("click",w.identity);await waitText(w.empty)
+    await browser("click",w.create);await browser("click",control("webhook"));await waitText(control("webhookSave"));await browser("click",control("schedule"));await browser("click",w.name);await browser("type","Browser interval "+language);await browser("click",w.instructions);await browser("type","Synthetic browser routine task "+language);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-editor.jpg`));await browser("click",control("createRoutine"))
     if(!zh) {
       await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Unknown outcome never automatically sends a replacement")
-      const beforeReload=pageLoads;await browser("viewport","mobile");await waitText("Synthetic Bot");await browser("viewport","desktop");await waitText("Synthetic Bot");assert.ok(pageLoads>=beforeReload+2,"Actual origin reloads were served");await browser("click",w.identity);await browser("click",w.routines);await waitText(copy.routineHeld)
+      const beforeReload=pageLoads;await browser("viewport","mobile");await waitText("Synthetic Bot");await browser("viewport","desktop");await waitText("Synthetic Bot");assert.ok(pageLoads>=beforeReload+2,"Actual origin reloads were served");await browser("click",w.identity);await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Reload preserves the command without sending it")
       await browser("screenshot","--out",path.join(artifacts,"en-routine-held-after-reload.jpg"));await browser("click",copy.routineReplay)
     }
@@ -104,9 +109,9 @@ try {
     await browser("click",w.name);await browser("type"," edited");await browser("click",w.save)
     await waitText("edited")
     await browser("click",w.test)
-    for(let i=0;i<8;i++){await pause(250);await browser("click",w.refresh);const read=await browser("read");if((read.text?.match(/Actual isolated routine result/g)??[]).length>=2)break}
+    for(let i=0;i<8;i++){await pause(250);await browser("click",copy.routineHistory);const read=await browser("read");if(read.text?.includes("Actual isolated routine result"))break}
     await waitText("Actual isolated routine result")
-    await browser("click",copy.routineHistory);await browser("scroll","down")
+    await browser("scroll","down")
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-result.jpg`))
     await browser("click",w.pause);await waitText(w.paused);await browser("click",w.enable)
     await browser("click",w.remove);await waitText(w.confirm);await browser("click",w.confirm);await waitText(w.empty)

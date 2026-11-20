@@ -21,7 +21,8 @@ function controlled(machine:string,live:boolean) {
       return await read()
     }finally{active--}
   }
-  const source:SourceClient={...base,canRoster:()=>live,
+  const source:SourceClient={...base,canRoster:()=>live,canRosterActions:()=>true,canManage:()=>true,
+    async deleteBot(){throw new Error("Deletion must stay at the confirmation step in this fixture")},
     status:signal=>live?observe(signal,()=>base.status(signal)):Promise.reject(new Error("Snapshot roster must not probe machine status")),
     list:(request,signal)=>live?base.list(request,signal):observe(signal,()=>base.list(request,signal)),
     ...(live?{async subscribeRoster(request:W.ProjectAssistantRosterRequest,receive:(frame:W.ProjectAssistantRosterFrame)=>void,signal:AbortSignal){
