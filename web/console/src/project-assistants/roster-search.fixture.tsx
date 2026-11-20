@@ -12,9 +12,9 @@ const requests:{machine:string;query:string;cursor:string}[]=[]
 let code:W.ProjectAssistantErrorCode|null=null
 const base=fixtureSource("studio")
 const source:SourceClient={...base,canRoster:()=>false,canGroups:()=>false,
-  async status(signal){if(code)throw failure(code);return base.status(signal)},
   async list(request,signal){
     if(signal.aborted)throw new DOMException("Aborted","AbortError")
+    if(code)throw failure(code)
     requests.push({machine:"studio",query:request.query,cursor:request.cursor})
     const matches=base.bots.filter(bot=>bot.name.toLowerCase().includes(request.query.toLowerCase()))
     const offset=Number(request.cursor||0),selected=matches.slice(offset,offset+3)
@@ -27,7 +27,7 @@ const source:SourceClient={...base,canRoster:()=>false,canGroups:()=>false,
   },
 }
 const other=fixtureSource("unpaired")
-const denied:SourceClient={...other,canRoster:()=>false,canGroups:()=>false,async status(){throw failure("pa_unpaired")}}
+const denied:SourceClient={...other,canRoster:()=>false,canGroups:()=>false,async list(){throw failure("pa_unpaired")}}
 const sources=[source,denied]
 Object.assign(window,{rosterSearch:{requests,fail(value:W.ProjectAssistantErrorCode|null){code=value}}})
 createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={new URL(location.href).searchParams.get("lang")??"en"} accountKey="synthetic-search" readerID="fixture" onClose={()=>{}}/>)

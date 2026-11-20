@@ -39,18 +39,31 @@ try{
      await page.waitForFunction(()=>[...document.querySelectorAll('.pa-window')].every(node=>node.getAnimations().every(a=>a.playState==='finished')))
      const row=page.locator('.pa-window .pa-mine').last(),trigger=row.locator('.pa-message-more')
      await row.scrollIntoViewIfNeeded();const geometry=()=>row.evaluate(node=>({bubble:node.querySelector('.pa-message-bubble').getBoundingClientRect().toJSON(),scroll:node.closest('.pa-chat-scroll').scrollTop,height:node.closest('.pa-chat-scroll').scrollHeight}))
-     const before=await geometry();await click(trigger);const menu=page.getByRole('menu',{name:word('messageActions'),exact:true});await menu.waitFor()
+     const before=await geometry()
+     if(width>=700){
+      await page.mouse.move(0,0)
+      assert.equal(await trigger.evaluate(node=>getComputedStyle(node).pointerEvents),'none','desktop message actions must wait for interaction')
+     }
+     const openMenu=async()=>{if(width>=700)await row.hover();await click(trigger)}
+     await openMenu();const menu=page.getByRole('menu',{name:word('messageActions'),exact:true});await menu.waitFor()
      const hits=await menu.evaluate(node=>[...node.querySelectorAll('button')].map(button=>{const rect=button.getBoundingClientRect(),hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);return {label:button.getAttribute('aria-label')||button.textContent,hit:hit?.tagName,hitClass:hit?.className,topmost:!!hit&&button.contains(hit),rect:rect.toJSON()}}))
      const opened=await geometry(),observation={tag,language,hostPresent:await page.locator('.pa-window').count(),hostLayer:await page.locator('.pa-window').evaluate(node=>getComputedStyle(node).zIndex),hits,before,opened};results.push(observation)
      await page.screenshot({path:path.join(artifacts,tag+'-opened.png')})
-     assert.ok(hits.length>=8&&hits.every(hit=>hit.topmost),'every visible menu control must actually win hit testing over the production window: '+JSON.stringify(observation))
+     assert.ok(hits.some(hit=>hit.label===word('copyMessage'))&&hits.every(hit=>hit.topmost),'every visible menu control must actually win hit testing over the production window: '+JSON.stringify(observation))
      assert.deepEqual(opened,before,'opening menu moved the chat')
+     await page.keyboard.press('Escape')
+     if(width<700)await openMenu()
+     else {
+      await row.hover()
+      await click(row.getByRole('button',{name:word('chooseReaction'),exact:true}))
+     }
+     await page.getByRole('group',{name:word('chooseReaction'),exact:true}).waitFor()
      const count=traffic.filter(r=>r.path.endsWith('/react')).length
      await click(page.getByRole('button',{name:word('reactWith')+' 👍',exact:true}));await row.locator('.pa-reaction-own').waitFor();await page.waitForFunction(()=>!document.querySelector('.pa-window .pa-reactions[aria-busy=true]'))
      assert.equal(traffic.filter(r=>r.path.endsWith('/react')).length,count+1);await click(row.getByRole('button',{name:word('removeReaction')+' 👍',exact:true}));await row.locator('.pa-reaction-own').waitFor({state:'detached'});await page.waitForFunction(()=>!document.querySelector('.pa-window .pa-reactions[aria-busy=true]'));assert.equal(traffic.filter(r=>r.path.endsWith('/react')).length,count+2)
-     await click(trigger);await page.keyboard.press('Escape');assert.equal(await trigger.evaluate(node=>node===document.activeElement),true);assert.equal(await menu.count(),0)
-     await click(trigger);await click(page.locator('.pa-window .pa-composer textarea'));assert.equal(await menu.count(),0,'portal must not intercept clicks outside its menu');assert.equal(await page.locator('.pa-window .pa-composer textarea').evaluate(node=>node===document.activeElement),true)
-     await click(trigger);await click(page.locator('.pa-window .pa-chat-identity'));assert.equal(await menu.count(),0,'details must dismiss the menu')
+     await openMenu();await page.keyboard.press('Escape');assert.equal(await trigger.evaluate(node=>node===document.activeElement),true);await menu.waitFor({state:'detached'})
+     await openMenu();await click(page.locator('.pa-window .pa-composer textarea'));await menu.waitFor({state:'detached'});assert.equal(await page.locator('.pa-window .pa-composer textarea').evaluate(node=>node===document.activeElement),true)
+     await openMenu();await click(page.locator('.pa-window .pa-chat-identity'));await menu.waitFor({state:'detached'})
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);observation.reactionWrites=2;observation.escapeFocus=true;observation.outsidePointerPasses=true;observation.detailsDismisses=true
      await page.screenshot({path:path.join(artifacts,tag+'-done.png')})
     }catch(error){await writeFile(path.join(artifacts,tag+'-page-errors.json'),JSON.stringify(errors));await page.screenshot({path:path.join(artifacts,tag+'-failure.png')}).catch(()=>{});throw error}

@@ -11,8 +11,12 @@ const grant=():AssistantGrant=>({accountKey:"local",readerID:"person",machineID:
 const sourceStatus=()=>({contract_version:"project-assistants.v1",sources:[{machine_id:"machine",state:"online",access:"interactive",readable:true,writable:true,fresh:true,observed_at:"",capabilities:[]}]})
 test("group operations keep their exact captured source, method, key and command over Cloud",async()=>{
   const seen:ReturnType<typeof assistantRelayRequest>[]=[],held=grant()
-  const source=new ProjectAssistantSourceClient(held,async(path,init)=>{if(path.endsWith("/status"))return Response.json(sourceStatus());seen.push(assistantRelayRequest(path,init));return Response.json({contract_version:"project-assistants.v1"})},()=>held)
-  await source.status(signal())
+  const source=new ProjectAssistantSourceClient(held,async(path,init)=>{
+    const request=assistantRelayRequest(path,init)
+    seen.push(request)
+    if(request.word==="project-assistants.groups")return Response.json({contract_version:"project-assistants.v1",groups:[],source:sourceStatus().sources[0]})
+    return Response.json({contract_version:"project-assistants.v1"})
+  },()=>held)
   await source.groups({machine_id:"machine"},signal())
   await source.groupHistory({key,before_seq:7,page_size:100},signal())
   const create:W.ProjectAssistantGroupCreateRequest={command:command(key,"create","one"),settings:{target:{machine_id:"machine",project_id:"p"},name:"Review",members:[{machine_id:"machine",bot_id:"a"}]}}

@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {SourceStatusPanel} from "./SourceStatusPanel";export {sourceHealth} from "./source-status";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,SourceStatusPanel,sourceHealth,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -33,12 +33,6 @@ test("permission options keep the persistent grants and disable them in history"
   const html=render(PermissionCard,{offer,enabled:false,onAnswer:()=>assert.fail("render answered"),w:words("en")})
   assert.equal((html.match(/disabled=""/g)||[]).length,3)
   assert.match(html,/Always allow/)
-})
-test("an offline machine shows in the collapsed connection summary, with its fix",async()=>{
-  const s=fixtureSource();s.setState("offline")
-  const value=await s.status(new AbortController().signal),w=words("zh-Hant")
-  const html=render(SourceStatusPanel,{health:sourceHealth(value.sources,new Map(),[],w),w})
-  assert.match(html,/這台機器：離線/);assert.match(html,/確認那台機器開著/);assert.match(html,/aria-expanded="false"/)
 })
 test("reading, selecting and metadata creation do not start a scripted model",async()=>{
   const log=[],s=fixtureSource("one",log),signal=new AbortController().signal

@@ -12,16 +12,18 @@ function controlled(machine:string,live:boolean) {
   let code:W.ProjectAssistantErrorCode|null="pa_offline",hold=false,release:(()=>void)|undefined,drop:(()=>void)|undefined
   let reads=0,active=0,maxActive=0,streams=0,maxStreams=0
   const cursors:string[]=[]
+  const observe=async<T,>(signal:AbortSignal, read:()=>Promise<T>):Promise<T>=>{
+    reads++;active++;maxActive=Math.max(maxActive,active)
+    try {
+      if(hold)await new Promise<void>(resolve=>{release=resolve;signal.addEventListener("abort",()=>resolve(),{once:true})})
+      if(signal.aborted)throw new DOMException("Aborted","AbortError")
+      if(code)throw failure(code)
+      return await read()
+    }finally{active--}
+  }
   const source:SourceClient={...base,canRoster:()=>live,
-    async status(signal){
-      reads++;active++;maxActive=Math.max(maxActive,active)
-      try {
-        if(hold)await new Promise<void>(resolve=>{release=resolve;signal.addEventListener("abort",()=>resolve(),{once:true})})
-        if(signal.aborted)throw new DOMException("Aborted","AbortError")
-        if(code)throw failure(code)
-        return await base.status(signal)
-      }finally{active--}
-    },
+    status:signal=>live?observe(signal,()=>base.status(signal)):Promise.reject(new Error("Snapshot roster must not probe machine status")),
+    list:(request,signal)=>live?base.list(request,signal):observe(signal,()=>base.list(request,signal)),
     ...(live?{async subscribeRoster(request:W.ProjectAssistantRosterRequest,receive:(frame:W.ProjectAssistantRosterFrame)=>void,signal:AbortSignal){
       cursors.push(request.cursor??"");streams++;maxStreams=Math.max(maxStreams,streams)
       try {

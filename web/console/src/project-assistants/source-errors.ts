@@ -13,8 +13,7 @@ export function shownSourceError(code: string | undefined): boolean {
  */
 export function readOnlyReason(source: { state: string; fresh: boolean; writable: boolean; access: string } | undefined, w: Record<string, string>): string {
   if (!source) return w.loading ?? ""
-  if (source.state !== "online") return w[source.state] ?? source.state
-  if (!source.fresh) return w.stale ?? ""
+  if (source.state !== "online" || !source.fresh) return w.unavailable ?? ""
   if (source.access !== "interactive") return w[source.access] ?? source.access
   if (!source.writable) return w.readOnlySource ?? ""
   return ""

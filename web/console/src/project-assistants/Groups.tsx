@@ -7,6 +7,7 @@ import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canRead, canWrite } from "./view-state"
 import { GroupRoom } from "./GroupRoom"
 import { EventRefreshMs } from "./Chat"
+import { retryableSourceError, shownSourceError } from "./source-errors"
 import { rosterMood } from "./working"
 import { BotAvatar } from "./BotAvatar"
 import { GroupAvatar } from "./GroupAvatar"
@@ -71,7 +72,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
     const load=async()=>{
       await Promise.all(supported.map(async source=>{
         try {
-          const page=await authorized(source,current,async signal=>{await source.status(signal);return source.groups!({machine_id:source.machineID},signal)},control.signal)
+          const page=await authorized(source,current,signal=>source.groups!({machine_id:source.machineID},signal),control.signal)
           if(!control.signal.aborted)setPages(old=>[...old.filter(p=>p.source!==source),{source,groups:page.groups.filter(g=>!g.deleted),status:page.source}])
           if(!control.signal.aborted)setError("")
         }catch(e){if(!control.signal.aborted){setPages(old=>old.filter(p=>p.source!==source));setError(errorCode(e))}}
@@ -101,7 +102,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
   const canCreate=active.some(p=>canWrite(p.status)&&items.some(b=>b.bot.key.machine_id===p.source.machineID))
   const rows=active.flatMap(p=>p.groups.filter(g=>(!machine||g.key.machine_id===machine)&&(!query||[g.name,projectNames.get(JSON.stringify([g.key.machine_id,g.project.project_id]))??""].some(text=>text.toLocaleLowerCase().includes(query.toLocaleLowerCase())))).map(group=>({source:p.source,group,status:p.status})))
   const content=<>
-    {error&&<p role="status">{groupWord("groupUnavailable")} ({error})</p>}
+    {shownSourceError(error)&&!retryableSourceError(error)&&<p role="status">{groupWord("groupUnavailable")}</p>}
     {creating&&<GroupEditor sources={active} bots={items.map(i=>i.bot)} projectNames={projectNames} projectIcons={projectIcons} current={current} onClose={()=>setCreating(false)} onSaved={(source,group)=>{setCreating(false);open({source,group});refresh(n=>n+1)}}/>}
     {selected&&selectedLive&&<GroupRoom key={identity(selected.group.key)} source={selected.source} current={current} group={selected.group} bots={items.map(i=>i.bot)} projectNames={projectNames} active={!selectedBot} onOpenMember={onSelectMember?key=>{
       if(!sources.includes(selected.source)||selected.source.current?.()===false||key.machine_id!==selected.source.machineID)return

@@ -4,17 +4,17 @@ import type {SourceClient} from "./client"
 import {authorized, failure} from "./client.ts"
 
 /** Refresh the loaded page coverage using fresh keyset cursors, then replace atomically. */
-export async function readSnapshotRoster(source:SourceClient,current:()=>readonly SourceClient[],query:string,pages:number,signal:AbortSignal) {
+export async function readSnapshotRoster(source:SourceClient,current:()=>readonly SourceClient[],query:string,pages:number,signal:AbortSignal,cursor="") {
   return authorized(source,current,async s=>{
-    const status=await source.status(s)
-    let cursor="",loadedPages=0
+    let sources:W.ProjectAssistantSourceStatus[]=[],loadedPages=0
     const items:W.ProjectAssistantBotSummary[]=[]
     do {
       const response=await source.list({machine_id:source.machineID,query,cursor,page_size:100},s)
+      sources=response.sources
       if(response.next_cursor&&response.next_cursor===cursor)throw failure("pa_invalid")
       items.push(...response.items);cursor=response.next_cursor;loadedPages++
     }while(cursor&&loadedPages<pages)
-    return {status,items,cursor,loadedPages}
+    return {sources,items,cursor,loadedPages}
   },signal)
 }
 
