@@ -203,7 +203,7 @@ func sessionContinuationBefore(x Export, turn pa.Turn, memory pa.MemoryRevision,
 			if binding.Fence.BindingID != source.Fence.BindingID {
 				continue
 			}
-			if !sameSessionOwner(binding.Fence, turn.Fence) || binding.Agent != pa.ClaudeCode && binding.Agent != pa.Codex {
+			if !sameSessionOwner(binding.Fence, turn.Fence) || !binding.Agent.Valid() {
 				return nil, nil, runtimeFailure(pa.ScopeDenied, "handoff_binding")
 			}
 			if binding.SessionSlot != "" {
@@ -372,7 +372,7 @@ func (h SessionHandoff) Opening(turn pa.Turn, filtered pa.ContextSnapshot) (stri
 	if err := pa.CheckContext(filtered, filtered.Memory); err != nil {
 		return "", err
 	}
-	if h.Agent != pa.ClaudeCode && h.Agent != pa.Codex {
+	if !h.Agent.Valid() {
 		return "", runtimeFailure(pa.Invalid, "handoff_agent")
 	}
 	if err := pa.CheckFence(h.Identity, turn.Fence); err != nil {

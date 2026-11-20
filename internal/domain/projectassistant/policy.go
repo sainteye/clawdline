@@ -132,7 +132,7 @@ func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
 	if err := ValidateTarget(target, resolved); err != nil {
 		return err
 	}
-	if in.Agent != ClaudeCode && in.Agent != Codex {
+	if !in.Agent.Valid() {
 		return fail(Unsupported, "agent")
 	}
 	if in.PermissionPolicy != Ask && in.PermissionPolicy != AutoRead && in.PermissionPolicy != Approve {
@@ -175,7 +175,7 @@ func applyRosterEdit(bot *Bot, edit RosterEdit) error {
 func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	previous := bot
 	if in.Agent != "" && in.Agent != bot.Agent {
-		if in.Agent != ClaudeCode && in.Agent != Codex {
+		if !in.Agent.Valid() {
 			return bot, fail(Unsupported, "agent")
 		}
 		bot.Agent = in.Agent
@@ -498,7 +498,7 @@ func VisibleReply(explicitMessageIDs []string, finalText string, stopped bool) (
 }
 
 func CheckCapabilities(c Capabilities) error {
-	if c.Agent != ClaudeCode && c.Agent != Codex {
+	if !c.Agent.Valid() {
 		return fail(Unsupported, "agent")
 	}
 	if c.Unavailable != nil {

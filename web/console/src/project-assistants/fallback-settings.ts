@@ -9,7 +9,7 @@ export const FALLBACK_AGENTS: readonly W.ProjectAssistantAgent[] = ["claude", "c
 export const MAX_FALLBACK_AGENTS = 3
 
 export function agentName(agent: string): string {
-  return agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : agent
+  return agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : agent === "grok" ? "Grok Build" : agent
 }
 
 /** Agents that may still be added: never the primary, never one already in the chain. */

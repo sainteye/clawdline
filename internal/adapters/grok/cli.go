@@ -3,6 +3,7 @@ package grok
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -49,4 +50,45 @@ func Renew(ctx context.Context, path string) error {
 	command.Stdin = nil
 	command.Stdout, command.Stderr = io.Discard, io.Discard
 	return command.Run()
+}
+
+// ACPIdentity identifies the native server and its noninteractive sign-in offer.
+func ACPIdentity(raw []byte) (valid, cachedToken bool) {
+	var identity struct {
+		Meta struct {
+			Shell   bool   `json:"grokShell"`
+			Version string `json:"agentVersion"`
+		} `json:"_meta"`
+		Auth []struct {
+			ID string `json:"id"`
+		} `json:"authMethods"`
+	}
+	if json.Unmarshal(raw, &identity) != nil || !identity.Meta.Shell || identity.Meta.Version == "" {
+		return false, false
+	}
+	for _, method := range identity.Auth {
+		if method.ID == "cached_token" {
+			return true, true
+		}
+	}
+	return true, false
+}
+
+// PersonalAccountProblem uses only the native auth result's billing and gate
+// metadata. The provider body is never included in a refusal.
+func PersonalAccountProblem(raw []byte) string {
+	var proof struct {
+		Meta struct {
+			Mode          string          `json:"auth_mode"`
+			BackendBilled *bool           `json:"backend_billed"`
+			Gate          json.RawMessage `json:"gate"`
+		} `json:"_meta"`
+	}
+	if json.Unmarshal(raw, &proof) != nil || proof.Meta.Mode != "Oidc" || proof.Meta.BackendBilled == nil || *proof.Meta.BackendBilled {
+		return "auth_mode_unsupported"
+	}
+	if len(proof.Meta.Gate) > 0 && string(proof.Meta.Gate) != "null" {
+		return "account_restricted"
+	}
+	return ""
 }

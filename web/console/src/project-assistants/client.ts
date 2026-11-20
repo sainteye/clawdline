@@ -1,4 +1,6 @@
 import type * as W from "@clawdline/contract"
+// @ts-expect-error -- Node's strip-types runner loads the generated source extension.
+import {ProjectAssistantAgentValues} from "../../../contract/src/generated.ts"
 
 /** Notification routing selects a chat; the live Bot still supplies browser authority. */
 export function botFromFragment(hash: string): {bot:string;conversation:string;machine:string} | null {
@@ -29,6 +31,7 @@ export interface SourceClient {
  canFallbackProfiles?():boolean
  loginSecret?(request:W.ProjectAssistantLoginProfileAction,value:string,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfileResponse>
  canLoginProfiles?():boolean
+ canGrok?():boolean
  loginProfiles?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfilesResponse>
  loginProfileAction?(request:W.ProjectAssistantLoginProfileAction,signal:AbortSignal):Promise<W.ProjectAssistantLoginProfileResponse>
   extensions?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantExtensionsResponse>
@@ -159,7 +162,7 @@ export function projectChoices(answer: W.ProjectAssistantProjectsResponse, reque
   if (!answer || answer.contract_version !== "project-assistants.v1" || !answer.source ||
     typeof answer.revision !== "string" || !answer.revision || !Array.isArray(answer.items) ||
     answer.items.length > request.page_size || !Array.isArray(answer.agents) ||
-    answer.agents.some(a => a !== "claude" && a !== "codex") || new Set(answer.agents).size !== answer.agents.length ||
+    answer.agents.some(a => !ProjectAssistantAgentValues.includes(a)) || new Set(answer.agents).size !== answer.agents.length ||
     (answer.personal_workspace !== undefined && typeof answer.personal_workspace !== "boolean") ||
     typeof answer.has_more !== "boolean" || typeof answer.next_cursor !== "string" ||
     answer.has_more !== !!answer.next_cursor || (answer.has_more && (!answer.items.length || answer.next_cursor === request.cursor))) throw failure("pa_invalid")

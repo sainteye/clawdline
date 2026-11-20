@@ -48,7 +48,7 @@ func NewProvider(o ProviderOptions) (*Provider, error) {
 	}
 	configs := make(map[pa.Agent]Configuration, len(o.Configurations))
 	for agent, c := range o.Configurations {
-		if agent != pa.ClaudeCode && agent != pa.Codex {
+		if !agent.Valid() {
 			return nil, refusal(pa.Unsupported, "agent")
 		}
 		if !filepath.IsAbs(c.Executable) {
@@ -141,7 +141,7 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 	if classify == nil {
 		classify = NewReadOnlyPermissionClassifier(caps.Agent, caps.AdapterVersion)
 	}
-	client, err := NewClient(proc, p.o.Limits, q.Binding.Fence, sink, classify)
+	client, err := newClient(proc, p.o.Limits, q.Binding.Fence, sink, classify, q.Bot.Agent)
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), p.o.Limits.CleanupTimeout)
 		defer cancel()
@@ -174,6 +174,14 @@ func (p *Provider) Open(ctx context.Context, q app.OpenRequest, sink func(contex
 			// Engine retains this handle and slot until an explicit cleanup
 			// succeeds. Returning nil would discard the partial resource.
 			return client, errors.Join(refusal(pa.ExecutionEffectUnknown, "owned_cleanup"), err, cleanupErr)
+		}
+		if q.Bot.Agent == pa.Grok && pa.Code(err) == pa.AuthRejected && client.SessionID() == "" {
+			return nil, &app.OpenNotStarted{Cause: err}
+		}
+		if q.Bot.Agent == pa.Grok && pa.Code(err) != pa.ResumeUnsupported {
+			// Return the closed handle so the runtime can release its slot
+			// without treating an unclassified Open as safe to replay.
+			return client, err
 		}
 		return nil, err
 	}

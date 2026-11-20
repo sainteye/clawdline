@@ -22,6 +22,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 // Bot routes were built at levels 58/59 on a branch while main used 57-59
 // for other routes; they first reached main together at 61. No released
 // daemon has 60, so base routes and the view route stay distinct tiers.
+export const PROJECT_ASSISTANTS_GROK_API_LEVEL = 100
 export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
 export const PROJECT_ASSISTANTS_CONNECTOR_CREDENTIALS_API_LEVEL = 83
@@ -380,7 +381,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   enableRoutine(r:W.ProjectAssistantRoutineEnabledRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/enabled"),r,s) }
   deleteRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)),r,s,"DELETE") }
   testRoutine(r:W.ProjectAssistantRoutineActionRequest,s:AbortSignal) { return this.routineWrite(endpoint(r.command.key,"/routines/"+encodeURIComponent(r.id)+"/runs"),r,s) }
-  create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST",true,r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
+  create(r: W.ProjectAssistantCreateRequest,s: AbortSignal) { return this.request<W.ProjectAssistantBotResponse>(base,s,r,"POST",true,r.settings?.agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
   async get(r: W.ProjectAssistantBotKey,s: AbortSignal) {
     this.key(r)
     const answer = await this.request<W.ProjectAssistantGetResponse>(endpoint(r)+query({machine_id:this.machineID}),s)
@@ -392,8 +393,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
     return answer
   }
+  canGrok() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROK_API_LEVEL }
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.roster!==undefined?PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL:r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:r.settings?.roster!==undefined?PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL:r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
@@ -535,7 +537,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
     return answer
   }
-  configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model,...(loginProfile!==undefined?{login_profile:loginProfile}:{})}),signal,undefined,"GET",true,loginProfile!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
+  configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model,...(loginProfile!==undefined?{login_profile:loginProfile}:{})}),signal,undefined,"GET",true,agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:loginProfile!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
   forget(r: W.ProjectAssistantForgetRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory/forget"),s,r,"POST") }
   saveMemory(r: W.ProjectAssistantMemoryWriteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory"),s,r,"POST",true,r.entry?.kind!==undefined||r.entry?.title!==undefined||r.entry?.summary!==undefined?PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
   export(r: W.ProjectAssistantBotKey,s: AbortSignal) { this.key(r); return this.request<W.ProjectAssistantExport>(endpoint(r,"/export")+query({machine_id:this.machineID}),s) }

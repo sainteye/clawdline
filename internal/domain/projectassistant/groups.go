@@ -144,7 +144,7 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 		if bot.Project != scope {
 			return fail(ScopeDenied, "group_member_project")
 		}
-		if bot.Agent != ClaudeCode && bot.Agent != Codex {
+		if !bot.Agent.Valid() {
 			return fail(Invalid, "group_member_agent")
 		}
 	}

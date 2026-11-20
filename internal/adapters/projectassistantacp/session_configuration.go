@@ -101,6 +101,8 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 		params["systemPrompt"] = map[string]any{
 			"mode": "append", "content": []any{map[string]string{"type": "text", "text": systemPrompt(q)}},
 		}
+	case pa.Grok:
+		params["_meta"] = map[string]string{"rules": systemPrompt(q)}
 	case "":
 		// Only package-internal transport fixtures omit a Bot. Provider.Open
 		// cannot reach this branch because capability admission rejects it.
@@ -133,8 +135,11 @@ func hasCapability(raw []byte) bool {
 func systemPrompt(q app.OpenRequest) string {
 	name := strings.TrimSpace(q.Bot.Name)
 	engine := "Claude Code"
-	if q.Bot.Agent == pa.Codex {
+	switch q.Bot.Agent {
+	case pa.Codex:
 		engine = "Codex"
+	case pa.Grok:
+		engine = "Grok Build"
 	}
 	lines := []string{"Agent profile:"}
 	if name != "" {

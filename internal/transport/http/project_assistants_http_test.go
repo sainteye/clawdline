@@ -544,6 +544,18 @@ func TestProjectAssistantHTTPCreateReplayAndCanonicalConflict(t *testing.T) {
 	}
 }
 
+func TestProjectAssistantHTTPCreateGrokWithoutStartingProvider(t *testing.T) {
+	f := newPAHTTPFixture(t)
+	request := f.createRequest()
+	request.Settings.Agent = contract.ProjectAssistantAgentGrok
+	reply := f.request(t, http.MethodPost, "/v1/project-assistants", request)
+	paAssertHTTPContract(t, reply, http.StatusOK, "ProjectAssistantBotResponse")
+	var created contract.ProjectAssistantBotResponse
+	if err := json.Unmarshal(reply.Body.Bytes(), &created); err != nil || created.Bot.Agent != contract.ProjectAssistantAgentGrok || len(f.runtime.submissions) != 0 {
+		t.Fatalf("Grok create: agent=%s submissions=%d error=%v", created.Bot.Agent, len(f.runtime.submissions), err)
+	}
+}
+
 type paHTTPWriteCase struct {
 	name, method, path, response string
 	body                         any

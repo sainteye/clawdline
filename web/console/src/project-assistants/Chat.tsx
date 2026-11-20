@@ -10,6 +10,7 @@ import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObse
 import {useMessageArrivals} from "./message-arrivals"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
+import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
 import "./chat-presentation.css"
 import { LeadStarter } from "./LeadStarter"
@@ -37,7 +38,7 @@ import { Trace,traceLabel,visibleTrace,workingCategory } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
 import { WorkingTransition } from "./WorkingTransition"
-import { botTurnOutcome, readOnlyReason } from "./source-errors"
+import { botTurnOutcome, grokSetupFailure, readOnlyReason } from "./source-errors"
 import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
@@ -162,7 +163,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const uncertain=()=>{const held=view.heldOutcomes.get(draftKey);return !!held&&!(held.intent.command.operation==="send"&&admittedReceipt(held.receipt))}
   const [text,setText]=useState(()=>lockedDraft?.text??legacyAtMount?.text??entryDraft.text),[quote,setQuote]=useState(lockedDraft?.quote_message_id??legacyAtMount?.quote??entryDraft.quote)
   const [reconnecting,setReconnecting]=useState(false),retryDelay=useRef(BACKOFF.firstMs)
-  const [error,setError]=useState(""),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>((inFlightAtMount??acceptedAtMount)?.text??null)
+  const [error,setError]=useState(""),[errorField,setErrorField]=useState<string>(),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>((inFlightAtMount??acceptedAtMount)?.text??null)
   const [localSend,setLocalSend]=useState("")
   const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
@@ -200,7 +201,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     JSON.stringify([head?.current_fence,head?.memory_revision,head?.conversation.active_turn_id,head?.conversation.active_turn_id?"":head?.bot_version]))
   const [editingHandoff,setEditingHandoff]=useState(false)
   useEffect(()=>{if(!handoff.available)setEditingHandoff(false)},[handoff.available])
-  const fail=useCallback((e:unknown)=>{if(valid())setError(errorCode(e))},[valid])
+  const fail=useCallback((e:unknown)=>{if(valid()){setErrorField((e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field);setError(errorCode(e))}},[valid])
   const changeText=(value:string)=>{view.stage(draftKey,value);setText(value)}
   const flush=()=>setDraftDurable(view.flush(draftKey))
   const archiveLegacyDraft=useCallback(()=>{
@@ -1133,14 +1134,14 @@ ${currentDraft}`:submitted)
       <h2 className="pa-chat-heading">
         <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}${serverLabel?" · "+serverLabel:""}`} aria-expanded={infoOpen} onClick={()=>infoOpen?setInfoOpen(false):openInfo("details")}>
           <BotAvatar appearance={bot.appearance} size={28} mood={mood}/>
-          <span className="pa-chat-identity-text"><span className="pa-chat-server-heading"><strong>{bot.name}</strong><DevServerTitle observation={servers} w={w}/></span><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,bot.agent==="claude"?"Claude Code":"Codex",machineName].filter(Boolean).join(" · ")}</span></small></span>
+          <span className="pa-chat-identity-text"><span className="pa-chat-server-heading"><strong>{bot.name}</strong><DevServerTitle observation={servers} w={w}/></span><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,agentName(bot.agent),machineName].filter(Boolean).join(" · ")}</span></small></span>
           <svg className="pa-chat-identity-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
       </h2>
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>
     </header>}
     {(reconnecting||error)&&<div className="pa-chat-error" role={reconnecting?"status":"alert"} data-reconnecting={reconnecting||undefined}>
-      <span>{reconnecting?w.chatReconnecting:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>}</span>
+      <span>{reconnecting?w.chatReconnecting:grokSetupFailure(errorField,w)??(error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
     </div>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>

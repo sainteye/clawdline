@@ -616,7 +616,7 @@ func validateAggregate(a aggregate) error {
 			}
 		}
 		f := binding.Fence
-		if id == "" || id != f.BindingID || (binding.Agent != pa.ClaudeCode && binding.Agent != pa.Codex) || f.Generation < 1 || binding.MemoryRevision < 1 || binding.MemoryRevision > a.Memory.Revision || binding.InstructionRevision < 1 || binding.InstructionRevision > b.Instructions.Revision || binding.ForgottenThrough < 0 || binding.ForgottenThrough > binding.MemoryRevision {
+		if id == "" || id != f.BindingID || !binding.Agent.Valid() || f.Generation < 1 || binding.MemoryRevision < 1 || binding.MemoryRevision > a.Memory.Revision || binding.InstructionRevision < 1 || binding.InstructionRevision > b.Instructions.Revision || binding.ForgottenThrough < 0 || binding.ForgottenThrough > binding.MemoryRevision {
 			return failure(pa.Invalid, "binding")
 		}
 		if err := check(f); err != nil {

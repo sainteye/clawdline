@@ -134,7 +134,7 @@ func PlanManagedCreate(m ManagerContext, req ManagedCreate, createdLive int, l M
 	if agent == "" {
 		agent = src.Agent
 	}
-	if agent != pa.ClaudeCode && agent != pa.Codex {
+	if !agent.Valid() {
 		return ManagedBotPlan{}, serviceFailure(pa.Invalid, "agent")
 	}
 	if agent != src.Agent {

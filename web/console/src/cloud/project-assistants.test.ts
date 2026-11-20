@@ -502,6 +502,17 @@ test("registered Projects use API58, captured query and configuration agents wit
     await assert.rejects(old.projects(projectsRequest,signal()),e=>errorCode(e)==="pa_unsupported")
   }
 })
+test("Grok appears from the owning machine's catalog and requires its API level for writes",async()=>{
+  const answer=catalog()
+  answer.agents.push("grok")
+  const modern=make(async()=>Response.json(answer),{...grant(),apiLevel:100}).source
+  assert.equal(modern.canGrok(),true)
+  assert.deepEqual((await modern.projects(projectsRequest,signal())).agents,["claude","codex","grok"])
+  const old=make(async()=>{assert.fail("a Grok mutation reached an older machine")},{...grant(),apiLevel:99}).source
+  assert.equal(old.canGrok(),false)
+  const request={command:command(key,"create"),settings:{agent:"grok"}} as W.ProjectAssistantCreateRequest
+  await assert.rejects(old.create(request,signal()),e=>errorCode(e)==="pa_unsupported")
+})
 test("Project catalogs accept fresh read-only metadata and require fresh interactive status for create",async()=>{
   let writes=0
   const response=catalog();response.source={...response.source,access:"history_only",writable:false}

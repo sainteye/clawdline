@@ -13,14 +13,14 @@ import {configurationError,RuntimeSettings,useModelCatalog} from "./RuntimeSetti
 import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
-import {botFailureText} from "./source-errors"
+import {botFailureText,grokSetupFailure} from "./source-errors"
 import "./bot-settings.css"
 
 
 function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):string {
   if(code==="pa_outcome_unknown")return w.fallbackSaveUnknown
   if(code==="pa_stale_generation"||code==="pa_stale_version")return w.fallbackSaveStale
-  const detail=code==="pa_capacity_full"?configurationError(code,w,field):botFailureText(code,w)
+  const detail=grokSetupFailure(field,w)??(code==="pa_capacity_full"?configurationError(code,w,field):botFailureText(code,w))
   return `${detail} (${code})`
 }
 
@@ -88,10 +88,10 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
         </SettingsGroup>
         <SettingsGroup title={w.settingsAgentHeading}>
           <div className="pa-settings-primary"><SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`} onOpen={()=>setModelsVisited(true)}>
-            <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+            <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option>{(agent==="grok"||source?.canGrok?.())&&<option value="grok">Grok Build</option>}</select></label>
             <RuntimeSettings discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
           </SettingsDisclosure></div>
-          <LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>
+          {agent==="grok"?<p className="pa-approval-detail">{w.grokUsesExistingLogin}</p>:<LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>}
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
             {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={validSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={validFallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}
           </SettingsDisclosure>

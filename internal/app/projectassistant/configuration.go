@@ -17,7 +17,7 @@ func (s *Service) Configuration(ctx context.Context, q MemoryReadRequest, agent 
 		return pa.ConfigurationCatalog{}, nil, serviceFailure(pa.Disabled, "configuration_feature")
 	}
 	if agent != "" {
-		if agent != pa.ClaudeCode && agent != pa.Codex {
+		if !agent.Valid() {
 			return pa.ConfigurationCatalog{}, nil, serviceFailure(pa.Unsupported, "agent")
 		}
 		if b.Agent != agent {
