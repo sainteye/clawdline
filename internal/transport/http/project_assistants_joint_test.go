@@ -212,6 +212,9 @@ func (r paJointCaptureRouter) Do(_ context.Context, q cloudops.LocalRequest) (cl
 	if r.frame.Word == "project-assistants.status" {
 		body = map[string]any{"contract_version": pa.ContractVersion, "sources": []any{source}}
 	}
+	if r.frame.Word == "project-assistants.list" {
+		body = map[string]any{"contract_version": pa.ContractVersion, "items": []any{}, "sources": []any{source}, "next_cursor": ""}
+	}
 	if r.frame.Word == "project-assistants.projects" {
 		body = map[string]any{"contract_version": pa.ContractVersion, "source": source, "agents": []string{"claude", "codex"}, "revision": "capture", "items": []any{map[string]any{"target": map[string]string{"machine_id": "source-one", "project_id": "project"}, "label": "Project"}}, "has_more": false, "next_cursor": ""}
 	}

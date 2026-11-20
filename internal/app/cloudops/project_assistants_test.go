@@ -172,7 +172,17 @@ let http, sequence=0;
 const connection={machineDescriptor:()=>({machine:{commands:Object.keys(CARRIED)}}),
  _machineRequest:async(machine,word,fields,kind)=>receive(word==='project-assistants.projects'?'<'.repeat(128):'captured-read-'+(++sequence),machine,word,fields,kind),
  _machineRequestAs:async(ref,machine,word,fields,kind)=>receive(ref,machine,word,fields,kind)};
-function receive(ref,machine,word,fields,kind){fixtures.push({...http,machine,word,ref,kind,plaintext:{type:word,session:'__clawdline_machine__',request:ref,...fields}});return word.endsWith('.status')?status:word.endsWith('.projects')?{contract_version:'project-assistants.v1',source:status.sources[0],agents:['claude','codex'],revision:'catalog-1',items:[{target:{machine_id:machine,project_id:'project'},label:'Project'}],next_cursor:'next',has_more:true}:{contract_version:'project-assistants.v1',echo:word};}
+function receive(ref,machine,word,fields,kind){
+  fixtures.push({...http,machine,word,ref,kind,plaintext:{type:word,session:'__clawdline_machine__',request:ref,...fields}});
+  const contract_version=status.contract_version;
+  if(word==='project-assistants.status')return status;
+  if(word==='project-assistants.list')return {contract_version,items:[],sources:status.sources,next_cursor:''};
+  if(word==='project-assistants.projects')return {
+    contract_version,source:status.sources[0],agents:['claude','codex'],revision:'catalog-1',
+    items:[{target:{machine_id:machine,project_id:'project'},label:'Project'}],next_cursor:'next',has_more:true,
+  };
+  return {contract_version,echo:word};
+}
 const relay=capturedAssistantRelayFetch(machine,()=>connection,Object.keys(CARRIED));
 const grant={accountKey:'fixture-account',readerID:'trusted-reader',machineID:machine,authorizationRevision:'revision',apiLevel:60,paired:true,online:true,writable:true};
 const source=new ProjectAssistantSourceClient(grant,async(input,init)=>{http={input,method:init.method,body:init.body??null,idempotency:new Headers(init.headers).get('Idempotency-Key')};return relay(input,init)},()=>grant);
