@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 13547,
-  "riskKeys": 5813,
-  "nonRiskCount": 7734,
+  "riskKeys": 5812,
+  "nonRiskCount": 7735,
   "groups": [
     {
       "name": "acp / other",
@@ -7810,7 +7810,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 211,
+      "count": 212,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7985,6 +7985,7 @@
         "transparency.card.voice-polish.condition",
         "transparency.card.voice-polish.title",
         "transparency.card.voice-question-menu.condition",
+        "transparency.card.voice-question-menu.how",
         "transparency.card.voice-question-menu.title",
         "transparency.card.voice-session-boards.condition",
         "transparency.card.voice-session-boards.summary",

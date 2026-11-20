@@ -97,7 +97,10 @@ spoken/audio acceptance or measured startup latency.
 Both voice engines use the same demand-only question endpoint (API level 77). The selected
 Session's machine reads recent originals and the related user questions, then the existing small
 text model answers the actual question with exact quoted source references and explicit unknowns.
-The voice model receives that focused answer and source metadata; the large original-message
+When you ask what a reviewer found, the read also looks for recorded reviews dispatched by that
+Session, so the findings can be distinguished from fixes described in later replies.
+The voice model receives the focused answer and source metadata. If the analysis fails, the
+machine can return bounded source excerpts for the voice model to answer from. The full read
 window stays on the machine. No question-analysis request runs for an opening or normal summary.
 Existing five-minute latest-summary and background recap policies are unchanged.
 
@@ -107,20 +110,22 @@ conversation starts a fresh read. At most sixteen contexts remain in memory, wit
 reclaimed on the next analysis request; they are never written to disk. Two analyses may run at
 once. Each reads at most five pages and five assistant replies, fits originals within 40,000 Unicode
 characters, and limits model output to 1,400 tokens. Older-page failures or shortened text remain
-incomplete. If the answer needs older material, the assistant can increase a one- or three-reply
-read to five; it must state the gap when the bounded window still cannot answer.
+incomplete. When that window cannot answer the question, the copilot says what it could confirm
+and what is missing. A follow-up can ask to read more replies.
 
 The analysis uses the same OpenAI key and small text model as the existing recap/Decision path.
-One model request runs per question, without tools or automatic retries. Provider-reported token
-usage from successful analyses is added to the current call's estimate in either voice engine;
-missing or unknown model pricing is not treated as a fully priced total. Rates follow the
+The console reuses the analysis if the voice backend rephrases that question for the same Session
+within one spoken turn. Provider-reported token usage is added to the call estimate in either
+voice engine when the machine returns the analysis or its source fallback.
+Missing or unknown model pricing is not treated as a fully priced total. Rates follow the
 [official model page](https://developers.openai.com/api/docs/models/gpt-4.1-mini). No paid model
 call was made during local verification. Source-quote validation proves literal correspondence,
 not the model's reasoning quality or live spoken comprehension.
 
 An older machine returns an unsupported endpoint without spending on a different recap. The
-voice client can then use the existing bounded original-message explanation. This is a fallback
-for compatibility; it does not claim that the small-model analysis succeeded.
+voice client can then use the existing bounded original-message explanation. GPT-Live sends
+answers to explicit question and recap reads directly to its speaking model. Starting a new
+question cancels any opening update still waiting to speak.
 
 ## Session recaps
 
