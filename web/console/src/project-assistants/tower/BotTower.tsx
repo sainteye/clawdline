@@ -10,6 +10,7 @@ import type { SourceClient } from "../client"
 import { canWrite } from "../view-state"
 import { placeFloor, placedFloors, readFloors, FloorError, type FloorDoc } from "./tower-floors"
 import { TowerFloorsPanel, type FloorRow } from "./TowerFloorsPanel"
+import { ProjectMark } from "../ProjectMark"
 import "./tower.css"
 
 export interface BotTowerProps {
@@ -21,6 +22,8 @@ export interface BotTowerProps {
   /** A Bot pointed at elsewhere (the roster); its tag shows as if hovered here. */
   highlight?: string | null
   projectName: (item: W.ProjectAssistantBotSummary) => string | undefined
+  /** The Project's own small icon, as the list shows it, so a Bot's Project reads at a glance. */
+  projectIcon?: (item: W.ProjectAssistantBotSummary) => W.Icon | undefined
   onSelect: (item: W.ProjectAssistantBotSummary) => void
   /** The Bots' sources, to read and answer a waiting offer in place; without
    * them the waiting list is read-only. */
@@ -90,7 +93,7 @@ function place(scene: TowerScene, b: TowerBot, index: number, now: number, still
   return { at: slotPoint(scene.zones[b.zone], index), moving: false }
 }
 
-export default function BotTower({ items, w, language, paused = false, highlight = null, projectName, onSelect, sources, current, loading = false }: BotTowerProps) {
+export default function BotTower({ items, w, language, paused = false, highlight = null, projectName, projectIcon, onSelect, sources, current, loading = false }: BotTowerProps) {
   const [tick, setTick] = useState(() => Date.now())
   const reduced = useReducedMotion()
   const [visible, setVisible] = useState(true)
@@ -386,7 +389,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
       const at = floorOfBot(b, floorOf), project = projectName(b.item) || w.unnamedProject, when = ago(b.item.activity_at, now, language)
       const elsewhere = building && at !== floor
       return <li key={b.key} data-bot-key={b.key}>
-        <p><strong>{b.item.bot.name}</strong><span>{building ? `${floors[at].label} · ${project}` : project}</span></p>
+        <p><strong>{b.item.bot.name}</strong><span className="pa-tower-project"><ProjectMark icon={projectIcon?.(b.item)} size={12}/>{building ? `${floors[at].label} · ${project}` : project}</span></p>
         <p>{b.caption && <small>{b.caption}</small>}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
         <div>
           {allow && <button type="button" aria-expanded={shown === b.key} onClick={() => setShown(s => s === b.key ? null : b.key)}>{w.towerAllowShow}</button>}
@@ -415,7 +418,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
       if (seen.has(key)) continue
       const machine = item.bot.key.machine_id, doc = docs.get(machine), writable = items.some(i => i.bot.key.machine_id === machine && canWrite(i.source))
       const supported = floorSources.some(s => s.machineID === machine)
-      seen.set(key, { key, machine, project: item.bot.project.project_id, name: projectName(item) || w.unnamedProject, floor: floorOf.get(key) ?? 0,
+      seen.set(key, { key, machine, project: item.bot.project.project_id, name: projectName(item) || w.unnamedProject, icon: projectIcon?.(item), floor: floorOf.get(key) ?? 0,
         placed: placed.has(key), ready: !!doc && writable,
         locked: !supported ? w.towerFloorsUnsupported : !writable ? w.towerFloorsLocked : !doc ? w.loading : undefined })
     }
@@ -464,7 +467,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
       onKeyDown={e => { if (e.key === "Escape") setPicked(null) }}>
       <header><strong>{b.item.bot.name}{b.lead && <small className="pa-tower-card-lead">★ {w.rosterLead}</small>}</strong><button type="button" aria-label={w.towerCardClose} onClick={() => setPicked(null)}>×</button></header>
       <p className="pa-tower-card-state"><i aria-hidden="true"/>{w[moodWord[b.mood]]}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
-      <p className="pa-tower-card-project">{projectName(b.item) || w.unnamedProject}</p>
+      <p className="pa-tower-card-project pa-tower-project"><ProjectMark icon={projectIcon?.(b.item)} size={14}/>{projectName(b.item) || w.unnamedProject}</p>
       {line && <p className="pa-tower-card-line">{line}</p>}
       {b.work > 0 && <p className="pa-tower-card-meta">{w.towerCardHelpers.replace("{count}", String(b.work))}</p>}
       {b.unread && <p className="pa-tower-card-meta">{w.towerCardUnread.replace("{count}", String(b.item.unread_count))}</p>}
