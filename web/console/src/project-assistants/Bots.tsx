@@ -342,9 +342,12 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   // On a phone, a chat opened from the tower rises as a bottom sheet over it,
   // so the floor stays in view and another Bot can be tapped from there.
   const towerSheet=narrow&&botsView==="tower"&&!!selectedItem&&!groupOpen
-  // Swiping the sheet down by its grip or header closes it, like the back button.
-  const swipe=useSheetSwipe(towerSheet,back)
-  return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}`} lang={language}>
+  // Swiped up the sheet fills the screen; down, a full one returns to half and
+  // a half one closes like the back button. Each chat opens as a half sheet.
+  const [sheetFull,setSheetFull]=useState(false)
+  useEffect(()=>{setSheetFull(false)},[selected,towerSheet])
+  const swipe=useSheetSwipe(towerSheet,sheetFull,release=>{if(release==="expand")setSheetFull(true);else if(release==="collapse")setSheetFull(false);else back()})
+  return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}${towerSheet&&sheetFull?" pa-tower-sheet-full":""}`} lang={language}>
     {rosterNotice&&<div className="pa-roster-notice" role={rosterNotice.error?"alert":"status"}>
       <span>{rosterNotice.text}</span><button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}

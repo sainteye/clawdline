@@ -125,7 +125,18 @@ async function towerChecks(page, width, language, shot) {
     await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 30, { steps: 10 }); await page.waitForTimeout(400); await page.mouse.up()
     await page.waitForTimeout(300)
     assert.equal(await page.getByRole("button", { name: w.towerBack }).isVisible(), true, "a short drag closed the sheet")
-    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 160, { steps: 12 }); await page.mouse.up()
+    // Swiped up the sheet fills the screen; swiped down it returns to half, then closes.
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y - 160, { steps: 12 }); await page.mouse.up()
+    await page.waitForFunction(() => { const r = document.querySelector(".pa-main").getBoundingClientRect(); return r.top <= 1 && r.height >= innerHeight - 1 })
+    checks.push("swiping the sheet up fills the screen")
+    await shot("tower-sheet-full")
+    const fullGrip = await box(page.locator(".pa-sheet-grip")), fx = fullGrip.x + fullGrip.width / 2, fy = fullGrip.y + fullGrip.height / 2
+    await page.mouse.move(fx, fy); await page.mouse.down(); await page.mouse.move(fx, fy + 160, { steps: 12 }); await page.mouse.up()
+    await page.waitForFunction(() => document.querySelector(".pa-main").getBoundingClientRect().top > 60)
+    assert.equal(await page.getByRole("button", { name: w.towerBack }).isVisible(), true, "swiping down from full closed the chat instead of returning to half")
+    checks.push("swiping a full sheet down returns it to half")
+    const half = await box(page.locator(".pa-sheet-grip")), hx = half.x + half.width / 2, hy = half.y + half.height / 2
+    await page.mouse.move(hx, hy); await page.mouse.down(); await page.mouse.move(hx, hy + 160, { steps: 12 }); await page.mouse.up()
     await page.getByRole("button", { name: w.towerBack }).waitFor({ state: "hidden" })
     await scene.waitFor()
     checks.push("swiping the sheet down closes it")
