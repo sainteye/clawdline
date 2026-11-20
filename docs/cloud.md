@@ -83,6 +83,16 @@ assistant to read output over the helper's existing SSH/session-manager access, 
 previously did when reading its report; it is not independent proof of remote execution.
 Missing, malformed, stale or mismatched evidence retains manual fingerprint comparison.
 A handover that arrives first keeps following the helper task until its observation arrives.
+While automatic verification is active, the dialog shows that work and withholds the manual
+confirmation. A background pairing shows its current stage in the header. If verification ends
+without matching evidence, the open dialog shows the comparison, or the background button marks
+that the person needs to compare the fingerprints.
+
+Reloading the same tab restores the offer view and the helper task for the same signed-in browser.
+The private claim stays in IndexedDB. The tab retains the target, the in-flight helper request or
+task ID, and any received fingerprints until the view is dismissed or verification completes. If
+the helper's start answer was lost and the offer is still live, the page asks under the original
+request ID so the helper returns the same task. It does not mint another offer.
 `pair-agent-start` carries the optional `assistant` field (`claude` or `codex`) through the encrypted
 command to the helper. Omitting it preserves the helper's installed-assistant default. Helpers
 running older decoders refuse the new field rather than silently use another assistant; update

@@ -20,6 +20,7 @@ test('assisted pairing closes only after matching helper evidence and handover, 
     writeFileSync(entry, `
 import React from 'react';import {createRoot} from 'react-dom/client';
 import * as Pairing from './src/cloud/PairPanel';import {pairingOfferDigest} from './src/cloud/pair-agent';
+import {readPairProgress,writePairProgress} from './src/cloud/pair-progress';
 import {bootCatalog} from './src/catalog';import {loadStrings} from './src/legacy/bridge';
 import './src/legacy/tokens.css';import './src/legacy/base.css';import './src/legacy/shell.css';import './src/legacy/list.css';import './src/legacy/pages.css';import './src/legacy/door.css';import './src/shell.css';import './src/cloud/cloud.css';
 localStorage.setItem('ui_language',new URLSearchParams(location.search).get('lang')||'en');
@@ -27,29 +28,51 @@ await bootCatalog(tag=>'/catalogs/'+tag+'.json');await loadStrings(async()=>({})
 const wake=new URLSearchParams(location.search).has('wake');
 const fragment='synthetic-offer';const digest=await pairingOfferDigest(fragment);
 const comparison={machine_id:'mac_target',offer_sha256:digest,viewer_fingerprint:'ABCD-EFGH-IJKL-MNOP',machine_fingerprint:'QRST-UVWX-YZ23-4567'};
+const restore=new URLSearchParams(location.search).has('restore');
+const account='test-account',device='test-device',machine={id:'mac_target',name:'Target'};
+const saved=restore?readPairProgress(account,device):null;
+const handover={phase:'paired',machineID:machine.id,fingerprint:comparison.viewer_fingerprint,machineFingerprint:comparison.machine_fingerprint};
+function remember(change) {
+  writePairProgress({...readPairProgress(account,device),...change});
+}
 window.progress={stage:'working',summary:'',failedReason:''};window.pairClosedCount=0;window.started=0;window.offers=0;window.expireIn=600000;
+window.holdLaunch=false;window.replayed='';window.statusReads=[];
+window.rememberedRequest=()=>readPairProgress(account,device)?.helper?.requestID;
 window.finish=(override={})=>{window.progress={stage:'done',summary:'Finished',failedReason:'',comparison:{...comparison,...override}}};
 window.missing=()=>{window.progress={stage:'done',summary:'Finished',failedReason:''}};
 const Overlay=Pairing.PairingOverlay ?? (({pairing})=><div className="door" data-step="cloud"><section data-step="cloud"><Pairing.PairPanel {...pairing}/></section></div>);
 function Example(){
-const [state,setState]=React.useState({phase:'idle'});
+const [state,setState]=React.useState(saved?.handover ?? (saved?{phase:'waiting',fragment,fingerprint:comparison.viewer_fingerprint,expiresAt:saved.expiresAt}:{phase:'idle'}));
 const [open,setOpen]=React.useState(true);
-const [visible,setVisible]=React.useState(true);
-window.handover=()=>setState({phase:'paired',machineID:'mac_target',fingerprint:comparison.viewer_fingerprint,machineFingerprint:comparison.machine_fingerprint});
-const close=()=>{window.pairClosedCount++;setOpen(false)};
-window.offer=()=>{window.offers++;setState({phase:'waiting',fragment,fingerprint:comparison.viewer_fingerprint,expiresAt:Date.now()+window.expireIn})};
+const [visible,setVisible]=React.useState(!(saved?.hidden));
+const [status,setStatus]=React.useState('working');
+window.handover=()=>{if(readPairProgress(account,device))remember({handover});setState(handover)};
+const close=()=>{window.pairClosedCount++;writePairProgress(null);setOpen(false)};
+window.offer=()=>{
+  window.offers++;
+  const expiresAt=Date.now()+window.expireIn;
+  writePairProgress({account,device,pairingID:'pair-one',machine,expiresAt,hidden:!visible});
+  setState({phase:'waiting',fragment,fingerprint:comparison.viewer_fingerprint,expiresAt});
+};
+const reveal=(visible)=>{remember({hidden:!visible});setVisible(visible)};
 const pairing={
-  request:{mode:'offer',machine:{id:'mac_target',name:'Target'}}, state, nameOf:()=> 'Target',
+  request:{mode:'offer',machine}, state, nameOf:()=> 'Target',
   onBegin:window.offer,
   onStop:()=>setState({phase:'stopped',expiresAt:null}), onAgain:()=>setState({phase:'idle'}), onClose:close, onPaired:close,
   helpers:[{id:'mac_helper',name:'Helper'},{id:'mac_other_helper',name:'Other helper'}],
-  onAgentStart:async()=>{window.started++;return {ok:true,mode:'agent',taskID:'task-one',trust:'recorded'}},
-  onAgentStatus:async()=>window.progress, device:'phone', onScan:()=>{},
-  visible, onHide:()=>setVisible(false), wakeOrigin:wake?location.origin:undefined,
+  onAgentStart:async(_helper,_offer,_target,_assistant,requestID)=>{
+    window.started++;
+    if(saved)window.replayed=requestID;
+    if(window.holdLaunch)await new Promise(()=>{});
+    return {ok:true,mode:'agent',taskID:'task-one',trust:'recorded'};
+  },
+  onAgentStatus:async(helper,task)=>{window.statusReads.push([helper,task]);return window.progress}, device:'phone', onScan:()=>{},
+  visible, onHide:()=>reveal(false), onStatus:setStatus, onFollow:helper=>remember({helper}),
+  restoredHelper:saved?.helper, restoredExpiry:saved?.expiresAt, wakeOrigin:wake?location.origin:undefined,
 };
 return <>
   <div id="conversation">Conversation remains mounted</div>
-  {open&&!visible&&<Pairing.PairingProgressButton onShow={()=>setVisible(true)}/>}
+  {open&&!visible&&<Pairing.PairingProgressButton status={status} onShow={()=>reveal(true)}/>}
   {open&&<Overlay pairing={pairing} overConsole/>}
 </>}
 createRoot(document.getElementById('root')).render(<React.StrictMode><Example/></React.StrictMode>);
@@ -82,13 +105,16 @@ createRoot(document.getElementById('root')).render(<React.StrictMode><Example/><
         await page.getByRole('dialog').waitFor({state:'hidden'})
         const resume=page.locator('.cloud-pair-resume')
         assert.equal(await resume.evaluate(button=>document.activeElement===button),true)
+        assert.equal(await resume.locator('.cloud-pair-spinner').isVisible(),true)
         await resume.click()
         await page.getByRole('dialog').waitFor()
         assert.equal(await page.evaluate(()=>window.started),1,'reopening keeps the original task')
         await page.evaluate(()=>window.handover())
         await page.locator('[data-pair-phase="paired"]').waitFor()
         assert.equal(await page.evaluate(()=>window.pairClosedCount),0,'handover alone does not finish')
+        assert.equal(await page.locator('#cloud-pair-close').count(),0,'manual confirmation is absent while verification is running')
         await hide.click()
+        assert.match(await resume.textContent(),lang==='zh-Hant'?/正在核對/:/Verifying fingerprints/)
         await page.evaluate(()=>window.finish())
         await page.waitForFunction(()=>window.pairClosedCount===1,{},{timeout:7000})
         assert.equal(await page.locator('[role="dialog"]').count(),0,'modal closes without a confirmation click')
@@ -101,6 +127,42 @@ createRoot(document.getElementById('root')).render(<React.StrictMode><Example/><
         assert.equal(await page.getByText('Finished',{exact:true}).count(),0,'the task summary is not a browser confirmation')
         await page.evaluate(()=>window.handover());await page.waitForFunction(()=>window.pairClosedCount===1)
         if(lang==='zh-Hant'&&width===390){
+          const reload=async()=>{
+            await page.goto(origin+'/pair-auto-fixture.html?lang=zh-Hant&restore')
+            await resume.waitFor()
+          }
+          await load();await start();await hide.click();await reload()
+          assert.match(await resume.textContent(),/配對中/)
+          await page.emulateMedia({reducedMotion:'reduce'})
+          assert.equal(await resume.locator('.cloud-pair-spinner').evaluate(mark=>getComputedStyle(mark).animationName),'none')
+          await page.emulateMedia({reducedMotion:'no-preference'})
+          await page.waitForFunction(()=>window.statusReads.length===1)
+          assert.deepEqual(await page.evaluate(()=>({started:window.started,offers:window.offers,reads:window.statusReads})),
+            {started:0,offers:0,reads:[['mac_helper','task-one']]})
+          await page.evaluate(()=>window.handover())
+          await resume.getByText('正在核對指紋…').waitFor()
+          await reload()
+          await resume.getByText('正在核對指紋…').waitFor()
+          await page.evaluate(()=>window.missing())
+          await resume.getByText('待你核對').waitFor()
+          assert.equal(await resume.locator('.cloud-pair-attention').isVisible(),true)
+          assert.equal(await resume.locator('.cloud-pair-spinner').count(),0)
+          assert.equal(await page.getByRole('dialog').isVisible(),false,'manual fallback does not interrupt a background conversation')
+          await resume.click()
+          await page.locator('#cloud-pair-close').click()
+          await load();await start();await hide.click();await reload()
+          await page.evaluate(()=>{window.handover();window.finish()})
+          await page.waitForFunction(()=>window.pairClosedCount===1)
+          assert.equal(await page.evaluate(()=>window.started),0,'matching result after reload needs no new dispatch or confirmation')
+          await load();await page.evaluate(()=>{window.holdLaunch=true});await start()
+          const originalRequest=await page.evaluate(()=>window.rememberedRequest())
+          assert.ok(originalRequest)
+          await hide.click();await reload()
+          await page.waitForFunction(()=>window.started===1)
+          assert.deepEqual(await page.evaluate(()=>({request:window.replayed,offers:window.offers})),{request:originalRequest,offers:0})
+          await page.evaluate(()=>{window.handover();window.finish()})
+          await page.waitForFunction(()=>window.pairClosedCount===1)
+
           const wakePath='**/v1/machines/mac_target/instabox-wake'
           let binding={configured:true,credential_ready:true}
           let wakeRequests=0
