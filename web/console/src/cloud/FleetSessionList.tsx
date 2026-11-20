@@ -30,6 +30,7 @@ import { CarrierDot } from "./CarrierDot.js"
 import { machineLight, type CarrierReading } from "./carrier-state.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
+import { FleetInstaBoxWake } from "./FleetInstaBoxWake.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal" | "cloud_setup"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
@@ -448,6 +449,10 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               onClick={() => setCollapsed((before) => ({ ...before, [machine.id]: !isCollapsed }))}>
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
             </button></h2>
+          {offline && !isCollapsed && <p role="status" className="cloud-all-offline">{nextWord("cloudAllMachineOffline",
+            { seen: machineSeenWord(machine.seenAt ?? null) })}</p>}
+          {offline && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
+            machine={machine.id} origin={machine.instaBoxWakeOrigin} />}
           <div className="cloud-all-group-body" data-open={!isCollapsed}
             inert={isCollapsed} aria-hidden={isCollapsed}>
           <div className="cloud-all-group-content">
@@ -455,8 +460,6 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
               freshness changes. Its own completeness and row freshness are the
               authority here; an unrelated roster state must not leave a
               permanent "checking connection" banner above settled results. */}
-          {offline && <p role="status" className="cloud-all-offline">{nextWord("cloudAllMachineOffline",
-            { seen: machineSeenWord(machine.seenAt ?? null) })}</p>}
           {!reading || reading.phase === "loading" ? !offline && <LoadingSkeleton id="SK-02" label={nextWord("cloudAllLoading")} /> : <>
             {/* // refusal-ok: Background verification keeps its reason and scheduled retry without announcing transient recovery above retained rows. */}
             {reading.value.kind === "unavailable" && !offline && (reading.value.reason === "unknown" ||

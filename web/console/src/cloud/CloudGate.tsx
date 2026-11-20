@@ -2345,6 +2345,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               id: machine.id, name: machine.name || machine.label || machine.id,
               platform: platformWord(machineIdentityFacts(machine).platform), freshness: machine.freshness,
               seenAt: machineIdentityFacts(machine).seenAt,
+              instaBoxWakeOrigin: !(session.current as { invited?: unknown } | null)?.invited &&
+                (machine.kind === "linux" || machine.kind === "linux_aws") ? transport.config.apiOrigin : undefined,
             }))}
             source={liveSessionSource}
             sessionBoardTargets={boardTargets}

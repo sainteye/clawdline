@@ -217,6 +217,10 @@
 .cloud-fleet-update-notices:empty { display: none; }
 .cloud-fleet-update-notice { margin: 0; }
 .cloud-all-group { min-width: 0; }
+.cloud-all-wake { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; }
+.cloud-all-wake .cloud-detail-act { margin-top: 0; }
+.cloud-all-wake .cloud-detail-act:disabled { opacity: .65; }
+.cloud-all-wake p { margin: 0; color: var(--dim); font-size: 13px; }
 
 .cloud-all-group-heading { margin: 0; display: flex; align-items: center; gap: 8px; }
 .cloud-all-group-heading .cloud-all-connection { flex: 1; min-width: 0; }

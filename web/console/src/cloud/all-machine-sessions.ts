@@ -29,6 +29,8 @@ export interface FleetMachine {
   /** The newest signed report this browser opened from it (`machineIdentityFacts`), or null. */
   seenAt?: number | null
   paired?: boolean
+  /** Cloud account API for the owner's Linux machine wake controls. */
+  instaBoxWakeOrigin?: string
 }
 
 /** Metadata from a pinned, read_transcript-authorized list read. */
