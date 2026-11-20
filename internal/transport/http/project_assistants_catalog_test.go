@@ -111,6 +111,11 @@ func TestProjectAssistantCatalogBridgeThroughServerAndRegistry(t *testing.T) {
 		}
 		return answer, payload.Body
 	}
+	wantAgents := []contract.ProjectAssistantAgent{
+		contract.ProjectAssistantAgentClaude,
+		contract.ProjectAssistantAgentCodex,
+		contract.ProjectAssistantAgentGrok,
+	}
 	page := func(sender, cursor string) contract.ProjectAssistantProjectsResponse {
 		t.Helper()
 		answer, body := ask(sender, f.key.MachineID, cursor, 2)
@@ -119,7 +124,7 @@ func TestProjectAssistantCatalogBridgeThroughServerAndRegistry(t *testing.T) {
 			response.Source.MachineID != f.key.MachineID || !response.Source.Readable || !response.Source.Fresh ||
 			response.Source.State != contract.ProjectAssistantSourceStateOnline ||
 			response.Source.Access != contract.ProjectAssistantAccessInteractive || response.Revision == "" ||
-			!reflect.DeepEqual(response.Agents, []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex}) ||
+			!reflect.DeepEqual(response.Agents, wantAgents) ||
 			len(response.Source.Capabilities) != 0 {
 			t.Fatalf("source-owned catalog DTO was lost: status=%d body=%s", answer.Status, body)
 		}
