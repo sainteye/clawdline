@@ -31,7 +31,7 @@ import { machineLight, type CarrierReading } from "./carrier-state.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
 
-export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal"
+export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal" | "cloud_setup"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */

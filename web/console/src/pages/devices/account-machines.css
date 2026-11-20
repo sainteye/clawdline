@@ -230,45 +230,38 @@
   color:var(--ink, #f4f4f5);
 }
 .am-cloud-setup::backdrop { background:rgb(0 0 0 / 55%); }
-.am-cloud-setup-head,.am-cloud-setup-actions {
+.am-cloud-setup-head {
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
   flex-wrap:wrap;
 }
-.am-cloud-setup-head,.am-cloud-setup-body { padding:16px; }
-.am-cloud-setup-head h2 { margin:0; font-size:17px; }
+.am-cloud-setup-head,.am-cloud-setup-body,.am-cloud-setup-foot { padding:16px; }
+.am-cloud-setup-head { border-bottom:1px solid var(--line); }
+.am-cloud-setup-head h2 { margin:0; font-size:18px; }
+.am-cloud-setup-body { display:grid; gap:12px; }
+.am-cloud-setup-foot { border-top:1px solid var(--line); display:flex; justify-content:flex-end; }
 .am-cloud-setup a { color:var(--accent); }
-.am-cloud-providers {
-  display:grid;
-  gap:8px;
-  min-width:0;
-  margin:0;
-  padding:0;
-  border:0;
-}
-.am-cloud-providers legend { margin-bottom:10px; }
-.am-cloud-provider {
-  display:grid;
-  gap:5px;
-  text-align:left;
-  color:inherit;
-  background:transparent;
+.am-cloud-offer,.am-cloud-option {
+  background:var(--am-panel);
   border:1px solid var(--line);
-  border-radius:12px;
-  padding:11px 13px;
-  cursor:pointer;
+  border-radius:14px;
+  padding:14px;
 }
-.am-cloud-provider span { color:var(--dim, #a1a1aa); font-size:13px; }
-.am-cloud-setup-steps { margin:12px 0 0; padding-inline-start:20px; }
-.am-cloud-setup-steps li { padding-block:7px; }
-.am-cloud-setup-steps h3,.am-cloud-setup-steps p { margin:0 0 8px; }
-.am-cloud-setup-steps h3 { font-size:14px; }
-.am-cloud-setup-steps p { font-size:13px; }
-.am-cloud-setup-steps pre { overflow-x:auto; padding:8px; border-radius:7px; background:var(--bg, #151518); }
-.am-cloud-setup-steps select { display:block; width:100%; min-height:44px; margin:6px 0; }
+.am-cloud-offer-head { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:10px; }
+.am-cloud-offer-head > a { grid-column:2; justify-self:start; }
+.am-cloud-offer-head h3 { margin:0; font-size:17px; }
+.am-cloud-offer-head p { margin:4px 0 0; color:var(--dim); font-size:13px; }
+.am-cloud-offer-icon { display:grid; place-items:center; inline-size:42px; block-size:42px; border-radius:12px; background:var(--card); color:var(--accent); }
+.am-cloud-offer > p { margin:14px 0 0; }
+.am-cloud-option summary { cursor:pointer; font-weight:600; }
+.am-cloud-option summary .am-quiet { float:inline-end; font-weight:400; }
+.am-cloud-option > .am-stack { padding-block-start:12px; }
 .am-cloud-enrollment { display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px; margin-block:10px; }
-.am-cloud-enrollment label { display:grid; gap:4px; }
-.am-cloud-enrollment input { min-height:42px; padding:0 8px; max-width:100%; }
+.am-cloud-enrollment label { display:grid; flex:1 1 180px; min-width:0; gap:4px; }
+.am-cloud-enrollment input,.am-cloud-enrollment select { min-height:42px; padding:0 8px; max-width:100%; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:8px; }
 .am-cloud-enrollment p { flex-basis:100%; }
+@media (max-width: 599px) {
+  .am-cloud-setup-foot .am-accent { width:100%; }
+}

@@ -7,6 +7,7 @@ import { observeStartedSession } from "./started-session.js"
 import { toolPlan } from "./machine-tool.js"
 import type { StartAnswer, StartPlaceRow } from "../legacy/start-bridge.js"
 import type { MachineToolbarAction } from "./FleetSessionList.js"
+import { INSTABOX_SETUP_INSTRUCTIONS } from "./instabox-setup.js"
 
 export interface PendingMachineAction {
   machineID: string
@@ -94,6 +95,10 @@ export function CloudSessionSheets({ machineID, machines, source, pending, onCon
       switch (plan.action) {
         case "terminal": location.hash = "#page=sessions&mode=terminal"; break
         case "voice": Command.openAndListen(); break
+        case "cloud_setup":
+          location.hash = "#page=sessions"
+          requestAnimationFrame(() => { void Command.startPrepared(INSTABOX_SETUP_INSTRUCTIONS) })
+          break
         case "work": openNewWorkItem(); break
         case "start":
           if (plan.do === "elsewhere") Start.openOn({ id: plan.machine, name: pending.machineName || plan.machine })

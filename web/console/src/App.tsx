@@ -243,7 +243,7 @@ function rowNode(id: string): HTMLElement | null {
  * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
  * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, sessionBoardTargets, fleetTarget = null, fleetTargetRow = null,
+export default function App({ aside, cloudPairingProgress, cloudSessions, cloudOperationsAccess = false, cloudOperationsAttention = null, cloudPeerAccess, fleetList, sessionBoardSource, sessionBoardTargets, fleetTarget = null, fleetTargetRow = null,
   fleetTargetIdentity = null, fleetReaderMachine = null, executionReadRevision = 0,
   cloudStartedRow = null, onCloudStartedObserved, cloudMachineOffline = null,
   fleetDetailProblem = null, onFleetDetailPending, onFleetClose, onOpenFleetSession, fleetActionIntent = null, onFleetActionIntentHandled,
@@ -256,6 +256,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
   onAssistantWorkOpened?: (token:string) => void
   quotaMachineName?: string
   aside?: ReactNode | ((light: ConnectionLight) => ReactNode)
+  cloudPairingProgress?: ReactNode
   cloudSessions?: ReactNode
   cloudOperationsAccess?: boolean
   /** The Cloud's operator attention list, read by the gate only for an administrator. */
@@ -1215,6 +1216,7 @@ export default function App({ aside, cloudSessions, cloudOperationsAccess = fals
             fleet.snapshot.sessions.length > 0}
           offline={!!cloudMachineOffline}
         />} />}
+        {cloudPairingProgress}
         {typeof aside === "function" ? aside(light) : (
           <>
             {aside}
