@@ -1,5 +1,5 @@
 import { LoadingSkeleton } from "../../LoadingSkeleton.js"
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { nextWord } from "../../next-strings.js"
 import type { NextWord } from "../../next-strings.js"
@@ -230,6 +230,7 @@ export function MachineSheet({ machine, manager, onClose, onStart, onForgotten }
   }
   const box = useRef<HTMLDivElement>(null)
   const name = nameOf(machine)
+  const dismissSwipe = useEffectEvent(() => close())
 
   useEffect(() => {
     const was = document.activeElement as HTMLElement | null
@@ -237,6 +238,62 @@ export function MachineSheet({ machine, manager, onClose, onStart, onForgotten }
     // a tap does not draw a focus ring around the close button.
     box.current?.focus({ preventScroll: true })
     return () => was?.focus?.({ preventScroll: true })
+  }, [])
+
+  useEffect(() => {
+    const sheet = box.current
+    if (!sheet) return
+    const wide = window.matchMedia("(min-width: 720px)")
+    let start: Touch | null = null
+    let distance = 0
+
+    const cancel = () => {
+      start = null
+      distance = 0
+      delete sheet.dataset.dragging
+      sheet.style.removeProperty("--am-swipe-y")
+    }
+    const begin = (event: TouchEvent) => {
+      cancel()
+      if (wide.matches || sheet.scrollTop > 0 || event.touches.length !== 1) return
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return
+      start = event.touches[0]
+    }
+    const move = (event: TouchEvent) => {
+      if (!start) return
+      if (wide.matches || event.touches.length !== 1 || !event.cancelable) return cancel()
+      const touch = event.touches[0]
+      const dx = touch.clientX - start.clientX
+      const dy = touch.clientY - start.clientY
+      if (sheet.dataset.dragging !== "true") {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 6) return
+        // The first directional move chooses between native scrolling and dismissal.
+        if (dy <= Math.abs(dx) || sheet.scrollTop > 0) return cancel()
+        sheet.dataset.dragging = "true"
+      }
+      event.preventDefault()
+      distance = Math.max(0, dy)
+      sheet.style.setProperty("--am-swipe-y", `${distance}px`)
+    }
+    const end = () => {
+      if (!wide.matches && distance >= 80) {
+        start = null
+        dismissSwipe()
+      } else {
+        cancel()
+      }
+    }
+
+    sheet.addEventListener("touchstart", begin, { passive: true })
+    sheet.addEventListener("touchmove", move, { passive: false })
+    sheet.addEventListener("touchend", end, { passive: true })
+    sheet.addEventListener("touchcancel", cancel, { passive: true })
+    return () => {
+      sheet.removeEventListener("touchstart", begin)
+      sheet.removeEventListener("touchmove", move)
+      sheet.removeEventListener("touchend", end)
+      sheet.removeEventListener("touchcancel", cancel)
+    }
   }, [])
 
   const onKey = (event: React.KeyboardEvent) => {
