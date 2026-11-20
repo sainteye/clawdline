@@ -667,6 +667,12 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
+		if request.CallStarted {
+			if request.Text != "" || request.QuoteMessageID != "" || len(request.Images) > 0 || len(request.UploadIds) > 0 || request.Handoff != nil {
+				return nil, paHTTPFailure(pa.Invalid, "call_started")
+			}
+			return paHTTPReceipt(s.LeadCallStarted(ctx, command, fence))
+		}
 		attachments, err := h.storePictures(ctx, command.Key, request.Images)
 		if err != nil {
 			return nil, err

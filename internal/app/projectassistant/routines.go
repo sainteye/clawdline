@@ -279,12 +279,13 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 			m.RoutineRun, m.Turn, m.Messages = &run, &turn, []pa.Message{msg}
 			m.Receipt.State = pa.EffectFailed
 			m.Events = []pa.Event{{Fence: f, Kind: pa.MessageCreated, Message: &msg}, {Fence: f, Kind: pa.TurnUpdated, Turn: &turn}}
-		} else if !exists {
-			d = advanced
-			run := r.newRoutineRun(d)
-			m.RoutineRun = &run
 		} else {
 			d = advanced
+			nearLimit := pa.IsLeadCheckIn(d.ID) && r.o.LeadQuotaNear != nil && r.o.LeadQuotaNear(bot, now)
+			if !exists && !nearLimit {
+				run := r.newRoutineRun(d)
+				m.RoutineRun = &run
+			}
 		}
 		d.Version++
 		m.Routine = &d
@@ -348,15 +349,21 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 			return err
 		}
 		c := x.Conversation
+		var binding *pa.ExecutionBinding
 		if c.BindingID == "" {
-			return runtimeFailure(pa.ResumeUnsupported, "routine_main_session")
+			if !pa.IsLeadCheckIn(d.ID) {
+				return runtimeFailure(pa.ResumeUnsupported, "routine_main_session")
+			}
+			c.BindingID, c.Generation = r.o.ID(), 1
+			binding = &pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, LoginProfile: bot.LoginProfile,
+				InstructionRevision: bot.Instructions.Revision, MemoryRevision: x.Memory.Revision, ForgottenThrough: x.Memory.ForgottenThrough}
 		}
 		f := currentFence(bot, c)
 		turn := pa.Turn{ID: "routine-turn-" + run.ID, RoutineRunID: run.ID, Fence: f, MessageID: "routine-notice-" + run.ID, State: pa.TurnQueued, IdempotencyKey: "routine-" + run.ID}
 		// The notice is provenance, never the hidden instruction presented as a person.
 		msg := pa.Message{ID: turn.MessageID, Fence: f, TurnID: turn.ID, Kind: pa.NoticeMessage, Text: d.Name, At: now}
 		run.TurnID = turn.ID
-		_, err = r.mutate(ctx, bot, Mutation{Command: r.command(key, pa.SendOperation, "routine-admit-"+run.ID, run.ID), RoutineRun: &run, Turn: &turn, Messages: []pa.Message{msg}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: f, Kind: pa.MessageCreated, Message: &msg}, {Fence: f, Kind: pa.TurnUpdated, Turn: &turn}}})
+		_, err = r.mutate(ctx, bot, Mutation{Command: r.command(key, pa.SendOperation, "routine-admit-"+run.ID, run.ID), RoutineRun: &run, Turn: &turn, Conversation: &c, Binding: binding, Messages: []pa.Message{msg}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: f, Kind: pa.MessageCreated, Message: &msg}, {Fence: f, Kind: pa.TurnUpdated, Turn: &turn}}})
 		if err != nil {
 			return err
 		}

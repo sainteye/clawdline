@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13603,
-  "riskKeys": 5833,
-  "nonRiskCount": 7770,
+  "englishContentKeys": 13620,
+  "riskKeys": 5842,
+  "nonRiskCount": 7778,
   "groups": [
     {
       "name": "acp / other",
@@ -6113,7 +6113,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 445,
+      "count": 452,
       "sources": [
         null
       ],
@@ -6129,11 +6129,14 @@
         "projectAssistants.approveAutomatically",
         "projectAssistants.artifact",
         "projectAssistants.artifactCompose",
+        "projectAssistants.artifactReplied",
         "projectAssistants.artifactTitle",
+        "projectAssistants.artifactViewChat",
         "projectAssistants.ask",
         "projectAssistants.attachFiles",
         "projectAssistants.attachPicture",
         "projectAssistants.attachedFile",
+        "projectAssistants.automaticLead",
         "projectAssistants.back",
         "projectAssistants.backToGroup",
         "projectAssistants.backgroundBack",
@@ -6176,6 +6179,7 @@
         "projectAssistants.createSaving",
         "projectAssistants.createSubmit",
         "projectAssistants.decisionActivity",
+        "projectAssistants.defaultLead",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",
@@ -6359,6 +6363,8 @@
         "projectAssistants.permissionShortened",
         "projectAssistants.permissionSourceAuthority",
         "projectAssistants.permissionSwitchMode",
+        "projectAssistants.personalBots",
+        "projectAssistants.personalWorkspace",
         "projectAssistants.picture",
         "projectAssistants.pictureLoading",
         "projectAssistants.pinned",
@@ -6559,6 +6565,7 @@
         "projectAssistants.uploadingFiles",
         "projectAssistants.version",
         "projectAssistants.work",
+        "projectAssistants.workspace",
         "projectAssistants.writingReply",
         "projectAssistants.yes",
         "projectAssistants.youReaction",
@@ -7842,7 +7849,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 215,
+      "count": 216,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7961,6 +7968,7 @@
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
+        "transparency.card.persistent-bot-lead.title",
         "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",
         "transparency.card.persistent-bot-outputs.title",

@@ -39,7 +39,12 @@ func command(key pa.BotKey, op pa.Operation, id string) pa.Command {
 }
 func seed(t *testing.T, s *Store, id string) pa.Bot {
 	t.Helper()
-	b := pa.Bot{Key: pa.BotKey{MachineID: "machine", BotID: id}, Project: pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}, ConversationID: "chat/" + id, Name: "Bot " + id, Appearance: pa.Appearance{Shape: pa.Blob, Color: "#e39567"}, Agent: pa.ClaudeCode, PermissionPolicy: pa.Ask, Instructions: pa.InstructionSnapshot{Revision: 1, Text: "Be helpful"}, Version: 1, CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	return seedWithScope(t, s, id, pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject})
+}
+
+func seedWithScope(t *testing.T, s *Store, id string, scope pa.ProjectScope) pa.Bot {
+	t.Helper()
+	b := pa.Bot{Key: pa.BotKey{MachineID: "machine", BotID: id}, Project: scope, ConversationID: "chat/" + id, Name: "Bot " + id, Appearance: pa.Appearance{Shape: pa.Blob, Color: "#e39567"}, Agent: pa.ClaudeCode, PermissionPolicy: pa.Ask, Instructions: pa.InstructionSnapshot{Revision: 1, Text: "Be helpful"}, Version: 1, CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	c := pa.Conversation{Key: b.Key, ID: b.ConversationID, Version: 1, MemoryRevision: 1}
 	cmd := command(b.Key, pa.CreateOperation, "create/"+id)
 	summary := pa.BotSummary{Bot: b}
@@ -472,6 +477,10 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 			delete(before, "project_assistant_schema")
 			delete(after, "project_assistant_schema")
 			delete(after, "project_assistant_exchanges")
+			if rows, exists := after["project_assistant_lead_setup"]; !exists || len(rows) != 0 {
+				t.Fatal("migration did not create an empty lead setup marker table")
+			}
+			delete(after, "project_assistant_lead_setup")
 			if len(after["project_assistant_routine_hooks"]) != 0 {
 				t.Fatal("migration manufactured hook secrets")
 			}
@@ -519,7 +528,7 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 			delete(after, "project_assistant_background_tasks")
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
-				if strings.Contains(statement, "project_assistant_background_") {
+				if strings.Contains(statement, "project_assistant_background_") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_lead_setup ") {
 					continue
 				}
 

@@ -87,6 +87,17 @@ test("all pending user messages map exactly to their summary without moving runn
   const wrong=structuredClone(a);wrong.snapshot!.queued_messages[2].turn_id="different-turn"
   assert.throws(()=>readView(wrong,request(),fence),e=>errorCode(e)==="pa_invalid")
 })
+test("a running resume or routine notice keeps the whole chat readable",()=>{
+  const a=answer(),s=a.snapshot!
+  s.pending_turns=[{id:"host-turn",message_id:"host-input",fence,state:"running",failure_code:"",started_at:""},
+    {id:"person-turn",message_id:"person-input",fence,state:"queued",failure_code:"",started_at:""}]
+  s.queued_messages=[{...message("host-input",601),kind:"notice",fence,turn_id:"host-turn"},
+    {...message("person-input",602),kind:"user",fence,turn_id:"person-turn"}]
+  const accepted=readView(a,request(),fence).snapshot!
+  assert.deepEqual(partitionMessages(accepted.queued_messages,accepted.pending_turns).queued.map(x=>x.id),["person-input"])
+  const invalid=structuredClone(a);invalid.snapshot!.queued_messages[0].kind="assistant"
+  assert.throws(()=>readView(invalid,request(),fence),e=>errorCode(e)==="pa_invalid")
+})
 test("the retained conversation memory revision can precede the source memory head",()=>{
   const a=answer();a.head.memory_revision=2
   assert.equal(readView(a,request(),fence).head.conversation.memory_revision,1)

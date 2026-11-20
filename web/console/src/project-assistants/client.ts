@@ -152,6 +152,7 @@ export function projectChoices(answer: W.ProjectAssistantProjectsResponse, reque
     typeof answer.revision !== "string" || !answer.revision || !Array.isArray(answer.items) ||
     answer.items.length > request.page_size || !Array.isArray(answer.agents) ||
     answer.agents.some(a => a !== "claude" && a !== "codex") || new Set(answer.agents).size !== answer.agents.length ||
+    (answer.personal_workspace !== undefined && typeof answer.personal_workspace !== "boolean") ||
     typeof answer.has_more !== "boolean" || typeof answer.next_cursor !== "string" ||
     answer.has_more !== !!answer.next_cursor || (answer.has_more && (!answer.items.length || answer.next_cursor === request.cursor))) throw failure("pa_invalid")
   if (answer.source.machine_id !== request.machine_id) throw failure("pa_scope_denied")

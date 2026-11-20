@@ -349,6 +349,7 @@ func paWireSourceStatus(value pa.SourceStatus) (contract.ProjectAssistantSourceS
 	var out contract.ProjectAssistantSourceStatus
 	out.MachineID = value.MachineID
 	out.DevServersSupported = value.DevServersSupported
+	out.LeadCallSupported = value.LeadCallSupported
 	out.State = contract.ProjectAssistantSourceState(value.State)
 	out.Readable = value.Readable
 	out.Writable = value.Writable
@@ -800,7 +801,12 @@ func paWireExportGroup(value app.GroupExport) (contract.ProjectAssistantExportGr
 }
 
 func paWireExchange(x pa.Exchange) contract.ProjectAssistantExchange {
-	return contract.ProjectAssistantExchange{ID: x.ID, Project: paWireProjectScope(x.Project), Source: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Source.Key), ConversationID: x.Source.ConversationID}, Target: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Target.Key), ConversationID: x.Target.ConversationID}, SourceTurnID: x.SourceTurnID, RequestTurnID: x.RequestTurnID, ReplyTurnID: x.ReplyTurnID, Request: x.Request, Reply: x.Reply, Detail: x.Detail, Outcome: string(x.Outcome), Revision: x.Revision, Hops: int64(x.Hops), Delivery: x.Delivery}
+	out := contract.ProjectAssistantExchange{ID: x.ID, Project: paWireProjectScope(x.Project), Source: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Source.Key), ConversationID: x.Source.ConversationID}, Target: contract.ProjectAssistantExchangeEndpoint{Key: paWireBotKey(x.Target.Key), ConversationID: x.Target.ConversationID}, SourceTurnID: x.SourceTurnID, RequestTurnID: x.RequestTurnID, ReplyTurnID: x.ReplyTurnID, Request: x.Request, Reply: x.Reply, Detail: x.Detail, Outcome: string(x.Outcome), Revision: x.Revision, Hops: int64(x.Hops), Delivery: x.Delivery}
+	if x.TargetProject != (pa.ProjectScope{}) {
+		project := paWireProjectScope(x.TargetProject)
+		out.TargetProject = &project
+	}
+	return out
 }
 
 func paWireOutput(o pa.Output) contract.ProjectAssistantOutput {

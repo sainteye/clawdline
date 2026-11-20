@@ -185,6 +185,9 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
 	}
+	if c.Key.BotID == "default-lead" {
+		return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "host_bot")
+	}
 	if settings.Target.MachineID != c.Key.MachineID {
 		return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "target_machine")
 	}
@@ -199,7 +202,7 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 		bot, e := s.opts.Repository.Bot(ctx, c.Key)
 		return bot, *prior, e
 	}
-	resolved, err := s.opts.Projects.Resolve(ctx, settings.Target)
+	resolved, err := s.resolveCreateWorkspace(ctx, c, settings)
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
 	}
@@ -244,6 +247,29 @@ func (s *Service) Create(ctx context.Context, c pa.Command, settings pa.CreateBo
 		bot, err = s.opts.Repository.Bot(ctx, c.Key)
 	}
 	return bot, r, err
+}
+
+func (s *Service) resolveCreateWorkspace(ctx context.Context, c pa.Command, settings pa.CreateBot) (pa.ProjectResolution, error) {
+	if settings.Target.ProjectID != "" {
+		if pa.IsPersonalWorkspaceID(settings.Target.ProjectID) {
+			return pa.ProjectResolution{}, serviceFailure(pa.ScopeDenied, "personal_workspace")
+		}
+		return s.opts.Projects.Resolve(ctx, settings.Target)
+	}
+	provisioner, ok := s.opts.Projects.(PersonalWorkspaceProvisioner)
+	if !ok {
+		return pa.ProjectResolution{}, serviceFailure(pa.Unsupported, "personal_workspace")
+	}
+	selection := pa.WorkspaceForCreate(c)
+	expected := pa.PersonalScope(selection)
+	if err := pa.ValidateCreate(settings, pa.ProjectResolution{Scope: expected, Directory: selection.ProjectID, Current: true, Available: true}); err != nil {
+		return pa.ProjectResolution{}, err
+	}
+	resolved, err := provisioner.ProvisionPersonalWorkspace(ctx, selection)
+	if err == nil && resolved.Scope != expected {
+		err = serviceFailure(pa.ScopeDenied, "personal_workspace")
+	}
+	return resolved, err
 }
 
 func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (pa.Bot, pa.Receipt, error) {
@@ -499,6 +525,29 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 		return e
 	}
 	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, AuthorityCheck: authorityCheck, Feature: a.Feature, Source: a.Source})
+}
+
+func (s *Service) LeadCallStarted(ctx context.Context, c pa.Command, fence pa.Fence) (pa.Receipt, error) {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if fence.Key != c.Key || !pa.ValidLeadCallKey(c.IdempotencyKey) {
+		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "lead_call")
+	}
+	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, struct {
+		Fence pa.Fence
+		Call  bool
+	}{fence, true})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	check := func(ctx context.Context) error {
+		_, err := s.authorizeEffect(ctx, c.Key, true, a)
+		return err
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: pa.SendMessage{Fence: fence, Text: pa.LeadCallGreeting},
+		Feature: a.Feature, Source: a.Source, AuthorityCheck: check, Notice: true, LeadCall: true})
 }
 
 func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, error) {

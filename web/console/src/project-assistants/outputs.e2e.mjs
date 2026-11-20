@@ -94,18 +94,34 @@ try{
     assert.equal(await workspace.isVisible(),true,"Escape in an editor keeps the viewer open")
     assert.match(await artifactDraft.getAttribute("aria-label"),/Interactive report/)
     const quoteMessageID=await page.locator(".pa-artifact-card").last().evaluate(card=>card.closest("[data-message-id]").dataset.messageId)
-    let sent
+    const inset=await artifactDraft.evaluate(el=>el.getBoundingClientRect().left-el.closest("form").getBoundingClientRect().left+parseFloat(getComputedStyle(el).paddingLeft))
+    assert.ok(inset>=14,`artifact composer text is only ${inset}px from the left border`)
+    let sent,release
+    let pending=new Promise(resolve=>release=resolve)
+    let accept=false
     await page.route("**/v1/project-assistants/*/messages",async route=>{
       if(route.request().method()!=="POST")return route.continue()
       sent=route.request().postDataJSON()
-      await route.fulfill({status:409,json:{contract_version:"project-assistants.v1",error:{code:"pa_stale_version",field:"synthetic_REFUSAL"}}})
+      await pending
+      if(accept){
+        await route.fulfill({json:{contract_version:"project-assistants.v1",receipt:{command:sent.command,id:"synthetic-receipt",resource_id:"synthetic-turn",event_seq:0,state:"accepted"}}})
+      }else await route.fulfill({status:409,json:{contract_version:"project-assistants.v1",error:{code:"pa_stale_version",field:"synthetic_REFUSAL"}}})
     })
     await workspace.locator(".pa-send").click()
+    await workspace.getByText(zh?"傳送中…":"Sending…",{exact:true}).waitFor()
+    assert.equal(await workspace.locator(".pa-send").isDisabled(),true)
+    release()
     await workspace.getByRole("alert").waitFor()
     assert.equal(sent.quote_message_id,quoteMessageID)
     assert.equal(sent.text,"Synthetic document change")
     assert.equal(await artifactDraft.inputValue(),"Synthetic document change")
-    await workspace.getByRole("button",{name:zh?"關閉 Artifact":"Close artifact",exact:true}).click()
+    accept=true;pending=new Promise(resolve=>release=resolve)
+    await workspace.locator(".pa-send").click()
+    await workspace.getByText(zh?"傳送中…":"Sending…",{exact:true}).waitFor()
+    release()
+    await workspace.getByText(zh?"訊息已送出":"Message sent",{exact:true}).waitFor()
+    assert.equal(await artifactDraft.inputValue(),"")
+    await workspace.getByRole("button",{name:zh?"查看對話":"View conversation",exact:true}).click()
     await workspace.waitFor({state:"detached"})
     assert.equal(await chatDraft.inputValue(),"Synthetic main chat draft")
     const before=reads;await page.waitForTimeout(100);assert.equal(reads,before,"closed viewer performs no further reads")

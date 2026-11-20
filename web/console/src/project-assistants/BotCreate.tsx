@@ -41,7 +41,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
       const answer=await authorized(source,current,async signal=>projectChoices(await source.projects(request,signal),request),control.signal)
       if(control.signal.aborted||selected.current!==source||id!==sequence.current)return
       if(previous){
-        if(previous.source!==source||answer.revision!==previous.answer.revision||JSON.stringify(answer.agents)!==JSON.stringify(previous.answer.agents))throw failure("pa_cursor_expired")
+        if(previous.source!==source||answer.revision!==previous.answer.revision||answer.personal_workspace!==previous.answer.personal_workspace||JSON.stringify(answer.agents)!==JSON.stringify(previous.answer.agents))throw failure("pa_cursor_expired")
         const ids=new Set(previous.answer.items.map(item=>item.target.project_id))
         if(answer.items.some(item=>ids.has(item.target.project_id))||answer.next_cursor&&previous.cursors.includes(answer.next_cursor))throw failure("pa_invalid")
       }
@@ -64,6 +64,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   },[source,current])
   const own=catalog&&catalog.source===source?catalog.answer:null
   const ready=!!own&&!loading&&!error&&canWrite(own.source)
+  const validWorkspace=project ? !!own?.items.some(item=>item.target.project_id===project) : own?.personal_workspace===true
   const canRetryCreate=!!pending.current&&pending.current.source===source&&!!own&&canWrite(own.source)&&!loading
   const verify=async(held:CreateAttempt,control:AbortController)=>{
     held.missing=false
@@ -90,7 +91,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
     finally {if(!control.signal.aborted&&selected.current===source)setOperation(null)}
   }
   const submit=async()=>{
-    if(!source||busy||(!ready&&!canRetryCreate)||!name.trim()||!own?.items.some(item=>item.target.project_id===project)||!own.agents.includes(agent)||pending.current&&pending.current.source!==source)return
+    if(!source||busy||(!ready&&!canRetryCreate)||!name.trim()||!validWorkspace||!own?.agents.includes(agent)||pending.current&&pending.current.source!==source)return
     const control=lifetime.current
     if(!control||control.signal.aborted)return
     setOperation("create");setCreateError("")
@@ -122,7 +123,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
   const uncertain=pending.current?.unknown===true
   const wantsCheck=uncertain&&!pending.current?.missing
   const actionText=operation==="check"?w.checkingSend:operation==="create"?w.createSaving:wantsCheck?w.checkSend:uncertain?w.retry:w.createSubmit
-  const actionDisabled=busy||(wantsCheck?pending.current?.source!==source:(!ready&&!canRetryCreate)||!name.trim()||!project||!own?.agents.includes(agent))
+  const actionDisabled=busy||(wantsCheck?pending.current?.source!==source:(!ready&&!canRetryCreate)||!name.trim()||!validWorkspace||!own?.agents.includes(agent))
   const action=()=>void(wantsCheck?check():submit())
   const close=()=>{lifetime.current?.abort();read.current?.abort();sequence.current++;onClose()}
   // A manually retried unknown create uses its held settings, never a new command.
@@ -135,7 +136,7 @@ export function BotCreate({sources,current,onClose,onCreated,w}: {sources:readon
       <AppearancePicker value={appearance} onChange={setAppearance} w={w}/><label>{w.name}<input required value={name} onChange={e=>setName(e.target.value)}/></label>
       {sources.length>1&&<PaSelect label={w.machine} value={machine} onChange={value=>{setProject("");setCatalog(null);setMachine(value)}} options={sources.map(s=>({value:s.machineID,label:s.machineName||w.thisMachine}))}/>}
       <div className="pa-field" role="radiogroup" aria-label={w.agent}><span>{w.agent}</span><div className="pa-agent-choices">{(own?.agents??["claude","codex"]).map(a=><button key={a} type="button" role="radio" aria-checked={agent===a} className="pa-agent-choice" disabled={!own?.agents.includes(a)} onClick={()=>{setAgent(a);setMode(undefined)}}><AgentMark agent={a}/><span>{agentName(a)}</span></button>)}</div></div>
-      <PaSelect label={w.project} value={project} busy={loading} disabled={loading||!!error||!own} placeholder={w.chooseProject} onChange={setProject} options={own?.items.map(p=>({value:p.target.project_id,label:p.label,icon:<ProjectMark icon={p.icon} size={16}/>}))??[]}/>
+      <PaSelect label={own?.personal_workspace?w.workspace:w.project} value={project} busy={loading} disabled={loading||!!error||!own} placeholder={w.chooseProject} onChange={setProject} options={[...(own?.personal_workspace?[{value:"",label:w.personalWorkspace}]:[]),...(own?.items.map(p=>({value:p.target.project_id,label:p.label,icon:<ProjectMark icon={p.icon} size={16}/>}))??[])]}/>
       {loading&&<p role="status">{w.projectsLoading}</p>}
       {own?.has_more&&!loading&&!error&&<button type="button" onClick={()=>void load(own.next_cursor,catalog)}>{w.more}</button>}
       {error&&!pending.current&&<button type="button" disabled={loading} onClick={()=>void load(retry.current,retry.current?catalog:null)}>{w.reloadProjects}</button>}

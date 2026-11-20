@@ -120,6 +120,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
   private readonly lifetime = new AbortController()
   private access: W.ProjectAssistantAccess = "hidden"
   private lastStatus: W.ProjectAssistantSourceStatus | null = null
+  private observedWriteAccess: boolean | null = null
+  private rememberSource(source: W.ProjectAssistantSourceStatus) {
+    this.access=source.access;this.lastStatus=source
+    if(source.fresh&&source.state==="online")this.observedWriteAccess=source.readable&&source.writable&&source.access==="interactive"
+  }
   constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null) {
     this.grant = { ...grant }; this.machineID = grant.machineID; this.machineName = grant.name; this.authorizationRevision = grant.authorizationRevision
     this.transport = transport; this.currentGrant = currentGrant
@@ -161,13 +166,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
     } finally { signal.removeEventListener("abort",abort);this.lifetime.signal.removeEventListener("abort",abort) }
   }
   current(): boolean { try {this.check(new AbortController().signal,false,false);return true} catch {return false} }
-  private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL) {
+  private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL, plainSend = false) {
     const live = this.currentGrant()
     if (!live || this.lifetime.signal.aborted || live.accountKey !== this.grant.accountKey ||
       live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
     if (live.apiLevel === undefined || live.apiLevel < minimum) throw failure("pa_unsupported")
+    if (plainSend) {
+      if (!live.writable || this.observedWriteAccess === false) throw failure("pa_read_only")
+      return
+    }
     if (!live.online) throw failure("pa_offline")
     if (minimum === PROJECT_ASSISTANTS_SOURCE_RULES_API_LEVEL) {
       const status = this.lastStatus
@@ -181,19 +190,19 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, plainSend = false): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
-    try { this.check(signal,write,content,minimum); if (body) this.key("command" in body ? body.command.key : body.key) } catch (error) { throw notSent(error) }
+    try { this.check(signal,write,content,minimum,plainSend); if (body) this.key("command" in body ? body.command.key : body.key) } catch (error) { throw notSent(error) }
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
     let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
         ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":"command" in body ? body.command.idempotency_key : body.idempotency_key}} : {})})
-      this.recheck(signal,write,content,minimum,response)
+      this.recheck(signal,write,content,minimum,response,plainSend)
       const answer: unknown = await response.json()
-      this.recheck(signal,write,content,minimum,answer)
+      this.recheck(signal,write,content,minimum,answer,plainSend)
       answered = true
       if (sourceFailure(answer)) throw answer
       if (!response.ok) throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
@@ -202,10 +211,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
       if (answered || error instanceof AssistantTransportFailure) throw error
       // A transport that refused before sending says so; nothing crossed.
       if (provablyNotSent(error)) {
-        try { this.check(signal,write,content,minimum) } catch (current) { throw notSent(current) }
+        try { this.check(signal,write,content,minimum,plainSend) } catch (current) { throw notSent(current) }
         throw sourceFailure(error) ? error : notSent(new AssistantTransportFailure("pa_offline",error))
       }
-      this.recheck(signal,write,content,minimum,error)
+      this.recheck(signal,write,content,minimum,error,plainSend)
       if (sourceFailure(error)) throw error
       throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
@@ -215,8 +224,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
    * prove that nothing happened. Reads keep their typed refusal; writes become
    * outcome unknown and retain what the transport returned as evidence.
    */
-  private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown) {
-    try { this.check(signal,write,content,minimum) }
+  private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown, plainSend = false) {
+    try { this.check(signal,write,content,minimum,plainSend) }
     catch (error) { if (!write) throw error; throw new AssistantTransportFailure("pa_outcome_unknown",{evidence,authority:error}) }
   }
   async status(s: AbortSignal): Promise<W.ProjectAssistantSourcesResponse> {
@@ -233,7 +242,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
       const own = answer.sources.find(source => source.machine_id === this.machineID)
       if (!own || answer.contract_version !== "project-assistants.v1") throw new AssistantTransportFailure("pa_invalid",answer)
       const effective = {...own,writable:own.writable && this.currentGrant()?.writable === true}
-      this.access = effective.access;this.lastStatus = effective
+      this.rememberSource(effective)
       return {...answer,sources:[effective]}
     } catch (error) {
       this.access="hidden"
@@ -247,7 +256,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     const answer = projectChoices(await this.request<W.ProjectAssistantProjectsResponse>("/v1/project-assistant-targets"+query({...r}),s),r)
     this.check(s,false,false)
     const source={...answer.source,writable:answer.source.writable && this.currentGrant()?.writable === true}
-    this.access=source.access;this.lastStatus=source
+    this.rememberSource(source)
     return {...answer,source}
   }
   list(r: W.ProjectAssistantListRequest,s: AbortSignal) { this.key({machine_id:r.machine_id,bot_id:""}); return this.request<W.ProjectAssistantListResponse>(base+query({...r}),s) }
@@ -323,7 +332,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     if(answer.contract_version!=="project-assistants.v1" || answer.source?.machine_id!==this.machineID || !answer.fence || !same(answer.fence.key,r.key) || !scope(answer.fence.project) || answer.fence.conversation_id!==r.conversation_id || !Array.isArray(answer.definitions) || !Array.isArray(answer.runs) || answer.definitions.length+answer.runs.length>r.page_size || typeof answer.next_cursor!=="string")throw failure("pa_scope_denied")
     for(const d of answer.definitions)if(!same(d.key,r.key)||!scope(d.project)||d.conversation_id!==r.conversation_id)throw failure("pa_scope_denied")
     for(const run of answer.runs)if(run.routine_id!==r.routine_id)throw failure("pa_scope_denied")
-    answer.source={...answer.source,writable:answer.source.writable&&this.currentGrant()?.writable===true};this.access=answer.source.access;this.lastStatus=answer.source
+    answer.source={...answer.source,writable:answer.source.writable&&this.currentGrant()?.writable===true};this.rememberSource(answer.source)
     return answer
   }
   private async routineWrite(path:string,r:{command:W.ProjectAssistantCommand},s:AbortSignal,method="POST",minimum=PROJECT_ASSISTANTS_ROUTINES_API_LEVEL) {
@@ -361,7 +370,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     if (answer.source) {
       if (answer.source.machine_id !== this.machineID || answer.bot.key.machine_id !== this.machineID || answer.bot.key.bot_id !== r.bot_id) throw failure("pa_scope_denied")
       answer.source={...answer.source,writable:answer.source.writable && this.currentGrant()?.writable === true}
-      this.access=answer.source.access;this.lastStatus=answer.source
+      this.rememberSource(answer.source)
     }
     return answer
   }
@@ -377,10 +386,14 @@ export class ProjectAssistantSourceClient implements SourceClient {
     readView(answer,r,{key:r.key,project:answer.head.project,conversation_id:r.conversation_id})
     const source=answer.source
     answer.source={...source,writable:source.writable&&this.currentGrant()?.writable===true}
-    this.access=answer.source.access;this.lastStatus=answer.source
+    this.rememberSource(answer.source)
     return answer
   }
-  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,r.handoff?PROJECT_ASSISTANTS_HANDOFF_API_LEVEL:r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL) }
+  send(r: W.ProjectAssistantSendRequest,s: AbortSignal) {
+    const minimum=r.handoff?PROJECT_ASSISTANTS_HANDOFF_API_LEVEL:r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL
+    const plain=typeof r.text==="string"&&!!r.text.trim()&&!r.call_started&&!r.handoff&&!r.images?.length&&!r.upload_ids?.length
+    return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,minimum,plain)
+  }
   canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
   upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
   input(r:W.ProjectAssistantInputRequest,s:AbortSignal) { this.key(r.key);const {key,...fields}=r;return this.request<W.ProjectAssistantInputResponse>(endpoint(key,"/input")+query({machine_id:key.machine_id,...fields}),s,undefined,"GET",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
@@ -678,6 +691,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" :
     tail === "/react" ? "react" : tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
+  if(action==="send"&&fields.call_started===true){
+    if(fields.text!==""||fields.quote_message_id!==""||fields.images||fields.upload_ids||fields.handoff)throw failure("pa_invalid")
+    delete fields.text // This existing carry word has a host greeting shape without user text.
+  }
   return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
 }
 

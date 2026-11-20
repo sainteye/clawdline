@@ -7,7 +7,7 @@ import "time"
 const (
 	ContractVersion     = "project-assistants.v1"
 	FixtureVersion      = 1
-	SchemaVersion       = 14
+	SchemaVersion       = 15
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
@@ -33,10 +33,12 @@ type ProjectKind string
 const (
 	RepositoryProject ProjectKind = "repository"
 	PlaceProject      ProjectKind = "place"
+	PersonalWorkspace ProjectKind = "personal"
 )
 
-// ProjectID is the registered Project on MachineID. CanonicalID identifies the
-// repository shared by linked worktrees, or the existing non-repository place.
+// ProjectID identifies a registered Project or a source-owned personal workspace.
+// CanonicalID identifies the repository shared by linked worktrees, the existing
+// non-repository place, or the exact personal workspace.
 // Display names and client-supplied paths never establish identity.
 type ProjectScope struct {
 	MachineID   string      `json:"machine_id"`
@@ -249,6 +251,7 @@ type Turn struct {
 }
 
 type ExecutionBinding struct {
+	LeadRole string `json:"lead_role,omitempty"`
 	// PrimarySupersededAt records the configuration revision that replaced
 	// this binding's primary Agent. Only the source store writes this fact.
 	PrimarySupersededAt int64  `json:"primary_superseded_at,omitempty"`
@@ -460,6 +463,7 @@ type SourceStatus struct {
 	Access              Access         `json:"access"`
 	Capabilities        []Capabilities `json:"capabilities"`
 	DevServersSupported bool           `json:"dev_servers_supported,omitempty"`
+	LeadCallSupported   bool           `json:"lead_call_supported,omitempty"`
 }
 type ReadCursor struct {
 	Key            BotKey `json:"key"`
@@ -476,7 +480,7 @@ type BotCompletion struct {
 
 // NotifiableCompletion excludes hidden Bots, peer requests, group members and joined inputs.
 func NotifiableCompletion(bot Bot, turn Turn) bool {
-	return (bot.Notify != "off") && !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && turn.Room == nil && turn.JoinedTurnID == ""
+	return (bot.Notify != "off") && !bot.Hidden && turn.State == TurnSucceeded && turn.Origin != BotRequestOrigin && !IsLeadCallTurn(turn) && turn.Room == nil && turn.JoinedTurnID == ""
 }
 
 type BotSummary struct {

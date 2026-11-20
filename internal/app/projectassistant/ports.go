@@ -30,7 +30,8 @@ type Submission struct {
 	// Notice marks a message Clawdline itself sends the agent, such as the
 	// resume prompt after a restart; it is shown as a notice, not as the
 	// person's words.
-	Notice bool
+	Notice   bool
+	LeadCall bool
 }
 type StopRequest struct {
 	Command pa.Command
@@ -83,6 +84,7 @@ type MessagePage struct {
 // A failure writes none. Same key/different hash is a conflict; unknown effects
 // retain their receipts. All non-nil facts must belong to Command.Key.
 type Mutation struct {
+	QuietCompletion   bool
 	StartFreshSession bool
 	DesignateLead     bool
 	ArtifactTitle     *pa.ArtifactDisplayTitle
@@ -266,6 +268,12 @@ type SourceRuleStore interface {
 	Handles(pa.PermissionRule) bool
 	List(context.Context, pa.BotKey, pa.ProjectScope) ([]pa.PermissionRule, error)
 	Remove(context.Context, pa.BotKey, pa.ProjectScope, pa.PermissionRule) error
+}
+
+// PersonalWorkspaceProvisioner is a source-owned capability. Only a human
+// create or host bootstrap can allocate a new directory.
+type PersonalWorkspaceProvisioner interface {
+	ProvisionPersonalWorkspace(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }
 
 type ProjectResolver interface {

@@ -82,6 +82,9 @@ func (s *Service) createGroup(ctx context.Context, c pa.Command, in CreateGroup,
 	if in.Target.MachineID != c.Key.MachineID {
 		return pa.Group{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "target_machine")
 	}
+	if pa.IsPersonalWorkspaceID(in.Target.ProjectID) {
+		return pa.Group{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "group_project")
+	}
 	resolved, err := s.opts.Projects.Resolve(ctx, in.Target)
 	if err != nil {
 		return pa.Group{}, pa.Receipt{}, err

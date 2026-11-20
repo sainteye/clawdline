@@ -29,6 +29,10 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
+	// Both lead setup and quota checks use source-owned local observations.
+	DefaultLeadAgent func(time.Time) pa.Agent
+	LeadTimeZone     string
+	LeadQuotaNear    func(pa.Bot, time.Time) bool
 	// ServerLaunch is an optional owned-process fixture; production uses the source launcher.
 	ServerLaunch func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
 	// ServerBootID is a trusted composition seam; production reads the OS boot identity.
@@ -462,6 +466,9 @@ func (h *Host) Enable(ctx context.Context) error {
 		h.mu.Unlock()
 		return err
 	}
+	if err := h.ensureLead(ctx); err != nil {
+		log.Printf("bots: lead setup did not complete: %s", pa.Code(err))
+	}
 	h.mu.Lock()
 	tickCtx, stop := context.WithCancel(context.Background())
 	h.routineStop = stop
@@ -484,7 +491,7 @@ func (h *Host) resumeInterrupted() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
 	defer cancel()
-	var keys []pa.BotKey
+	var keys, expiredCalls []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 	for {
 		page, err := st.List(ctx, query)
@@ -493,8 +500,13 @@ func (h *Host) resumeInterrupted() {
 		}
 		for _, bot := range page.Items {
 			pending, err := st.PendingTurns(ctx, bot.Bot.Key)
-			if err == nil && len(pending) == 1 && pending[0].State == pa.TurnUnknown && pending[0].Failure != nil && pending[0].Failure.Field == app.RestartField {
-				keys = append(keys, bot.Bot.Key)
+			if err == nil && len(pending) == 1 {
+				turn := pending[0]
+				if pa.IsLeadCallTurn(turn) && turn.State != pa.TurnUnknown {
+					expiredCalls = append(expiredCalls, bot.Bot.Key)
+				} else if turn.State == pa.TurnUnknown && turn.Failure != nil && turn.Failure.Field == app.RestartField && !pa.IsLeadCallTurn(turn) {
+					keys = append(keys, bot.Bot.Key)
+				}
 			}
 		}
 		if page.NextCursor == "" {
@@ -502,7 +514,7 @@ func (h *Host) resumeInterrupted() {
 		}
 		query.Cursor = page.NextCursor
 	}
-	if len(keys) == 0 {
+	if len(keys) == 0 && len(expiredCalls) == 0 {
 		return
 	}
 	// The runtime is otherwise built on first use; resuming is a use, so it
@@ -511,6 +523,11 @@ func (h *Host) resumeInterrupted() {
 	if err != nil {
 		log.Printf("bots: interrupted turns were not resumed: %s", pa.Code(err))
 		return
+	}
+	for _, key := range expiredCalls {
+		if err := r.Recover(ctx, key); err != nil {
+			log.Printf("bots: a previous voice greeting did not settle: %s", pa.Code(err))
+		}
 	}
 	for _, key := range keys {
 		if err := r.ResumeInterrupted(ctx, key); err != nil {
@@ -668,7 +685,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, NativeHistory: h.o.NativeHistory, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, NativeHistory: h.o.NativeHistory, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, LeadQuotaNear: h.o.LeadQuotaNear, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e

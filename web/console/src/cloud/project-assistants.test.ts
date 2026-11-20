@@ -827,9 +827,26 @@ test("send recovery: authority that changes after the transport keeps a write ou
     if (change === "abort") control.abort()
     else setGrant(change === "offline" ? {...grant(),online:false} : change === "unpaired" ? {...grant(),paired:false} : {...grant(),authorizationRevision:"grant-2"})
     release(Response.json({contract_version:"project-assistants.v1",receipt:{id:"r",command:sendRequest("crossed-"+change).command,event_seq:1,resource_id:"turn",state:"accepted"}}))
-    await assert.rejects(pending,e => {assert.equal(errorCode(e),"pa_outcome_unknown",change);assert.equal(notSentEvidence(e),false);return true})
+    if(change==="offline"){
+      const answer=await pending
+      assert.equal(answer.receipt.state,"accepted","an offline badge cannot erase a confirmed source receipt")
+    }else await assert.rejects(pending,e => {assert.equal(errorCode(e),"pa_outcome_unknown",change);assert.equal(notSentEvidence(e),false);return true})
     assert.equal(sends,1)
   }
+})
+test("plain text reaches the captured source even while its machine badge is stale",async()=>{
+  let sends=0
+  const request=sendRequest("stale-machine-badge")
+  const {source,setGrant}=make(async(path,init)=>{
+    if(path.endsWith("/status"))return Response.json(sourceStatus())
+    sends++
+    assert.equal(new Headers(init?.headers).get("Idempotency-Key"),request.command.idempotency_key)
+    return Response.json({contract_version:"project-assistants.v1",receipt:{id:"r",command:request.command,state:"accepted",resource_id:"turn",event_seq:1}})
+  })
+  await source.status(signal())
+  setGrant({...grant(),online:false})
+  assert.equal((await source.send(request,signal())).receipt.state,"accepted")
+  assert.equal(sends,1)
 })
 test("send recovery: a lost send response is outcome unknown, while a source refusal stays definitive",async()=>{
   const lost = make(async path => {if (path.endsWith("/status")) return Response.json(sourceStatus()); throw new TypeError("network lost after write")}).source

@@ -58,7 +58,7 @@ func (s *Store) RestoreArchive(ctx context.Context, in Archive) error {
 // validates both versions identically; the next export uses the current schema.
 // SupportsArchiveSchema identifies versions the feature archive decoder can restore.
 func SupportsArchiveSchema(version int) bool {
-	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 || version == pa.SchemaVersion
+	return version == 1 || version == 2 || version == 3 || version == 4 || version == 5 || version == 6 || version == 7 || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 || version == 14 || version == pa.SchemaVersion
 }
 
 func (s *Store) Export(ctx context.Context, key pa.BotKey) (app.Export, error) {
@@ -326,6 +326,20 @@ func (s *Store) Restore(ctx context.Context, in app.Export) error {
 	}
 	if err = restoreReactions(ctx, tx, a, in.Reactions); err != nil {
 		return err
+	}
+	if a.Bot.Lead {
+		var hasLead bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?
+			AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL
+			AND json_extract(CAST(data AS TEXT),'$.Bot.lead')=1)`, a.Bot.Key.MachineID).Scan(&hasLead); err != nil {
+			return err
+		}
+		if hasLead {
+			return failure(pa.StaleVersion, "lead_sidebar")
+		}
+		if err = markLeadSetup(ctx, tx, a.Bot.Key.MachineID); err != nil {
+			return err
+		}
 	}
 	if err = persist(ctx, tx, a, 0); err != nil {
 		return err

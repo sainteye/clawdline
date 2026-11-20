@@ -18,6 +18,7 @@ import (
 )
 
 type RuntimeOptions struct {
+	LeadQuotaNear   func(pa.Bot, time.Time) bool
 	NetworkCheck    func(context.Context, pa.Turn) error
 	NativeHistory   NativeMaintenanceHistory
 	Repository      Repository
@@ -268,6 +269,32 @@ func (r *Engine) prepareMutation(ctx context.Context, bot pa.Bot, m Mutation) (M
 	return m, nil
 }
 
+func (r *Engine) checkPlainMessageFence(ctx context.Context, submission Submission, current pa.Fence) error {
+	m := submission.Message
+	if submission.Notice || submission.Network != nil || submission.Room != nil || submission.AuthorityCheck == nil ||
+		m.Handoff != nil || len(m.Attachments) > 0 || len(m.UploadIDs) > 0 {
+		return pa.CheckSendFence(m.Fence, current)
+	}
+	got := m.Fence
+	if got.Key != current.Key || got.Project != current.Project || got.ConversationID != current.ConversationID {
+		return runtimeFailure(pa.ScopeDenied, "fence")
+	}
+	if got.Generation == 0 && got.BindingID == "" {
+		return nil
+	}
+	if got.Generation < 1 || got.Generation >= current.Generation || got.BindingID == "" {
+		return runtimeFailure(pa.StaleGeneration, "fence")
+	}
+	binding, err := r.o.Repository.Binding(ctx, got.Key, got.BindingID)
+	if err != nil && pa.Code(err) != pa.NotFound {
+		return err
+	}
+	if binding.Fence != got || binding.Revoked {
+		return runtimeFailure(pa.StaleGeneration, "fence")
+	}
+	return nil
+}
+
 func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err := s.Feature.CheckWrite(); err != nil {
 		return pa.Receipt{}, err
@@ -352,8 +379,15 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if err = pa.CheckSendFence(s.Message.Fence, currentFence(bot, c)); err != nil {
-		return pa.Receipt{}, err
+	liveFence := currentFence(bot, c)
+	if err = pa.CheckSendFence(s.Message.Fence, liveFence); err != nil {
+		// Typed text targets the conversation, which survives a native
+		// process rebind. Inputs carrying permissions or files still need
+		// the exact current execution generation.
+		if e := r.checkPlainMessageFence(ctx, s, liveFence); e != nil {
+			return pa.Receipt{}, e
+		}
+		s.Message.Fence = liveFence
 	}
 
 	if len(files) > 0 {
@@ -414,6 +448,9 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 		}
 		waiting++
+	}
+	if s.LeadCall && (!bot.Lead || a.working || c.ActiveTurnID != "" || len(pending) > 0) {
+		return pa.Receipt{}, runtimeFailure(pa.ReadOnly, "lead_call_busy")
 	}
 	if len(unknown) > 0 && s.Network != nil {
 		return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
@@ -485,6 +522,14 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.Notice {
 		kind = pa.NoticeMessage
 		turn.Origin = pa.HostNoticeOrigin
+	}
+	if s.LeadCall {
+		if !bot.Lead || !s.Notice || s.AuthorityCheck == nil || s.Message.Text != pa.LeadCallGreeting ||
+			!pa.ValidLeadCallKey(s.Command.IdempotencyKey) || s.Room != nil || s.Network != nil {
+			return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "lead_call")
+		}
+		turn.Origin = pa.LeadCallOrigin
+		turn.MessageID = pa.LeadCallKeyPrefix + turn.MessageID
 	}
 	if s.Network != nil {
 		turn.Origin = pa.NetworkRequestOrigin
@@ -621,7 +666,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				}
 			}
 		}
-		if pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+		if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
 			state := pa.TurnCancelled
 			if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
 				state = pa.TurnUnknown
@@ -861,6 +906,10 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Queued turns were admitted against a previous idle snapshot. Bind them
 	// to the current process only after checking their immutable ownership;
 	// rotating a process must not strand the rest of the durable queue.
+	if pa.IsLeadCallTurn(t) && !bot.Lead {
+		a.mu.Unlock()
+		return runtimeFailure(pa.Revoked, "lead_call")
+	}
 	if t.Fence.Key != bot.Key || t.Fence.Project != bot.Project || t.Fence.ConversationID != c.ID || t.Fence.Generation > c.Generation {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "queued_fence")
@@ -1082,6 +1131,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	memoryChanged := binding.MemoryRevision != current.Revision
 	binding.MemoryRevision = current.Revision
 	binding.ForgottenThrough = current.ForgottenThrough
+	leadRole := "member"
+	if bot.Lead {
+		leadRole = "lead"
+	}
+	roleChanged := resume && binding.LeadRole != leadRole
+	binding.LeadRole = leadRole
 	binding.InstructionRevision = bot.Instructions.Revision
 	t.State = pa.TurnRunning
 	started := r.o.Clock().UTC()
@@ -1277,6 +1332,13 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 			}
 		}
 		promptText := input.Text
+		if roleChanged {
+			role := "You are now an ordinary Bot. Your previous lead role has ended."
+			if bot.Lead {
+				role = pa.LeadBrief
+			}
+			promptText = "<agent_profile_update>" + role + "</agent_profile_update>\n\n" + promptText
+		}
 		if carryKind != "" && !isolatedRoutine {
 			kind, after := carryKind, carryAfter
 			if !resume {
@@ -1539,6 +1601,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		c.ActiveTurnID = ""
 	}
 	var messages []pa.Message
+	silentRoutine := false
 	if state == pa.TurnSucceeded && t.Origin != pa.BotRequestOrigin {
 		// Visible messages have stable IDs. Querying this turn from export also
 		// covers long conversations whose user message is outside the last page.
@@ -1548,7 +1611,15 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 				explicit = append(explicit, m.ID)
 			}
 		}
-		if final, ok := pa.VisibleReply(explicit, text, false); ok {
+		if t.RoutineRunID != "" {
+			for _, run := range export.RoutineRuns {
+				if run.ID == t.RoutineRunID && pa.IsLeadCheckIn(run.RoutineID) && len(explicit) == 0 && pa.IsRoomPass(text) {
+					silentRoutine = true
+					break
+				}
+			}
+		}
+		if final, ok := pa.VisibleReply(explicit, text, false); ok && !silentRoutine {
 			if err = pa.ValidateMessage(final); err != nil {
 				return err
 			}
@@ -1630,7 +1701,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 	if len(t.Attempts) > 0 {
 		clearProfile = t.Attempts[len(t.Attempts)-1].LoginProfile
 	}
-	m := Mutation{ClearLoginProfile: clearProfile, ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events}
+	m := Mutation{QuietCompletion: silentRoutine, ClearLoginProfile: clearProfile, ClearAgentRest: clearRest, Command: cmd, Conversation: &c, Turn: &t, RoutineRun: run, Messages: messages, Permissions: permissions, Receipt: pa.Receipt{State: effect, ResourceID: t.ID}, Events: events}
 	if run != nil && run.Source == "follow_up" {
 		for _, d := range export.Routines {
 			if d.ID == run.RoutineID && !d.Deleted {
@@ -2136,7 +2207,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if pa.IsPeerRequest(t.Origin) || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)
@@ -2179,5 +2250,5 @@ func (r *Engine) currentForStart(ctx context.Context, key pa.BotKey, prepared pa
 }
 
 func sameExecutionConfig(a, b pa.Bot) bool {
-	return a.Key == b.Key && a.Project == b.Project && a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameExtensions(a.Extensions, b.Extensions) && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.FallbackSteps == b.FallbackSteps && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
+	return a.Key == b.Key && a.Lead == b.Lead && a.Project == b.Project && a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameExtensions(a.Extensions, b.Extensions) && a.PermissionPolicy == b.PermissionPolicy && a.Mode == b.Mode && a.FallbackAgents == b.FallbackAgents && a.FallbackSteps == b.FallbackSteps && a.Instructions == b.Instructions && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && a.ConversationID == b.ConversationID
 }

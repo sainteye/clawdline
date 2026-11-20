@@ -17,7 +17,7 @@ const object=(v:unknown):v is Record<string,unknown>=>typeof v==="object"&&v!==n
 const oneOf=<T extends string>(v:unknown,choices:readonly T[]):v is T=>typeof v==="string"&&choices.includes(v as T)
 const date=(v:unknown)=>typeof v==="string"&&Number.isFinite(Date.parse(v))
 const key=(v:unknown):v is W.ProjectAssistantBotKey=>object(v)&&text(v.machine_id)&&text(v.bot_id)
-const project=(v:unknown):v is W.ProjectAssistantProjectScope=>object(v)&&text(v.machine_id)&&text(v.project_id)&&text(v.canonical_id)&&(v.kind==="repository"||v.kind==="place")
+const project=(v:unknown):v is W.ProjectAssistantProjectScope=>object(v)&&text(v.machine_id)&&text(v.project_id)&&text(v.canonical_id)&&(v.kind==="repository"||v.kind==="place"||v.kind==="personal")
 const fence=(v:unknown):v is W.ProjectAssistantFence=>object(v)&&key(v.key)&&project(v.project)&&text(v.conversation_id)&&typeof v.binding_id==="string"&&integer(v.generation)
 const cursor=(v:unknown):v is string=>typeof v==="string"&&new TextEncoder().encode(v).length<=4096
 const states=ProjectAssistantTurnStateValues
@@ -114,7 +114,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     metadata(b,scope)
     const ids=new Set<string>(),queued=new Set<string>(),pending=new Map<string,W.ProjectAssistantReadTurnSummary>(),included=new Set<string>()
     for(const t of s.pending_turns){turn(t,scope);if(ids.has(t.id)||pending.has(t.message_id)||!["accepted","queued","running","waiting_permission"].includes(t.state))throw failure("pa_invalid");ids.add(t.id);pending.set(t.message_id,t);if(t.state==="accepted"||t.state==="queued")queued.add(t.message_id)}
-    for(const m of s.queued_messages){message(m,scope);const t=pending.get(m.id);if(m.kind!=="user"||!t||m.turn_id!==t.id||included.has(m.id))throw failure("pa_invalid");included.add(m.id);queued.delete(m.id)}
+    for(const m of s.queued_messages){message(m,scope);const t=pending.get(m.id);if((m.kind!=="user"&&m.kind!=="notice")||!t||m.turn_id!==t.id||included.has(m.id))throw failure("pa_invalid");included.add(m.id);queued.delete(m.id)}
     if(queued.size)throw failure("pa_invalid")
     if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
   }else if(answer.snapshot!==undefined)throw failure("pa_invalid")

@@ -88,7 +88,7 @@ function useCronPreview({source,bot}:SchedulePreviewScope, enabled:boolean, expr
         expression,time_zone:zone,
       },controller.signal).then(answer=>{
         if(controller.signal.aborted)return
-        const next=new Intl.DateTimeFormat(currentCatalogTag(),{timeZone:zone,dateStyle:"medium",timeStyle:"short"}).format(Date.parse(answer.next_due))
+        const next=new Intl.DateTimeFormat(currentCatalogTag(),{...(zone==="host"?{}:{timeZone:zone}),dateStyle:"medium",timeStyle:"short"}).format(Date.parse(answer.next_due))
         setResult({inputs,next})
       }).catch(error=>{
         if(controller.signal.aborted)return
@@ -112,7 +112,7 @@ function RoutineScheduleFields({trigger, calendar, onCalendar, onZone, w, previe
   w: Words
 }) {
   const {repeat, time, weekday} = calendar
-  const customPreview=useCronPreview(previewScope,repeat==="custom",trigger.expression,trigger.timeZone)
+  const customPreview=useCronPreview(previewScope,repeat==="custom"||trigger.timeZone==="host",trigger.expression,trigger.timeZone)
   const presetNext=useMemo(()=>nextCalendarTime(calendar,trigger.timeZone),[repeat,time,weekday,trigger.timeZone])
   const next=repeat==="custom"?customPreview?.next:presetNext
   const cronInput=useRef<HTMLInputElement>(null)

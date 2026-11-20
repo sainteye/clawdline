@@ -10,11 +10,16 @@ import "./artifact-workspace.css"
 const tr=(key:string)=>catalogWord("projectAssistants",key)
 const ArtifactComposer=lazy(()=>import("./Composer").then(module=>({default:module.Composer})))
 
+export type ArtifactSendResult =
+  | {state:"accepted";turn:string}
+  | {state:"refused"|"unknown";code?:string}
+
 export interface ArtifactComposerAccess {
   blocked:boolean
   read:(id:string)=>string
   write:(id:string,text:string)=>void
-  send:(message:ProjectAssistantMessage,text:string)=>Promise<boolean>
+  send:(message:ProjectAssistantMessage,text:string)=>Promise<ArtifactSendResult>
+  progress:(turn:string)=>"replied"|"failed"|null
 }
 
 export function ArtifactIcon({size=20}:{size?:number}){
@@ -28,7 +33,7 @@ export function ArtifactWorkspace({name,message,html,links,w,state,rename,access
   const artifactID=message.output!.artifact_id
   const frame=useMemo(()=>html===undefined?undefined:artifactFrame(html),[html])
   const [draft,setDraft]=useState(()=>access?.read(artifactID)??"")
-  const [sending,setSending]=useState(false),[sendError,setSendError]=useState("")
+  const [sending,setSending]=useState(false),[receipt,setReceipt]=useState<ArtifactSendResult|null>(null)
   const [closing,setClosing]=useState(false)
   const dialog=useRef<HTMLDialogElement>(null),close=useRef<HTMLButtonElement>(null),share=useRef<HTMLDetailsElement>(null)
   const pending=useRef(false)
@@ -42,18 +47,20 @@ export function ArtifactWorkspace({name,message,html,links,w,state,rename,access
     }
   },[])
   useLayoutEffect(()=>{if(closing&&dialog.current)return afterSurfaceExit(dialog.current,()=>action.current())},[closing])
-  const update=(value:string)=>{setDraft(value);access?.write(artifactID,value);setSendError("")}
+  const update=(value:string)=>{setDraft(value);access?.write(artifactID,value);setReceipt(null)}
   const send=async()=>{
     if(!draft.trim()||!access||access.blocked||pending.current)return
-    pending.current=true;setSending(true);setSendError("")
+    pending.current=true;setSending(true);setReceipt(null)
     try{
-      if(await access.send(message,draft))update("")
-      else setSendError("unconfirmed")
+      const result=await access.send(message,draft)
+      if(result.state==="accepted")update("")
+      setReceipt(result)
     }catch(error){
-      setSendError(errorCode(error))
+      setReceipt({state:"refused",code:errorCode(error)})
     }
     finally{pending.current=false;setSending(false)}
   }
+  const delivery=receipt?.state==="accepted"?access?.progress(receipt.turn):null
   return <dialog className="pa-artifact-workspace" ref={dialog} data-closing={closing||undefined} inert={closing} aria-label={name}
     onCancel={event=>{
       event.preventDefault()
@@ -80,8 +87,15 @@ export function ArtifactWorkspace({name,message,html,links,w,state,rename,access
       {html===undefined?<div className="pa-artifact-load">{state}</div>:<iframe className="pa-artifact-frame" title={name} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={frame}/>}
     </div>
     {access&&<div className="pa-artifact-composer">
-      {sendError&&<p className="pa-artifact-send-error" role="alert">{tr("artifactSendFailed")}{sendError!=="unconfirmed"&&` (${sendError})`}</p>}
-      <Suspense fallback={null}><ArtifactComposer plain text={draft} onText={update} onSend={()=>void send()} disabled={access.blocked||sending||html===undefined} busy={sending} onClearQuote={()=>{}}
+      {(sending||receipt)&&<div className="pa-artifact-send-status">
+        <span role={receipt?.state==="refused"||receipt?.state==="unknown"?"alert":"status"}>
+          {sending?<><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</>:receipt?.state==="accepted"
+            ?delivery==="replied"?w.artifactReplied:delivery==="failed"?w.artifactReplyFailed:w.artifactSent
+            :receipt?.state==="unknown"?w.artifactSendUnknown:<>{tr("artifactSendFailed")}{receipt?.code&&<small>({receipt.code})</small>}</>}
+        </span>
+        {!sending&&receipt?.state!=="refused"&&<button type="button" onClick={()=>setClosing(true)}>{w.artifactViewChat}</button>}
+      </div>}
+      <Suspense fallback={null}><ArtifactComposer plain text={draft} onText={update} onSend={()=>void send()} disabled={access.blocked||sending||html===undefined} draftEditable={!sending&&html!==undefined} busy={sending} onClearQuote={()=>{}}
         w={{...w,compose:tr("artifactCompose").replace("{title}",name)}}/></Suspense>
     </div>}
   </dialog>

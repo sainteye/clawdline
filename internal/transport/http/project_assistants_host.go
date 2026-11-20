@@ -49,6 +49,7 @@ type projectAssistantServer struct {
 	inspectionFailed bool
 	// Private fixture overrides; production uses the installed native factory.
 	provider          func() (app.Provider, error)
+	defaultLeadAgent  func(time.Time) pa.Agent
 	loginProfiles     func(context.Context) (app.LoginProfiles, error)
 	extensions        app.ExtensionInventory
 	clock             func() time.Time
@@ -159,6 +160,10 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	}
 	netSource := s.prepareBotNetwork(i)
 	netSource.prepareAssistant(ctx)
+	defaultLeadAgent := projectAssistantDefaultLeadAgent
+	if p.provider != nil {
+		defaultLeadAgent = p.defaultLeadAgent
+	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
 		NativeHistory: projectassistantstore.NewNativeMaintenanceHistoryReader(s.cfg.Dir),
 		Network:       netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
@@ -167,6 +172,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,
 		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: clock,
+		DefaultLeadAgent: defaultLeadAgent, LeadTimeZone: projectAssistantHostTimeZone(), LeadQuotaNear: projectAssistantLeadQuotaNear,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
 		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, Rules: projectassistantacp.ClaudeLocalRules{},
 		// The provider receives only execution-bound NativeTools from Host.
@@ -301,7 +307,8 @@ func (s *Server) projectAssistantSource(ctx context.Context, key pa.BotKey, writ
 	}
 	f.Enabled = f.Enabled && allowed && v.ProjectAssistantsEnabled()
 	source := pa.SourceStatus{MachineID: i.MachineID, State: pa.SourceOnline,
-		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access(), DevServersSupported: runtime.GOOS != "windows"}
+		Readable: true, Writable: f.Enabled, Fresh: true, ObservedAt: time.Now().UTC(), Access: f.Access(),
+		LeadCallSupported: true, DevServersSupported: runtime.GOOS != "windows"}
 	if a, ok := ctx.Value(accessKey{}).(access); ok {
 		_, _, _, writable, err := s.projectAssistantHuman(ctx, a, i)
 		if err != nil {
@@ -386,6 +393,9 @@ func (p projectAssistantProjects) Resolve(ctx context.Context, target pa.Project
 	}
 	if target.MachineID != i.MachineID || target.ProjectID == "" {
 		return pa.ProjectResolution{}, paHTTPFailure(pa.ScopeDenied, "project_machine")
+	}
+	if pa.IsPersonalWorkspaceID(target.ProjectID) {
+		return p.personalWorkspace(target, false)
 	}
 	// Read saved choices only, then inspect the single selected directory.
 	// /v1/projects remains the intentionally retired empty catalog.

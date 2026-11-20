@@ -289,7 +289,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 			return pa.Receipt{}, failure(pa.StaleVersion, "bot")
 		}
 	}
-	completed := m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
+	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -345,6 +345,9 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	}
 	if m.DesignateLead {
 		if err = replaceRosterLead(ctx, tx, a); err != nil {
+			return pa.Receipt{}, err
+		}
+		if err = markLeadSetup(ctx, tx, a.Bot.Key.MachineID); err != nil {
 			return pa.Receipt{}, err
 		}
 	}
@@ -676,7 +679,7 @@ func validateAggregate(a aggregate) error {
 			x := msg.Exchange
 			self := pa.ExchangeEndpoint{Key: b.Key, ConversationID: c.ID}
 			worker := a.BackgroundOwner != nil && *a.BackgroundOwner == x.Target.Key && x.Recipient() == self
-			if x.Project != b.Project || x.Source != self && x.Target != self && !worker || x.Source.Key == x.Target.Key {
+			if x.ParticipantProject(b.Key) != b.Project || x.Source != self && x.Target != self && !worker || x.Source.Key == x.Target.Key {
 				return failure(pa.ScopeDenied, "exchange_projection")
 			}
 		}

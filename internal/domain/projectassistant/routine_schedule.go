@@ -10,6 +10,9 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+// HostRoutineTimeZone uses the source machine’s wall clock.
+const HostRoutineTimeZone = "host"
+
 // RoutineTrigger retains the person's schedule, independently of its next wake.
 // At is Unix milliseconds, as in the pinned Codync routine contract.
 type RoutineTrigger struct {
@@ -76,14 +79,20 @@ func (t RoutineTrigger) cron() (cron.Schedule, error) {
 	if (!isDesc && len(fields) != 5) || strings.Contains(expr, "=") || strings.HasPrefix(strings.ToLower(expr), "@every") {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}
-	if t.TimeZone == "" || t.TimeZone == "Local" || len(strings.Fields(t.TimeZone)) != 1 {
+	zone := t.TimeZone
+	if zone == HostRoutineTimeZone {
+		zone = "Local"
+	} else if zone == "Local" {
 		return nil, &Failure{Code: Invalid, Field: "routine_time_zone"}
 	}
-	if _, err := time.LoadLocation(t.TimeZone); err != nil {
+	if zone == "" || len(strings.Fields(zone)) != 1 {
+		return nil, &Failure{Code: Invalid, Field: "routine_time_zone"}
+	}
+	if _, err := time.LoadLocation(zone); err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_time_zone"}
 	}
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	s, err := parser.Parse("CRON_TZ=" + t.TimeZone + " " + expr)
+	s, err := parser.Parse("CRON_TZ=" + zone + " " + expr)
 	if err != nil {
 		return nil, &Failure{Code: Invalid, Field: "routine_cron"}
 	}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import type * as W from "@clawdline/contract"
 import { onStatusRefresh } from "../status-refresh.js"
 import { Bots } from "../project-assistants/Bots.js"
+import { botCallAudioAvailable } from "../project-assistants/bot-call-audio.js"
 import { BotOrb } from "../project-assistants/BotOrb.js"
 import { canRead } from "../project-assistants/view-state.js"
 import { ProjectAssistantRegistry, assistantBadge, PROJECT_ASSISTANTS_API_LEVEL } from "../cloud/project-assistants.js"
@@ -30,7 +31,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const [local] = useState(() => new ProjectAssistantRegistry("local","local"))
   const registry = supplied ?? local
   const sources = useSyncExternalStore(registry.subscribe,registry.getSnapshot,registry.getSnapshot)
-  const [opened,setOpened] = useState(false), [entry,setEntry] = useState(0)
+  const [opened,setOpened] = useState(false), [entry,setEntry] = useState(0),[voiceShortcut,setVoiceShortcut]=useState(0)
   const openedRef = useRef(false), opener = useRef<HTMLElement | null>(null)
   const pendingWork = useRef<W.ProjectAssistantWorkLink | null>(null)
   const ownedHistory = useRef("")
@@ -149,7 +150,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     // Bots owns its roster and conversation entries. The host only closes the stack.
     const steps = assistantHistoryBackSteps(history.state,ownedHistory.current)
     if (steps) { history.go(-steps); return }
-    openedRef.current = false; setOpened(false)
+    openedRef.current = false; setOpened(false);setVoiceShortcut(0)
     const saved = origin.current
     if (saved && location.hash !== saved.hash) history.replaceState(saved.state,"",saved.href)
     requestAnimationFrame(() => {
@@ -187,21 +188,32 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const noticeOpened=useRef("")
   useEffect(()=>{
     const follow=()=>{
-      if(!admitted||!botFromFragment(location.hash))return
-      if(openedRef.current){noticeOpened.current=location.hash;return}
+      const call=location.hash==="#call-bot"
+      if(!admitted||!call&&!botFromFragment(location.hash))return
       if(noticeOpened.current===location.hash)return
       noticeOpened.current=location.hash
-      open()
+      if(call&&botCallAudioAvailable())setVoiceShortcut(count=>count+1)
+      if(!openedRef.current)open()
     }
     follow();window.addEventListener("hashchange",follow)
     return()=>window.removeEventListener("hashchange",follow)
+  },[admitted,sources])
+  useEffect(()=>{
+    const call=(event:KeyboardEvent)=>{
+      if(!admitted||event.defaultPrevented||event.repeat||event.isComposing||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=="KeyV"||!botCallAudioAvailable())return
+      event.preventDefault()
+      setVoiceShortcut(count=>count+1)
+      if(!openedRef.current)open()
+    }
+    window.addEventListener("keydown",call)
+    return()=>window.removeEventListener("keydown",call)
   },[admitted,sources])
   useEffect(() => { if (opened && !admitted) close() },[opened,admitted,close])
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
     <Bots key={entry} onRosterObserved={observeCompletions} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
-      viewState={registry.viewState} returnFocus={opener.current} manageHistory onClose={close}
+      viewState={registry.viewState} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
   </section> : null
   return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} disabled={!admitted} onOpen={open}/>}

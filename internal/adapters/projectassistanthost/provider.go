@@ -457,6 +457,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	life.sealed, life.seal = context.WithCancel(context.Background())
 	life.watching(context.AfterFunc(openCtx, life.invalidate))
 	bound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+		if pa.IsLeadCallTurn(turn) {
+			return nil, nil, failure(pa.ScopeDenied, "lead_call_tools")
+		}
 		life.used.Store(true)
 		if life.insideSend(ctx) {
 			return nil, nil, failure(pa.ExecutionEffectUnknown, "native_tool_during_send")

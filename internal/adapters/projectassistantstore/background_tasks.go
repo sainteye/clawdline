@@ -178,7 +178,7 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 			return pa.BotKey{}, err
 		}
 		if x.Target != (pa.ExchangeEndpoint{Key: key, ConversationID: task.Fence.ConversationID}) ||
-			x.Project != task.Fence.Project || x.Outcome != pa.ExchangeQueued || x.ID != task.ID ||
+			x.DestinationProject() != task.Fence.Project || x.Outcome != pa.ExchangeQueued || x.ID != task.ID ||
 			x.RequestWorkerID != backgroundWorkerID(task.ID) {
 			return pa.BotKey{}, failure(pa.ScopeDenied, "background_exchange")
 		}

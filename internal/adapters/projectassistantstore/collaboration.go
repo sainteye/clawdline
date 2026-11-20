@@ -135,7 +135,8 @@ func (s *Store) Directory(ctx context.Context, fence pa.Fence, turn string, q pa
 	if err != nil {
 		return pa.BotDirectoryPage{}, err
 	}
-	if _, err = exchangeActive(a, fence, turn); err != nil {
+	active, err := exchangeActive(a, fence, turn)
+	if err != nil {
 		return pa.BotDirectoryPage{}, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot>? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL ORDER BY bot`, fence.Key.MachineID, q.Cursor)
@@ -155,7 +156,7 @@ func (s *Store) Directory(ctx context.Context, fence pa.Fence, turn string, q pa
 			return out, err
 		}
 		b := row.Bot
-		if b.Key == fence.Key || b.Hidden || b.Project != fence.Project {
+		if a.BackgroundOwner != nil || row.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b, active) {
 			continue
 		}
 		match := true
@@ -270,7 +271,7 @@ func (s *Store) AdmitExchange(ctx context.Context, q app.ExchangeAdmission) (pa.
 	if a.Bot.Version != q.SourceVersion || b.Bot.Version != q.TargetVersion {
 		return x, failure(pa.StaleVersion, "exchange_bot")
 	}
-	if a.Bot.Project != x.Project || b.Bot.Project != x.Project || b.Bot.Hidden || a.Conversation.ID != x.Source.ConversationID || b.Conversation.ID != x.Target.ConversationID || x.Hops != t.Hops+1 {
+	if a.Bot.Project != x.Project || b.Bot.Project != x.DestinationProject() || b.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b.Bot, t) || a.Conversation.ID != x.Source.ConversationID || b.Conversation.ID != x.Target.ConversationID || x.Hops != t.Hops+1 {
 		return x, failure(pa.ScopeDenied, "exchange_project")
 	}
 	var total, sender int
@@ -350,7 +351,7 @@ func (s *Store) StartExchange(ctx context.Context, fence pa.Fence, turn, id stri
 		return err
 	}
 	if x.Recipient() != (pa.ExchangeEndpoint{Key: fence.Key, ConversationID: fence.ConversationID}) ||
-		x.Project != fence.Project || x.RequestTurnID != turn || !x.Outstanding() {
+		x.DestinationProject() != fence.Project || x.RequestTurnID != turn || !x.Outstanding() {
 		return failure(pa.ScopeDenied, "exchange_start")
 	}
 	if x.RequestWorkerID == "" {
@@ -363,7 +364,7 @@ func (s *Store) StartExchange(ctx context.Context, fence pa.Fence, turn, id stri
 			return err
 		}
 		if b.BackgroundOwner == nil || *b.BackgroundOwner != x.Target.Key || owner.Bot.Hidden ||
-			owner.Bot.Project != x.Project || owner.Conversation.ID != x.Target.ConversationID {
+			owner.Bot.Project != x.DestinationProject() || owner.Conversation.ID != x.Target.ConversationID {
 			return failure(pa.ScopeDenied, "exchange_recipient")
 		}
 	}
@@ -432,7 +433,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 		}
 	} else {
 		if t.Origin != pa.BotRequestOrigin || x.Recipient() != (pa.ExchangeEndpoint{Key: a.Bot.Key, ConversationID: a.Conversation.ID}) ||
-			x.Project != a.Bot.Project || x.RequestTurnID != t.ID || !x.Outstanding() ||
+			x.DestinationProject() != a.Bot.Project || x.RequestTurnID != t.ID || !x.Outstanding() ||
 			x.RequestWorkerID != "" && (a.BackgroundOwner == nil || *a.BackgroundOwner != x.Target.Key) {
 			return x, failure(pa.StaleVersion, "request_completion")
 		}
@@ -521,7 +522,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			if err != nil {
 				return x, err
 			}
-			if owner.Bot.Project != x.Project || owner.Conversation.ID != x.Target.ConversationID {
+			if owner.Bot.Project != x.DestinationProject() || owner.Conversation.ID != x.Target.ConversationID {
 				return x, failure(pa.ScopeDenied, "exchange_recipient")
 			}
 			msg := exchangeNotice(owner, x, x.ID+"-result-target", x.Request, "", at)
@@ -570,7 +571,7 @@ func cancelWaitingBackgroundExchanges(ctx context.Context, tx *sql.Tx, target ag
 			return err
 		}
 		if x.Target != (pa.ExchangeEndpoint{Key: key, ConversationID: target.Conversation.ID}) ||
-			x.Project != target.Bot.Project || x.RequestWorkerID != backgroundWorkerID(id) || x.Outcome != pa.ExchangeQueued {
+			x.DestinationProject() != target.Bot.Project || x.RequestWorkerID != backgroundWorkerID(id) || x.Outcome != pa.ExchangeQueued {
 			return failure(pa.ScopeDenied, "background_exchange")
 		}
 		prior := x.Revision

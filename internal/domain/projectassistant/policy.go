@@ -82,7 +82,16 @@ func ValidateScope(s ProjectScope) error {
 	if s.MachineID == "" || s.ProjectID == "" || s.CanonicalID == "" {
 		return fail(Invalid, "project")
 	}
-	if s.Kind != RepositoryProject && s.Kind != PlaceProject {
+	switch s.Kind {
+	case RepositoryProject, PlaceProject:
+		if IsPersonalWorkspaceID(s.ProjectID) {
+			return fail(Invalid, "project_kind")
+		}
+	case PersonalWorkspace:
+		if !IsPersonalWorkspaceID(s.ProjectID) || s.ProjectID != s.CanonicalID {
+			return fail(Invalid, "personal_workspace")
+		}
+	default:
 		return fail(Invalid, "project_kind")
 	}
 	return nil
@@ -113,7 +122,14 @@ func validateSettings(name string, appearance Appearance, instructions string) e
 
 // ValidateCreate has no Runtime dependency: creation records configuration only.
 func ValidateCreate(in CreateBot, resolved ProjectResolution) error {
-	if err := ValidateTarget(in.Target, resolved); err != nil {
+	target := in.Target
+	if target.ProjectID == "" {
+		if resolved.Scope.Kind != PersonalWorkspace {
+			return fail(Invalid, "personal_workspace")
+		}
+		target.ProjectID = resolved.Scope.ProjectID
+	}
+	if err := ValidateTarget(target, resolved); err != nil {
 		return err
 	}
 	if in.Agent != ClaudeCode && in.Agent != Codex {

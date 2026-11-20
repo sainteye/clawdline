@@ -125,6 +125,9 @@ func (s *Service) SubscribeRoster(ctx context.Context, request pa.RosterRequest)
 	}
 	// Even an empty Project-scoped feed requires a currently readable Project.
 	if request.ProjectID != "" {
+		if pa.IsPersonalWorkspaceID(request.ProjectID) {
+			return nil, serviceFailure(pa.ScopeDenied, "roster_project")
+		}
 		p, err := s.opts.Projects.Resolve(ctx, pa.ProjectSelection{MachineID: request.MachineID, ProjectID: request.ProjectID})
 		if err != nil {
 			return nil, err

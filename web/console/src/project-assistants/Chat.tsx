@@ -22,7 +22,7 @@ import { TeamApprovals } from "./Groups"
 import { Routines } from "./Routines"
 import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
-import type {ArtifactComposerAccess} from "./ArtifactWorkspace"
+import type {ArtifactComposerAccess,ArtifactSendResult} from "./ArtifactWorkspace"
 import { ChatRows } from "./ChatRows"
 import { HandoffCard } from "./HandoffCard"
 import { handoffWords } from "./handoff-card-words"
@@ -88,10 +88,10 @@ export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,c
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
-  showBack?:boolean;backLabel?:string;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];
+  showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink)=>void;onDeleted?:()=>void;onRead?:()=>void
 }
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,voiceShortcut}:ChatProps) {
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
   const grant=useRef(source.authorizationRevision).current
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
@@ -188,6 +188,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
   const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
   const collectionCursors=useRef({permissions:new Set<string>(),traces:new Set<string>()})
+  const collectionsToRetry=useRef(new Set<"permissions"|"traces">())
   const lastRead=useRef(0),reading=useRef(false),restored=useRef(false),followingRef=useRef(true),sendBaselineSeq=useRef(0)
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   currentData.current=data;timelineRef.current=timeline;headRef.current=head;permissionRows.current=permissions;traceRows.current=traceSummaries;detailRows.current=details
@@ -301,16 +302,23 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current
     let snapshotValidated=false
     eventControl.current=control
-    const settleCollections=async(reads:(Promise<void>|undefined)[])=>{
-      // A sibling refused at the old fence must settle before re-reading.
-      const results=await Promise.allSettled(reads)
-      for(const result of results)if(result.status==="rejected")throw result.reason
+    const settleCollections=async(modes:("permissions"|"traces")[])=>{
+      // A projection failing at an older fence is retried on the next poll.
+      // It cannot take a validated chat snapshot or a write receipt offline.
+      await Promise.all(modes.map(async mode=>{
+        try{
+          await collection(mode)
+          if(!control.signal.aborted&&valid())collectionsToRetry.current.delete(mode)
+        }catch{
+          if(!control.signal.aborted&&valid())collectionsToRetry.current.add(mode)
+        }
+      }))
     }
     const readSnapshot=async()=>{
       await recoverSnapshot(control.signal)
       if(!valid()||control.signal.aborted)return
       snapshotValidated=true
-      await settleCollections([collection("permissions"),collection("traces")])
+      await settleCollections(["permissions","traces"])
     }
     const readRecovered=()=>{
       if(!valid()||control.signal.aborted)return
@@ -343,10 +351,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
           lastSeq.current=page.next_seq;callViewFrontier.current=page.has_more?page.next_seq:page.head.event_frontier;setError("")
-          await settleCollections([
-            before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission)?collection("permissions"):undefined,
-            before.trace_category_count!==page.head.trace_category_count||page.items.some(row=>row.event?.trace)?collection("traces"):undefined,
-          ])
+          const modes=new Set(collectionsToRetry.current)
+          if(before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission))modes.add("permissions")
+          if(before.trace_category_count!==page.head.trace_category_count||page.items.some(row=>row.event?.trace))modes.add("traces")
+          await settleCollections([...modes])
         }
       }
       readRecovered()
@@ -468,15 +476,31 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     view.heldOutcomes.settle(draftKey,held.intent.command.idempotency_key,null)
     setSending(null);setUnknown(false);repaintJournal()
   },[timeline,receipt,view,draftKey])
-  const send=async(artifact?:{message:W.ProjectAssistantMessage;text:string})=>{
-    if(call.active||busy||unknown||!handoff.ready||legacyBlocked()||view.heldOutcomes.has(draftKey)||filesLost||editingHandoff||handoff.mutating()||handoff.error||(!artifact&&!text.trim()&&images.length===0&&files.length===0)||!currentData.current)return false
+  const textOnlyDraft=images.length===0&&files.length===0&&!quote&&handoff.card?.state!=="draft"
+  const sendAuthorityLost=["pa_revoked","pa_unpaired","pa_scope_denied","pa_unsupported","pa_disabled"].includes(error)
+  const canTryText=textOnlyDraft&&!thread&&!unknown&&!legacyBlocked()&&!sendAuthorityLost
+  const sendInFlight=useRef(false)
+  const send=async(artifact?:{message:W.ProjectAssistantMessage;text:string}):Promise<ArtifactSendResult>=>{
+    const refused={state:"refused"} as const
+    const plain=artifact
+      ?!thread&&!sendAuthorityLost&&handoff.card?.state!=="draft"&&!!artifact.text.trim()
+      :canTryText&&!!text.trim()
+    if(!valid()||call.active||busy||sendInFlight.current||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
+      ||(!artifact&&!text.trim()&&images.length===0&&files.length===0)
+      ||(!plain&&(!handoff.ready||handoff.error||!currentData.current)))return refused
+    const earlier=view.heldOutcomes.get(draftKey)
+    if(earlier){
+      if(!plain||!admittedReceipt(earlier.receipt))return refused
+      view.heldOutcomes.settle(draftKey,earlier.intent.command.idempotency_key,null)
+    }
     const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
-    if(artifact&&(!artifact.text.trim()||handoffRef||!artifact.message.output?.artifact_id||!sameConversation(artifact.message.fence,scope)))return false
+    if(artifact&&(!artifact.text.trim()||handoffRef||!artifact.message.output?.artifact_id||!sameConversation(artifact.message.fence,scope)))return refused
     const submitted=artifact?.text??text,pictures=artifact?[]:images,selected=artifact?[]:files
-    const intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:fence(currentData.current),text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
+    const captured=headRef.current?.current_fence??(currentData.current?fence(currentData.current):{...scope,binding_id:"",generation:0})
+    const intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:captured,text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
-    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
+    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;sendInFlight.current=true;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
     followingRef.current=true;setFollowing(true)
     const hold=(receipt:W.ProjectAssistantReceipt|null):HeldOutcome=>({intent,receipt,...(pictures.length?{pictures:pictures.length}:{}),...(selected.length?{files:selected.map(f=>f.file.name)}:{})})
     // This send's own answer changes only its own journal entry: never a newer
@@ -495,44 +519,61 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // durable copy is only cleared once the send is accepted.
     const restore=()=>{
       if(artifact)return
-      if(view.draft(draftKey)==="")view.stage(draftKey,submitted)
+      const currentDraft=view.draft(draftKey)
+      if(currentDraft!==submitted)view.stage(draftKey,currentDraft?`${submitted}
+
+${currentDraft}`:submitted)
       if(quoted&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quoted)
       if(!valid())return
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures);setFiles(old=>old.length?old:selected)
     }
     if(!artifact){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)}
     try{
-      const result=await mutate(async(d,s)=>{
+      const deliver=async(s:AbortSignal)=>{
+        if(view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
+        attempted=true;view.heldOutcomes.set(draftKey,hold(null));view.heldOutcomes.beginTransport(draftKey,id);repaintJournal()
+        // A journaled send settles even if the person leaves this chat.
+        const effect=new AbortController(),follow=()=>{if(alive.current)effect.abort()}
+        if(s.aborted)follow();else s.addEventListener("abort",follow,{once:true})
+        const attempt=async()=>{
+          const answer=await source.send(intent,effect.signal)
+          if(!sendAcknowledgement(answer,intent))throw Object.assign(failure("pa_outcome_unknown"),{response:answer})
+          answered=answer
+          return answer
+        }
+        try{
+          return await attempt()
+        }catch(e){
+          const refusal=e as Partial<W.ProjectAssistantErrorResponse>
+          if(!plain||effect.signal.aborted||!valid()||refusal.error?.code!=="pa_stale_generation"||refusal.error.field!=="fence")throw e
+          // Only the source's explicit admission refusal permits a retry.
+          // Rebind within the same authenticated conversation, once.
+          const fresh=await read(request("snapshot"),effect.signal)
+          if(!sameConversation(fresh.head.current_fence,scope)||sameFence(intent.fence,fresh.head.current_fence))throw e
+          intent.fence=fresh.head.current_fence
+          view.heldOutcomes.set(draftKey,hold(null))
+          return await attempt()
+        }finally{s.removeEventListener("abort",follow)}
+      }
+      const result=plain?await authorized(source,current,deliver,new AbortController().signal):await mutate(async(d,s)=>{
         if(selected.length){
           const upload=new AbortController();uploadControl.current=upload;const cancel=()=>upload.abort();s.addEventListener("abort",cancel,{once:true})
           try{setUploading("0%");intent.fence=fence(d);intent.upload_ids=await uploadInputs(source,intent.fence,selected,upload.signal,(n,total)=>{if(valid()&&!upload.signal.aborted)setUploading((total?Math.floor(n*100/total):100)+"%")},d.bot.instructions.revision)}
           finally{s.removeEventListener("abort",cancel);uploadControl.current=null;if(valid())setUploading("")}
           if(s.aborted||!valid()||recovery.current)throw failure("pa_revoked")
         }
-        // An earlier unknown turn stays visible and is never resent; a new
-        // message from the person is a new turn. Only this tab's own
-        // uncertain send is held.
-        if(view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
-        // Journaled before the transport, so a full reload still holds it.
-        attempted=true;view.heldOutcomes.set(draftKey,hold(null));view.heldOutcomes.beginTransport(draftKey,id);repaintJournal()
-        // Once bytes may cross, leaving this Chat no longer drops the request:
-        // the host journal outlives the Chat and takes the receipt. Authority
-        // changes while the Chat is shown still cancel it, and the source
-        // client itself turns a later revocation into outcome unknown.
-        const effect=new AbortController(),follow=()=>{if(alive.current)effect.abort()}
-        if(s.aborted)follow();else s.addEventListener("abort",follow,{once:true})
-        try{const answer=await source.send(intent,effect.signal);if(!sendAcknowledgement(answer,intent))throw Object.assign(failure("pa_outcome_unknown"),{response:answer});answered=answer}finally{s.removeEventListener("abort",follow)}
-        return answered
+        return deliver(s)
       })
       const owner=land(result.receipt.state==="unknown"||admittedReceipt(result.receipt)?hold(result.receipt):null)
       observation.accept(result.receipt)
       if((result.receipt.state==="unknown"||result.receipt.state==="failed")&&owner==="active")restore()
       const accepted=admittedReceipt(result.receipt)
-      if(!valid())return accepted
+      const outcome:ArtifactSendResult=accepted?{state:"accepted",turn:result.receipt.resource_id}:{state:result.receipt.state==="unknown"?"unknown":"refused"}
+      if(!valid())return outcome
       setReceipt(result.receipt);setUnknown(uncertain())
       if(accepted&&!artifact){setFiles([]);rememberFiles(false);flush()}
-      await refresh(true)
-      return accepted
+      void refresh(true)
+      return outcome
     }catch(e){
       // The source's own receipt outlives a later authority or abort check.
       const kept=answered as W.ProjectAssistantReceiptResponse|null
@@ -541,7 +582,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         if(owner==="active"&&!artifact){rememberFiles(false);view.flush(draftKey)}
         observation.accept(kept.receipt)
         if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!artifact)setFiles([]);setError("");await refresh(true)}
-        return true
+        return {state:"accepted",turn:kept.receipt.resource_id}
       }
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
@@ -552,8 +593,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||owner==="active")restore()
       if(valid()){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
-      return false
-    }finally{if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
+      return {state:unresolved?"unknown":"refused",code}
+    }finally{sendInFlight.current=false;if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
   }
 
   // Reads the source's durable receipts once, on the person's request. A
@@ -903,7 +944,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const submitCall=async(input:CallInput)=>{
     if(!handoff.ready||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return {state:"sendFailed" as const}
     const intent:W.ProjectAssistantSendRequest={
-      command:command(key,"send",botCallSendID(input.callID)),fence:input.fence,text:input.text,quote_message_id:"",
+      command:command(key,"send",input.greeting?`lead-call-${input.callID}`:botCallSendID(input.callID)),
+      fence:input.fence,text:input.text,quote_message_id:"",...(input.greeting?{call_started:true}:{}),
     }
     const id=intent.command.idempotency_key
     let attempted=false
@@ -921,14 +963,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
         received.answer=result.receipt
       })
     }catch(e){
-      if(attempted&&handoffInputRefused(e)) {
+      if(attempted&&(handoffInputRefused(e)||input.greeting&&errorCode(e)==="pa_read_only")) {
         view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null)
         if(valid()){setReceipt(null);setUnknown(false);repaintJournal();void handoff.refresh()}
-        return {state:"sendFailed" as const}
+        return {state:input.greeting&&errorCode(e)==="pa_read_only"?"skipped" as const:"sendFailed" as const}
       }
       if(!attempted||provablyNotSent(e)) {
         if(attempted){view.heldOutcomes.settle(draftKey,id,null);view.heldOutcomes.endTransport(draftKey,id,null);repaintJournal()}
-        return {state:"sendFailed" as const}
+        return {state:input.greeting?"skipped" as const:"sendFailed" as const}
       }
     }
     const {answer}=received
@@ -947,12 +989,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const {call,state:callState}=useBotCall({current:callObservation,submit:submitCall})
   const artifactDraftKey=(id:string)=>JSON.stringify(["artifact",draftKey,id])
   const artifactComposer:ArtifactComposerAccess|undefined=thread?undefined:{
-    blocked:!enabled||busy||unknown||call.active||legacyBlocked()||!handoff.ready||handoff.card?.state==="draft"||editingHandoff||handoff.busy||!!handoff.error||filesLost,
+    blocked:sendAuthorityLost||busy||unknown||call.active||legacyBlocked()||handoff.card?.state==="draft"||editingHandoff||handoff.busy,
     read:id=>view.draft(artifactDraftKey(id)),
     write:(id,value)=>{const key=artifactDraftKey(id);view.stage(key,value);view.flush(key)},
-    send:(message,text)=>send({message,text})
+    send:(message,text)=>send({message,text}),
+    progress:turn=>messages.some(message=>message.turn_id===turn&&message.kind==="assistant")?"replied":
+      turns.some(item=>item.id===turn&&["failed","cancelled","unknown"].includes(item.state))?"failed":null
   }
-  const canCall=!thread&&!!callView?.caughtUp&&!callView.activeTurn&&!busy&&!unknown&&!legacyBlocked()
+  const canCall=!thread&&!!callView?.caughtUp&&!busy&&!unknown&&!legacyBlocked()
     &&!view.heldOutcomes.has(draftKey)&&!parts.queued.length&&!head?.unknown_turn_count
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
   const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
@@ -1146,8 +1190,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       </div>
     })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
-      {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language}/>}
-      <Composer key={draftKey} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={reconnecting&&!!data&&canWrite(data.source)&&!unknown&&!legacyLocked} sendBlocked={filesLost||sendingAccepted||!handoff.ready||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
+      <Composer key={draftKey} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}

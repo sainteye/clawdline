@@ -20,7 +20,7 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
   for (const row of mergeTimeline([timeline])) {
     if(row.work){out.push({id:row.work.id,kind:"work",work:row.work});lastAuthor=null;continue}
     const message=row.message
-    if(!message)continue
+    if(!message||message.kind==="notice"&&message.id.startsWith("lead-call-"))continue
     const date = Date.parse(message.at)
     if (lastDate === null || date-lastDate > ChatSeparatorGapMs) { out.push({id:`sep-${message.id}`,kind:"separator",at:message.at}); lastAuthor=null }
     out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor})
@@ -35,7 +35,7 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
 export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state">[]) {
   const busy = turns.some(t=>t.state==="running" || t.state==="waiting_permission")
   const queuedIDs = new Set(busy ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
-  return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>!queuedIDs.has(m.id) || m.kind!=="user") }
+  return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>(!queuedIDs.has(m.id) || m.kind!=="user") && !(m.kind==="notice"&&m.id.startsWith("lead-call-"))) }
 }
 
 /**

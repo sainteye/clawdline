@@ -5703,6 +5703,7 @@ export interface ProjectAssistantExchange {
   source: ProjectAssistantExchangeEndpoint
   source_turn_id: string
   target: ProjectAssistantExchangeEndpoint
+  target_project?: ProjectAssistantProjectScope
 }
 
 export interface ProjectAssistantExchangeEndpoint {
@@ -6671,8 +6672,9 @@ export const ProjectAssistantPermissionStateValues: readonly ProjectAssistantPer
 export type ProjectAssistantProjectKind =
     "repository"
   | "place"
+  | "personal"
 
-export const ProjectAssistantProjectKindValues: readonly ProjectAssistantProjectKind[] = ["repository", "place"] as const
+export const ProjectAssistantProjectKindValues: readonly ProjectAssistantProjectKind[] = ["repository", "place", "personal"] as const
 
 /**
  * A source-registered choice for Bot configuration. The label is metadata, not
@@ -6732,6 +6734,11 @@ export interface ProjectAssistantProjectsResponse {
   has_more: boolean
   items: ProjectAssistantProjectOption[]
   next_cursor: string
+
+  /**
+   * An empty project choice creates a source-owned personal workspace.
+   */
+  personal_workspace?: boolean
   revision: string
   source: ProjectAssistantSourceStatus
 }
@@ -7330,6 +7337,11 @@ export interface ProjectAssistantSendNowRequest {
 }
 
 export interface ProjectAssistantSendRequest {
+  /**
+   * Ask an idle lead assistant to greet once for this call. The source supplies the
+   * prompt.
+   */
+  call_started?: boolean
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
 
@@ -7409,6 +7421,11 @@ export interface ProjectAssistantSourceStatus {
    */
   dev_servers_supported?: boolean
   fresh: boolean
+
+  /**
+   * This source accepts an idle lead assistant greeting when a voice call starts.
+   */
+  lead_call_supported?: boolean
   machine_id: string
   observed_at: string
   readable: boolean

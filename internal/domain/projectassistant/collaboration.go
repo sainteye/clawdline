@@ -39,6 +39,7 @@ type ExchangeEndpoint struct {
 type Exchange struct {
 	ID              string           `json:"id"`
 	Project         ProjectScope     `json:"project"`
+	TargetProject   ProjectScope     `json:"target_project,omitzero"`
 	Source          ExchangeEndpoint `json:"source"`
 	Target          ExchangeEndpoint `json:"target"`
 	SourceTurnID    string           `json:"source_turn_id"`
@@ -53,6 +54,36 @@ type Exchange struct {
 	Hops            int              `json:"hops"`
 	// Delivery concerns the source reply turn; it does not assert observation/read.
 	Delivery string `json:"delivery,omitempty"`
+}
+
+// DestinationProject preserves the shared scope on exchanges stored before
+// the sender and recipient could have separate workspaces.
+func (x Exchange) DestinationProject() ProjectScope {
+	if x.TargetProject == (ProjectScope{}) {
+		return x.Project
+	}
+	return x.TargetProject
+}
+
+func (x Exchange) ParticipantProject(key BotKey) ProjectScope {
+	switch key {
+	case x.Source.Key:
+		return x.Project
+	case x.Target.Key, x.Recipient().Key:
+		return x.DestinationProject()
+	default:
+		return ProjectScope{}
+	}
+}
+
+// A human designation allows a lead to coordinate same-machine Bots during
+// a user's turn. Peers keep their old scope and never inherit the lead's.
+func MayContactBot(source, target Bot, turn Turn) bool {
+	if source.Key == target.Key || source.Key.MachineID != target.Key.MachineID || source.Hidden || target.Hidden {
+		return false
+	}
+	return source.Project == target.Project ||
+		source.Lead && turn.RoutineRunID == "" && (turn.Origin == UserOrigin || turn.Origin == "")
 }
 
 // Recipient identifies the execution conversation. Target remains the visible
@@ -120,6 +151,10 @@ func ValidateTurnOrigin(t Turn) error {
 		return fail(Invalid, "network_origin")
 	}
 	switch t.Origin {
+	case LeadCallOrigin:
+		if !ValidLeadCallKey(t.IdempotencyKey) || t.ExchangeID != "" || t.Hops != 0 || t.RoutineRunID != "" || t.Room != nil {
+			return fail(Invalid, "lead_call_origin")
+		}
 	case "", UserOrigin, HostNoticeOrigin:
 		if t.ExchangeID != "" || t.Hops != 0 {
 			return fail(Invalid, "turn_origin")

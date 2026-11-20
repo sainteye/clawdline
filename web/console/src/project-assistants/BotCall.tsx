@@ -33,8 +33,8 @@ export function useBotCall(ports: Pick<CallPorts, "current" | "submit">) {
   return { call, state }
 }
 
-export function BotCallControls({call, state, enabled, name, language}: {
-  call: BotCall; state: CallState; enabled: boolean; name: string; language: string
+export function BotCallControls({call, state, enabled, name, language, greeting=false, shortcut=0}: {
+  call: BotCall; state: CallState; enabled: boolean; name: string; language: string; greeting?: boolean; shortcut?:number
 }) {
   const w = botCallWords(language)
   const [readyLanguage,setReadyLanguage] = useState<string|null>(null)
@@ -53,10 +53,17 @@ export function BotCallControls({call, state, enabled, name, language}: {
   }, [language])
   const canStart = enabled && readyLanguage === language
   const label = `${w.start} · ${name}`
+  const started = useRef(0)
+  useEffect(() => {
+    if (!shortcut || shortcut === started.current || !canStart) return
+    started.current = shortcut
+    if (dictating()) call.end("microphone")
+    else void call.start(browserCallAudio(language), greeting)
+  }, [call, canStart, shortcut, language, greeting])
   if (!call.active) return canStart || state.phase !== "idle" ? <div className="pa-bot-call-start">
     {state.phase !== "idle" && <span role="status">{w[state.phase]}</span>}
     {canStart && <button type="button" className="pa-pill" aria-label={label} title={label}
-      onClick={() => { if (dictating()) call.end("microphone"); else void call.start(browserCallAudio(language)) }}>
+      onClick={() => { if (dictating()) call.end("microphone"); else void call.start(browserCallAudio(language), greeting) }}>
       <CallIcon/>{w.start}
     </button>}
   </div> : null

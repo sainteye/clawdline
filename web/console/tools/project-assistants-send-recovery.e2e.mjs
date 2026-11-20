@@ -235,13 +235,15 @@ if (readRecovery) {
       catch(error){throw new Error("expected automatic recovery after one admitted send: "+await page.locator(".pa-chat-error").innerText(),{cause:error})}
       const followUp="A fresh draft during recovery"
       await draft.fill(followUp)
-      assert.equal(await send.isDisabled(),true,"draft may change while source authority is rechecked")
+      assert.equal(await send.isEnabled(),true,"a new message can reach the source while reads recover")
+      await send.click()
+      await page.waitForFunction(()=>window.sendRecovery.state.sends===2)
       await reconnect.waitFor({state:"hidden",timeout:12000})
       await page.locator(".pa-chat-content").getByText(text,{exact:true}).waitFor()
-      assert.equal(await draft.inputValue(),followUp)
-      assert.equal(await send.isEnabled(),true,"a fresh snapshot enables the next manual send")
+      assert.equal(await draft.inputValue(),"")
+      await page.locator(".pa-chat-content").getByText(followUp,{exact:true}).waitFor()
       const state=await page.evaluate(()=>({sends:window.sendRecovery.state.sends,exports:window.sendRecovery.state.exports}))
-      assert.deepEqual(state,{sends:1,exports:0},"automatic recovery issues no mutation and reads no archive")
+      assert.deepEqual(state,{sends:2,exports:0},"both explicit sends are admitted once while automatic recovery only reads")
       await page.screenshot({path:path.join(artifacts,"read-recovery.png")})
       record("accepted send recovers from cursor expiry and offline without resending",state)
     } finally { await engine.close() }

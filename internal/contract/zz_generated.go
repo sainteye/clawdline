@@ -4903,6 +4903,7 @@ type ProjectAssistantExchange struct {
 	Source        ProjectAssistantExchangeEndpoint `json:"source"`
 	SourceTurnID  string                           `json:"source_turn_id"`
 	Target        ProjectAssistantExchangeEndpoint `json:"target"`
+	TargetProject *ProjectAssistantProjectScope    `json:"target_project,omitempty"`
 }
 
 type ProjectAssistantExchangeEndpoint struct {
@@ -5827,10 +5828,11 @@ type ProjectAssistantProjectKind string
 const (
 	ProjectAssistantProjectKindRepository ProjectAssistantProjectKind = "repository"
 	ProjectAssistantProjectKindPlace      ProjectAssistantProjectKind = "place"
+	ProjectAssistantProjectKindPersonal   ProjectAssistantProjectKind = "personal"
 )
 
 // ProjectAssistantProjectKindValues is every value the contract allows, in contract order.
-var ProjectAssistantProjectKindValues = []ProjectAssistantProjectKind{ProjectAssistantProjectKindRepository, ProjectAssistantProjectKindPlace}
+var ProjectAssistantProjectKindValues = []ProjectAssistantProjectKind{ProjectAssistantProjectKindRepository, ProjectAssistantProjectKindPlace, ProjectAssistantProjectKindPersonal}
 
 // A source-registered choice for Bot configuration. The label is metadata, not
 // proof that a directory or native provider is currently usable. Creation and
@@ -5878,8 +5880,11 @@ type ProjectAssistantProjectsResponse struct {
 	HasMore         bool                            `json:"has_more"`
 	Items           []ProjectAssistantProjectOption `json:"items"`
 	NextCursor      string                          `json:"next_cursor"`
-	Revision        string                          `json:"revision"`
-	Source          ProjectAssistantSourceStatus    `json:"source"`
+
+	// An empty project choice creates a source-owned personal workspace.
+	PersonalWorkspace bool                         `json:"personal_workspace,omitempty"`
+	Revision          string                       `json:"revision"`
+	Source            ProjectAssistantSourceStatus `json:"source"`
 }
 
 type ProjectAssistantReactRequest struct {
@@ -6404,8 +6409,11 @@ type ProjectAssistantSendNowRequest struct {
 }
 
 type ProjectAssistantSendRequest struct {
-	Command ProjectAssistantCommand `json:"command"`
-	Fence   ProjectAssistantFence   `json:"fence"`
+	// Ask an idle lead assistant to greet once for this call. The source supplies the
+	// prompt.
+	CallStarted bool                    `json:"call_started,omitempty"`
+	Command     ProjectAssistantCommand `json:"command"`
+	Fence       ProjectAssistantFence   `json:"fence"`
 
 	// The exact draft version approved for this input on API 93 sources.
 	Handoff *ProjectAssistantHandoffRef `json:"handoff,omitempty"`
@@ -6479,13 +6487,16 @@ type ProjectAssistantSourceStatus struct {
 
 	// Optional explicit source support for source-owned server tools and exact command
 	// rules. Missing or false is unsupported; it is not an authority grant.
-	DevServersSupported bool                        `json:"dev_servers_supported,omitempty"`
-	Fresh               bool                        `json:"fresh"`
-	MachineID           string                      `json:"machine_id"`
-	ObservedAt          string                      `json:"observed_at"`
-	Readable            bool                        `json:"readable"`
-	State               ProjectAssistantSourceState `json:"state"`
-	Writable            bool                        `json:"writable"`
+	DevServersSupported bool `json:"dev_servers_supported,omitempty"`
+	Fresh               bool `json:"fresh"`
+
+	// This source accepts an idle lead assistant greeting when a voice call starts.
+	LeadCallSupported bool                        `json:"lead_call_supported,omitempty"`
+	MachineID         string                      `json:"machine_id"`
+	ObservedAt        string                      `json:"observed_at"`
+	Readable          bool                        `json:"readable"`
+	State             ProjectAssistantSourceState `json:"state"`
+	Writable          bool                        `json:"writable"`
 }
 
 type ProjectAssistantSourcesResponse struct {

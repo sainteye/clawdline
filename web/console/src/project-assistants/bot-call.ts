@@ -34,10 +34,11 @@ export interface CallInput {
   callID: string
   fence: W.ProjectAssistantFence
   text: string
+  greeting?: boolean
   signal: AbortSignal
 }
 
-type Submission = { state: "admitted"; turn: string; eventSeq: number } | { state: "sendFailed" | "sendUnknown" }
+type Submission = { state: "admitted"; turn: string; eventSeq: number } | { state: "sendFailed" | "sendUnknown" | "skipped" }
 
 export interface CallPorts {
   current(): CallObservation | null
@@ -66,9 +67,9 @@ export class BotCall {
 
   get active() { return !!this.call }
 
-  async start(source: CallAudioSource) {
+  async start(source: CallAudioSource, greeting = false) {
     const ready = this.ports.current()
-    if (this.call || !ready?.caughtUp || ready.activeTurn) return
+    if (this.call || !ready?.caughtUp) return
     const call: LiveCall = {
       id: crypto.randomUUID(), owner: ready.owner, fence: ready.fence, life: new AbortController(),
     }
@@ -78,12 +79,14 @@ export class BotCall {
       const audio = await source.open(call.life.signal, text => void this.heard(call, text), why => {
         if (this.call === call) this.end(why)
       })
-      if (!this.current(call)) {
+      const current = this.current(call)
+      if (!current) {
         audio.close()
         return
       }
       call.audio = audio
-      this.set("listening")
+      if (greeting && !current.activeTurn) await this.submit(call, current.fence, "", true)
+      else this.set("listening")
     } catch (error) {
       if (this.call === call) this.end(error instanceof CallAudioError ? error.code : "microphone")
     }
@@ -163,10 +166,15 @@ export class BotCall {
     if (this.call !== call || this.state.phase !== "listening" || this.state.muted || !text.trim()) return
     const now = this.current(call)
     if (!now?.caughtUp || now.activeTurn) return
+    await this.submit(call, now.fence, text.trim())
+  }
+
+  private async submit(call: LiveCall, fence: W.ProjectAssistantFence, text: string, greeting = false) {
     this.set("sending")
     try {
-      const result = await this.ports.submit({ callID: call.id, fence: now.fence, text: text.trim(), signal: call.life.signal })
+      const result = await this.ports.submit({ callID: call.id, fence, text, greeting, signal: call.life.signal })
       if (!this.current(call)) return
+      if (result.state === "skipped") return this.set("listening")
       if (result.state !== "admitted") return this.end(result.state)
       call.turn = { id: result.turn, eventSeq: result.eventSeq }
       this.set("waiting")
@@ -210,7 +218,7 @@ export function botCallSendID(callID: string) {
 }
 
 export function isBotCallSend(id: string) {
-  return id.startsWith(callSendPrefix)
+  return id.startsWith(callSendPrefix) || id.startsWith("lead-call-")
 }
 
 /** The source rejects this exact input before its admission transaction mutates.

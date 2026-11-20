@@ -37,7 +37,10 @@
   z-index:1; position:absolute; width:min(900px,calc(100% - 24px)); inset:auto 0 max(12px,env(safe-area-inset-bottom)) 0; margin-inline:auto;
 }
 .pa-artifact-composer .pa-composer { margin:0; box-shadow:0 8px 24px #0005; background:var(--pa-card,#222); }
-.pa-artifact-send-error { padding:5px 8px; margin:0 0 4px; color:var(--pa-ink,#eee); background:var(--pa-card,#222); border-radius:7px; }
+.pa-artifact-composer .pa-editor { margin-inline-start: 10px; }
+.pa-artifact-send-status { display:flex; align-items:center; gap:12px; width:fit-content; max-width:100%; padding:6px 12px; margin:0 0 5px; color:var(--pa-ink,#eee); background:var(--pa-card,#222); border-radius:10px; }
+.pa-artifact-send-status span[role] { display:flex; align-items:center; gap:8px; }
+.pa-artifact-send-status button { background:none; color:inherit; border:0; padding:0; text-decoration:underline; }
 .project-assistants .pa-output-card.pa-artifact-card { width:min(500px,100%); margin:0; }
 .project-assistants .pa-artifact-card > button { padding:0; display:block; border-radius:17px; overflow:hidden; }
 .pa-artifact-preview { display:block; position:relative; overflow:hidden; height:clamp(135px,25vw,240px); background:var(--pa-bg,#111); }

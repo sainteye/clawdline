@@ -180,7 +180,8 @@
       "type": "string",
       "enum": [
         "repository",
-        "place"
+        "place",
+        "personal"
       ],
       "description": ""
     },
@@ -1145,6 +1146,10 @@
       "additionalProperties": false,
       "description": "Offline cached rows stay visibly stale; revoked and unpaired rows cannot be read. An offline source is never an authoritative empty list.",
       "properties": {
+        "lead_call_supported": {
+          "type": "boolean",
+          "description": "This source accepts an idle lead assistant greeting when a voice call starts."
+        },
         "machine_id": {
           "type": "string"
         },
@@ -1639,6 +1644,10 @@
         },
         "fence": {
           "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "call_started": {
+          "type": "boolean",
+          "description": "Ask an idle lead assistant to greet once for this call. The source supplies the prompt."
         },
         "text": {
           "type": "string"
@@ -2336,6 +2345,10 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantAgent"
           }
+        },
+        "personal_workspace": {
+          "type": "boolean",
+          "description": "An empty project choice creates a source-owned personal workspace."
         },
         "revision": {
           "type": "string"
@@ -3356,6 +3369,9 @@
           "type": "string"
         },
         "project": {
+          "$ref": "#/$defs/ProjectAssistantProjectScope"
+        },
+        "target_project": {
           "$ref": "#/$defs/ProjectAssistantProjectScope"
         },
         "source": {

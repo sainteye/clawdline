@@ -14,7 +14,9 @@ const endpoint=(v:W.ProjectAssistantExchangeEndpoint)=>!!v&&!!v.key&&text(v.key.
 /** Validate both participants before any request, reply or diagnostic can be published. */
 export function scopedExchange(x:W.ProjectAssistantExchange,scope:ExchangeScope):W.ProjectAssistantExchange {
   if(!x||!text(x.id)||!endpoint(x.source)||!endpoint(x.target)||!text(x.source_turn_id)||!text(x.request_turn_id)||typeof x.request!=="string"||typeof x.outcome!=="string"||!Number.isSafeInteger(x.revision)||x.revision<1||!Number.isSafeInteger(x.hops)||x.hops<1||x.hops>8||[x.reply,x.detail,x.delivery,x.reply_turn_id].some(v=>v!==undefined&&typeof v!=="string"))throw failure("pa_invalid")
-  if(!sameProject(x.project,scope.project)||x.project.machine_id!==scope.key.machine_id||x.source.key.machine_id!==scope.key.machine_id||x.target.key.machine_id!==scope.key.machine_id||sameBot(x.source.key,x.target.key)||![x.source,x.target].some(p=>sameConversation({...p,project:x.project},scope)))throw failure("pa_scope_denied")
+  const destination = x.target_project ?? x.project
+  if(x.project?.machine_id!==scope.key.machine_id||destination?.machine_id!==scope.key.machine_id||x.source.key.machine_id!==scope.key.machine_id||x.target.key.machine_id!==scope.key.machine_id||sameBot(x.source.key,x.target.key)||
+    !(sameConversation({...x.source,project:x.project},scope)||sameConversation({...x.target,project:destination},scope)))throw failure("pa_scope_denied")
   return x
 }
 
@@ -50,7 +52,7 @@ export async function loadExchange(source:SourceClient,scope:ExchangeScope,refer
   const found=(value.exchanges??[]).filter(x=>x?.id===reference.id)
   if(found.length!==1)throw failure(found.length?"pa_invalid":"pa_not_found")
   const x=scopedExchange(found[0],scope)
-  if(!sameBot(x.source.key,reference.source.key)||!sameBot(x.target.key,reference.target.key)||x.source.conversation_id!==reference.source.conversation_id||x.target.conversation_id!==reference.target.conversation_id||x.source_turn_id!==reference.source_turn_id||x.request_turn_id!==reference.request_turn_id)throw failure("pa_scope_denied")
+  if(!sameProject(x.project,reference.project)||!sameProject(x.target_project??x.project,reference.target_project??reference.project)||!sameBot(x.source.key,reference.source.key)||!sameBot(x.target.key,reference.target.key)||x.source.conversation_id!==reference.source.conversation_id||x.target.conversation_id!==reference.target.conversation_id||x.source_turn_id!==reference.source_turn_id||x.request_turn_id!==reference.request_turn_id)throw failure("pa_scope_denied")
   if(x.revision<reference.revision)throw failure("pa_stale_version")
   // Export has no source envelope; the paired status supplies freshness/access.
   const status=await source.status(signal);check()
