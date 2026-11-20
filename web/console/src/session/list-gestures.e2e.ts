@@ -4206,15 +4206,24 @@ test("a confirmed close immediately leaves detail and allows another close befor
       await tab.press("#session-end")
       await tab.until("the first confirmation is ready", (s) => s.confirmDisabled === false)
       const returning = await tab.run(`new Promise(resolve => {
+        const historyLength = history.length
         document.getElementById("action-confirm-go").click()
         requestAnimationFrame(() => {
           const list = document.querySelector(".pane-list")
+          const scroller = list.querySelector(".list-scroll:not([hidden])")
+          const motion = scroller.getAnimations().find(animation => animation.id === "session-close-return")
+          const frames = motion?.effect.getKeyframes() ?? []
           resolve({ view: document.getElementById("app").dataset.view,
-            fading: list.getAnimations().some(motion => motion.effect.getKeyframes().some(frame => Number(frame.opacity) < 1)),
-            visibility: getComputedStyle(list).visibility })
+            duration: motion?.effect.getTiming().duration ?? null,
+            contentFades: frames.some(frame => Number(frame.opacity) < 1),
+            contentMoves: frames.map(frame => new DOMMatrixReadOnly(frame.transform).m42),
+            paneOpacity: getComputedStyle(list).opacity,
+            visibility: getComputedStyle(list).visibility,
+            sameHistory: history.length === historyLength })
         })
       })`)
-      assert.deepEqual(returning, { view: "list", fading: true, visibility: "visible" })
+      assert.deepEqual(returning, { view: "list", duration: 260, contentFades: true,
+        contentMoves: [14, 0], paneOpacity: "1", visibility: "visible", sameHistory: true })
       await tab.until("the first close reaches the server", () => answers.has(SAFE))
       await tab.until("the sheet, detail and row go before the server answers", (s) =>
         s.sheet === null && s.open === null && !s.order.includes(SAFE), 1800)
@@ -4270,11 +4279,12 @@ for (const reduced of [false, true]) test(`a desktop close ${reduced ? "honors r
           resolve({
             gone: !document.querySelector('li[role="option"][data-id="${SAFE}"]'),
             visual: ghost ? { inert: ghost.inert, pointer: getComputedStyle(ghost).pointerEvents,
+              duration: ghost.getAnimations()[0]?.effect.getTiming().duration ?? null,
               fading: ghost.getAnimations().some(motion => motion.effect.getKeyframes().some(frame => frame.opacity === "0")) } : null,
           })
         })
       })`)
-      assert.deepEqual(exit, { gone: true, visual: reduced ? null : { inert: true, pointer: "none", fading: true } })
+      assert.deepEqual(exit, { gone: true, visual: reduced ? null : { inert: true, pointer: "none", duration: 260, fading: true } })
       await tab.press(`li.row[data-id="${SPARE}"]`)
       await tab.until("another detail opens before the close answers", (state) => state.open === SPARE && answers.has(SAFE))
       await tab.run(`Promise.all(document.getAnimations().filter(motion => motion.effect?.target?.closest(".session-close-visual"))

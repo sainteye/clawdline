@@ -1,12 +1,13 @@
 import "./close-motion.css"
 
 const returnMotion = "session-close-return"
+const closeDuration = 260
 
-function reveal(pane: HTMLElement | null): void {
+function reveal(pane: HTMLElement | null, frames: Keyframe[]): void {
   if (!pane) return
   pane.getAnimations().find((motion) => motion.id === returnMotion)?.cancel()
-  pane.animate([{ opacity: .78 }, { opacity: 1 }], {
-    id: returnMotion, duration: 180, easing: "ease-out",
+  pane.animate(frames, {
+    id: returnMotion, duration: closeDuration, easing: "ease-out",
   })
 }
 
@@ -37,7 +38,7 @@ function leave(row: HTMLElement): (() => void) | undefined {
   const animation = layer.animate([
     { opacity: 1, transform: "none" },
     { opacity: 0, transform: "translateX(-10px) scale(.985)" },
-  ], { duration: 180, easing: "ease-out" })
+  ], { duration: closeDuration, easing: "ease-out" })
   document.body.append(layer)
   void animation.finished.then(() => layer.remove(), () => layer.remove())
   return () => { layer.remove(); animation.cancel() }
@@ -49,10 +50,13 @@ export function playSessionCloseMotion(keys: readonly string[], leavingDetail: b
   const app = document.querySelector<HTMLElement>("#app:not([hidden])")
   if (!app) return
   const list = app.querySelector<HTMLElement>(".pane-list")
-  // Keep the phone's fixed transcript pane on its atomic visibility swap.
-  // The list is already mounted and can fade in without moving the pane.
+  // The phone swaps pane visibility in one frame. Move the scrollable
+  // content into place while the list background and toolbar hold steady.
   if (leavingDetail && list && getComputedStyle(list).visibility === "hidden") {
-    reveal(list)
+    reveal(list.querySelector<HTMLElement>(".list-scroll:not([hidden])"), [
+      { opacity: .82, transform: "translateY(14px)" },
+      { opacity: 1, transform: "translateY(0)" },
+    ])
     return
   }
   const selector = keys.map((key) => `li.row[data-selection-key="${CSS.escape(key)}"]`).join(",")
@@ -61,7 +65,7 @@ export function playSessionCloseMotion(keys: readonly string[], leavingDetail: b
   if (!cancel && leavingDetail) {
     requestAnimationFrame(() => {
       if (app.querySelector("#pane-detail .detail-identity-block[hidden]")) {
-        reveal(app.querySelector("#pane-detail"))
+        reveal(app.querySelector("#pane-detail"), [{ opacity: .78 }, { opacity: 1 }])
       }
     })
   }
