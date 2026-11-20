@@ -628,3 +628,13 @@ old binary or qualify updater installation, service switching, signed bundles,
 failed-update rollback, production UI or a new-format writer. Those recovery
 and destination boundaries remain separate, and Host maintenance writers stay
 closed.
+
+## Project memory pages
+
+API 98 accepts a page number and size on the existing authenticated memory
+view. Page zero loads the Bot memory layer. The console reads Project memory
+when its tab opens, then requests one page at a time in the existing index order. The usual
+page contains 25 previews and the live total and capacity. The store scans
+frontmatter to exclude archived entries and reads only the selected bodies. A detail uses the same captured conversation,
+Project, source epoch and page revision. Earlier daemons and existing API
+clients retain the original request shape.

@@ -56,3 +56,7 @@
 .project-assistants .pa-memory-dreams small { color:var(--pa-dim); font-weight:400; }
 .project-assistants .pa-memory-dreams h4 { margin:12px 0 0; font-size:13px; }
 .project-assistants .pa-memory-dreams ul { padding-inline-start:18px; color:var(--pa-dim); font-size:13px; }
+
+.project-assistants .pa-memory-pages { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; }
+.project-assistants .pa-memory-pages button { min-height:44px; }
+.project-assistants .pa-memory-pages [aria-disabled="true"] { opacity:.55; cursor:default; }

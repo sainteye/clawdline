@@ -42,7 +42,8 @@ import (
 // Source-owned Bot sidebar actions arrive at API 95.
 // Source-side Bot routine schedule previews arrive at API 96.
 // Bots tower floor placements arrive at API 97.
-const APILevel = 97
+// On-demand Project memory pages in Bots arrive at API 98.
+const APILevel = 98
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

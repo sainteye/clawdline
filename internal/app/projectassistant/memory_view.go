@@ -12,9 +12,17 @@ import (
 type MemoryReader interface {
 	ReadMemory(context.Context, pa.BotKey, string) (pa.MemoryViewState, pa.MemoryLayer, string, error)
 }
+
+// ProjectMemoryPage zero values retain the original unpaged read.
+type ProjectMemoryPage struct {
+	Number int
+	Size   int
+}
+
 type MemoryReadRequest struct {
 	Key                                                   pa.BotKey
 	ConversationID, SourceEpoch, Layer, EntryID, Revision string
+	Page                                                  ProjectMemoryPage
 }
 type MemoryReadResult struct {
 	View        pa.MemoryView    `json:"view"`
@@ -61,7 +69,18 @@ func (s *Service) memoryOwner(ctx context.Context, q MemoryReadRequest) (pa.Bot,
 }
 
 func (s *Service) ReadMemory(ctx context.Context, q MemoryReadRequest) (MemoryReadResult, error) {
-	if q.EntryID == "" && (q.Layer != "" || q.Revision != "" || q.SourceEpoch != "") {
+	paged := q.Page != (ProjectMemoryPage{})
+	projectPage := paged && q.Page.Number > 0
+	if paged {
+		if err := pa.CheckPage(q.Page.Size, false); err != nil {
+			return MemoryReadResult{}, err
+		}
+		if q.Page.Number < 0 || projectPage && (q.Layer != "project" || q.SourceEpoch == "") ||
+			!projectPage && q.Layer != "" && q.Layer != "bot" {
+			return MemoryReadResult{}, serviceFailure(pa.Invalid, "project_memory_page")
+		}
+	}
+	if q.EntryID == "" && (q.Revision != "" || !projectPage && (q.Layer != "" || q.SourceEpoch != "")) {
 		return MemoryReadResult{}, serviceFailure(pa.Invalid, "memory_list")
 	}
 	b, _, resolved, epoch, err := s.memoryOwner(ctx, q)
@@ -91,17 +110,24 @@ func (s *Service) ReadMemory(ctx context.Context, q MemoryReadRequest) (MemoryRe
 	}
 	shared := pa.MemoryLayer{Layer: "project", Entries: []pa.MemoryRow{}}
 	sharedText := ""
-	if s.opts.ProjectMemory != nil {
+	if s.opts.ProjectMemory != nil && (!paged || projectPage) {
 		entry = ""
 		if q.Layer == "project" {
 			entry = q.EntryID
 		}
-		shared, sharedText, err = s.opts.ProjectMemory(ctx, resolved, entry)
+		shared, sharedText, err = s.opts.ProjectMemory(ctx, resolved, entry, q.Page)
 		if err != nil {
 			return MemoryReadResult{}, err
 		}
 	}
-	out := MemoryReadResult{SourceEpoch: epoch, View: pa.MemoryView{Bot: b, ConversationID: b.ConversationID, Memory: m, Layers: []pa.MemoryLayer{shared, local}}}
+	layers := []pa.MemoryLayer{shared, local}
+	if paged {
+		layers = []pa.MemoryLayer{local}
+		if projectPage {
+			layers = []pa.MemoryLayer{shared}
+		}
+	}
+	out := MemoryReadResult{SourceEpoch: epoch, View: pa.MemoryView{Bot: b, ConversationID: b.ConversationID, Memory: m, Layers: layers}}
 	if q.EntryID != "" {
 		layer := local
 		if q.Layer == "project" {
@@ -136,12 +162,12 @@ func (s *Service) ReadMemory(ctx context.Context, q MemoryReadRequest) (MemoryRe
 		if currentLocal.Revision != local.Revision {
 			return serviceFailure(pa.ContextStale, "memory_revision")
 		}
-		if s.opts.ProjectMemory != nil {
+		if s.opts.ProjectMemory != nil && (!paged || projectPage) {
 			entry := ""
 			if q.Layer == "project" {
 				entry = q.EntryID
 			}
-			now, _, err := s.opts.ProjectMemory(ctx, resolved, entry)
+			now, _, err := s.opts.ProjectMemory(ctx, resolved, entry, q.Page)
 			if err != nil {
 				return err
 			}

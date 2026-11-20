@@ -15,22 +15,24 @@ const root=fileURLToPath(new URL("..",import.meta.url)),requests=[],operations=[
 
 const bundle=await build({stdin:{contents:`
 import React,{useState} from "react";import {createRoot} from "react-dom/client";
-import {MemoryPanel} from "./src/project-assistants/MemoryPanel";import {BotSettings} from "./src/project-assistants/BotSettings";
+import {MemoryPanel,projectMemoryPageSize} from "./src/project-assistants/MemoryPanel";import {BotSettings} from "./src/project-assistants/BotSettings";
 import {FallbackSourceScope} from "./src/project-assistants/FallbackSettings";
 import {ProjectAssistantSourceClient} from "./src/cloud/project-assistants";import {command} from "./src/project-assistants/client";
 import {words} from "./src/project-assistants/words";import {bootCatalog} from "./src/catalog";import "./src/project-assistants/styles.css";
 const q=new URL(location.href).searchParams,language=q.get("lang"),read=q.has("read");localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json");
-let live={accountKey:"synthetic-account",readerID:read?"read-only":"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:79,paired:true,online:true,writable:!read};
+let live={accountKey:"synthetic-account",readerID:read?"read-only":"synthetic-reader",machineID:${JSON.stringify(machine)},authorizationRevision:"synthetic-grant",apiLevel:98,paired:true,online:true,writable:!read};
 const source=new ProjectAssistantSourceClient(live,(input,init)=>fetch(input+(read?(input.includes("?")?"&":"?")+"fixture_read=1":""),init),()=>live);
 const key={machine_id:live.machineID,bot_id:${JSON.stringify(bot)}},got=await source.get(key,new AbortController().signal),w=words(language);
 window.fixtureRead=()=>source.memoryView(key,got.conversation.id,new AbortController().signal).then(()=>"unexpected publication",e=>e.error?.code);
-window.fixtureDowngrade=async()=>{live={...live,apiLevel:78};try{await source.edit({command:command(key,"edit"),settings:{name:got.bot.name,appearance:got.bot.appearance,instructions:got.bot.instructions.text,expected_version:got.bot.version,runtime_settings:{model:"",options:{}}}},new AbortController().signal);return "unexpected write"}catch(e){return e.error?.code}finally{live={...live,apiLevel:79}}};
+window.fixtureDowngrade=async()=>{live={...live,apiLevel:78};try{await source.edit({command:command(key,"edit"),settings:{name:got.bot.name,appearance:got.bot.appearance,instructions:got.bot.instructions.text,expected_version:got.bot.version,runtime_settings:{model:"",options:{}}}},new AbortController().signal);return "unexpected write"}catch(e){return e.error?.code}finally{live={...live,apiLevel:98}}};
 window.fixtureRevoke=()=>{live={...live,authorizationRevision:"revoked-grant"}};
 function Fixture(){const [bot,setBot]=useState(got.bot),[memory,setMemory]=useState(null),[screen,setScreen]=useState("home"),[message,setMessage]=useState("");
-const refresh=async()=>setMemory(await source.memoryView(key,got.conversation.id,new AbortController().signal));
+const botPage={page:0,page_size:projectMemoryPageSize}
+const refresh=async()=>setMemory(await source.memoryView(key,got.conversation.id,new AbortController().signal,undefined,botPage));
 return <FallbackSourceScope source={source}><main className="project-assistants" style={{maxWidth:900,margin:"0 auto"}}>
 <nav><button onClick={()=>{setScreen("memory");void refresh()}}>{w.memory}</button><button onClick={()=>setScreen("settings")}>{w.settings}</button><button disabled={read} onClick={async()=>{const fresh=await source.get(key,new AbortController().signal);const c=fresh.conversation;await source.send({command:command(key,"send"),fence:{key,project:fresh.bot.project,conversation_id:c.id,binding_id:c.binding_id,generation:c.generation},text:"Synthetic configured input",quote_message_id:""},new AbortController().signal);setMessage("Scripted input accepted")}}>Send scripted input</button></nav>
-{screen==="memory"&&<MemoryPanel value={memory} enabled={!read} w={w} onClose={()=>setScreen("home")} onRefresh={refresh} onSave={async()=>{throw Error("not exercised")}} onForget={async()=>{throw Error("not exercised")}} readDetail={detail=>source.memoryView(key,got.conversation.id,new AbortController().signal,detail)}/>}
+{screen==="memory"&&<MemoryPanel value={memory} enabled={!read} w={w} onClose={()=>setScreen("home")} onRefresh={refresh} onSave={async()=>{throw Error("not exercised")}} onForget={async()=>{throw Error("not exercised")}} readDetail={(detail,page)=>source.memoryView(key,got.conversation.id,new AbortController().signal,detail,page??botPage)}
+readProjectPage={async(epoch,page,signal)=>(await source.memoryView(key,got.conversation.id,signal,{source_epoch:epoch,layer:"project",entry_id:"",revision:""},page)).view.layers[0]}/>}
 {screen==="settings"&&<BotSettings bot={bot} enabled={!read} teamAvailable={true} w={w} onClose={()=>setScreen("home")} onSave={async settings=>{const saved=await source.edit({command:command(key,"edit"),settings},new AbortController().signal);setBot(saved.bot);setScreen("home");setMessage("Settings saved")}}/>}
 <p role="status">{message}</p></main></FallbackSourceScope>}
 createRoot(document.getElementById("app")).render(<Fixture/>);
@@ -44,7 +46,7 @@ const server=createServer(async(req,res)=>{try{
     const chunks=[];for await(const chunk of req)chunks.push(chunk)
     const headers={Authorization:"Bearer "+(read?readToken:token)};for(const key of ["content-type","idempotency-key"])if(req.headers[key])headers[key]=req.headers[key]
     const answer=await fetch(upstream+url.pathname+url.search,{method:req.method,headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})}),body=Buffer.from(await answer.arrayBuffer())
-    requests.push({method:req.method,path:url.pathname,status:answer.status,...(chunks.length?{body:JSON.parse(Buffer.concat(chunks))}:{})})
+    requests.push({method:req.method,path:url.pathname,page:url.searchParams.get("page"),status:answer.status,...(chunks.length?{body:JSON.parse(Buffer.concat(chunks))}:{})})
     if(holdNext&&url.pathname.endsWith("/memory-view")){holdNext=false;held=true;await new Promise(resolve=>{releaseHeld=resolve})}
     res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(body);return
   }
@@ -83,7 +85,19 @@ try{
   for(const [language,readonly] of [["en",true],["en",false],["zh-Hant",false]]){
     const zh=language!=="en",memory=zh?"記憶":"Memory",settings=zh?"Bot 設定":"Bot settings",project=zh?"Project 共用記憶":"Project shared memory",local=zh?"這個 Bot 的記憶":"This Bot’s memory",read=zh?"閱讀筆記":"Read note",save=zh?"儲存":"Save"
     await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings)
-    await browser("click",memory);await waitText(local);await browser("click",project);await waitText("Synthetic shared long note")
+    const beforeMemory=requests.length
+    await browser("click",memory);await waitText(local)
+    assert.deepEqual(requests.slice(beforeMemory).filter(r=>r.path.endsWith("/memory-view")).map(r=>r.page),["0"])
+    await browser("click",project);await waitText("sample-0000")
+    await waitText("sample-0025",false)
+    assert.equal(await evaluate('document.querySelectorAll(".pa-memory-collection .pa-memory-index").length'),25)
+    await waitText(zh?"第 1 頁，共 2 頁":"Page 1 of 2")
+    await browser("click",zh?"下一頁":"Next page");await waitText("Synthetic shared long note")
+    await waitText("sample-0000",false)
+    await waitText(zh?"第 2 頁，共 2 頁":"Page 2 of 2")
+    await browser("click",zh?"上一頁":"Previous page");await waitText("sample-0000")
+    await browser("click",zh?"下一頁":"Next page");await waitText("Synthetic shared long note")
+    assert.deepEqual(requests.slice(beforeMemory).filter(r=>r.path.endsWith("/memory-view")).map(r=>r.page),["0","1","2","1","2"])
     await browser("click",read+": shared-note");await waitText("Synthetic authorized Project note.")
     await browser("screenshot","--out",path.join(artifacts,language+(readonly?"-readonly":"")+"-memory.jpg"));await writeFile(path.join(artifacts,language+(readonly?"-readonly":"")+"-memory.html"),await evaluate("document.documentElement.outerHTML"))
     assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true,"Memory stays within viewport")
@@ -95,7 +109,7 @@ try{
       await waitText("Reasoning effort");await select(zh?"模型":"Model","synthetic-large");await waitText("Reasoning effort");await select("Reasoning effort","high");await select("Fast mode","true")
       await browser("screenshot","--out",path.join(artifacts,language+"-settings.jpg"));await writeFile(path.join(artifacts,language+"-settings.html"),await evaluate("document.documentElement.outerHTML"))
       await browser("click",save);await waitText("Settings saved")
-      if(!zh){await browser("click","Send scripted input");await waitText("Scripted input accepted")}
+      if(zh){await browser("click","Send scripted input");await waitText("Scripted input accepted")}
     }
     await browser("close");tab=undefined
   }

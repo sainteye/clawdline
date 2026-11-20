@@ -11,21 +11,35 @@ import (
 	"net/http"
 )
 
-func (s *Server) projectAssistantProjectMemory(ctx context.Context, resolved pa.ProjectResolution, id string) (pa.MemoryLayer, string, error) {
+func (s *Server) projectAssistantProjectMemory(ctx context.Context, resolved pa.ProjectResolution, id string, page app.ProjectMemoryPage) (pa.MemoryLayer, string, error) {
 	layer := pa.MemoryLayer{Layer: "project", Cap: memory.LiveEntryLimit, Available: true, Entries: []pa.MemoryRow{}}
 	key, ok := memory.KeyFor(resolved.Directory)
 	if !ok {
 		return layer, "", paHTTPFailure(pa.ScopeDenied, "project_memory_key")
 	}
-	v, err := s.memoryStore().Browse(key, id)
+	var v memory.BrowseView
+	var total int
+	var err error
+	if page.Number > 0 {
+		v, total, err = s.memoryStore().BrowsePage(key, id, page.Number, page.Size)
+	} else {
+		v, err = s.memoryStore().Browse(key, id)
+		total = len(v.Entries)
+	}
+	if errors.Is(err, memory.ErrInvalid) && page.Number > 0 {
+		return layer, "", paHTTPFailure(pa.Invalid, "project_memory_page")
+	}
 	if errors.Is(err, memory.ErrNotFound) {
+		if page.Number > 0 {
+			return layer, "", paHTTPFailure(pa.ContextStale, "project_memory_page")
+		}
 		return layer, "", paHTTPFailure(pa.NotFound, "memory_entry")
 	}
 	if err != nil {
 		return layer, "", err
 	}
 	layer.Revision = v.Revision
-	layer.Used = len(v.Entries)
+	layer.Used = total
 	layer.Truncated = layer.Used > memory.LiveEntryLimit
 	for _, entry := range v.Entries {
 		if len(layer.Entries) == memory.LiveEntryLimit {
@@ -48,6 +62,9 @@ func (h *projectAssistantHTTP) readMemorySettings(r *http.Request, route paHTTPR
 	fields := []string{"machine_id", "conversation_id"}
 	if route.action == "memory-view" {
 		fields = append(fields, "source_epoch", "layer", "entry_id", "revision")
+		if r.URL.Query().Has("page") || r.URL.Query().Has("page_size") {
+			fields = append(fields, "page", "page_size")
+		}
 	} else {
 		fields = append(fields, "agent", "model")
 		if r.URL.Query().Has("login_profile") {
@@ -63,6 +80,14 @@ func (h *projectAssistantHTTP) readMemorySettings(r *http.Request, route paHTTPR
 		return nil, err
 	}
 	request := app.MemoryReadRequest{Key: key, ConversationID: q.Get("conversation_id"), SourceEpoch: q.Get("source_epoch"), Layer: q.Get("layer"), EntryID: q.Get("entry_id"), Revision: q.Get("revision")}
+	if q.Has("page") {
+		page, pageErr := paHTTPNumber(q, "page")
+		size, sizeErr := paHTTPNumber(q, "page_size")
+		if pageErr != nil || sizeErr != nil || page > memory.LiveEntryLimit || size < 1 || size > pa.MaxPageRows {
+			return nil, paHTTPFailure(pa.Invalid, "project_memory_page")
+		}
+		request.Page = app.ProjectMemoryPage{Number: int(page), Size: int(size)}
+	}
 	var value any
 	var check func(context.Context) error
 	if route.action == "memory-view" {

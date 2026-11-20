@@ -300,6 +300,26 @@ func TestProjectAssistantCapturedLegacy16SourceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProjectAssistantMemoryViewCloudPage(t *testing.T) {
+	calls := 0
+	bridge := open(projectAssistantRouter(func(_ context.Context, req LocalRequest) (LocalResponse, error) {
+		calls++
+		if req.Method != "GET" || req.Path != "/v1/project-assistants/bot/memory-view" ||
+			req.Query["page"] != "2" || req.Query["page_size"] != "25" ||
+			req.Query["source_epoch"] != "epoch" || req.Query["layer"] != "project" {
+			t.Fatalf("wrong forwarded page: %+v", req)
+		}
+		return LocalResponse{Status: 200, Body: []byte(`{"contract_version":"project-assistants.v1"}`)}, nil
+	}))
+	fields := body{"type": "project-assistants.memory-view", "session": MachineReplySession, "request": "memory-page",
+		"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "source_epoch": "epoch", "layer": "project",
+		"entry_id": "", "revision": "", "page": 2, "page_size": 25}
+	answer := bridge.Handle(t.Context(), request(t, ClassCtl, fields))
+	if !answer.OK() || calls != 1 {
+		t.Fatal("bounded page was not carried", answer.Status, calls)
+	}
+}
+
 func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 	for _, row := range projectAssistantRows(t) {
 		t.Run(row.Op, func(t *testing.T) {
@@ -360,7 +380,7 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 					mutations = append(mutations, changed)
 				}
 			}
-			for _, path := range []string{"page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version", "handoff.revision", "ref.revision"} {
+			for _, path := range []string{"page", "page_size", "before_seq", "after_seq", "event_seq", "expected_revision", "revision", "fence.generation", "settings.expected_version", "cursor.message_seq", "quote.seq", "message_seq", "group_version", "handoff.revision", "ref.revision"} {
 				if path == "revision" && !strings.HasPrefix(row.Op, "project-assistants.dev-server-") {
 					continue // Memory-view revision is an opaque string, not this CAS integer.
 				}

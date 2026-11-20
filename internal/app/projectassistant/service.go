@@ -34,7 +34,7 @@ type ServiceOptions struct {
 	NetworkCapabilities func(context.Context, string, string) pa.NetworkCapabilities
 	LoginProfiles       LoginProfiles
 	Extensions          ExtensionInventory
-	ProjectMemory       func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	ProjectMemory       func(context.Context, pa.ProjectResolution, string, ProjectMemoryPage) (pa.MemoryLayer, string, error)
 	Configuration       func(context.Context, pa.Bot, string, string) (pa.ConfigurationCatalog, error)
 	Repository          Repository
 	ReadViews           ReadViews

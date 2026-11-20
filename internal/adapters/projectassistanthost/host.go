@@ -45,7 +45,7 @@ type Options struct {
 	NetworkCapabilities func(context.Context, string, string) pa.NetworkCapabilities
 	Extensions          app.ExtensionInventory
 	LoginProfiles       func(context.Context) (app.LoginProfiles, error)
-	ProjectMemory       func(context.Context, pa.ProjectResolution, string) (pa.MemoryLayer, string, error)
+	ProjectMemory       func(context.Context, pa.ProjectResolution, string, app.ProjectMemoryPage) (pa.MemoryLayer, string, error)
 	Database            *sql.DB
 	// Reader borrows Store's existing query-only pool. Host never closes it.
 	Reader *sql.DB

@@ -194,6 +194,71 @@ func TestMemorySettingsStoredHTTP(t *testing.T) {
 	paAssertHTTPFailure(t, f.request(t, "GET", memoryViewURL(f, g.Conversation.ID, detail), f.readonly, nil), 404, pa.NotFound)
 }
 
+func TestProjectSharedMemoryHTTPPages(t *testing.T) {
+	f, _ := memorySettingsFixture(t)
+	conversation := f.get(t, f.local).Conversation.ID
+	key, ok := memory.KeyFor(f.project)
+	if !ok {
+		t.Fatal("fixture memory key missing")
+	}
+	populateProjectMemoryPages(t, f, key, 1023)
+	pages := url.Values{"page": {"0"}, "page_size": {"25"}, "source_epoch": {""}, "layer": {""}, "entry_id": {""}, "revision": {""}}
+	req := func() *httptest.ResponseRecorder {
+		return f.request(t, "GET", memoryViewURL(f, conversation, pages), f.readonly, nil)
+	}
+	load := func() contract.ProjectAssistantMemoryViewResponse {
+		t.Helper()
+		response := req()
+		paAssertHTTPContract(t, response, 200, "ProjectAssistantMemoryViewResponse")
+		return paHTTPDecode[contract.ProjectAssistantMemoryViewResponse](t, response)
+	}
+	initial := load()
+	if len(initial.View.Layers) != 1 || initial.View.Layers[0].Layer != "bot" {
+		t.Fatal("opening Bot memory returned Project rows")
+	}
+	pages.Set("source_epoch", initial.SourceEpoch)
+	pages.Set("layer", "project")
+	pages.Set("page", "1")
+	first := load().View.Layers[0]
+	if first.Used != 1024 || len(first.Entries) != 25 || first.Entries[0].ID != "sample-0000" || first.Entries[24].ID != "sample-0024" {
+		t.Fatal("first page did not contain exactly the first 25 of 1024 rows")
+	}
+	pages.Set("page", "2")
+	second := load().View.Layers[0]
+	if len(second.Entries) != 25 || second.Entries[0].ID != "sample-0025" {
+		t.Fatal("second page duplicated or skipped rows")
+	}
+	pages.Set("page", "41")
+	last := load().View.Layers[0]
+	if len(last.Entries) != 24 || last.Entries[23].ID != "shared-note" {
+		t.Fatal("last page was incorrect")
+	}
+	pages.Set("entry_id", "shared-note")
+	pages.Set("revision", last.Revision)
+	detail := load().Detail
+	if detail == nil || !strings.HasPrefix(detail.Text, "Synthetic authorized Project note.") {
+		t.Fatal("paged detail omitted its body")
+	}
+	pages.Set("page", "1")
+	paAssertHTTPFailure(t, req(), 409, pa.ContextStale)
+	pages.Set("page_size", "101")
+	paAssertHTTPFailure(t, req(), 400, pa.Invalid)
+}
+
+func populateProjectMemoryPages(t *testing.T, f *paServerFixture, key string, count int) {
+	t.Helper()
+	dir, err := f.s.memoryStore().Dir(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < count; i++ {
+		entry := memory.Entry{Name: fmt.Sprintf("sample-%04d", i), Description: "Synthetic preview", Type: memory.TypeProject, Body: "Synthetic body"}
+		if err = os.WriteFile(filepath.Join(dir, entry.Name+".md"), []byte(memory.Format(entry)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestMemorySettingsBrowser(t *testing.T) {
 	dir := os.Getenv("CLAWDLINE_MEMORY_SETTINGS_BROWSER_DIR")
 	if dir == "" {
@@ -203,6 +268,11 @@ func TestMemorySettingsBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, record := memorySettingsFixture(t)
+	key, ok := memory.KeyFor(f.project)
+	if !ok {
+		t.Fatal("fixture memory key missing")
+	}
+	populateProjectMemoryPages(t, f, key, 26)
 	server := httptest.NewServer(f.h)
 	defer server.Close()
 	cmd := exec.Command("node", "../../../web/console/tools/project-assistants-memory-settings.e2e.mjs")

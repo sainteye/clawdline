@@ -22,7 +22,7 @@ import { BotSettings } from "./BotSettings"
 import { BotTemplate } from "./BotTemplate"
 import { TeamApprovals } from "./Groups"
 import { Routines } from "./Routines"
-import { MemoryPanel,type MemoryNoteDraft } from "./MemoryPanel"
+import { MemoryPanel, projectMemoryPageSize, type MemoryNoteDraft } from "./MemoryPanel"
 import {OutputLibrary} from "./OutputLibrary"
 import type {ArtifactComposerAccess,ArtifactSendResult} from "./ArtifactWorkspace"
 import { ChatRows } from "./ChatRows"
@@ -860,10 +860,16 @@ ${currentDraft}`:submitted)
     }catch(error){if(valid()&&!control.signal.aborted)setExportError(errorCode(error))}
     finally{reads.current.delete(control);if(valid())setExporting(false)}
   }
-  const loadExport=async()=>{
+  const projectMemoryPages=source.canProjectMemoryPages?.()===true
+  const readMemory=async(signal:AbortSignal,detail?:import("./client").MemoryReadDetail,page?:import("./client").ProjectMemoryPage)=>{
     if(!source.canMemorySettings?.()||!source.memoryView)throw failure("pa_unsupported")
-    const value=await authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s),new AbortController().signal)
+    const value=await authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail,page),signal)
     if(!valid()||!sameConversation({key:value.view.bot.key,project:value.view.bot.project,conversation_id:value.view.conversation_id},scope))throw failure("pa_scope_denied")
+    return value
+  }
+  const botMemoryPage=projectMemoryPages?{page:0,page_size:projectMemoryPageSize}:undefined
+  const loadExport=async()=>{
+    const value=await readMemory(new AbortController().signal,undefined,botMemoryPage)
     if(memoryShown.current)setMemory(previous=>previous&&previous.view.memory.revision>value.view.memory.revision?previous:value)
   }
   // The panel opens at once with placeholders; a failed read closes it onto the chat's error line.
@@ -1218,7 +1224,12 @@ ${currentDraft}`:submitted)
         </div>
       </>,
       library:<OutputLibrary embedded artifactComposer={artifactComposer} source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
-      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={async detail=>{if(!source.memoryView)throw failure("pa_unsupported");return authorized(source,current,s=>source.memoryView!(key,scope.conversation_id,s,detail),new AbortController().signal)}} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
+      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{
+        const value=await readMemory(signal,{source_epoch:epoch,layer:"project",entry_id:"",revision:""},page)
+        const layer=value.view.layers.find(layer=>layer.layer==="project")
+        if(!layer)throw failure("pa_invalid")
+        return layer
+      }:undefined} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
       settings:null
     }}/>}
   </section>

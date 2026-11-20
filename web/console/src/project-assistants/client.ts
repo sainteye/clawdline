@@ -8,6 +8,9 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
   return bot&&conversation?{bot,conversation,machine:fields.get("machine")??""}:null
 }
 
+export type MemoryReadDetail={source_epoch:string;layer:string;entry_id:string;revision:string}
+export type ProjectMemoryPage={page:number;page_size:number}
+
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
  canReactions?():boolean
@@ -31,7 +34,8 @@ export interface SourceClient {
   extensions?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantExtensionsResponse>
   canTopicMemory?():boolean
   canMemorySettings?():boolean
-  memoryView?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}):Promise<W.ProjectAssistantMemoryViewResponse>
+  canProjectMemoryPages?():boolean
+  memoryView?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:MemoryReadDetail,page?:ProjectMemoryPage):Promise<W.ProjectAssistantMemoryViewResponse>
   configuration?(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string):Promise<W.ProjectAssistantConfigurationResponse>
   canRenameArtifact?(): boolean
   renameArtifact?(request:W.ProjectAssistantRenameArtifactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>

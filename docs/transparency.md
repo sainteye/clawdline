@@ -1103,3 +1103,9 @@ receipt is pending. The Cloud writer captures the selected execution before the
 detail changes and uses the closeability version from the confirmation. The
 English and Taiwan Traditional Chinese Session rotation and CodeGraph entries
 still describe the same handoff request, safety check and message guidance.
+
+The Bots memory inspector reads Project memory previews on demand, one page
+at a time. Review of the English and Taiwan Traditional Chinese persistent-Bot
+memory explanations confirmed that Project files remain a read-only display
+and do not enter the Bot's model context. The source receipts follow the
+reviewed read projection and UI.

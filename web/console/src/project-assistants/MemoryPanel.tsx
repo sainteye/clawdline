@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
+import type { MemoryReadDetail, ProjectMemoryPage } from "./client"
 import { MemoryBrowser } from "./MemoryBrowser"
 import { MemoryDreams } from "./MemoryDreams"
 import type { Words } from "./words"
 import { LoadingSkeleton } from "../LoadingSkeleton"
 import "./topic-memory.css"
+
+export const projectMemoryPageSize=25
 
 export type MemoryNoteDraft={entry_id:string;title:string;summary:string;text:string;expected_revision:number}
 
@@ -15,12 +18,13 @@ type MemoryProps={
   onSaveNote?:(note:MemoryNoteDraft)=>Promise<void>;noteDraft?:MemoryNoteDraft|null;onNoteDraft?:(draft:MemoryNoteDraft|null)=>void;pendingNote?:MemoryNoteDraft;
   onForget:(ids:string[])=>Promise<void>;
   onRefresh:()=>Promise<void>;onClose:()=>void;
-  readDetail:(detail:{source_epoch:string;layer:string;entry_id:string;revision:string})=>Promise<W.ProjectAssistantMemoryViewResponse>
+  readDetail:(detail:MemoryReadDetail,page?:ProjectMemoryPage)=>Promise<W.ProjectAssistantMemoryViewResponse>;
+  readProjectPage?:(epoch:string,page:ProjectMemoryPage,signal:AbortSignal)=>Promise<W.ProjectAssistantMemoryLayer>
 }
 
 /** Open as soon as it is asked for: placeholders stand where the memory will be until its read answers. */
 export function MemoryPanel({value,...props}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse|null}) {
-  return value?<MemoryContent value={value} {...props}/>:<MemoryLoading w={props.w} onClose={props.onClose} embedded={props.embedded}/>
+  return value?<MemoryContent key={value.source_epoch} value={value} {...props}/>:<MemoryLoading w={props.w} onClose={props.onClose} embedded={props.embedded}/>
 }
 
 function MemoryLoading({w,onClose,embedded=false}:{w:Words;onClose:()=>void;embedded?:boolean}) {
@@ -32,7 +36,7 @@ function MemoryLoading({w,onClose,embedded=false}:{w:Words;onClose:()=>void;embe
   </section>
 }
 
-function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingNote,noteDraft,onNoteDraft,enabled,onSave,onSaveNote,onForget,onRefresh,onClose,readDetail,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
+function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingNote,noteDraft,onNoteDraft,enabled,onSave,onSaveNote,onForget,onRefresh,onClose,readDetail,readProjectPage,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
   const [text,setText]=useState(pendingText??""),[selected,setSelected]=useState<string[]>(()=>(value.view.layers.find(layer=>layer.layer==="bot")?.entries??[]).filter(entry=>entry.sources.some(source=>pendingSources?.includes(source.id))).map(entry=>entry.id))
   const [busy,setBusy]=useState(false),[error,setError]=useState(pendingNote?"pa_outcome_unknown":""),[uncertain,setUncertain]=useState(!!pendingNote)
   const [localNote,setLocalNote]=useState<MemoryNoteDraft|null>(pendingNote??null)
@@ -47,8 +51,26 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
   const [read, setRead] = useState<{ snapshot: string; detail?: W.ProjectAssistantMemoryDetail } | null>(null)
   const detailSequence = useRef(0)
   const detailHeading = useRef<HTMLHeadingElement>(null), detailOpener = useRef<HTMLButtonElement>(null)
-  const shown = value.view.layers.find(item => item.layer === layer)
-  const snapshot = JSON.stringify([layer, value.source_epoch, ...value.view.layers.map(item => [item.layer, item.revision])])
+  const [pageRequest,setPageRequest]=useState({page:1})
+  const [projectPage,setProjectPage]=useState<{request:typeof pageRequest;layer?:W.ProjectAssistantMemoryLayer;error?:string}|null>(null)
+  const readProjectPageRef=useRef(readProjectPage)
+  readProjectPageRef.current=readProjectPage
+  const pagedProject=layer==="project"&&!!readProjectPage
+  useEffect(()=>{
+    const readPage=readProjectPageRef.current
+    if(!pagedProject||!readPage)return
+    const control=new AbortController()
+    void readPage(value.source_epoch,{...pageRequest,page_size:projectMemoryPageSize},control.signal).then(
+      layer=>{if(!control.signal.aborted)setProjectPage({request:pageRequest,layer})},
+      error=>{if(!control.signal.aborted)setProjectPage({request:pageRequest,error:errorCode(error)})}
+    )
+    return()=>control.abort()
+  },[pagedProject,value.source_epoch,pageRequest])
+  const currentProjectPage=projectPage?.request===pageRequest?projectPage:null
+  const shown=pagedProject?currentProjectPage?.layer:value.view.layers.find(item=>item.layer===layer)
+  const pageLoading=pagedProject&&!currentProjectPage
+  const pageTotal=Math.max(1,Math.ceil((projectPage?.layer?.used??0)/projectMemoryPageSize))
+  const snapshot=JSON.stringify([layer,value.source_epoch,shown?.revision,pagedProject?pageRequest.page:undefined])
   const detail = read?.snapshot === snapshot ? read.detail : undefined
   const reading = read?.snapshot === snapshot && !read.detail
 
@@ -59,10 +81,19 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
     detailHeading.current?.focus({preventScroll:true})
   }, [detail])
 
-  const switchLayer = (next: string) => {
-    if (next === layer) return
+  const changeProjectPage=(page:number)=>{
     detailSequence.current++
     setRead(null)
+    setError("")
+    setPageRequest({page})
+  }
+  const refresh=()=>{
+    if(pagedProject)changeProjectPage(1)
+    else void onRefresh().catch(error=>setError(errorCode(error)))
+  }
+  const switchLayer = (next: string) => {
+    if (next === layer) return
+    changeProjectPage(1)
     setLayer(next)
   }
   const open = async (entry: W.ProjectAssistantMemoryRow, opener: HTMLButtonElement) => {
@@ -72,7 +103,7 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
     setRead({ snapshot })
     setError("")
     try {
-      const answer = await readDetail({ source_epoch: value.source_epoch, layer, entry_id: entry.id, revision: shown.revision })
+      const answer = await readDetail({ source_epoch: value.source_epoch, layer, entry_id: entry.id, revision: shown.revision },pagedProject?{...pageRequest,page_size:projectMemoryPageSize}:undefined)
       if (sequence !== detailSequence.current) return
       setRead(answer.detail ? { snapshot, detail: answer.detail } : null)
     } catch (e) {
@@ -103,7 +134,7 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       )}
     </nav>
     <div className="pa-memory-refresh">
-      <button type="button" onClick={() => void onRefresh().catch(e => setError(errorCode(e)))}>{w.memoryRefresh}</button>
+      <button type="button" onClick={refresh}>{w.memoryRefresh}</button>
     </div>
     {reading && <p role="status">{w.memoryLoading}</p>}
     {detail && <section className="pa-memory-detail" aria-label={w.memoryRead}>
@@ -132,7 +163,14 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       <label>{w.memoryNoteBody}<textarea className="pa-memory-note-body" value={note.text} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,text:event.target.value})}/></label>
       <div className="pa-toolbar"><button type="button" disabled={busy||uncertain} onClick={()=>setNote(null)}>{w.cancel}</button><button type="submit" disabled={!enabled||busy||!note.title.trim()||!note.summary.trim()||!note.text.trim()}>{uncertain?w.retry:w.save}</button></div>
     </form>}
-    {layer === "dreams" ? <MemoryDreams history={value.view.dreams} w={w}/> : !shown?.available ? <p role="status">{w.memoryUnavailable}</p> : <>
+    {pagedProject&&(pageTotal>1||pageRequest.page>1)&&<div className="pa-memory-pages" role="group" aria-label={w.memoryProjectFiles}>
+      <button className="pa-pill" type="button" aria-disabled={pageLoading||pageRequest.page===1} onClick={()=>{if(!pageLoading&&pageRequest.page>1)changeProjectPage(pageRequest.page-1)}}>{w.memoryPreviousPage}</button>
+      {shown&&<span role="status">{w.memoryPage.replace("{page}",String(pageRequest.page)).replace("{total}",String(pageTotal))}</span>}
+      <button className="pa-pill" type="button" aria-disabled={pageLoading||pageRequest.page>=pageTotal} onClick={()=>{if(!pageLoading&&pageRequest.page<pageTotal)changeProjectPage(pageRequest.page+1)}}>{w.memoryNextPage}</button>
+    </div>}
+    {layer === "dreams" ? <MemoryDreams history={value.view.dreams} w={w}/> : pageLoading ? <p role="status">{w.memoryLoading}</p> :
+      pagedProject&&currentProjectPage?.error ? <p role="alert">{currentProjectPage.error==="pa_context_stale"?w.memoryDetailStale:w.unavailable} ({currentProjectPage.error})
+        <button type="button" onClick={()=>changeProjectPage(currentProjectPage.error==="pa_context_stale"?1:pageRequest.page)}>{w.retry}</button></p> : !shown?.available ? <p role="status">{w.memoryUnavailable}</p> : <>
       <div className="pa-memory-content-head">
         <p className="pa-memory-usage">{w.memoryUsage.replace("{used}", String(shown.used)).replace("{cap}", String(shown.cap))}</p>
         {layer === "bot" && onSaveNote && <button className="pa-memory-create-note" type="button" disabled={!enabled || busy || !!note || uncertain}
@@ -155,7 +193,7 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       <button type="button" disabled={!enabled||busy||!sourceIDs.length} onClick={()=>void run(()=>onForget(sourceIDs),()=>setSelected([]))}>{w.forget}</button>
     </fieldset></details>
     </>}<p className="pa-memory-revision">{w.memoryRevision}: {value.view.memory.revision} · {w.forgotten}: {value.view.memory.forgotten_count}</p>
-    {error&&<p role="alert">{uncertain?w.unknown:["pa_context_stale","pa_stale_version"].includes(error)?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");void onRefresh().catch(error=>setError(errorCode(error)))}}>{w.memoryRefresh}</button></p>}
+    {error&&<p role="alert">{uncertain?w.unknown:["pa_context_stale","pa_stale_version"].includes(error)?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");refresh()}}>{w.memoryRefresh}</button></p>}
     {busy&&<p role="status">{w.savingMemory}</p>}
   </section>
 }

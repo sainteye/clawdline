@@ -5629,7 +5629,9 @@
         "source_epoch": "",
         "layer": "",
         "entry_id": "",
-        "revision": ""
+        "revision": "",
+        "page": 0,
+        "page_size": 25
       },
       "shapes": [
         {
@@ -5650,6 +5652,32 @@
             "entry_id",
             "layer",
             "machine_id",
+            "revision",
+            "source_epoch"
+          ]
+        },
+        {
+          "body": [
+            "bot_id",
+            "conversation_id",
+            "entry_id",
+            "layer",
+            "machine_id",
+            "page",
+            "page_size",
+            "request",
+            "revision",
+            "session",
+            "source_epoch"
+          ],
+          "path": "/v1/project-assistants/{bot_id}/memory-view",
+          "query": [
+            "conversation_id",
+            "entry_id",
+            "layer",
+            "machine_id",
+            "page",
+            "page_size",
             "revision",
             "source_epoch"
           ]
@@ -5682,6 +5710,16 @@
           },
           "revision": {
             "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "min": 0,
+            "max": 1152
+          },
+          "page_size": {
+            "type": "integer",
+            "min": 1,
+            "max": 100
           }
         },
         "route": {
@@ -5704,6 +5742,12 @@
             },
             "revision": {
               "from": "revision"
+            },
+            "page": {
+              "from": "page"
+            },
+            "page_size": {
+              "from": "page_size"
             }
           }
         }

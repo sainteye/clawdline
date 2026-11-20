@@ -67,12 +67,13 @@ test("every carried row's console route is parsed as its word", () => {
       if (row.op.startsWith("project-assistants.")) {
         const example = row.example
         const lookup = (path:string) => path.split(".").reduce<unknown>((value,key) => (value as Record<string,unknown>)[key],example)
-        let path = row.shapes[0].path.replace(/\{([^}]+)\}/g,(_match,field:string) => encodeURIComponent(String(lookup(field))))
+        const shape = row.op === "project-assistants.memory-view" ? row.shapes.find(shape=>shape.query?.includes("page"))! : row.shapes[0]
+        let path = shape.path.replace(/\{([^}]+)\}/g,(_match,field:string) => encodeURIComponent(String(lookup(field))))
         const reference = row.decode?.route?.headers?.["Idempotency-Key"]?.from
         const id = reference ? lookup(reference) : undefined
         assert.ok(id === undefined || typeof id === "string",`${row.op}: declared stable command ref`)
         const key = example.key as {machine_id:string} | undefined
-        const query = new URLSearchParams((row.shapes[0].query ?? []).map(field => {
+        const query = new URLSearchParams((shape.query ?? []).map(field => {
           const from=row.decode?.route?.query?.[field]?.from
           return [field,String(from?lookup(from):field === "machine_id" ? key?.machine_id ?? example.machine_id : example[field])]
         }))

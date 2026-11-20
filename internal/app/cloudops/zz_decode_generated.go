@@ -3664,6 +3664,7 @@ func genDecodeProjectAssistantsMemory(b body) (plan, LocalRequest, bool) {
 func genDecodeProjectAssistantsMemoryView(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "bot_id", "conversation_id", "entry_id", "layer", "machine_id", "request", "revision", "session", "source_epoch"},
+		[]string{"type", "bot_id", "conversation_id", "entry_id", "layer", "machine_id", "page", "page_size", "request", "revision", "session", "source_epoch"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -3682,6 +3683,12 @@ func genDecodeProjectAssistantsMemoryView(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("page", genRule{kind: "integer", min: genInt(0), max: genInt(1152)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("page_size", genRule{kind: "integer", min: genInt(1), max: genInt(100)}) {
+		return plan{}, LocalRequest{}, false
+	}
 	if !b.genValid("revision", genRule{kind: "string"}) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -3694,7 +3701,7 @@ func genDecodeProjectAssistantsMemoryView(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/project-assistants/" + segment(genText(b["bot_id"])) + "/memory-view"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "entry_id": genValue{from: "entry_id"}, "layer": genValue{from: "layer"}, "machine_id": genValue{from: "machine_id"}, "revision": genValue{from: "revision"}, "source_epoch": genValue{from: "source_epoch"}})
+	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "entry_id": genValue{from: "entry_id"}, "layer": genValue{from: "layer"}, "machine_id": genValue{from: "machine_id"}, "page": genValue{from: "page"}, "page_size": genValue{from: "page_size"}, "revision": genValue{from: "revision"}, "source_epoch": genValue{from: "source_epoch"}})
 	req.Header = asDevice()
 	return p, req, true
 }

@@ -1,7 +1,7 @@
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
-import type { SourceClient } from "../project-assistants/client.js"
+import type { MemoryReadDetail, ProjectMemoryPage, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -59,6 +59,7 @@ export const PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL = 95
 export const PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL = 96
 // The Bots tower's floor placements, one document per machine, arrive at 97.
 export const PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL = 97
+export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
 const base = "/v1/project-assistants"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -523,9 +524,15 @@ export class ProjectAssistantSourceClient implements SourceClient {
   loginProfileAction(r:W.ProjectAssistantLoginProfileAction,signal:AbortSignal){return this.request<W.ProjectAssistantLoginProfileResponse>(endpoint(r.command.key,"/login-profile"),signal,r,"POST",true,r.kind==="api_key"||r.action==="prepare-key"?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:PROJECT_ASSISTANTS_LOGIN_API_LEVEL)}
   canTopicMemory(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL);return true}catch{return false}}
   canMemorySettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL);return true}catch{return false}}
-  async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:{source_epoch:string;layer:string;entry_id:string;revision:string}){
-    this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
-    const v=answer.view;if(v.bot.key.machine_id!==key.machine_id||v.bot.key.bot_id!==key.bot_id||v.bot.conversation_id!==conversation||v.conversation_id!==conversation||!answer.source_epoch||detail&&(answer.source_epoch!==detail.source_epoch||answer.detail?.id!==detail.entry_id||answer.detail?.layer!==detail.layer||answer.detail?.revision!==detail.revision))throw failure("pa_scope_denied")
+  canProjectMemoryPages(){return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL}
+  async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:MemoryReadDetail,page?:ProjectMemoryPage){
+    this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail,...page}),signal,undefined,"GET",true,page?PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
+    const v=answer.view;if(v.bot.key.machine_id!==key.machine_id||v.bot.key.bot_id!==key.bot_id||v.bot.conversation_id!==conversation||v.conversation_id!==conversation||!answer.source_epoch||detail&&(answer.source_epoch!==detail.source_epoch||detail.entry_id&&(answer.detail?.id!==detail.entry_id||answer.detail?.layer!==detail.layer||answer.detail?.revision!==detail.revision)))throw failure("pa_scope_denied")
+    if(page&&page.page>0&&!detail?.entry_id){
+      const layer=v.layers?.[0]
+      if(v.layers?.length!==1||layer?.layer!=="project"||!Array.isArray(layer.entries)||layer.entries.length>page.page_size||
+        !Number.isSafeInteger(layer.used)||layer.used<layer.entries.length||layer.available&&!layer.revision)throw failure("pa_invalid")
+    }
     return answer
   }
   configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model,...(loginProfile!==undefined?{login_profile:loginProfile}:{})}),signal,undefined,"GET",true,loginProfile!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
@@ -685,7 +692,13 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     }
     if(tail==="/memory-view"||tail==="/configuration"||tail==="/login-profiles"||tail==="/extensions"||tail==="/network-settings"){
       const fields=tail==="/memory-view"?["machine_id","conversation_id","source_epoch","layer","entry_id","revision"]:tail==="/extensions"||tail==="/network-settings"?["machine_id","conversation_id"]:tail==="/login-profiles"?["machine_id","conversation_id","agent"]:["machine_id","conversation_id","agent","model",...(url.searchParams.has("login_profile")?["login_profile"]:[])]
-      if(init?.body!=null||[...url.searchParams.keys()].some(f=>!fields.includes(f))||!q.conversation_id||!q.machine_id)throw failure("pa_invalid")
+      if(init?.body!=null||[...url.searchParams.keys()].some(f=>!fields.includes(f)&&!(tail==="/memory-view"&&(f==="page"||f==="page_size")))||!q.conversation_id||!q.machine_id)throw failure("pa_invalid")
+      if(tail==="/memory-view"&&(url.searchParams.has("page")||url.searchParams.has("page_size"))){
+        const page=Number(q.page),page_size=Number(q.page_size)
+        if(!/^(0|[1-9][0-9]*)$/.test(q.page)||! /^[1-9][0-9]*$/.test(q.page_size)||!Number.isSafeInteger(page)||!Number.isSafeInteger(page_size)||
+          url.searchParams.size!==fields.length+2||[...fields,"page","page_size"].some(key=>url.searchParams.getAll(key).length!==1))throw failure("pa_invalid")
+        return {word:"project-assistants.memory-view",kind:"read" as const,fields:{...key,...q,page,page_size},id:""}
+      }
       if(tail==="/network-settings"&&(url.searchParams.size!==fields.length||fields.some(field=>url.searchParams.getAll(field).length!==1)))throw failure("pa_invalid")
       return {word:"project-assistants."+(tail==="/configuration"&&url.searchParams.has("login_profile")?"configuration-profile":tail.slice(1)),kind:"read" as const,fields:{...key,...Object.fromEntries(fields.filter(f=>f!=="machine_id").map(f=>[f,q[f]??""]))},id:""}
     }
