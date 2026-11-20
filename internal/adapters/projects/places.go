@@ -103,6 +103,55 @@ func (p *Places) label(path string) string {
 	return filepath.Base(path)
 }
 
+// RegisteredForStart resolves a saved choice without scanning the other
+// Sessions or either provider's history. Discovery-only and protected paths
+// still use List, which applies their existing admission rules.
+func (p *Places) RegisteredForStart(id string) (Place, bool) {
+	if p.Fixture != nil || p.Registered == nil {
+		return Place{}, false
+	}
+	rows, err := p.Registered()
+	if err != nil {
+		return Place{}, false
+	}
+	for _, row := range rows {
+		path := row.Path
+		if PlaceID(path) != id {
+			continue
+		}
+		if !usable(path) || !MayInspectInBackground(path) || IsMachineWorkspace(p.MachineStateDir, path) {
+			return Place{}, false
+		}
+		hidden, err := p.hiddenPaths()
+		if err != nil || hidden[storedPathKey(path)] {
+			return Place{}, false
+		}
+		if !durableJudge(p.Managed)(path) && resolvedPath(path) != resolvedPath(home()) {
+			return Place{}, false
+		}
+		if !isDirectory(path) {
+			return Place{}, false
+		}
+		return Place{ID: id, Path: path, Label: p.label(path), At: time.Unix(row.AddedAt, 0), ProjectKey: row.ProjectKey}, true
+	}
+	return Place{}, false
+}
+
+func (p *Places) hiddenPaths() (map[string]bool, error) {
+	hidden := map[string]bool{}
+	if p.Hidden == nil {
+		return hidden, nil
+	}
+	paths, err := p.Hidden()
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		hidden[storedPathKey(path)] = true
+	}
+	return hidden, nil
+}
+
 // List is StartPoints.places(limit:): recorded Claude Code folders, Codex
 // rollouts and the live sessions' directories, tidied. `live` is the working
 // directory of every assistant session this machine can see now.
@@ -148,16 +197,10 @@ func (p *Places) List(live []string, limit int) []Place {
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
 	}
-	hidden := map[string]bool{}
-	if p.Hidden != nil {
-		if paths, err := p.Hidden(); err == nil {
-			for _, path := range paths {
-				hidden[storedPathKey(path)] = true
-			}
-		} else {
-			// A broken preference file must not silently restore removed Projects.
-			return []Place{}
-		}
+	hidden, err := p.hiddenPaths()
+	if err != nil {
+		// A broken preference file must not silently restore removed Projects.
+		return []Place{}
 	}
 	durable := durableJudge(p.Managed)
 	// The home directory is left out when it is only where a session happened

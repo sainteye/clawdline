@@ -1114,3 +1114,9 @@ The Bot roster leaves incoming Bot exchange notices out of the recipient's
 unread count. The English and Taiwan Traditional Chinese Lead explanations
 still describe the same handoff, execution authority and prompts. The reviewed
 source receipt follows the roster projection.
+
+Starting in an explicitly registered Project resolves the saved ID before
+preparing the launch context. The English and Taiwan Traditional Chinese
+language, Project memory, role, workflow and CodeGraph explanations still
+describe when their context is selected and how it reaches the assistant.
+The reviewed start-route receipt follows the Project lookup.

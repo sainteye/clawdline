@@ -426,8 +426,15 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	defer release()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	starter := s.starter(s.readForStart(ctx))
-	place, ok := starter.Place(ctx, id)
+	place, ok := s.projectReaders().places.RegisteredForStart(id)
+	var reading startReading
+	if !ok {
+		reading = s.readForStart(ctx)
+	}
+	starter := s.starter(reading)
+	if !ok {
+		place, ok = starter.Place(ctx, id)
+	}
 	if !ok {
 		log.Printf("audit place.start place=%.64s ok=0 why=not_found", id)
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
