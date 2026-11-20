@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13627,
+  "englishContentKeys": 13628,
   "riskKeys": 5842,
-  "nonRiskCount": 7785,
+  "nonRiskCount": 7786,
   "groups": [
     {
       "name": "acp / other",
@@ -6113,7 +6113,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 459,
+      "count": 460,
       "sources": [
         null
       ],
@@ -6540,6 +6540,7 @@
         "projectAssistants.towerElevator",
         "projectAssistants.towerEnterFloor",
         "projectAssistants.towerFloorEmpty",
+        "projectAssistants.towerFloorsMenu",
         "projectAssistants.towerLatest",
         "projectAssistants.towerLayout",
         "projectAssistants.towerLayoutBuilding",

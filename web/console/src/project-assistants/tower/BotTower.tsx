@@ -76,7 +76,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const reduced = useReducedMotion()
   const [visible, setVisible] = useState(true)
   const [pageShown, setPageShown] = useState(() => typeof document === "undefined" || !document.hidden)
-  const sceneRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null)
+  const sceneRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null), viewRef = useRef<HTMLDivElement>(null)
+  // On a phone the layout switch and floor map fold behind one floor button.
+  const [panelOpen, setPanelOpen] = useState(false)
   const buttons = useRef(new Map<string, HTMLButtonElement>())
   // Item changes place Bots at once; the idle tiers also age once a minute.
   const now = useMemo(() => Date.now(), [items, tick])
@@ -96,6 +98,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // The last real floor visited also dresses the one-floor layout.
   const [sceneFloor, setSceneFloor] = useState<number | null>(() => { const v = readPref(sceneKey); const n = Number(v); return v !== null && Number.isInteger(n) && n >= 0 && n < towerFloors.length ? n : null })
   const goFloor = (i: number) => {
+    setPanelOpen(false)
     setChosenFloor(i); writePref(floorKey, i === Section ? "section" : String(i))
     if (i !== Section) { setSceneFloor(i); writePref(sceneKey, String(i)) }
   }
@@ -105,6 +108,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const setLayout = (next: TowerLayout) => {
     // Leaving the building for one floor keeps the floor being looked at.
     if (next === "floor" && building && floor !== Section) { setSceneFloor(floor); writePref(sceneKey, String(floor)) }
+    setPanelOpen(false)
     setLayoutState(next); writePref(layoutKey, next)
   }
   const list = new Intl.ListFormat(language, { style: "narrow", type: "unit" })
@@ -217,6 +221,16 @@ export default function BotTower({ items, w, language, paused = false, highlight
   }, [running])
   // A still picture (reduced motion, hidden) redraws when its Bots change.
   useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running, scene])
+  // A phone shows part of the floor: open where the Bots are, busy ones first.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || view.scrollWidth <= view.clientWidth + 1 || !bots.length) return
+    const focus = bots.filter(b => b.mood === "wait" || b.mood === "error" || b.mood === "work")
+    const pick = focus.length ? focus : bots
+    const xs = pick.map(b => locate(b, 0, true).at[0])
+    const mid = xs.reduce((a, x) => a + x, 0) / xs.length
+    view.scrollLeft = Math.max(0, mid / scene.width * view.scrollWidth - view.clientWidth / 2)
+  }, [scene.picture])
   const sectionPct = (x: number, y: number) => ({ left: `${x / sectionScene.width * 100}%`, top: `${y / sectionScene.height * 100}%` })
 
   // HUD chips: each fact is its own chip, the count picked out as the glowing figure.
@@ -237,10 +251,10 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <p className="pa-hud-facts" role="status">
       {summary.total ? chips.map(c => <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
     </p>
-    {canBuild && <div className="pa-hud-switch" role="group" aria-label={w.towerLayout}>
-      <button type="button" aria-pressed={!building} onClick={() => setLayout("floor")}>{w.towerLayoutFloor}</button>
-      <button type="button" aria-pressed={building} onClick={() => setLayout("building")}>{w.towerLayoutBuilding}</button>
-    </div>}
+  </div>
+  const layoutSwitch = <div className="pa-hud-switch" role="group" aria-label={w.towerLayout}>
+    <button type="button" aria-pressed={!building} onClick={() => setLayout("floor")}>{w.towerLayoutFloor}</button>
+    <button type="button" aria-pressed={building} onClick={() => setLayout("building")}>{w.towerLayoutBuilding}</button>
   </div>
   // The elevator is a small glowing wireframe of the building: one isometric
   // slab per floor, its Bot count beside it, a lit pixel where someone waits.
@@ -264,7 +278,12 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
         {hud}
-        {elevator}
+        {canBuild && <button type="button" className="pa-tower-floorbtn" aria-expanded={panelOpen} aria-label={w.towerFloorsMenu} onClick={() => setPanelOpen(o => !o)}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5 8 2.5l6 3-6 3zM2 8.5l6 3 6-3M2 11.5l6 3 6-3"/></svg>
+          <b>{!building ? w.towerLayoutFloor : section ? w.towerSection : floors[floor].label}</b>
+        </button>}
+        {canBuild && <div className="pa-tower-controls" data-open={panelOpen || undefined}>{layoutSwitch}{elevator}</div>}
+        <div className="pa-tower-view" ref={viewRef}>
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}>
           <img key={scene.picture} src={pictures[scene.picture]} alt="" draggable={false} decoding="async"/>
           {building && <span key={`door-${floor}`} className="pa-tower-doors" aria-hidden="true"/>}
@@ -295,6 +314,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
               </span>
             </button>
           })}
+        </div>
         </div>
       </div>
     </div>
