@@ -36,8 +36,8 @@ Project is given its index at launch, whichever assistant it runs.
   restored by hand) is still listed, with an empty description, so its entries stay reachable. A
   groups file that cannot be parsed is `memory_unreadable`, never "no groups". Groups are not
   removed in this version; an empty one stays listed with 0 entries.
-- **Index.** `INDEX.md` is generated after every write and never edited by hand: a heading, then
-  one line per resident entry, `- name — description`, grouped by type in the order above and
+- **Index.** `INDEX.md` is generated whenever the active set or its descriptions change. It has a
+  heading, then one line per active resident entry, `- name — description`, grouped by type in the order above and
   sorted by name, then a `## Groups` section with one line per group:
 
   ```text
@@ -52,11 +52,13 @@ Project is given its index at launch, whichever assistant it runs.
   one lock per daemon, so concurrent adds from several Sessions neither interleave nor lose an
   entry. The same add twice answers `unchanged`; a different entry under a name already taken is
   refused, not overwritten.
-- **Bounds.** 1,024 entries per Project (one more is refused with `memory_full`; only a person or a
-  Session they asked forgets one), 64 KiB per body, 512 bytes per description, 64 bytes per name
-  or group slug, 16 groups per Project (one more is `memory_full`), 256 bytes per group
-  description. Sixteen groups at their longest take about 6 KiB of the index, so resident entries
-  always keep room. All are registered in `internal/domain/capacity` (`memory.*`).
+- **Bounds.** A Project can keep 1,024 active entries, 128 durable pending entries, and 512
+  archived originals. New memories go to the pending set when the active set is full. They can be
+  listed, read, edited and retried immediately. Only simultaneous active and pending saturation
+  refuses a new name with `memory_full`. An archive at its bound leaves further candidates live.
+  Each body can hold 64 KiB and each description 512 bytes. A name or group slug can hold 64 bytes.
+  A Project can have 16 groups with 256 bytes per group description. Capacity is registered in
+  `internal/domain/capacity` (`memory.*`).
 - **Unknown is not empty.** A store directory that does not exist is a Project with no memory; one
   that exists and cannot be read is `memory_unreadable` (500), never an empty list.
 
@@ -68,13 +70,15 @@ clawdline memory show   <name> [--project <dir>] [--json]
 clawdline memory add    --name <n> --description <d> --type <t> [--group <slug>] [--body-file <f>] [--project <dir>]
 clawdline memory update --name <n> --description <d> --type <t> [--group <slug>] [--body-file <f>] [--project <dir>]
 clawdline memory forget <name> [--project <dir>]
+clawdline memory dream  [--project <dir>] [--json]
+clawdline memory restore <name> [--project <dir>]
 clawdline memory group  set <slug> --description <when to read it> [--project <dir>]
 clawdline memory group  list [--project <dir>] [--json]
 clawdline memory import --from-claude [--apply] [--project <dir>]
 ```
 
-`list` prints the resident entries and one line per group; `list --group <slug>` prints that
-group's entries, and an unknown slug is refused (exit 1), not an empty list. The route's `PUT`
+`list` includes active and pending memories and identifies pending entries. `list --group <slug>`
+prints that group's live entries. An unknown slug is refused with exit 1. The route's `PUT`
 replaces the whole entry, group included; the CLI's `update` without `--group` first reads the
 entry and keeps its group, so changing a description never moves an entry, and `--group ""` makes
 it resident again.
@@ -89,7 +93,9 @@ orchestrator token like the other machine-scoped Project routes:
 
 | Route | Answer | Refusals |
 |---|---|---|
-| `GET /v1/projects/{place}/memory` | `ProjectMemoryList`: key, entries (each with its `group`), groups with counts, index, whether it was cut | `memory_unreadable` |
+| `GET /v1/projects/{place}/memory` | `ProjectMemoryList`: key, active and pending entries, groups with counts, index, whether it was cut | `memory_unreadable` |
+| `GET /v1/projects/{place}/memory-dream` | `ProjectMemoryDream`: live and archive counts, last run, proposed changes, review candidates, archived names and reasons | `memory_unreadable` |
+| `POST /v1/projects/{place}/memory/{name}/restore` | 200 updated or unchanged. A restore can wait for an active slot | `memory_entry_not_found` 404, `memory_full` 409 |
 | `POST /v1/projects/{place}/memory` | `ProjectMemoryWriteAnswer`, 201 created / 200 unchanged | `memory_entry_invalid` 400, `memory_group_not_found` 400, `memory_entry_exists` 409, `memory_full` 409 |
 | `GET /v1/projects/{place}/memory/{name}` | `ProjectMemoryEntry` | `memory_entry_not_found` 404 |
 | `PUT /v1/projects/{place}/memory/{name}` | updated / unchanged | `memory_entry_not_found` 404, `memory_entry_invalid` 400 |
@@ -100,6 +106,35 @@ The types are in `api/v1/projects.schema.json`. A store that cannot be written a
 `file_permission` 403. `group` is optional on an entry and absent from a resident one, so an older
 client's add still works; the CLI and the daemon ship as one binary, and an older daemon refuses a
 `group` field it does not know with `bad_request` rather than dropping it.
+
+## Dreaming and recovery
+
+The daemon checks every five minutes. The first pass and weekly reviews wait for five minutes
+without a memory write and yield to recently observed working Sessions of that Project. At 820
+live entries or more, a changed store can run before the weekly review. The daemon records the
+last successful pass and the input fingerprint in `DREAM.json`, so an unchanged store under
+pressure does not run every tick. A preview from `clawdline memory dream` is read-only.
+
+Dreaming keeps preferences and feedback in the live set. It can archive a Project or reference
+entry with the same type, group, description and body as one it will keep. For a Project record
+whose replacement is known, its author can end the body with `Superseded-by: <name>` on a separate
+line. Both entries must be live Project records in the same group. Overlapping replacements and
+entries with the same description but different bodies can be reviewed in the CLI. Dreaming
+does not infer a successor from age or a similarity score, and it does not call a model.
+
+An archive is an atomic metadata update in the original Markdown file. The entry keeps its name,
+body, and existing header data. `memory dream` shows the archive reason and surviving name, and
+`memory show <name>` reads the original. `memory restore <name>` takes it out of future automatic
+archiving. If the active set is full, the restored original is immediately readable in the pending
+set. Maintenance fills available active slots from pending entries. Explicit `memory forget`
+removes the named entry in any state. Older daemon builds still read the Markdown files by name,
+treating all of them as active and ignoring the maintenance metadata. Editing a file with an
+older build may remove that metadata.
+
+The design follows [CodyNC's idle and near-full Dreaming loop](https://github.com/leepokai/Codync/blob/9b47189739216b405416b334b9ada5b5b28176c1/host/src/chat/memory/dream.rs)
+and [its preservation of lines moved out of launch memory](https://github.com/leepokai/Codync/blob/9b47189739216b405416b334b9ada5b5b28176c1/host/crates/memory/src/dream/notes.rs).
+Clawdline uses deterministic local rules for its shared Project store and keeps originals in the
+same files. The normal add path does not wait for a Dreaming run.
 
 ## Launch delivery
 

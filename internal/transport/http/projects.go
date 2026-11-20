@@ -325,6 +325,14 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectTreeRoute(w, r, parts[0], len(parts) == 3)
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "memory-dream" {
+		s.projectMemoryDreamRoute(w, r, parts[0], "")
+		return
+	}
+	if len(parts) == 4 && parts[0] != "" && parts[1] == "memory" && parts[2] != "" && parts[3] == "restore" {
+		s.projectMemoryDreamRoute(w, r, parts[0], parts[2])
+		return
+	}
 	if len(parts) >= 2 && parts[0] != "" && parts[1] == "memory" && len(parts) <= 3 {
 		name := ""
 		if len(parts) == 3 {

@@ -39,6 +39,8 @@ const memoryUsage = `usage:
                           [--group <slug>] [--body-file <file>] [--project <dir>]     (the body is read from stdin without --body-file)
   clawdline memory update --name <name> --description <one line> --type <type> [--group <slug>] [--body-file <file>] [--project <dir>]
   clawdline memory forget <name> [--project <dir>]
+  clawdline memory dream  [--project <dir>] [--json]
+  clawdline memory restore <name> [--project <dir>]
   clawdline memory group  set <slug> --description <when to read it> [--project <dir>]
   clawdline memory group  list [--project <dir>] [--json]
   clawdline memory import --from-claude [--apply] [--project <dir>]
@@ -102,7 +104,7 @@ func runMemory(args []string, stdin io.Reader, stdout, stderr io.Writer, open fu
 	}
 	var groupVerb string
 	switch verb {
-	case "list", "add", "update", "import":
+	case "list", "add", "update", "import", "dream":
 		if len(positional) > 0 {
 			return usage(memoryCopy("unexpected_argument", "unexpected argument ") + positional[0])
 		}
@@ -115,7 +117,7 @@ func runMemory(args []string, stdin io.Reader, stdout, stderr io.Writer, open fu
 			return usage(memoryCopy("group_usage", "use `group set <slug> --description <one line>` or `group list`"))
 		}
 		groupVerb = positional[0]
-	case "show", "forget":
+	case "show", "forget", "restore":
 		if len(positional) == 1 && *name == "" {
 			*name = positional[0]
 		} else if len(positional) > 0 || *name == "" {
@@ -156,7 +158,7 @@ func runMemory(args []string, stdin io.Reader, stdout, stderr io.Writer, open fu
 			fmt.Fprintf(stderr, memoryCopy("operation_refused", "clawdline memory %s: refused: %v\n"), verb, err)
 			return memoryExitRefused
 		}
-	} else if (verb == "show" || verb == "forget") && !memory.ValidName(*name) {
+	} else if (verb == "show" || verb == "forget" || verb == "restore") && !memory.ValidName(*name) {
 		fmt.Fprintf(stderr, memoryCopy("name_refused", "clawdline memory %s: refused: %q is not an entry name (lowercase letters, digits and single hyphens)\n"), verb, *name)
 		return memoryExitRefused
 	}
@@ -313,8 +315,22 @@ func runMemory(args []string, stdin io.Reader, stdout, stderr io.Writer, open fu
 			return code
 		}
 		return printMemoryWrite(stdout, stderr, verb, a)
-	case "forget":
-		a, code := call(http.MethodDelete, base+"/"+url.PathEscape(*name), nil)
+	case "dream":
+		a, code := call(http.MethodGet, base+"-dream", nil)
+		if code != memoryExitOK {
+			return code
+		}
+		if *asJSON {
+			stdout.Write(indentJSON(a.Body))
+			return memoryExitOK
+		}
+		return printMemoryDream(stdout, stderr, a)
+	case "forget", "restore":
+		method, path := http.MethodDelete, base+"/"+url.PathEscape(*name)
+		if verb == "restore" {
+			method, path = http.MethodPost, path+"/restore"
+		}
+		a, code := call(method, path, nil)
 		if code != memoryExitOK {
 			return code
 		}
@@ -439,6 +455,45 @@ func memoryGroupPath(place, slug string) string {
 	return "/v1/projects/" + url.PathEscape(place) + "/memory-groups/" + url.PathEscape(slug)
 }
 
+func printMemoryDream(out, stderr io.Writer, a answer) int {
+	var dream contract.ProjectMemoryDream
+	if json.Unmarshal(a.Body, &dream) != nil {
+		fmt.Fprintln(stderr, memoryCopy("dream_unreadable", "clawdline memory dream: the daemon's answer was not readable"))
+		return memoryExitUnknown
+	}
+	fmt.Fprintf(out, memoryCopy("dream_counts", "Active %d/%d · Pending %d/%d · Archived %d/%d\n"),
+		dream.Counts.Active, dream.ActiveLimit, dream.Counts.Pending, dream.PendingLimit, dream.Counts.Archived, dream.ArchiveLimit)
+	if dream.LastRun != "" {
+		fmt.Fprintf(out, memoryCopy("dream_last_run", "Last run %s\n"), dream.LastRun)
+	}
+	printChanges := func(title string, changes []contract.ProjectMemoryDreamChange) {
+		if len(changes) == 0 {
+			return
+		}
+		fmt.Fprintln(out, title)
+		for _, change := range changes {
+			reason := string(change.Reason)
+			switch reason {
+			case "archived_duplicate":
+				reason = memoryCopy("dream_duplicate", "identical content")
+			case "archived_superseded":
+				reason = memoryCopy("dream_superseded", "explicitly superseded")
+			case "archive_full":
+				reason = memoryCopy("dream_archive_full", "archive is full")
+			case "successor_chain":
+				reason = memoryCopy("dream_successor_chain", "overlapping replacements")
+			case "same_description":
+				reason = memoryCopy("dream_same_description", "same description, different content")
+			}
+			fmt.Fprintf(out, "  %s → %s (%s)\n", change.Name, change.Replacement, reason)
+		}
+	}
+	printChanges(memoryCopy("dream_proposed", "Proposed for archiving"), dream.Archive)
+	printChanges(memoryCopy("dream_review", "For manual review"), dream.Review)
+	printChanges(memoryCopy("dream_archived", "Archived · use memory show or memory restore with the original name"), dream.Archived)
+	return memoryExitOK
+}
+
 // printMemoryEntries is entries in index order, under a line per type.
 func printMemoryEntries(stdout io.Writer, entries []contract.ProjectMemorySummary) {
 	var kind contract.ProjectMemoryType
@@ -447,7 +502,11 @@ func printMemoryEntries(stdout io.Writer, entries []contract.ProjectMemorySummar
 			kind = e.Type
 			fmt.Fprintf(stdout, "%s\n", kind)
 		}
-		fmt.Fprintf(stdout, "  %s — %s\n", e.Name, e.Description)
+		suffix := ""
+		if e.Pending {
+			suffix = memoryCopy("pending_marker", " (pending)")
+		}
+		fmt.Fprintf(stdout, "  %s — %s%s\n", e.Name, e.Description, suffix)
 	}
 }
 

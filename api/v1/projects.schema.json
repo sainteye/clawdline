@@ -629,7 +629,8 @@
         "name": { "description": "Lowercase letters, digits and single hyphens, at most 64 bytes.", "type": "string" },
         "description": { "description": "One line, at most 512 bytes.", "type": "string" },
         "type": { "$ref": "#/$defs/ProjectMemoryType" },
-        "group": { "description": "The group the entry is filed under; absent for a resident entry, which the index lists by name.", "type": "string" }
+        "group": { "description": "The group the entry is filed under; absent for a resident entry, which the index lists by name.", "type": "string" },
+        "pending": { "description": "True when the entry has been durably saved and is waiting for space in the active index.", "type": "boolean" }
       }
     },
     "ProjectMemoryEntry": {
@@ -657,7 +658,7 @@
       }
     },
     "ProjectMemoryList": {
-      "description": "GET /v1/projects/:id/memory: every entry, every group, and the index a launched session is given. The index lists resident entries and one line per group; when resident entries alone would pass its 8 KiB bound they are cut, which index_cut and the index's own note say, and the group lines are kept. entries always lists every entry.",
+      "description": "GET /v1/projects/:id/memory: active and pending entries, every group, and the index a launched session is given. The index lists resident entries and one line per group; when resident entries alone would pass its 8 KiB bound they are cut, which index_cut and the index's own note say, and the group lines are kept. Archived entries can be found in the Dream plan and read by their original name.",
       "type": "object",
       "additionalProperties": false,
       "required": ["project_key", "entries", "groups", "index", "index_cut"],
@@ -667,6 +668,42 @@
         "groups": { "description": "Sorted by slug, at most 16.", "type": "array", "items": { "$ref": "#/$defs/ProjectMemoryGroup" } },
         "index": { "description": "Empty when there are no entries.", "type": "string" },
         "index_cut": { "description": "Whether the index left resident entries out.", "type": "boolean" }
+      }
+    },
+    "ProjectMemoryDream": {
+      "description": "Read-only preview of Project memory maintenance and the current reversible archive.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counts", "active_limit", "pending_limit", "archive_limit", "archive", "review", "archived"],
+      "properties": {
+        "counts": { "$ref": "#/$defs/ProjectMemoryDreamCounts" },
+        "active_limit": { "type": "integer", "minimum": 0 },
+        "pending_limit": { "type": "integer", "minimum": 0 },
+        "archive_limit": { "type": "integer", "minimum": 0 },
+        "last_run": { "type": "string", "format": "date-time" },
+        "archive": { "type": "array", "items": { "$ref": "#/$defs/ProjectMemoryDreamChange" } },
+        "review": { "type": "array", "items": { "$ref": "#/$defs/ProjectMemoryDreamChange" } },
+        "archived": { "type": "array", "items": { "$ref": "#/$defs/ProjectMemoryDreamChange" } }
+      }
+    },
+    "ProjectMemoryDreamCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "pending", "archived"],
+      "properties": {
+        "active": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 },
+        "archived": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ProjectMemoryDreamChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "replacement", "reason"],
+      "properties": {
+        "name": { "type": "string" },
+        "replacement": { "type": "string" },
+        "reason": { "type": "string", "enum": ["archived_duplicate", "archived_superseded", "archive_full", "successor_chain", "same_description"] }
       }
     },
     "ProjectMemoryGroupSet": {

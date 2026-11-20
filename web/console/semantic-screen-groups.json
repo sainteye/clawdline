@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13663,
-  "riskKeys": 5861,
-  "nonRiskCount": 7802,
+  "englishContentKeys": 13665,
+  "riskKeys": 5864,
+  "nonRiskCount": 7801,
   "groups": [
     {
       "name": "acp / other",
@@ -565,7 +565,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 696,
+      "count": 697,
       "sources": [
         null
       ],
@@ -1023,6 +1023,7 @@
         "capacityRow.iterm.osascript_kinds.what",
         "capacityRow.iterm.stall_cooldown_seconds.what",
         "capacityRow.iterm.stall_section_bytes.what",
+        "capacityRow.memory.archive_entries.what",
         "capacityRow.memory.description_bytes.what",
         "capacityRow.memory.entry_bytes.what",
         "capacityRow.memory.group_description_bytes.what",
@@ -7872,7 +7873,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 216,
+      "count": 214,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7966,9 +7967,7 @@
         "transparency.card.machine.effect",
         "transparency.card.machine.how",
         "transparency.card.machine.title",
-        "transparency.card.memory-body.condition",
         "transparency.card.memory-body.effect",
-        "transparency.card.memory-body.how",
         "transparency.card.memory-body.summary",
         "transparency.card.memory-body.title",
         "transparency.card.memory-index.condition",

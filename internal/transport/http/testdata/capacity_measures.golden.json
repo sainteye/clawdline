@@ -2983,6 +2983,11 @@
     "Known": true
   },
   {
+    "Name": "memory.archive_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "memory.description_bytes",
     "Known": true,
     "Note": true

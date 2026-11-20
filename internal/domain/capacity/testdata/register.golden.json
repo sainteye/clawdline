@@ -11782,6 +11782,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "memory.archive_entries",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/memory.ArchiveEntryLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "memory.description_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -11805,7 +11825,7 @@
     "Name": "memory.entries",
     "Class": "evidence",
     "Unit": "rows",
-    "Limit": 1024,
+    "Limit": 1152,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -11818,7 +11838,9 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/adapters/memory.EntryCountLimit"
+      "internal/adapters/memory.LiveEntryLimit",
+      "internal/adapters/memory.EntryCountLimit",
+      "internal/adapters/memory.PendingEntryLimit"
     ]
   },
   {
