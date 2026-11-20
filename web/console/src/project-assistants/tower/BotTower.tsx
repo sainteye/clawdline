@@ -96,18 +96,26 @@ export default function BotTower({ items, w, language, paused = false, highlight
     return () => io.disconnect()
   }, [])
 
+  // What to draw lives in a ref: a parent re-render (a roster hover, a new
+  // roster frame) swaps the picture without restarting the loop or resizing
+  // the canvas, since resizing clears it and showed as a flash of every Bot.
+  const scenery = useRef({ bots, slots, running })
+  scenery.current = { bots, slots, running }
+  const drawRef = useRef<(t: number) => void>(() => {})
   useEffect(() => {
     const el = sceneRef.current, canvas = canvasRef.current
     if (!el || !canvas) return
     const g = canvas.getContext("2d")
     if (!g) return
-    let frame = 0, dpr = 1
+    let dpr = 1
     const fit = () => {
       const r = el.getBoundingClientRect()
       dpr = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr))
+      const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr))
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
     }
-    const draw = (t: number) => {
+    drawRef.current = (t: number) => {
+      const { bots, slots, running } = scenery.current
       const k = canvas.width / scene.width, still = !running
       g.clearRect(0, 0, canvas.width, canvas.height)
       const placed = bots.map(b => ({ b, ...place(b, slots.get(b.key) ?? 0, t, still) })).sort((a, z) => a.at[1] - z.at[1])
@@ -120,33 +128,44 @@ export default function BotTower({ items, w, language, paused = false, highlight
         }
       }
     }
-    const loop = (t: number) => { draw(t); frame = requestAnimationFrame(loop) }
     fit()
-    const ro = new ResizeObserver(() => { fit(); if (!running) draw(performance.now()) })
+    drawRef.current(performance.now())
+    const ro = new ResizeObserver(() => { fit(); drawRef.current(performance.now()) })
     ro.observe(el)
-    if (running) frame = requestAnimationFrame(loop)
-    else draw(performance.now())
-    return () => { cancelAnimationFrame(frame); ro.disconnect() }
-  }, [bots, slots, running])
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!running) { drawRef.current(performance.now()); return }
+    let frame = 0
+    const loop = (t: number) => { drawRef.current(t); frame = requestAnimationFrame(loop) }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+  }, [running])
+  // A still picture (reduced motion, hidden) redraws when its Bots change.
+  useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running])
 
-  const parts = [w.towerBots.replace("{count}", String(summary.total))]
-  if (summary.wait) parts.push(w.towerWaiting.replace("{count}", String(summary.wait)))
-  if (summary.work) parts.push(w.towerWorking.replace("{count}", String(summary.work)))
-  if (summary.error) parts.push(w.towerErrors.replace("{count}", String(summary.error)))
-  if (summary.unread) parts.push(w.towerUnread.replace("{count}", String(summary.unread)))
-  if (summary.total && !summary.wait && !summary.work && !summary.error) parts.push(w.towerAllIdle)
+  // HUD chips: each fact is its own chip, the count picked out as the glowing figure.
+  type Chip = { key: string, tone: string, text: string }
+  const chips: Chip[] = [{ key: "total", tone: "total", text: w.towerBots.replace("{count}", String(summary.total)) }]
+  if (summary.wait) chips.push({ key: "wait", tone: "wait", text: w.towerWaiting.replace("{count}", String(summary.wait)) })
+  if (summary.work) chips.push({ key: "work", tone: "work", text: w.towerWorking.replace("{count}", String(summary.work)) })
+  if (summary.error) chips.push({ key: "error", tone: "error", text: w.towerErrors.replace("{count}", String(summary.error)) })
+  if (summary.unread) chips.push({ key: "unread", tone: "unread", text: w.towerUnread.replace("{count}", String(summary.unread)) })
+  if (summary.total && !summary.wait && !summary.work && !summary.error) chips.push({ key: "idle", tone: "idle", text: w.towerAllIdle })
   if (summary.latest) {
     const when = ago(summary.latest.item.activity_at, now, language)
-    if (when) parts.push(w.towerLatest.replace("{time}", when).replace("{name}", summary.latest.item.bot.name))
+    if (when) chips.push({ key: "latest", tone: "latest", text: w.towerLatest.replace("{time}", when).replace("{name}", summary.latest.item.bot.name) })
   }
+  if (summary.stale) chips.push({ key: "stale", tone: "stale", text: w.towerStale })
+  const figure = (text: string) => text.split(/(\d+)/).map((part, i) => i % 2 ? <b key={i}>{part}</b> : part)
+  const hud = <p className="pa-tower-hud" role="status">
+    {summary.total ? chips.map(c => <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
+  </p>
 
   return <section className="pa-tower" aria-label={w.towerView}>
-    <p className="pa-tower-summary">
-      {summary.total ? parts.join(" · ") : w.towerEmpty}
-      {summary.stale && <span className="pa-tower-stale">{w.towerStale}</span>}
-    </p>
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
+        {hud}
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}>
           <img src={ramen} alt="" draggable={false} decoding="async"/>
           <canvas ref={canvasRef} aria-hidden="true"/>

@@ -48,4 +48,26 @@ function HistoryApp(){
   {opened&&<Bots sources={historySources} language={language} accountKey="group-history-fixture" readerID="fixture-reader" manageHistory onClose={()=>setOpened(false)}/>}
  </>
 }
-createRoot(document.querySelector("#app")!).render(params.has("history")?<HistoryApp/>:<App/>)
+function actionsSource():SourceClient {
+ const base=fixtureSource("fixture-machine")
+ const edit=base.edit.bind(base)
+ return {...base,canManage:()=>true,canRosterActions:()=>true,
+  edit:async(request,signal)=>{
+   const answer=await edit(request,signal)
+   if(request.settings.roster?.designate_lead)answer.bot.lead=true
+   return answer
+  },
+  deleteBot:async({command})=>{
+   const index=base.bots.findIndex(bot=>bot.key.bot_id===command.key.bot_id)
+   if(index<0)throw Error("Wrong Bot deleted")
+   base.bots.splice(index,1);counts.writes++
+  }
+ }
+}
+function ActionsApp(){
+ const [clients]=useState(()=>[actionsSource()])
+ return <section className="pa-window" style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh"}}>
+  <Bots sources={clients} language={language} accountKey="roster-actions-fixture" onClose={()=>{}}/>
+ </section>
+}
+createRoot(document.querySelector("#app")!).render(params.has("actions")?<ActionsApp/>:params.has("history")?<HistoryApp/>:<App/>)

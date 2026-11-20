@@ -42,16 +42,39 @@ function abortError() {
   return new DOMException("Aborted", "AbortError")
 }
 
+function callLanguage(language: string) {
+  const locale = new Intl.Locale(language || "en").maximize()
+  return [locale.language, locale.region].filter(Boolean).join("-")
+}
+
+function playbackVoice(lang: string) {
+  const exact = lang.toLowerCase()
+  const base = exact.split("-")[0]
+  const voices = window.speechSynthesis.getVoices().filter(voice => voice.localService)
+  return voices.find(voice => voice.lang.toLowerCase() === exact)
+    ?? voices.find(voice => voice.lang.toLowerCase().split("-")[0] === base)
+}
+
+async function recognitionReady(Recognition: RecognitionConstructor, lang: string) {
+  try { return await Recognition.available({ langs: [lang], processLocally: true }) === "available" }
+  catch { return false }
+}
+
+export async function browserCallAudioReady(language: string) {
+  if (!botCallAudioAvailable()) return false
+  const Recognition = localRecognizer(), lang = callLanguage(language)
+  return !!Recognition && await recognitionReady(Recognition, lang) && !!playbackVoice(lang)
+}
+
 /** The selected language pack and playback voice must be installed on this device. */
 export function browserCallAudio(language: string): CallAudioSource {
-  const locale = new Intl.Locale(language || "en").maximize()
-  const lang = [locale.language, locale.region].filter(Boolean).join("-")
+  const lang = callLanguage(language)
   return {
     async open(signal, heard, failed) {
       const Recognition = localRecognizer()
       if (!Recognition || !botCallAudioAvailable()) throw new CallAudioError("unsupported")
-      const available = await Recognition.available({ langs: [lang], processLocally: true }).catch(() => "unavailable")
-      if (available !== "available") throw new CallAudioError("language")
+      if (!await recognitionReady(Recognition, lang)) throw new CallAudioError("language")
+      if (!playbackVoice(lang)) throw new CallAudioError("audio")
       if (signal.aborted) throw abortError()
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } })
       const track = stream.getAudioTracks()[0]
@@ -114,9 +137,7 @@ export function browserCallAudio(language: string): CallAudioSource {
         play(text, playback) {
           if (closed || signal.aborted || playback.aborted) return Promise.reject(abortError())
           const synth = window.speechSynthesis
-          const voices = synth.getVoices().filter(voice => voice.localService)
-          const voice = voices.find(v => v.lang.toLowerCase() === lang.toLowerCase())
-            ?? voices.find(v => v.lang.toLowerCase().split("-")[0] === lang.toLowerCase().split("-")[0])
+          const voice = playbackVoice(lang)
           if (!voice) return Promise.reject(new CallAudioError("audio"))
           return new Promise<void>((resolve, reject) => {
             const line = new SpeechSynthesisUtterance(text)

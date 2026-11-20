@@ -76,12 +76,13 @@ export function PaMenu({label,items,floating=false,triggerIcon,externalAnchor,on
     {items.map((it,i)=><button key={it.id} type="button" role="menuitem" data-index={i} tabIndex={i===active?0:-1} disabled={it.disabled} data-danger={it.danger||undefined} aria-haspopup={it.submenu?"menu":undefined}
       onClick={()=>{if(!it.keepOpen)close();else setActive(0);it.onSelect()}}>{it.icon}{it.label}{it.submenu&&<span className="pa-menu-next" aria-hidden="true">›</span>}</button>)}
   </div>
+  // Floating menus escape the scrolling list while staying in the Bots window's stacking context.
   return <div className="pa-menu" ref={root} data-open={open||undefined}>
     {externalAnchor===undefined&&<button type="button" ref={button} className="pa-circle" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
       onClick={()=>{if(open)close();else{setActive(enabled[0]??0);setOpen(true)}}}
       onKeyDown={e=>{if(e.key==="ArrowDown"){e.preventDefault();setActive(enabled[0]??0);setOpen(true)}}}>
       {triggerIcon??<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg>}
     </button>}
-    {(open||present)&&(floating?createPortal(<div className="project-assistants">{choices}</div>,document.body):choices)}
+    {(open||present)&&(floating?createPortal(<div className="project-assistants">{choices}</div>,root.current?.closest(".pa-window")??document.body):choices)}
   </div>
 }

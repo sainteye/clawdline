@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { busy as dictating } from "../legacy/voice-bridge"
 import { BotCall, type CallPorts, type CallState } from "./bot-call"
-import { botCallAudioAvailable, browserCallAudio } from "./bot-call-audio"
+import { botCallAudioAvailable, browserCallAudio, browserCallAudioReady } from "./bot-call-audio"
 import { botCallWords } from "./bot-call-words"
 import "./bot-call.css"
 
@@ -37,16 +37,29 @@ export function BotCallControls({call, state, enabled, name, language}: {
   call: BotCall; state: CallState; enabled: boolean; name: string; language: string
 }) {
   const w = botCallWords(language)
-  const supported = botCallAudioAvailable()
+  const [readyLanguage,setReadyLanguage] = useState<string|null>(null)
+  useEffect(() => {
+    if (!botCallAudioAvailable()) return
+    let current = true
+    const update = () => void browserCallAudioReady(language).then(ready => {
+      if (current) setReadyLanguage(ready ? language : null)
+    })
+    update()
+    window.speechSynthesis.addEventListener("voiceschanged", update)
+    return () => {
+      current = false
+      window.speechSynthesis.removeEventListener("voiceschanged", update)
+    }
+  }, [language])
+  const canStart = enabled && readyLanguage === language
   const label = `${w.start} · ${name}`
-  if (!call.active) return <div className="pa-bot-call-start">
+  if (!call.active) return canStart || state.phase !== "idle" ? <div className="pa-bot-call-start">
     {state.phase !== "idle" && <span role="status">{w[state.phase]}</span>}
-    <button type="button" className="pa-pill" disabled={!enabled || !supported} aria-label={label}
-      title={supported ? label : w.unsupported}
+    {canStart && <button type="button" className="pa-pill" aria-label={label} title={label}
       onClick={() => { if (dictating()) call.end("microphone"); else void call.start(browserCallAudio(language)) }}>
       <CallIcon/>{w.start}
-    </button>
-  </div>
+    </button>}
+  </div> : null
   const phase = state.muted && state.phase === "listening" ? "muted" : state.phase
   return <section className="pa-bot-call" aria-label={label}>
     <span className="pa-bot-call-status" role="status"><strong>{name}</strong> {phase !== "idle" && w[phase]}</span>

@@ -74,32 +74,34 @@ const pairingAgentTemplate = `# Pair a Clawdline Cloud browser with another mach
 
 From Clawdline Cloud, the person asked for the machine named %[1]s
 (Cloud machine id ` + "`%[2]s`" + `) to be paired with their browser, and confirmed it on
-this computer. Nobody is watching this tab: do the steps below and nothing else.
+this computer. This task runs independently of the person's Clawdline pairing window.
 
-1. Resolve the target using access already configured on this helper.
+1. Resolve the target using access already available to this helper.
 
-   InstaBox: If instabox is already installed, with an existing CLI login or
-   INSTABOX_API_KEY, use instabox get <exact-name-or-configured-ID> --json
-   to look up this target only. Use an existing explicit mapping or an exact name
-   match in the configured account. A similar name, a different workspace, or an
-   ambiguous response is not a match. Do not enumerate accounts, print credentials,
-   or attempt a new login. If an existing connection identifies the target as an
-   InstaBox but this credential or lookup fails, report that and stop.
+   An InstaBox can be reached from its signed-in dashboard terminal without
+   installing the InstaBox CLI. For a known InstaBox, or when no exact connection
+   is configured for this target, check the InstaBox dashboard at
+   https://dashboard.instabox.sh/ using the Clawdline browser tool. Read
+   clawdline guide browser and follow the configured browser policy. Use only a
+   previously verified machine mapping or a unique exact machine name in the
+   signed-in workspace. Open that machine's Terminal when it is ready. Do not
+   switch workspaces or choose a similar name. A pending wake, cooldown, or
+   manually stopped machine is a provider state, not a reason to search elsewhere.
 
-   For a matched InstaBox, use its returned immutable ID for every subsequent call.
-   If it is running, connect directly. If it auto-paused, call instabox wake <id>
-   once. This calls the provider's wake API and waits for the resume. If the API says a
-   resume is in progress, use read-only instabox get <id> --json checks at five-second
-   intervals for up to one minute, stopping as soon as the machine is running.
-   A provider cooldown, manually paused/stopped machine, or a rejected wake stops the
-   flow. Report the provider's reason and any retry time without restarting the machine
-   or retrying the wake. For a running InstaBox, use instabox ssh <id> -- <command>
-   with the existing account. The provider's machine ID is not the Cloud machine ID.
+   An already signed-in InstaBox CLI is another route. Use instabox get
+   <exact-name-or-configured-ID> --json, then the immutable provider ID with
+   instabox ssh <id> -- <command>. If the provider shows an automatic pause and
+   the pairing page has not already requested wake, use instabox wake <id> once
+   and wait for a running state. Report the provider's refusal or retry time if
+   it cannot run. For other machines use an existing SSH alias or provider
+   session already tied to the target. Do not search unrelated accounts, install
+   the CLI, create credentials, or change connection settings for this task.
 
-   For other machines, use an existing SSH alias or an existing provider session
-   manager (for example AWS SSM) which the helper's configuration ties to the target.
-   Do not install anything, create credentials, or change configuration. If none
-   of the known connections identifies the target, report the missing access and stop.
+   If the target is a known InstaBox and the dashboard is your only route,
+   use a browser handoff when it requires sign-in, another confirmation, or the
+   person's control. Read clawdline guide note. Ask only for access to the
+   named machine and wait for handback. If no route identifies the target,
+   report what access or machine selection is missing before attempting pairing.
 
 2. On that machine, as the user that runs Clawdline there, locate its binary.
    Use command -v clawdline, then ~/.local/bin/clawdline and /usr/local/bin/clawdline,
@@ -109,12 +111,37 @@ this computer. Nobody is watching this tab: do the steps below and nothing else.
    above. If it differs or the identity is unreadable, stop before sending the code.
 
    After this check, run exactly this one pairing command with the resolved binary
-   on the same target as the same user. For InstaBox, send the command over SSH.
-   InstaBox exec can retain its arguments in the provider's command history.
+   on the same target as the same user:
 
        CLAWDLINE_LANG=en clawdline cloud pair -offer '%[3]s'
 
-   Change nothing else on that machine. Do not run this command on the helper itself.
+   In the InstaBox dashboard terminal, enter this command first so the code
+   is read without echoing it. Substitute the verified executable if needed.
+
+       bash -c 'IFS= read -rs offer && CLAWDLINE_LANG=en clawdline cloud pair -offer "$offer"'
+
+   Press Enter to start that read. On the helper, set PAIR_TASK_JSON to the
+   private task.json path named in CHILD.md and PAIR_TAB to the dashboard tab
+   you just verified. Send the code straight from the task file into that tab's
+   focused terminal, using the same browser selection throughout:
+
+python3 - "$PAIR_TASK_JSON" <<'PAIRING_OFFER' | clawdline browser type --tab "$PAIR_TAB" --stdin
+import json
+import re
+import sys
+with open(sys.argv[1], encoding="utf-8") as task:
+    instructions = json.load(task)["instructions"]
+match = re.search(r"-offer \x27([A-Za-z0-9_-]+)\x27", instructions)
+if match is None:
+    sys.exit("pairing offer unavailable")
+sys.stdout.write(match[1])
+PAIRING_OFFER
+
+   If typing succeeds, press Enter once to finish the hidden read and inspect
+   the pairing output. If secure typing is unavailable or its result is uncertain,
+   stop before pressing Enter or attempting another connection. Do not send the
+   offer through InstaBox exec, provider command history, browser address fields,
+   or a command on the helper. Change nothing else on the target.
 
 3. Report the ` + "`browser`" + ` and ` + "`machine`" + ` fingerprint lines the command prints, word for
    word. In result.json, also include this structured field, copying only fingerprints
@@ -124,7 +151,8 @@ this computer. Nobody is watching this tab: do the steps below and nothing else.
 
    Never derive the machine fingerprint from Cloud, the browser, or the offer. Do not
    invent, complete, or substitute values. If either line is missing, omit the field;
-   the browser will keep manual comparison. Do not operate the browser yourself.
+   the browser will keep manual comparison. The InstaBox dashboard terminal is
+   the remote connection. The person's Clawdline pairing page belongs to them.
 
 If a step fails, report which step failed (lookup, wake, connection, identity, or
 pairing), with the relevant refusal and any retry time. Remove the pairing code
