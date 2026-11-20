@@ -96,18 +96,26 @@ export default function BotTower({ items, w, language, paused = false, highlight
     return () => io.disconnect()
   }, [])
 
+  // What to draw lives in a ref: a parent re-render (a roster hover, a new
+  // roster frame) swaps the picture without restarting the loop or resizing
+  // the canvas, since resizing clears it and showed as a flash of every Bot.
+  const scenery = useRef({ bots, slots, running })
+  scenery.current = { bots, slots, running }
+  const drawRef = useRef<(t: number) => void>(() => {})
   useEffect(() => {
     const el = sceneRef.current, canvas = canvasRef.current
     if (!el || !canvas) return
     const g = canvas.getContext("2d")
     if (!g) return
-    let frame = 0, dpr = 1
+    let dpr = 1
     const fit = () => {
       const r = el.getBoundingClientRect()
       dpr = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr))
+      const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr))
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
     }
-    const draw = (t: number) => {
+    drawRef.current = (t: number) => {
+      const { bots, slots, running } = scenery.current
       const k = canvas.width / scene.width, still = !running
       g.clearRect(0, 0, canvas.width, canvas.height)
       const placed = bots.map(b => ({ b, ...place(b, slots.get(b.key) ?? 0, t, still) })).sort((a, z) => a.at[1] - z.at[1])
@@ -120,14 +128,21 @@ export default function BotTower({ items, w, language, paused = false, highlight
         }
       }
     }
-    const loop = (t: number) => { draw(t); frame = requestAnimationFrame(loop) }
     fit()
-    const ro = new ResizeObserver(() => { fit(); if (!running) draw(performance.now()) })
+    drawRef.current(performance.now())
+    const ro = new ResizeObserver(() => { fit(); drawRef.current(performance.now()) })
     ro.observe(el)
-    if (running) frame = requestAnimationFrame(loop)
-    else draw(performance.now())
-    return () => { cancelAnimationFrame(frame); ro.disconnect() }
-  }, [bots, slots, running])
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!running) { drawRef.current(performance.now()); return }
+    let frame = 0
+    const loop = (t: number) => { drawRef.current(t); frame = requestAnimationFrame(loop) }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+  }, [running])
+  // A still picture (reduced motion, hidden) redraws when its Bots change.
+  useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running])
 
   const parts = [w.towerBots.replace("{count}", String(summary.total))]
   if (summary.wait) parts.push(w.towerWaiting.replace("{count}", String(summary.wait)))
