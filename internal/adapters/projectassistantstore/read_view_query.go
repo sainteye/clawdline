@@ -16,7 +16,9 @@ import (
 // complete JSON in each member's fence predicate repeatedly compares the large
 // aggregate in SQLite's JSON parse cache. Keep j as TEXT so returned objects
 // and raw-byte budgets preserve their existing JSON semantics.
-const viewAggregateSQL = `WITH aggregate AS MATERIALIZED (
+// The inner lookup only names that TEXT expression. Inline it so SQLite does
+// not write a second temporary copy of the full Bot aggregate.
+const viewAggregateSQL = `WITH aggregate AS NOT MATERIALIZED (
  SELECT CAST(data AS TEXT) j FROM project_assistant_bots WHERE machine=? AND bot=?
 ), a AS MATERIALIZED (
  SELECT j,
