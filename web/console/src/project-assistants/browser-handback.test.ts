@@ -2,7 +2,7 @@ import {test} from "node:test"
 import assert from "node:assert/strict"
 import type {BrowserCall} from "../session/browser-call"
 // @ts-expect-error Node executes source extensions.
-import {createBrowserHandback} from "./browser-handback.ts"
+import {createBrowserHandback} from "../session/browser-handback.ts"
 
 function fixture() {
   const tabs=[{tab:9,conversation:"owner",browser_mode:"user_chrome",person:true,current:true},{tab:9,conversation:"owner",browser_mode:"isolated",person:true,current:false},{tab:10,conversation:"foreign",browser_mode:"user_chrome",person:true,current:false}]

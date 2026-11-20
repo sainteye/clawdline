@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
-import {createBrowserHandback} from "./browser-handback"
+import {createBrowserHandback} from "../session/browser-handback"
 import {toast} from "../overlays/toast"
 import { catalogWord } from "../catalog"
 import type { BrowserCall, BrowserPanelTarget } from "../session/browser-call"

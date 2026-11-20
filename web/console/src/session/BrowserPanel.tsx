@@ -1,10 +1,13 @@
 import type { SessionRow } from "@clawdline/contract"
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
-import { followsRelay } from "../client.js"
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { followsRelay, mayWriteThroughCurrentTransport } from "../client.js"
+import { captureMachineFetch } from "../cloud/install.js"
+import { toast } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { ChoiceMenu } from "../ui-language/ChoiceMenu.js"
 import { browserCall as defaultCall, type BrowserCall, type BrowserPanelTarget } from "./browser-call.js"
+import { createBrowserHandback } from "./browser-handback.js"
 import { openBrowserSetup } from "./BrowserSetup.js"
 import { BrowserViewport } from "./BrowserViewport.js"
 import { BrowserComposer, type BrowserKeyboardHandle, type PageField } from "./BrowserComposer.js"
@@ -28,7 +31,8 @@ import "./browser-panel.css"
  *
  * **Input needs a takeover.** Clicking the picture, typing and the keys work
  * only after Take over, which the daemon records and which stops the agent's
- * commands to that tab until Hand back. What the person types is not recorded.
+ * commands to that tab until they hand it back or return to the Session
+ * conversation. What the person types is not recorded.
  *
  * Through Clawdline Cloud the same four routes are carried as the
  * chrome-tab-* words (internal/domain/cloudvocab/vocabulary.json), end to end
@@ -86,10 +90,21 @@ function assistantName(row: SessionRow | null): string {
 export function BrowserPanel({ row = null, target: destination, open, onClose, activityScope }: { row?: SessionRow | null; target?: BrowserPanelTarget; open: boolean; activityScope?: string; onClose: (restore: boolean) => void }) {
   const target=destination?.kind==="bot"?destination:undefined
   row=destination?.kind==="session"?destination.row:row
-  const call = target?.call ?? defaultCall
   const relay = target ? target.remote : followsRelay()
   const conversation = target?.conversation ?? row?.sessionId ?? ""
-  const writable = target?.writable ?? true
+  const [closing, setClosing] = useState(false)
+  const sessionBrowser = useMemo(() => {
+    if (target || !open || !conversation) return null
+    const machine = captureMachineFetch()
+    const request: BrowserCall = (method, path, body) => defaultCall(method, path, body, machine.fetch)
+    const handback = createBrowserHandback(request, conversation)
+    return { handback, call: ((method, path, body) => {
+      if (method === "GET") return request(method, path, body)
+      return handback.track(method, path, () => request(method, path, body))
+    }) satisfies BrowserCall }
+  }, [target, open, conversation])
+  const call = target?.call ?? sessionBrowser?.call ?? defaultCall
+  const writable = (target?.writable ?? true) && !closing
   const reason = target?.reason ?? ""
   const describe = (error: unknown, lead: "browserPanelReadFailed" | "browserPanelActFailed") => target?.refusal?.(error) || said(error, lead)
   const [status, setStatus] = useState<Status | null>(null)
@@ -116,7 +131,8 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
   const mine = status?.status.tabs.filter((t) => t.conversation === (target ? status?.owner : conversation) && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
-  const activity = useBrowserActivityFeed(open && tabID ? conversation || undefined : undefined, call, activityScope)?.data ?? []
+  // Keep the activity reader shared with the Session transcript.
+  const activity = useBrowserActivityFeed(open && tabID ? conversation || undefined : undefined, target?.call ?? defaultCall, activityScope)?.data ?? []
   const browserMode = status?.mode
   const scopeKey = (target?.id ?? row?.id ?? "") + ":" + conversation + ":" + (browserMode ?? "legacy") + ":" + tabID
   const scope = useRef(scopeKey)
@@ -125,6 +141,31 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
   const otherDebugger = (shotError as { code?: string } | null)?.code === "browser_other_debugger"
   const person = !!tab?.person && status?.enabled !== false && !otherDebugger
   const name = target?.name ?? assistantName(row)
+
+  const close = async () => {
+    const handback = sessionBrowser?.handback
+    const controlsTab = status?.status.tabs.some(tab => tab.person && tab.conversation === conversation)
+    if (!handback || !mayWriteThroughCurrentTransport() || (!handback.hadControlWrite() && !controlsTab)) {
+      onClose(true)
+      return
+    }
+    if (handback.closing()) return
+    wantPhone.current = false
+    nativeKeyboard.current?.close()
+    setClosing(true)
+    try {
+      await handback.exit()
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code ?? "browser_unavailable"
+      toast(catalogWord("botBrowser", "handbackFailed").replace("{code}", code), true)
+    } finally {
+      // The Session may have changed during the handback.
+      if (closeRef.current) {
+        setClosing(false)
+        onClose(true)
+      }
+    }
+  }
 
   useEffect(()=>{setStatus(null);setStatusError(null);setActError(null)},[call])
   useEffect(() => {
@@ -263,7 +304,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
     if (await ensureControl()) await act("reload", {})
   }
   useEffect(() => {
-    if (!wantPhone.current || !shot || !person) return
+    if (!writable || !wantPhone.current || !shot || !person) return
     wantPhone.current = false
     if (shot.layout !== "mobile") void changeLayout("mobile")
   })
@@ -353,7 +394,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
 
   const ready = !!tab && !!status?.status.connected && !!status.enabled
   return (
-    <section className="panel-view" id="browser-panel" aria-labelledby="browser-title" hidden={!open}>
+    <section className="panel-view" id="browser-panel" aria-labelledby="browser-title" aria-busy={closing || undefined} hidden={!open}>
       {/* One address bar instead of a title row: the page's address, how it is
           shown (a picture about once a second), and the way out. */}
       <div className="browser-bar">
@@ -367,7 +408,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose, a
           <span className="browser-path">{address(shot?.url).rest}</span>
         </div>}
         {ready && <span className="browser-live" title={nextWord("browserPanelSampled")}><i aria-hidden="true" />{nextWord("browserPanelSampled")}</span>}
-        <button className="browser-close" type="button" ref={closeRef} aria-label={L.strings.webClose} title={L.strings.webClose} onClick={() => onClose(true)}>
+        <button className="browser-close" type="button" ref={closeRef} aria-label={L.strings.webClose} title={L.strings.webClose} disabled={closing} onClick={() => void close()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
       </div>
