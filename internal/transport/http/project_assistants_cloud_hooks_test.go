@@ -271,6 +271,18 @@ func TestBotRoutineHooksHTTPHostSQLiteExactBytesLostAckAndRedelivery(t *testing.
 	if second.ID != first.ID {
 		t.Fatal("redelivery created another run")
 	}
+	var hookCalls int64
+	for _, route := range f.s.routeStatsTable().reading().Routes {
+		if route.Method == http.MethodPost && route.Route == "/hooks/routines/:id" {
+			hookCalls = route.Callers.Cloud
+			if route.Count != 2 || route.Status2xx != 2 || route.LatencyMs == nil || route.LatencyMs.Samples != 2 {
+				t.Fatalf("hook receiver was not measured once per invocation: %+v", route)
+			}
+		}
+	}
+	if hookCalls != 2 {
+		t.Fatalf("want both receiver invocations attributed to Cloud, got %d", hookCalls)
+	}
 	p.mu.Lock()
 	sends := len(p.sends)
 	p.mu.Unlock()

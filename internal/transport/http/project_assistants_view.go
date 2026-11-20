@@ -63,28 +63,30 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	return paEncodedReadView{body: encoded, result: result}, nil
 }
 
-func paReadViewEncode(response contract.ProjectAssistantReadViewResponse, rows [][]byte) ([]byte, bool, error) {
-	// Each complete generated item is encoded once. Encode the small generated
-	// envelope for this prefix, then insert only whole encoded array elements.
-	response.Items = []contract.ProjectAssistantReadViewItem{}
-	header, err := json.Marshal(response)
-	if err != nil {
-		return nil, false, err
+func paReadViewEncode(header []byte, rows [][]byte) ([]byte, error) {
+	if len(rows) == 0 {
+		return append(header, '\n'), nil
 	}
-	var array bytes.Buffer
-	array.WriteByte('[')
+	const items = `"items":[]`
+	start := bytes.Index(header, []byte(items))
+	if start < 0 {
+		return nil, paHTTPFailure(pa.Invalid, "view_items")
+	}
+	start += len(items) - 1
+	size := len(header) + len(rows) // Commas and the final newline.
+	for _, row := range rows {
+		size += len(row)
+	}
+	encoded := make([]byte, 0, size)
+	encoded = append(encoded, header[:start]...)
 	for i, row := range rows {
 		if i > 0 {
-			array.WriteByte(',')
+			encoded = append(encoded, ',')
 		}
-		array.Write(row)
+		encoded = append(encoded, row...)
 	}
-	array.WriteByte(']')
-	encoded := bytes.Replace(header, []byte(`"items":[]`), append([]byte(`"items":`), array.Bytes()...), 1)
-	encoded = append(encoded, '\n')
-	name := "read:" + strings.Repeat("<", 128)
-	size, err := cloudops.ProjectAssistantReadReplySize(name, http.StatusOK, encoded)
-	return encoded, len(encoded) <= cloudops.ReadPlaintextBytesLimit && size <= cloudops.ReadPlaintextBytesLimit, err
+	encoded = append(encoded, header[start:]...)
+	return append(encoded, '\n'), nil
 }
 
 func paPackReadView(q pa.ReadViewRequest, result app.ReadViewResult) ([]byte, error) {
@@ -95,7 +97,7 @@ func paPackReadView(q pa.ReadViewRequest, result app.ReadViewResult) ([]byte, er
 	}
 	response := contract.ProjectAssistantReadViewResponse{ContractVersion: pa.ContractVersion,
 		Mode: contract.ProjectAssistantReadViewMode(v.Mode), SourceEpoch: v.SourceEpoch,
-		Head: paWireReadHead(v.Head), Source: source}
+		Head: paWireReadHead(v.Head), Source: source, Items: []contract.ProjectAssistantReadViewItem{}}
 	if (v.Snapshot != nil) != (q.Mode == pa.ReadViewSnapshot) {
 		return nil, paHTTPFailure(pa.Invalid, "view_snapshot")
 	}
@@ -108,23 +110,33 @@ func paPackReadView(q pa.ReadViewRequest, result app.ReadViewResult) ([]byte, er
 	if q.Mode == pa.ReadViewEvents {
 		response.NextSeq = q.AfterSeq
 	}
-	var best []byte
-	var failure error
-	rows := make([][]byte, 0, len(v.Items))
-	rowBytes := 0
-	mandatory, fits, err := paReadViewEncode(response, nil)
+	mandatory, err := json.Marshal(response)
 	if err != nil {
 		return nil, err
 	}
-	if !fits {
+	name := "read:" + strings.Repeat("<", 128)
+	cloudSize, err := cloudops.ProjectAssistantReadReplySize(name, http.StatusOK, mandatory)
+	if err != nil {
+		return nil, err
+	}
+	if len(mandatory)+1 > cloudops.ReadPlaintextBytesLimit || cloudSize > cloudops.ReadPlaintextBytesLimit {
 		return nil, paHTTPFailure(pa.CapacityFull, "view_mandatory_bytes")
 	}
 	if len(v.Items) == 0 {
 		if v.HasMore {
 			return nil, paHTTPFailure(pa.Invalid, "view_empty_continuation")
 		}
-		best = mandatory
+		return paReadViewEncode(mandatory, nil)
 	}
+	// The header and each item are compact, HTML-escaped json.Marshal output.
+	// Cloud's RawMessage serializer leaves those bytes intact. The local final
+	// newline is excluded from Cloud, while the reply envelope has a fixed cost.
+	cloudOverhead := cloudSize - len(mandatory)
+	var bestHeader []byte
+	var bestCount int
+	var failure error
+	rows := make([][]byte, 0, len(v.Items))
+	rowBytes := 0
 	for i, item := range v.Items {
 		// A bad row cannot be skipped. A preceding valid prefix still provides
 		// its honest continuation and exposes this failure on the next read.
@@ -175,17 +187,18 @@ func paPackReadView(q pa.ReadViewRequest, result app.ReadViewResult) ([]byte, er
 			}
 			response.NextCursor = item.AfterCursor
 		}
-		encoded, fits, e := paReadViewEncode(response, rows)
+		header, e := json.Marshal(response)
 		if e != nil {
 			failure = e
 			break
 		}
-		if fits {
-			best = encoded
+		bodySize := len(header) + rowBytes + len(rows) - 1 // One comma between items.
+		if bodySize+1 <= cloudops.ReadPlaintextBytesLimit && bodySize+cloudOverhead <= cloudops.ReadPlaintextBytesLimit {
+			bestHeader, bestCount = header, len(rows)
 		}
 	}
-	if best != nil {
-		return best, nil
+	if bestHeader != nil {
+		return paReadViewEncode(bestHeader, rows[:bestCount])
 	}
 	if failure != nil {
 		return nil, failure

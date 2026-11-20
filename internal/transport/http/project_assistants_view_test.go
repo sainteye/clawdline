@@ -249,4 +249,23 @@ func TestProjectAssistantViewExactCloudByteBoundary(t *testing.T) {
 	if _, err = paPackReadView(q, r); pa.Code(err) != pa.CapacityFull {
 		t.Fatalf("one-byte overflow published: %v", err)
 	}
+
+	escaped := "<台灣>&\u2028\u2029\n"
+	r.View.Items = []app.ReadViewItem{paPackMessage("first", escaped, "next"), paPackMessage("second", escaped, "")}
+	b, err = paPackReadView(q, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size, err = cloudops.ProjectAssistantReadReplySize("read:"+strings.Repeat("<", 128), 200, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.View.Items[1].Message.Text += strings.Repeat("x", cloudops.ReadPlaintextBytesLimit-size)
+	if out := paPackDecode(t, q, r); len(out.Items) != 2 || out.Items[0].Message.Text != escaped || out.HasMore {
+		t.Fatal("exactly fitting escaped page lost an item or added a continuation")
+	}
+	r.View.Items[1].Message.Text += "x"
+	if out := paPackDecode(t, q, r); len(out.Items) != 1 || out.NextCursor != "next" || !out.HasMore {
+		t.Fatal("one-byte overflow did not stop at the previous continuation")
+	}
 }

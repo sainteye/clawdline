@@ -476,6 +476,32 @@ func TestReadViewEventsValidateEveryPayloadScope(t *testing.T) {
 	}
 }
 
+func TestEventFactChecksKeepBindingGenerationAndTurnScope(t *testing.T) {
+	export, old, current := viewFixture(t, 1, 0, false)
+	db, _, views, _ := restoreViews(t, export)
+	head := readView(t, views, viewQuery(export.Bot)).Head
+	tx, err := db.BeginTx(testContext, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var checks viewEventFactChecks
+	event := pa.Event{Fence: current, Trace: &pa.Trace{TurnID: "t1"}}
+	for range 2 {
+		if err = checks.verify(testContext, tx, event, head); err != nil {
+			t.Fatal(err)
+		}
+	}
+	event.Fence.Generation = old.Generation
+	if err = checks.verify(testContext, tx, event, head); !reflect.DeepEqual(err, failure(pa.ScopeDenied, "read_view_event_binding")) {
+		t.Fatalf("a previously checked binding ID was accepted with the wrong generation: %v", err)
+	}
+	event.Fence = old
+	if err = checks.verify(testContext, tx, event, head); !reflect.DeepEqual(err, failure(pa.ScopeDenied, "read_view_event_trace")) {
+		t.Fatalf("a previously checked turn ID was accepted with a different binding: %v", err)
+	}
+}
+
 func TestReadViewDoesNotMutateOrCloseBorrowedPool(t *testing.T) {
 	db, store, _ := testDB(t)
 	b := seed(t, store, "target")
