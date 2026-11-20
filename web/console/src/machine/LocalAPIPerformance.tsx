@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { client } from "../client"
+import { catalogFormat } from "../catalog"
 import { nextWord } from "../next-strings"
 import { LOCAL_PERFORMANCE_LIMITS, localQuantile, readLocalPerformance, type Histogram, type LocalPerformance, type LocalPoint } from "./api-performance"
 import "./api-performance.css"
@@ -29,6 +30,8 @@ export function LocalAPIPerformance({ get = globalThis.fetch }: { get?: typeof f
     return()=>{alive=false;ctl?.abort();if(timer)clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",revalidate);window.removeEventListener("storage",revalidate)}
   },[key,hours,until,refresh,get])
   const state=held.key===key?held:{key,data:null,error:null,loading:true},data=state.data
+  const completed = data?.totals.completed ?? 0
+  const unattributed = data?.slow_routes.find((route) => route.route === "OTHER (overflow)")?.totals.completed ?? 0
   const q=(h:Histogram,p=95)=>{if(!data)return"—";const value=localQuantile(h,data.histogram_upper_bounds_ms,p);return value===null?(h.count?">60000 ms":"—"):`${fmt(value)} ms`}
   const stateWord=(p:LocalPoint)=>p.state==="missing"?nextWord("apiPerformanceMissing"):p.state==="partial"?nextWord("apiPerformancePartial"):p.state==="no_traffic"?nextWord("apiPerformanceNoTraffic"):""
   const routes=(rows:LocalPerformance["slow_routes"])=>rows.length?<div className="lap-routes">{rows.map(r=><article key={r.route}><code>{r.route}</code><dl><dt>{nextWord("apiPerformanceCount")}</dt><dd>{fmt(r.totals.completed)}</dd><dt>P95 / P99</dt><dd>{q(r.totals.finite_latency_ms)} / {q(r.totals.finite_latency_ms,99)}</dd><dt>5xx / 499</dt><dd>{fmt(r.totals.status_5xx)} / {fmt(r.totals.cancelled)}</dd><dt>Σ / max</dt><dd>{fmt(r.totals.finite_latency_ms.sum_ms)} / {fmt(r.totals.finite_latency_ms.max_ms)} ms</dd></dl></article>)}</div>:<p className="machine-note">{nextWord("apiPerformanceEmpty")}</p>
@@ -42,6 +45,11 @@ export function LocalAPIPerformance({ get = globalThis.fetch }: { get?: typeof f
       <p className={data.stale||state.error?"lap-warning":"machine-note"} role="status">{nextWord(data.stale||state.error?"apiPerformanceStale":"apiPerformanceLive")} · {at(data.at_ms)}</p>
       <h3>{nextWord("apiPerformanceWindow")}</h3><p className="machine-note">{at(data.from_ms)} – {at(data.until_ms)}</p>
       <div className="lap-cards">{[[nextWord("apiPerformanceCount"),fmt(data.totals.completed)],["P95",q(data.totals.finite_latency_ms)],[nextWord("apiPerformanceErrors"),`${fmt(data.totals.status_5xx)} / ${fmt(data.totals.cancelled)}`],[nextWord("apiPerformanceActive"),`${fmt(data.active)} / ${fmt(data.open_streams)}`]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      {completed > 0 && unattributed > 0 && (
+        <p className="lap-warning">{catalogFormat("capacity", "unattributedRequests", [
+          fmt(unattributed), fmt(completed), fmt(unattributed / completed * 100),
+        ])}</p>
+      )}
       <LocalHistory points={data.points} bounds={data.histogram_upper_bounds_ms}/>
       <section><h3>{nextWord("apiPerformanceRecent")}</h3><ul className="lap-values">{data.recent_minutes.slice(0,5).map(p=><li key={p.start_ms}><time>{at(p.start_ms)}</time><span>{fmt(p.totals.completed)} · P95 {q(p.totals.finite_latency_ms)}</span><small>{fmt(p.covered_seconds)} / 60 s · {stateWord(p)}</small></li>)}</ul></section>
       <section><h3>{nextWord("apiPerformanceRecentRoutes")}</h3>{routes(data.recent_slow_routes)}</section>

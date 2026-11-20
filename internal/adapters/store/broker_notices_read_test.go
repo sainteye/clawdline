@@ -26,6 +26,10 @@ func TestAReadNoticeIsNotDueAndAnUnreadOneStillIsAfterAReopen(t *testing.T) {
 			DeliveredAt: at, NextRetryAt: at.Add(2 * time.Minute)},
 		{ID: "n-read", TaskID: "t-read", State: "delivered", Attempts: 1, CreatedAt: at,
 			DeliveredAt: at, ObservedAt: at.Add(time.Minute)},
+		{ID: "n-dead-delivered", TaskID: "t-dead-delivered", State: "dead_letter", CreatedAt: at,
+			DeliveredAt: at, DeadLetterAt: at.Add(time.Minute)},
+		{ID: "n-dead-missing", TaskID: "t-dead-missing", State: "dead_letter", CreatedAt: at,
+			DeadLetterAt: at.Add(time.Minute)},
 	}
 	if err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
 		for _, n := range rows {
@@ -60,7 +64,7 @@ func TestAReadNoticeIsNotDueAndAnUnreadOneStillIsAfterAReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts.Delivered != 2 || !counts.OldestPending.Equal(at) {
+	if counts.Delivered != 2 || counts.DeadLetter != 2 || counts.DeadLetterDelivered != 1 || !counts.OldestPending.Equal(at) {
 		t.Fatalf("counts: %+v", counts)
 	}
 	read, err := s.BrokerNotice(ctx, "t-read")

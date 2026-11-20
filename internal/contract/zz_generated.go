@@ -537,6 +537,13 @@ type BrokerChild struct {
 	TerminalID string  `json:"terminalId"`
 }
 
+// Transport evidence for the current dead letters, independent of browser push.
+// Absent in older daemons.
+type BrokerDeadLetterDelivery struct {
+	Delivered  int64 `json:"delivered"`
+	Unrecorded int64 `json:"unrecorded"`
+}
+
 // The broker block of /v1/diagnostics: the beat, what its last pass did, the
 // notice ledger, the store, and what the beat has only observed.
 type BrokerDiagnostics struct {
@@ -1034,11 +1041,12 @@ type BrokerNotice struct {
 }
 
 type BrokerNoticeCounts struct {
-	Acknowledged      int64 `json:"acknowledged"`
-	DeadLetter        int64 `json:"dead_letter"`
-	Delivered         int64 `json:"delivered"`
-	OldestOpenSeconds int64 `json:"oldest_open_seconds,omitempty"`
-	Pending           int64 `json:"pending"`
+	Acknowledged       int64                     `json:"acknowledged"`
+	DeadLetter         int64                     `json:"dead_letter"`
+	DeadLetterDelivery *BrokerDeadLetterDelivery `json:"dead_letter_delivery,omitempty"`
+	Delivered          int64                     `json:"delivered"`
+	OldestOpenSeconds  int64                     `json:"oldest_open_seconds,omitempty"`
+	Pending            int64                     `json:"pending"`
 }
 
 type BrokerNoticeError struct {
@@ -2105,8 +2113,8 @@ type CapacityLastPush struct {
 // rest of /v1/diagnostics — no state directory, no ports — because a person
 // reads the panel from a browser that is a paired device, and /v1/diagnostics
 // is this machine's own token's. Beside it, the count of completion notices
-// that went unanswered through their whole ladder (limits N7): a dead letter is
-// pushed once when it happens, and this is where it stays visible.
+// that went unanswered through their whole ladder (limits N7): it stays visible
+// independently of whether browser push was accepted.
 type CapacityPanel struct {
 	At       int64               `json:"at"`
 	Capacity CapacityDiagnostics `json:"capacity"`

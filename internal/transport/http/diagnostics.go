@@ -668,15 +668,25 @@ func (s *Server) capacityRoute(w http.ResponseWriter, r *http.Request) {
 	if counts, err := s.store.BrokerNoticeCounts(r.Context()); err != nil {
 		out.CompletionsError = err.Error()
 	} else {
-		out.Completions = &contract.BrokerNoticeCounts{
-			Pending: int64(counts.Pending), Delivered: int64(counts.Delivered),
-			DeadLetter: int64(counts.DeadLetter), Acknowledged: int64(counts.Acknowledged),
-		}
-		if !counts.OldestPending.IsZero() {
-			out.Completions.OldestOpenSeconds = int64(time.Since(counts.OldestPending) / time.Second)
-		}
+		wire := brokerNoticeCountsWire(counts, time.Unix(out.At, 0))
+		out.Completions = &wire
 	}
 	writeJSON(w, out)
+}
+
+func brokerNoticeCountsWire(counts store.NoticeCounts, now time.Time) contract.BrokerNoticeCounts {
+	wire := contract.BrokerNoticeCounts{
+		Pending: int64(counts.Pending), Delivered: int64(counts.Delivered),
+		DeadLetter: int64(counts.DeadLetter), Acknowledged: int64(counts.Acknowledged),
+		DeadLetterDelivery: &contract.BrokerDeadLetterDelivery{
+			Delivered:  int64(counts.DeadLetterDelivered),
+			Unrecorded: int64(counts.DeadLetter - counts.DeadLetterDelivered),
+		},
+	}
+	if !counts.OldestPending.IsZero() {
+		wire.OldestOpenSeconds = int64(now.Sub(counts.OldestPending) / time.Second)
+	}
+	return wire
 }
 
 // CapacityEntry is one row on the wire, as /v1/diagnostics.capacity and

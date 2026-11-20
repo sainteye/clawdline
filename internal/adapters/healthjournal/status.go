@@ -36,6 +36,7 @@ type Status struct {
 	PrunedCount         uint64     `json:"pruned_segments_count"`
 	PrunedRecords       uint64     `json:"pruned_records"`
 	PruneFailures       uint64     `json:"prune_failures"`
+	PruneBlocked        bool       `json:"prune_blocked,omitempty"`
 	Shed                uint64     `json:"shed_on_disk_full"`
 	Writes              uint64     `json:"writes"`
 	// Readers is how many Reads hold one of the MaxConcurrentReads slots.
@@ -56,7 +57,7 @@ func (s *Store) Status() Status {
 		Refused: s.st.refused.Load(), Invalid: s.st.invalid.Load(), TooLarge: s.st.tooLarge.Load(),
 		Lost: s.st.lost.Load(), DroppedOnClose: s.st.droppedAtClose.Load(),
 		PrunedAge: s.st.prunedAge.Load(), PrunedBytes: s.st.prunedBytes.Load(), PrunedCount: s.st.prunedCount.Load(),
-		PrunedRecords: s.st.prunedRecords.Load(), PruneFailures: s.st.pruneFailures.Load(), Shed: s.st.shed.Load(),
+		PrunedRecords: s.st.prunedRecords.Load(), PruneFailures: s.st.pruneFailures.Load(), PruneBlocked: s.st.pruneBlocked.Load(), Shed: s.st.shed.Load(),
 		Writes: s.st.writes.Load(), Syncs: s.st.syncs.Load(),
 		Recovery: s.recovery, Readers: len(s.readers),
 	}
