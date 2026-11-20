@@ -198,6 +198,8 @@
   .project-assistants.pa-tower-sheet .pa-sheet-grip { flex:none;display:grid;place-items:center;height:22px;touch-action:none;cursor:grab; }
   .project-assistants.pa-tower-sheet .pa-sheet-grip::before { content:"";width:40px;height:4px;border-radius:2px;background:rgba(250,250,250,.28); }
   .project-assistants.pa-tower-sheet .pa-chat-header { touch-action:none; }
+  /* Swiped up, the sheet fills the screen; its grip stays to swipe it back. */
+  .project-assistants.pa-tower-sheet-full .pa-main { top:0;height:100dvh;min-height:0;border-radius:0;padding-top:env(safe-area-inset-top);transition:height .2s ease-out; }
   .project-assistants.pa-tower-sheet .pa-main > :not(.pa-sheet-grip) { flex:1;min-height:0; }
   .project-assistants.pa-tower-sheet .pa-chat-header { min-height:60px;padding-top:6px; }
   .project-assistants .pa-chat-back { display:grid; }
