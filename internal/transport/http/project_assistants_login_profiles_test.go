@@ -310,7 +310,7 @@ func loginCapabilitiesFixture(t *testing.T, wraps ...func(app.Provider) app.Prov
 		return r, e
 	}
 	skillPath := filepath.Join(f.s.cfg.Dir, "synthetic-installed-skill.json")
-	skillBytes, _ := json.Marshal([]squad.Skill{{SkillID: "synthetic", Name: squad.Names{En: "Synthetic installed skill"}, Content: "Use the local synthetic fixture skill."}})
+	skillBytes, _ := json.Marshal([]squad.Skill{{SkillID: "synthetic", Name: squad.Names{En: "Synthetic installed skill"}, Purpose: squad.Names{En: "Explain the synthetic skill before enabling it.", ZhHant: "開啟前先了解這項測試技能。"}, Content: "Use the local synthetic fixture skill."}})
 	if e := os.WriteFile(skillPath, skillBytes, 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -574,8 +574,14 @@ func TestIndividualExtensionsCrossStoredHTTPAndActualACP(t *testing.T) {
 	for _, o := range catalog.Items {
 		ref := contract.ProjectAssistantExtensionRef{ID: o.ID, Fingerprint: o.Fingerprint}
 		if o.Kind == "skill" {
+			if o.Purpose == nil || o.Purpose.En != "Explain the synthetic skill before enabling it." || o.Purpose.ZhHant != "開啟前先了解這項測試技能。" {
+				t.Fatalf("installed skill purpose missing from the extension catalog: %+v", o.Purpose)
+			}
 			selection.Skills = append(selection.Skills, ref)
 		} else {
+			if o.Purpose != nil {
+				t.Fatal("connector unexpectedly has skill purpose")
+			}
 			selection.Connectors = append(selection.Connectors, ref)
 		}
 	}

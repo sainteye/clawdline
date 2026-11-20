@@ -12,12 +12,18 @@ type ExtensionSelection struct {
 	Skills     []ExtensionRef `json:"skills"`
 	Connectors []ExtensionRef `json:"connectors"`
 }
+type ExtensionPurpose struct {
+	En     string `json:"en"`
+	ZhHant string `json:"zh-Hant"`
+}
+
 type ExtensionOffer struct {
-	ID                 string `json:"id"`
-	Fingerprint        string `json:"fingerprint"`
-	Name               string `json:"name"`
-	Kind               string `json:"kind"`
-	CredentialRequired bool   `json:"credential_required,omitempty"`
+	ID                 string            `json:"id"`
+	Fingerprint        string            `json:"fingerprint"`
+	Name               string            `json:"name"`
+	Kind               string            `json:"kind"`
+	Purpose            *ExtensionPurpose `json:"purpose,omitempty"`
+	CredentialRequired bool              `json:"credential_required,omitempty"`
 }
 type ExtensionCatalog struct {
 	Items               []ExtensionOffer `json:"items"`

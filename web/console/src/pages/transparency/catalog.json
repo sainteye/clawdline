@@ -5082,7 +5082,7 @@
     "internal/adapters/antigravitysession/host.go": "45f36eb430404824b82feac80f742e216ba5220bc23c46ce850da5b2e9402562",
     "internal/adapters/antigravitysession/naming.go": "352cbc233177c14277b67dae9047637bbe9ab7919d7078edc90ad6766ac67116",
     "internal/adapters/antigravitysession/turnend.go": "0e37dc41dcf875f0cbc8d12ddeee5e9fb603ac309a400fb4d2ab594f8c09d32d",
-    "internal/adapters/botcapabilities/inventory.go": "cb2323c5b9ae087f07d5ffe1fc167137bd4863966d0c781c1db71dffefa72bc1",
+    "internal/adapters/botcapabilities/inventory.go": "86795536d0401c99d3b7b98c95aa224a709190b27de6048db8803e9eaaf78874",
     "internal/adapters/botconnectorvault/registry.go": "851393da81e68d7983994fa3c4cc2def43d970e9b9896defb4118d3a9e73d923",
     "internal/adapters/botdevserverstore/catalog.go": "5117057ba91815186d464b6e6c54605c58d9b2c700374c036500733c2ab2131f",
     "internal/adapters/botdevserverstore/rules.go": "5018a72ffb3a08545f18e95cd99924b1ca4c6f168d0ba2d02fc793c0f17d7197",

@@ -47,6 +47,10 @@ test("builtin metadata follows all nine active catalogs without changing wire or
         purpose: names(source.en["builtinSkill.golang-concurrency.purpose"]), content: "immutable historical instruction body", version: "old" }
       const snapshotBefore = JSON.stringify(snapshot)
       assert.equal(builtinDisplay("skill", snapshot.id, snapshot.name, snapshot.purpose).detail, `${tag} builtinSkill.golang-concurrency.purpose`)
+      assert.equal(builtinDisplay("skill", snapshot.id, snapshot.name).detail, `${tag} builtinSkill.golang-concurrency.purpose`)
+      assert.equal(builtinDisplay("skill", snapshot.id, names("Edited name")).detail, "")
+      assert.equal(builtinDisplay("skill", snapshot.id, snapshot.name, { en: "" }).detail, "")
+      assert.equal(builtinDisplay("skill", "custom.skill.golang-concurrency", snapshot.name).detail, "")
       assert.equal(JSON.stringify(snapshot), snapshotBefore)
       for (const id of ["custom.backend", "unknown", "clawdline.persona.unknown"]) {
         assert.equal(builtinDisplay("persona", id, role.name, role.summary).name, tag === "zh-Hant" ? "wire Chinese" : role.name.en)

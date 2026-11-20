@@ -5091,11 +5091,12 @@ type ProjectAssistantExtensionCatalog struct {
 }
 
 type ProjectAssistantExtensionOffer struct {
-	CredentialRequired bool   `json:"credential_required,omitempty"`
-	Fingerprint        string `json:"fingerprint"`
-	ID                 string `json:"id"`
-	Kind               string `json:"kind"`
-	Name               string `json:"name"`
+	CredentialRequired bool        `json:"credential_required,omitempty"`
+	Fingerprint        string      `json:"fingerprint"`
+	ID                 string      `json:"id"`
+	Kind               string      `json:"kind"`
+	Name               string      `json:"name"`
+	Purpose            *SquadNames `json:"purpose,omitempty"`
 }
 
 type ProjectAssistantExtensionRef struct {

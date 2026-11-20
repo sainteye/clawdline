@@ -9,23 +9,23 @@ export function wireDisplay(words: DisplayNames): string {
   return (currentCatalogTag() === "zh-Hant" ? words["zh-Hant"] : words.en) || words.en || words["zh-Hant"] || ""
 }
 
-/** Only a complete known English pair can identify bundled display metadata.
- * Bodies, versions and the wire objects themselves are never rewritten. This
- * also permits an immutable snapshot with unchanged metadata to be displayed
- * in the active language, while older or edited metadata stays verbatim.
+/** Match bundled metadata against the known English pair. Older Bot extension
+ * catalogs omit the skill purpose, so the exact built-in ID and name are used
+ * in that case. Explicit or edited metadata keeps its source text.
  */
 export function builtinDisplay(kind: "persona" | "skill", id: string, name: DisplayNames,
-  detail: DisplayNames): { name: string; detail: string } {
+  detail?: DisplayNames): { name: string; detail: string } {
   const prefix = `clawdline.${kind}.`
   const short = kind === "persona" && !id.includes(".") ? id : id.startsWith(prefix) ? id.slice(prefix.length) : ""
   const domain = kind === "persona" ? "builtinPersona" : "builtinSkill"
   const field = kind === "persona" ? "summary" : "purpose"
   const key = `${domain}.${short}`
   const en = source.en as Record<string, string>
-  if (short && Object.hasOwn(en, `${key}.name`) && name.en === en[`${key}.name`] && detail.en === en[`${key}.${field}`]) {
+  const detailMatches = detail ? detail.en === en[`${key}.${field}`] : kind === "skill"
+  if (short && Object.hasOwn(en, `${key}.name`) && name.en === en[`${key}.name`] && detailMatches) {
     return { name: catalogWord(domain, `${short}.name`), detail: catalogWord(domain, `${short}.${field}`) }
   }
-  return { name: wireDisplay(name), detail: wireDisplay(detail) }
+  return { name: wireDisplay(name), detail: detail ? wireDisplay(detail) : "" }
 }
 
 const teamKeys: Record<string, string> = {

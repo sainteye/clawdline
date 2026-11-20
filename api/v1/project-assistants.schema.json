@@ -4371,6 +4371,9 @@
         "kind": {
           "type": "string"
         },
+        "purpose": {
+          "$ref": "squad.schema.json#/$defs/SquadNames"
+        },
         "credential_required": {
           "type": "boolean"
         }

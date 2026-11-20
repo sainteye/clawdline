@@ -5912,6 +5912,7 @@ export interface ProjectAssistantExtensionOffer {
   id: string
   kind: string
   name: string
+  purpose?: SquadNames
 }
 
 export interface ProjectAssistantExtensionRef {

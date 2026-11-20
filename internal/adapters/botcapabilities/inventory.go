@@ -193,7 +193,10 @@ func (i Inventory) Catalog(ctx context.Context, b pa.Bot, _ string) (pa.Extensio
 		if name == "" {
 			name = s.SkillID
 		}
-		out.Items = append(out.Items, pa.ExtensionOffer{ID: "skill:" + s.SkillID, Fingerprint: fingerprint(s), Name: name, Kind: "skill"})
+		out.Items = append(out.Items, pa.ExtensionOffer{
+			ID: "skill:" + s.SkillID, Fingerprint: fingerprint(s), Name: name, Kind: "skill",
+			Purpose: &pa.ExtensionPurpose{En: s.Purpose.En, ZhHant: s.Purpose.ZhHant},
+		})
 	}
 	for _, c := range connectors {
 		out.Items = append(out.Items, pa.ExtensionOffer{ID: "connector:" + c.ID, Fingerprint: connectorFingerprint(c), Name: c.Name, Kind: "connector", CredentialRequired: c.CredentialHeader != "" || c.CredentialEnv != ""})
