@@ -156,6 +156,18 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		if err := b.TrustClaudeProject(cwd); err != nil {
 			log.Printf("broker: %s was not recorded as a folder Claude Code trusts: %v", cwd, err)
 		}
+		// Each --add-dir folder is a package this broker wrote, one per
+		// handoff, root assignment or remote task under a root it owns.
+		// Claude Code 2.1.329 asks "Adding a new directory … trust?" for it,
+		// with "No, exit" selected, before the composer exists, so a handoff
+		// line can never arrive (2026-11-20). Trusting the owning root once
+		// covers every package below it, as Claude Code reads trust; a folder
+		// outside this broker's own state is never recorded.
+		for _, root := range packageRoots(b.Dir, addDirs) {
+			if err := b.TrustClaudeProject(root); err != nil {
+				log.Printf("broker: %s was not recorded as a folder Claude Code trusts: %v", root, err)
+			}
+		}
 	}
 	// A session this broker opens is started with the machine's compaction
 	// window, as a child is; nobody's task names one here.
@@ -1125,4 +1137,26 @@ func (b *Broker) updateAssignment(ctx context.Context, id, kind string, change f
 			[]store.Event{{Kind: kind, Subject: id, Payload: payload}}, nil
 	})
 	return out, err
+}
+
+// packageRoots are the distinct parents of the add-dir folders that lie
+// inside the broker's state directory, in order. Any other folder is left to
+// Claude Code's own question.
+func packageRoots(state string, addDirs []string) []string {
+	if state == "" {
+		return nil
+	}
+	base := filepath.Clean(state)
+	var roots []string
+	seen := map[string]bool{}
+	for _, dir := range addDirs {
+		parent := filepath.Dir(filepath.Clean(dir))
+		rel, err := filepath.Rel(base, parent)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || seen[parent] {
+			continue
+		}
+		seen[parent] = true
+		roots = append(roots, parent)
+	}
+	return roots
 }
