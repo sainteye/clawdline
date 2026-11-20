@@ -215,6 +215,24 @@ test("legacy unverified draft: original text, quote and full scope survive separ
   }
   assert.equal(reloaded.unverifiedDrafts.history(draftIdentity("other",key),scope).length,0)
 })
+test("removing an archived draft keeps later drafts out of legacy recovery after reload",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  view.unverifiedDrafts.capture(own,scope,"Old draft","old quote")
+  assert.equal(view.unverifiedDrafts.dismiss(own,scope),false,"a draft still being recovered cannot be dismissed")
+  assert.ok(view.archiveUnverifiedDraft(own,scope))
+  disk.set(own,"A later draft")
+  const blocked=createViewState({...store,setItem:()=>{throw new Error("blocked")}})
+  assert.equal(blocked.unverifiedDrafts.dismiss(own,scope),false)
+  assert.equal(blocked.unverifiedDrafts.history(own,scope)[0].text,"Old draft")
+  assert.equal(view.unverifiedDrafts.dismiss(own,{...scope,conversation_id:"another conversation"}),false)
+  assert.equal(view.unverifiedDrafts.dismiss(own,scope),true)
+  const reloaded=createViewState(store)
+  assert.equal(reloaded.draft(own),"A later draft")
+  assert.equal(reloaded.unverifiedDrafts.continuing(own,scope),true)
+  reloaded.unverifiedDrafts.capture(own,scope,"A later draft","")
+  assert.deepEqual(reloaded.unverifiedDrafts.history(own,scope),[])
+  assert.doesNotMatch(disk.get(viewStateModule.unverifiedDraftKey(own))??"",/Old draft|old quote/)
+})
 test("legacy unverified draft: every storage refusal retains the original and the lock",()=>{
   for(const failAt of [1,2,3]){
     const {disk,store}=memoryStore(),own=draftIdentity("account",key)

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13788,
+  "englishKeys": 13794,
   "counts": {
-    "negation": 3562,
+    "negation": 3564,
     "state": 2342,
     "permission": 832,
-    "deletion": 318,
+    "deletion": 320,
     "uncertainty": 554
   },
-  "unionCount": 5898,
+  "unionCount": 5901,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3177,6 +3177,8 @@
       "projectAssistants.turnUnknownNext",
       "projectAssistants.unknown",
       "projectAssistants.unpaired",
+      "projectAssistants.unreadBotsEmpty",
+      "projectAssistants.unverifiedRemoveFailed",
       "projectAssistants.unverifiedUnsaved",
       "projectAssistants.workNoSteps",
       "projectMemory.emptyArchive",
@@ -7030,6 +7032,8 @@
       "projectAssistants.routineDeleteConfirm",
       "projectAssistants.routineRemoveTrigger",
       "projectAssistants.serverRemove",
+      "projectAssistants.unverifiedRemove",
+      "projectAssistants.unverifiedRemoveFailed",
       "projectMemory.confirmArchive",
       "projectMemory.discardDraft",
       "projectMemory.restore",
@@ -12843,7 +12847,10 @@
     "projectAssistants.unavailable",
     "projectAssistants.unknown",
     "projectAssistants.unpaired",
+    "projectAssistants.unreadBotsEmpty",
     "projectAssistants.unverifiedDraft",
+    "projectAssistants.unverifiedRemove",
+    "projectAssistants.unverifiedRemoveFailed",
     "projectAssistants.unverifiedUnsaved",
     "projectAssistants.waiting_for_person",
     "projectAssistants.waiting_permission",

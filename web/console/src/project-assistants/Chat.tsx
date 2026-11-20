@@ -167,6 +167,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [localSend,setLocalSend]=useState("")
   const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
+  const [legacyRemoveFailed,setLegacyRemoveFailed]=useState(false)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
   const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<AbortController|null>(null)
   // Sends set aside to write a new message, each with its own explicit check; repainted from the host journal.
@@ -1052,6 +1053,19 @@ ${currentDraft}`:submitted)
   const legacyProblem=view.unverifiedDrafts.problem(draftKey)
   const legacyRows=view.unverifiedDrafts.history(draftKey,scope)
   const legacyDrafts=legacyLocked&&!legacyRows.length&&entryDraft.text?[entryDraft]:legacyRows
+  const canEditLegacy=enabled&&!busy&&!unknown&&!legacyLocked&&!call.active&&!text&&!quote&&!images.length&&!files.length&&!filesLost
+  const editLegacyDraft=(draft:{text:string;quote:string})=>{
+    if(!canEditLegacy||!valid())return
+    changeText(draft.text)
+    if(draft.quote){setQuote(draft.quote);view.quotes.set(draftKey,draft.quote)}
+    flush()
+    scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()
+  }
+  const removeLegacyDraft=()=>{
+    if(!valid())return
+    setLegacyRemoveFailed(!view.unverifiedDrafts.dismiss(draftKey,scope))
+    repaintJournal()
+  }
   const taskRows=head?.background_tasks
   const tasks=thread||recoveryRequired?[]:taskRows??[]
   const openTask=(task:BackgroundTask,button:HTMLButtonElement)=>{
@@ -1165,9 +1179,16 @@ ${currentDraft}`:submitted)
           {draft.quote&&<blockquote>{messages.find(message=>message.id===draft.quote)?.text??w.quoteMissing}</blockquote>}
           <p>{draft.text}</p>
         </div>
-        <small>{w.unverifiedDraft}</small>
+        <div className="pa-unverified-action">
+          <small>{w.unverifiedDraft}</small>
+          {"continued" in draft&&draft.continued===true&&<>
+            <button type="button" disabled={!canEditLegacy} onClick={()=>editLegacyDraft(draft)}>{w.unverifiedEdit}</button>
+            <button type="button" onClick={removeLegacyDraft}>{w.unverifiedRemove}</button>
+          </>}
+        </div>
+        {legacyRemoveFailed&&<p role="alert" className="pa-turn">{w.unverifiedRemoveFailed}</p>}
       </article>)}
-      {(legacyProblem||legacyLocked&&enabled)&&<div className="pa-unverified-action">
+      {(legacyProblem||legacyLocked&&enabled)&&<div className="pa-unverified-save">
         {legacyProblem&&<p className="pa-turn" role="alert">{w.unverifiedUnsaved}</p>}
         {enabled&&legacyProblem!=="unreadable"&&view.unverifiedDrafts.active(draftKey,scope)&&
           <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}

@@ -23,8 +23,9 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead,openLead}: {
-  leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;openLead?:()=>void;
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead,unreadOnly,hasUnread,onToggleUnread}: {
+  leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;
+  unreadOnly?:boolean;hasUnread?:boolean;onToggleUnread?:()=>void;
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
@@ -76,7 +77,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   const [sorting,setSorting]=useState(false)
   const sortFocus=useRef<string|undefined>(undefined),restoreOptions=useRef(false)
   const [active, setActive] = useState<RosterDrag | null>(null), [over, setOver] = useState<RosterDrag | null>(null)
-  const shown = items.filter(i => !machine || i.bot.key.machine_id === machine)
+  const shown = items.filter(i => (!machine || i.bot.key.machine_id === machine)&&(!unreadOnly||i.unread_count>0))
   const endDrag = () => gesture.cancel()
   const entryFor=(key:string)=>[...root.current?.querySelectorAll<HTMLElement>(".pa-roster-entry")??[]].find(row=>row.dataset.rosterDropKey===key)
   const pin=(key:string,pinned:boolean)=>{update(pinRosterBot(rosterState,key,pinned));requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}
@@ -154,7 +155,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     })
     const handle = (source: RosterDrag, name: string, keys: string[]) => <RosterHandle label={`${w.rosterReorder}: ${name}`} hint={w.rosterReorderHint} onKey={keyboard(source, keys)}/>
     return <>
-      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<p className="pa-empty" role="status">{w.rosterUnavailable}</p>:<p className="pa-empty">{query?w.searchEmpty:w.empty}</p>)}
+      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<p className="pa-empty" role="status">{w.rosterUnavailable}</p>:!(unreadOnly&&onMore)&&<p className="pa-empty">{query?w.searchEmpty:unreadOnly?w.unreadBotsEmpty:w.empty}</p>)}
       {problem&&<p role="status" className="pa-roster-save-error">{w.rosterUnsaved}</p>}
       {context&&(()=>{
         const row=allRows.find(row=>row.kind==="bot"&&row.key===context.key)
@@ -209,7 +210,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
             <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
             <h1>{w.allBots}</h1>
             {onView&&!sorting&&<button type="button" className="pa-circle pa-view-toggle" aria-pressed={view==="tower"} aria-label={w.towerView} title={w.towerView} onClick={()=>onView(view==="tower"?"list":"tower")}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 14.5V3.5l5-2 5 2v11M1.5 14.5h13M6 5.5h1M9 5.5h1M6 8.5h1M9 8.5h1M7 14.5v-3h2v3"/></svg></button>}
-            {openLead&&!sorting&&<button type="button" className="pa-circle" aria-label={w.openLead} title={w.openLead} onClick={openLead}>{rosterIcon("lead")}</button>}
+            {onToggleUnread&&!sorting&&<button type="button" className="pa-circle pa-roster-unread" aria-pressed={!!unreadOnly} aria-label={w.unreadMessages} aria-description={hasUnread?w.unreadBotsPresent:undefined} title={w.unreadMessages} onClick={onToggleUnread}>{rosterIcon("unread")}{hasUnread&&<span className="pa-roster-unread-dot" aria-hidden="true"/>}</button>}
             {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
             {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
           </header>
@@ -219,9 +220,9 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
           <div className="pa-roster-scroll">
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
             {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
-            {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
+            {tower??renderRows(unreadOnly?[]:group.rows,group.open,group.selected,group.dismiss)}
             {group.content}
-            {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
+            {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{!unreadOnly&&hidden}
           </div>
         </>
       }}
