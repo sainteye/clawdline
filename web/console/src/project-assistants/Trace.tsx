@@ -111,7 +111,8 @@ function ThoughtStep({id,text,unfolded,w}:{id:string;text:string;unfolded:boolea
   return <details open={open} className="pa-trace-row pa-trace-thought pa-flow-disclosure" data-trace-id={id}
     onToggle={event=>setOpen(event.currentTarget.open)}>
     <summary className="pa-trace-line"><ThinkingOrb size={15} animated={false} color="var(--pa-dim)"/><span>{w.traceThought}</span><TraceIcon icon="chevron"/></summary>
-    <p className="pa-trace-narration">{text}</p>
+    {/* Thoughts arrive as Markdown, like narration: render it through the same escaping renderer. */}
+    <div className="pa-trace-narration pa-markdown" dangerouslySetInnerHTML={{__html:richText(text)}}/>
   </details>
 }
 

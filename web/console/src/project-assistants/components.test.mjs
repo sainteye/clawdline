@@ -188,6 +188,15 @@ test("the process trace says what each step is, never its turn ID or provider ca
   assert.match(html,/進度更新/);assert.match(html,/Checking the saved work/)
   assert.doesNotMatch(html,/5ba44472|agent_message_chunk|host-aa-teamAvailable|查看詳細內容/)
 })
+test("a thought step renders its Markdown, and markup inside it stays escaped",()=>{
+  const turn_id="t"
+  const details={t1:{turn_id,category:"agent_thought_chunk",text:"**我先確認瀏覽器操作**\n\n<img src=x onerror=alert(1)>",complete:true}}
+  const summaries=[{id:"t1",turn_id,category:"agent_thought_chunk",complete:true,detail_cursor:"t1"}]
+  const html=render(Trace,{summaries,details,inline:true,expanded:true,onDetail:()=>assert.fail("render requested a detail"),w:words("zh-Hant")})
+  assert.match(html,/<strong>我先確認瀏覽器操作<\/strong>/)
+  assert.doesNotMatch(html,/\*\*我先/)
+  assert.doesNotMatch(html,/<img/)
+})
 test("a Bots drop-down reads as one, with its value and a chevron, and no platform select",()=>{
   const html=render(PaSelect,{label:"Project",value:"",placeholder:"選擇 Project",options:[{value:"a",label:"clawdline"}],onChange:()=>{}})
   assert.match(html,/aria-haspopup="listbox"/);assert.match(html,/aria-expanded="false"/);assert.match(html,/pa-select-chevron/);assert.match(html,/選擇 Project/)
