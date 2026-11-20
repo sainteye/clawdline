@@ -303,7 +303,15 @@ if (readRecovery) {
     assert.match(page, /legacy-transcript=0 legacy-footer=0/)
     click("Test: switch account")
     page = await until(p => p.includes("account=fixture-account") && p.includes("legacy-transcript=1"), "legacy original account")
-    record("one archived draft and an empty composer; reload; new UUID; account scope", { refusedInitialStorage: refuseLegacyStorage, sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]), keys })
+    click("Edit as new message")
+    page = await until(p => p.includes("composer=editable draft=[Legacy uncertain draft]"), "legacy draft restored for editing")
+    assert.equal(log(page)?.[1], "1"); assert.equal(log(page)?.[2], "0")
+    click("Remove from this device")
+    page = await until(p => p.includes("legacy-transcript=0") && p.includes("composer=editable draft=[Legacy uncertain draft]"), "local row removed without clearing the composer")
+    click("Test: reload page")
+    page = await until(p => p.includes("legacy-transcript=0") && p.includes("composer=editable draft=[Legacy uncertain draft]"), "removal and editable draft survive reload")
+    assert.equal(log(page)?.[1], "1"); assert.equal(log(page)?.[2], "0")
+    record("one archived draft, explicit new UUID, account scope, edit and local removal", { refusedInitialStorage: refuseLegacyStorage, sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]), keys })
   } else {
   // 1. A pre-transport refusal leaves an editable draft, not a permanent lock.
   click("Test: refuse next send before transport"); await settle(300)

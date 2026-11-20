@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13788,
-  "riskKeys": 5898,
-  "nonRiskCount": 7890,
+  "englishContentKeys": 13794,
+  "riskKeys": 5901,
+  "nonRiskCount": 7893,
   "groups": [
     {
       "name": "acp / other",
@@ -6139,7 +6139,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 500,
+      "count": 503,
       "sources": [
         null
       ],
@@ -6633,8 +6633,11 @@
         "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
         "projectAssistants.unread",
+        "projectAssistants.unreadBotsPresent",
         "projectAssistants.unreadCount",
+        "projectAssistants.unreadMessages",
         "projectAssistants.unsupported",
+        "projectAssistants.unverifiedEdit",
         "projectAssistants.unverifiedSave",
         "projectAssistants.uploadingFiles",
         "projectAssistants.version",

@@ -19,6 +19,9 @@
 .project-assistants .pa-roster-compact .pa-bot-row { min-height:72px; }
 .project-assistants .pa-roster-compact .pa-project-heading { margin-top:8px;margin-bottom:4px; }
 .project-assistants .pa-roster-compact .pa-toolbar h1 { flex:1; }
+.project-assistants .pa-roster-unread { position:relative; }
+.project-assistants .pa-roster-unread[aria-pressed=true] { background:var(--pa-card);border-color:var(--pa-dim); }
+.project-assistants .pa-roster-unread-dot { position:absolute;inset-block-start:6px;inset-inline-end:6px;width:8px;height:8px;border-radius:50%;background:#f04450; }
 .project-assistants .pa-roster-sort-done { padding:4px 8px;font-size:13px; }
 @media (hover:none), (pointer:coarse) {
   .project-assistants .pa-roster-compact .pa-roster-pin,

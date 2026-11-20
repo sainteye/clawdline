@@ -285,17 +285,30 @@ export class UnverifiedDrafts {
     } catch { this.problems.set(key, "unreadable") }
     this.records.set(key, rows); return rows
   }
-  private save(key: string, rows: UnverifiedDraft[]) {
+  private save(key: string, rows: UnverifiedDraft[], reportRecoveryProblem = true) {
     if (this.problems.get(key) === "unreadable") return false
     try {
       if (!this.storage) throw new Error("storage")
       this.storage.setItem(unverifiedDraftKey(key), JSON.stringify({ v: 1, drafts: rows }))
-      this.problems.delete(key); return true
-    } catch { this.problems.set(key, "unsaved"); return false }
+      if (reportRecoveryProblem) this.problems.delete(key)
+      return true
+    } catch {
+      if (reportRecoveryProblem) this.problems.set(key, "unsaved")
+      return false
+    }
   }
-  history(key: string, scope: UnverifiedDraft["scope"]) { return this.load(key).filter(d => sameConversation(d.scope, scope)) }
+  history(key: string, scope: UnverifiedDraft["scope"]) { return this.load(key).filter(d => d.text && sameConversation(d.scope, scope)) }
   active(key: string, scope: UnverifiedDraft["scope"]) { return this.history(key, scope).find(d => !d.continued) }
-  continuing(key: string, scope: UnverifiedDraft["scope"]) { const rows = this.history(key, scope); return rows.some(d => d.continued) && !rows.some(d => !d.continued) }
+  continuing(key: string, scope: UnverifiedDraft["scope"]) { return !this.active(key, scope) && this.load(key).some(d => d.continued && sameConversation(d.scope, scope)) }
+  dismiss(key: string, scope: UnverifiedDraft["scope"]) {
+    const draft = this.history(key, scope).find(d => d.continued)
+    if (!draft) return false
+    // Keep the recovery marker so a later draft is not mistaken for this one.
+    const next = this.load(key).map(d => d === draft ? { ...d, text: "", quote: "" } : d)
+    if (!this.save(key, next, false)) return false
+    this.records.set(key, next)
+    return true
+  }
   problem(key: string) { this.load(key); return this.problems.get(key) }
   capture(key: string, scope: UnverifiedDraft["scope"], text: string, quote: string) {
     if (!text || this.active(key, scope) || this.continuing(key, scope)) return
