@@ -266,6 +266,68 @@ work is at most 168 hourly points, 128 retained route shapes plus overflow,
 and six current minute points. Histogram storage is fixed, never a sample
 ring used as a window percentile.
 
+### Bot request attribution and history cost
+
+Bot requests that reach the daemon use the same completion counters as Session
+requests. `/v1/diagnostics` contains the current boot's caller classes, status
+counts and timing samples. `/v1/api-performance` keeps bounded history. For
+the Bot dispatcher, `/v1/project-assistants/:id/view`,
+`/v1/project-assistants/:id/configuration`, and other recognized operations
+have separate keys. Identifier positions stay masked even when an ID matches
+a route word. Query parameters, bodies and credentials do not enter the
+label. A Cloud webhook that invokes the Bot routine receiver directly uses
+the same observer, with Cloud caller attribution and one observation per
+actual receiver invocation. Retrying only an acknowledgement adds no call.
+
+Once the last retained bucket for a route expires, its history slot can be
+reused. Startup also removes stale registry names loaded from older
+checkpoints. The route cap remains 128. When all slots still have retained
+observations, unseen routes enter overflow until a slot expires. Previously
+aggregated overflow cannot be broken back into its original routes. For Bot
+read views the summary combines the snapshot, history and events query modes.
+Five alternating saturated-history aggregation runs on the same machine
+(`-test.bench '^BenchmarkBoundedAggregation$' -test.benchtime=200ms
+-test.benchmem`) measured 3.439/3.529 µs baseline and 3.533/3.696 µs candidate
+median/P95 of run averages, both with zero allocations per steady-state event.
+
+**2026-11-20 history storage probe.** The Bot conversation request already
+pages by `(anchor, kind, id)`. Its current SQL opens the full JSON aggregate,
+validates every fact and relationship, computes current control counts, and
+sorts candidate facts before selecting a page. Reducing the row limit can
+reduce response bytes and client work. It leaves those database scans in place.
+Group chat already uses persisted, indexed lines for its history pages.
+
+A disposable SQLite 3.53.2 probe compared a JSON aggregate with indexed
+`(bot, seq)` message rows on an Apple M4 Pro (darwin/arm64). For each fixture it
+fetched 100 complete messages in descending order below a cursor, alternating
+the two queries 40 times on the same warmed query-only connection. It checked
+each returned `(seq, message JSON)` against the expected page. The JSON query
+uses `json_each(data,'$.Messages')`, filters on `json_extract(value,'$.seq') < ?`,
+and orders by that sequence. The indexed query reads the same JSON text from
+`PRIMARY KEY (bot,seq) WITHOUT ROWID` with `WHERE bot=? AND seq<? ORDER BY seq
+DESC LIMIT 100`. The plan performs a primary-key range lookup.
+
+| History size | JSON latest median / P95 (ms) | Indexed latest median / P95 (ms) |
+| --- | ---: | ---: |
+| 1,000 messages (0.59 MB) | 3.076 / 3.302 | 0.044 / 0.079 |
+| 9,001 messages (5.34 MB) | 28.011 / 31.183 | 0.066 / 0.103 |
+| 30,000 messages (17.83 MB) | 90.954 / 93.763 | 0.072 / 0.089 |
+
+These measurements cover message selection only. The existing API also checks
+publication authority, work/turn relations and byte budgets, applies artifacts
+and reactions, and serializes the reply. The comparison establishes the growth
+of the SQL lookup, with no estimate of total HTTP time saved. An indexed Bot
+read projection should cover both page facts and the compact head. Publish
+them in the transaction that accepts the underlying facts, with an atomic
+backfill for older archives and checks for replacement, deletion, restore and
+concurrent writes. Keeping an indexed copy adds write and disk cost until the
+aggregate can stop duplicating those rows. A page cache could help repeated
+reads of stable history if its key tracks the projection revision and
+authority is rechecked before publication. A cache of the complete response
+would also have to account for reader-specific reactions, current permissions,
+the machine event frontier and newly appended messages. Model calls and
+external dependencies are outside this read-path comparison.
+
 ## Verification and integration
 
 Unit/transport tests cover inclusive histogram bounds, exclusive time-window

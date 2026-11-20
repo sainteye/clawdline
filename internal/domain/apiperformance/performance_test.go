@@ -176,6 +176,21 @@ func TestQueueReadersAndActiveSlotsShedWithoutBlocking(t *testing.T) {
 	}
 }
 
+func TestExpiredRouteNamesFreeHistoryAdmission(t *testing.T) {
+	h := emptyHistory()
+	now := time.Unix(1_800_000_000, 0)
+	old := "GET /retired-route"
+	active := "GET /v1/sessions"
+	bot := "GET /v1/project-assistants/:id/view"
+	h.observe(event{at: now, route: old, status: 200}, 2)
+	later := now.Add(time.Duration(MaxHours) * time.Hour)
+	h.observe(event{at: later.Add(-time.Hour), route: active, status: 200}, 2)
+	h.observe(event{at: later, route: bot, status: 200}, 2)
+	if len(h.Routes) != 2 || h.Routes[old] || !h.Routes[active] || !h.Routes[bot] || h.Overflow != 0 {
+		t.Fatalf("expired route still occupies a live slot: %v overflow=%d", h.Routes, h.Overflow)
+	}
+}
+
 func TestWorstCaseHistoryAndReadingFitTheirByteCaps(t *testing.T) {
 	h := emptyHistory()
 	h.limits = HardLimits()

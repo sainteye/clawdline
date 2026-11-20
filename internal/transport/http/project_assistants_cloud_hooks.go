@@ -207,7 +207,8 @@ func (w *botRoutineHookWorker) cycle(ctx context.Context) (err error) {
 	response := &botHookResponse{header: http.Header{}}
 	// Invoke the production receiver directly, without a local/device bearer.
 	// It rechecks the current key, source, Project, memory and durable receipt.
-	w.server.routineHooksRoute(response, request)
+	key := routeKey(request.Method, "/hooks/routines/", request.URL.EscapedPath())
+	w.server.routeStatsTable().countRoute(key, callerCloud, response, request, http.HandlerFunc(w.server.routineHooksRoute))
 	ack := bh.Ack{Protocol: bh.Protocol, LeaseToken: delivery.LeaseToken, Status: response.status, Code: "webhook_outcome_unknown"}
 	if ack.Status == 0 {
 		ack.Status = http.StatusOK
