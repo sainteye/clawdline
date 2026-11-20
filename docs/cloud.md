@@ -89,7 +89,10 @@ without matching evidence, the open dialog shows the comparison, or the backgrou
 that the person needs to compare the fingerprints.
 
 Reloading the same tab restores the offer view and the helper task for the same signed-in browser.
-The private claim stays in IndexedDB. The tab retains the target, the in-flight helper request or
+The private claim stays in IndexedDB. The browser uses a per-offer non-extractable AES-GCM key to
+wrap the ephemeral X25519 key and binds the wrap to the exact offer. On reload it imports the
+unwrapped key as non-extractable. This keeps pending claims recoverable on WebKit versions that
+cannot deserialize an X25519 key from IndexedDB. The tab retains the target, the in-flight helper request or
 task ID, and any received fingerprints until the view is dismissed or verification completes. If
 the helper's start answer was lost and the offer is still live, the page asks under the original
 request ID so the helper returns the same task. It does not mint another offer.

@@ -1,4 +1,5 @@
-import type { CloudSession, PairingInvitation, PendingPairing } from "./copied.js"
+import { unwrapPairingOfferKey } from "../legacy/js/net/cloud-pairing.js"
+import type { CloudSession, PairingInvitation, PendingPairing, WrappedPairingKey } from "./copied.js"
 import type { OpenedPairing, PairStart } from "./pair.js"
 
 const DATABASE = "clawdline-viewer-state"
@@ -56,7 +57,7 @@ export function durablePairViewer(
   progress: Pick<PairHooks, "onOffer" | "onOpened"> = {},
 ): PairStart {
   return async (hooks) => {
-    const pending = await session.startPairing()
+    const pending = await session.startPairing(true)
     const scope = scopeFor(session)
     try {
       await store.put(scope, pending)
@@ -79,7 +80,7 @@ export function durablePairViewerFromInvitation(
   store: PendingPairingStore,
 ): PairStart {
   return async (hooks) => {
-    const pending = await session.startPairing()
+    const pending = await session.startPairing(true)
     const scope = scopeFor(session)
     try {
       await store.put(scope, pending)
@@ -157,12 +158,10 @@ async function removeTerminal(
   }
 }
 
-interface PendingRecord {
-  v: 1
-  account: string
-  device: string
-  pending: PendingPairing
-}
+type PendingRecord = PairingScope & (
+  | { v: 1; pending: PendingPairing }
+  | { v: 2; pending: Omit<PendingPairing, "ephemeralPrivateKey"> & { wrappedPrivateKey: WrappedPairingKey } }
+)
 
 function recordKey(scope: PairingScope): string {
   return encodeURIComponent(scope.account) + ":" + encodeURIComponent(scope.device)
@@ -179,12 +178,11 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
   })
 }
 
-function pendingIn(value: unknown, scope: PairingScope): PendingPairing | null {
+function recordIn(value: unknown, scope: PairingScope): PendingRecord | null {
   if (!value || typeof value !== "object") return null
   const record = value as Partial<PendingRecord>
-  if (record.v !== 1 || record.account !== scope.account || record.device !== scope.device) return null
+  if ((record.v !== 1 && record.v !== 2) || record.account !== scope.account || record.device !== scope.device) return null
   const pending = record.pending as Partial<PendingPairing> | undefined
-  const key = pending?.ephemeralPrivateKey as Partial<CryptoKey> | undefined
   if (
     !pending ||
     typeof pending.pairingID !== "string" ||
@@ -196,17 +194,23 @@ function pendingIn(value: unknown, scope: PairingScope): PendingPairing | null {
     typeof pending.fingerprint !== "string" ||
     !Number.isFinite(pending.expiresAt) ||
     !pending.offer ||
-    typeof pending.offer !== "object" ||
-    !key ||
-    key.type !== "private" ||
-    key.extractable !== false
+    typeof pending.offer !== "object"
   ) {
     return null
   }
-  return pending as PendingPairing
+  if (record.v === 1) {
+    const key = pending.ephemeralPrivateKey
+    if (key?.type !== "private" || key.extractable !== false) return null
+  } else {
+    const wrapped = pending.wrappedPrivateKey
+    if (wrapped?.key?.type !== "secret" || wrapped.key.extractable !== false ||
+        wrapped.key.algorithm.name !== "AES-GCM" || !(wrapped.iv instanceof Uint8Array) ||
+        !(wrapped.ciphertext instanceof ArrayBuffer)) return null
+  }
+  return record as PendingRecord
 }
 
-/** IndexedDB can retain a non-extractable CryptoKey without exposing it. */
+/** IndexedDB keeps the wrapped offer through reload without cloning an X25519 key. */
 export function browserPendingPairings(factory: IDBFactory | undefined = globalThis.indexedDB): PendingPairingStore {
   async function transact<T>(
     mode: IDBTransactionMode,
@@ -249,8 +253,8 @@ export function browserPendingPairings(factory: IDBFactory | undefined = globalT
       const request = store.get(recordKey(scope))
       request.onerror = () => fail(request.error)
       request.onsuccess = () => {
-        const pending = pendingIn(request.result, scope)
-        if (!pending || pending.pairingID !== pairingID) {
+        const record = recordIn(request.result, scope)
+        if (record?.pending.pairingID !== pairingID) {
           done(undefined)
           return
         }
@@ -262,7 +266,10 @@ export function browserPendingPairings(factory: IDBFactory | undefined = globalT
 
   return {
     put(scope, pending) {
-      const record: PendingRecord = { v: 1, account: scope.account, device: scope.device, pending }
+      const { ephemeralPrivateKey, ...wrapped } = pending
+      const record: PendingRecord = wrapped.wrappedPrivateKey
+        ? { v: 2, ...scope, pending: { ...wrapped, wrappedPrivateKey: wrapped.wrappedPrivateKey } }
+        : { v: 1, ...scope, pending: { ...wrapped, ephemeralPrivateKey } }
       return transact<void>("readwrite", (store, done, fail) => {
         const request = store.put(record, recordKey(scope))
         request.onsuccess = () => done(undefined)
@@ -275,13 +282,16 @@ export function browserPendingPairings(factory: IDBFactory | undefined = globalT
         request.onsuccess = () => done(request.result)
         request.onerror = () => fail(request.error)
       })
-      const pending = pendingIn(value, scope)
-      if (!pending) return null
+      const record = recordIn(value, scope)
+      if (!record) return null
+      const pending = record.pending
       if (pending.expiresAt <= now) {
         await remove(scope, pending.pairingID)
         return null
       }
-      return pending
+      if (record.v === 1) return record.pending
+      const ephemeralPrivateKey = await unwrapPairingOfferKey(record.pending.wrappedPrivateKey, pending.offer)
+      return { ...pending, ephemeralPrivateKey }
     },
     remove,
   }
