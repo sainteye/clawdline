@@ -28,6 +28,8 @@ func historyForRequest(state string, q app.OpenRequest) (nativeHistory, error) {
 	case pa.ClaudeCode:
 	case pa.Codex:
 		policy = "codex-owned-history.v1"
+	case pa.Grok:
+		policy = "grok-owned-history.v1"
 	default:
 		return nativeHistory{}, refusal(pa.ScopeDenied, "native_history_agent")
 	}

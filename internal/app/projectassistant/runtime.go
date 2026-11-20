@@ -826,6 +826,10 @@ func (r *Engine) work(a *runtimeActor) {
 				if latest.State == pa.TurnRunning && pa.SafeAttemptClosed(latest) && latest.Attempts[len(latest.Attempts)-1].SendReturned {
 					state = pa.TurnFailed
 				}
+				var openNotStarted *OpenNotStarted
+				if latest.State == pa.TurnRunning && pa.Code(err) == pa.AuthRejected && errors.As(err, &openNotStarted) {
+					state = pa.TurnFailed
+				}
 				var notStarted *routineNotStarted
 				if latest.RoutineRunID != "" && errors.As(err, &notStarted) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 					state = pa.TurnFailed

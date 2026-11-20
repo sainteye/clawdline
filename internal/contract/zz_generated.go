@@ -4419,10 +4419,11 @@ type ProjectAssistantAgent string
 const (
 	ProjectAssistantAgentClaude ProjectAssistantAgent = "claude"
 	ProjectAssistantAgentCodex  ProjectAssistantAgent = "codex"
+	ProjectAssistantAgentGrok   ProjectAssistantAgent = "grok"
 )
 
 // ProjectAssistantAgentValues is every value the contract allows, in contract order.
-var ProjectAssistantAgentValues = []ProjectAssistantAgent{ProjectAssistantAgentClaude, ProjectAssistantAgentCodex}
+var ProjectAssistantAgentValues = []ProjectAssistantAgent{ProjectAssistantAgentClaude, ProjectAssistantAgentCodex, ProjectAssistantAgentGrok}
 
 type ProjectAssistantAppearance struct {
 	Color string                `json:"color"`

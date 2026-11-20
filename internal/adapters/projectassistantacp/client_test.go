@@ -62,6 +62,50 @@ func TestACPTestPeer(t *testing.T) {
 		if json.Unmarshal(scanner.Bytes(), &f) != nil {
 			os.Exit(3)
 		}
+		if strings.HasPrefix(mode, "grok-") {
+			const sessionID = "00000000-0000-4000-8000-000000000042"
+			switch f.Method {
+			case "initialize":
+				methods := []map[string]string{}
+				if mode != "grok-signed-out" {
+					methods = append(methods, map[string]string{"id": "cached_token"})
+				}
+				send(frame{ID: f.ID, Result: raw(map[string]any{
+					"protocolVersion": 1, "_meta": map[string]any{"grokShell": true, "agentVersion": "scripted"},
+					"authMethods": methods, "agentCapabilities": map[string]any{
+						"mcpCapabilities":     map[string]bool{"http": true},
+						"sessionCapabilities": map[string]any{"resume": map[string]any{}},
+					},
+				})})
+			case "authenticate":
+				var request struct {
+					MethodID string `json:"methodId"`
+					Meta     struct {
+						Headless bool `json:"headless"`
+					} `json:"_meta"`
+				}
+				if json.Unmarshal(f.Params, &request) != nil || request.MethodID != "cached_token" || !request.Meta.Headless || mode == "grok-signed-out" {
+					os.Exit(10)
+				}
+				send(frame{ID: f.ID, Result: raw(map[string]any{"_meta": map[string]any{"auth_mode": "Oidc", "backend_billed": mode == "grok-backed-key"}})})
+			case "session/new", "session/resume":
+				if mode != "grok-scripted" {
+					os.Exit(11)
+				}
+				path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE")
+				if err := os.WriteFile(path, scanner.Bytes(), 0600); err != nil {
+					os.Exit(12)
+				}
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": sessionID, "update": map[string]string{"sessionUpdate": "current_mode_update", "currentModeId": "build"}})})
+				send(frame{ID: f.ID, Result: raw(map[string]any{"sessionId": sessionID, "modes": map[string]string{"currentModeId": "build"}})})
+			case "session/prompt":
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": sessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Scripted Grok reply"}}})})
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+			default:
+				os.Exit(13)
+			}
+			continue
+		}
 		switch f.Method {
 		case "initialize":
 			if mode == "provider-claude-terminal-quota" {

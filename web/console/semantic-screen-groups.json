@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13784,
-  "riskKeys": 5896,
-  "nonRiskCount": 7888,
+  "englishContentKeys": 13788,
+  "riskKeys": 5898,
+  "nonRiskCount": 7890,
   "groups": [
     {
       "name": "acp / other",
@@ -6139,7 +6139,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 498,
+      "count": 500,
       "sources": [
         null
       ],
@@ -6266,6 +6266,8 @@
         "projectAssistants.forget",
         "projectAssistants.forgetScope",
         "projectAssistants.forgotten",
+        "projectAssistants.grokInstall",
+        "projectAssistants.grokLogin",
         "projectAssistants.groupBack",
         "projectAssistants.groupCancel",
         "projectAssistants.groupCreate",

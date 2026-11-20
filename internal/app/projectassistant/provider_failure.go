@@ -17,6 +17,13 @@ func executionFailureField(cause error) string {
 	if errors.Is(cause, context.Canceled) {
 		return "prompt_stopped"
 	}
+	var native *pa.Failure
+	if errors.As(cause, &native) {
+		switch native.Field {
+		case "grok_cli", "grok_login", "grok_auth_mode_unsupported", "grok_account_restricted":
+			return native.Field
+		}
+	}
 	var provider *ProviderFailure
 	if errors.As(cause, &provider) {
 		switch provider.Reason {
@@ -92,10 +99,9 @@ type PreSendRefusal struct{ Failure *ProviderFailure }
 func (f *PreSendRefusal) Error() string { return f.Failure.Error() }
 func (f *PreSendRefusal) Unwrap() error { return f.Failure }
 
-// OpenNotStarted is a trusted host-only fact: provider Open was never entered
-// and setup registrations have been reclaimed. It does not prove no effects
-// and never permits fallback. It only distinguishes no process to clean up
-// from an unknown Open that returned no cleanup handle.
+// OpenNotStarted is a trusted host fact: the native session did not start,
+// and any process and registrations are closed. It releases the execution
+// slot without authorizing fallback or replay.
 type OpenNotStarted struct{ Cause error }
 
 func (f *OpenNotStarted) Error() string { return f.Cause.Error() }

@@ -114,7 +114,7 @@ func TestProjectAssistantTargetsMetadataAndSelectedResolution(t *testing.T) {
 	if len(page.Items) != len(rows) || page.Source.Writable || page.Source.Access != contract.ProjectAssistantAccessInteractive || len(page.Source.Capabilities) != 0 {
 		t.Fatalf("configuration read changed authority or lost choices: %+v", page)
 	}
-	if !reflect.DeepEqual(page.Agents, []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex}) {
+	if !reflect.DeepEqual(page.Agents, []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex, contract.ProjectAssistantAgentGrok}) {
 		t.Fatal(page.Agents)
 	}
 	seen := map[string]bool{}

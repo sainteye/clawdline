@@ -5,6 +5,7 @@ export const AUTO_MODE = "auto"
 
 /** The modes of the supplied adapters, Auto first; the daemon's AgentModes holds the same list and refuses others. */
 export const AGENT_MODES: Record<W.ProjectAssistantAgent, readonly {id:string;name:string}[]> = {
+  grok: [{id:AUTO_MODE,name:"Auto"},{id:"default",name:"Manual"}],
   claude: [{id:AUTO_MODE,name:"Auto"},{id:"default",name:"Manual"},{id:"acceptEdits",name:"Accept edits"},{id:"plan",name:"Plan"}],
   codex: [{id:AUTO_MODE,name:"Auto review"},{id:"read-only",name:"Read-only"},{id:"workspace-write",name:"Workspace access"},{id:"agent-full-access",name:"Full access"}],
 }

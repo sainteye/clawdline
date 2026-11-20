@@ -264,3 +264,18 @@ consecutive prompts, model controls, cancellation and unchanged refusal cases.
 The exact native orphan payload was not retained. A metadata-only native load
 probe returned `-32602` and did not reproduce the failure; it is not live-model
 acceptance. No additional paid model prompt was used for this investigation.
+
+## Bots
+
+Choose **Grok Build** when creating a Bot or changing its primary agent. The
+computer that runs the Bot needs the official Grok CLI. Bot creation stores
+the settings. When a turn opens, Clawdline starts the installed CLI and
+asks ACP to reuse that computer's cached personal login. If the account
+needs sign-in, run `grok login --device-auth` there and send again once the
+device authorization has finished.
+
+The Bot uses its own native conversation binding, Clawdline memory, and the
+same scoped MCP tools and approval cards as other Bots. It starts in Grok's
+Auto mode by default, with Manual available in Bot settings. Native
+cross-session memory is disabled for the Bot process. Separate app-managed
+Grok account profiles and API keys are outside this integration.

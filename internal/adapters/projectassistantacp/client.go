@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/grok"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -88,7 +89,9 @@ type Client struct {
 	sequence          uint64
 	ctx               context.Context
 	cancel            context.CancelFunc
+	agent             pa.Agent
 	adapterVersion    string
+	promptImages      bool
 	sessionFailures   bool
 	ownedMCP          *OwnedMCP
 	mcpMu             sync.Mutex
@@ -102,6 +105,10 @@ type Client struct {
 }
 
 func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool) (*Client, error) {
+	return newClient(p, l, fence, sink, readOnly, "")
+}
+
+func newClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool, agent pa.Agent) (*Client, error) {
 	if p == nil || sink == nil {
 		return nil, refusal(pa.Invalid, "acp_client")
 	}
@@ -112,7 +119,7 @@ func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, 
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Client{p: p, l: l, fence: fence, sink: sink, readOnly: readOnly, pending: make(map[string]pendingResponse), permissions: make(map[string]nativePermission), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel, rpcSlots: make(chan struct{}, l.RPCPending)}
+	c := &Client{p: p, l: l, fence: fence, agent: agent, sink: sink, readOnly: readOnly, pending: make(map[string]pendingResponse), permissions: make(map[string]nativePermission), done: make(chan struct{}), workerDone: make(chan struct{}), ctx: ctx, cancel: cancel, rpcSlots: make(chan struct{}, l.RPCPending)}
 	c.queueReady = sync.NewCond(&c.mu)
 	go c.consume()
 	go c.read()
@@ -130,7 +137,10 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	var initialized struct {
 		ProtocolVersion   int `json:"protocolVersion"`
 		AgentCapabilities struct {
-			LoadSession     bool `json:"loadSession"`
+			LoadSession        bool `json:"loadSession"`
+			PromptCapabilities struct {
+				Image bool `json:"image"`
+			} `json:"promptCapabilities"`
 			MCPCapabilities struct {
 				HTTP bool `json:"http"`
 			} `json:"mcpCapabilities"`
@@ -155,7 +165,11 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 			"version": 1, "capabilities": []string{"sessionFailure"},
 		}}}
 	}
-	b, err := c.call(ctx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": caps, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}})
+	init := map[string]any{"protocolVersion": 1, "clientCapabilities": caps, "clientInfo": map[string]string{"name": "clawdline", "version": pa.ContractVersion}}
+	if q.Bot.Agent == pa.Grok {
+		init["_meta"] = map[string]string{"clientType": "extension"}
+	}
+	b, err := c.call(ctx, "initialize", init)
 	if err != nil {
 		return err
 	}
@@ -168,7 +182,7 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
 	}
-	if c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterPackage(q.Bot.Agent)) {
+	if q.Bot.Agent != pa.Grok && c.adapterVersion != "" && (initialized.AgentInfo.Version != c.adapterVersion || initialized.AgentInfo.Name != adapterPackage(q.Bot.Agent)) {
 		return refusal(pa.ProviderVersionUnsupported, "acp_adapter_identity")
 	}
 	if !maintenance && q.Bot.Agent == pa.Codex && !hasCapability(initialized.AgentCapabilities.SessionCapabilities["systemPrompt"]) {
@@ -179,6 +193,12 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	if c.ownedMCP != nil && !initialized.AgentCapabilities.MCPCapabilities.HTTP {
 		return refusal(pa.Unsupported, "http_mcp")
+	}
+	if q.Bot.Agent == pa.Grok {
+		if err := c.authenticateGrok(ctx, b); err != nil {
+			return err
+		}
+		c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
 	}
 	if q.Resume && q.PersistNativeSession && !nativeSessionUUID.MatchString(q.Binding.NativeSessionID) {
 		return refusal(pa.ScopeDenied, "native_session_id")
@@ -194,10 +214,17 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	method := "session/new"
 	if q.Resume {
-		if !initialized.AgentCapabilities.LoadSession {
+		switch {
+		case q.Bot.Agent == pa.Grok:
+			if !hasCapability(initialized.AgentCapabilities.SessionCapabilities["resume"]) {
+				return refusal(pa.ResumeUnsupported, "native_resume")
+			}
+			method = "session/resume"
+		case initialized.AgentCapabilities.LoadSession:
+			method = "session/load"
+		default:
 			return refusal(pa.ResumeUnsupported, "load_session")
 		}
-		method = "session/load"
 		params["sessionId"] = q.Binding.NativeSessionID
 		c.mu.Lock()
 		c.sessionID = q.Binding.NativeSessionID
@@ -250,7 +277,9 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	if c.discovery {
 		return nil
 	}
-	if session.Modes == nil {
+	// Grok's session modes are a separate control from its launch-level
+	// permission mode. The Bot's permission mode is set on the command line.
+	if q.Bot.Agent == pa.Grok || session.Modes == nil {
 		return nil
 	}
 	return c.applyMode(ctx, q.Bot, session.SessionID, session.Modes.CurrentModeID, func(id string) bool {
@@ -261,6 +290,33 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 		}
 		return false
 	})
+}
+
+func (c *Client) authenticateGrok(ctx context.Context, initialized []byte) error {
+	valid, cached := grok.ACPIdentity(initialized)
+	if !valid {
+		return refusal(pa.ProviderVersionUnsupported, "grok_cli")
+	}
+	signIn := func() error {
+		return &app.ProviderFailure{Reason: app.ProviderSignedOut, Cause: refusal(pa.AuthRejected, "grok_login")}
+	}
+	if !cached {
+		return signIn()
+	}
+	raw, err := c.call(ctx, "authenticate", map[string]any{
+		"methodId": "cached_token", "_meta": map[string]bool{"headless": true},
+	})
+	if err != nil {
+		var provider *app.ProviderFailure
+		if errors.As(err, &provider) && provider.Reason == app.ProviderSignedOut {
+			return signIn()
+		}
+		return err
+	}
+	if problem := grok.PersonalAccountProblem(raw); problem != "" {
+		return refusal(pa.AuthRejected, "grok_"+problem)
+	}
+	return nil
 }
 
 // applyMode puts the session in the Bot's mode, as Codync does with
@@ -441,6 +497,9 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return nil, err
 	}
+	if c.agent == pa.Grok && len(q.Images) > 0 && !c.promptImages {
+		return nil, refusal(pa.Unsupported, "images")
+	}
 	var ids []string
 	for _, file := range q.Files {
 		if err := pa.ValidateInput(file.File); err != nil {
@@ -556,6 +615,9 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
 		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_stopped")
 	}
+	if p.rpc.c.agent == pa.Grok && result.StopReason != "end_turn" {
+		return app.PromptResult{}, refusal(pa.ExecutionEffectUnknown, "prompt_result")
+	}
 	if p.rpc.c.sessionFailures {
 		if err := claudePromptFailure(b, result.StopReason, result.Text); err != nil {
 			return app.PromptResult{}, err
@@ -633,6 +695,9 @@ func (c *Client) resolve(f frame) {
 		x := response{value: f.Result}
 		if f.Error != nil {
 			x.err = providerFailure(f.Error)
+			if c.agent == pa.Grok && f.Error.Code == -32003 {
+				x.err = &app.ProviderFailure{Reason: app.ProviderRateLimited, RPCCode: f.Error.Code, Cause: refusal(pa.Unsupported, "rpc_-32003")}
+			}
 		}
 		p.ch <- x
 	}
@@ -710,6 +775,11 @@ func (c *Client) handle(f frame) error {
 		}
 		if err := json.Unmarshal(f.Params, &p); err != nil {
 			return refusal(pa.Invalid, "update")
+		}
+		// Grok can publish initial session metadata before session/new replies.
+		// Nothing is routed to the Bot until the native session is bound.
+		if c.agent == pa.Grok && c.SessionID() == "" {
+			return nil
 		}
 		if p.Update.SessionUpdate == "usage_update" || p.Update.SessionUpdate == "available_commands_update" {
 			return c.updateNativeContext(p.SessionID, p.Update.SessionUpdate, p.Update.Commands, p.Update.Used, p.Update.Size)

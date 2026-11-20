@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/antigravityacp"
+	"github.com/sainteye/clawdline/internal/adapters/grok"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -307,23 +308,11 @@ func (c *Client) Initialize(ctx context.Context) (json.RawMessage, error) {
 		return nil, c.badResult("unsupported_protocol")
 	}
 	if c.opts.Assistant == session.AssistantGrok {
-		var identity struct {
-			Meta struct {
-				Shell   bool   `json:"grokShell"`
-				Version string `json:"agentVersion"`
-			} `json:"_meta"`
-			Auth []struct {
-				ID string `json:"id"`
-			} `json:"authMethods"`
-		}
-		if json.Unmarshal(r, &identity) != nil || !identity.Meta.Shell || identity.Meta.Version == "" {
+		valid, cached := grok.ACPIdentity(r)
+		if !valid {
 			return nil, c.badResult("provider_cli_incompatible")
 		}
-		for _, method := range identity.Auth {
-			if method.ID == "cached_token" {
-				c.cachedToken = true
-			}
-		}
+		c.cachedToken = cached
 	}
 	c.initialized = true
 	var agent struct {
@@ -376,18 +365,8 @@ func (c *Client) AuthenticatePersonal(ctx context.Context) (json.RawMessage, err
 	if err == nil && c.opts.Assistant == session.AssistantGrok {
 		// cached_token can fall through inside the native agent. An RPC ack
 		// alone does not prove it stayed on the interactive account path.
-		var proof struct {
-			Meta struct {
-				Mode          string          `json:"auth_mode"`
-				BackendBilled *bool           `json:"backend_billed"`
-				Gate          json.RawMessage `json:"gate"`
-			} `json:"_meta"`
-		}
-		if json.Unmarshal(r, &proof) != nil || proof.Meta.Mode != "Oidc" || proof.Meta.BackendBilled == nil || *proof.Meta.BackendBilled {
-			return nil, failure("auth_mode_unsupported", Acknowledged)
-		}
-		if len(proof.Meta.Gate) > 0 && string(proof.Meta.Gate) != "null" {
-			return nil, failure("account_restricted", Acknowledged)
+		if problem := grok.PersonalAccountProblem(r); problem != "" {
+			return nil, failure(problem, Acknowledged)
 		}
 	}
 	if err == nil {

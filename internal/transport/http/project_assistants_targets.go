@@ -227,7 +227,7 @@ func (s *Server) projectAssistantTargetsReply(r *http.Request) ([]byte, error) {
 		return nil, err
 	}
 	response := contract.ProjectAssistantProjectsResponse{ContractVersion: pa.ContractVersion, Source: source,
-		Agents:   []contract.ProjectAssistantAgent{contract.ProjectAssistantAgentClaude, contract.ProjectAssistantAgentCodex},
+		Agents:   contract.ProjectAssistantAgentValues,
 		Revision: revision, Items: []contract.ProjectAssistantProjectOption{}, PersonalWorkspace: true}
 	var encoded []byte
 	if start == len(items) {

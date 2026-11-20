@@ -5172,8 +5172,9 @@ export const ProjectAssistantAccessValues: readonly ProjectAssistantAccess[] = [
 export type ProjectAssistantAgent =
     "claude"
   | "codex"
+  | "grok"
 
-export const ProjectAssistantAgentValues: readonly ProjectAssistantAgent[] = ["claude", "codex"] as const
+export const ProjectAssistantAgentValues: readonly ProjectAssistantAgent[] = ["claude", "codex", "grok"] as const
 
 export interface ProjectAssistantAppearance {
   color: string

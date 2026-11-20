@@ -248,7 +248,7 @@ func probeConfiguration(ctx context.Context, config Configuration, caps pa.Capab
 	}
 	bot.RuntimeSettings = pa.RuntimeSettings{Model: model, Options: bot.RuntimeSettings.Options}
 	fence := pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: bot.ConversationID, BindingID: "configuration-discovery", Generation: 1}
-	c, err := NewClient(p, limits, fence, func(context.Context, app.ProtocolEvent) error { return refusal(pa.ScopeDenied, "configuration_event") }, nil)
+	c, err := newClient(p, limits, fence, func(context.Context, app.ProtocolEvent) error { return refusal(pa.ScopeDenied, "configuration_event") }, nil, bot.Agent)
 	if err != nil {
 		cleanup, stop := context.WithTimeout(context.Background(), limits.CleanupTimeout)
 		defer stop()

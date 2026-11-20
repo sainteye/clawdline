@@ -307,7 +307,7 @@ func ProjectRoomMemberOutcome(room pa.RoomState, name string, t pa.Turn) pa.Room
 		default:
 			continue
 		}
-		if f.Agent != pa.ClaudeCode && f.Agent != pa.Codex {
+		if !f.Agent.Valid() {
 			continue
 		}
 		if n := len(out.Attempts); n > 0 && out.Attempts[n-1].Ordinal == attempt.Ordinal {

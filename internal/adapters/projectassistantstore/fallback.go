@@ -116,7 +116,7 @@ func checkAttemptFacts(next pa.Turn) error {
 	}
 	tried := map[pa.FallbackStep]bool{}
 	for i, f := range next.Attempts {
-		if !pa.ValidLoginProfileID(f.LoginProfile) || f.Ordinal < 1 || f.Ordinal > pa.MaxFallbackAgents+1 || f.Agent != pa.ClaudeCode && f.Agent != pa.Codex || f.Fence.Key != next.Fence.Key || f.Fence.Project != next.Fence.Project || f.Fence.ConversationID != next.Fence.ConversationID {
+		if !pa.ValidLoginProfileID(f.LoginProfile) || f.Ordinal < 1 || f.Ordinal > pa.MaxFallbackAgents+1 || !f.Agent.Valid() || f.Fence.Key != next.Fence.Key || f.Fence.Project != next.Fence.Project || f.Fence.ConversationID != next.Fence.ConversationID {
 			return failure(pa.Invalid, "attempt")
 		}
 		if f.ToolActivity && !f.NativeActivity || f.SendReturned && !f.SendStarted || f.AnswerObserved && !f.SendReturned || f.CarryAfterSeq < 0 || f.CarryKind != "" && f.CarryKind != "recap" && f.CarryKind != "catch_up" || f.CarryKind == "catch_up" && f.ResumeBindingID == "" {
