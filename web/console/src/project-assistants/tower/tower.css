@@ -214,3 +214,6 @@
 .project-assistants .pa-tower-more li button span { color:#99999f;font-weight:500; }
 .project-assistants .pa-tower-more button:focus-visible { outline:2px solid #e39567;outline-offset:1px; }
 .project-assistants .pa-tower-looks { display:flex;gap:8px;justify-content:flex-end; }
+/* A Project name carries its small icon, as in the list. */
+.project-assistants .pa-tower-project { display:inline-flex;align-items:center;gap:6px;min-width:0; }
+.project-assistants .pa-tower-project > :first-child:not(:only-child) { flex:none; }

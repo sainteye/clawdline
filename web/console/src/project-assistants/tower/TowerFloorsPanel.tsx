@@ -1,5 +1,7 @@
 import { useState } from "react"
+import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
+import { ProjectMark } from "../ProjectMark"
 import { FloorError } from "./tower-floors"
 
 /** One Project as the floor panel lists it. */
@@ -8,6 +10,7 @@ export interface FloorRow {
   machine: string
   project: string
   name: string
+  icon?: W.Icon
   floor: number
   /** The person placed it; otherwise the default rule did. */
   placed: boolean
@@ -50,7 +53,7 @@ export function TowerFloorsPanel({ rows, labels, w, onPlace, onClose }: {
     <header><b>{w.towerFloorsTitle}</b><button type="button" aria-label={w.towerFloorsClose} onClick={onClose}>×</button></header>
     <p className="pa-tower-floorset-hint">{w.towerFloorsHint}</p>
     <ol>{rows.map(row => <li key={row.key}>
-      <p><strong>{row.name}</strong>{!row.placed && <span>{w.towerFloorAuto}</span>}</p>
+      <p><strong className="pa-tower-project"><ProjectMark icon={row.icon} size={12}/>{row.name}</strong>{!row.placed && <span>{w.towerFloorAuto}</span>}</p>
       <div role="group" aria-label={w.towerFloorsFor.replace("{project}", row.name)} aria-busy={busy === row.key || undefined}>
         {labels.map((label, i) => <button key={label} type="button" aria-pressed={row.floor === i} disabled={!row.ready || busy !== null}
           aria-label={w.towerFloorsPick.replace("{project}", row.name).replace("{floor}", label)} title={row.locked} onClick={() => void place(row, i)}>{label}</button>)}
