@@ -116,7 +116,7 @@ export type DirectTry =
 export { directCarrierHealthError }
 
 /** Closes this page made on purpose: nothing failed, so nothing is recorded. */
-const DELIBERATE_CLOSE = new Set(["carrier_client_retired", "carrier_client_stopped", "carrier_replaced"])
+const DELIBERATE_CLOSE = new Set(["carrier_client_retired", "carrier_page_resumed", "carrier_credentials_renewed", "carrier_page_left", "carrier_client_stopped", "carrier_replaced"])
 
 /** Compare only UDP server-reflexive public IPv4 addresses already in the
  * encrypted negotiation. Equal NAT exits suggest a LAN; they do not prove it.
@@ -147,10 +147,11 @@ export function samePublicIPv4(offer: string, answer: string): boolean {
 const registry = new WeakMap<CarrierClient, Map<string, DirectCarrier>>()
 
 export class DirectCarrier implements SharedCarrier {
-  private readonly client: CarrierClient
+  private client: CarrierClient
   private readonly machine: string
   private readonly peers: DirectPeerFactory | null
   private link: DirectLink | null = null
+  private viewerOwned = false
   /** Set while this carrier's own negotiation is in flight, so two reads make one offer. */
   private opening: Promise<boolean> | null = null
   /**
@@ -196,6 +197,20 @@ export class DirectCarrier implements SharedCarrier {
    */
   static held(client: CarrierClient, machine: string): DirectCarrier | null {
     return registry.get(client)?.get(machine) ?? null
+  }
+
+  /** A negotiated viewer carrier can rebind its receiver to a proven successor. */
+  static transfer(prior: CarrierClient, next: CarrierClient, machine: string): DirectCarrier | null {
+    const previous = registry.get(prior)
+    if (!previous) return null
+    const carrier = previous.get(machine)
+    if (!carrier?.open || !carrier.viewerOwned || carrier.opening || registry.get(next)?.has(machine)) return null
+    let destination = registry.get(next)
+    if (!destination) { destination = new Map(); registry.set(next, destination) }
+    previous.delete(machine)
+    destination.set(machine, carrier)
+    carrier.client = next
+    return carrier
   }
 
   get canEnableSameNetwork(): boolean { return !this.open && this.sameNetworkSuggestion }
@@ -288,8 +303,13 @@ export class DirectCarrier implements SharedCarrier {
       opening = false
       suggestSameNetwork = answer.directLocalNetwork === false && samePublicIPv4(sdp, answerSDP)
       await link.answer(answerSDP)
+      if (!this.client.ready || this.client.retired) {
+        link.close("carrier_client_retired")
+        health.complete("aborted")
+        return { kind: "not_connected", code: "carrier_client_retired" }
+      }
       if (!link.open) throw fail("carrier_not_open")
-      this.install(link, answer.directReceipts)
+      this.install(link, answer.directReceipts, true)
       recordDirectAttempt(this.machine, true)
       health.complete("ok")
       return { kind: "open", ms: Date.now() - started }
@@ -322,13 +342,14 @@ export class DirectCarrier implements SharedCarrier {
    */
   adopt(link: DirectLink, directReceipts: boolean): void {
     if (this.link && this.link !== link) this.link.close("carrier_replaced")
-    this.install(link, directReceipts)
+    this.install(link, directReceipts, false)
     recordDirectAttempt(this.machine, true)
   }
 
   /** One channel becomes this carrier's, and counts its envelopes from one. */
-  private install(link: DirectLink, directReceipts: boolean): void {
+  private install(link: DirectLink, directReceipts: boolean, viewerOwned: boolean): void {
     this.link = link
+    this.viewerOwned = viewerOwned
     this.receipts = directReceipts
     this.gen++
   }
@@ -385,10 +406,11 @@ export class DirectCarrier implements SharedCarrier {
     // An open carrier that stopped carrying is a failure of this path even while the relay socket
     // is fine; a negotiation's own failure was recorded by `negotiate`, and a deliberate close
     // (renewal, stop, replacement) is not a failure at all.
-    if (this.link === link && !DELIBERATE_CLOSE.has(code)) {
+    if (this.link !== link) return
+    if (!DELIBERATE_CLOSE.has(code)) {
       viewerHealthFailed("viewer_carrier_replace", directCarrierHealthError(code), { class: "transport" })
     }
-    if (this.link === link) this.link = null
+    this.link = null
     this.receipts = false
     // A carrier this page lets go is closed, never only forgotten. The machine
     // keeps one carrier per viewer and has no idle bound to fall back on, so a
@@ -408,6 +430,9 @@ export function directCarriers(client: CarrierClient, peers?: DirectPeerFactory 
     for(machine: string): DirectCarrier | null {
       if (typeof machine !== "string" || !machine) return null
       return DirectCarrier.for(client, machine, peers)
+    },
+    transfer(prior: CarrierClient, machine: string): DirectCarrier | null {
+      return DirectCarrier.transfer(prior, client, machine)
     },
     /** Whether a carrier this page already holds for that machine is open. It opens none. */
     open(machine: string): boolean {

@@ -682,7 +682,11 @@ func (l *Link) closeDirectPeer(peer *directPeer, why string) {
 	l.directMu.Unlock()
 	go func() { _ = peer.pc.Close() }()
 	l.logDirectTrace(peer.trace, false, why == directWhyOpenTimeout)
-	l.logf("cloud terminal carrier=direct closed: %s", why)
+	if peer.trace != nil {
+		l.logf("cloud terminal carrier=direct closed: %s attempt=%s kind=%s", why, logToken(peer.trace.attempt), peer.trace.kind)
+	} else {
+		l.logf("cloud terminal carrier=direct closed: %s", why)
+	}
 	l.terminalMu.Lock()
 	direct := []*terminalConnection{}
 	for _, c := range l.terminalConnections {

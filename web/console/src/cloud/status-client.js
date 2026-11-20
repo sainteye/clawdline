@@ -202,7 +202,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     this.carrierRowSequences = new Map()
     this.carrierReads = new Map()
     this.directCarriers = null
-    this.carrierWatched = new WeakSet()
+    this.carrierWatched = new WeakMap()
     this.carrierMachines = new Set()
     this.classicSessionMachine = null
     this.classicSessionReads = new Map()
@@ -488,9 +488,8 @@ export class StatusCloudClient extends CatalogCloudClient {
     let carrier = null
     try { carrier = this.directCarriers.for(machine) } catch { return null }
     if (carrier && !this.carrierWatched.has(carrier)) {
-      this.carrierWatched.add(carrier)
+      this.carrierWatched.set(carrier, carrier.whenDown((code) => this._carrierDown(machine, code)))
       this.carrierMachines.add(machine)
-      carrier.whenDown((code) => this._carrierDown(machine, code))
     }
     return carrier
   }
@@ -1099,17 +1098,39 @@ export class StatusCloudClient extends CatalogCloudClient {
     return super._settleRead(key, body, error)
   }
 
-  /**
-   * A renewal hands the page to a replacement client, and this one's carrier goes with it.
-   *
-   * The machine keeps one carrier per viewer and gives it no idle bound, so a channel a retired
-   * client leaves open is a channel the machine still believes in: measured on 2026-10-11, the
-   * replacement's offer was refused as busy and that page read over the relay for the rest of
-   * its life. The machine supersedes such a carrier now, and this is the other half of it — the
-   * page says so itself rather than leaving the machine to work it out.
-   */
+  _continueFrom(prior) {
+    super._continueFrom(prior)
+    // Called after the signed relay handshake proved the old socket was still
+    // live. Only the same account, paired viewer, and relay may keep its peer.
+    if (!this.account || !this.deviceID ||
+      this.selectionTransportIdentity !== prior.selectionTransportIdentity) return
+    prior.carrierCredentialRenewed = true
+    if (!this.directCarriers?.transfer) return
+    const reading = new Set(Array.from(prior.carrierReads?.values() ?? [], (read) => read.identity.machine))
+    for (const machine of prior.carrierMachines ?? []) {
+      if (reading.has(machine) || this.carrierPairingRefusals?.has(machine)) continue
+      const previous = prior._carrierFor(machine)
+      if (!previous?.open || prior.carrierReceiveQueues?.has(JSON.stringify([machine, previous.channelGeneration]))) continue
+      const carrier = this.directCarriers.transfer(prior, machine)
+      if (!carrier) continue
+      prior.carrierWatched.get(carrier)?.()
+      prior.carrierWatched.delete(carrier)
+      prior.carrierMachines.delete(machine)
+      this._carrierFor(machine)
+      const floor = prior.carrierSequences.get(machine)
+      if (floor) this.carrierSequences.set(machine, floor)
+      const prefix = "s/" + channelSegment(machine) + "/"
+      for (const [channel, seq] of prior.carrierRowSequences) {
+        if (channel.startsWith(prefix)) this.carrierRowSequences.set(channel, seq)
+      }
+    }
+  }
+
+  /** Close channels with unfinished reads or without proven continuity. */
   retire() {
-    this._closeCarriers("carrier_client_retired")
+    const reason = this.continuityUnproven ? "carrier_page_resumed"
+      : this.carrierCredentialRenewed ? "carrier_credentials_renewed" : "carrier_client_retired"
+    this._closeCarriers(reason)
     return super.retire()
   }
 
