@@ -40,3 +40,31 @@ export function firstFillCover(): (filling: boolean) => boolean {
     return filling && !shown
   }
 }
+
+/**
+ * Where the scroll box goes after an older page is drawn above the reader, so
+ * the message they were reading stays where it was. A rubber-band past the top
+ * reads as a negative offset; the place held is the top edge, not the bounce.
+ */
+export function heldReadingTop(anchor: { top: number; height: number }, height: number, newestFirst: boolean): number {
+  const top = Math.max(0, anchor.top)
+  return newestFirst ? top : top + height - anchor.height
+}
+
+/**
+ * Writes that place. A finger fling, or the bounce at the top, keeps running
+ * across a plain `scrollTop` write on iOS and lands where the fling was
+ * heading: the first message of the page just loaded. After a touch, the box
+ * stops scrolling for one frame, which ends the fling, and the place is
+ * written again once scrolling is back. A mouse or trackpad never needs it,
+ * and hiding a classic scrollbar for a frame would reflow the conversation.
+ */
+export function holdReadingPlace(el: HTMLElement, top: number, touched: boolean): void {
+  el.scrollTop = top
+  if (!touched) return
+  el.style.overflowY = "hidden"
+  requestAnimationFrame(() => {
+    el.style.overflowY = ""
+    el.scrollTop = top
+  })
+}

@@ -366,6 +366,8 @@ for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an
       const seen = () => { if (box.querySelector(".tx-history-loading") || box.querySelector(".tx-history-body")?.style.visibility === "hidden") window.__covered = true }
       new MutationObserver(seen).observe(box, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] })
     })()`)
+    // A finger was the last thing on the conversation: the iOS fling guard runs.
+    await run(`document.getElementById("tx-scroll").dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", bubbles: true }))`)
     await run(`document.querySelector(".tx-older .go").click()`)
     while (!(await run(`document.getElementById("tx").textContent.includes("Turn 3.")`))) {
       if (Date.now() > deadline + 8_000) assert.fail("the older page did not appear")
@@ -374,6 +376,9 @@ for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an
     assert.equal(await run(`window.__covered`), false, "loading an older page covered the conversation with a skeleton")
     const after = await run(turnTop)
     assert.ok(Math.abs(after - before) <= 3, `Turn 31 moved from ${before} to ${after}`)
+    await run(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))`)
+    assert.equal(await run(`document.getElementById("tx-scroll").style.overflowY`), "", "the fling guard gave scrolling back")
+    assert.ok(Math.abs(await run(turnTop) - before) <= 3, "Turn 31 stayed after scrolling came back")
     assert.equal(await run(`document.querySelector(".tx-older") === null`), true)
     if (structured) {
       toolDone = true

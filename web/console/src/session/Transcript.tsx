@@ -68,7 +68,7 @@ import "./transcript-error.css"
 import "./activity.css"
 import { atNewest, jumpOffered } from "./jump.js"
 import { joinTranscript, pendingHistoryPages } from "./history.js"
-import { HistoryFill, firstFillCover, historyAdvanced } from "./history-fill.js"
+import { HistoryFill, firstFillCover, heldReadingTop, historyAdvanced, holdReadingPlace } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
@@ -360,6 +360,9 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     return () => { alive.current = false }
   }, [])
   const olderAnchor = useRef<{ top: number; height: number } | null>(null)
+  // Whether the reader's last gesture on the conversation was a finger, so the
+  // place they were reading survives an iOS fling (`holdReadingPlace`).
+  const touching = useRef(false)
   // The list row's spinner and live line, repeated under the conversation's
   // newest end, where the reader's eye already is. Only the session's own
   // transcript: a provider subagent's page is not what the row's state is about.
@@ -463,8 +466,24 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     if (!anchor) return
     olderAnchor.current = null
     const scroll = document.getElementById("tx-scroll")
-    if (scroll) scroll.scrollTop = anchor.top + (newestFirst ? 0 : scroll.scrollHeight - anchor.height)
+    if (scroll) holdReadingPlace(scroll, heldReadingTop(anchor, scroll.scrollHeight, newestFirst), touching.current)
   }, [earlier, restartedPage, newestFirst])
+  const hasData = !!data
+  useEffect(() => {
+    const scroll = document.getElementById("tx-scroll")
+    if (!scroll) return
+    const finger = () => { touching.current = true }
+    const pointer = (event: PointerEvent) => { touching.current = event.pointerType === "touch" }
+    const wheel = () => { touching.current = false }
+    scroll.addEventListener("touchstart", finger, { passive: true })
+    scroll.addEventListener("pointerdown", pointer, { passive: true })
+    scroll.addEventListener("wheel", wheel, { passive: true })
+    return () => {
+      scroll.removeEventListener("touchstart", finger)
+      scroll.removeEventListener("pointerdown", pointer)
+      scroll.removeEventListener("wheel", wheel)
+    }
+  }, [hasData])
   useEffect(() => {
     const scroll = document.getElementById("tx-scroll")
     if (!scroll || !olderCursor) return
