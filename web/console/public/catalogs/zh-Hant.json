@@ -525,6 +525,7 @@
   "botExchange.title": "Bot 互審往來",
   "botExchange.unavailable": "目前無法讀取這筆往來。",
   "botExchange.unknown": "結果不明",
+  "botExchange.unknownBot": "未知的 Bot",
   "botExchange.from": "訊息來自",
   "botExchange.to": "已傳訊息給",
   "botExchange.waiting": "等待 {name}⋯",

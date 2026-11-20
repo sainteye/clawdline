@@ -17,7 +17,8 @@ import { WorkResultCard } from "./WorkResultCard"
 import { ExchangePanel } from "./ExchangePanel"
 import { exchangeWords } from "./exchange-words"
 import { BotAvatar } from "./BotAvatar"
-import { exchangeEntries, exchangePeer } from "./exchanges"
+import { exchangeBot, exchangeEntries, exchangePeer, loadExchangeBot } from "./exchanges"
+import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
 export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,roster,artifactComposer}: {artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];onOpenWork?:(work:W.ProjectAssistantWorkLink)=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode}) {
@@ -32,10 +33,9 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
   const exchanges=new Map(entries.map(entry=>[entry.exchange.id,entry]))
   const exchangeMessage=exchange?.source===source&&exchange?messages.find(m=>m.id===exchange.message.id&&sameConversation(m.fence,exchange.message.fence)&&m.exchange?.id===exchange.message.exchange?.id):null
   const first=new Set<string>()
-  const findPeer=(entry:W.ProjectAssistantExchange,scope:W.ProjectAssistantFence)=>{
-    const peer=exchangePeer(entry,scope.key)
-    return roster?.find(bot=>sameBot(bot.key,peer.key)&&bot.conversation_id===peer.conversation_id&&sameConversation({key:bot.key,project:bot.project,conversation_id:bot.conversation_id},{key:peer.key,project:scope.project,conversation_id:peer.conversation_id}))
-  }
+  const peers=exchangeScope?entries.map(entry=>exchangePeer(entry.exchange,exchangeScope.key)):[]
+  const resolved=useExchangeParticipants(source,roster,peers)
+  const participants=resolved.length?[...roster??[],...resolved]:roster
   const onArticleClick=(e:React.MouseEvent)=>{
     const copyBtn=(e.target as Element).closest?.<HTMLButtonElement>("button.codecopy")
     if(copyBtn){
@@ -55,20 +55,47 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)
-    const {exchange:reference}=entry, peer=exchangePeer(reference,botKey),bot=findPeer(reference,item.message.fence)
+    const {exchange:reference}=entry,bot=exchangeBot(participants,exchangePeer(reference,botKey)),name=bot?.name||exchangeWord.unknownBot
     const outgoing=sameBot(reference.source.key,botKey),failed=["failed","cancelled","unknown"].includes(reference.outcome)
     return <div key={item.id} className="pa-exchange-attribution" data-message-id={item.id} data-message-seq={item.message.seq}>
       <button type="button" className="pa-exchange-entry" data-failed={failed||undefined} onClick={()=>setExchange({message:item.message,source})}
-        aria-label={`${outgoing?exchangeWord.to:exchangeWord.from} ${bot?.name||peer.key.bot_id}`} title={exchangeWord.open}>
+        aria-label={`${outgoing?exchangeWord.to:exchangeWord.from} ${name}`} title={exchangeWord.open}>
         {failed&&<span aria-hidden="true">!</span>}<span>{outgoing?exchangeWord.to:exchangeWord.from}</span>
-        {bot&&<BotAvatar appearance={bot.appearance} size={17}/>}<strong>{bot?.name||peer.key.bot_id}</strong><span aria-hidden="true">›</span>
+        {bot&&<BotAvatar appearance={bot.appearance} size={17}/>}<strong>{name}</strong><span aria-hidden="true">›</span>
       </button>
     </div>
   })():<Fragment key={JSON.stringify([item.kind,item.id])}><article data-arrival={arrivals?.has(item.id)||undefined} onAnimationEnd={e=>{if(e.animationName==="pa-bubble-enter")onArrivalEnd?.(item.id)}} data-message-id={item.id} data-message-seq={item.message.seq} onClick={(e:React.MouseEvent)=>onArticleClick(e)} tabIndex={0} onKeyDown={(e:React.KeyboardEvent)=>{if((e.key==="Enter"||e.key===" ")&&e.target===e.currentTarget){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}}} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}} className={`pa-message ${item.message.kind==="user"?"pa-mine":""} ${item.message.kind==="notice"?"pa-notice":""} ${item.groupStart?"pa-group-start":""}`}>
     <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}{item.message.text&&!item.message.output&&(item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:<p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:item.message.text}</p>)}{onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}</div>
     <MessageReactions key={JSON.stringify([source?.machineID,source?.authorizationRevision,item.message.id])} message={item.message} source={onQuote?source:undefined} dismissKey={dismissActionsKey} onQuote={onQuote?()=>onQuote(item.message):undefined} onCopy={item.message.text?()=>copy(item.message):undefined} copyLabel={copied===item.id?w.copiedMessage:w.copyMessage}/>
 
-  </article>{afterMessage?.(item.message)}</Fragment>)}{exchangeMessage?.exchange&&source&&botKey&&exchangeMessage.fence.key.machine_id===botKey.machine_id&&exchangeMessage.fence.key.bot_id===botKey.bot_id&&<ExchangePanel source={source} scope={exchangeMessage.fence} reference={exchangeMessage.exchange} entries={entries} roster={roster} language={language} w={w} onClose={()=>setExchange(null)}/>}</>
+  </article>{afterMessage?.(item.message)}</Fragment>)}{exchangeMessage?.exchange&&source&&botKey&&exchangeMessage.fence.key.machine_id===botKey.machine_id&&exchangeMessage.fence.key.bot_id===botKey.bot_id&&<ExchangePanel key={JSON.stringify([source.authorizationRevision,exchangeMessage.fence.key,exchangeMessage.fence.conversation_id,exchangeMessage.exchange.id])} source={source} scope={exchangeMessage.fence} reference={exchangeMessage.exchange} entries={entries} roster={participants} language={language} w={w} onClose={()=>setExchange(null)}/>}</>
+}
+
+/** Resolve peers outside the loaded roster with one captured read in flight. */
+function useExchangeParticipants(source:SourceClient|undefined,roster:readonly W.ProjectAssistantBot[]|undefined,peers:readonly ExchangeScope[]) {
+  const missing=JSON.stringify(Array.from(new Set(peers.filter(peer=>!exchangeBot(roster,peer))
+    .map(({key,project})=>JSON.stringify({key,project})))).sort())
+  const revision=source?.authorizationRevision
+  const [result,setResult]=useState<{source:SourceClient;revision:string;bots:W.ProjectAssistantBot[]}|null>(null)
+  const loaded=result&&result.source===source&&result.revision===revision&&source?.current?.()!==false?result.bots:[]
+  useEffect(()=>{
+    if(!source||revision===undefined||missing==="[]")return
+    const control=new AbortController()
+    const bots=[...loaded]
+    void (async()=>{
+      for(const identity of JSON.parse(missing) as string[]){
+        if(control.signal.aborted||source.current?.()===false||source.authorizationRevision!==revision)return
+        const party=JSON.parse(identity) as Pick<ExchangeScope,"key"|"project">
+        if(exchangeBot(bots,party))continue
+        try {
+          bots.push(await loadExchangeBot(source,party,control.signal))
+          if(!control.signal.aborted)setResult({source,revision,bots:[...bots]})
+        }catch{/* A missing or inaccessible profile keeps its fallback label. */}
+      }
+    })()
+    return()=>control.abort()
+  },[source,revision,missing])
+  return loaded
 }
 
 /** Each mounted picture owns its request; a source change discards late bytes. */

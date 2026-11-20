@@ -248,13 +248,31 @@ const viewTimelineCTE = `, messages AS MATERIALIZED (
  JOIN turns t ON t.id=json_extract(w.value,'$.turn_id') JOIN messages m ON m.id=t.message_id
 ) `
 
+// Hydrate exchange notices from the matched durable record inside the timeline
+// budget. The selected message page bounds the exchange lookups.
 func viewTimelineSQL() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + viewTimelineCTE + `, candidates AS MATERIALIZED (
- SELECT anchor,kind,id,timeline.j,length(CAST(timeline.j AS BLOB)) n FROM a,timeline
+ SELECT anchor,kind,id,timeline.j FROM a,timeline
  WHERE ` + ownChatMessageSQL("json_extract(timeline.j,'$.turn_id')") + ` AND (?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY))
  ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?
+), exchange_state AS MATERIALIZED (
+ SELECT c.anchor,c.kind,c.id,CASE
+ WHEN json_valid(CAST(e.data AS TEXT))=1 THEN CASE
+ WHEN e.revision>=json_extract(c.j,'$.exchange.revision')
+ AND json_extract(CAST(e.data AS TEXT),'$.source')=json_extract(c.j,'$.exchange.source')
+ AND json_extract(CAST(e.data AS TEXT),'$.target')=json_extract(c.j,'$.exchange.target')
+ AND json_extract(CAST(e.data AS TEXT),'$.project')=json_extract(c.j,'$.exchange.project')
+ AND json_extract(CAST(e.data AS TEXT),'$.target_project') IS json_extract(c.j,'$.exchange.target_project')
+ AND json_extract(CAST(e.data AS TEXT),'$.source_turn_id')=json_extract(c.j,'$.exchange.source_turn_id')
+ AND json_extract(CAST(e.data AS TEXT),'$.request_turn_id')=json_extract(c.j,'$.exchange.request_turn_id')
+ THEN json_set(c.j,'$.exchange',json(CAST(e.data AS TEXT))) ELSE c.j END
+ ELSE c.j END j
+ FROM candidates c LEFT JOIN project_assistant_exchanges e ON c.kind=0 AND e.machine=?
+ AND e.id=json_extract(c.j,'$.exchange.id') AND (e.source=? OR e.target=?)
+), sized AS (
+ SELECT *,length(CAST(j AS BLOB)) n FROM exchange_state
 ), budget AS (
- SELECT *,sum(n) OVER(ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC) spent FROM candidates
+ SELECT *,sum(n) OVER(ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC) spent FROM sized
 )
 SELECT anchor,kind,CASE WHEN n<=? AND spent<=? THEN id ELSE '' END,
  CASE WHEN n<=? AND spent<=? THEN j END FROM budget

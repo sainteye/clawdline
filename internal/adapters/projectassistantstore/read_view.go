@@ -282,7 +282,8 @@ func viewRowFailure() app.ReadViewItem {
 
 func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
 	rows, err := tx.QueryContext(ctx, viewTimelineSQL(), out.Head.Key.MachineID, out.Head.Key.BotID,
-		p.ID != "", p.Anchor, p.Kind, p.ID, q.Request.PageSize+1, q.ByteLimit, q.ByteLimit, q.ByteLimit, q.ByteLimit)
+		p.ID != "", p.Anchor, p.Kind, p.ID, q.Request.PageSize+1,
+		out.Head.Key.MachineID, out.Head.Key.BotID, out.Head.Key.BotID, q.ByteLimit, q.ByteLimit, q.ByteLimit, q.ByteLimit)
 	if err != nil {
 		return err
 	}

@@ -525,6 +525,7 @@
   "botExchange.title": "Bot conversation",
   "botExchange.unavailable": "This exchange is unavailable.",
   "botExchange.unknown": "Unknown",
+  "botExchange.unknownBot": "Unknown Bot",
   "botExchange.from": "Message from",
   "botExchange.to": "Messaged",
   "botExchange.waiting": "Waiting for {name}…",

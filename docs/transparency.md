@@ -1092,3 +1092,8 @@ The English and Taiwan Traditional Chinese Schedule Webhook wake setting explain
 the account owner's opt-in and possible InstaBox runtime costs. It is console
 copy. The existing assisted-pairing, setup and Session rotation instruction
 excerpts still describe their respective flows.
+
+The Bot review panel resolves participant profiles by their recorded Project
+and reads exchange notices through the existing paginated chat view. The
+English and Taiwan Traditional Chinese Bot review and turn context explanations
+still describe the same prompts, tools, memory access and execution authority.

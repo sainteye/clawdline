@@ -8,66 +8,86 @@ import {renderToStaticMarkup} from "react-dom/server"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error -- Node loads source extensions.
-import {loadExchange,scopedExchange,exchangeOutcome,exchangeDelivery,exchangeEntries} from "./exchanges.ts"
+import {loadExchangePage,loadExchangeBot,scopedExchange,exchangeOutcome,exchangeDelivery,exchangeEntries} from "./exchanges.ts"
 // @ts-expect-error -- Node loads source extensions.
-import {errorCode} from "./client.ts"
+import {errorCode,failure} from "./client.ts"
 
 const key={machine_id:"machine",bot_id:"requester"},peer={...key,bot_id:"responder"}
 const project:W.ProjectAssistantProjectScope={machine_id:key.machine_id,project_id:"project",canonical_id:"canonical",kind:"repository"}
 const scope={key,project,conversation_id:"source-chat"}
 const exchange:W.ProjectAssistantExchange={id:"exchange",project,source:{key,conversation_id:"source-chat"},target:{key:peer,conversation_id:"target-chat"},source_turn_id:"source-turn",request_turn_id:"request-turn",request:"Review\n<script>untrusted</script>\n"+"long line ".repeat(2000),reply:"Looks complete",detail:"Preserved diagnostic",outcome:"unknown",revision:3,hops:1,delivery:"waiting"}
-function fixture(){
-  const value={contract_version:"project-assistants.v1",bot:{key,project,conversation_id:scope.conversation_id,name:"Requester"},conversation:{key,id:scope.conversation_id},exchanges:[structuredClone(exchange)]} as W.ProjectAssistantExport
-  const status:W.ProjectAssistantSourcesResponse={contract_version:"project-assistants.v1",sources:[{machine_id:key.machine_id,state:"online",access:"history_only",readable:true,writable:false,fresh:true,observed_at:"",capabilities:[]}]}
-  const calls:string[]=[],source={machineID:key.machine_id,authorizationRevision:"grant",current:()=>true,async export(k:W.ProjectAssistantBotKey){assert.deepEqual(k,key);calls.push("export");return value},async status(){calls.push("status");return status}} as unknown as SourceClient
+const at="2026-11-17T00:00:00Z"
+const fence:W.ProjectAssistantFence={...scope,binding_id:"",generation:0}
+const own:W.ProjectAssistantBot={...scope,name:"Requester",agent:"codex",appearance:{shape:"blob",color:"#e39567"},permission_policy:"ask",instructions:{revision:1,text:"",role_snapshot_ref:""},created_at:at,updated_at:at,version:1}
+const targetProject:W.ProjectAssistantProjectScope={...project,project_id:"other",canonical_id:"other-canonical"}
+const target:W.ProjectAssistantBot={...own,key:peer,project:targetProject,conversation_id:"new-target-chat",name:"Partner"}
+const notice=(x=exchange,seq=1):W.ProjectAssistantMessage=>({id:`notice-${seq}`,seq,at,kind:"notice",text:"Review requested",turn_id:"source-turn",quote_message_id:"",fence,exchange:x})
+const row=(message:W.ProjectAssistantMessage):W.ProjectAssistantReadViewItem=>({id:message.id,kind:"message",message,anchor_message_seq:message.seq,observed_event_seq:10})
+function fixture() {
+  const status:W.ProjectAssistantSourceStatus={machine_id:key.machine_id,state:"online",access:"history_only",readable:true,writable:false,fresh:true,observed_at:"",capabilities:[]}
+  const conversation={key,id:scope.conversation_id,binding_id:"",generation:0,active_turn_id:"",last_message_seq:4,memory_revision:1,version:1}
+  const value:W.ProjectAssistantReadViewResponse={contract_version:"project-assistants.v1",mode:"snapshot",source_epoch:"epoch",source:status,
+    head:{key,project,current_fence:fence,conversation,bot_version:1,memory_revision:1,event_frontier:10,unknown_turn_count:0,pending_permission_count:0,trace_category_count:0},
+    items:[row(notice(structuredClone(exchange)))],snapshot:{bot:own,pending_turns:[],queued_messages:[]},has_more:true,next_cursor:"earlier",next_seq:0}
+  const calls:W.ProjectAssistantReadViewRequest[]=[]
+  const source={machineID:key.machine_id,authorizationRevision:"grant",current:()=>true,
+    async export(){throw failure("pa_capacity_full")},
+    async view(query:W.ProjectAssistantReadViewRequest){calls.push(query);return value},
+    async get(k:W.ProjectAssistantBotKey){assert.deepEqual(k,peer);return {contract_version:value.contract_version,bot:target,source:status,conversation}}
+  } as unknown as SourceClient
   return {value,status,calls,source}
 }
 const signal=()=>new AbortController().signal
 
-test("exchange detail preserves full request/reply/detail from a captured read-only export without commands",async()=>{
-  const f=fixture(),result=await loadExchange(f.source,scope,exchange,signal())
-  assert.deepEqual(result,{exchange,botName:"Requester"});assert.deepEqual(f.calls,["export","status"])
-  assert.equal(exchangeOutcome(result.exchange.outcome),"unknown");assert.equal(exchangeDelivery(result.exchange.delivery),"waiting")
+test("exchange pages preserve full request, reply and detail without requesting a Bot export",async()=>{
+  const f=fixture()
+  f.value.items.push(row(notice({...exchange,id:"other-exchange",target:{key:{...peer,bot_id:"other"},conversation_id:"other-chat"}},2)))
+  f.value.items.push(row(notice({...exchange,request_turn_id:"changed",revision:4},3)))
+  const first=await loadExchangePage(f.source,scope,exchange,signal())
+  assert.deepEqual(first.entries,[{exchange,seq:1,at}])
+  assert.equal(first.bot?.name,"Requester")
+  assert.deepEqual(first.next,{cursor:"earlier",sourceEpoch:"epoch"})
+  Object.assign(f.value,{mode:"history",snapshot:undefined,has_more:false,next_cursor:"",items:[row(notice({...exchange,id:"older",outcome:"completed"},1))]})
+  const earlier=await loadExchangePage(f.source,scope,exchange,signal(),first.next)
+  assert.equal(earlier.entries[0].exchange.id,"older")
+  assert.equal(earlier.next,undefined)
+  assert.deepEqual(f.calls.map(({mode,cursor,source_epoch})=>[mode,cursor,source_epoch]),[["snapshot","",""],["history","earlier","epoch"]])
   assert.equal(scopedExchange(exchange,{key:peer,project,conversation_id:"target-chat"}),exchange)
 })
 
-test("exchange scope refuses foreign machine, Project, either Bot and conversation before publishing",async()=>{
-  const changes:Array<(f:ReturnType<typeof fixture>)=>void>=[
-    f=>{f.value.bot.key={...key,bot_id:"other"}},f=>{f.value.bot.project={...project,project_id:"other"}},
-    f=>{f.value.conversation.id="other"},f=>{f.value.conversation.key={...key,machine_id:"other"}},
-    f=>{f.value.exchanges![0].project={...project,canonical_id:"other"}},f=>{f.value.exchanges![0].project={...project,project_id:"other"}},
-    f=>{f.value.exchanges![0].source.key={...key,machine_id:"other"}},f=>{f.value.exchanges![0].target.key={...peer,bot_id:"other"}},
-    f=>{f.value.exchanges![0].target.conversation_id="other"},f=>{f.value.exchanges![0].source_turn_id="other"},
-  ]
-  for(const change of changes){const f=fixture();change(f);await assert.rejects(loadExchange(f.source,scope,exchange,signal()),e=>errorCode(e)==="pa_scope_denied")}
-  const f=fixture();Object.defineProperty(f.source,"machineID",{value:"foreign"});await assert.rejects(loadExchange(f.source,scope,exchange,signal()),e=>errorCode(e)==="pa_scope_denied");assert.deepEqual(f.calls,[])
-})
-
-test("missing, duplicated, malformed, stale and revoked exchange reads remain explicit failures",async()=>{
-  for(const kind of ["missing","duplicate","malformed","stale","offline","revoked","hidden","unreadable"]){
-    const f=fixture()
-    if(kind==="missing")f.value.exchanges=[]
-    if(kind==="duplicate")f.value.exchanges!.push(structuredClone(exchange))
-    if(kind==="malformed")f.value.exchanges![0].reply=42 as unknown as string
-    if(kind==="stale")f.value.exchanges![0].revision=1
-    if(kind==="offline")f.status.sources[0].fresh=false
-    if(kind==="revoked")f.status.sources[0].state="revoked"
-    if(kind==="hidden")f.status.sources[0].access="hidden"
-    if(kind==="unreadable")f.status.sources[0].readable=false
-    await assert.rejects(loadExchange(f.source,scope,exchange,signal()),e=>errorCode(e)===({missing:"pa_not_found",duplicate:"pa_invalid",malformed:"pa_invalid",stale:"pa_stale_version",offline:"pa_offline",revoked:"pa_revoked",hidden:"pa_scope_denied",unreadable:"pa_scope_denied"}[kind]))
+test("exchange pages reject malformed results, foreign scope and unreadable sources",async()=>{
+  for(const [change,code] of [
+    [(f:ReturnType<typeof fixture>)=>{f.value.items=[row({...notice(),fence:{...fence,conversation_id:"other"}})]},"pa_scope_denied"],
+    [(f:ReturnType<typeof fixture>)=>{f.value.next_cursor=""},"pa_invalid"],
+    [(f:ReturnType<typeof fixture>)=>{f.status.fresh=false},"pa_offline"],
+    [(f:ReturnType<typeof fixture>)=>{f.status.state="revoked"},"pa_revoked"],
+    [(f:ReturnType<typeof fixture>)=>{f.status.access="hidden"},"pa_scope_denied"],
+  ] as const){
+    const f=fixture();change(f)
+    await assert.rejects(loadExchangePage(f.source,scope,exchange,signal()),e=>errorCode(e)===code)
   }
+  const f=fixture();Object.defineProperty(f.source,"machineID",{value:"foreign"})
+  await assert.rejects(loadExchangePage(f.source,scope,exchange,signal()),e=>errorCode(e)==="pa_scope_denied")
+  assert.deepEqual(f.calls,[])
 })
 
-test("abort, authority replacement and revocation discard late export or status results; explicit retry can recover",async()=>{
-  for(const stage of ["export","status"] as const)for(const kind of ["abort","revoke","revision"]){
-    const f=fixture(),control=new AbortController(),read=f.source[stage].bind(f.source);let release!:()=>void
-    Reflect.set(f.source,stage,async(...args:unknown[])=>{const answer=await (read as (...args:unknown[])=>Promise<unknown>)(...args);await new Promise<void>(resolve=>{release=resolve});return answer})
-    const pending=loadExchange(f.source,scope,exchange,control.signal)
+test("peer profile lookup accepts a new conversation in the recorded Project, and rejects a different Project",async()=>{
+  const f=fixture()
+  assert.deepEqual(await loadExchangeBot(f.source,{key:peer,project:targetProject},signal()),target)
+  await assert.rejects(loadExchangeBot(f.source,{key:peer,project},signal()),e=>errorCode(e)==="pa_scope_denied")
+})
+
+test("closing the panel or changing the grant discards a late page",async()=>{
+  for(const kind of ["abort","revoke","revision"]){
+    const f=fixture(),control=new AbortController(),read=f.source.view.bind(f.source);let release!:()=>void
+    f.source.view=async(...args)=>{const answer=await read(...args);await new Promise<void>(resolve=>{release=resolve});return answer}
+    const pending=loadExchangePage(f.source,scope,exchange,control.signal)
     while(!release)await new Promise(resolve=>setImmediate(resolve))
-    if(kind==="abort")control.abort();if(kind==="revoke")f.source.current=()=>false;if(kind==="revision")Object.defineProperty(f.source,"authorizationRevision",{value:"replacement"})
+    if(kind==="abort")control.abort()
+    if(kind==="revoke")f.source.current=()=>false
+    if(kind==="revision")Object.defineProperty(f.source,"authorizationRevision",{value:"replacement"})
     release();await assert.rejects(pending,e=>kind==="abort"?(e as Error).name==="AbortError":errorCode(e)==="pa_revoked")
   }
-  const f=fixture();f.value.exchanges=[];await assert.rejects(loadExchange(f.source,scope,exchange,signal()));f.value.exchanges=[exchange];assert.equal((await loadExchange(f.source,scope,exchange,signal())).exchange.id,exchange.id)
 })
 
 test("known and future request/delivery states stay distinct regardless of final-looking reply text",()=>{
@@ -82,11 +102,16 @@ test("rendered chat offers the exchange action only for its captured Bot; panel 
   const {outputFiles}=await build({stdin:{contents:'export {ChatRows} from "./ChatRows";export {ExchangePanel} from "./ExchangePanel";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
   const compiled={exports:{} as {ChatRows:typeof import("./ChatRows").ChatRows;ExchangePanel:typeof import("./ExchangePanel").ExchangePanel;words:typeof import("./words").words}}
   new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-  const message:W.ProjectAssistantMessage={id:"notice",seq:1,at:"2026-11-17T00:00:00Z",kind:"notice",text:"Review requested",turn_id:"source-turn",quote_message_id:"",fence:{...scope,binding_id:"",generation:1},exchange}
+  const message=notice()
   const source=fixture().source
-  const render=(m:W.ProjectAssistantMessage,botKey=key,language="en")=>renderToStaticMarkup(React.createElement(compiled.exports.ChatRows,{timeline:[{id:m.id,kind:"message",message:m,anchor_message_seq:1,observed_event_seq:1}],source,botKey,onQuote:()=>{},w:compiled.exports.words(language),language}))
-  assert.ok(render(message).includes(`aria-label="Messaged ${peer.bot_id}"`))
-  assert.ok(render(message,key,"zh-Hant-TW").includes(`aria-label="已傳訊息給 ${peer.bot_id}"`))
+  const render=(m:W.ProjectAssistantMessage,botKey=key,language="en",roster?:W.ProjectAssistantBot[])=>renderToStaticMarkup(React.createElement(compiled.exports.ChatRows,{timeline:[{id:m.id,kind:"message",message:m,anchor_message_seq:1,observed_event_seq:1}],source,botKey,roster,onQuote:()=>{},w:compiled.exports.words(language),language}))
+  const crossProject={...message,exchange:{...exchange,target_project:targetProject}}
+  assert.match(render(crossProject,key,"zh-Hant-TW",[target]),/aria-label="已傳訊息給 Partner"/)
+  assert.match(render(crossProject,key,"en",[{...target,project,name:"Wrong"},target]),/aria-label="Messaged Partner"/)
+  const incoming={...crossProject,fence:{...fence,key:peer,conversation_id:"target-chat",project:targetProject}}
+  assert.match(render(incoming,peer,"en",[own,target]),/aria-label="Message from Requester"/)
+  assert.match(render(message),/aria-label="Messaged Unknown Bot"/)
+  assert.match(render(message,key,"zh-Hant-TW"),/aria-label="已傳訊息給 未知的 Bot"/)
   assert.ok(!render(message).includes("Review requested"))
   assert.ok(!render({...message,exchange:undefined}).includes("pa-exchange-entry"))
   assert.ok(!render(message,peer).includes("pa-exchange-entry"))

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13662,
+  "englishKeys": 13663,
   "counts": {
     "negation": 3551,
     "state": 2322,
     "permission": 829,
     "deletion": 315,
-    "uncertainty": 553
+    "uncertainty": 554
   },
-  "unionCount": 5860,
+  "unionCount": 5861,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7056,6 +7056,7 @@
       "botCall.sendUnknown",
       "botExchange.unavailable",
       "botExchange.unknown",
+      "botExchange.unknownBot",
       "botRoutineControls.publicUnavailable",
       "botRoutineControls.unknownRun",
       "browserPairing.androidScan",
@@ -7769,6 +7770,7 @@
     "botExchange.open",
     "botExchange.unavailable",
     "botExchange.unknown",
+    "botExchange.unknownBot",
     "botExchange.waiting",
     "botHandoff.adopted",
     "botHandoff.empty",

@@ -126,7 +126,7 @@ Managers, team/group rooms, coordinator behavior and networking remain in
 their existing Board steps. Broader delete/revoke and late-result combinations
 remain additional coverage; the whole step is not complete.
 
-## Chat exchange detail construction
+## Original chat exchange detail construction
 
 `ChatRows` offers a separate exchange action for messages carrying structured
 exchange metadata in the captured Bot's chat. Existing browser, quote, copy,
@@ -155,6 +155,15 @@ name. Request outcomes and reply delivery are separate labels. Unknown/future
 states remain unknown even when a reply looks final. Completed request text
 never proves delivery or observation. The panel shows the complete selected
 exchange, not an aggregated peer thread; no new retention limit is added.
+
+The current panel reads the captured chat's byte-bounded read view through
+snapshot and history cursors. Every page validates the source and conversation.
+The store joins notices to matching exchange records before packing each page,
+so request outcomes and reply delivery reflect the durable revision. Participant
+names come from Bot profiles matched to their own Project scopes, with a captured
+profile read when a Bot is missing from the roster. Earlier notices remain
+readable across a fresh conversation. The paragraphs above record the original
+export-based version.
 
 The read-only upstream comparison was `BotConversation.tsx` and
 `bot-exchange.ts` at `9f67eb09084db61b3cca9c84a11bc03df9de29b7`, together
