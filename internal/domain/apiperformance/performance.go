@@ -240,19 +240,48 @@ func (h *history) prune(now int64) {
 	} else {
 		now = h.Watermark
 	}
-	for k := range h.Minutes {
+	expiredRoutes := false
+	for k, b := range h.Minutes {
 		if k < floor(now, 60000)-(h.bound("minutes")-1)*60000 {
+			expiredRoutes = expiredRoutes || len(b.Routes) > 0
 			delete(h.Minutes, k)
 		}
 	}
-	for k := range h.Hours {
+	for k, b := range h.Hours {
 		if k < floor(now, 3600000)-(h.bound("hours")-1)*3600000 || k < floor(now-h.bound("retention")*1000, 3600000) {
+			expiredRoutes = expiredRoutes || len(b.Routes) > 0
 			delete(h.Hours, k)
 		}
 	}
+	if expiredRoutes {
+		h.reclaimRouteNames()
+	}
+}
+
+// Only a route still represented in a retained bucket needs an admission
+// slot. Older checkpoints can contain names whose last bucket already aged out.
+func (h *history) reclaimRouteNames() {
+	live := make(map[string]bool, len(h.Routes))
+	for _, buckets := range []map[int64]*bucket{h.Hours, h.Minutes} {
+		for _, b := range buckets {
+			for key := range b.Routes {
+				if h.Routes[key] {
+					live[key] = true
+				}
+			}
+			if len(live) == len(h.Routes) {
+				return
+			}
+		}
+	}
+	h.Routes = live
 }
 
 func (h *history) observe(e event, routeCap int) {
+	at := e.at.UnixMilli()
+	if !h.Routes[e.route] && len(h.Routes) >= routeCap && floor(at, 60000) > floor(h.Watermark, 60000) {
+		h.prune(at)
+	}
 	if !h.Routes[e.route] {
 		if len(h.Routes) >= routeCap || int64(len(e.route)) > h.bound("route_bytes") || e.route == "" || e.route == "OTHER (overflow)" {
 			e.route = "OTHER (overflow)"
@@ -261,14 +290,14 @@ func (h *history) observe(e event, routeCap int) {
 			h.Routes[e.route] = true
 		}
 	}
-	for _, b := range []*bucket{getBucket(h.Minutes, e.at.UnixMilli(), 60000), getBucket(h.Hours, e.at.UnixMilli(), 3600000)} {
+	for _, b := range []*bucket{getBucket(h.Minutes, at, 60000), getBucket(h.Hours, at, 3600000)} {
 		b.provenance(h.source)
 		b.Total.observe(e)
 		t := b.Routes[e.route]
 		t.observe(e)
 		b.Routes[e.route] = t
 	}
-	h.prune(e.at.UnixMilli())
+	h.prune(at)
 }
 
 func (h *history) cover(from, to time.Time) {
@@ -544,6 +573,7 @@ func (r *Runtime) run(dir string) {
 	h.source = Provenance{BootID: r.boot, Build: r.build}
 	h.limits = r.limits
 	h.prune(time.Now().UnixMilli())
+	h.reclaimRouteNames()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	last := time.Now().Truncate(time.Second).Add(time.Second)

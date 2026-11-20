@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/apiperformance"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
@@ -22,11 +24,10 @@ import (
 // browser somebody ran by hand.
 //
 // **A key is a route's shape, never its spelling.** The method, the pattern
-// the mux matched, and below a prefix pattern only words this file names: any
-// other segment — a session id, a pane, a task, a file name — is `:id`, and
-// the query is never read. So nothing a person typed or named reaches the
-// table, whatever a later route puts in its path; a word missing from
-// routeWords costs precision, not privacy.
+// the mux matched, and below a prefix pattern only approved route words.
+// Bot routes use their dispatcher and mask identifiers by position. Generic
+// routes replace any segment outside routeWords with `:id`. Only the fixed
+// Bot read mode can affect the route key beyond the path.
 //
 // Counters run from the daemon's start and are never reset: two readings are
 // compared by subtracting them, which a reset would make wrong for every other
@@ -103,10 +104,22 @@ func routeKey(method, pattern, escapedPath string) string {
 	if !strings.HasSuffix(pattern, "/") {
 		return method + " " + pattern
 	}
-	rest := strings.TrimPrefix(cleanPath(escapedPath), pattern)
-	if rest == cleanPath(escapedPath) && pattern != "/" {
+	path := cleanPath(escapedPath)
+	rest := strings.TrimPrefix(path, pattern)
+	if rest == path && pattern != "/" {
 		// The path does not sit under the pattern it matched (a redirect).
 		return method + " " + pattern
+	}
+	switch pattern {
+	case "/v1/project-assistants/":
+		return method + " " + projectAssistantRouteShape(method, path)
+	case "/hooks/routines/":
+		return method + " /hooks/routines/:id"
+	case "/v1/bot-network/consents/":
+		if _, action, ok := strings.Cut(rest, "/"); ok && action == "sync" {
+			return method + " /v1/bot-network/consents/:id/sync"
+		}
+		return method + " /v1/bot-network/consents/(unmatched)"
 	}
 	var b strings.Builder
 	b.WriteString(method + " " + strings.TrimSuffix(pattern, "/"))
@@ -124,6 +137,42 @@ func routeKey(method, pattern, escapedPath string) string {
 		}
 	}
 	return b.String()
+}
+
+// The Bot dispatchers recognize the static path parts. Mask the IDs by
+// position even when they have the same spelling as a route word.
+func projectAssistantRouteShape(method, path string) string {
+	const prefix = "/v1/project-assistants/"
+	if !readablePath(path) {
+		return prefix + "(unmatched)"
+	}
+	decoded, _ := url.PathUnescape(path) // readablePath verified every segment.
+	r := &http.Request{Method: method, URL: &url.URL{Path: decoded}}
+	parts := strings.Split(strings.TrimPrefix(decoded, prefix), "/")
+	route, group := paGroupRoute(r)
+	if group && parts[0] == "rooms" && parts[1] == "groups" {
+		if route.action == "group-invalid" {
+			return prefix + "rooms/groups/(unmatched)"
+		}
+		if route.bot != "" {
+			parts[2] = ":id"
+		}
+		return prefix + strings.Join(parts, "/")
+	}
+	if !group {
+		var err error
+		route, err = paRoute(r)
+		if err != nil {
+			return prefix + "(unmatched)"
+		}
+	}
+	if route.bot != "" {
+		parts[0] = ":id"
+	}
+	if route.offer != "" && route.action != "routine-preview" {
+		parts[2] = ":id"
+	}
+	return prefix + strings.Join(parts, "/")
 }
 
 // routeStat is one key's counts. Its fields are guarded by routeStats.mu.
@@ -294,32 +343,67 @@ func (t *routeStats) countRoutes(mux *http.ServeMux, next http.Handler) http.Han
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, pattern := mux.Handler(r)
 		key := routeKey(r.Method, pattern, r.URL.EscapedPath())
-		slot := &callerSlot{kind: callerAnonymous}
+		if key == "GET /v1/project-assistants/:id/view" {
+			key += botReadModeLabel(r.URL.RawQuery)
+		}
+		caller := callerAnonymous
 		if cloud.ViaCloud(r.Context()) {
-			slot.kind = callerCloud
+			caller = callerCloud
 		}
-		r = r.WithContext(context.WithValue(r.Context(), callerSlotKey{}, slot))
-		op := t.performance.Load().Begin(key)
-		cw := &countingWriter{ResponseWriter: w, stats: t, key: key, operation: op}
-		start := time.Now()
-		defer func() {
-			panicValue := recover()
-			t.done(key, slot.kind, cw.statusOr(), time.Since(start), cw.stream)
-			status := cw.statusOr()
-			if panicValue != nil {
-				status = 500
-			}
-			op.Done(status, r.Context().Err() != nil || cw.writeFailed)
-			if panicValue != nil {
-				panic(panicValue)
-			}
-		}()
-		if f, ok := w.(http.Flusher); ok {
-			next.ServeHTTP(&flushingCountingWriter{countingWriter: cw, flusher: f}, r)
-			return
-		}
-		next.ServeHTTP(cw, r)
+		t.countRoute(key, caller, w, r, next)
 	})
+}
+
+// Count the requested view operation even when the request is refused. Skip
+// decoding unrelated values, which can contain cursor and source identifiers.
+func botReadModeLabel(query string) string {
+	var mode pa.ReadViewMode
+	for field := range strings.SplitSeq(query, "&") {
+		key, value, _ := strings.Cut(field, "=")
+		name, err := url.QueryUnescape(key)
+		if err != nil || name != "mode" {
+			continue
+		}
+		if mode != "" {
+			return " [unclassified]"
+		}
+		decoded, err := url.QueryUnescape(value)
+		if err != nil || decoded == "" {
+			return " [unclassified]"
+		}
+		mode = pa.ReadViewMode(decoded)
+	}
+	switch mode {
+	case pa.ReadViewSnapshot, pa.ReadViewHistory, pa.ReadViewEvents, pa.ReadViewPermissions, pa.ReadViewTraces, pa.ReadViewDetail:
+		return " [" + string(mode) + "]"
+	default:
+		return " [unclassified]"
+	}
+}
+
+func (t *routeStats) countRoute(key, caller string, w http.ResponseWriter, r *http.Request, next http.Handler) {
+	slot := &callerSlot{kind: caller}
+	r = r.WithContext(context.WithValue(r.Context(), callerSlotKey{}, slot))
+	op := t.performance.Load().Begin(key)
+	cw := &countingWriter{ResponseWriter: w, stats: t, key: key, operation: op}
+	start := time.Now()
+	defer func() {
+		panicValue := recover()
+		t.done(key, slot.kind, cw.statusOr(), time.Since(start), cw.stream)
+		status := cw.statusOr()
+		if panicValue != nil {
+			status = 500
+		}
+		op.Done(status, r.Context().Err() != nil || cw.writeFailed)
+		if panicValue != nil {
+			panic(panicValue)
+		}
+	}()
+	if f, ok := w.(http.Flusher); ok {
+		next.ServeHTTP(&flushingCountingWriter{countingWriter: cw, flusher: f}, r)
+		return
+	}
+	next.ServeHTTP(cw, r)
 }
 
 // noteCaller sits just inside the gate and names who it let in.
