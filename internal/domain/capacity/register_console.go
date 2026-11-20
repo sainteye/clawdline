@@ -146,6 +146,19 @@ func baseConsoleBounds() []Entry {
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,
 		},
 		{
+			// FLING_GAP_MS in session/history-fill.ts: wheel events closer
+			// than this belong to one fling, so the rest of a fling to the
+			// top is not scrolled into the older page that just landed.
+			Name: "console.transcript_fling_gap_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 120, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Person,
+		},
+		{
+			// FLING_HOLD_MS in session/history-fill.ts: the longest that fling
+			// is held after the page lands; a pause or a turn ends it sooner.
+			Name: "console.transcript_fling_hold_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 3000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Person,
+		},
+		{
 			// LIST_LATEST_READS in realtime/copilot-tools.ts: how many group
 			// Sessions' newest words one Session list carries, one transcript
 			// read each. Further Sessions are listed without them.

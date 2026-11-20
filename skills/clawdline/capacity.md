@@ -514,6 +514,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.support_title_characters` | 160 | `rows` | `refuse` | `diagnostics` | — |
 | `console.transcript_backoff_seconds` | 30 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_fill_pages` | 32 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.transcript_fling_gap_milliseconds` | 120 | `milliseconds` | `refuse` | `diagnostics` | — |
+| `console.transcript_fling_hold_milliseconds` | 3000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `console.transcript_follow_fast_seconds` | 10 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_later_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.transcript_follow_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |

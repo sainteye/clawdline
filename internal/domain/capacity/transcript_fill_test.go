@@ -65,3 +65,35 @@ func TestTranscriptReadRecoveryIsRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestTranscriptFlingHoldIsRegistered(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "web", "console", "src", "session", "history-fill.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"console.transcript_fling_gap_milliseconds":  "FLING_GAP_MS",
+		"console.transcript_fling_hold_milliseconds": "FLING_HOLD_MS",
+	} {
+		match := regexp.MustCompile(`export const ` + source + ` = ([0-9_]+)`).FindSubmatch(raw)
+		if match == nil {
+			t.Fatalf("missing fling bound %s", source)
+		}
+		limit, err := strconv.ParseInt(strings.ReplaceAll(string(match[1]), "_", ""), 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, e := range Register() {
+			if e.Name == name {
+				found = true
+				if e.Limit != limit {
+					t.Errorf("%s must match %s: got %d want %d", name, source, e.Limit, limit)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("fling hold has no capacity registration: %s", name)
+		}
+	}
+}

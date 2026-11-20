@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- Node executes the source test with type stripping.
-import { HistoryFill, HISTORY_FILL_PAGES, firstFillCover, heldReadingTop, historyAdvanced } from "./history-fill.ts"
+import { FlingGuard, FLING_GAP_MS, FLING_HOLD_MS, HistoryFill, HISTORY_FILL_PAGES, firstFillCover, heldReadingTop, historyAdvanced } from "./history-fill.ts"
 
 const empty = { cursor: 100, contentHeight: 600, viewportHeight: 600, loading: false, failed: false }
 
@@ -91,4 +91,32 @@ test("an older page drawn above the reader keeps the message they were reading i
   assert.equal(heldReadingTop({ top: 40, height: 2000 }, 5000, false), 3040)
   assert.equal(heldReadingTop({ top: -60, height: 2000 }, 5000, false), 3000, "a bounce past the top holds the top edge")
   assert.equal(heldReadingTop({ top: 40, height: 2000 }, 5000, true), 40, "newest first: the older page lands below")
+})
+
+test("the rest of a fling running when an older page lands is held, and nothing else", () => {
+  const fling = new FlingGuard()
+  for (let at = 0; at <= 300; at += 16) assert.equal(fling.swallow(at, true), false, "before the page lands it scrolls")
+  fling.held(310)
+  assert.equal(fling.swallow(320, true), true, "the same fling after the page lands")
+  assert.equal(fling.swallow(336, true), true)
+  assert.equal(fling.swallow(336 + FLING_GAP_MS + 1, true), false, "a pause ends it")
+  assert.equal(fling.swallow(336 + FLING_GAP_MS + 10, true), false, "and the next scroll moves")
+})
+
+test("a slow scroll, a turn, or a long fling is never held past its end", () => {
+  const slow = new FlingGuard()
+  slow.swallow(0, true)
+  slow.held(FLING_GAP_MS + 50)
+  assert.equal(slow.swallow(FLING_GAP_MS + 60, true), false, "no fling was running when the page landed")
+
+  const turn = new FlingGuard()
+  turn.swallow(0, true); turn.held(10)
+  assert.equal(turn.swallow(20, false), false, "scrolling back toward the newest end")
+  assert.equal(turn.swallow(30, true), false, "ends the hold")
+
+  const long = new FlingGuard()
+  long.swallow(0, true); long.held(10)
+  let at = 10
+  while (at < 10 + FLING_HOLD_MS - 16) { at += 16; assert.equal(long.swallow(at, true), true) }
+  assert.equal(long.swallow(10 + FLING_HOLD_MS + 1, true), false, "held at most FLING_HOLD_MS")
 })

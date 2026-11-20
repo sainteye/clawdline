@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13668,
+  "englishContentKeys": 13672,
   "riskKeys": 5863,
-  "nonRiskCount": 7805,
+  "nonRiskCount": 7809,
   "groups": [
     {
       "name": "acp / other",
@@ -567,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 697,
+      "count": 701,
       "sources": [
         null
       ],
@@ -953,6 +953,10 @@
         "capacityRow.console.transcript_backoff_seconds.full",
         "capacityRow.console.transcript_backoff_seconds.what",
         "capacityRow.console.transcript_fill_pages.full",
+        "capacityRow.console.transcript_fling_gap_milliseconds.full",
+        "capacityRow.console.transcript_fling_gap_milliseconds.what",
+        "capacityRow.console.transcript_fling_hold_milliseconds.full",
+        "capacityRow.console.transcript_fling_hold_milliseconds.what",
         "capacityRow.console.transcript_follow_later_seconds.what",
         "capacityRow.console.transcript_quiet_failures.full",
         "capacityRow.console.transcript_quiet_failures.what",

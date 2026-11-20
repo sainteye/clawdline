@@ -9885,6 +9885,40 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.transcript_fling_gap_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.transcript_fling_hold_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 3000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.transcript_follow_fast_seconds",
     "Class": "cache",
     "Unit": "seconds",
