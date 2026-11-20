@@ -17,7 +17,7 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-func TestProcessWriteStallIsBoundedUnknown(t *testing.T) {
+func TestProcessWriteCancellationAfterPartialFrameIsUnknown(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix owned process supervisor")
 	}
@@ -31,13 +31,44 @@ func TestProcessWriteStallIsBoundedUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	timer := time.AfterFunc(100*time.Millisecond, cancel)
+	defer timer.Stop()
 	began := time.Now()
-	err = p.Write(context.Background(), []byte(strings.Repeat("x", l.FrameBytes)))
+	err = p.Write(ctx, []byte(strings.Repeat("x", l.FrameBytes)))
 	if pa.Code(err) != pa.ExecutionEffectUnknown {
 		t.Fatalf("partial stdin=%v", err)
 	}
 	if time.Since(began) > time.Second {
 		t.Fatal("stdin write exceeded bound")
+	}
+}
+
+func TestProcessQueuedWriteCancellationLeavesPipeUsable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("anonymous pipe deadlines depend on the platform")
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	p := &Process{stdin: writer, write: make(chan struct{}, 1), done: make(chan struct{})}
+	p.write <- struct{}{}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err = p.Write(ctx, []byte("never sent")); !errors.Is(err, errWriteNotStarted) {
+		t.Fatal("cancellation before writing was not distinguished", err)
+	}
+	<-p.write
+	if err = p.Write(context.Background(), []byte("next")); err != nil {
+		t.Fatal(err)
+	}
+	var got [4]byte
+	if _, err = reader.Read(got[:]); err != nil || string(got[:]) != "next" {
+		t.Fatalf("the next write did not start on a clean pipe: %q, %v", got, err)
 	}
 }
 

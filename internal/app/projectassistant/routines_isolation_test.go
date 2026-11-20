@@ -82,7 +82,7 @@ func routineIsolationCommand(key pa.BotKey, op pa.Operation, id string) pa.Comma
 }
 func newRoutineIsolationFixture(t *testing.T) *routineIsolationFixture {
 	t.Helper()
-	f := &routineIsolationFixture{now: time.Date(2096, 2, 29, 0, 0, 0, 0, time.UTC), p: &routineIsolationProvider{sent: make(chan *routineIsolationSession, pa.MaxPendingTurns)}}
+	f := &routineIsolationFixture{now: time.Date(2096, 2, 29, 0, 0, 0, 0, time.UTC), p: &routineIsolationProvider{sent: make(chan *routineIsolationSession, pa.MaxAutomationBacklog)}}
 	var err error
 	f.db, err = sql.Open("sqlite", filepath.Join(t.TempDir(), "routines.db"))
 	if err != nil {

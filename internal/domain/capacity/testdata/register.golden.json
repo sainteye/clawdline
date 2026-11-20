@@ -1200,10 +1200,10 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.attachments_per_message",
+    "Name": "bots.automation_backlog",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 4,
+    "Limit": 16,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -1215,7 +1215,7 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/domain/projectassistant.MaxAttachmentsPerMessage"
+      "internal/domain/projectassistant.MaxAutomationBacklog"
     ]
   },
   {
@@ -1223,7 +1223,7 @@
     "Name": "bots.background_threads",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 3,
+    "Limit": 6,
     "WarnAt": 0,
     "AtLimit": "coalesce",
     "Deviation": "",
@@ -2260,46 +2260,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.inputs_per_bot",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 128,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "person",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/projectassistant.MaxInputsPerBot"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "bots.inputs_per_message",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 4,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "person",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/projectassistant.MaxInputsPerMessage"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "bots.instruction_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2436,6 +2396,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotManagerPending"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.mcp_write_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "disconnect",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotWriteMilliseconds"
     ]
   },
   {
@@ -2661,46 +2641,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.pending_turns",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 16,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/projectassistant.MaxPendingTurns"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "bots.perm_rows",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 8,
-    "WarnAt": 0,
-    "AtLimit": "disconnect",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.MaximumBotPermissions"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "bots.permission_action_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -2757,26 +2697,6 @@
     "Sources": [
       "internal/domain/capacity.MaximumBotProcesses",
       "internal/app/projectassistant.NewRuntime:chan(o.Limits.MaxProcesses)"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "bots.prompt_ms",
-    "Class": "buffer",
-    "Unit": "milliseconds",
-    "Limit": 600000,
-    "WarnAt": 0,
-    "AtLimit": "disconnect",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.MaximumBotPromptMilliseconds"
     ]
   },
   {
@@ -3864,10 +3784,10 @@
   },
   {
     "Register": "daemon",
-    "Name": "bots.write_ms",
+    "Name": "bots.turn_control_window_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
-    "Limit": 2000,
+    "Limit": 600000,
     "WarnAt": 0,
     "AtLimit": "disconnect",
     "Deviation": "",
@@ -3879,7 +3799,27 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/domain/capacity.MaximumBotWriteMilliseconds"
+      "internal/domain/capacity.MaximumBotControlWindowMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.user_message_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 524288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxUserMessageBytes"
     ]
   },
   {

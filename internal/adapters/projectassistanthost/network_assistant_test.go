@@ -50,7 +50,7 @@ func testAssistantSignedHTTPNativeACP(t *testing.T, closeFault bool) {
 	f.o.Provider = func() (app.Provider, error) {
 		provider, err := acp.NewProvider(acp.ProviderOptions{
 			Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestNetworkNativePeer$"}, Environment: []string{"CLAWDLINE_NETWORK_FIXTURE=b", "CLAWDLINE_NETWORK_RECEIPT=" + diagnostics, "GORACE=atexit_sleep_ms=0"}}},
-			Limits:         acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: f.o.Limits.CleanupTimeout, RPCTimeout: 15 * time.Second, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond},
+			Limits:         acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: f.o.Limits.CleanupTimeout, RPCTimeout: 15 * time.Second, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond},
 			Verify: func(_ context.Context, bot pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 				return pa.Capabilities{Key: bot.Key, Project: bot.Project, Agent: bot.Agent, CLIVersion: "synthetic", AdapterVersion: "synthetic", Evidence: "local ACP only", ReadOnlyEnforced: true, NativeMemory: pa.NativeMemoryDisabled, NativeMemoryVerified: true, SendMessage: true}, nil
 			},

@@ -289,6 +289,7 @@ func TestRosterSSESubscribeBeforeSnapshotAndReconnectConverges(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := json.Marshal(seen[b.Key].Summary)
+	want.Items[0].Bot.BackgroundThreads = want.Items[0].Bot.BackgroundConcurrency()
 	expected, _ := json.Marshal(want.Items[0])
 	var actual pa.BotSummary
 	_ = json.Unmarshal(got, &actual)

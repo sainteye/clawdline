@@ -154,7 +154,7 @@ func fixtureGit(t *testing.T, dir string, args ...string) string {
 }
 func newHostFixture(t *testing.T) *hostFixture {
 	t.Helper()
-	f := &hostFixture{scope: pa.ProjectScope{MachineID: "source", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}, p: &fixtureProvider{sent: make(chan app.PromptRequest, pa.MaxPendingTurns), sessions: make(chan *fixtureSession, pa.MaxPendingTurns)}}
+	f := &hostFixture{scope: pa.ProjectScope{MachineID: "source", ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}, p: &fixtureProvider{sent: make(chan app.PromptRequest, pa.MaxAutomationBacklog), sessions: make(chan *fixtureSession, pa.MaxAutomationBacklog)}}
 	var e error
 	f.st, e = hoststore.Open(t.TempDir())
 	if e != nil {

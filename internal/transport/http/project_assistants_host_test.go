@@ -734,7 +734,7 @@ func TestProjectAssistantServerUnreadableInstalledSchemaIsNotKnownZero(t *testin
 	if err := f.s.StartProjectAssistants(context.Background()); pa.Code(err) != pa.Unsupported {
 		t.Fatal("unknown schema accepted", err)
 	}
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsPendingTurns} {
+	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsAutomationBacklog} {
 		if got := f.s.projectAssistantCapacityMeasures()[name](); got.Known {
 			t.Fatalf("%s reported known zero after failed installed schema inspection: %+v", name, got)
 		}
@@ -751,7 +751,7 @@ func TestProjectAssistantServerExistingHostInspectionFailureRetainsUnknownUntilF
 	if _, err := f.s.projectAssistantFeature(context.Background()); pa.Code(err) != pa.Unsupported {
 		t.Fatal("existing Host accepted changed schema", err)
 	}
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsPendingTurns} {
+	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsAutomationBacklog} {
 		if got := f.s.projectAssistantCapacityMeasures()[name](); got.Known {
 			t.Errorf("%s reported known zero after existing Host inspection failed: %+v", name, got)
 		}

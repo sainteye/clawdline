@@ -54,11 +54,11 @@ export interface HeldOutcome {
   restored?: boolean
 }
 /**
- * A held text larger than the source accepts (`bots.message_bytes`,
- * pa.MaxMessageBytes) is not journaled. Retained history does not consume
+ * A held text larger than the source transcript budget
+ * (pa.MaxUserMessageBytes) is not journaled. Retained history does not consume
  * the source's pending execution slots.
  */
-export const MAX_HELD_TEXT_BYTES = 32 << 10
+export const MAX_HELD_TEXT_BYTES = 512 << 10
 /** Why this device cannot vouch for a held send after a reload. */
 export type HeldJournalProblem = "unsaved" | "unreadable"
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">
@@ -77,9 +77,9 @@ function decodeOutcome(v: unknown, draftKey: string): HeldOutcome | null {
   if (!Array.isArray(owner) || owner[2] !== c.key.machine_id || owner[3] !== c.key.bot_id) return null
   if (!f || !f.key || !sameBot(f.key, c.key) || !f.project || !str(f.conversation_id) || !str(f.binding_id) || typeof f.generation !== "number") return null
   if (typeof i.text !== "string" || bytes(i.text) > MAX_HELD_TEXT_BYTES || !str(i.quote_message_id) || "images" in i) return null
-  if (i.upload_ids !== undefined && (!Array.isArray(i.upload_ids) || i.upload_ids.length > 4 || !i.upload_ids.every((x: unknown) => str(x)))) return null
-  if (o.files !== undefined && (!Array.isArray(o.files) || o.files.length > 4 || !o.files.every((x: unknown) => str(x)))) return null
-  if (o.pictures !== undefined && (!Number.isInteger(o.pictures) || o.pictures < 0 || o.pictures > 4)) return null
+  if (i.upload_ids !== undefined && (!Array.isArray(i.upload_ids) || !i.upload_ids.every((x: unknown) => str(x)))) return null
+  if (o.files !== undefined && (!Array.isArray(o.files) || !o.files.every((x: unknown) => str(x)))) return null
+  if (o.pictures !== undefined && (!Number.isInteger(o.pictures) || o.pictures < 0)) return null
   const r = o.receipt
   if (r !== null) {
     if (!r || typeof r !== "object" || !r.command || r.command.idempotency_key !== c.idempotency_key) return null

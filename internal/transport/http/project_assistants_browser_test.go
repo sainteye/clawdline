@@ -547,7 +547,7 @@ func TestBotBrowserRunsEndToEndThroughACPAndOwnedMCP(t *testing.T) {
 	resolver := collaborationProjects{directory: f.project, scopes: map[string]pa.ProjectScope{project.ProjectID: project}}
 	provider := func() (app.Provider, error) {
 		config := acp.Configuration{Executable: exe, Arguments: []string{"-test.run=^TestBotBrowserACPSubprocess$"}, Environment: []string{"CLAWDLINE_BROWSER_PEER_LOG=" + logPath, "GORACE=atexit_sleep_ms=0"}}
-		p, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: config}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 20 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		p, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: config}, Limits: acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 20 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			// The owned MCP descriptor is offered only to an adapter verified
 			// to carry it, as the collaboration fixture declares.
 			c := paServerCaps(b)

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13802,
-  "riskKeys": 5903,
-  "nonRiskCount": 7899,
+  "englishContentKeys": 13798,
+  "riskKeys": 5896,
+  "nonRiskCount": 7902,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 705,
+      "count": 706,
       "sources": [
         null
       ],
@@ -628,7 +628,8 @@
         "capacityRow.bots.artifact_bytes.what",
         "capacityRow.bots.artifact_title_bytes.what",
         "capacityRow.bots.attachment_bytes.what",
-        "capacityRow.bots.attachments_per_message.what",
+        "capacityRow.bots.automation_backlog.full",
+        "capacityRow.bots.automation_backlog.what",
         "capacityRow.bots.background_threads.full",
         "capacityRow.bots.background_threads.what",
         "capacityRow.bots.background_waiting.what",
@@ -676,8 +677,6 @@
         "capacityRow.bots.input_bytes.what",
         "capacityRow.bots.input_chunk_bytes.full",
         "capacityRow.bots.input_chunk_bytes.what",
-        "capacityRow.bots.inputs_per_bot.what",
-        "capacityRow.bots.inputs_per_message.what",
         "capacityRow.bots.instruction_bytes.what",
         "capacityRow.bots.login_profiles.what",
         "capacityRow.bots.manager_approval_seconds.what",
@@ -688,13 +687,13 @@
         "capacityRow.bots.memory_preview.full",
         "capacityRow.bots.memory_search_results.full",
         "capacityRow.bots.memory_search_results.what",
+        "capacityRow.bots.message_bytes.what",
         "capacityRow.bots.name_runes.what",
         "capacityRow.bots.output_bytes.what",
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
         "capacityRow.bots.processes.what",
-        "capacityRow.bots.prompt_ms.what",
         "capacityRow.bots.reaction_emoji_bytes.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.review_hops.what",
@@ -745,6 +744,8 @@
         "capacityRow.bots.tower_floor_project_bytes.what",
         "capacityRow.bots.tower_floors.what",
         "capacityRow.bots.tower_zone_shown.what",
+        "capacityRow.bots.turn_control_window_ms.what",
+        "capacityRow.bots.user_message_bytes.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -6139,7 +6140,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 509,
+      "count": 511,
       "sources": [
         null
       ],
@@ -6168,6 +6169,7 @@
         "projectAssistants.backgroundBack",
         "projectAssistants.backgroundBrief",
         "projectAssistants.backgroundCompose",
+        "projectAssistants.backgroundConcurrency",
         "projectAssistants.backgroundFree",
         "projectAssistants.backgroundLabel",
         "projectAssistants.backgroundPermission",
@@ -6410,6 +6412,7 @@
         "projectAssistants.project",
         "projectAssistants.projectsFailed",
         "projectAssistants.projectsLoading",
+        "projectAssistants.queueLimited",
         "projectAssistants.queued",
         "projectAssistants.quote",
         "projectAssistants.quoteMissing",

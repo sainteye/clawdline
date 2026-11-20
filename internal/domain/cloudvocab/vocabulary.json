@@ -3238,6 +3238,14 @@
                 ],
                 "closed": true
               },
+              "background_threads": {
+                "type": "integer",
+                "min": 1,
+                "max": 6,
+                "copies": {
+                  "max": "projectassistant.MaxBackgroundThreads"
+                }
+              },
               "instructions": {
                 "type": "string",
                 "max_bytes": 16384,
@@ -7555,12 +7563,12 @@
           "text": {
             "type": "string",
             "non_empty": true,
-            "max_bytes": 32768,
+            "max_bytes": 524288,
             "checks": [
               "not_blank"
             ],
             "copies": {
-              "max_bytes": "projectassistant.MaxMessageBytes"
+              "max_bytes": "projectassistant.MaxUserMessageBytes"
             }
           },
           "quote_message_id": {
@@ -7895,9 +7903,9 @@
           },
           "text": {
             "type": "string",
-            "max_bytes": 32768,
+            "max_bytes": 524288,
             "copies": {
-              "max_bytes": "projectassistant.MaxMessageBytes"
+              "max_bytes": "projectassistant.MaxUserMessageBytes"
             }
           },
           "quote_message_id": {
@@ -7906,10 +7914,6 @@
           "images": {
             "type": "list",
             "min_items": 1,
-            "max_items": 4,
-            "copies": {
-              "max_items": "projectassistant.MaxAttachmentsPerMessage"
-            },
             "items": {
               "type": "string",
               "non_empty": true
@@ -7918,10 +7922,6 @@
           "upload_ids": {
             "type": "list",
             "min_items": 1,
-            "max_items": 4,
-            "copies": {
-              "max_items": "projectassistant.MaxInputsPerMessage"
-            },
             "items": {
               "type": "string",
               "non_empty": true
@@ -8427,9 +8427,9 @@
           },
           "text": {
             "type": "string",
-            "max_bytes": 32768,
+            "max_bytes": 524288,
             "copies": {
-              "max_bytes": "projectassistant.MaxMessageBytes"
+              "max_bytes": "projectassistant.MaxUserMessageBytes"
             }
           },
           "quote_message_id": {
@@ -8438,10 +8438,6 @@
           "images": {
             "type": "list",
             "min_items": 1,
-            "max_items": 4,
-            "copies": {
-              "max_items": "projectassistant.MaxAttachmentsPerMessage"
-            },
             "items": {
               "type": "string",
               "non_empty": true
@@ -8904,6 +8900,14 @@
                   "shape"
                 ],
                 "closed": true
+              },
+              "background_threads": {
+                "type": "integer",
+                "min": 1,
+                "max": 6,
+                "copies": {
+                  "max": "projectassistant.MaxBackgroundThreads"
+                }
               },
               "instructions": {
                 "type": "string",

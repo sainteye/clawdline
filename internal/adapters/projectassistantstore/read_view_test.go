@@ -58,7 +58,7 @@ func viewFixture(t *testing.T, messages, works int, controls bool) (app.Export, 
 	e.Events, e.Receipts, e.Messages, e.Turns, e.Permissions, e.WorkLinks = nil, nil, nil, nil, nil, nil
 	for i := 1; i <= messages; i++ {
 		m := pa.Message{ID: fmt.Sprintf("m%03d", i), Fence: current, Seq: int64(i), Kind: pa.AssistantMessage, Text: fmt.Sprintf("message %03d", i), At: b.CreatedAt}
-		if i == 1 || controls && i <= 17+pa.MaxPendingTurns {
+		if i == 1 || controls && i <= 17+25 {
 			m.Kind, m.TurnID = pa.UserMessage, fmt.Sprintf("t%d", i)
 			state := pa.TurnSucceeded
 			if controls {
@@ -159,7 +159,7 @@ func TestReadViewTimelineAndAllControlsStayBounded(t *testing.T) {
 	seed(t, store, "other") // Another Bot owns the machine frontier, 602.
 	q := viewQuery(e.Bot)
 	v := readView(t, views, q)
-	if v.Head.EventFrontier != 602 || v.Head.UnknownTurnCount != 17 || v.Head.PendingPermissionCount != 101 || v.Head.TraceCategoryCount != 1 || len(v.Snapshot.PendingTurns) != pa.MaxPendingTurns || len(v.Snapshot.QueuedMessages) != pa.MaxPendingTurns || v.Snapshot.LastTurn != nil {
+	if v.Head.EventFrontier != 602 || v.Head.UnknownTurnCount != 17 || v.Head.PendingPermissionCount != 101 || v.Head.TraceCategoryCount != 1 || len(v.Snapshot.PendingTurns) != 25 || len(v.Snapshot.QueuedMessages) != 25 || v.Snapshot.LastTurn != nil {
 		t.Fatalf("mandatory controls/frontier: %+v %+v", v.Head, v.Snapshot)
 	}
 	seen := map[string]bool{}
@@ -356,17 +356,22 @@ func TestReadViewCandidateBytesAreOneSharedPrefixBudget(t *testing.T) {
 	}
 }
 
-func TestReadViewPendingOverflowIsNotUnknownOverflow(t *testing.T) {
+func TestReadViewLongQueueKeepsCountAndTranscriptWhenItCannotAllFit(t *testing.T) {
 	e, _, _ := viewFixture(t, 600, 0, true)
-	db, _, views, _ := restoreViews(t, e)
-	readView(t, views, viewQuery(e.Bot))
-	// Failure injection bypasses the old writer, which already rejects17
-	// counted pending turns. Unknown17+pending16 above is legal Restore data.
-	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns.t1.state','queued')`); err != nil {
-		t.Fatal(err)
+	// Add a large, valid message behind the running turn. The transport can
+	// keep showing the transcript and exact queue count when only a prefix fits.
+	e.Messages[18].Text = strings.Repeat("x", 12<<10)
+	_, _, views, _ := restoreViews(t, e)
+	q := viewQuery(e.Bot)
+	complete := readView(t, views, q)
+	if complete.Head.QueuedTurnCount != 24 || len(complete.Snapshot.QueuedMessages) != 25 {
+		t.Fatal("complete view rejected a queue over the former turn count")
 	}
-	_, err := views.Read(testContext, viewQuery(e.Bot))
-	requireCode(t, err, pa.CapacityFull)
+	q.ByteLimit = 20 << 10
+	bounded := readView(t, views, q)
+	if bounded.Head.QueuedTurnCount != 24 || len(bounded.Snapshot.PendingTurns) != 1 || bounded.Snapshot.PendingTurns[0].State != pa.TurnRunning || len(bounded.Items) == 0 {
+		t.Fatalf("bounded view hid queue controls or recent chat: %+v", bounded)
+	}
 }
 
 func TestReadViewEventsUseLastIncludedSequence(t *testing.T) {
@@ -640,7 +645,7 @@ func TestReadViewGiantTraceAndCapturedInstructionsStayOutOfMandatoryState(t *tes
 	_, _, views, _ := restoreViews(t, e)
 	q := viewQuery(e.Bot)
 	v := readView(t, views, q)
-	if len(v.Snapshot.PendingTurns) != 16 || v.Head.TraceCategoryCount != 1 {
+	if len(v.Snapshot.PendingTurns) != 23 || v.Head.TraceCategoryCount != 1 {
 		t.Fatal("giant optional objects broke mandatory summaries")
 	}
 	q.Request.Mode, q.Request.SourceEpoch = pa.ReadViewTraces, v.SourceEpoch

@@ -254,6 +254,12 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 	if err := ValidateFallbackSteps(FallbackStep{Agent: bot.Agent, LoginProfile: bot.LoginProfile}, bot.FallbackSteps.Steps()); err != nil {
 		return bot, err
 	}
+	if in.BackgroundThreads != 0 {
+		if in.BackgroundThreads < 1 || in.BackgroundThreads > MaxBackgroundThreads {
+			return previous, fail(Invalid, "background_threads")
+		}
+		bot.BackgroundThreads = in.BackgroundThreads
+	}
 	if in.ManageTeam != nil {
 		bot.ManageTeam = *in.ManageTeam
 	}
@@ -285,19 +291,23 @@ func ValidateMessage(text string) error {
 	return nil
 }
 
-// ValidateSend admits a message with text, pictures or both.
-func ValidateSend(text string, attachments []Attachment) error {
-	if len(attachments) == 0 {
-		return ValidateMessage(text)
-	}
-	if !utf8.ValidString(text) {
+// ValidateUserMessage admits ordinary chat text within the transcript wire budget.
+func ValidateUserMessage(text string) error { return validateUserText(text, true) }
+
+func validateUserText(text string, required bool) error {
+	if !utf8.ValidString(text) || required && strings.TrimSpace(text) == "" {
 		return fail(Invalid, "text")
 	}
-	if len(text) > MaxMessageBytes {
+	if len(text) > MaxUserMessageBytes {
 		return fail(CapacityFull, "text")
 	}
-	if len(attachments) > MaxAttachmentsPerMessage {
-		return fail(CapacityFull, "attachments")
+	return nil
+}
+
+// ValidateSend admits a message with text, pictures or both.
+func ValidateSend(text string, attachments []Attachment) error {
+	if err := validateUserText(text, len(attachments) == 0); err != nil {
+		return err
 	}
 	for _, a := range attachments {
 		if !attachmentID.MatchString(a.ID) || a.Bytes <= 0 || a.Bytes > MaxAttachmentBytes {
@@ -314,15 +324,6 @@ func ValidateSend(text string, attachments []Attachment) error {
 
 var attachmentID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-func CheckAdmission(pending int) error {
-	if pending < 0 {
-		return fail(Invalid, "pending")
-	}
-	if pending >= MaxPendingTurns {
-		return fail(CapacityFull, "pending_turns")
-	}
-	return nil
-}
 func CheckPage(size int, events bool) error {
 	bound := MaxPageRows
 	if events {

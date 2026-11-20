@@ -103,7 +103,7 @@ func (r *Engine) QualifyNativeMaintenance(ctx context.Context, intent NativeMain
 		r.mu.Unlock()
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, r.o.Limits.PromptTimeout)
+	ctx, cancel := context.WithTimeout(ctx, r.o.Limits.ControlWindow())
 	stop := context.AfterFunc(a.lifetime, cancel)
 	defer stop()
 	defer cancel()

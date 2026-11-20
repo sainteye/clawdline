@@ -16,7 +16,7 @@ func paWireReadHead(v app.ReadViewHead) contract.ProjectAssistantReadViewHead {
 	return contract.ProjectAssistantReadViewHead{BackgroundTasks: paWireBackgroundTasks(v.BackgroundTasks), Key: paWireBotKey(v.Key), Project: paWireProjectScope(v.Project),
 		Conversation: paWireConversation(v.Conversation), CurrentFence: paWireFence(v.CurrentFence),
 		BotVersion: v.BotVersion, MemoryRevision: v.MemoryRevision, EventFrontier: v.EventFrontier,
-		UnknownTurnCount: v.UnknownTurnCount, PendingPermissionCount: v.PendingPermissionCount, TraceCategoryCount: v.TraceCategoryCount}
+		UnknownTurnCount: v.UnknownTurnCount, QueuedTurnCount: v.QueuedTurnCount, PendingPermissionCount: v.PendingPermissionCount, TraceCategoryCount: v.TraceCategoryCount}
 }
 
 func paWireBackgroundTasks(tasks []pa.BackgroundTaskSummary) []contract.ProjectAssistantBackgroundTaskSummary {

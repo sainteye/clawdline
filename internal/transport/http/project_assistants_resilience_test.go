@@ -78,7 +78,7 @@ func TestProjectAssistantServerRevocationDuringExecutionPreparation(t *testing.T
 	}
 }
 
-func TestProjectAssistantServerCapacityAndReconnectDoNotRepeatEffects(t *testing.T) {
+func TestProjectAssistantServerLongQueueAndReconnectDoNotRepeatEffects(t *testing.T) {
 	f := newPAServerFixture(t, true)
 	var opens atomic.Int32
 	session := &paServerSession{sent: make(chan struct{})}
@@ -101,7 +101,8 @@ func TestProjectAssistantServerCapacityAndReconnectDoNotRepeatEffects(t *testing
 	case <-time.After(3 * time.Second):
 		t.Fatal("no prompt")
 	}
-	for i := 1; i < pa.MaxPendingTurns; i++ {
+	const queued = 25
+	for i := 1; i <= queued; i++ {
 		paServerOK(t, f.send(t, f.local, fmt.Sprintf("queued-%d", i)))
 	}
 	st := featurestore.New(f.s.store.ProjectAssistantDatabase())
@@ -109,15 +110,14 @@ func TestProjectAssistantServerCapacityAndReconnectDoNotRepeatEffects(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	paAssertHTTPFailure(t, f.send(t, f.local, "overflow"), 429, pa.CapacityFull)
-	// A lost HTTP response can be retried at capacity, without another prompt.
+	// A lost HTTP response can be retried with a long queue without another prompt.
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/messages", f.local, first))
 	conflict := first
 	conflict.Text = "Different payload"
 	paAssertHTTPFailure(t, f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/messages", f.local, conflict), 409, pa.IdempotencyConflict)
 	after, err := st.Export(context.Background(), f.key)
 	if err != nil || !reflect.DeepEqual(before, after) || opens.Load() != 1 {
-		t.Fatalf("capacity/reconnect mutated facts or opened another process: opens=%d error=%v", opens.Load(), err)
+		t.Fatalf("reconnect mutated facts or opened another process: opens=%d error=%v", opens.Load(), err)
 	}
 	paServerOK(t, f.request(t, "POST", "/v1/settings/project-assistants", f.local, `{"enabled":false}`))
 	after, err = st.Export(context.Background(), f.key)
@@ -133,7 +133,7 @@ func TestProjectAssistantServerCapacityAndReconnectDoNotRepeatEffects(t *testing
 			cancelled++
 		}
 	}
-	if unknown != 1 || cancelled != pa.MaxPendingTurns-1 || opens.Load() != 1 || session.closes.Load() != 1 {
+	if unknown != 1 || cancelled != queued || opens.Load() != 1 || session.closes.Load() != 1 {
 		t.Fatalf("disable: unknown=%d cancelled=%d opens=%d closes=%d", unknown, cancelled, opens.Load(), session.closes.Load())
 	}
 }

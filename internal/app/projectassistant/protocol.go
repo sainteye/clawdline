@@ -6,16 +6,28 @@ import (
 
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
 	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 // RuntimeLimits are host-owned operational bounds, deliberately without defaults.
 // The host registers its selected values in domain/capacity.
 type RuntimeLimits struct {
-	MaxBots        int
-	MaxProcesses   int
+	MaxBots      int
+	MaxProcesses int
+	// PromptTimeout is optional for hosts that explicitly bound ordinary turns.
+	// Production leaves it zero; scheduled routines carry their own deadline.
 	PromptTimeout  time.Duration
 	CleanupTimeout time.Duration
+}
+
+// ControlWindow bounds maintenance and issued work authority independently of
+// a production prompt. Embedded hosts may request a shorter operation budget.
+func (l RuntimeLimits) ControlWindow() time.Duration {
+	if l.PromptTimeout > 0 {
+		return l.PromptTimeout
+	}
+	return time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond
 }
 
 type Provider interface {

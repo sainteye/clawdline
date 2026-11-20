@@ -346,7 +346,7 @@ func TestHostNativeMaintenanceUsesScriptedACP(t *testing.T) {
 			Environment: []string{"CLAWDLINE_SYNTHETIC_MAINTENANCE_PEER=" + frames},
 		}},
 		Limits: acp.Limits{
-			RPCPending: capacity.MaximumBotRPCPending, IncomingPermissions: capacity.MaximumBotPermissions,
+			RPCPending: capacity.MaximumBotRPCPending,
 			FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotProcessCensusBytes,
 			StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants,
 			WriteTimeout: time.Second, CleanupTimeout: time.Second, RPCTimeout: time.Second,

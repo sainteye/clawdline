@@ -13,7 +13,7 @@ import (
 )
 
 func limits() acp.Limits {
-	return acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20,
+	return acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20,
 		CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second,
 		CleanupTimeout: 5 * time.Second, RPCTimeout: 5 * time.Second, DescendantPoll: 10 * time.Millisecond}
 }

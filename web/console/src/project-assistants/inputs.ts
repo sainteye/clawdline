@@ -6,7 +6,6 @@ import {command,failure,errorCode} from "./client.ts"
 import {readSource} from "./read-views.ts"
 
 /** Same registered limits as the source. Selection keeps File objects, not bytes. */
-export const MAX_INPUTS = 4
 export const MAX_INPUT_BYTES = 100*1024*1024
 const CHUNK = 384*1024
 export interface DraftInput {file:File;id:string;metadata?:W.ProjectAssistantInputFile;fence?:string}
@@ -20,7 +19,7 @@ const digest=async(data:ArrayBuffer)=>Array.from(new Uint8Array(await crypto.sub
 /** Explicit retry starts at zero with the same IDs; the source compares bytes.
  * Upload failure never calls send, and no content goes into an offline mailbox. */
 export async function uploadInputs(source:SourceClient,fence:W.ProjectAssistantFence,files:readonly DraftInput[],signal:AbortSignal,progress:(n:number,total:number)=>void,revision=0):Promise<string[]> {
-  if(!source.upload||!source.canInputs?.()||files.length>MAX_INPUTS)throw failure("pa_unsupported")
+  if(!source.upload||!source.canInputs?.())throw failure("pa_unsupported")
   const check=()=>{if(signal.aborted)throw new DOMException("Aborted","AbortError");if(source.current?.()===false)throw failure("pa_revoked")}
   const total=files.reduce((n,f)=>n+f.file.size,0);let sent=0
   for(const draft of files){

@@ -152,7 +152,7 @@ func (s *Store) StartBackgroundTask(ctx context.Context, key pa.BotKey, now time
 		WHERE machine=? AND bot=? AND state='active'`, key.MachineID, key.BotID).Scan(&active); err != nil {
 		return pa.BotKey{}, err
 	}
-	if active >= pa.MaxBackgroundThreads {
+	if active >= parent.Bot.BackgroundConcurrency() {
 		return pa.BotKey{}, nil
 	}
 	var id string
@@ -253,26 +253,29 @@ func newBackgroundWorker(parent aggregate, task pa.BackgroundTask, now time.Time
 	}
 }
 
-func (a aggregate) backgroundNeedsInput() bool {
-	return a.BackgroundOwner != nil && a.Turns[a.Conversation.ActiveTurnID].State == pa.TurnWaitingPermission
+func (a aggregate) backgroundTurnState() pa.TurnState {
+	if a.BackgroundOwner == nil {
+		return ""
+	}
+	return a.Turns[a.Conversation.ActiveTurnID].State
 }
 
 // projectBackgroundTurn keeps queue admission and final publication in the
 // worker's transaction. A terminal turn with queued input leaves work active.
-func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation, wasWaiting bool) error {
+func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.Mutation, previousTurnState pa.TurnState) error {
 	if a.BackgroundOwner == nil {
 		return nil
 	}
 	owner := *a.BackgroundOwner
-	attentionChanged := wasWaiting != a.backgroundNeedsInput()
-	notifyAttention := func() error {
-		if attentionChanged {
+	activityChanged := previousTurnState != a.backgroundTurnState()
+	notifyActivity := func() error {
+		if activityChanged {
 			return noteBackgroundOwner(ctx, tx, owner)
 		}
 		return nil
 	}
 	if m.Turn == nil {
-		return notifyAttention()
+		return notifyActivity()
 	}
 	id := a.Conversation.ID
 	match := []any{owner.MachineID, owner.BotID, id, a.Bot.Key.BotID}
@@ -289,17 +292,17 @@ func projectBackgroundTurn(ctx context.Context, tx *sql.Tx, a aggregate, m app.M
 			return err
 		}
 		if n == 0 {
-			return notifyAttention()
+			return notifyActivity()
 		}
 		return noteBackgroundOwner(ctx, tx, owner)
 	case pa.TurnSucceeded, pa.TurnFailed, pa.TurnCancelled, pa.TurnUnknown:
 	default:
-		return notifyAttention()
+		return notifyActivity()
 	}
 	for _, turn := range a.Turns {
 		switch turn.State {
 		case pa.TurnQueued, pa.TurnAccepted, pa.TurnRunning, pa.TurnWaitingPermission:
-			return notifyAttention()
+			return notifyActivity()
 		}
 	}
 	state := m.Turn.State
@@ -446,8 +449,13 @@ func backgroundTaskSummaries(ctx context.Context, tx *sql.Tx, key pa.BotKey) ([]
 		if worker != "" {
 			task.Worker = &pa.BotKey{MachineID: key.MachineID, BotID: worker}
 		}
-		if task.State == "active" && active.String == string(pa.TurnWaitingPermission) {
-			task.State = "waiting_permission"
+		if task.State == "active" {
+			switch active.String {
+			case "":
+				task.State = "waiting"
+			case string(pa.TurnWaitingPermission):
+				task.State = "waiting_permission"
+			}
 		}
 		if task.State == "active" && traceJSON.Valid {
 			var trace pa.Trace

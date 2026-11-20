@@ -198,7 +198,7 @@ func (r *Engine) prepareFollowUp(f pa.Fence, turnID string, q RoutineRequest, cm
 		return Mutation{}, runtimeFailure(pa.CapacityFull, "follow_up_chain")
 	}
 	now := r.o.Clock()
-	d := pa.Routine{ID: r.o.ID(), Key: f.Key, Project: f.Project, ConversationID: f.ConversationID, Name: note, Instruction: note, TimeoutSeconds: int64(r.o.Limits.PromptTimeout / time.Second), Enabled: true, Version: 1, FollowUp: true, FollowUpChain: chain, MemoryRevision: x.Memory.Revision}
+	d := pa.Routine{ID: r.o.ID(), Key: f.Key, Project: f.Project, ConversationID: f.ConversationID, Name: note, Instruction: note, TimeoutSeconds: int64(r.o.Limits.ControlWindow() / time.Second), Enabled: true, Version: 1, FollowUp: true, FollowUpChain: chain, MemoryRevision: x.Memory.Revision}
 	// The displayed name is metadata; the complete bounded note remains instruction.
 	if len(d.Name) > pa.MaxRoutineNameBytes {
 		d.Name = "Follow-up / 後續追蹤"
@@ -325,7 +325,7 @@ func (r *Engine) TickRoutines(ctx context.Context, key pa.BotKey) error {
 			return nil
 		}
 	}
-	if len(pending) >= pa.MaxPendingTurns {
+	if len(pending) >= pa.MaxAutomationBacklog {
 		return nil
 	}
 	for _, run := range x.RoutineRuns {

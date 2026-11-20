@@ -142,23 +142,23 @@ measurement wiring, translated notices and its selected integration values.
 | --- | ---: | --- |
 | RuntimeLimits.MaxBots | 64 | Refuse a new active actor before durable acceptance; idle actors are reclaimed. This is not the saved Bot count. |
 | RuntimeLimits.MaxProcesses | 4 | Keep accepted turns durably queued; wait cancellably. |
-| RuntimeLimits.PromptTimeout | 10 minutes | Default for ordinary chat turns. A durable background worker has no total turn deadline. A routine uses its configured deadline. When a deadline expires, retain unknown external effect without replaying. |
+| Ordinary chat and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Scheduled routines time their execution after acquiring a process slot. |
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
-| Limits.RPCPending | 32 | Refuse additional outgoing RPCs with typed capacity. |
-| Limits.IncomingPermissions | 8 | Fail the transport on overload; retain unknown effect. |
+| Limits.RPCPending | 32 | Bound concurrent owned HTTP tool requests. Native protocol RPCs do not use this pool. |
+| Native permission requests | No fixed local count ceiling | Each offer is scoped to its live turn and must be resolved under its permission policy. |
 | Native ACP notifications | No fixed local count ceiling | Ordered delivery follows Codync; load replay and prompt completion retain ordering barriers. |
 | Limits.FrameBytes | 1 MiB | Owned MCP HTTP inputs and adapter metadata only; native ACP input/output lines have no local byte ceiling. |
 | Limits.CaptureBytes | 1 MiB | Existing process-identity census budget only; native reply capture has no local byte ceiling. |
 | Limits.StderrBytes | 64 KiB | Retain the first bounded bytes; continue draining without unbounded memory. |
 | Limits.OwnedDescendants | 256 | Stop and surface typed capacity/unknown if the owned process census exceeds its budget. |
-| Limits.WriteTimeout | 2 seconds | A lock/deadline/partial-write failure is typed unknown; do not retry the frame. |
+| Native pipe writes | Caller cancellation | Wait cancellably. A write that might have transmitted a partial frame closes the transport and is never replayed. Owned HTTP writes and native control or cleanup calls have their own budgets. |
 | Limits.CleanupTimeout | 5 seconds | Bound native child cleanup and inventory commands. |
 | Limits.RPCTimeout | 120 seconds | Control RPC waits stay bounded. Native permissions follow the prompt lifetime, including for background work. A prompt response waits on its turn context. Stop, shutdown and revocation still cancel that context, and native termination and bounded cleanup still apply. |
 | Limits.DescendantPoll | 50 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. |
 
-Pending turns and person-visible message size use the existing domain limits
-(`MaxPendingTurns`, `MaxMessageBytes`), not a second local definition. Durations
-are standard `time.Duration`. Prompt completion uses the runtime turn context
+Person-initiated sends queue durably without a row ceiling. The chat snapshot
+shows the prefix of the queue that fits its transport budget. Automated producers
+remain paced to leave room for a person to chat. Prompt completion uses the runtime turn context
 directly, so the shorter control RPC deadline cannot end a still-running turn.
 `Engine.Usage` and `Client.Usage` expose counts for host measurements without
 contents. A busy actor returns `Known=false` instead of delaying diagnostics.

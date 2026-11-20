@@ -15,18 +15,17 @@ const (
 	MaximumBotActors           = 64
 	MaximumBotProcesses        = 4
 	MaximumBotRPCPending       = 32
-	MaximumBotPermissions      = 8
 	MaximumBotFrameBytes       = 1048576
 	// Existing process-identity inventory budget; never limits native ACP text.
-	MaximumBotProcessCensusBytes  = 1048576
-	MaximumBotStderrBytes         = 65536
-	MaximumBotWriteMilliseconds   = 2000
-	MaximumBotCleanupMilliseconds = 5000
-	MaximumBotRPCMilliseconds     = 120000
-	MaximumBotPromptMilliseconds  = 600000
-	MaximumBotSurveyMilliseconds  = 50
-	MaximumBotChatGapMilliseconds = 3600000
-	MaximumBotRefreshMilliseconds = 3000
+	MaximumBotProcessCensusBytes        = 1048576
+	MaximumBotStderrBytes               = 65536
+	MaximumBotWriteMilliseconds         = 2000
+	MaximumBotCleanupMilliseconds       = 5000
+	MaximumBotRPCMilliseconds           = 120000
+	MaximumBotControlWindowMilliseconds = 600000
+	MaximumBotSurveyMilliseconds        = 50
+	MaximumBotChatGapMilliseconds       = 3600000
+	MaximumBotRefreshMilliseconds       = 3000
 	// Live rows and removal revisions retained by one browser source.
 	MaximumBotRosterClientRows = 1000
 	// The longest isolated work one Bot dispatch may start.
@@ -155,8 +154,6 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsRosterClientRows, Class: Buffer, Unit: Rows, Limit: MaximumBotRosterClientRows, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotRosterClientRows"}},
 		{Name: BotsInputBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputBytes"}},
 		{Name: BotsInputChunkBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxInputChunkBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputChunkBytes"}},
-		{Name: BotsInputsPerMessage, Class: Buffer, Unit: Rows, Limit: pa.MaxInputsPerMessage, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputsPerMessage"}},
-		{Name: BotsInputsPerBot, Class: Buffer, Unit: Rows, Limit: pa.MaxInputsPerBot, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxInputsPerBot"}},
 		{Name: BotsRosterSubscribers, Class: Buffer, Unit: Rows, Limit: pa.MaxRosterSubscribers, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterSubscribers"}},
 		{Name: BotsRosterWakeups, Class: Buffer, Unit: Rows, Limit: pa.MaxRosterWakeups, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterWakeups", "internal/adapters/projectassistantstore.(*Store).SubscribeRoster:chan(pa.MaxRosterWakeups)"}},
 		{Name: BotsRosterLifetime, Class: Buffer, Unit: Seconds, Limit: pa.MaxRosterLifetimeSeconds, AtLimit: Disconnect, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRosterLifetimeSeconds"}},
@@ -176,9 +173,12 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsMessageBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxMessageBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxMessageBytes"}},
-		{Name: BotsPendingTurns, Class: Buffer, Unit: Rows, Limit: pa.MaxPendingTurns, AtLimit: Refuse,
+		{Name: BotsUserMessageBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxUserMessageBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/projectassistant.MaxPendingTurns"}},
+			Sources: []string{"internal/domain/projectassistant.MaxUserMessageBytes"}},
+		{Name: BotsAutomationBacklog, Class: Buffer, Unit: Rows, Limit: pa.MaxAutomationBacklog, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxAutomationBacklog"}},
 		{Name: BotsPageRows, Class: Buffer, Unit: Rows, Limit: pa.MaxPageRows, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxPageRows"}},
@@ -194,9 +194,6 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsRPCPending, Class: Buffer, Unit: Rows, Limit: MaximumBotRPCPending, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCPending", "internal/adapters/projectassistantacp.newClient:chan(l.RPCPending)"}},
-		{Name: BotsPermissions, Class: Buffer, Unit: Rows, Limit: MaximumBotPermissions, AtLimit: Disconnect,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotPermissions"}},
 		// This still bounds owned MCP HTTP/manifest IO, not native ACP lines.
 		{Name: BotsFrames, Class: Buffer, Unit: Bytes, Limit: MaximumBotFrameBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
@@ -205,7 +202,7 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsStderr, Class: Buffer, Unit: Bytes, Limit: MaximumBotStderrBytes, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotStderrBytes"}},
-		{Name: BotsWrite, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotWriteMilliseconds, AtLimit: Disconnect,
+		{Name: BotsMCPWrite, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotWriteMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotWriteMilliseconds"}},
 		{Name: BotsCleanup, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupMilliseconds, AtLimit: Disconnect,
@@ -214,9 +211,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsRPCDeadline, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotRPCMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCMilliseconds"}},
-		{Name: BotsPrompt, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotPromptMilliseconds, AtLimit: Disconnect,
+		{Name: BotsTurnControlWindow, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotControlWindowMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotPromptMilliseconds"}},
+			Sources: []string{"internal/domain/capacity.MaximumBotControlWindowMilliseconds"}},
 		{Name: BotsSurvey, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotSurveyMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotSurveyMilliseconds"}},
@@ -259,9 +256,6 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsMemorySearchResults, Class: Buffer, Unit: Rows, Limit: pa.MaxMemorySearchResults, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxMemorySearchResults"}},
-		{Name: BotsAttachmentsPerMessage, Class: Buffer, Unit: Rows, Limit: pa.MaxAttachmentsPerMessage, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/projectassistant.MaxAttachmentsPerMessage"}},
 		{Name: BotsAttachmentBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxAttachmentBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxAttachmentBytes"}},

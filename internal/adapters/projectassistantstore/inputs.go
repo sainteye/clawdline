@@ -149,25 +149,12 @@ func (s Inputs) Put(ctx context.Context, fence pa.Fence, file pa.InputFile, offs
 		if offset != 0 {
 			return 0, failure(pa.Invalid, "upload_offset")
 		}
-		entries, e := os.ReadDir(dir)
-		if e != nil {
-			return 0, e
-		}
-		n := 0
-		for _, entry := range entries {
-			if entry.IsDir() {
-				n++
-			}
-		}
-		if n >= pa.MaxInputsPerBot {
-			return 0, failure(pa.CapacityFull, "input_slots")
-		}
 		// Exclusive creation also refuses stale directories and symlinks.
-		if e = root.Mkdir(file.ID, 0700); e != nil {
+		if e := root.Mkdir(file.ID, 0700); e != nil {
 			return 0, failure(pa.Invalid, "upload_directory")
 		}
 		rec = inputRecord{File: file, Fence: fence, Owner: owner}
-		if e = s.save(root, rec); e != nil {
+		if e := s.save(root, rec); e != nil {
 			_ = root.Remove(file.ID)
 			return 0, e
 		}

@@ -264,7 +264,7 @@ func collaborationRealTCPMCPRequestAndReply(t *testing.T, maxActors int) {
 		for agent, role := range map[pa.Agent]string{pa.Codex: "A", pa.ClaudeCode: "B"} {
 			configs[agent] = acp.Configuration{Executable: exe, Arguments: []string{"-test.run=^TestCollaborationACPSubprocess$"}, Environment: []string{"CLAWDLINE_REVIEW_PEER=" + role, "CLAWDLINE_REVIEW_LOG=" + logPath, "GORACE=atexit_sleep_ms=0"}}
 		}
-		p, e := acp.NewProvider(acp.ProviderOptions{Configurations: configs, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		p, e := acp.NewProvider(acp.ProviderOptions{Configurations: configs, Limits: acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 15 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			c := paServerCaps(b)
 			c.SendMessage = true
 			return c, nil

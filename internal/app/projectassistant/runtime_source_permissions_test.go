@@ -203,28 +203,20 @@ func TestLostSourceAnswerCommitDoesNotDeliverOrReplayAChoice(t *testing.T) {
 	}
 }
 
-func TestSourceAndNativePermissionCardsShareTheExistingPendingBound(t *testing.T) {
+func TestSourceAndNativePermissionCardsCanCoexistPastEight(t *testing.T) {
 	f := newRuntimeFixture(t)
 	_, _ = f.submit(t, "synthetic", "one")
 	q := receivePrompt(t, f.provider)
-	var cancels []context.CancelFunc
-	var replies []<-chan sourceChoice
-	for range capacity.MaximumBotPermissions {
-		cancel, done := requestSource(t, f, sourceRequest(q))
-		cancels, replies = append(cancels, cancel), append(replies, done)
+	for range 8 {
+		requestSource(t, f, sourceRequest(q))
 	}
-	awaitSourceOffer(t, f, capacity.MaximumBotPermissions)
-	_, full := requestSource(t, f, sourceRequest(q))
-	if got := receiveSourceChoice(t, full); pa.Code(got.err) != pa.CapacityFull {
-		t.Fatal(got)
+	offers := awaitSourceOffer(t, f, 8)
+	native := pa.PermissionOffer{ID: "ninth", NativeRequestID: "native-nine", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Options: []pa.PermissionOption{{ID: "yes", Kind: pa.AllowOnce, Allow: true}}}
+	if err := f.provider.session().sink(context.Background(), ProtocolEvent{ID: "ninth", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Permission: &native}); err != nil {
+		t.Fatalf("a native permission interrupted the active turn: %v", err)
 	}
-	native := pa.PermissionOffer{ID: "ninth", NativeRequestID: "native-nine", Fence: q.Turn.Fence, TurnID: q.Turn.ID, ExpiresAt: time.Now().Add(time.Minute), Options: []pa.PermissionOption{{ID: "yes", Kind: pa.AllowOnce, Allow: true}}}
-	if err := f.provider.session().sink(context.Background(), ProtocolEvent{ID: "ninth", Fence: q.Turn.Fence, TurnID: q.Turn.ID, Permission: &native}); pa.Code(err) != pa.CapacityFull {
-		t.Fatalf("a native offer bypassed the shared pending bound: %v", err)
-	}
-	for n, cancel := range cancels {
-		cancel()
-		_ = receiveSourceChoice(t, replies[n])
+	if _, err := answerSource(t, f, offers[0], "once"); err != nil {
+		t.Fatalf("prior card could not be answered after a native offer: %v", err)
 	}
 }
 

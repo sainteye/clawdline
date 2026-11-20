@@ -625,6 +625,10 @@
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
         },
+        "background_threads": {
+          "type": "integer",
+          "description": "Maximum simultaneous background threads selected for this Bot."
+        },
         "manage_team": {
           "type": "boolean"
         },

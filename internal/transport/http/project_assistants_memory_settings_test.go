@@ -103,7 +103,7 @@ func memorySettingsFixture(t *testing.T, refuseFast ...bool) (*paServerFixture, 
 	if len(refuseFast) > 0 && refuseFast[0] {
 		extra = "CLAWDLINE_MEMORY_SETTINGS_REFUSE_FAST=1"
 	}
-	p, err := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestMemorySettingsACPFixture$"}, Environment: []string{"CLAWDLINE_MEMORY_SETTINGS_PEER=1", "CLAWDLINE_MEMORY_SETTINGS_RECORD=" + record, extra}}}, Limits: acp.Limits{RPCPending: 16, IncomingPermissions: 16, Notifications: 256, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+	p, err := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestMemorySettingsACPFixture$"}, Environment: []string{"CLAWDLINE_MEMORY_SETTINGS_PEER=1", "CLAWDLINE_MEMORY_SETTINGS_RECORD=" + record, extra}}}, Limits: acp.Limits{RPCPending: 16, Notifications: 256, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 		return paServerCaps(b), nil
 	}})
 	if err != nil {

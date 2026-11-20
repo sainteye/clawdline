@@ -200,24 +200,22 @@ func viewSnapshot(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h app.Re
  SELECT *,sum(length(CAST(j AS BLOB))+coalesce(length(CAST(m AS BLOB)),0)) OVER(ORDER BY anchor,id COLLATE BINARY) spent FROM matched
 )
 SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
- FROM budget ORDER BY anchor,id COLLATE BINARY LIMIT ?`
-	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, q.ByteLimit, q.ByteLimit, pa.MaxPendingTurns+1)
+ FROM budget ORDER BY anchor,id COLLATE BINARY`
+	// Leave room for navigation, recent transcript and result metadata even
+	// when queued work occupies most of the persisted conversation.
+	queueBudget := q.ByteLimit / 2
+	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, queueBudget, queueBudget)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		if len(out.PendingTurns) == pa.MaxPendingTurns {
-			rows.Close()
-			return nil, failure(pa.CapacityFull, "pending_turns")
-		}
 		var raw, message sql.NullString
 		if err = rows.Scan(&raw, &message); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		if !raw.Valid {
-			rows.Close()
-			return nil, failure(pa.CapacityFull, "read_view_snapshot_bytes")
+			break
 		}
 		if !message.Valid {
 			rows.Close()

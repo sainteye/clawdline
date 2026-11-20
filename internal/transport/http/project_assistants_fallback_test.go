@@ -86,7 +86,6 @@ func TestProjectAssistantFallbackHTTPKeepsLogicalTurnAndDurableRest(t *testing.T
 	f.s.projectAssistants.clock = func() time.Time { return time.Unix(0, now.Load()).UTC() }
 	var mu sync.Mutex
 	var opens []app.OpenRequest
-	var deadlines []time.Time
 	var prompts []app.PromptRequest
 	var oldTools app.NativeTools
 	closed := false
@@ -97,13 +96,8 @@ func TestProjectAssistantFallbackHTTPKeepsLogicalTurnAndDurableRest(t *testing.T
 			mu.Lock()
 			defer mu.Unlock()
 			opens = append(opens, q)
-			deadline, ok := ctx.Deadline()
-			if !ok {
-				t.Error("missing logical-turn deadline")
-			}
-			deadlines = append(deadlines, deadline)
-			if len(opens) == 2 && !deadlines[0].Equal(deadlines[1]) {
-				t.Error("fallback restarted the prompt deadline")
+			if _, ok := ctx.Deadline(); ok || ctx.Done() == nil {
+				t.Error("ordinary attempts must be cancellable without a prompt deadline")
 			}
 			if len(opens) == 2 && f.s.projectAssistants.host.Usage().Processes != 1 {
 				t.Error("fallback acquired a second process slot")
@@ -553,7 +547,7 @@ func (p fallbackOSPending) Wait(context.Context) (app.PromptResult, error) {
 
 func TestProjectAssistantFallbackHTTPWithOwnedOSProcesses(t *testing.T) {
 	f := newPAServerFixture(t, true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	var primarySends, alternateSends atomic.Int32
 	var primaryClosed, alternateClosed atomic.Bool

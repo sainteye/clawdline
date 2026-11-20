@@ -39,7 +39,9 @@ func TestQuoteScopeProvenanceAndBoundsFailClosed(t *testing.T) {
 		{"old_revision", func(_ *Export, m *pa.MemoryRevision) { m.Revision = 2; m.ForgottenThrough = 2 }, pa.ContextStale},
 		{"unknown_revision", func(e *Export, m *pa.MemoryRevision) { e.Turns[0].MemoryRevision = 0; m.ForgottenThrough = 1 }, pa.ContextStale},
 		{"unknown_turn", func(e *Export, m *pa.MemoryRevision) { e.Turns[0].State = pa.TurnUnknown; m.ForgottenThrough = 1 }, pa.ContextStale},
-		{"too_long", func(e *Export, _ *pa.MemoryRevision) { e.Messages[0].Text = strings.Repeat("x", pa.MaxMessageBytes+1) }, pa.CapacityFull},
+		{"too_long", func(e *Export, _ *pa.MemoryRevision) {
+			e.Messages[0].Text = strings.Repeat("x", pa.MaxUserMessageBytes+1)
+		}, pa.CapacityFull},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			e := Export{Messages: []pa.Message{message}, Turns: []pa.Turn{turn}}

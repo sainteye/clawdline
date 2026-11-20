@@ -319,7 +319,7 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 	f.store = &runtimeStore{bot: pa.Bot{Key: f.key, Project: f.scope, ConversationID: "chat", Version: 1, Agent: pa.Codex, Instructions: pa.InstructionSnapshot{Revision: 1, Text: "fixed"}}, c: pa.Conversation{Key: f.key, ID: "chat"}, turns: map[string]pa.Turn{}, bindings: map[string]pa.ExecutionBinding{}, permissions: map[string]pa.PermissionOffer{}, receipts: map[string]pa.Receipt{}}
 	m := pa.MemoryRevision{Key: f.key, Project: f.scope, Revision: 1}
 	f.memory = &runtimeMemory{current: m, snapshot: pa.ContextSnapshot{Memory: m, ProvenanceComplete: true}}
-	f.provider = &runtimeProvider{sent: make(chan PromptRequest, pa.MaxPendingTurns), memory: f.memory}
+	f.provider = &runtimeProvider{sent: make(chan PromptRequest, pa.MaxAutomationBacklog), memory: f.memory}
 	f.source = pa.SourceStatus{MachineID: "machine", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
 	var err error
 	f.r, err = NewRuntime(RuntimeOptions{Repository: f.store, Memory: f.memory, WorkBridge: &runtimeBridge{store: f.store}, ProjectResolver: runtimeResolver{f.scope}, Provider: f.provider, Clock: time.Now, ID: func() string { return fmt.Sprint(f.seq.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
@@ -587,16 +587,13 @@ func TestRuntimeFreshRevocationPreventsIncomingEffects(t *testing.T) {
 	}
 }
 
-func TestRuntimeQueueFullAndIdleActorReclaimed(t *testing.T) {
+func TestRuntimeLongQueueCanBeStoppedBeforeNativeExecution(t *testing.T) {
 	f := newRuntimeFixture(t)
 	f.r.slots <- struct{}{} // Hold the process slot; admission still persists.
-	for i := 0; i < pa.MaxPendingTurns; i++ {
+	for i := range 25 {
 		if _, err := f.submit(t, "queued", fmt.Sprint(i)); err != nil {
 			t.Fatal(i, err)
 		}
-	}
-	if _, err := f.submit(t, "overflow", "overflow"); pa.Code(err) != pa.CapacityFull {
-		t.Fatal(err)
 	}
 	f.store.mu.Lock()
 	fence := currentFence(f.store.bot, f.store.c)

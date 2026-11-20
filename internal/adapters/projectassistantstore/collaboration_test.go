@@ -487,7 +487,7 @@ func collaborationWaitingReplyFixture(t *testing.T) (*Store, pa.Bot, pa.Exchange
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 1; i < pa.MaxPendingTurns; i++ {
+	for i := 1; i < pa.MaxAutomationBacklog; i++ {
 		ax, e := s.Export(testContext, a.Key)
 		if e != nil {
 			t.Fatal(e)
@@ -509,7 +509,7 @@ func collaborationWaitingReplyFixture(t *testing.T) (*Store, pa.Bot, pa.Exchange
 		t.Fatal("recipient completion was not committed", err)
 	}
 	ax, err := s.Export(testContext, a.Key)
-	if err != nil || len(ax.Turns) != pa.MaxPendingTurns {
+	if err != nil || len(ax.Turns) != pa.MaxAutomationBacklog {
 		t.Fatal("source queue was overfilled", err)
 	}
 	if total, _, err := s.CollaborationUsage(testContext, a.Key.MachineID); err != nil || total != 0 {

@@ -421,9 +421,6 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	if err != nil {
 		return nil, NativeWork{}, err
 	}
-	if !bounded && taskOwner.BotID == "" {
-		return nil, NativeWork{}, failure(pa.Invalid, "native_work_deadline")
-	}
 	c, err := h.current(openCtx, q.Bot.Key)
 	if err != nil {
 		return nil, NativeWork{}, err
@@ -454,8 +451,8 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	if c.DispatchAllowed {
 		expires := deadline
 		if !bounded {
-			// An open background prompt does not extend a signed Board capability.
-			expires = h.o.Clock().Add(h.o.Limits.PromptTimeout)
+			// An open prompt does not extend a signed Board capability.
+			expires = h.o.Clock().Add(h.o.Limits.ControlWindow())
 		}
 		actor, err = a.Issue(openCtx, c.Fence, []pa.ActorOperation{pa.DispatchWork, pa.ReadWork}, expires)
 		if err != nil {

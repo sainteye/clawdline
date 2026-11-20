@@ -165,7 +165,7 @@ func (r *Engine) discardTakenBackInputs(ctx context.Context, q StopRequest, rece
 		if m.ID != t.MessageID || m.TurnID != t.ID || m.Kind != pa.UserMessage {
 			continue
 		}
-		if m.Fence != t.Fence || len(m.Files) > pa.MaxInputsPerMessage {
+		if m.Fence != t.Fence {
 			return runtimeFailure(pa.ScopeDenied, "input_takeback_message")
 		}
 		// Do not remove a malformed shared reference that another message may

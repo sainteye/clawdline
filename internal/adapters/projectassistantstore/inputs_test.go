@@ -147,20 +147,20 @@ func TestInputsEmptyLimitsCancellationAndSafePaths(t *testing.T) {
 	}
 }
 
-func TestInputsHaveBoundedRetainedSlots(t *testing.T) {
+func TestInputsRetainHistoryWithoutRefusingNewUploads(t *testing.T) {
 	ctx := context.Background()
 	s := Inputs{Dir: t.TempDir()}
 	fence := inputTestFence()
-	// Empty complete and abandoned uploads occupy the same finite slot pool.
-	for i := 0; i < pa.MaxInputsPerBot; i++ {
+	// Previous versions refused this Bot after 128 upload directories.
+	for i := 0; i < 128; i++ {
 		file := inputTestFile(fmt.Sprintf("%08x-1111-4111-8111-111111111111", i), "empty", nil)
 		if _, err := s.Put(ctx, fence, file, 0, nil, true, inputCheck); err != nil {
 			t.Fatal(i, err)
 		}
 	}
 	file := inputTestFile("ffffffff-1111-4111-8111-111111111111", "empty", nil)
-	if _, err := s.Put(ctx, fence, file, 0, nil, true, inputCheck); pa.Code(err) != pa.CapacityFull {
-		t.Fatal("slot pool unbounded", err)
+	if _, err := s.Put(ctx, fence, file, 0, nil, true, inputCheck); err != nil {
+		t.Fatal("retained uploads blocked a new file", err)
 	}
 	first := inputTestFile("00000000-1111-4111-8111-111111111111", "empty", nil)
 	foreign := fence
@@ -169,13 +169,13 @@ func TestInputsHaveBoundedRetainedSlots(t *testing.T) {
 		t.Fatal("foreign takeback removed a file", err)
 	}
 	if err := s.Remove(ctx, fence, first); err != nil {
-		t.Fatal("takeback did not reclaim a slot", err)
+		t.Fatal("takeback did not remove its file", err)
 	}
 	if err := s.Remove(ctx, fence, first); err != nil {
 		t.Fatal("takeback retry", err)
 	}
 	if _, err := s.Put(ctx, fence, file, 0, nil, true, inputCheck); err != nil {
-		t.Fatal("reclaimed slot unavailable", err)
+		t.Fatal("replaying an existing upload after takeback", err)
 	}
 }
 

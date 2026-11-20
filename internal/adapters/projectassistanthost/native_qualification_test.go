@@ -49,7 +49,7 @@ func TestInstalledAgentsNativeQualification(t *testing.T) {
 		if !t.Run(string(agent), func(t *testing.T) {
 			f := newHostFixture(t)
 			f.o.Limits = app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses,
-				PromptTimeout:  time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond,
+				PromptTimeout:  time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond,
 				CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
 			f.o.Provider = func() (app.Provider, error) { return p, nil }
 			f.start(t)

@@ -15,21 +15,20 @@ import (
 )
 
 type Limits struct {
-	RPCPending          int
-	IncomingPermissions int
-	Notifications       int
-	FrameBytes          int
-	CaptureBytes        int // Process census only; native ACP text has no capture ceiling.
-	StderrBytes         int
-	OwnedDescendants    int
-	WriteTimeout        time.Duration
-	CleanupTimeout      time.Duration
-	RPCTimeout          time.Duration
-	DescendantPoll      time.Duration
+	RPCPending       int
+	Notifications    int
+	FrameBytes       int
+	CaptureBytes     int // Process census only; native ACP text has no capture ceiling.
+	StderrBytes      int
+	OwnedDescendants int
+	WriteTimeout     time.Duration
+	CleanupTimeout   time.Duration
+	RPCTimeout       time.Duration
+	DescendantPoll   time.Duration
 }
 
 func (l Limits) Validate() error {
-	if l.RPCPending < 1 || l.IncomingPermissions < 1 || l.CaptureBytes < 1 || l.FrameBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 {
+	if l.RPCPending < 1 || l.CaptureBytes < 1 || l.FrameBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 {
 		return refusal(pa.Invalid, "acp_limits")
 	}
 	return nil
@@ -290,22 +289,45 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 	return p, nil
 }
 
+// errWriteNotStarted lets the ACP client leave other in-flight requests alone
+// when this caller is cancelled before writing a byte.
+var errWriteNotStarted = errors.New("ACP write not started")
+
 func (p *Process) Write(ctx context.Context, b []byte) error {
-	writeCtx, cancel := context.WithTimeout(ctx, p.limits.WriteTimeout)
-	defer cancel()
 	select {
 	case p.write <- struct{}{}:
-	case <-writeCtx.Done():
-		return refusal(pa.ExecutionEffectUnknown, "stdin_lock")
+	case <-ctx.Done():
+		return errors.Join(errWriteNotStarted, ctx.Err())
+	case <-p.done:
+		return refusal(pa.ExecutionEffectUnknown, "acp_closed")
 	}
 	defer func() { <-p.write }()
-	deadline, _ := writeCtx.Deadline()
+	if err := ctx.Err(); err != nil {
+		return errors.Join(errWriteNotStarted, err)
+	}
+	deadline, _ := ctx.Deadline()
 	if err := p.stdin.SetWriteDeadline(deadline); err != nil {
 		return refusal(pa.ExecutionEffectUnknown, "stdin_deadline")
 	}
-	// One syscall may write only a prefix. Never retry a possibly sent frame.
+	// Interrupt a blocked pipe on Stop even for an otherwise open-ended turn.
+	// Drain the callback before releasing the lock, so it cannot affect the
+	// next writer's deadline.
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = p.stdin.SetWriteDeadline(time.Now())
+		close(interrupted)
+	})
+	defer func() {
+		if !stop() {
+			<-interrupted
+		}
+	}()
 	n, err := p.stdin.Write(b)
+	if n == 0 && ctx.Err() != nil {
+		return errors.Join(errWriteNotStarted, ctx.Err())
+	}
 	if err != nil || n != len(b) {
+		// A possibly transmitted prefix must never be retried on this pipe.
 		return refusal(pa.ExecutionEffectUnknown, "stdin_partial")
 	}
 	return nil

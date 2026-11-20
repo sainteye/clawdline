@@ -376,7 +376,7 @@ func (c *Client) write(ctx context.Context, f frame) error {
 	}
 	b = append(b, '\n')
 	err = c.p.Write(ctx, b)
-	if err != nil {
+	if err != nil && !errors.Is(err, errWriteNotStarted) {
 		c.fail(err)
 	}
 	return err
@@ -389,12 +389,6 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 		err := c.failure
 		c.mu.Unlock()
 		return nil, err
-	}
-	select {
-	case c.rpcSlots <- struct{}{}:
-	default:
-		c.mu.Unlock()
-		return nil, refusal(pa.CapacityFull, "pending_rpc")
 	}
 	c.next++
 	id := strconv.FormatUint(c.next, 10)
@@ -416,14 +410,9 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 	return &pendingRPC{c: c, id: id, ch: ch}, nil
 }
 
-// removePending holds c.mu; only the owner of an existing entry releases its
-// shared ACP/MCP request slot. Late replies cannot release another request.
-func (c *Client) removePending(id string) {
-	if _, ok := c.pending[id]; ok {
-		delete(c.pending, id)
-		<-c.rpcSlots
-	}
-}
+// removePending holds c.mu. Native response correlation does not consume an
+// owned HTTP tool handler slot.
+func (c *Client) removePending(id string) { delete(c.pending, id) }
 
 type pendingRPC struct {
 	c  *Client
@@ -431,14 +420,8 @@ type pendingRPC struct {
 	ch chan response
 }
 
-func (p *pendingRPC) wait(ctx context.Context) (json.RawMessage, error) {
-	ctx, cancel := context.WithTimeout(ctx, p.c.l.RPCTimeout)
-	defer cancel()
-	return p.waitResult(ctx)
-}
-
-// The runtime owns the prompt deadline and cancels it on stop, shutdown or
-// revocation. Control RPCs retain their shorter deadline through wait.
+// The caller owns the prompt lifetime. A control RPC has one shorter
+// deadline covering both its write and its response.
 func (p *pendingRPC) waitResult(ctx context.Context) (json.RawMessage, error) {
 	select {
 	case x := <-p.ch:
@@ -486,11 +469,13 @@ func (c *Client) err() error {
 	return refusal(pa.ExecutionEffectUnknown, "acp_closed")
 }
 func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.l.RPCTimeout)
+	defer cancel()
 	p, err := c.begin(ctx, method, params)
 	if err != nil {
 		return nil, err
 	}
-	return p.wait(ctx)
+	return p.waitResult(ctx)
 }
 
 func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
@@ -560,7 +545,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	// model input. Instructions belong to this turn's immutable snapshot.
 	blocks := []any{}
 	if q.Quote != nil {
-		if err := pa.ValidateMessage(q.Quote.Text); err != nil {
+		if err := pa.ValidateUserMessage(q.Quote.Text); err != nil {
 			return nil, err
 		}
 		if q.Quote.MessageID == "" {
@@ -879,10 +864,6 @@ func (c *Client) handle(f frame) error {
 			c.mu.Unlock()
 			return c.write(c.ctx, frame{ID: f.ID, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "cancelled"}})})
 		}
-		if len(c.permissions) >= c.l.IncomingPermissions {
-			c.mu.Unlock()
-			return refusal(pa.CapacityFull, "permissions")
-		}
 		if _, exists := c.permissions[id]; exists {
 			c.mu.Unlock()
 			return nil
@@ -917,6 +898,8 @@ func (c *Client) handle(f frame) error {
 }
 
 func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
+	ctx, cancel := context.WithTimeout(ctx, c.l.RPCTimeout)
+	defer cancel()
 	c.answerMu.Lock()
 	defer c.answerMu.Unlock()
 	c.mu.Lock()
@@ -946,6 +929,8 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 	return c.write(ctx, frame{ID: p.id, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionID}})})
 }
 func (c *Client) Cancel(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, c.l.CleanupTimeout)
+	defer cancel()
 	return c.cancelPrompt(ctx, "")
 }
 
@@ -1051,7 +1036,7 @@ func (c *Client) closeSegment() {
 // promptRequired instead of starting one. What the agent writes next starts a
 // new paragraph of the reply.
 func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
-	if err := pa.ValidateMessage(text); err != nil {
+	if err := pa.ValidateUserMessage(text); err != nil {
 		return "", err
 	}
 	c.mu.Lock()

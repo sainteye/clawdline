@@ -11,14 +11,16 @@ const (
 	MaxNameRunes        = 128
 	MaxInstructionBytes = 16 << 10
 	MaxMessageBytes     = 32 << 10
-	// Pictures one message may carry, and each one's size after normalizing.
-	MaxAttachmentsPerMessage = 4
-	MaxAttachmentBytes       = 12 << 20
+	// A single user message must fit an escaped history/event record inside
+	// the Cloud read envelope, alongside its identity and control metadata.
+	MaxUserMessageBytes = 512 << 10
+	// Maximum decoded size of one normalized picture.
+	MaxAttachmentBytes = 12 << 20
 	// Live memory entries one Bot keeps (the person's and its own), and the
 	// matches one memory search returns.
 	MaxMemoryEntries       = 256
 	MaxMemorySearchResults = 30
-	MaxPendingTurns        = 16
+	MaxAutomationBacklog   = 16
 	MaxPageRows            = 100
 	MaxEventPageRows       = 256
 )
@@ -135,7 +137,8 @@ type Bot struct {
 	// ManageTeam is Codync's "Manage the team": off by default, written
 	// only by the person's own settings (CreateBot/EditBot), never by a
 	// manager tool or a model.
-	ManageTeam bool `json:"manage_team,omitempty"`
+	ManageTeam        bool `json:"manage_team,omitempty"`
+	BackgroundThreads int  `json:"background_threads,omitempty"`
 	// CreatedBy names the manager Bot that created this one. Only the host
 	// sets it, in its manager operation; no person or model request does.
 	CreatedBy    *BotKey             `json:"created_by,omitempty"`
@@ -187,7 +190,8 @@ type EditBot struct {
 	Mode             string           `json:"mode,omitempty"`
 	// ManageTeam nil leaves the switch as it is, so an older console cannot
 	// reset it; only the person's edit reaches this field.
-	ManageTeam *bool `json:"manage_team,omitempty"`
+	ManageTeam        *bool `json:"manage_team,omitempty"`
+	BackgroundThreads int   `json:"background_threads,omitempty"`
 }
 
 type Conversation struct {

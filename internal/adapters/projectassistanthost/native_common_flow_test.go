@@ -460,7 +460,7 @@ func commonFlowFixture(t *testing.T, root string, p app.Provider) *hostFixture {
 	f.o.Broker = f.broker(t, filepath.Join(root, "broker"))
 	f.o.Outputs = featurestore.Outputs{Dir: filepath.Join(root, "outputs")}
 	f.o.Provider = func() (app.Provider, error) { return p, nil }
-	f.o.Limits = app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
+	f.o.Limits = app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
 	f.start(t)
 	f.enable(t)
 	return f

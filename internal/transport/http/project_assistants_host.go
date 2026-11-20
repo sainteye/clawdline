@@ -110,7 +110,6 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 	}
 	limits := app.RuntimeLimits{
 		MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses,
-		PromptTimeout:  time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond,
 		CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond,
 	}
 	if p.limits != nil {

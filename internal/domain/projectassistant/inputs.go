@@ -6,12 +6,8 @@ import (
 )
 
 const (
-	MaxInputBytes       = 100 << 20
-	MaxInputChunkBytes  = 384 << 10
-	MaxInputsPerMessage = 4
-	// Includes completed and abandoned uploads. Queued takeback reclaims its
-	// files; Bot deletion reclaims all. Refusal never evicts sent evidence.
-	MaxInputsPerBot = 128
+	MaxInputBytes      = 100 << 20
+	MaxInputChunkBytes = 384 << 10
 )
 
 // InputFile is durable sent metadata. It contains no client-supplied path.
@@ -37,9 +33,6 @@ func ValidateInputSend(text string, pictures []Attachment, ids []string) error {
 	if len(ids) == 0 {
 		return ValidateSend(text, pictures)
 	}
-	if len(ids) > MaxInputsPerMessage {
-		return fail(CapacityFull, "input_files")
-	}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if !ValidUploadID(id) || seen[id] {
@@ -47,16 +40,10 @@ func ValidateInputSend(text string, pictures []Attachment, ids []string) error {
 		}
 		seen[id] = true
 	}
-	// Preserve every picture validation, including its count and type. A
+	// Preserve every picture validation, including size and type. A
 	// files-only message has no text but still obeys the text byte bound.
-	if !utf8.ValidString(text) {
-		return fail(Invalid, "text")
-	}
-	if len(text) > MaxMessageBytes {
-		return fail(CapacityFull, "text")
-	}
 	if len(pictures) == 0 {
-		return nil
+		return validateUserText(text, false)
 	}
 	return ValidateSend(text, pictures)
 }

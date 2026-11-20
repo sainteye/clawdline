@@ -5275,6 +5275,11 @@ export interface ProjectAssistantBackgroundWork {
 export interface ProjectAssistantBot {
   agent: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
+
+  /**
+   * Maximum simultaneous background threads selected for this Bot.
+   */
+  background_threads?: number
   conversation_id: string
   created_at: string
   created_by?: ProjectAssistantBotKey
@@ -5570,6 +5575,11 @@ export interface ProjectAssistantEditRequest {
 export interface ProjectAssistantEditSettings {
   agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
+
+  /**
+   * Maximum simultaneous background threads selected for this Bot.
+   */
+  background_threads?: number
   expected_version: number
   extensions?: ProjectAssistantExtensionSelection
 
@@ -6855,9 +6865,8 @@ export interface ProjectAssistantReadResponse {
 }
 
 /**
- * Complete mandatory snapshot. Counted pending turns and queued user messages obey
- * the existing16-turn bound; unknown barriers are counted in head.
- * Permissions/traces are separate bounded collections.
+ * Complete controls and the queued prefix that fits the transport. Unknown barriers
+ * are counted in head. Permissions and traces are separate bounded collections.
  */
 export interface ProjectAssistantReadSnapshot {
   bot: ProjectAssistantBot
@@ -6929,6 +6938,12 @@ export interface ProjectAssistantReadViewHead {
    */
   pending_permission_count: number
   project: ProjectAssistantProjectScope
+
+  /**
+   * Accepted but not yet executing turns, including any past the visible snapshot
+   * prefix.
+   */
+  queued_turn_count?: number
 
   /**
    * Latest current-fence trace groups; full text is fetched by reference.
@@ -7496,6 +7511,11 @@ export interface ProjectAssistantTeamAnswerResponse {
 export interface ProjectAssistantTeamEditSettings {
   agent?: ProjectAssistantAgent
   appearance: ProjectAssistantAppearance
+
+  /**
+   * Maximum simultaneous background threads selected for this Bot.
+   */
+  background_threads?: number
   expected_version: number
   extensions?: ProjectAssistantExtensionSelection
 

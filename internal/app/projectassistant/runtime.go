@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -138,7 +137,7 @@ func runtimeFailure(code pa.ErrorCode, field string) error {
 }
 
 func NewRuntime(o RuntimeOptions) (*Engine, error) {
-	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout <= 0 || o.Limits.CleanupTimeout <= 0 {
+	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, runtimeFailure(pa.Invalid, "runtime_options")
 	}
 	return &Engine{o: o, actors: make(map[pa.BotKey]*runtimeActor), slots: make(chan struct{}, o.Limits.MaxProcesses), disabled: make(map[pa.ProjectSelection]bool), changed: make(chan struct{})}, nil
@@ -458,9 +457,6 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if len(unknown) > 0 && waiting > 0 {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 	}
-	if err = pa.CheckAdmission(waiting); err != nil {
-		return pa.Receipt{}, err
-	}
 	// Capability admission is local evidence inspection, not a model request.
 	caps, err := r.o.Provider.Capabilities(ctx, bot)
 	if err != nil {
@@ -765,12 +761,7 @@ func (r *Engine) work(a *runtimeActor) {
 				}
 			}
 		}
-		ctx, cancel, err := r.turnPromptContext(a.lifetime, *turn)
-		if err != nil {
-			a.working = false
-			a.mu.Unlock()
-			return
-		}
+		ctx, cancel := context.WithCancel(a.lifetime)
 		a.cancel = cancel
 		a.turnID = turn.ID
 		a.pendingPermissions = 0
@@ -782,7 +773,13 @@ func (r *Engine) work(a *runtimeActor) {
 			r.mu.Lock()
 			a.slot = true
 			r.mu.Unlock()
-			err = r.execute(ctx, a, *turn)
+			runCtx, end, contextErr := r.turnPromptContext(ctx, *turn)
+			if contextErr == nil {
+				err = r.execute(runCtx, a, *turn)
+				end()
+			} else {
+				err = contextErr
+			}
 			r.mu.Lock()
 			retained := a.retained
 			r.mu.Unlock()
@@ -864,10 +861,12 @@ func (r *Engine) turnPromptContext(lifetime context.Context, turn pa.Turn) (cont
 		if err != nil {
 			return nil, nil, err
 		}
-		if d, _, err := routineForTurn(x, turn); err == nil {
-			timeout = time.Duration(d.TimeoutSeconds) * time.Second
+		d, _, err := routineForTurn(x, turn)
+		if err != nil {
+			return nil, nil, err
 		}
-	} else if repo, ok := r.o.Repository.(backgroundOwnership); ok {
+		timeout = time.Duration(d.TimeoutSeconds) * time.Second
+	} else if repo, ok := r.o.Repository.(backgroundOwnership); ok && timeout > 0 {
 		owner, err := repo.BackgroundOwner(lifetime, turn.Fence.Key)
 		if err != nil {
 			return nil, nil, err
@@ -878,6 +877,10 @@ func (r *Engine) turnPromptContext(lifetime context.Context, turn pa.Turn) (cont
 			ctx, cancel := context.WithCancel(lifetime)
 			return ctx, cancel, nil
 		}
+	}
+	if timeout == 0 {
+		ctx, cancel := context.WithCancel(lifetime)
+		return ctx, cancel, nil
 	}
 	ctx, cancel := context.WithTimeout(lifetime, timeout)
 	return ctx, cancel, nil
@@ -1556,7 +1559,7 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 	if strings.TrimSpace(text) == "" && len(message.Attachments) > 0 {
 		text = "[Image attachment / 圖片附件]"
 	}
-	if err := pa.ValidateMessage(text); err != nil {
+	if err := pa.ValidateUserMessage(text); err != nil {
 		return nil, err
 	}
 	return &PromptQuote{MessageID: message.ID, Text: text}, nil
@@ -1839,9 +1842,6 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 		p := *e.Permission
 		if strings.HasPrefix(p.NativeRequestID, sourcePermissionPrefix) || strings.HasPrefix(p.ID, sourcePermissionPrefix) {
 			return runtimeFailure(pa.ScopeDenied, "source_permission_namespace")
-		}
-		if a.pendingPermissions >= capacity.MaximumBotPermissions {
-			return runtimeFailure(pa.CapacityFull, "pending_permissions")
 		}
 		if a.closing {
 			return runtimeFailure(pa.StaleGeneration, "permission_session")

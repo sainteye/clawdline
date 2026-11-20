@@ -263,6 +263,22 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     assert.equal(await workResult('newer-work-observation').count(),1)
     await noLegacy();await shot('work-order-after-history')
   }
+  if(process.env.BOTS_BACKGROUND_THREADS_ONLY){
+    await fresh(()=>{window.botsFixture.a.bots[0].background_threads=3})
+    await open();await ready();await openInfo()
+    await info.getByRole("tab",{name:w.settings,exact:true}).click()
+    const setting=info.getByRole("combobox",{name:zh?"背景工作並行數":"Background threads at once",exact:true})
+    assert.equal(await setting.inputValue(),"3")
+    await setting.selectOption("6")
+    await info.getByRole("button",{name:zh?"儲存":"Save",exact:true}).click()
+    await page.waitForFunction(()=>window.botsFixture.a.bots[0].background_threads===6)
+    const edits=(await log()).filter(entry=>entry.method==="edit")
+    assert.equal(edits.length,1)
+    assert.equal(edits[0].request.settings.background_threads,6)
+    await shot("background-concurrency")
+    all.push(...await log())
+    return ["saved background concurrency from the editable Bot settings"]
+  }
   if(process.env.BOTS_READ_RACE==='order'){
     await workOrder();all.push(...await log());return ['work admission order after Send, live completion and delayed history; latest message actions']
   }

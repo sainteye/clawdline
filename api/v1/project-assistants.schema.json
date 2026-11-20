@@ -469,6 +469,10 @@
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
         },
+        "background_threads": {
+          "type": "integer",
+          "description": "Maximum simultaneous background threads selected for this Bot."
+        },
         "manage_team": {
           "type": "boolean"
         },
@@ -605,6 +609,10 @@
             "$ref": "#/$defs/ProjectAssistantAgent"
           },
           "description": "Ordered unique default login identities. Omitted edits preserve saved settings; an explicit empty array clears them."
+        },
+        "background_threads": {
+          "type": "integer",
+          "description": "Maximum simultaneous background threads selected for this Bot."
         },
         "manage_team": {
           "type": "boolean"
@@ -2522,6 +2530,10 @@
           "maximum": 9007199254740991,
           "description": "Machine log high-water mark from the same transaction, not a message sequence."
         },
+        "queued_turn_count": {
+          "type": "integer",
+          "description": "Accepted but not yet executing turns, including any past the visible snapshot prefix."
+        },
         "unknown_turn_count": {
           "type": "integer",
           "minimum": 0,
@@ -2604,7 +2616,7 @@
     },
     "ProjectAssistantReadSnapshot": {
       "type": "object",
-      "description": "Complete mandatory snapshot. Counted pending turns and queued user messages obey the existing16-turn bound; unknown barriers are counted in head. Permissions/traces are separate bounded collections.",
+      "description": "Complete controls and the queued prefix that fits the transport. Unknown barriers are counted in head. Permissions and traces are separate bounded collections.",
       "properties": {
         "bot": {
           "$ref": "#/$defs/ProjectAssistantBot"

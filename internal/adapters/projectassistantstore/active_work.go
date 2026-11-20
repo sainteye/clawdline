@@ -14,7 +14,8 @@ const (
 	activeWorkLinkStatesSQL      = `('accepted','waiting_for_person','executing')`
 	activeBackgroundStatesSQL    = `('waiting','active')`
 	backgroundWorkerTurnStateSQL = `json_extract(CAST(b.data AS TEXT),'$.Turns.'||json_quote(json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id'))||'.state')`
-	backgroundWorkCountsSQL      = `count(*) FILTER (WHERE t.state='active'),count(*) FILTER (WHERE t.state='waiting'),
+	backgroundWorkCountsSQL      = `count(*) FILTER (WHERE t.state='active' AND ` + backgroundWorkerTurnStateSQL + ` IS NOT NULL),
+		count(*) FILTER (WHERE t.state='waiting' OR (` + backgroundWorkerTurnStateSQL + ` IS NULL AND t.state='active')),
 		count(*) FILTER (WHERE ` + backgroundWorkerTurnStateSQL + `='waiting_permission')`
 	backgroundWorkFromSQL = ` FROM project_assistant_background_tasks t
 		LEFT JOIN project_assistant_bots b ON t.state='active' AND t.worker=b.bot AND t.machine=b.machine

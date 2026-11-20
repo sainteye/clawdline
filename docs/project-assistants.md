@@ -249,8 +249,9 @@ offline/error states rather than shrinking the roster to the selected machine.
 | --- | ---: | --- | --- |
 | bots.name_runes | 128 Unicode code points | Refuse settings; preserve old Bot | PA-03 calls PA-01 validation; PA-05 measurement |
 | bots.instruction_bytes | 16,384 UTF-8 bytes | Refuse new instructions; running snapshot unchanged | PA-03; PA-05 measurement |
-| bots.message_bytes | 32,768 UTF-8 bytes | Refuse before acceptance; no prompt | PA-02/05; PA-05 measurement |
-| bots.pending_turns | 16 waiting turns per Bot, excluding active | Refuse new admission, retain existing queue and receipts | PA-02; live count wired by PA-05 |
+| bots.message_bytes | 32,768 UTF-8 bytes | Refuse oversized tool messages before acceptance | Tool policy |
+| bots.user_message_bytes | 524,288 UTF-8 bytes | Refuse a text record that exceeds the supported history wire budget | User message policy |
+| bots.automation_backlog | 16 pending turns per Bot | Pace automated producers. Person-initiated sends stay durable and visible through the bounded chat read. | Scheduler and reply delivery |
 | bots.page_rows | 100 Bots/messages per page | Refuse oversized request; continue with cursor | PA-03/05 |
 | bots.event_rows | 256 replay events per page | Refuse oversized request; expired cursor requires snapshot | PA-03/05 |
 

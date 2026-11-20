@@ -289,7 +289,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 			return pa.Receipt{}, failure(pa.StaleVersion, "bot")
 		}
 	}
-	wasWaiting := a.backgroundNeedsInput()
+	previousBackgroundTurn := a.backgroundTurnState()
 	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
@@ -355,7 +355,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if err = persist(ctx, tx, a, m.ExpectedVersion); err != nil {
 		return pa.Receipt{}, err
 	}
-	if err = projectBackgroundTurn(ctx, tx, a, m, wasWaiting); err != nil {
+	if err = projectBackgroundTurn(ctx, tx, a, m, previousBackgroundTurn); err != nil {
 		return pa.Receipt{}, err
 	}
 	if err = writeReceipt(ctx, tx, result); err != nil {
@@ -536,6 +536,9 @@ func validateAggregate(a aggregate) error {
 		}
 	}
 	b := a.Bot
+	if b.BackgroundThreads < 0 || b.BackgroundThreads > pa.MaxBackgroundThreads {
+		return failure(pa.Invalid, "background_threads")
+	}
 	if err := pa.ValidateRuntimeSettings(b.RuntimeSettings); err != nil {
 		return err
 	}
@@ -623,7 +626,6 @@ func validateAggregate(a aggregate) error {
 			return err
 		}
 	}
-	pending := 0
 	for id, t := range a.Turns {
 		if err := pa.ValidateRoomTurn(t); err != nil {
 			return err
@@ -653,15 +655,11 @@ func validateAggregate(a aggregate) error {
 		}
 
 		switch t.State {
-		case pa.TurnAccepted, pa.TurnQueued, pa.TurnRunning, pa.TurnWaitingPermission:
-			pending++
-		case pa.TurnSucceeded, pa.TurnFailed, pa.TurnCancelled, pa.TurnUnknown:
+		case pa.TurnAccepted, pa.TurnQueued, pa.TurnRunning, pa.TurnWaitingPermission,
+			pa.TurnSucceeded, pa.TurnFailed, pa.TurnCancelled, pa.TurnUnknown:
 		default:
 			return failure(pa.Invalid, "turn_state")
 		}
-	}
-	if pending > pa.MaxPendingTurns {
-		return failure(pa.CapacityFull, "pending_turns")
 	}
 	if c.ActiveTurnID != "" {
 		t, ok := a.Turns[c.ActiveTurnID]

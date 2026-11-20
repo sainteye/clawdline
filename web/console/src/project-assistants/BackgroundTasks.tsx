@@ -7,8 +7,6 @@ import "./background-tasks.css"
 export type BackgroundTask = W.ProjectAssistantBackgroundTaskSummary
 type OpenTask = (task: BackgroundTask, button: HTMLButtonElement) => void
 
-const threadSlots = 3
-
 export function liveBackgroundTask(task: BackgroundTask) {
   return task.state === "waiting" || task.state === "active" || task.state === "waiting_permission"
 }
@@ -25,13 +23,13 @@ export function backgroundTaskLabel(task: BackgroundTask, w: Words) {
 
 export function BackgroundDuration({task}: {task: BackgroundTask}) {
   const [now, setNow] = useState(Date.now)
-  const live = liveBackgroundTask(task) && !!task.started_at && !task.ended_at
+  const live = liveBackgroundTask(task) && task.state !== "waiting" && !!task.started_at && !task.ended_at
   useEffect(() => {
     if (!live) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [live])
-  if (!task.started_at) return null
+  if (!task.started_at || task.state === "waiting") return null
   const end = task.ended_at ? Date.parse(task.ended_at) : now
   const duration = Math.max(0, Math.floor((end - Date.parse(task.started_at)) / 1000))
   return <time dateTime={`PT${duration}S`}>{Math.floor(duration / 60)}:{String(duration % 60).padStart(2,"0")}</time>
@@ -73,7 +71,7 @@ export function BackgroundCapsule({tasks, open, stop, stopping, outcomes, writab
   tasks: readonly BackgroundTask[]; open: OpenTask; stop: (task: BackgroundTask) => void; stopping: string; outcomes: Readonly<Record<string, BackgroundStopOutcome>>; writable: boolean; w: Words
 }) {
   const live = tasks.filter(liveBackgroundTask)
-  const task = live.find(item => item.state === "waiting_permission") ?? live.find(item => item.worker) ?? live[0]
+  const task = live.find(item => item.state === "waiting_permission") ?? live.find(item => item.state === "active") ?? live[0]
   if (!task) return null
   return <div className="pa-background-capsule">
     <button type="button" className="pa-background-open" onClick={event => open(task,event.currentTarget)}>
@@ -89,10 +87,10 @@ export function BackgroundCapsule({tasks, open, stop, stopping, outcomes, writab
   </div>
 }
 
-export function BackgroundList({tasks, workspace, open, section, w}: {
-  tasks: readonly BackgroundTask[]; workspace: string; open: OpenTask; section: "live" | "recent"; w: Words
+export function BackgroundList({tasks, workspace, open, section, slots, w}: {
+  tasks: readonly BackgroundTask[]; workspace: string; open: OpenTask; section: "live" | "recent"; slots: number; w: Words
 }) {
-  const active = tasks.filter(task => task.worker && liveBackgroundTask(task))
+  const active = tasks.filter(task => task.worker && (task.state === "active" || task.state === "waiting_permission"))
   const waiting = tasks.filter(task => task.state==="waiting")
   const recent = tasks.filter(task => task.worker && !liveBackgroundTask(task))
   const rows = (group: readonly BackgroundTask[]) => group.map(task =>
@@ -103,8 +101,8 @@ export function BackgroundList({tasks, workspace, open, section, w}: {
     </button>)
   if(section==="recent")return recent.length>0?<section className="pa-background-list"><h3>{w.backgroundRecent}</h3><div>{rows(recent)}</div></section>:null
   return <>
-    {active.length>0&&<section className="pa-background-list"><h3>{w.backgroundThreads} <small>{active.length} / {threadSlots}</small></h3>
-      <div>{rows(active)}{Array.from({length:Math.max(0,threadSlots-active.length)},(_,index)=><p className="pa-background-empty" key={index}>{w.backgroundFree}</p>)}</div>
+    {active.length>0&&<section className="pa-background-list"><h3>{w.backgroundThreads} <small>{active.length} / {slots}</small></h3>
+      <div>{rows(active)}{Array.from({length:Math.max(0,slots-active.length)},(_,index)=><p className="pa-background-empty" key={index}>{w.backgroundFree}</p>)}</div>
     </section>}
     {waiting.length>0&&<section className="pa-background-list"><h3>{w.backgroundQueue}</h3><div>{rows(waiting)}</div></section>}
   </>

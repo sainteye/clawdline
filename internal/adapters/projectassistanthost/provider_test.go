@@ -273,15 +273,15 @@ func TestNativeWorkReclaimsRegistrationOnFailedSetup(t *testing.T) {
 	}
 }
 
-func TestNativeWorkRequiresRealDeadlineAndSeparateDispatchPolicy(t *testing.T) {
-	n := startNative(t, func(f *hostFixture) { f.o.DispatchPolicy = nil })
+func TestOpenEndedNativeWorkStillRequiresBindingAndDispatchPolicy(t *testing.T) {
+	n := startNative(t, func(f *hostFixture) { f.o.DispatchPolicy = nil; f.o.Limits.PromptTimeout = 0 })
 	if e := n.tools.SendMessage(context.Background(), "visible", "Chat remains usable."); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := n.tools.Dispatch(context.Background(), "work", "Change a.go", []string{"a.go"}); pa.Code(e) != pa.ScopeDenied {
 		t.Fatal(e)
 	}
-	if _, _, e := n.f.h.tools(context.Background(), app.OpenRequest{Bot: n.bot}); pa.Code(e) != pa.Invalid {
+	if _, _, e := n.f.h.tools(context.Background(), app.OpenRequest{Bot: n.bot}); pa.Code(e) != pa.StaleGeneration {
 		t.Fatal(e)
 	}
 	if n.f.launcher.calls.Load() != 0 {

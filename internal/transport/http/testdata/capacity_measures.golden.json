@@ -285,7 +285,7 @@
     "Note": true
   },
   {
-    "Name": "bots.attachments_per_message",
+    "Name": "bots.automation_backlog",
     "Known": true,
     "Note": true
   },
@@ -554,16 +554,6 @@
     "Note": true
   },
   {
-    "Name": "bots.inputs_per_bot",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "bots.inputs_per_message",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "bots.instruction_bytes",
     "Known": true,
     "Note": true
@@ -595,6 +585,11 @@
   },
   {
     "Name": "bots.manager_pending",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.mcp_write_ms",
     "Known": true,
     "Note": true
   },
@@ -654,16 +649,6 @@
     "Note": true
   },
   {
-    "Name": "bots.pending_turns",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "bots.perm_rows",
-    "Known": true,
-    "Note": true
-  },
-  {
     "Name": "bots.permission_action_bytes",
     "Known": true,
     "Note": true
@@ -675,11 +660,6 @@
   },
   {
     "Name": "bots.processes",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "bots.prompt_ms",
     "Known": true,
     "Note": true
   },
@@ -953,7 +933,12 @@
     "Note": true
   },
   {
-    "Name": "bots.write_ms",
+    "Name": "bots.turn_control_window_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.user_message_bytes",
     "Known": true,
     "Note": true
   },

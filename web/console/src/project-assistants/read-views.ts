@@ -55,7 +55,7 @@ function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
 function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
   if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues)||(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.some(a=>!a||!/^[0-9a-f]{64}$/.test(a.id)||typeof a.media_type!=="string"||!integer(a.bytes,1)))))throw failure("pa_invalid")
   if(m.reactions!==undefined){if(!Array.isArray(m.reactions))throw failure("pa_invalid");const actors=new Set<string>();for(const a of m.reactions){if(!a||!text(a.id)||actors.has(a.id)||!["human","bot"].includes(a.kind)||typeof a.name!=="string"||!integer(a.revision,1)||!Array.isArray(a.emojis)||a.emojis.some(e=>typeof e!=="string"||!e||new TextEncoder().encode(e).length>32)||a.own!==undefined&&typeof a.own!=="boolean"||a.kind==="bot"&&(!key(a.bot)||a.bot.machine_id!==scope.key.machine_id||a.emojis.length!==1)||a.kind==="human"&&(a.bot!==undefined||a.emojis.length>8))throw failure("pa_invalid");if(a.appearance!==undefined&&(!object(a.appearance)||typeof a.appearance.color!=="string"||!oneOf(a.appearance.shape,ProjectAssistantShapeValues)))throw failure("pa_invalid");actors.add(a.id)}}
-  if(m.files!==undefined){if(!Array.isArray(m.files)||m.files.length>4||m.kind!=="user")throw failure("pa_invalid");m.files.forEach(inputMetadata)}
+  if(m.files!==undefined){if(!Array.isArray(m.files)||m.kind!=="user")throw failure("pa_invalid");m.files.forEach(inputMetadata)}
   if(m.output!==undefined){outputMetadata(m.output);if(m.kind!=="assistant")throw failure("pa_invalid")}
   own(m.fence,scope)
 }
@@ -76,7 +76,7 @@ function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.Pr
 }
 function trace(t:W.ProjectAssistantTrace) {if(t?.id!==undefined&&typeof t.id!=="string")throw failure("pa_invalid");if(!t||!text(t.turn_id)||!text(t.category)||typeof t.text!=="string"||typeof t.complete!=="boolean")throw failure("pa_invalid")}
 
-/** The existing wire limits are shared with the source: 100/256 rows, 16 turns, 4096 cursor bytes. */
+/** The existing wire limits are shared with the source: 100/256 rows and 4096 cursor bytes. */
 export function readViewRequest(q:W.ProjectAssistantReadViewRequest):W.ProjectAssistantReadViewRequest {
   if(!q||!key(q.key)||!text(q.conversation_id)||!oneOf(q.mode,ProjectAssistantReadViewModeValues)||typeof q.source_epoch!=="string"||!cursor(q.cursor)||!integer(q.after_seq)||!integer(q.page_size,1)||q.page_size>(q.mode==="events"?256:100))throw failure("pa_invalid")
   if(q.mode==="snapshot") {if(q.source_epoch||q.cursor||q.after_seq)throw failure("pa_invalid")}
@@ -97,6 +97,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
   own(h.current_fence,scope)
   if(!sameConversation({key:h.key,project:h.project,conversation_id:c.id},scope)||h.project.machine_id!==h.key.machine_id||c.key.machine_id!==h.key.machine_id||c.key.bot_id!==h.key.bot_id)throw failure("pa_scope_denied")
   if(c.binding_id!==h.current_fence.binding_id||c.generation!==h.current_fence.generation||c.memory_revision>h.memory_revision)throw failure("pa_invalid")
+  if(h.queued_turn_count!==undefined&&!integer(h.queued_turn_count))throw failure("pa_invalid")
   if(h.background_tasks!==undefined){
     if(!Array.isArray(h.background_tasks)||h.background_tasks.length>100)throw failure("pa_invalid")
     const ids=new Set<string>()
@@ -110,7 +111,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
   }
   if(q.mode==="snapshot") {
     const s=answer.snapshot,b=s?.bot
-    if(!s||!b||!Array.isArray(s.pending_turns)||!Array.isArray(s.queued_messages)||s.pending_turns.length>16||s.queued_messages.length>16||b.version!==h.bot_version)throw failure("pa_invalid")
+    if(!s||!b||!Array.isArray(s.pending_turns)||!Array.isArray(s.queued_messages)||b.version!==h.bot_version)throw failure("pa_invalid")
     metadata(b,scope)
     const ids=new Set<string>(),queued=new Set<string>(),pending=new Map<string,W.ProjectAssistantReadTurnSummary>(),included=new Set<string>()
     for(const t of s.pending_turns){turn(t,scope);if(ids.has(t.id)||pending.has(t.message_id)||!["accepted","queued","running","waiting_permission"].includes(t.state))throw failure("pa_invalid");ids.add(t.id);pending.set(t.message_id,t);if(t.state==="accepted"||t.state==="queued")queued.add(t.message_id)}

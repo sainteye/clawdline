@@ -64,8 +64,8 @@
 | `bots.assistant_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.assistant_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `bots.attachments_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.background_threads` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
+| `bots.automation_backlog` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.background_threads` | 6 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.background_waiting` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
@@ -118,8 +118,6 @@
 | `bots.human_reactions` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `bots.inputs_per_bot` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.inputs_per_message` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -127,6 +125,7 @@
 | `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_pending` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.mcp_write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.memory_entries` | 256 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.memory_preview` | 128 | `characters` | `coalesce` | `diagnostics` | — |
 | `bots.memory_search_results` | 30 | `rows` | `refuse` | `diagnostics` | — |
@@ -138,12 +137,9 @@
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.pending_turns` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.perm_rows` | 8 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.prompt_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.reaction_emoji_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
@@ -198,7 +194,8 @@
 | `bots.tower_floor_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_floors` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_zone_shown` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
-| `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.turn_control_window_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.user_message_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |

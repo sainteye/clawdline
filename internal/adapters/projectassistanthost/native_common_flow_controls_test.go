@@ -564,7 +564,7 @@ func TestCommonFlowControlsCompleteFunctionalStages(t *testing.T) {
 		t.Run(string(agent), func(t *testing.T) {
 			root := t.TempDir()
 			batch := commonFlowControlBatch(t, commonFlowFixedLimits())
-			provider := &fixtureProvider{sent: make(chan app.PromptRequest, pa.MaxPendingTurns), sessions: make(chan *fixtureSession, pa.MaxPendingTurns)}
+			provider := &fixtureProvider{sent: make(chan app.PromptRequest, pa.MaxAutomationBacklog), sessions: make(chan *fixtureSession, pa.MaxAutomationBacklog)}
 			stop := make(chan struct{})
 			defer close(stop)
 			errs := make(chan error, 1)

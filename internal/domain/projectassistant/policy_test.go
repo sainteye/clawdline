@@ -159,12 +159,6 @@ func TestCapacityBoundaries(t *testing.T) {
 	if Code(ValidateMessage(" \n")) != Invalid {
 		t.Fatal("blank message accepted")
 	}
-	if err := CheckAdmission(MaxPendingTurns - 1); err != nil {
-		t.Fatal(err)
-	}
-	if Code(CheckAdmission(MaxPendingTurns)) != CapacityFull {
-		t.Fatal("queue full accepted")
-	}
 	for _, events := range []bool{false, true} {
 		n := MaxPageRows
 		if events {
@@ -189,6 +183,26 @@ func TestCapacityBoundaries(t *testing.T) {
 		t.Fatal("instructions cap not enforced")
 	}
 }
+func TestOrdinaryMessageCanCarryLongTextAndMultipleFiles(t *testing.T) {
+	text := strings.Repeat("長", MaxMessageBytes/len("長")+1)
+	ids := []string{
+		"00000001-1111-4111-8111-111111111111",
+		"00000002-1111-4111-8111-111111111111",
+		"00000003-1111-4111-8111-111111111111",
+		"00000004-1111-4111-8111-111111111111",
+		"00000005-1111-4111-8111-111111111111",
+	}
+	if err := ValidateInputSend(text, nil, ids); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSend(text, nil); err != nil {
+		t.Fatal(err)
+	}
+	if Code(ValidateSend(strings.Repeat("a", MaxUserMessageBytes+1), nil)) != CapacityFull {
+		t.Fatal("oversized transport record was admitted")
+	}
+}
+
 func TestPermissionCannotWidenScopeOrAnswerAnotherGeneration(t *testing.T) {
 	f := testFence()
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)

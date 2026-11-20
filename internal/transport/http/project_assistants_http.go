@@ -622,7 +622,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, BackgroundThreads: int(settings.BackgroundThreads), Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
@@ -804,9 +804,6 @@ func paDecodeHTTP[T any](w http.ResponseWriter, r *http.Request) (T, error) {
 func (h *projectAssistantHTTP) storePictures(ctx context.Context, key pa.BotKey, images []string) ([]pa.Attachment, error) {
 	if len(images) == 0 {
 		return nil, nil
-	}
-	if len(images) > pa.MaxAttachmentsPerMessage {
-		return nil, paHTTPFailure(pa.CapacityFull, "images")
 	}
 	out := make([]pa.Attachment, 0, len(images))
 	for _, url := range images {

@@ -38,6 +38,7 @@ type ReadViewHead struct {
 	MemoryRevision         int64
 	EventFrontier          int64
 	UnknownTurnCount       int64
+	QueuedTurnCount        int64
 	PendingPermissionCount int64
 	TraceCategoryCount     int64
 }

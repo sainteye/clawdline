@@ -23,7 +23,7 @@ import (
 )
 
 func testLimits() Limits {
-	return Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Millisecond * 100, CleanupTimeout: time.Second, RPCTimeout: time.Second * 3, DescendantPoll: time.Millisecond * 10}
+	return Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Millisecond * 100, CleanupTimeout: time.Second, RPCTimeout: time.Second * 3, DescendantPoll: time.Millisecond * 10}
 }
 func testFence() pa.Fence {
 	return pa.Fence{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}, Project: pa.ProjectScope{MachineID: "machine", ProjectID: "project", CanonicalID: "repo", Kind: pa.RepositoryProject}, ConversationID: "chat", BindingID: "binding", Generation: 1}

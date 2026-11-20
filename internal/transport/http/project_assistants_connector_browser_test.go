@@ -28,7 +28,7 @@ func TestConnectorCredentialsBrowser(t *testing.T) {
 		t.Fatal(e)
 	}
 	f, _ := loginCapabilitiesFixture(t, func(original app.Provider) app.Provider {
-		provider, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestExtensionsNativeProtocolPeer$", "--", "extensions-native"}}}, Limits: acp.Limits{RPCPending: 16, IncomingPermissions: 16, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		provider, e := acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: exe, Arguments: []string{"-test.run=^TestExtensionsNativeProtocolPeer$", "--", "extensions-native"}}}, Limits: acp.Limits{RPCPending: 16, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 4 << 20, StderrBytes: 64 << 10, OwnedDescendants: 32, WriteTimeout: time.Second, CleanupTimeout: 5 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			return paServerCaps(b), nil
 		}})
 		if e != nil {

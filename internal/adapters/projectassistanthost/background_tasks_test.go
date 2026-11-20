@@ -14,9 +14,10 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
 	f.o.Limits.MaxProcesses = 2
+	f.o.Limits.PromptTimeout = 0
 	f.o.Reader = f.o.Database
 	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
-	f.p.promptContexts = make(chan context.Context, pa.MaxPendingTurns)
+	f.p.promptContexts = make(chan context.Context, pa.MaxAutomationBacklog)
 	f.start(t)
 	f.enable(t)
 	bot := f.create(t, "coordinator")
@@ -29,8 +30,8 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	}
 	main := fixtureReceive(t, f.p.sessions)
 	fixtureReceive(t, f.p.sent)
-	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); !bounded {
-		t.Fatal("the main chat should retain its prompt deadline")
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); bounded {
+		t.Fatal("ordinary chat inherited a fixed deadline")
 	}
 	tools, ok := main.q.Tools.(app.BackgroundTools)
 	if !ok || !tools.BackgroundAvailable() {
@@ -91,8 +92,8 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	if chatTurn.q.Bot.Key != bot.Key {
 		t.Fatal("the main chat sent its next turn to a worker")
 	}
-	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); !bounded {
-		t.Fatal("a follow-up in the main chat lost its prompt deadline")
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); bounded {
+		t.Fatal("a follow-up in the main chat inherited a fixed deadline")
 	}
 	chatTurn.reply <- app.PromptResult{FinalText: "Quick answer."}
 	worker.reply <- app.PromptResult{FinalText: "The source records agree."}

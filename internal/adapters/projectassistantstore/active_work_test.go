@@ -152,7 +152,7 @@ func TestActiveWorkCountsUnfinishedLinksAndBackgroundTasksAndWakesTheRoster(t *t
 	if !drain(wake) {
 		t.Fatal("a started background task did not wake the roster")
 	}
-	check("started", "idle", base+3, &pa.BackgroundWork{Working: 1})
+	check("worker is waiting for an execution slot", "idle", base+3, &pa.BackgroundWork{Waiting: 1})
 
 	pending, err := s.PendingTurns(testContext, worker)
 	if err != nil || len(pending) != 1 {
@@ -179,6 +179,10 @@ func TestActiveWorkCountsUnfinishedLinksAndBackgroundTasksAndWakesTheRoster(t *t
 		}
 	}
 	setWorkerTurn("worker-running", pa.TurnRunning)
+	if !drain(wake) {
+		t.Fatal("starting the background turn did not wake the owner's roster")
+	}
+	check("running", "idle", base+3, &pa.BackgroundWork{Working: 1})
 	offer := pa.PermissionOffer{ID: "worker-permission", Fence: workerTurn.Fence, TurnID: workerTurn.ID,
 		NativeRequestID: "worker-permission", State: pa.PermissionPending, ExpiresAt: bot.CreatedAt.Add(time.Hour),
 		Options: []pa.PermissionOption{{ID: "reject", Kind: pa.RejectOnce}}}

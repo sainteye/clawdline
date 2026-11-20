@@ -29,8 +29,8 @@ import { ChatRows } from "./ChatRows"
 import { HandoffCard } from "./HandoffCard"
 import { handoffWords } from "./handoff-card-words"
 import { useHandoffCard } from "./useHandoffCard"
-import {uploadInputs,MAX_INPUTS,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
-import { Composer, MAX_PICTURES } from "./Composer"
+import {uploadInputs,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
+import { Composer } from "./Composer"
 import { BotCallControls, useBotCall } from "./BotCall"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
@@ -467,12 +467,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const canInput=!thread&&!!source.canInputs?.()&&!!source.upload
   const addFiles=(selected:readonly File[])=>{
     if(!canInput||busy||unknown||legacyBlocked())return false
-    if(files.length+selected.length>MAX_INPUTS||selected.some(f=>f.size>MAX_INPUT_BYTES)){setFileError(w.inputLimits);return false}
+    if(selected.some(f=>f.size>MAX_INPUT_BYTES)){setFileError(w.inputLimits);return false}
     if(selected.some(f=>!f.name||f.name==="."||f.name===".."||/[\/\\\p{Cc}]/u.test(f.name)||new TextEncoder().encode(f.name).length>128)){setFileError(w.invalidFileName);return false}
     const next=[...files,...selected.map(file=>({file,id:crypto.randomUUID()}))];setFiles(next);setFileError("");setFilesLost(false);rememberFiles(true);return true
   }
   const canAttach=!thread&&!!source.pictures?.()
-  const addImages=(files:readonly File[])=>{void Promise.all(files.slice(0,MAX_PICTURES).map(file=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)}))).then(urls=>{if(valid())setImages(old=>[...old,...urls].slice(0,MAX_PICTURES))}).catch(fail)}
+  const addImages=(files:readonly File[])=>{void Promise.all(files.map(file=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)}))).then(urls=>{if(valid())setImages(old=>[...old,...urls])}).catch(fail)}
   useEffect(()=>{
     const held=view.heldOutcomes.get(draftKey)
     if(!held||held.intent.command.operation!=="send"||!admittedMessage(held.intent as W.ProjectAssistantSendRequest,held.receipt,messages))return
@@ -962,7 +962,7 @@ ${currentDraft}`:submitted)
     try{
       await mutate(async(d,s,page)=>{
         if(input.signal.aborted||!sameFence(input.fence,page.head.current_fence)||d.conversation.active_turn_id
-          ||page.snapshot!.queued_messages.length||page.head.unknown_turn_count||view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
+          ||page.snapshot!.queued_messages.length||page.head.queued_turn_count||page.head.unknown_turn_count||view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
         view.heldOutcomes.set(draftKey,{intent,receipt:null});view.heldOutcomes.beginTransport(draftKey,id)
         attempted=true
         // Once the source might have admitted the turn, hangup only ends the
@@ -1044,6 +1044,7 @@ ${currentDraft}`:submitted)
       details={details} more={more} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/>:null}</div>
   }
   const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
+  const queueLimited=(head?.queued_turn_count??0)>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
   const canReadActions=!!data&&!recoveryRequired&&source.current?.()!==false&&canMarkConversationRead(data.source)
@@ -1099,7 +1100,7 @@ ${currentDraft}`:submitted)
       const query:W.ProjectAssistantReadViewRequest={key:worker,conversation_id:task.id,mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:1}
       const snapshot=readView(await authorized(source,current,signal=>source.view!(query,signal),control.signal),query,{key:worker,conversation_id:task.id,project:bot.project})
       if(!canWrite(snapshot.source))throw failure("pa_read_only")
-      const turnID=snapshot.head.conversation.active_turn_id
+      const turnID=snapshot.head.conversation.active_turn_id||snapshot.snapshot?.pending_turns.find(turn=>turn.state==="accepted"||turn.state==="queued")?.id
       if(!turnID){if(valid())void refresh();return}
       const action=command(worker,"stop")
       const result=await authorized(source,current,signal=>{
@@ -1169,6 +1170,7 @@ ${currentDraft}`:submitted)
         steps={liveSteps.length?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={liveTraceTurn===moreTraceTurn} onMore={loadMoreTraces}
           onDetail={readTraceDetail} w={w}/>:undefined}/>
       {stopText&&!visibleTurn&&<p className="pa-turn" role="status">{stopText}</p>}
+      {queueLimited&&<p className="pa-turn" role="status">{w.queueLimited}</p>}
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
       {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} incomplete={moreOrphanTraces} more={moreOrphanTraces} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/>}
       {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
@@ -1238,8 +1240,8 @@ ${currentDraft}`:submitted)
           <button type="button" className="pa-settings-link" disabled={!canReadActions||exporting} aria-busy={exporting||undefined} onClick={()=>void exportBot()}>{w.export}</button>
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}
         </>} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage bare w={w} enabled={enabled} hideDisabled={bot.lead} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList bare w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettingsRevision(n=>n+1);setSettings(false)}}catch(e){fail(e);throw e}}}/>} children={{
-      details:<><BackgroundList section="live" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/><Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])}/>
-        <BackgroundList section="recent" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/>
+      details:<><BackgroundList slots={bot.background_threads??3} section="live" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/><Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])}/>
+        <BackgroundList slots={bot.background_threads??3} section="recent" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/>
       </>,
       library:<OutputLibrary embedded artifactComposer={artifactComposer} source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
       memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{

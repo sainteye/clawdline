@@ -185,6 +185,22 @@ func TestBackgroundWorkerWaitsForChatAndHasIndependentQueue(t *testing.T) {
 	if worker, err := store.StartBackgroundTask(testContext, bot.Key, now); worker.BotID != "" || err != nil {
 		t.Fatalf("exceeded thread slots: %+v, %v", worker, err)
 	}
+	configured, err := store.Bot(testContext, bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured.BackgroundThreads = 4
+	configured.Version++
+	if _, err = store.Commit(testContext, app.Mutation{
+		Command: command(bot.Key, pa.EditOperation, "four-threads"), ExpectedVersion: configured.Version - 1, Bot: &configured,
+		Receipt: pa.Receipt{ID: "four-threads", State: pa.EffectDelivered},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	worker, err := New(db).StartBackgroundTask(testContext, bot.Key, now)
+	if err != nil || worker.BotID != "thread-fourth" {
+		t.Fatalf("saved concurrency did not let the waiting worker start: %+v, %v", worker, err)
+	}
 	list, err := store.List(testContext, pa.ListBots{MachineID: bot.Key.MachineID, PageSize: pa.MaxPageRows})
 	if err != nil || len(list.Items) != 1 || list.Items[0].Bot.Key != bot.Key {
 		t.Fatalf("private worker leaked into Bot roster: %+v, %v", list, err)

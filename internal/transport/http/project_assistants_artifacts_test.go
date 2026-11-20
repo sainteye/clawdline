@@ -168,7 +168,7 @@ func outputMCPFixture(t *testing.T) (*paServerFixture, app.Export) {
 		t.Fatal(err)
 	}
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
-		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestBotOutputMCPPeer$"}, Environment: []string{"CLAWDLINE_OUTPUT_PEER=1", "CLAWDLINE_OUTPUT_PROJECT=" + f.project}}}, Limits: acp.Limits{RPCPending: 8, IncomingPermissions: 4, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 4096, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestBotOutputMCPPeer$"}, Environment: []string{"CLAWDLINE_OUTPUT_PEER=1", "CLAWDLINE_OUTPUT_PROJECT=" + f.project}}}, Limits: acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 4096, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			c := paServerCaps(b)
 			c.SendMessage = true
 			return c, nil

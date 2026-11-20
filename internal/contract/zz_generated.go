@@ -4501,12 +4501,15 @@ type ProjectAssistantBackgroundWork struct {
 }
 
 type ProjectAssistantBot struct {
-	Agent          ProjectAssistantAgent               `json:"agent"`
-	Appearance     ProjectAssistantAppearance          `json:"appearance"`
-	ConversationID string                              `json:"conversation_id"`
-	CreatedAt      string                              `json:"created_at"`
-	CreatedBy      *ProjectAssistantBotKey             `json:"created_by,omitempty"`
-	Extensions     *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
+	Agent      ProjectAssistantAgent      `json:"agent"`
+	Appearance ProjectAssistantAppearance `json:"appearance"`
+
+	// Maximum simultaneous background threads selected for this Bot.
+	BackgroundThreads int64                               `json:"background_threads,omitempty"`
+	ConversationID    string                              `json:"conversation_id"`
+	CreatedAt         string                              `json:"created_at"`
+	CreatedBy         *ProjectAssistantBotKey             `json:"created_by,omitempty"`
+	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
@@ -4764,10 +4767,13 @@ type ProjectAssistantEditRequest struct {
 // an empty array clears it. Project remains fixed; qualified sources may change
 // the primary Agent for the next idle turn.
 type ProjectAssistantEditSettings struct {
-	Agent           ProjectAssistantAgent               `json:"agent,omitempty"`
-	Appearance      ProjectAssistantAppearance          `json:"appearance"`
-	ExpectedVersion int64                               `json:"expected_version"`
-	Extensions      *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
+	Agent      ProjectAssistantAgent      `json:"agent,omitempty"`
+	Appearance ProjectAssistantAppearance `json:"appearance"`
+
+	// Maximum simultaneous background threads selected for this Bot.
+	BackgroundThreads int64                               `json:"background_threads,omitempty"`
+	ExpectedVersion   int64                               `json:"expected_version"`
+	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
@@ -5985,9 +5991,9 @@ type ProjectAssistantReadResponse struct {
 	Cursor          ProjectAssistantReadCursor `json:"cursor"`
 }
 
-// Complete mandatory snapshot. Counted pending turns and queued user messages
-// obey the existing16-turn bound; unknown barriers are counted in head.
-// Permissions/traces are separate bounded collections.
+// Complete controls and the queued prefix that fits the transport. Unknown
+// barriers are counted in head. Permissions and traces are separate bounded
+// collections.
 type ProjectAssistantReadSnapshot struct {
 	Bot            ProjectAssistantBot               `json:"bot"`
 	LastTurn       *ProjectAssistantReadTurnSummary  `json:"last_turn,omitempty"`
@@ -6042,6 +6048,10 @@ type ProjectAssistantReadViewHead struct {
 	// expired display state.
 	PendingPermissionCount int64                        `json:"pending_permission_count"`
 	Project                ProjectAssistantProjectScope `json:"project"`
+
+	// Accepted but not yet executing turns, including any past the visible snapshot
+	// prefix.
+	QueuedTurnCount int64 `json:"queued_turn_count,omitempty"`
 
 	// Latest current-fence trace groups; full text is fetched by reference.
 	TraceCategoryCount int64 `json:"trace_category_count"`
@@ -6550,10 +6560,13 @@ type ProjectAssistantTeamAnswerResponse struct {
 // Editable settings; omitted fallback_agents preserves the saved chain, while
 // an empty array clears it. Primary Agent and Project remain immutable.
 type ProjectAssistantTeamEditSettings struct {
-	Agent           ProjectAssistantAgent               `json:"agent,omitempty"`
-	Appearance      ProjectAssistantAppearance          `json:"appearance"`
-	ExpectedVersion int64                               `json:"expected_version"`
-	Extensions      *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
+	Agent      ProjectAssistantAgent      `json:"agent,omitempty"`
+	Appearance ProjectAssistantAppearance `json:"appearance"`
+
+	// Maximum simultaneous background threads selected for this Bot.
+	BackgroundThreads int64                               `json:"background_threads,omitempty"`
+	ExpectedVersion   int64                               `json:"expected_version"`
+	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.

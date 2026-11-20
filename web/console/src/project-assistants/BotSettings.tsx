@@ -33,6 +33,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const available=useFallbackSource(),source=useSettingsSource(),modern=source?.canMemorySettings?.()===true
   const [fallbacks,setFallbacks]=useState(bot.fallback_agents??[]),[fallbackSteps,setFallbackSteps]=useState<W.ProjectAssistantFallbackStep[]>(original.steps)
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
+  const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
   const [extensions,setExtensions]=useState<W.ProjectAssistantExtensionSelection>(bot.extensions??{skills:[],connectors:[]})
   const [loginProfile,setLoginProfile]=useState(bot.login_profile??""),[loginState,setLoginState]=useState("")
@@ -55,6 +56,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
       await onSave({name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
+        ...(backgroundThreads!==(bot.background_threads??3)?{background_threads:backgroundThreads}:{}),
         ...(manageTeam!==(bot.manage_team??false)?{manage_team:manageTeam}:{})})
     }catch(e){
       const code=errorCode(e),field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
@@ -68,7 +70,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     setRuntime({model:"",options:{}})
     setApproval({permission_policy:approval.permission_policy})
   }
-  const dirty=name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
+  const dirty=backgroundThreads!==(bot.background_threads??3)||name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
   // Codync's Settings tab: titled groups, always open, one row per control.
   const switchRow=(title:string,hint:string,on:boolean,disabled:boolean,change:(on:boolean)=>void)=><div className="pa-settings-row">
@@ -106,6 +108,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
         </SettingsGroup>}
         <SettingsGroup title={w.settingsAccess}>
           {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
+          {bot.background_threads!==undefined&&<label className="pa-settings-field">{w.backgroundConcurrency}<select value={backgroundThreads} onChange={e=>setBackgroundThreads(Number(e.target.value))}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}</select></label>}
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
           {switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
         </SettingsGroup>

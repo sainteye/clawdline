@@ -7,9 +7,18 @@ import (
 )
 
 const (
-	MaxBackgroundPending = 20
-	MaxBackgroundThreads = 3
+	MaxBackgroundPending     = 20
+	DefaultBackgroundThreads = 3
+	MaxBackgroundThreads     = 6
 )
+
+// BackgroundConcurrency uses Codync's default for older saved Bots.
+func (b Bot) BackgroundConcurrency() int {
+	if b.BackgroundThreads == 0 {
+		return DefaultBackgroundThreads
+	}
+	return b.BackgroundThreads
+}
 
 // BackgroundTask belongs to the Bot that received the user's message. Its
 // brief and source message remain available when the worker's turn changes.

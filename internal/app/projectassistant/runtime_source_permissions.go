@@ -138,7 +138,7 @@ func (r *Engine) RequestSourcePermission(ctx context.Context, q SourcePermission
 			delete(a.sourcePermissions, id)
 		}
 	}
-	if a.pendingPermissions >= capacity.MaximumBotPermissions || len(a.sourcePermissions) >= capacity.MaximumBotServerCallerReceipts {
+	if len(a.sourcePermissions) >= capacity.MaximumBotServerCallerReceipts {
 		a.mu.Unlock()
 		return pa.PermissionOption{}, runtimeFailure(pa.CapacityFull, "source_permissions")
 	}

@@ -112,6 +112,7 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 		}
 	}
 	out.ManageTeam = value.ManageTeam
+	out.BackgroundThreads = int64(value.BackgroundConcurrency())
 	if value.CreatedBy != nil {
 		key := paWireBotKey(*value.CreatedBy)
 		out.CreatedBy = &key
