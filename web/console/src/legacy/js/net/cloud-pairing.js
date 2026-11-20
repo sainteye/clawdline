@@ -278,11 +278,22 @@ function exactMembers(object, members, code) {
     }
 }
 
+function pairingOfferKeyCipher(iv, offer) {
+    return { name: "AES-GCM", iv: iv, additionalData: canonicalBytes(offer) };
+}
+
+/** Restore the offer's X25519 key as non-extractable, bound to this exact offer. */
+export async function unwrapPairingOfferKey(wrapped, offer) {
+    return subtle().unwrapKey("pkcs8", wrapped.ciphertext, wrapped.key,
+        pairingOfferKeyCipher(wrapped.iv, offer), { name: "X25519" }, false, ["deriveBits"]);
+}
+
 /**
  * Build the offer, its fragment, and the ephemeral private key that opens what comes back.
  *
  * `pairingID` and `claimNonce` are what `POST /v1/pairing/start` just returned; the ephemeral
- * key and the pairing nonce are made here and never leave this page except as public bytes.
+ * key and the pairing nonce are made here. For reload recovery the private key is wrapped
+ * locally with a per-offer, non-extractable AES key. Only public bytes enter the offer.
  */
 export async function createPairingOffer(input) {
     var signingPublic = requireLength(input.signingPublicKey, 32, "viewer_signing_key");
@@ -294,7 +305,7 @@ export async function createPairingOffer(input) {
     while (bytesBase64(pairingNonce) === input.claimNonce) {
         pairingNonce = crypto.getRandomValues(new Uint8Array(32));
     }
-    var pair = await subtle().generateKey({ name: "X25519" }, false, ["deriveBits"]);
+    var pair = await subtle().generateKey({ name: "X25519" }, input.durable === true, ["deriveBits"]);
     var ephemeralPublic = new Uint8Array(await subtle().exportKey("raw", pair.publicKey));
     var offer = {
         v: 1,
@@ -310,10 +321,20 @@ export async function createPairingOffer(input) {
         expires_at: input.expiresAt
     };
     exactMembers(offer, OFFER_MEMBERS, "bad_offer");
+    var fragment = base64URL(canonicalBytes(offer));
+    if (!input.durable) return { offer: offer, fragment: fragment, ephemeralPrivateKey: pair.privateKey };
+
+    // Some WebKit versions cannot read an X25519 CryptoKey back from IndexedDB.
+    // AES-GCM CryptoKeys and byte arrays round-trip on those versions.
+    var key = await subtle().generateKey({ name: "AES-GCM", length: 256 }, false, ["wrapKey", "unwrapKey"]);
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    var ciphertext = await subtle().wrapKey("pkcs8", pair.privateKey, key, pairingOfferKeyCipher(iv, offer));
+    var wrappedPrivateKey = { key: key, iv: iv, ciphertext: ciphertext };
     return {
         offer: offer,
-        fragment: base64URL(canonicalBytes(offer)),
-        ephemeralPrivateKey: pair.privateKey
+        fragment: fragment,
+        ephemeralPrivateKey: await unwrapPairingOfferKey(wrappedPrivateKey, offer),
+        wrappedPrivateKey: wrappedPrivateKey
     };
 }
 

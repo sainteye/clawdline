@@ -150,7 +150,7 @@ export interface CloudSession {
   adoptInvitedBrowser?(result: import("./browser-invite.js").JoinResult): Promise<void>
   signInURL(): string
   now(): number
-  startPairing(): Promise<PendingPairing>
+  startPairing(durable?: boolean): Promise<PendingPairing>
   acceptPairingInvitation(invitation: PairingInvitation, pending: PendingPairing): Promise<PendingPairing>
   claimPairing(pending: PendingPairing): Promise<OpenedPairing>
 }
@@ -229,15 +229,19 @@ export interface PairingInvitation {
   expires_at: number
 }
 
-/**
- * The browser half needed to claim a handover. In particular the private
- * X25519 key must survive leaving the waiting card; it is non-extractable but
- * can be structured-cloned by IndexedDB.
- */
+/** A durable offer's local encrypted private key and its non-extractable wrapping key. */
+export interface WrappedPairingKey {
+  key: CryptoKey
+  iv: Uint8Array
+  ciphertext: ArrayBuffer
+}
+
+/** The browser half needed to claim a handover. */
 export interface PendingPairing extends PendingOffer {
   claimNonce: string
   offer: Record<string, unknown>
   ephemeralPrivateKey: CryptoKey
+  wrappedPrivateKey?: WrappedPairingKey
 }
 
 export const decodePairingInvitation = decodePairingInvitationOriginal as (fragment: string, nowMilliseconds: number) => PairingInvitation
