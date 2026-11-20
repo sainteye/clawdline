@@ -158,6 +158,15 @@ func paViewServerBridgeContext(ctx context.Context, t *testing.T, f *paServerFix
 }
 
 func TestProjectAssistantViewServerLongHistoryFitsExistingCloudReadDeadline(t *testing.T) {
+	paViewServerHistory(t, 9001, 600, "synthetic visible fact")
+}
+
+func TestProjectAssistantViewServerRichHistory(t *testing.T) {
+	paViewServerHistory(t, 200, 1, strings.Repeat("Bot <code> & 台灣\n", 400))
+}
+
+func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText string) {
+	t.Helper()
 	started := time.Now()
 	f := newPAServerFixture(t, true)
 	f.enable(t)
@@ -165,14 +174,15 @@ func TestProjectAssistantViewServerLongHistoryFitsExistingCloudReadDeadline(t *t
 	g := f.get(t, f.local)
 	fence := pa.Fence{Key: f.key, Project: paDomainProjectScope(g.Bot.Project), ConversationID: g.Conversation.ID}
 	t.Logf("fixture server/enable/create/get elapsed=%s", time.Since(started))
-	paViewServerEvents(t, f, f.key, fence, 600)
+	paViewServerEvents(t, f, f.key, fence, eventCount)
 	other := f.create()
 	other.Command.Key.BotID, other.Command.IdempotencyKey = "other-bot", "create-other"
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, other))
 	started = time.Now()
-	messages := make([]pa.Message, 9001)
+	messages := make([]pa.Message, messageCount)
+	messageAt := time.Unix(1700000000, 0).UTC()
 	for i := range messages {
-		messages[i] = pa.Message{ID: fmt.Sprintf("message-%d", i+1), Fence: fence, Seq: int64(i + 1), Kind: pa.AssistantMessage, Text: "synthetic visible fact", At: time.Now().UTC()}
+		messages[i] = pa.Message{ID: fmt.Sprintf("message-%d", i+1), Fence: fence, Seq: int64(i + 1), Kind: pa.AssistantMessage, Text: messageText, At: messageAt}
 	}
 	raw, err := json.Marshal(messages)
 	if err != nil {
@@ -195,7 +205,7 @@ func TestProjectAssistantViewServerLongHistoryFitsExistingCloudReadDeadline(t *t
 	q := contract.ProjectAssistantReadViewRequest{Key: paWireBotKey(f.key), ConversationID: g.Conversation.ID, Mode: contract.ProjectAssistantReadViewModeSnapshot, PageSize: 100}
 	a := read(q)
 	if !a.OK() {
-		t.Fatalf("9001-message source did not answer within the existing Cloud read wait: status=%d %s", a.Status, a.Payload)
+		t.Fatalf("%d-message source did not answer within the existing Cloud read wait: status=%d %s", messageCount, a.Status, a.Payload)
 	}
 	var envelope struct {
 		Body contract.ProjectAssistantReadViewResponse `json:"body"`
@@ -203,19 +213,32 @@ func TestProjectAssistantViewServerLongHistoryFitsExistingCloudReadDeadline(t *t
 	if err = json.Unmarshal(a.Payload, &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Body.Head.EventFrontier != 602 || len(envelope.Body.Items) != 100 || envelope.Body.Items[0].Message.Seq != 9001 || !envelope.Body.HasMore || len(a.Payload) > cloudops.ReadPlaintextBytesLimit {
+	if envelope.Body.Head.EventFrontier != int64(eventCount+2) || !envelope.Body.HasMore || len(a.Payload) > cloudops.ReadPlaintextBytesLimit {
 		t.Fatal("long history lost bounded latest facts or the machine frontier")
 	}
 	snapshot := envelope.Body
+	assertPage := func(page contract.ProjectAssistantReadViewResponse, firstSeq int64) {
+		t.Helper()
+		if len(page.Items) != int(q.PageSize) {
+			t.Fatalf("got %d items, want %d", len(page.Items), q.PageSize)
+		}
+		for i, row := range page.Items {
+			if row.Message == nil || row.Message.Seq != firstSeq-int64(i) || row.Message.Text != messageText {
+				t.Fatalf("message %d lost content or position", i)
+			}
+		}
+	}
+	assertPage(snapshot, int64(messageCount))
 	q.Mode, q.SourceEpoch, q.Cursor = contract.ProjectAssistantReadViewModeHistory, snapshot.SourceEpoch, snapshot.NextCursor
 	a = read(q)
 	if !a.OK() {
-		t.Fatalf("9001-message history exceeded the existing per-request Cloud wait: %d %s", a.Status, a.Payload)
+		t.Fatalf("%d-message history exceeded the existing per-request Cloud wait: %d %s", messageCount, a.Status, a.Payload)
 	}
 	if err = json.Unmarshal(a.Payload, &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Body.Items) != int(q.PageSize) || envelope.Body.Items[0].Message.Seq != int64(len(messages))-q.PageSize || envelope.Body.NextSeq != 0 {
+	assertPage(envelope.Body, int64(messageCount)-q.PageSize)
+	if envelope.Body.HasMore != (int64(messageCount) > 2*q.PageSize) || envelope.Body.NextSeq != 0 {
 		t.Fatal("long older page lost its position or advanced the event cursor")
 	}
 	q.Mode, q.Cursor, q.AfterSeq, q.PageSize = contract.ProjectAssistantReadViewModeEvents, "", snapshot.Head.EventFrontier, 256
