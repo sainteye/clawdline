@@ -7,11 +7,12 @@ The earlier revision proposed machine-owned installation; that transport is defe
 
 ## What the host owns
 
-The sidebar’s **View plugins** entry owns installation and management. The bottom
-status-bar orbit button opens installed, enabled views only: one view opens
-directly, while multiple views use a compact picker. An empty launcher points to
-the sidebar without embedding installation controls. The orbit entry follows
-the provider quota bar’s visibility.
+The sidebar’s **View plugins** entry offers the full gallery, ZIP import, and
+package management. The status-bar orbit button opens a single enabled view
+directly and shows the launcher when there are zero or multiple enabled views.
+The launcher recommends Session Departures and World of Codecraft until each
+package is installed. Selecting a recommendation opens package review in place.
+The orbit entry follows the provider quota bar’s visibility.
 An opened view fills the app.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
@@ -359,7 +360,7 @@ revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the produ
 manager/frame/registry and supplied packages with synthetic Session sources. It
 exercises import, Galaxy plus a synthetic community view, multiple machines/Projects, Back/focus, hostile label
 text, revocation, persisted packages without persisted grants, direct opening
-including after reload, a management-free picker, cross-tab disabling, replacement,
+including after reload, cross-tab disabling, replacement,
 rollback, failed import, disable, remove, rejection of withdrawn IDs and removal of saved withdrawn archives. It accepts an existing Playwright
 module path; it installs no browser dependencies.
 
@@ -380,10 +381,12 @@ origin, including another local port. Network or HTTP download failures have
 their own error and must not be presented as malformed ZIP packages.
 
 `plugins/curated-install.acceptance.mjs` exercises the production host in
-Chromium and WebKit, in English and Taiwan Traditional Chinese. It installs all
-five actual archives behind a cookie gate and from a public origin, verifies
+Chromium and WebKit, in English and Taiwan Traditional Chinese. It installs the
+supplied archives behind a cookie gate and from a public origin, verifies
 reload persistence, refuses a download without modifying the registry, and
-checks a cross-origin redirect does not carry the native cookie. Run with
+checks a cross-origin redirect does not carry the native cookie. It also installs
+both recommendations from the launcher at desktop and mobile widths, checks
+focus on review and cancellation, and opens the installed views after a reload. Run with
 `PLUGIN_ARTIFACTS` and an existing `PLAYWRIGHT_MODULE`. The former credential-omitting
 host fails the native installation case before reaching package review.
 
