@@ -43,7 +43,7 @@ func TestLegacyViewerReadingMachineCanSendOnlyWithItsContentKey(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	l := &Link{file: file, settings: adaptercloud.Settings{Enabled: true}, opts: LinkOptions{Now: time.Now},
@@ -100,11 +100,11 @@ func TestLegacyViewerReadingMachineCanSendOnlyWithItsContentKey(t *testing.T) {
 	if transport.AcceptDirect("viewer", seal(2, otherSecret)) || opened != 1 {
 		t.Fatal("account login without this machine's content key reached its commands")
 	}
-	if _, err := file.Set(map[string]any{adaptercloud.KeyCommands: false}); err != nil {
+	if _, err := file.Set(map[string]any{"cloud_commands": false}); err != nil {
 		t.Fatal(err)
 	}
-	if l.authority(context.Background(), "viewer", viewer.PublicKey(), true).WriteGateAllows {
-		t.Fatal("the per-machine command switch was ignored")
+	if !l.authority(context.Background(), "viewer", viewer.PublicKey(), true).WriteGateAllows {
+		t.Fatal("a saved legacy switch blocked an authenticated paired viewer")
 	}
 	if err := l.pinned.Pin("account", adaptercloud.PinnedDevice{DeviceID: "viewer", PublicKey: row.PublicKey}); err != nil {
 		t.Fatal(err)

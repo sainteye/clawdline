@@ -27,7 +27,7 @@
 | 2 | 使用者 | 在這台 Mac 的終端機打 `~/code/clawdline-go/bin/clawdline cloud login`。它印出 `code` 與 `approve at <網址>` → 在瀏覽器開那個網址 → 頁面問「Is this the same code?」，核對跟終端機一樣 → 按 **Continue with GitHub** → 看到「**<名稱> is linked.**」 | 帳號多一台 Mac。終端機接著印 `account`、`machine`、`saved`，最後一行 `verified the control plane issued a device token` 表示核准真的生效（只拿 token，不連 relay） | `clawdline cloud off`，刪 `~/.config/clawdline-next/cloud/machine-identity-v1.json`。**帳號那一列目前沒有按鈕可刪**（hosted console 沒有 machine 撤銷介面），它會留著占一格；**不要刪 `device-ed25519-v1`**——同一把金鑰重新 login 會沿用同一列，不再多占一格 |
 | 3 | root | `clawdline cloud on`，然後重啟 7727 的 daemon（現在是 `~/code/clawdline-go` 下的 `./bin/clawdline serve`；開關只在 daemon 啟動時讀） | daemon 自己連上 relay。7727 設定頁「遠端」→「Cloud 狀態」顯示「連線：connected」；`bin/serve.log` 有 `cloud ready account=… machine=…` | `clawdline cloud off`，重啟 daemon。帳號與舊 app 都不受影響 |
 | 4 | 使用者 | 7727 設定頁「遠端」→「配對瀏覽器」→ **產生配對連結** → 在**已登入同一帳號**的瀏覽器開那個連結 → 核對兩邊顯示的金鑰指紋一樣 | 那個瀏覽器拿到這台 Mac 的內容金鑰，看得到新 Mac 的 session；「配對瀏覽器」列出它，標「由這台 Mac 配對」。從此同一個瀏覽器看得到兩台 Mac（見上面第 3 點） | 設定頁那一列按「撤銷」，或 `clawdline cloud revoke <device-id>`：本機撤銷優先於帳號清單 |
-| 5 | 使用者決定 | `clawdline cloud commands on` | 已配對的瀏覽器可以對這台 Mac 的 session 打字、開新 session。**預設關，不做這步也能看** | `clawdline cloud commands off`，下一個請求就生效，不必重啟 |
+| 5 | 使用者 | 在已配對的瀏覽器啟動 Session | 主機連上 Cloud 後，具有操作權限的瀏覽器可以開啟 Session 並傳送訊息 | 在裝置清單撤銷該裝置，或依步驟 3 中斷 Cloud 連線 |
 
 ## 失敗時怎麼看
 

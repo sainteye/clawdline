@@ -55,9 +55,7 @@ Cloud service stores project settings, and no protocol change was needed.
 | `project-mirror-apply` | command | `POST /v1/project-sync/mirror` — apply one project |
 | `project-mirror-detach` | command | `DELETE /v1/project-sync/mirror?repo=` — make it this machine's own again |
 
-The two commands pass the same gates as every other Cloud write: the receiving machine must have
-remote commands switched on (`clawdline cloud commands on`), and the device must be allowed to
-send.
+The receiving machine must be connected to Cloud and the paired device must have an operation grant.
 
 ### In the console
 

@@ -841,7 +841,7 @@ func TestDirectRekeyRefusesWithoutAnOpenChannel(t *testing.T) {
 	} {
 		f := newDirectFixture(t)
 		file := nextconfig.Open(t.TempDir())
-		if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+		if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 			t.Fatal(err)
 		}
 		f.l.file = file

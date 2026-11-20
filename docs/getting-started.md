@@ -187,8 +187,7 @@ machine owns those settings; the others mirror them read-only. Projects are matc
 
 - Both machines run this version. An older one is listed with “Clawdline needs an update” and cannot be
   chosen.
-- The browser is paired with both machines (section 6), and the receiving machine lets the browser
-  act on it: `./bin/clawdline cloud commands on` there.
+- The browser is paired with both machines (section 6) and has an operation grant on the receiving machine.
 - Each project has an `origin` remote that the other machine can reach. A project with no origin,
   or a folder that is not a git repository, is listed as skipped with its reason.
 

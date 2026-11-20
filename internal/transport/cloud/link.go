@@ -16,10 +16,8 @@ package cloud
 // the free product does not depend on Cloud, so a machine that was never
 // enrolled must behave exactly as it did before this file existed.
 //
-// **Two switches, not one.** `cloud_enabled` is whether the line is up;
-// `cloud_commands` is whether a viewer may cause an effect. The second is read
-// per request rather than captured at start, because a person turning writes
-// off means the request in flight too.
+// The machine rechecks the Cloud connection setting for each effect.
+// Device authentication, revocation and local operation grants apply separately.
 
 import (
 	"bytes"
@@ -62,7 +60,7 @@ type Status struct {
 	// Enabled is the settings switch. It is first because it is the answer to
 	// "why is nothing happening" nine times out of ten.
 	Enabled bool `json:"enabled"`
-	// Commands is the remote-write switch.
+	// Commands reports connection-level operation access to older consoles.
 	Commands bool `json:"commands"`
 	// TerminalDirect controls both Terminal and Session-read direct carriers.
 	TerminalDirect bool `json:"terminal_direct"`
@@ -358,7 +356,6 @@ type Link struct {
 	terminalRefusals   chan Inbound
 }
 
-// A paired viewer may use terminals while Cloud commands are enabled.
 const (
 	CloudTerminalRosterRefreshLimit  = 2
 	CloudTerminalRosterDeadlineLimit = 2
@@ -387,8 +384,8 @@ const (
 	// CloudTerminalRosterRefreshLimit names the viewer, unrevoked, with
 	// the same key this machine verifies its envelopes with.
 	TerminalAllowed
-	// TerminalDenied means a fact this machine holds says no: Cloud or Cloud
-	// commands are off here, this machine revoked the device, or a fresh
+	// TerminalDenied means a fact this machine holds says no: Cloud is off,
+	// this machine revoked the device, or a fresh
 	// roster lacks the device, marks it revoked or names a
 	// different key than the pin.
 	TerminalDenied
@@ -456,8 +453,8 @@ func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, 
 	if err != nil {
 		return TerminalUnverified, "this machine's Cloud settings could not be read"
 	}
-	if !settings.Commands {
-		return TerminalDenied, "Cloud commands are off on this machine"
+	if !settings.Enabled {
+		return TerminalDenied, "Cloud is off on this machine"
 	}
 	// A local revocation is answered before the roster is asked: an
 	// unreadable roster must not turn "this machine threw it out" into
@@ -1585,12 +1582,8 @@ func (l *Link) answer(ctx context.Context, service Service, request Inbound) boo
 	return answer.OK()
 }
 
-// allowCommands reads the write switch from the file, now.
-//
-// From the file rather than from the reading taken at start: a person who turns
-// writes off wants the request in flight refused too, and a value captured at
-// startup would keep saying yes until the daemon restarted. A file that cannot
-// be read is a no — an unreadable switch is not an open one.
+// allowCommands rechecks the connection setting before admitting an effect.
+// A failing read or a disconnected machine denies in-flight requests.
 func (l *Link) allowCommands() bool {
 	allowed, _ := l.operationAccess()
 	return allowed
@@ -1603,7 +1596,7 @@ func (l *Link) operationAccess() (bool, bool) {
 	if err != nil {
 		return false, false
 	}
-	return settings.Commands, true
+	return settings.Enabled, true
 }
 
 // publicKeyFor is who this machine will verify an envelope against.
@@ -1701,7 +1694,7 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 // The roster is the account's, not this machine's: a device the person removed
 // in the hosted console stops being able to act here at the next refresh.
 // Every active viewer that can authenticate and decrypt this machine's
-// envelope may send while Cloud commands are enabled. The transport already
+// envelope may send while Cloud is enabled, subject to its device grant. The transport already
 // verified both before calling the bridge. A local pin, when present, still
 // overrides the roster key; a local revocation always denies the viewer.
 func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519.PublicKey, requiresWriteGate bool) cloudops.Authority {
@@ -1996,7 +1989,7 @@ func (l *Link) logf(format string, args ...any) {
 // request reaches the same gate, the same capability checks and the same
 // refusal words a paired browser on this machine's own network would. What a
 // Cloud viewer may ask for is decided before this point — by `cloudops`'
-// closed vocabulary, by the account's roster, and by the write switch — so the
+// closed vocabulary, by the account's roster, and by the Cloud connection setting — so the
 // credential here only has to be one the gate accepts for the routes that
 // vocabulary names. Minting a narrower device credential of its own would be a
 // second permission model, and the second one is the one that goes wrong.

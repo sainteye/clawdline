@@ -177,8 +177,7 @@ type Authority struct {
 	RosterReadable bool
 	// RosterAllowsSender is whether this sender is still on it.
 	RosterAllowsSender bool
-	// WriteGateAllows is the machine's own switch: may a remote device cause
-	// an effect here at all. False by default, everywhere.
+	// WriteGateAllows is the machine's current Cloud connection check.
 	WriteGateAllows bool
 	ViewerReadOnly  bool
 	// Invited is a sender a browser invitation admitted. It may use the
@@ -214,8 +213,8 @@ type Bridge struct {
 	// Router is this daemon's own routes. Nil answers every routed operation
 	// with `router_unavailable` rather than pretending it succeeded.
 	Router LocalRouter
-	// AllowCommands is the machine's remote-write switch, read per request
-	// because a person may turn it off while one is in flight. Nil is off.
+	// AllowCommands rechecks the machine's Cloud connection setting for effects.
+	// Nil fails closed.
 	AllowCommands func() bool
 	// Authority is the roster and the clock, re-read at the point of no
 	// return. Nil trusts the transport's own admission for the roster and the
@@ -483,12 +482,7 @@ func (b Bridge) contentReadAnswer(cmd Command, p plan, answer Answer) Answer {
 
 // serveRead answers one of the effect-free words.
 //
-// A read is not behind the write switch, and that difference is the reason
-// reads are a separate list: a command types into somebody's session, while a
-// transcript read types into nothing. A paired device reads a transcript over
-// this machine's own network with that switch off, and a viewer that can see
-// every session row but not the messages inside one would be showing less than
-// the same device sees over the tunnel, for no reason anybody chose.
+// Reads follow their own authorization policy and can run for a readonly device.
 func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) Answer {
 	// A read rides the command channel and therefore its class, which is what
 	// the relay bills and what the envelope pins. `dispatch` is a command
@@ -734,8 +728,7 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	return b.answer(cmd, plan, o, res)
 }
 
-// allowCommands reads the machine's write switch. Nil is off: a daemon that
-// was never told anybody may write has not been told anybody may write.
+// allowCommands rechecks connection-level operation access and fails closed.
 func (b Bridge) allowCommands() bool {
 	if b.AllowCommands == nil {
 		return false

@@ -247,7 +247,7 @@ func TestEveryGuideExplainsCloudPairing(t *testing.T) {
 		"clawdline cloud pair -offer '<code>'",
 		"clawdline cloud devices",
 		"clawdline cloud revoke <device-id>",
-		"commands",
+		"clawdline cloud grant <device-id> operate",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)

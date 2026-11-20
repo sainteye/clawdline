@@ -55,7 +55,7 @@ Finish these, in order, and after each one tell me what the machine actually pri
    files, dot files and secrets — do not copy those by hand to make up for it.
 6. Show me it worked. On the new machine, list the projects and give me one line per project: its
    path, and the files the import wrote or kept. If I say I want to open that machine in the hosted
-   console later, also run `clawdline cloud login` and `clawdline cloud commands on` there.
+   console later, also run `clawdline cloud login` and `clawdline cloud on` there.
 
 Rules: nothing is done because it should have worked — only because the machine printed something
 that says it did. Collect everything that needs my hands into one message, and if you are blocked
@@ -87,7 +87,7 @@ on me and it cannot wait, send it with `clawdline notify` rather than only writi
    `CLAUDE.local.md`；它刻意不帶權限設定檔、dot 檔與任何密鑰——不要為了「補齊」而手動複製那些。
 6. 給我看它成功了。在新機器上列出專案，每個專案一行：路徑，以及 import 寫入或保留了哪些檔案。如果我
    說之後要在 hosted console 開那台機器，就再在那台跑 `clawdline cloud login` 和
-   `clawdline cloud commands on`。
+   `clawdline cloud on`。
 
 規則：沒有一件事可以因為「應該會成功」就算完成，只有機器印出來的東西能算。需要我動手的事情集中成
 一則訊息給我；如果你被我卡住而且不能等，用 `clawdline notify` 送出來，不要只寫在對話裡。

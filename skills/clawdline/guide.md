@@ -201,10 +201,7 @@ The command never installs or builds. Enable the machine setting and explicitly 
 
 ### Pair a Cloud browser
 
-Pairing changes who may read this machine. A paired browser may read it immediately and, when
-Cloud `commands` are on, may drive it. Run a pairing command only when the person explicitly asks
-to pair that browser or gives you the exact pairing command or offer. Pairing does not turn
-commands on; that remains a separate setting.
+Once the machine is connected to Cloud, a paired browser can read its Sessions and can act with an operation grant. Run a pairing command only when the person explicitly asks to pair that browser or gives you the exact pairing command or offer.
 
 There are two supported directions:
 
@@ -229,8 +226,11 @@ mismatch is not success: immediately run `clawdline cloud revoke <device-id>` us
 id, then report the mismatch. `clawdline cloud devices` lists the current browser roster and its
 local trust status; it is also the read-only check to use after pairing.
 
+On the target machine, `clawdline cloud grant <device-id> operate` changes the grant of an already
+paired device. Use it only when the person authorizes that device to operate.
+
 These commands go through the running local daemon. If one fails, report its exact stderr. Do not
-turn Cloud on, log in, enable commands, rotate keys, or replace the supplied offer unless the
+turn Cloud on, log in, rotate keys, or replace the supplied offer unless the
 person separately asked for that change.
 
 **Connect machines for Agent work.** Browser pairing alone never grants machine-to-machine authority.

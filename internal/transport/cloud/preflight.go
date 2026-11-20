@@ -85,11 +85,6 @@ func Preflight(opts LinkOptions) PreflightReport {
 	} else {
 		add("switch", PreflightOK, "%s is off; it is turned on after sign-in (step 3)", adaptercloud.KeyEnabled)
 	}
-	if settings.Commands {
-		add("commands", PreflightWarn, "%s is already true: a browser paired with this machine could type into its sessions; the runbook turns this on last", adaptercloud.KeyCommands)
-	} else {
-		add("commands", PreflightOK, "%s is off: a paired browser may read and may not act", adaptercloud.KeyCommands)
-	}
 
 	keys, err := cloudkeys.Open(opts.Dir, opts.ForeignDirs...)
 	if err != nil {

@@ -22,7 +22,7 @@ func TestAnotherViewerPreservesALiveCarrierProof(t *testing.T) {
 			f := newDirectFixture(t)
 			f.carrier(t)
 			file := nextconfig.Open(t.TempDir())
-			if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+			if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 				t.Fatal(err)
 			}
 			f.l.file = file
@@ -62,7 +62,7 @@ func TestAnotherViewerPreservesALiveCarrierProof(t *testing.T) {
 func TestAPendingCarrierKeepsItsProofUntilItsReservationEnds(t *testing.T) {
 	f := newDirectFixture(t)
 	file := nextconfig.Open(t.TempDir())
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	f.l.file = file

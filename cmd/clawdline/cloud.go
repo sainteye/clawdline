@@ -2,14 +2,11 @@ package main
 
 // `clawdline cloud …` — the line to app.clawdline.com, from the command line.
 //
-// Nine subcommands, and the first thing every one of them does is read the
-// switch. The line is off until somebody turns it on; `cloud on` is that
-// somebody saying so out loud, in a file they can read.
+// The line is off until someone connects the machine with `cloud on`.
 //
 //	clawdline cloud status              what the switch and the identity say
 //	clawdline cloud preflight           is the machine side ready for the person's step
 //	clawdline cloud on | off            the switch
-//	clawdline cloud commands on | off   whether a viewer may act on this machine
 //	clawdline cloud direct on | off     whether Terminal and Session reads try WebRTC
 //	clawdline cloud direct local on | off  whether that may use same-network addresses
 //	clawdline cloud login               register this machine, and wait for approval
@@ -66,8 +63,6 @@ func cloudCommand(args []string) {
 		cloudSwitchCommand(true)
 	case "off":
 		cloudSwitchCommand(false)
-	case "commands":
-		cloudCommandsCommand(args[1:])
 	case "direct":
 		cloudDirectCommand(args[1:])
 	case "login":
@@ -94,11 +89,10 @@ func cloudCommand(args []string) {
 
 func cloudUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.grant", "  grant <id> <scope>     set one paired browser to readonly or operate"))
-	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.overview", "usage: clawdline cloud <status|preflight|on|off|commands|direct|login|pair|devices|revoke|rotate|connect>"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.overview", "usage: clawdline cloud <status|preflight|on|off|direct|login|pair|devices|revoke|rotate|connect>"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.status", "  status                 the switch, the identity and the endpoints"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.preflight", "  preflight              check, without the network, that only the person's step is left"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.switch", "  on | off               turn the cloud line on or off in the settings file"))
-	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.commands", "  commands on | off      whether a paired viewer may act on this machine; off by default"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.direct", "  direct on | off        use a direct WebRTC carrier for Terminal and Session reads"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.direct_local", "  direct local on | off  let it use same-network addresses; off by default, macOS asks once"))
 	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.login", "  login [--wait 10m]     register this machine and wait for the approval"))
@@ -159,7 +153,6 @@ func cloudStatusCommand() {
 		os.Exit(1)
 	}
 	fmt.Printf(cliCopy("cloud", "status.enabled", "enabled    %v\n"), parts.settings.Enabled)
-	fmt.Printf(cliCopy("cloud", "status.commands", "commands   %v\n"), parts.settings.Commands)
 	fmt.Printf(cliCopy("cloud", "status.direct", "direct     %v\n"), parts.settings.TerminalDirect)
 	fmt.Printf(cliCopy("cloud", "status.direct_local", "same net   %v\n"), parts.settings.DirectLocalNetwork)
 	fmt.Printf(cliCopy("cloud", "status.relay", "relay      %s\n"), parts.settings.RelayURL)
@@ -231,33 +224,6 @@ func applyCloudSwitch(on bool) {
 		fmt.Fprintf(os.Stderr, cliCopy("cloud", "switch.not_applied",
 			"clawdline: the running daemon did not apply it (%s). Restart the service with `clawdline setup`, which applies the file.\n"), err)
 		os.Exit(1)
-	}
-}
-
-// cloudCommandsCommand is the remote-write switch, which is a separate
-// decision from whether the line is up: reading a session list and running code
-// on this machine are not the same permission and never share a switch.
-func cloudCommandsCommand(args []string) {
-	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
-		fmt.Fprintln(os.Stderr, cliCopy("cloud", "commands.usage", "usage: clawdline cloud commands <on|off>"))
-		os.Exit(2)
-	}
-	parts, err := openCloud()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
-	}
-	on := args[0] == "on"
-	if err := cloud.SetCommands(parts.file, on); err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
-	}
-	fmt.Printf(cliCopy("cloud", "commands.result", "commands %-3s %s\n"), args[0], parts.file.Path())
-	if on {
-		// "this Mac" was this line for as long as there was only ever a Mac
-		// under it. This daemon is built for macOS, Linux and Windows, and the
-		// sentence is printed by whichever one it is running on.
-		fmt.Print(cliCopy("cloud", "commands.allowed", "           a paired viewer may now type into this machine's sessions\n"))
 	}
 }
 

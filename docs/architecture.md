@@ -315,9 +315,7 @@ Off by default, and a failure in it never stops the daemon.
   permission checks, not two.
 
 Trust in a viewer is decided on this machine: a device it revoked is always refused, and a device
-it pinned during pairing comes before anything the account's roster says. Two switches:
-`cloud_enabled` for the line, `cloud_commands` for whether a viewer may act, re-read on every
-request. [cloud-wire.md](cloud-wire.md) is the wire specification; [the implementation record](records/cloud-wire-implementation-2026-09.md) holds what was
+it pinned during pairing comes before anything the account's roster says. The daemon rechecks `cloud_enabled` and the viewer's operation grant before applying an effect. [cloud-wire.md](cloud-wire.md) is the wire specification; [the implementation record](records/cloud-wire-implementation-2026-09.md) holds what was
 measured. [remote.md](remote.md) draws the line between the free product and Cloud.
 
 ## The shell and the web

@@ -116,7 +116,7 @@ The maintained English and Traditional Chinese online instructions are at
 | You see | It means | Do this |
 | --- | --- | --- |
 | The Cloud line stays off | `clawdline cloud status` gives the reason. A broken Cloud setting never stops the daemon, it only keeps the line down | Fix what it names. `cloud on` applies to the running daemon; follow its printed error if that fails |
-| A paired phone can read but not act | Commands are off on this machine | `clawdline cloud commands on` ([remote-access.md](remote-access.md)) |
+| A paired phone can read but cannot act | Its grant may be read-only | Check its grant under [Remote access](remote-access.md) |
 
 ## Projects across machines
 

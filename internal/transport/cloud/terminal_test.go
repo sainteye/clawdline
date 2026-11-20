@@ -357,7 +357,7 @@ func TestTerminalRequestRejectsForgedShapeAndKey(t *testing.T) {
 func TestTerminalAdmissionUsesCommandKeyPinAndFreshRoster(t *testing.T) {
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	pinned := adaptercloud.NewPinnedStore(filepath.Join(dir, "pins"))
@@ -545,7 +545,7 @@ func TestLocalGrantRefusalRegistersBeforeReceiptAndRetiresAfterSettlement(t *tes
 	}))
 	defer server.Close()
 	file := nextconfig.Open(t.TempDir())
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), nil, time.Now)
@@ -622,7 +622,7 @@ func TestRosterOnlyCommandSenderGetsEncryptedTerminalRefusal(t *testing.T) {
 	}))
 	defer server.Close()
 	file := nextconfig.Open(t.TempDir())
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), nil, time.Now)

@@ -112,8 +112,7 @@ the change. From a terminal on the machine:
 
 A device paired before this choice existed, and a new pairing the machine did not set, stays
 read and operate. A device cannot raise its own grant: the pairing request and its confirmation
-ignore any permission they carry. Clawdline Cloud has its own machine-wide command switch (below),
-which does not change these grants.
+ignore any permission they carry. See the Clawdline Cloud pairing section below for Cloud device grants.
 
 ### See and revoke devices signed in directly
 
@@ -203,12 +202,7 @@ Keep the original browser page open, compare its fingerprints with the machine's
 
 ### Let paired devices act
 
-A paired browser can send text, answer, and start or close Sessions only when both its local
-`operate` grant and this machine's Cloud command switch allow it:
-
-```sh
-./bin/clawdline cloud commands on     # takes effect on the next request; `off` stops it at once
-```
+While the machine is connected to Cloud, a paired browser with an `operate` grant can send text, answer, and start or close Sessions. A new pairing uses this grant by default.
 
 Choose a browser's grant on the machine with `clawdline cloud grant <device-id> readonly` or
 `operate`. Use `clawdline cloud pair --scope readonly` to pair a read-only browser. Omitting scope

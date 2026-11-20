@@ -7,7 +7,7 @@ import {
   cancelCloudPairing,
   readCloudLogin,
   readCloudStatus,
-  setCloudCommands,
+  enableLegacyCloudOperation,
   setCloudEnabled,
   startCloudLogin,
   type CloudLogin,
@@ -240,7 +240,7 @@ function Guide() {
     if (!signedIn && login?.phase !== "waiting") { setRunning(false); return }
     if (signedIn && !cloud.enabled && !asked.current.line) {
       asked.current.line = true
-      setCloudEnabled(true).then(() => setCloudCommands(true)).then(() => void refresh(), fail)
+      setCloudEnabled(true).then(enableLegacyCloudOperation).then(() => void refresh(), fail)
       return
     }
     if (!lineUp) return

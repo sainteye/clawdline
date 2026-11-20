@@ -1,7 +1,4 @@
 [
-  "commands.allowed",
-  "commands.result",
-  "commands.usage",
   "connect.body_help",
   "connect.connects",
   "connect.disabled_remedy",
@@ -62,7 +59,6 @@
   "rotate.yes_help",
   "status.account",
   "status.api",
-  "status.commands",
   "status.device_key",
   "status.device_key_none",
   "status.device_key_unreadable",
@@ -76,7 +72,6 @@
   "status.relay",
   "switch.off",
   "switch.on",
-  "usage.commands",
   "usage.connect",
   "usage.devices",
   "usage.login",

@@ -61,7 +61,7 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
    只存雜湊；本機也沒有例外；還沒有配對任何裝置之前 tunnel 不准啟動。直接配對的裝置逐台是只讀
    （`read`）或可讀可操作（`read`+`send`），只有本機 token 能選（`POST /v1/auth/devices/{id}/permission`、
    配對前的 `POST /v1/auth/pairings/{id}/permission`）；舊裝置與本機沒選過的新配對維持可讀可操作。
-   Cloud 是整台機器一個操作開關（`clawdline cloud commands`）；Cloud 逐個 viewer 的權限尚未實作。
+   主機連上 Cloud 後，各配對裝置依授權範圍讀取與操作。
    沒有原生殼的平台（Linux、Windows），碼由 CLI 在終端印出。
 
 ## 順序
