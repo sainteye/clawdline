@@ -75,7 +75,11 @@
 .vp-empty>svg { display:block;margin:0 auto 12px;width:44px;height:44px;color:var(--vp-muted) }
 .vp-empty p { font-size:13px;max-width:380px;margin:8px auto 0 }
 .vp-launcher { max-width:640px;padding-top:28px }
-.vp-launcher .vp-empty { margin:24px 0 }
+.vp-launcher .vp-examples { margin-top:24px }
+.vp-launcher .vp-example { display:flex;flex-direction:column }
+.vp-launcher .vp-art-preview { flex:none }
+.vp-launcher .vp-example>div:not(.vp-art) { display:flex;flex:1;flex-direction:column;align-items:flex-start }
+.vp-launcher .vp-example button { margin-top:auto }
 .vp-launch-list { display:flex;flex-direction:column;gap:12px }
 .vp-host .vp-launch-item { text-align:left;justify-content:flex-start;gap:16px;padding:18px;background:var(--vp-surface);border-radius:16px }
 .vp-launch-item>span:not(.vp-launch-arrow) { display:flex;flex-direction:column;gap:4px;flex:1;min-width:0 }

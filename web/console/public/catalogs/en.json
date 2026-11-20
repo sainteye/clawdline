@@ -13188,6 +13188,7 @@
   "viewPlugins.previous": "Previous version",
   "viewPlugins.project": "Project",
   "viewPlugins.read": "Read Session summaries",
+  "viewPlugins.recommended": "Recommended views",
   "viewPlugins.remove": "Remove",
   "viewPlugins.removePrevious": " Its previous version is removed too.",
   "viewPlugins.removeQuestion": "Remove {name}?",

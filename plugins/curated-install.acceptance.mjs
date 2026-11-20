@@ -11,9 +11,11 @@ if (!output || !process.env.PLAYWRIGHT_MODULE) throw Error('Set PLUGIN_ARTIFACTS
 await mkdir(output, { recursive: true })
 const bundle = await build({ stdin: { contents: `
 import React from 'react';import{createRoot}from'react-dom/client';import{useViewPlugins}from'./view-plugins/Host';
-function Host(){const api=useViewPlugins([],document.documentElement.lang);return <><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>Manager</button>{api.content}</>};createRoot(document.getElementById('root')).render(<Host/>);
+const sources=[{key:"test",label:"Test machine",async read(){return{sessions:[],connected:true}},subscribe(){return()=>{}}}];
+function Host(){const api=useViewPlugins(sources,document.documentElement.lang);return <><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>Manager</button>{api.dock}{api.content}</>};createRoot(document.getElementById('root')).render(<Host/>);
 `, resolveDir: root + 'web/console/src', loader: 'tsx' }, bundle: true, write: false, outfile: 'host.js', format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"development"' } })
 const files = new Map(bundle.outputFiles.map(f => ['/' + f.path.split('/').at(-1), { bytes: f.contents, type: f.path.endsWith('.js') ? 'text/javascript' : 'text/css' }]))
+files.set('/view-plugins/catalog.json', { bytes: await readFile(root + 'web/console/public/view-plugins/catalog.json'), type: 'application/json' })
 for (const item of JSON.parse(await readFile(root + 'web/console/src/view-plugins/previews.json', 'utf8'))) {
   files.set(item.src, { bytes: await readFile(root + 'web/console/public' + item.src), type: 'image/webp' })
 }
@@ -54,18 +56,82 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r))
 const origin = `http://127.0.0.1:${server.address().port}`
 const pw = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href), results = []
+async function installFromLauncher(page, language, screenshot) {
+  const zh = language === 'zh-Hant'
+  const entry = page.getByRole('button', { name: zh ? '開啟已安裝視圖' : 'Open installed views', exact: true })
+  const recommended = page.getByRole('region', { name: zh ? '推薦視圖' : 'Recommended views' })
+  const install = page.getByRole('button', { name: zh ? '安裝套件' : 'Install package', exact: true })
+  const cancel = page.getByRole('button', { name: zh ? '取消' : 'Cancel', exact: true })
+  const launches = page.locator('.vp-launch-item')
+  await entry.click()
+  await recommended.waitFor({ timeout: 5000 })
+  assert.equal(await page.locator('input[type=file]').count(), 0)
+  assert.equal(await recommended.getByRole('button').count(), 2)
+  const previews = recommended.locator('img')
+  assert.equal(await previews.count(), 2)
+  await previews.evaluateAll(images => Promise.all(images.map(image => image.decode())))
+  await page.screenshot({ path: screenshot })
+  const choices = views.filter(([slug]) => slug === 'departures' || slug === 'codecraft')
+  const launchButtons = []
+  for (const [slug, en, tw] of choices) {
+    const button = recommended.getByRole('button', { name: zh ? tw : en, exact: true })
+    const id = 'com.clawdline.session-' + slug
+    const manifest = JSON.parse(await readFile(root + 'plugins/session-' + slug + '/manifest.json', 'utf8'))
+    const launch = launches.filter({ has: page.getByText(manifest.name[language], { exact: true }) })
+    launchButtons.push(launch)
+    const review = page.locator('.vp-review[data-phase=review][data-package-id="' + id + '"]')
+    await button.click()
+    await review.waitFor()
+    await review.evaluate(el => { if (document.activeElement !== el) throw new Error('Package review should take focus') })
+    if (slug === 'departures') {
+      await cancel.click()
+      await review.waitFor({ state: 'detached' })
+      await button.evaluate(el => { if (document.activeElement !== el) throw new Error('Cancel should restore focus') })
+      assert.equal(await launches.count(), 0)
+      await button.click()
+      await review.waitFor()
+    }
+    await install.click()
+    await page.locator('.vp-review[data-phase=installed]').waitFor()
+    await launch.waitFor()
+    assert.equal(await button.count(), 0, 'Installed views are removed from recommendations')
+  }
+  assert.equal(await recommended.count(), 0)
+  await page.reload()
+  await entry.click()
+  await launches.nth(1).waitFor()
+  assert.equal(await launches.count(), 2)
+  for (const launch of launchButtons) {
+    await launch.click()
+    await page.locator('iframe').waitFor({ state: 'visible' })
+    await page.locator('.vp-frame-loading').waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: zh ? '關閉視圖並返回' : 'Close view and return', exact: true }).click()
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await entry.click()
+    await launches.nth(1).waitFor()
+  }
+}
 try {
   for (const engine of process.env.INSTALL_ENGINE ? [process.env.INSTALL_ENGINE] : ['chromium', 'webkit']) {
     const browser = await pw[engine].launch({ headless: true })
     try {
       for (const language of process.env.INSTALL_LANGUAGE ? [process.env.INSTALL_LANGUAGE] : ['en', 'zh-Hant']) {
-        for (const mode of process.env.INSTALL_MODE ? [process.env.INSTALL_MODE] : ['native', 'public', 'redirect', 'denied']) {
-          const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+        for (const mode of process.env.INSTALL_MODE ? [process.env.INSTALL_MODE] : ['native', 'public', 'redirect', 'denied', 'launcher-desktop', 'launcher-mobile']) {
+          const context = await browser.newContext({ viewport: { width: mode === 'launcher-mobile' ? 390 : 1440, height: 900 }, reducedMotion: 'reduce' })
           if (mode !== 'public') await context.addCookies([{ name: 'clawdline-next', value: 'synthetic-install', url: origin, httpOnly: true, sameSite: 'Strict' }])
           const page = await context.newPage(), errors = [], start = requests.length, redirectStart = redirected.length
           page.on('pageerror', error => errors.push(error.message))
           try {
             await page.goto(origin + '/?mode=' + mode + '&lang=' + language)
+            if (mode.startsWith('launcher-')) {
+              await installFromLauncher(page, language, `${output}/${engine}-${language}-${mode}.png`)
+              const actual = requests.slice(start)
+              assert.deepEqual(actual.map(r => r.slug), ['departures', 'departures', 'codecraft'])
+              assert.ok(actual.every(r => r.cookie && r.status === 200))
+              assert.deepEqual(errors, [])
+              results.push({ engine, language, mode, installed: 2, requests: actual, passed: true })
+              continue
+            }
             await page.locator('#manager').click()
             await page.locator('input[type=file]:not([disabled])').waitFor()
             for (const [slug, en, zh] of mode === 'native' || mode === 'public' ? views : views.slice(0, 1)) {

@@ -18,6 +18,8 @@ import "./plugins.css"
 
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
 const name = (p: ViewPackage, language: string) => p.manifest.name[language.startsWith("zh") ? "zh-Hant" : "en"]
+const curatedID = (slug: string) => "com.clawdline." + slug
+const recommendedSlugs = ["session-departures", "session-codecraft"]
 
 type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 
@@ -142,12 +144,14 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   }
   const act = async (operation: () => Promise<void>) => {
     if (isBusy || installingRef.current) return
+    const opening = owned.current
     setBusy(true); setError("")
-    try { await operation(); await refresh() } catch (e) {
+    try { await operation(); if (owned.current === opening) await refresh() } catch (e) {
+      if (owned.current !== opening) return
       queueAttention(() => modal.current?.querySelector<HTMLElement>(".vp-error") ?? null, reviewOpener.current)
       setError(code(e))
     }
-    finally { setBusy(false); setLoading(false) }
+    finally { if (owned.current === opening) { setBusy(false); setLoading(false) } }
   }
   const inspect = async (archive: ArrayBuffer, official = false) => {
     const generation = operations.current
@@ -178,6 +182,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
   const exampleInstall = (id: string, button: HTMLElement) => {
     if (isBusy || installingRef.current) return
     reviewOpener.current = button
+    const generation = operations.current
     return act(async () => {
       let answer: Response
       try { answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "same-origin", cache: "no-store" }) }
@@ -189,6 +194,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
       } finally { await reader.cancel() }
       const bytes = new Uint8Array(size); let at = 0; for (const part of chunks) { bytes.set(part, at); at += part.length }
       const pkg = await parsePackage(bytes.buffer), catalog = await updates.check(false)
+      if (!openedRef.current || generation !== operations.current) return
       const release = catalog?.packages.find(item => item.id === pkg.manifest.id)
       await inspect(bytes.buffer, !!release && release.sha256 === pkg.digest && release.version === pkg.manifest.version)
     })
@@ -229,35 +235,59 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     <ViewPluginIcon />
   </button>
   const enabled = rows.filter(row => row.enabled)
+  const examples = [
+    {id:"session-codecraft", title:w.codecraft, description:w.codecraftHint, action:w.addCodecraft},
+    {id:"session-kaiju", title:w.kaiju, description:w.kaijuHint, action:w.addKaiju},
+    {id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},
+    {id:"session-orrery", title:w.orrery, description:w.orreryHint, action:w.addOrrery},
+    {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},
+    {id:"session-departures", title:w.departures, description:w.departuresHint, action:w.addDepartures},
+    {id:"session-territory", title:w.territory, description:w.territoryHint, action:w.addTerritory},
+  ].filter(example => !!exampleCover(curatedID(example.id)))
+  const recommendations = recommendedSlugs.flatMap(id => examples.filter(example =>
+    example.id === id && !rows.some(row => row.id === curatedID(id))))
+  const gallery = (items: typeof examples, heading: string, hint?: string) =>
+    <section className="vp-examples" aria-label={heading}>
+      <div className="vp-section-head"><div><h2>{heading}</h2>{hint && <p>{hint}</p>}</div></div>
+      <div className="vp-example-grid">{items.map(example => {
+        const installed = rows.find(row => row.id === curatedID(example.id)), update = installed && hasCuratedUpdate(installed.active)
+        return <article className="vp-example" key={example.id}>
+          <ViewArtwork cover={examplePreview(curatedID(example.id), language)} missing={w.coverRequired} preview />
+          <div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{installed ? update ? w.update : w.added : example.action}</button></div>
+        </article>
+      })}</div>
+    </section>
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
       <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
       <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
         {error && !review && !installing && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
-        {loading ? <LoadingSkeleton label={w.loading} id="view-plugins" kind="cards" /> : mode === "launch" ? <>
-          {!isBusy && !enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2><p>{w.launchEmptyHint}</p></div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
-            <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
-          </button>)}</div>}
-        </> : <>
-          <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={isBusy} onChange={e => {
+        {loading ? <LoadingSkeleton label={w.loading} id="view-plugins" kind="cards" /> : <>
+          {mode === "manage" && <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={isBusy} onChange={e => {
             const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""
             if (file) { reviewOpener.current = e.currentTarget.closest<HTMLElement>(".vp-import"); void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) }) }
-          }} /></label></div>
+          }} /></label></div>}
           {panel && <section className="vp-review vp-card" data-package-id={panel.manifest.id} data-phase={installing ? "installing" : review ? "review" : "installed"} tabIndex={-1} aria-label={completed && !review && !installing ? w.added : w.review}>
             <ViewArtwork cover={panel.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow" data-install-result={completed && !review && !installing ? true : undefined}>{completed && !review && !installing ? w.added : w.review}</p><h2>{name(panel, language)}</h2><p className="vp-package-id">{panel.manifest.id} · {panel.manifest.version}</p>
             <p>{w.permissions}: {w.read}{panel.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
             {error && (review || installing) && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
             <div className="vp-actions">{completed && !review && !installing ? <>
               <button className="vp-primary" disabled={isBusy || !rows.find(row => row.id === completed.manifest.id)?.enabled} onClick={() => choose(completed)}>{w.open} <span aria-hidden="true">↗</span></button>
-              <button disabled={isBusy} onClick={() => {
+              {mode === "manage" && <button disabled={isBusy} onClick={() => {
                 const card = [...(modal.current?.querySelectorAll<HTMLElement>(".vp-installed") ?? [])].find(el => el.dataset.packageId === completed.manifest.id)
                 if (card) { reveal(card, card.closest(".vp-library")?.querySelector<HTMLElement>(".vp-section-head") ?? undefined); card.querySelector<HTMLButtonElement>(".vp-primary")?.focus({ preventScroll: true }) }
-              }}>{w.installed}</button>
+              }}>{w.installed}</button>}
             </> : <>
               <button className="vp-primary" disabled={isBusy} onClick={() => void confirmInstall()}>{review?.expected || installing?.expected ? w.replace : w.confirmInstall}</button>
               <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
             </>}</div></section>}
+          {mode === "launch" ? <>
+            {!enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2>{!recommendations.length && <p>{w.launchEmptyHint}</p>}</div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
+              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
+            </button>)}</div>}
+            {recommendations.length > 0 && gallery(recommendations, w.recommended)}
+          </> : <>
           <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span><button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button></div>
             {updates.failure && <p className="vp-update-error" role="status">{w.errors[updates.failure] || w.errors.update_check_failed}</p>}
             {!rows.length && <div className="vp-empty"><ViewPluginIcon /><h3>{w.empty}</h3><p>{w.emptyHint}</p></div>}
@@ -282,22 +312,9 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
               </div>
             </article>})}</div>
           </section>
-          <section className="vp-examples"><div className="vp-section-head"><div><h2>{w.preset}</h2><p>{w.examplesHint}</p></div></div><div className="vp-example-grid">
-            {[
-              {id:"session-codecraft", title:w.codecraft, description:w.codecraftHint, action:w.addCodecraft},
-              {id:"session-kaiju", title:w.kaiju, description:w.kaijuHint, action:w.addKaiju},
-              {id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},
-              {id:"session-orrery", title:w.orrery, description:w.orreryHint, action:w.addOrrery},
-              {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},
-              {id:"session-departures", title:w.departures, description:w.departuresHint, action:w.addDepartures},
-              {id:"session-territory", title:w.territory, description:w.territoryHint, action:w.addTerritory},
-            ].filter(example => !!exampleCover("com.clawdline." + example.id)).map(example => {
-              const installed = rows.find(r => r.id === "com.clawdline." + example.id), update = installed && hasCuratedUpdate(installed.active)
-              return <article className="vp-example" key={example.id}>
-              <ViewArtwork cover={examplePreview("com.clawdline." + example.id, language)} missing={w.coverRequired} preview /><div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{installed ? update ? w.update : w.added : example.action}</button></div>
-            </article>})}
-          </div></section>
+          {gallery(examples, w.preset, w.examplesHint)}
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>
+          </>}
         </>}
       </main></>}
   </div>, document.body) : null
