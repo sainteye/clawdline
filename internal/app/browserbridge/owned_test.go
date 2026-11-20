@@ -331,3 +331,48 @@ func TestAnAuditFilterCanLeaveBotsOut(t *testing.T) {
 		t.Fatal("prefix")
 	}
 }
+
+func TestClosedChromeTabDisappearsFromOwnedStatusWhenSampled(t *testing.T) {
+	h, err := OpenProfiles("", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const owner = BotOwnerPrefix + "fixture"
+	closed := false
+	profilesHost(t, h, "isolated", func(c Command) Result {
+		switch c.Op {
+		case "open":
+			return Result{ID: c.ID, Tab: 41, OK: true}
+		case "screenshot":
+			if closed {
+				return Result{ID: c.ID, Tab: c.Tab, Error: "the tab was closed"}
+			}
+			return Result{ID: c.ID, Tab: c.Tab, Error: "the debugger could not take a picture"}
+		default:
+			t.Errorf("unexpected host command %q", c.Op)
+			return Result{ID: c.ID}
+		}
+	})
+	ctx := context.Background()
+	policy := ownedPolicy()
+	if _, err = h.DoOwned(ctx, owner, "open", json.RawMessage(`{"url":"https://example.com"}`), policy, ""); err != nil {
+		t.Fatal(err)
+	}
+	target := PersonTarget{Owner: owner}
+	if err = h.SetPersonControlFor(target, "isolated", 41, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.PersonDoFor(ctx, target, "isolated", "screenshot", 41, nil); err == nil {
+		t.Fatal("transient failure was not returned")
+	}
+	_, status, _ := h.SelectedStatus(owner, policy)
+	if len(status.Tabs) != 1 || !status.Tabs[0].Person {
+		t.Fatal("lost live tab after transient failure")
+	}
+	closed = true
+	_, err = h.PersonDoFor(ctx, target, "isolated", "screenshot", 41, nil)
+	_, status, _ = h.SelectedStatus(owner, policy)
+	if err != NoTab || len(status.Tabs) != 0 || len(status.PersonTabs) != 0 {
+		t.Fatalf("closed tab remained visible: %v, %+v", err, status)
+	}
+}

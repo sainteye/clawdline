@@ -115,55 +115,48 @@ try {
     console.log("BROWSER_UI_STAGE "+JSON.stringify({stage:"navigate",mode,lang,width}))
     await send("Emulation.setDeviceMetricsOverride",{width,height,deviceScaleFactor:1,mobile:width<700},sessionId)
     await send("Page.navigate",{url:origin+"/?mode="+mode+"&lang="+lang+"#bot="+encodeURIComponent(bot)+"&conversation="+encodeURIComponent(conversation)+"&machine="+encodeURIComponent(machine)},sessionId)
-    await until('document.querySelector(".pa-chat-header h2")?.textContent==="Synthetic Bot"')
+    await until('document.querySelector(".pa-chat-header h2 strong")?.textContent==="Synthetic Bot"')
     if(mode==="old") {
       assert.equal(await run('!!document.querySelector(".pa-chat-header .browser-chip")'),false)
       assert.equal(await run('!!document.querySelector(".pa-reply-browser")'),false)
-      await run('document.querySelector(".pa-chat-header button[aria-haspopup=menu]").click()')
-      await until('!!document.querySelector("[role=menuitem]")')
-      await run('document.querySelector("[role=menuitem]").click()')
-    } else {
-      await until('!!document.querySelector(".pa-chat-header .browser-chip")')
-      assert.equal(await run('document.querySelector(".pa-chat-header").scrollWidth>document.querySelector(".pa-chat-header").clientWidth'),false,"chip fits the phone header")
-      await run('document.querySelector(".pa-chat-header .browser-chip").click()')
-    }
-    await until('!!document.querySelector("#browser-panel")')
-    if(mode==="old") {
-      await until('document.querySelector("#browser-panel").innerText.includes("API 74")')
       assert.equal(requests.slice(start).filter(r=>r.path.startsWith("/v1/browser/")).length,0)
+      results.push({mode,lang,width,chip:false,replyEntry:false,requests:requests.length-start})
+      await send("Target.closeTarget",{targetId})
+      continue
+    }
+    await until('!!document.querySelector(".pa-chat-header .browser-chip")')
+    assert.equal(await run('document.querySelector(".pa-chat-header").scrollWidth>document.querySelector(".pa-chat-header").clientWidth'),false,"chip fits the phone header")
+    await run('document.querySelector(".pa-chat-header .browser-chip").click()')
+    await until('!!document.querySelector("#browser-panel")')
+    await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
+    const frameDeadline=Date.now()+5000
+    while(requests.slice(start).filter(r=>r.path.startsWith("/v1/browser/screenshot")).length<2){assert.ok(Date.now()<frameDeadline,"the open panel samples another screenshot");await new Promise(r=>setTimeout(r,50))}
+    if(mode==="read") {
+      assert.equal(await run('document.querySelector(".browser-take").disabled'),true)
+      await until('document.querySelector("#browser-panel").innerText.includes("write access")')
+      assert.equal(requests.slice(start).filter(r=>r.method==="POST"&&r.path.startsWith("/v1/browser/")).length,0)
     } else {
-      await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
-      const frameDeadline=Date.now()+5000
-      while(requests.slice(start).filter(r=>r.path.startsWith("/v1/browser/screenshot")).length<2){assert.ok(Date.now()<frameDeadline,"the open panel samples another screenshot");await new Promise(r=>setTimeout(r,50))}
-      if(mode==="read") {
-        assert.equal(await run('document.querySelector(".browser-take").disabled'),true)
-        await until('document.querySelector("#browser-panel").innerText.includes("write access")')
-        assert.equal(requests.slice(start).filter(r=>r.method==="POST"&&r.path.startsWith("/v1/browser/")).length,0)
-      } else {
-        await run('document.querySelector(".browser-take").click()')
-        await until('document.querySelector(".browser-who").dataset.person==="true"')
-        await run('document.querySelector(".browser-take").click()')
-        await until('!document.querySelector(".browser-who").dataset.person')
-        await run('document.querySelector(".browser-tools-toggle").click()')
-        await run('document.querySelector(".browser-notify").click()')
-        await until('document.querySelector(".browser-notify").getAttribute("aria-pressed")==="false"')
-        await run('document.querySelector(".browser-notify").click()')
-        await until('document.querySelector(".browser-notify").getAttribute("aria-pressed")==="true"')
-        await run('document.querySelectorAll(".browser-activity").forEach(el=>el.open=true)')
-        await until('document.querySelectorAll(".browser-activity li").length>0')
-      }
+      await run('document.querySelector(".browser-take").click()')
+      await until('document.querySelector(".browser-who").dataset.person==="true"')
+      await run('document.querySelector(".browser-take").click()')
+      await until('!document.querySelector(".browser-who").dataset.person')
+      await run('document.querySelector(".browser-tools-toggle").click()')
+      await run('document.querySelector(".browser-notify").click()')
+      await until('document.querySelector(".browser-notify").getAttribute("aria-pressed")==="false"')
+      await run('document.querySelector(".browser-notify").click()')
+      await until('document.querySelector(".browser-notify").getAttribute("aria-pressed")==="true"')
+      await run('document.querySelectorAll(".browser-activity").forEach(el=>el.open=true)')
+      await until('document.querySelectorAll(".browser-activity li").length>0')
     }
-    if(mode!=="old") {
-      // The reply entry uses durable tool details, without opening the trace first.
-      await run('document.querySelector("#browser-panel .browser-close").click()')
-      await until('!document.querySelector("#browser-panel")')
-      await until('!!document.querySelector("[data-message-id=browser-ui-reply] .pa-reply-browser")')
-      assert.equal(await run('document.querySelectorAll(".pa-reply-browser").length'),1,"the user message mentioning a tool has no browser action")
-      assert.equal(await run('document.querySelector(".pa-reply-browser").textContent'),lang==="en"?"Open browser":"打開瀏覽器")
-      await run('document.querySelector(".pa-reply-browser").click()')
-      await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
-      assert.equal(await run('document.querySelector(".browser-take").disabled'),mode==="read")
-    }
+    // The reply entry uses durable tool details, without opening the trace first.
+    await run('document.querySelector("#browser-panel .browser-close").click()')
+    await until('!document.querySelector("#browser-panel")')
+    await until('!!document.querySelector("[data-message-id=browser-ui-reply] .pa-reply-browser")')
+    assert.equal(await run('document.querySelectorAll(".pa-reply-browser").length'),1,"the user message mentioning a tool has no browser action")
+    assert.equal(await run('document.querySelector(".pa-reply-browser").textContent'),lang==="en"?"Open browser":"打開瀏覽器")
+    await run('document.querySelector(".pa-reply-browser").click()')
+    await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
+    assert.equal(await run('document.querySelector(".browser-take").disabled'),mode==="read")
     const {data}=await send("Page.captureScreenshot",{format:"png"},sessionId)
     await writeFile(path.join(artifacts,`bot-browser-${mode}-${lang}-${width}.png`),Buffer.from(data,"base64"))
     for(const request of requests.slice(start).filter(r=>r.path.startsWith("/v1/browser/"))) {
@@ -181,7 +174,7 @@ try {
     const run=async(expression)=>{const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
     const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error("open fixture did not reach "+expression+" "+await run("document.body.innerText"));await new Promise(r=>setTimeout(r,50))}}
     await send("Page.navigate",{url:origin+"/?mode=local&lang=en#bot="+emptyBot+"&conversation="+emptyConversation},sessionId)
-    await until('document.querySelector(".pa-chat-header h2")?.textContent==="Empty Bot"')
+    await until('document.querySelector(".pa-chat-header h2 strong")?.textContent==="Empty Bot"')
     await until('!!document.querySelector(".pa-reply-browser")')
     assert.equal(await run('!!document.querySelector(".pa-chat-header .browser-chip")'),false,"no chip without an owned tab")
     await run('document.querySelector(".pa-reply-browser").click()')
@@ -202,10 +195,8 @@ try {
     const run=async(expression)=>{const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
     const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error("fault fixture did not reach "+expression+" "+await run("document.body.innerText"));await new Promise(r=>setTimeout(r,50))}}
     await send("Page.navigate",{url:origin+"/?mode=local&lang=en#bot="+bot+"&conversation="+conversation},sessionId)
-    await until('!!document.querySelector(".pa-chat-header h2")')
-    await run('document.querySelector(".pa-chat-header button[aria-haspopup=menu]").click()')
-    await until('!!document.querySelector(".pa-chat-header [role=menuitem]")')
-    await run('[...document.querySelectorAll(".pa-chat-header [role=menuitem]")].find(button=>button.textContent==="Browser").click()')
+    await until('!!document.querySelector(".pa-chat-header .browser-chip")')
+    await run('document.querySelector(".pa-chat-header .browser-chip").click()')
     await until('!!document.querySelector(".browser-take")')
     const before=requests.filter(r=>r.path==="/v1/browser/control").length,beforeReads=requests.filter(r=>r.path.startsWith("/v1/project-assistants/"+bot+"?")).length
     assert.equal(await run('!!document.querySelector("#browser-panel [role=alert]")'),false)
@@ -219,6 +210,23 @@ try {
       assert.ok(requests.filter(r=>r.path.startsWith("/v1/project-assistants/"+bot+"?")).length>beforeReads,"stale identity is reloaded")
     }
     await send("Target.closeTarget",{targetId});results.push({fault,actions:1,replayed:false})
+  }
+  // Closing the actual tab leaves the Bot's chat usable and clears the chip.
+  {
+    const {targetId}=await send("Target.createTarget",{url:"about:blank"}),sessionId=await attach(targetId)
+    const run=async(expression)=>{const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
+    const until=async(expression)=>{const deadline=Date.now()+8000;while(!await run(expression)){if(Date.now()>deadline)throw Error("close fixture did not reach "+expression+" "+await run("document.body.innerText"));await new Promise(r=>setTimeout(r,50))}}
+    await send("Page.navigate",{url:origin+"/?mode=local&lang=en#bot="+emptyBot+"&conversation="+emptyConversation},sessionId)
+    await until('!!document.querySelector(".pa-chat-header .browser-chip")')
+    await run('document.querySelector(".pa-chat-header .browser-chip").click()')
+    await until('!!document.querySelector("#browser-panel img")?.naturalWidth')
+    const closed=await fetch(upstream+"/__fixture/close-browser-tab",{method:"POST"})
+    assert.equal(closed.status,204)
+    await until('document.querySelector(".browser-card h3")?.textContent==="This Bot has no tab yet"')
+    await run('document.querySelector("#browser-panel .browser-close").click()')
+    await until('!document.querySelector("#browser-panel")&&!document.querySelector(".pa-chat-header .browser-chip")')
+    assert.equal(await run('document.querySelector(".pa-chat-header h2 strong")?.textContent'),"Empty Bot")
+    await send("Target.closeTarget",{targetId});results.push({closedTab:true,chip:false})
   }
   await writeFile(path.join(artifacts,"browser-ui-requests.json"),JSON.stringify(requests,null,2))
   await writeFile(path.join(artifacts,"browser-ui-results.json"),JSON.stringify(results,null,2))

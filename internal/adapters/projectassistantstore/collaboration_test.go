@@ -129,6 +129,81 @@ func TestCollaborationOrdinaryRecipientKeepsItsActiveChat(t *testing.T) {
 	}
 }
 
+func TestCollaborationRecipientRosterDoesNotCountExchangeNotices(t *testing.T) {
+	for _, managesTeam := range []bool{false, true} {
+		t.Run(fmt.Sprintf("manage-team=%t", managesTeam), func(t *testing.T) {
+			db, s, _ := testDB(t)
+			views := newTestViews(t, db)
+			sender := seed(t, s, "sender")
+			var recipient pa.Bot
+			if managesTeam {
+				recipient = seedTeamRecipient(t, s, "recipient")
+			} else {
+				recipient = seed(t, s, "recipient")
+				collaborationActiveSource(t, s, recipient)
+			}
+			collaborationActiveSource(t, s, sender)
+			q := rosterQuery()
+			assertUnread := func(want int64) {
+				t.Helper()
+				list, err := s.ListForReader(testContext, pa.ListBots{MachineID: "machine", PageSize: pa.MaxPageRows}, q.ReaderID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				legacy, streamed := int64(-1), int64(-1)
+				for _, row := range list.Items {
+					if row.Bot.Key == recipient.Key {
+						legacy = row.UnreadCount
+					}
+				}
+				for _, change := range rosterRead(t, views, q).Frame.Changes {
+					if change.Key == recipient.Key && change.Summary != nil {
+						streamed = change.Summary.UnreadCount
+					}
+				}
+				if legacy != want || streamed != want {
+					t.Fatalf("recipient unread legacy=%d stream=%d, want %d", legacy, streamed, want)
+				}
+			}
+			directUnread := int64(0)
+			if !managesTeam {
+				directUnread = 1
+			}
+			assertUnread(directUnread)
+			x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, sender, recipient, "hidden-unread"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertUnread(directUnread)
+			worker := recipient.Key
+			if !managesTeam {
+				worker, err = s.StartBackgroundTask(testContext, recipient.Key, time.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			active := reviewStart(t, s, worker, x.RequestTurnID)
+			if _, err = s.FinishExchange(testContext, reviewFinish(t, s, worker, active, pa.TurnSucceeded), "Synthetic answer"); err != nil {
+				t.Fatal(err)
+			}
+			assertUnread(directUnread)
+			export, err := s.Export(testContext, recipient.Key)
+			if err != nil || export.Messages[len(export.Messages)-1].Exchange == nil {
+				t.Fatal("recipient exchange card disappeared", err)
+			}
+			if directUnread > 0 {
+				_, err = s.MarkRead(testContext, command(recipient.Key, pa.ReadOperation, "explicit-read"), pa.ReadCursor{
+					Key: recipient.Key, ConversationID: recipient.ConversationID, ReaderID: q.ReaderID, MessageSeq: 1,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertUnread(0)
+			}
+		})
+	}
+}
+
 func TestCollaborationAdmissionAndCompletionAreTwoBotTransactions(t *testing.T) {
 	db, s, _ := testDB(t)
 	a := seed(t, s, "a")
