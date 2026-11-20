@@ -29,13 +29,13 @@ const kinds: Record<ProjectMemorySummary["type"], string> = {
 
 function memoryError(error: unknown) {
   if (!(error instanceof ProjectMemoryError)) return memoryWord("unavailable")
-  if (error.status === 501) return memoryWord("upgrade")
+  if (error.status === 501 || error.code === "unknown_command" || error.code === "cloud_feature_unavailable" || error.code === "cloud_machine_unsupported") return memoryWord("upgrade")
   if (error.status === 403) return memoryWord("permission")
   if (error.code === "memory_review_stale") return memoryWord("stale")
   if (error.code === "memory_full") return memoryWord("full")
   if (error.code === "memory_entry_invalid") return memoryWord("invalid")
   if (error.code === "memory_entry_not_found") return memoryWord("missing")
-  return memoryWord("unavailable")
+  return `${memoryWord("unavailable")} (${error.code}${error.status ? `, ${error.status}` : ""})`
 }
 
 export function ProjectMemory({ project, onState }: {
