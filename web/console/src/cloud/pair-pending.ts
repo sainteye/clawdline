@@ -20,6 +20,7 @@ export interface PendingPairingStore {
 
 interface PairHooks {
   onOffer?: (pending: PendingPairing) => void
+  onOpened?: (pending: PendingPairing, opened: OpenedPairing) => void
   sleep?: (ms: number) => Promise<void>
 }
 
@@ -49,7 +50,11 @@ function wait(ms: number): Promise<void> {
  * durable. Closing the card stops that card's wait, not the pairing itself;
  * `resumePendingPairing` can claim it from this or a later page.
  */
-export function durablePairViewer(session: CloudSession, store: PendingPairingStore): PairStart {
+export function durablePairViewer(
+  session: CloudSession,
+  store: PendingPairingStore,
+  progress: Pick<PairHooks, "onOffer" | "onOpened"> = {},
+): PairStart {
   return async (hooks) => {
     const pending = await session.startPairing()
     const scope = scopeFor(session)
@@ -61,8 +66,9 @@ export function durablePairViewer(session: CloudSession, store: PendingPairingSt
         error instanceof Error ? error.message : "the pending pairing could not be stored",
       )
     }
+    progress.onOffer?.(pending)
     hooks.onOffer(pending)
-    return claim(session, store, scope, pending, hooks.sleep)
+    return claim(session, store, scope, pending, { sleep: hooks.sleep, onOpened: progress.onOpened })
   }
 }
 
@@ -90,7 +96,7 @@ export function durablePairViewerFromInvitation(
       await removeTerminal(store, scope, pending, error, session.now())
       throw error
     }
-    return claim(session, store, scope, pending, hooks.sleep)
+    return claim(session, store, scope, pending, hooks)
   }
 }
 
@@ -98,12 +104,13 @@ export function durablePairViewerFromInvitation(
 export async function resumePendingPairing(
   session: CloudSession,
   store: PendingPairingStore,
-  hooks: Pick<PairHooks, "sleep"> = {},
+  hooks: PairHooks = {},
 ): Promise<OpenedPairing | null> {
   const scope = scopeFor(session)
   const pending = await store.get(scope, session.now())
   if (!pending) return null
-  return claim(session, store, scope, pending, hooks.sleep)
+  hooks.onOffer?.(pending)
+  return claim(session, store, scope, pending, hooks)
 }
 
 async function claim(
@@ -111,11 +118,12 @@ async function claim(
   store: PendingPairingStore,
   scope: PairingScope,
   pending: PendingPairing,
-  sleep: ((ms: number) => Promise<void>) | undefined,
+  { sleep, onOpened }: PairHooks,
 ): Promise<OpenedPairing> {
   for (;;) {
     try {
       const opened = await session.claimPairing(pending)
+      onOpened?.(pending, opened)
       await store.remove(scope, pending.pairingID)
       return opened
     } catch (error) {
