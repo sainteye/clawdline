@@ -21,6 +21,8 @@ test('assisted pairing closes only after matching helper evidence and handover, 
 import React from 'react';import {createRoot} from 'react-dom/client';
 import * as Pairing from './src/cloud/PairPanel';import {pairingOfferDigest} from './src/cloud/pair-agent';
 import {readPairProgress,writePairProgress} from './src/cloud/pair-progress';
+import {browserPendingPairings,durablePairViewer,resumePendingPairing} from './src/cloud/pair-pending';
+import {CloudViewerSession} from './src/legacy/js/net/cloud-boot';
 import {bootCatalog} from './src/catalog';import {loadStrings} from './src/legacy/bridge';
 import './src/legacy/tokens.css';import './src/legacy/base.css';import './src/legacy/shell.css';import './src/legacy/list.css';import './src/legacy/pages.css';import './src/legacy/door.css';import './src/shell.css';import './src/cloud/cloud.css';
 localStorage.setItem('ui_language',new URLSearchParams(location.search).get('lang')||'en');
@@ -38,6 +40,43 @@ function remember(change) {
 window.progress={stage:'working',summary:'',failedReason:''};window.pairClosedCount=0;window.started=0;window.offers=0;window.expireIn=600000;
 window.holdLaunch=false;window.replayed='';window.statusReads=[];
 window.rememberedRequest=()=>readPairProgress(account,device)?.helper?.requestID;
+function claimFixture() {
+  const session=new CloudViewerSession({
+    config:{apiOrigin:location.origin,appOrigin:location.origin,relayAddress:'wss://example.test',protocolVersion:1},
+    fetch:async()=>Response.json({pairing_id:'storage-test',claim_nonce:btoa(String.fromCharCode(...new Uint8Array(32))),
+      expires_at:new Date(Date.now()+60000).toISOString()}),
+  });
+  session.account=account;
+  session.deviceID=device;
+  session.devicePublicKey=new Uint8Array(32);
+  return session;
+}
+window.storeDurableOffer=()=>new Promise((resolve,reject)=>{
+  const session=claimFixture();
+  session.claimPairing=async()=>{throw Object.assign(new Error('Waiting'),{code:'pairing_unfinished'})};
+  void durablePairViewer(session,browserPendingPairings())({
+    onOffer:pending=>resolve({private:pending.ephemeralPrivateKey.type,extractable:pending.ephemeralPrivateKey.extractable}),
+    sleep:()=>new Promise(()=>{}),
+  }).catch(reject);
+});
+window.recoverDurableOffer=async()=>{
+  const session=claimFixture();
+  session.claimPairing=async pending=>{
+    const key=pending.ephemeralPrivateKey;
+    if(key.type!=='private'||key.extractable) throw Error('Restored claim key can be exported');
+    const algorithm={name:'X25519'};
+    const peer=await crypto.subtle.generateKey(algorithm,false,['deriveBits']);
+    const wireBytes=Uint8Array.from(atob(pending.offer.viewer_ephemeral_key),c=>c.charCodeAt(0));
+    const publicKey=await crypto.subtle.importKey('raw',wireBytes,algorithm,false,[]);
+    const local=await crypto.subtle.deriveBits({...algorithm,public:peer.publicKey},key,256);
+    const remote=await crypto.subtle.deriveBits({...algorithm,public:publicKey},peer.privateKey,256);
+    if(String(new Uint8Array(local))!==String(new Uint8Array(remote))) throw Error('Restored key differs from the offered key');
+    return {machineID:machine.id,machineFingerprint:comparison.machine_fingerprint};
+  };
+  const store=browserPendingPairings();
+  const opened=await resumePendingPairing(session,store);
+  return {machine:opened?.machineID??null,remaining:await store.get({account,device},Date.now())!==null};
+};
 window.finish=(override={})=>{window.progress={stage:'done',summary:'Finished',failedReason:'',comparison:{...comparison,...override}}};
 window.missing=()=>{window.progress={stage:'done',summary:'Finished',failedReason:''}};
 const Overlay=Pairing.PairingOverlay ?? (({pairing})=><div className="door" data-step="cloud"><section data-step="cloud"><Pairing.PairPanel {...pairing}/></section></div>);
@@ -127,6 +166,10 @@ createRoot(document.getElementById('root')).render(<React.StrictMode><Example/><
         assert.equal(await page.getByText('Finished',{exact:true}).count(),0,'the task summary is not a browser confirmation')
         await page.evaluate(()=>window.handover());await page.waitForFunction(()=>window.pairClosedCount===1)
         if(lang==='zh-Hant'&&width===390){
+          await load()
+          assert.deepEqual(await page.evaluate(()=>window.storeDurableOffer()),{private:'private',extractable:false})
+          await load()
+          assert.deepEqual(await page.evaluate(()=>window.recoverDurableOffer()),{machine:'mac_target',remaining:false})
           const reload=async()=>{
             await page.goto(origin+'/pair-auto-fixture.html?lang=zh-Hant&restore')
             await resume.waitFor()

@@ -680,9 +680,9 @@ export class CloudViewerSession {
 
     /**
      * Ask the control plane for a routing handle and a one-time claim nonce, then build the
-     * offer the human carries to the Mac. The private half never leaves this page.
+     * offer the human carries to the Mac. The browser keeps the private half locally.
      */
-    async startPairing() {
+    async startPairing(durable = false) {
         if (!this.devicePublicKey) throw bootError("no_device_key", "no viewer device key yet");
         var fingerprint = await ed25519Fingerprint(this.devicePublicKey);
         var started = await json(this.fetch, this.config.apiOrigin + "/v1/pairing/start", {
@@ -701,7 +701,8 @@ export class CloudViewerSession {
             accountID: this.account,
             deviceID: this.deviceID,
             signingPublicKey: this.devicePublicKey,
-            expiresAt: expiresAt
+            expiresAt: expiresAt,
+            durable: durable
         });
         return {
             pairingID: started.body.pairing_id,
@@ -710,7 +711,8 @@ export class CloudViewerSession {
             fingerprint: fingerprint,
             offer: made.offer,
             fragment: made.fragment,
-            ephemeralPrivateKey: made.ephemeralPrivateKey
+            ephemeralPrivateKey: made.ephemeralPrivateKey,
+            wrappedPrivateKey: made.wrappedPrivateKey
         };
     }
 
