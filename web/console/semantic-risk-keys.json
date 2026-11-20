@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13630,
+  "englishKeys": 13635,
   "counts": {
     "negation": 3542,
-    "state": 2307,
+    "state": 2310,
     "permission": 827,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5843,
+  "unionCount": 5846,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5590,6 +5590,9 @@
       "projectAssistants.towerMoodError",
       "projectAssistants.towerMoodRecent",
       "projectAssistants.towerMoodWait",
+      "projectAssistants.towerOpenChat",
+      "projectAssistants.towerWaitList",
+      "projectAssistants.towerWaitListClose",
       "projectAssistants.towerWaiting",
       "projectAssistants.traceToolCompleted",
       "projectAssistants.traceToolFailed",
@@ -12731,6 +12734,9 @@
     "projectAssistants.towerMoodError",
     "projectAssistants.towerMoodRecent",
     "projectAssistants.towerMoodWait",
+    "projectAssistants.towerOpenChat",
+    "projectAssistants.towerWaitList",
+    "projectAssistants.towerWaitListClose",
     "projectAssistants.towerWaiting",
     "projectAssistants.traceNoReply",
     "projectAssistants.traceToolCompleted",
