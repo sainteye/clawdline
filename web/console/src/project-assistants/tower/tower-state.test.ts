@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs } from "./tower-state.ts"
+import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs } from "./tower-state.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "../words.ts"
 
@@ -80,4 +80,13 @@ test("unread replies mark a Bot without moving it", () => {
   assert.equal(b.mood, "idle")
   assert.equal(b.unread, true)
   assert.equal(towerSummary([b]).unread, 1)
+})
+
+test("floors follow a stable sort of Projects and wrap past the last floor", () => {
+  const at = (project: string, id: string) => ({ ...(bot(id) as object), bot: { key: { machine_id: "m", bot_id: id }, name: id, project: { machine_id: "m", project_id: project } } }) as never
+  const items = [at("zeta", "1"), at("alpha", "2"), at("mid", "3"), at("alpha", "4"), at("b", "5"), at("c", "6")]
+  const floors = assignFloors(items, 4)
+  assert.deepEqual([...floors.values()], [0, 1, 2, 3, 0])
+  assert.equal(floors.get(projectOf(items[1])), floors.get(projectOf(items[3])))
+  assert.deepEqual(assignFloors([...items].reverse(), 4), floors)
 })

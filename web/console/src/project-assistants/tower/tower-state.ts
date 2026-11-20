@@ -105,3 +105,14 @@ export function strollPoint(spots: readonly Point[], seed: number, now: number, 
   const k = (f - 0.72) / 0.28
   return { at: [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k], moving: true }
 }
+
+/** Project identity across machines, as the roster groups it. */
+export const projectOf = (item: W.ProjectAssistantBotSummary) => JSON.stringify([item.bot.key.machine_id, item.bot.project.project_id])
+
+/** Each Project's floor index, from a sort of the Projects themselves, so every
+ * device showing the same Bots picks the same floors and nothing depends on a
+ * particular person's Project names. Beyond `floors`, Projects share from the top. */
+export function assignFloors(items: readonly W.ProjectAssistantBotSummary[], floors: number): Map<string, number> {
+  const projects = [...new Set(items.map(projectOf))].sort()
+  return new Map(projects.map((p, i) => [p, i % floors]))
+}

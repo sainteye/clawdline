@@ -1,6 +1,30 @@
 .project-assistants .pa-tower { display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;padding:14px 18px 18px;box-sizing:border-box; }
 /* The summary is a game HUD: monospace, notched pixel chips, glowing figures. */
-.project-assistants .pa-tower-hud { margin:0;display:flex;flex-wrap:wrap;gap:6px;font:600 12px/1 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace;letter-spacing:.04em;pointer-events:none; }
+.project-assistants .pa-tower-hud { display:flex;align-items:flex-start;justify-content:space-between;gap:8px;font:600 12px/1 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace;letter-spacing:.04em;pointer-events:none; }
+.project-assistants .pa-hud-facts { margin:0;display:flex;flex-wrap:wrap;gap:6px;min-width:0; }
+.project-assistants .pa-hud-switch { display:flex;flex:none;pointer-events:auto;background:rgba(12,9,20,.86);box-shadow:inset 0 0 0 2px rgba(227,149,103,.45);padding:2px;
+  clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px)); }
+.project-assistants .pa-hud-switch button,.project-assistants .pa-tower-elevator button { font:inherit;color:#cfc8c0;background:transparent;border:0;border-radius:0;cursor:pointer; }
+.project-assistants .pa-hud-switch button { min-height:28px;padding:0 10px; }
+.project-assistants .pa-hud-switch button[aria-pressed="true"] { color:#120a10;background:#e39567; }
+.project-assistants .pa-hud-switch button:focus-visible,.project-assistants .pa-tower-elevator button:focus-visible { outline:2px solid #e39567;outline-offset:1px; }
+/* Elevator: one pixel button per floor, a lit dot where someone waits. */
+.project-assistants .pa-tower-elevator { display:flex;flex-direction:column;gap:4px;font:600 12px/1.2 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace; }
+.project-assistants .pa-tower-elevator button { display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;min-height:44px;width:168px;padding:6px 10px;text-align:left;background:rgba(12,9,20,.86);box-shadow:inset 0 0 0 2px rgba(156,166,179,.35);position:relative; }
+.project-assistants .pa-tower-elevator b { grid-row:1 / 3;font-size:15px;color:#efe6dc; }
+.project-assistants .pa-tower-elevator span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-tower-elevator small { color:#99999f;font-size:11px; }
+.project-assistants .pa-tower-elevator button[aria-pressed="true"] { box-shadow:inset 0 0 0 2px #e39567,inset 0 -8px 14px -10px #e39567; }
+.project-assistants .pa-tower-elevator button[aria-pressed="true"] b { color:#e39567;text-shadow:0 0 6px #e39567; }
+.project-assistants .pa-tower-elevator button[data-wait]::after { content:"";position:absolute;right:8px;top:8px;width:6px;height:6px;background:#e39567;box-shadow:0 0 6px #e39567; }
+.project-assistants .pa-tower-elevator button[data-wait] small { color:#e39567; }
+.project-assistants .pa-tower-elevator button:disabled { opacity:.45;cursor:default; }
+/* Elevator doors close and open over the floor when it changes. */
+.project-assistants .pa-tower-doors { position:absolute;inset:0;pointer-events:none;z-index:2; }
+.project-assistants .pa-tower-doors::before,.project-assistants .pa-tower-doors::after { content:"";position:absolute;top:0;bottom:0;width:50%;background:repeating-linear-gradient(90deg,#16121c 0 14px,#1d1824 14px 16px);animation:pa-door .55s steps(8,end) both; }
+.project-assistants .pa-tower-doors::before { left:0;box-shadow:inset -2px 0 0 #e39567;--from:-100%; }
+.project-assistants .pa-tower-doors::after { right:0;box-shadow:inset 2px 0 0 #e39567;--from:100%; }
+@keyframes pa-door { 0% { transform:translateX(0); } 100% { transform:translateX(var(--from)); } }
 .project-assistants .pa-hud-chip { --tone:#e39567;display:inline-flex;align-items:center;gap:6px;padding:7px 10px;color:#efe6dc;background:rgba(12,9,20,.86);
   clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px));
   box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--tone) 55%,transparent),inset 0 -6px 12px -8px var(--tone);white-space:nowrap; }
@@ -18,6 +42,7 @@
   .project-assistants .pa-tower-stage { flex:1;min-height:0;display:grid;place-items:center;container-type:size; }
   .project-assistants .pa-tower-pan { position:relative;width:min(100cqw, 100cqh * 1672 / 941); }
   .project-assistants .pa-tower-hud { position:absolute;left:12px;top:12px;right:12px;z-index:4; }
+  .project-assistants .pa-tower-elevator { position:absolute;right:12px;top:58px;z-index:4; }
 }
 .project-assistants .pa-tower-scene { position:relative;width:100%;aspect-ratio:1672 / 941;border:1px solid var(--pa-line);border-radius:12px;overflow:hidden;background:#0b0812; }
 .project-assistants .pa-tower-scene > img,
@@ -37,6 +62,8 @@
   .project-assistants .pa-tower { height:auto;padding:4px 0 12px; }
   .project-assistants .pa-tower-stage { overflow-x:auto;overscroll-behavior-x:contain;border-radius:12px; }
   .project-assistants .pa-tower-pan { width:max(100%, 720px); }
-  .project-assistants .pa-tower-hud { position:sticky;left:0;width:calc(100vw - 32px);margin-bottom:8px; }
+  .project-assistants .pa-tower-hud { position:sticky;left:0;width:calc(100vw - 32px);margin-bottom:8px;flex-direction:column; }
+  .project-assistants .pa-tower-elevator { position:sticky;left:0;width:calc(100vw - 32px);flex-direction:row;overflow-x:auto;margin-bottom:8px; }
+  .project-assistants .pa-tower-elevator button { width:auto;min-width:96px;flex:none; }
   .project-assistants .pa-tower-bot { min-width:44px;min-height:44px; }
 }
