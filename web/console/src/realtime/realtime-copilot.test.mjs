@@ -931,6 +931,53 @@ test('a Live review reply and an explicit recap both reach the speaking model', 
   }
 })
 
+for (const supersedes of [false, true]) test(`a Live read survives acknowledgment and records a real replacement accurately (replacement=${supersedes})`, async () => {
+  const f = fixture(false)
+  const c = f.c
+  c.live = true
+  c.journalCall = 'follow-up-fixture'
+  c.historyCall = c.journalCall
+  c.operations.reset(c.journalCall)
+  c.callObserving = true
+  c.flushJournal = () => {}
+  let release, start
+  const held = new Promise(resolve => { release = resolve })
+  const started = new Promise(resolve => { start = resolve })
+  c.toolDeps = () => ({
+    ...RealtimeCopilotClient.prototype.toolDeps.call(c), fleet: undefined,
+    decide: async () => ({}),
+    fetch: async path => {
+      if (path === '/v1/sessions') return Response.json({sessions:[row]})
+      assert.equal(path, '/v1/voice/copilot-question')
+      start()
+      return held
+    },
+  })
+  const say = delta => c.handleLiveEvent({type:'session.input_transcript.delta',delta})
+  say('請問')
+  say('他說的原因是什麼')
+  const read = c.runLiveTool('held', 'explain_session_reply', '{"session_id":"%7","question":"Why choose this?","analyze":true}')
+  await started
+  say('嗯')
+  say('。')
+  if (supersedes) say('現在改查部署結果。')
+  release(Response.json({
+    session_id: '%7', conversation: row.sessionId, context: 'test-context',
+    analysis: {answer:'The reviewer found two stop controls.'},
+  }))
+  const result = JSON.parse(await read)
+  const speech = f.sent.filter(event => event.type === 'session.commentary.append')
+  assert.equal(result.voice_presentation, supersedes ? 'superseded' : 'app')
+  assert.equal(result.error, supersedes ? 'copilot_question_superseded' : undefined)
+  assert.equal(speech.length, supersedes ? 0 : 1)
+  if (!supersedes) assert.match(speech[0].content, /two stop controls/)
+  const outcomes = c.state.tools.filter(record => ['explain_session_reply','analyze_session_question'].includes(record.name))
+  assert.equal(outcomes.length, 2)
+  assert.deepEqual(outcomes.map(record => record.outcome), Array(2).fill(supersedes ? 'cancelled' : 'done'))
+  const tool = c.journalLines.find(entry => entry.kind === 'tool' && entry.text === 'explain_session_reply')
+  assert.equal(tool.tool.outcome, supersedes ? 'cancelled' : 'done')
+})
+
 test('a GPT-Live call switched to another Session says its summary at once and goes on with the latest one', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }

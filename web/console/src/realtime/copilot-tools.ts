@@ -329,6 +329,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 進度數字（完成幾步、還剩幾項）只能用 progress，那是剛剛從看板讀到的現況。deliveries 每筆的 when 是那次回報的時間，裡面的數字是當時的；和 progress 不同時，絕對不可以說成現在的進度，要提就說是什麼時候的。沒有 progress 就不要講剩幾項。
 
 【解說單一 Session】
+- 「他最新的分析」「最新狀況呢」「好了嗎」沿用正在談的 Session。使用者清楚換成另一個工作階段時，才改查新的對象。
 - 明確問最近訊息、表格、原因、取捨或洞見時，直接 explain_session_reply，不先產生摘要；只有概況與進度問題才先讀 get_session_summary。
 - 一般概況先讀 get_session_summary，用兩到三句講：它在做什麼、做到哪（依 delivered_summary 或 last_reply 講具體結果）、現在卡在哪，有待決事項才說明在等使用者做什麼。閒置的 Session 也要說它最後完成了什麼。使用者追問執行過程才讀 get_session_activity；訊息內容、原因或取捨直接 explain_session_reply。
 - 依紀錄內容具體講，不要只說「在工作中」或「已閒置」。
@@ -1151,6 +1152,10 @@ export function isHere(text: string): boolean {
  */
 export function pointsBack(text: string): boolean {
   if (/(?:不是|不要|別|别|\bnot\b)/i.test(text)) return false
+  if (/^(?:[嗯好那，、,。\s]+)?(?:(?:好|查好|處理好|完成|找到)了[嗎吗沒没]|(?:有|出)結果了[嗎吗沒没])\p{P}*$/iu.test(text)) return true
+  if (/^(?:那\s*)?(?:現在|现在|目前|最新|最近)(?:的)?(?:狀況|状况|進度|进度|訊息|消息|結果|结果)(?:呢|怎麼樣|怎么样|是什麼|是什么)?\p{P}*$/u.test(text)) return true
+  if (/^(?:is it (?:ready|done)(?: yet)?|any updates?(?: yet)?|what(?:'s| is) the latest)\p{P}*$/iu.test(text)) return true
+  if (/(?<![其吉])[他她它祂](?:的)?(?:最新|最近)(?:的)?(?:分析|結果|结果|數據|数据|進度|进度|狀況|状况|訊息|消息|回覆|回复|回答)|\b(?:its|his|her) (?:latest|most recent) (?:analysis|findings|results|numbers|update|status|message|reply|response)\b/i.test(text)) return true
   return /(?<![其吉])[他她它祂](?![們们])(?:剛剛|剛才|刚刚|刚才|最後|最后|之前|一開始|一开始)?(?:說|说|講|讲|提|建議|建议|發現|发现|找到|認為|认为|覺得|觉得|問|问|要我|推薦|推荐|的(?:結論|结论|建議|建议|原因|發現|发现|修正|修改|做法|方法|意思|說法|说法|回覆|回复|回答|問題|问题|計畫|计划|下一步))|\bwhat (?:did|does|is) (?:it|she|he) (?:say|said|suggest|find|found|recommend|mean|want|propose|saying|suggesting|asking)|\b(?:its|his|her) (?:conclusion|suggestion|fix|reason|answer|reply|plan|finding)/i.test(text)
 }
 
@@ -1221,7 +1226,7 @@ export async function resolveRead(
       id: r.id, label: r.label, state: r.state, assistant: r.assistant,
       ...(r.delivered ? { delivered: clip(r.delivered, LIST_GOAL_CHARS) } : {}),
       ...(r.question ? { question: clip(r.question, LIST_GOAL_CHARS) } : {}),
-    })), 'row' in direct ? direct.row.id : undefined)
+    })), focused()?.id ?? ('row' in direct ? direct.row.id : undefined))
     observation?.end({outcome:'done'})
   } catch {
     // refusal-ok: without a decision the copilot still gets every Session and chooses itself.
@@ -2157,8 +2162,14 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
   return out
 }
 
-async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, count = 1, question = '', analyze = false): Promise<unknown> {
-  if (!Number.isInteger(count) || count < 1 || count > RECENT_REPLIES) return { error: 'voice_reply_count_invalid', maximum: RECENT_REPLIES }
+function asksForLatestOriginal(text: string): boolean {
+  const latest = /(?:最新|最近|最後|最后)(?:的)?(?:一[則则條条]|那[則则條条])?\s*(?:訊息|消息|回覆|回复|回答|原文|分析結果|分析结果)|\b(?:latest|most recent|last) (?:message|reply|response|analysis|findings|results)\b/i
+  const synthesis = /比較|比较|對照|对照|核對|核对|綜合|综合|多[則则條条]|幾[則则條条]|審查者|审查者|\b(?:compare|cross-check|verify|synthesi[sz]e|reviewer|several|multiple)\b/i
+  return latest.test(text) && !synthesis.test(text)
+}
+
+async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, replyCount = 1, question = '', analyze = false): Promise<unknown> {
+  if (!Number.isInteger(replyCount) || replyCount < 1 || replyCount > RECENT_REPLIES) return { error: 'voice_reply_count_invalid', maximum: RECENT_REPLIES }
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -2171,9 +2182,12 @@ async function explainReply(deps: ToolDeps, logs: ToolLog[], wanted: string, cou
   }
   const { row } = found
   deps.focus?.set(row.id)
-  const requested = question.trim() || deps.heard?.().trim() || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
+  const heard = deps.heard?.().trim()
+  const requested = question.trim() || heard || 'Explain the conclusions, reasons, tradeoffs and decisions in these recent replies.'
+  const latestOnly = !deps.selectedReadTarget && asksForLatestOriginal(heard || requested)
+  const count = latestOnly ? 1 : replyCount
   let analysisError: string | undefined
-  if ((deps.selectedReadTarget?.analyze ?? analyze) && deps.analyzeQuestion) {
+  if (!latestOnly && (deps.selectedReadTarget?.analyze ?? analyze) && deps.analyzeQuestion) {
     const analysis = await observedRead(deps,'analyze_session_question',row,()=>deps.analyzeQuestion!(row,requested,count))
     if (analysis) {
       if (analysis.error === 'copilot_question_unusable' || analysis.error === 'copilot_question_failed') analysisError = analysis.error
@@ -3142,7 +3156,8 @@ async function observedRead<T>(deps:ToolDeps,name:string,row:CopilotSessionRow|u
   }})
   const value=result as {error?:unknown;analysis_error?:unknown;source_fallback?:unknown;reused?:boolean}|undefined
   const fallback = value?.analysis_error && Array.isArray(value.source_fallback) && value.source_fallback.length > 0
-  span?.end({outcome:cancelled||deps.operationSignal?.aborted?'cancelled':failed||value?.error?'failed':fallback?'fallback':value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
+  const interrupted = cancelled || deps.operationSignal?.aborted || value?.error === 'copilot_question_superseded'
+  span?.end({outcome:interrupted?'cancelled':failed||value?.error?'failed':fallback?'fallback':value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
   return result
  }catch(error){span?.end({outcome:error instanceof Error&&error.name==='AbortError'?'cancelled':'failed'});throw error}
 }
@@ -3305,7 +3320,7 @@ export function unbackedClaimEvents(kinds: readonly ActionKind[]): Record<string
 }
 
 /** One tool the copilot used in the current turn, as the call sheet shows it. */
-export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number; outcome: 'done' | 'queued' | 'asked' | 'many' | 'failed' }
+export interface ToolTrace { name: string; target?: string; ok: boolean; ms: number; outcome: 'done' | 'queued' | 'asked' | 'many' | 'failed' | 'cancelled' }
 
 /**
  * What a tool call was, for the sheet's tool line: its own name, the Session
@@ -3322,7 +3337,7 @@ export function toolTrace(name: string, output: string, ms: number): ToolTrace {
   const ok = !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{')
   // A list of Sessions to choose from, or to read one by one, is no failure.
   const preparedMessage=o.prepared===true&&o.message_delivered===false&&typeof proposal.message==='string'
-  const outcome = preparedMessage||ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
+  const outcome = o.error === 'copilot_question_superseded' ? 'cancelled' : preparedMessage||ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'
   return { name, ...(target ? { target } : {}), ok, ms: Math.max(0, Math.round(ms)), outcome }
 }
 

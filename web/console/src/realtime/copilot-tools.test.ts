@@ -1001,6 +1001,50 @@ test("a follow-up that names its Session only by a pronoun stays on the copilot'
   assert.equal(JSON.parse(other).session_id, "%9", other)
 })
 
+test('latest-result follow-ups read the focused Session and its newest original reply', async () => {
+  const { deps, calls } = fakeMachine({}, { transcripts: {
+    '%2': { entries: [{role:'user',text:'Check the capture size'}, {role:'assistant',text:'The newest capture is six megabytes.'}] },
+    '%9': { entries: [{role:'assistant',text:'The login test passed.'}] },
+  } })
+  let focus = '%2'
+  const decisions: {heard:string; current?:string}[] = []
+  deps.focus = { get: () => focus, set: id => { focus = id } }
+  deps.decide = async (heard, _rows, current) => { decisions.push({heard,current}); return {id:'%9'} }
+  deps.analyzeQuestion = async () => assert.fail('the latest original reply needs no additional analysis')
+  const read = async (heard: string, session = '%2', analyze = false) => {
+    deps.heard = () => heard
+    return JSON.parse((await runCopilotTool('explain_session_reply', JSON.stringify({
+      session_id: session, analyze, replies: analyze ? 3 : 1,
+    }), deps)).output)
+  }
+
+  for (const [heard, id, analysis] of [
+    ['幫我看看他最新的分析結果跟數據', '%2', true],
+    ['好，好了嗎？', '%2', false],
+    ['請看他最新的訊息', '%9', true],
+    ['那最新的訊息呢？', '%9', true],
+    ["What's its latest reply?", '%9', true],
+  ] as const) {
+    const answer = await read(heard, id, analysis)
+    assert.equal(answer.session_id, '%2', heard)
+    assert.equal(answer.reply, 'The newest capture is six megabytes.')
+    assert.equal(answer.replies.length, 1)
+  }
+  assert.deepEqual(decisions, [])
+  assert.equal(focus, '%2')
+  assert.deepEqual(calls.filter(c => c.path.startsWith('/v1/transcript')).map(c => c.path), Array(5).fill('/v1/transcript?session=%252'))
+  assert.equal((await read('其他的登入測試呢')).session_id, '%9')
+  assert.deepEqual(decisions, [{heard:'其他的登入測試呢',current:'%2'}])
+  assert.equal((await read('Fix the login test 最新的訊息')).session_id, '%9')
+  assert.equal(decisions.length, 1, 'a different full name spoken by the person selects that Session directly')
+  deps.analyzeQuestion = async (row, _question, replies) => {
+    assert.equal(row.id, '%9')
+    assert.equal(replies, 3)
+    return {analysis:{answer:'Comparison across replies.'}}
+  }
+  assert.equal((await read('請比較他最新的回覆和前兩則', '%9', true)).analysis.answer, 'Comparison across replies.')
+})
+
 test("「我這個 Session」 is the Session on screen, read by the program, never decided by a model", async () => {
   const { deps } = fakeMachine({ "%9": [{ pending: false, readable: true, text: "login" }, { pending: false, readable: true, text: "login" }], "%7": [{ pending: false, readable: true, text: "flaky" }] })
   deps.decide = async () => assert.fail("where the person is is not a model's guess")

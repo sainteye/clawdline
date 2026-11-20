@@ -4675,11 +4675,19 @@
         },
         {
           "path": "web/console/src/realtime/realtime-copilot.ts",
-          "line": 606
+          "line": 613
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 2160
+          "line": 2171
+        },
+        {
+          "path": "web/console/src/realtime/copilot-tools.ts",
+          "line": 1174
+        },
+        {
+          "path": "web/console/src/realtime/realtime-copilot.ts",
+          "line": 1891
         },
         {
           "path": "web/console/src/realtime/copilot-live.ts",
@@ -5337,8 +5345,8 @@
     "web/console/src/realtime/copilot-reports.ts": "61a6bb220a23c0798b3ae2477971c552276ec8e3b79c91dd1d5b342f808d0355",
     "web/console/src/realtime/copilot-session-boards.ts": "8962c2e0af6ac22983092a136422ba0b5a3dc86e4efe2c89655bbc2be54d668c",
     "web/console/src/realtime/copilot-speech.ts": "2558a06d674f7158bea43dfc0c051dff1c4b0d9c01fe9054da174202d042bb01",
-    "web/console/src/realtime/copilot-tools.ts": "4a9e9694c432de0de53b5d6161ae092680b665b037fa3a507d295f38ae88a1c4",
-    "web/console/src/realtime/realtime-copilot.ts": "ef9babe3f194f59483420b30b09e7aa0e453e3a6033681ab511ce1c8879fe824",
+    "web/console/src/realtime/copilot-tools.ts": "fba06d7ddbde0f70833dfd88ba430788fe03ed1a3b04defc1c055f3890b4c0e8",
+    "web/console/src/realtime/realtime-copilot.ts": "c0e8b9dd98d29238863dde62cfd0d3c3333ea1e0373d0f63404de16b3966d72b",
     "web/console/src/session/Composer.tsx": "20285a8ce50481f403995d3342847ea4df771371c85cceab806403a13fa23b11",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
@@ -5354,7 +5362,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "f1af5c4f32e8c2f02137668475a4d1dd5f539eae3a5a1f4fdd232c8c2bdd1d12",
-    "zh-Hant": "e3afd52954857a4f7492dca0ac938e63d7a0439b6ffffecd031f4b7deb85b4fb"
+    "en": "4c93dfae5e228599352c42560d4daaa6fdac6c7087523025942d2bafb45cf563",
+    "zh-Hant": "b7133e0fdcdc6e8302909dc055916e5785916d12db68399ba11423eb5d118f3a"
   }
 }

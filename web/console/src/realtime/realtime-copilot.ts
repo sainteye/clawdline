@@ -128,6 +128,12 @@ export function setProgressSounds(on: boolean): void {
   try { localStorage.setItem(PROGRESS_SOUNDS_KEY, on ? 'on' : 'off') } catch { /* refusal-ok: without storage the choice lasts until reload. */ }
 }
 
+/** Transcript deltas can be punctuation or a listening sound within an outstanding question. */
+function hasLiveQuestionInput(text: string): boolean {
+  const words = text.replace(/[\s\p{P}]+/gu, ' ').trim()
+  return !!words && !/^(?:(?:[嗯呃喔哦啊好]+|uh+|um+|huh|hmm+|mm+|okay|ok)(?: |$))+$/i.test(words)
+}
+
 export function getStoredOpenAIKey(): string {
   try {
     return localStorage.getItem(API_KEY_STORAGE_KEY) || ''
@@ -181,6 +187,7 @@ export class RealtimeCopilotClient {
    * decision never judges the sentence before.
    */
   private heardNow = ''
+  private liveQuestionText = ''
   private speechContexts = new Map<string, Promise<{id:string;label:string;machine?:string;conversation?:string}|undefined>>()
   private spokenSessions=new SpokenSessions()
   private sessionReports=new SessionReportQueue()
@@ -632,6 +639,10 @@ export class RealtimeCopilotClient {
       this.cancelOpening()
       this.sessionReports.interrupt()
       this.narrator.discard('session-report')
+      if (this.live) {
+        this.consumeLiveInput()
+        this.liveQuestionText = request.text
+      }
       this.heardNow = request.text
       this.questionTarget = { ...selected, analyze: request.analyze }
       this.focus = selected.id
@@ -735,7 +746,7 @@ export class RealtimeCopilotClient {
   private consumeLiveInput(){
     clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined
     const heard=this.liveHeard.take()
-    if(heard){this.observeEndIntent(heard);this.journal('heard',heard);this.doneSinceHeard.clear();this.updateState({})}
+    if(heard){this.observeEndIntent(heard);this.journal('heard',heard);this.boardVoice.heard(heard,this.boardVoiceTurn);this.doneSinceHeard.clear();this.updateState({})}
     return heard||this.heardNow
   }
   continueSessionReport(request?:string, skipInterrupted=false){
@@ -857,6 +868,7 @@ export class RealtimeCopilotClient {
     // was placed from, and that Session is the one under discussion.
     this.call = { snapshot: '', options: { origin } }
     this.focus = origin?.id
+    this.heardNow = ''; this.liveQuestionText = ''
     this.questionTarget=undefined;this.questionContext=undefined;this.pendingQuestion=undefined;this.livePresentedRead=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.boardVoice = new CopilotSessionBoards(); this.boardVoiceTurn = 0
@@ -1785,17 +1797,23 @@ export class RealtimeCopilotClient {
         return
       case 'session.input_transcript.delta': {
         this.liveInputAt=Date.now()
-        this.questionSerial++
-        this.questionTarget = undefined
         this.personSpoke = true
         this.cancelOpening()
         this.liveReportRevision++;if(this.liveReportItem)this.liveReportItem.interrupted=true
         this.sessionReports.interrupt();this.spokenSessions.interrupted(!!this.liveSaid.peek());this.awaitingResponse=false
         const said = this.liveSaid.take()
         if (said) { this.journal('said', said); this.flushJournal() }
-        if (!this.liveHeard.peek()) this.boardVoiceTurn++
+        const previous = this.liveHeard.peek()
+        if (!previous) this.boardVoiceTurn++
         this.liveHeard.add(event.delta)
         this.heardNow = this.liveHeard.peek()
+        if (hasLiveQuestionInput(this.heardNow)) {
+          if (!hasLiveQuestionInput(previous)) {
+            this.questionSerial++
+            this.questionTarget = undefined
+          }
+          this.liveQuestionText = this.heardNow
+        }
         this.observeEndIntent(this.heardNow,false)
         clearTimeout(this.liveContinueTimer)
         if(this.sessionReports.hasPending()||this.endIntent.requested){
@@ -1872,6 +1890,10 @@ export class RealtimeCopilotClient {
   }
   private async runLiveToolBody(callID: string, name: string, args: string,parent:string) {
     const dc = this.dc, attempt = this.attempt, turn = this.questionSerial
+    const explicit = name === 'explain_session_reply' || name === 'get_session_recap'
+    const focus = this.focus, utterance = this.liveQuestionText
+    const currentQuestion = () => this.dc === dc && this.attempt === attempt && this.questionSerial === turn
+    if (explicit) this.consumeLiveInput()
     const steps: string[] = []
     this.livePending.add(callID)
     this.pendingTools.add(callID)
@@ -1892,13 +1914,28 @@ export class RealtimeCopilotClient {
       }
       if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(undefined, requested.next_report === true),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
       else if (name === 'prepare_session_board' || name === 'confirm_session_board') output = JSON.stringify(await this.boardTool(name, requested))
-      else {const result = await runCopilotTool(name, args, timedDeps(this.directToolDeps({...this.toolDeps(),operationParent:parent}), steps));output = result.output; logs = result.logs}
+      else {
+        const deps = this.toolDeps()
+        if (explicit) {
+          deps.heard = () => utterance
+          deps.focus = {get: () => focus, set: id => { if (currentQuestion()) this.focus = id }}
+          deps.onRead = ref => { if (currentQuestion()) this.spokenSessions.observe(ref) }
+        }
+        const result = await runCopilotTool(name, args, timedDeps(this.directToolDeps({...deps,operationParent:parent}), steps))
+        output = result.output
+        logs = result.logs
+      }
     } catch (error) {
       output = JSON.stringify({ error: String(error) })
     }
     this.livePending.delete(callID)
     this.pendingTools.delete(callID)
     if (this.dc !== dc || attempt !== this.attempt || dc?.readyState !== 'open') { this.updateState({}); return }
+    const result = explicit ? JSON.parse(output) as Record<string, unknown> : undefined
+    const superseded = explicit && !currentQuestion()
+    if (superseded) {
+      output = JSON.stringify({ error: 'copilot_question_superseded', voice_presentation: 'superseded', label: result?.label })
+    }
     const trace = toolTrace(name, output, performance.now() - started)
     this.updateState({toolCallLog:undefined})
     this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
@@ -1908,11 +1945,7 @@ export class RealtimeCopilotClient {
     // The note is session-wide: Live takes a delegation id only for a client
     // delegation and refused this Responses one ("Unknown client or Decision
     // delegation", call of 2026-11-15), so the summary was never spoken.
-    const explicit = name === 'explain_session_reply' || name === 'get_session_recap'
-    if (explicit && turn !== this.questionSerial) {
-      output = JSON.stringify({ voice_presentation: 'superseded' })
-    } else if (explicit) {
-      const result = JSON.parse(output) as Record<string, unknown>
+    if (result && !superseded) {
       const presentation = liveExplicitRead(name, result)
       if (presentation) {
         const key = JSON.stringify([name, result.session_id])
