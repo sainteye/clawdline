@@ -116,3 +116,11 @@ export function assignFloors(items: readonly W.ProjectAssistantBotSummary[], flo
   const projects = [...new Set(items.map(projectOf))].sort()
   return new Map(projects.map((p, i) => [p, i % floors]))
 }
+
+/** Bots waiting for the person, longest quiet first. A summary carries no
+ * time the wait began, so the last activity stands in for it; a Bot whose
+ * time cannot be read goes last, and ties keep the tower's key order. */
+export function waitingList(bots: readonly TowerBot[]): TowerBot[] {
+  const at = (b: TowerBot) => { const t = Date.parse(b.item.activity_at); return Number.isFinite(t) && t > 0 ? t : Infinity }
+  return bots.filter(b => b.mood === "wait").sort((a, z) => at(a) - at(z) || (a.key < z.key ? -1 : a.key > z.key ? 1 : 0))
+}

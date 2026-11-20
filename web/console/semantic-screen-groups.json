@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13630,
-  "riskKeys": 5843,
-  "nonRiskCount": 7787,
+  "englishContentKeys": 13635,
+  "riskKeys": 5846,
+  "nonRiskCount": 7789,
   "groups": [
     {
       "name": "acp / other",
@@ -6113,7 +6113,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 460,
+      "count": 462,
       "sources": [
         null
       ],
@@ -6550,6 +6550,8 @@
         "projectAssistants.towerMoodSleep",
         "projectAssistants.towerMoodUnread",
         "projectAssistants.towerMoodWork",
+        "projectAssistants.towerRide",
+        "projectAssistants.towerRideTo",
         "projectAssistants.towerSection",
         "projectAssistants.towerStale",
         "projectAssistants.towerUnread",
