@@ -57,6 +57,43 @@ const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(
 const snapshotOf = (conversation: string): SessionSkillSnapshot => ({ snapshotId: "snap." + conversation, conversationId: conversation,
   definitionId: "persona.a", scopeId: "repo.a", skills: [{ id: "skill.review", version: "v1", name: "Review", when: "" }] })
 
+test("a hidden Skill feed keeps its cursor and quietly catches up on return", async () => {
+  const machine = new Machine()
+  const clock = new Clock()
+  const moments: SkillMoment[] = []
+  let hidden = true
+  let changed = () => {}
+  const visibility = { hidden: () => hidden, subscribe: (listener: () => void) => {
+    changed = listener
+    return () => { changed = () => {} }
+  } }
+  const feed = new SkillFeed(machine.read, () => {}, (moment) => moments.push(moment), clock, visibility)
+  feed.show("conversation.a")
+  feed.start()
+  await clock.tick(POLL_MS)
+  assert.deepEqual(machine.requests, [])
+  hidden = false; changed()
+  await clock.tick()
+  assert.ok(feed.ledger.baselined)
+
+  const before = machine.requests.length
+  hidden = true; changed()
+  machine.add("conversation.a", "applied")
+  await clock.tick(POLL_MS)
+  assert.equal(machine.requests.length, before)
+
+  hidden = false; changed()
+  await clock.tick()
+  assert.equal(feed.ledger.after, 1)
+  assert.equal(feed.ledger.usesFor(snapshotOf("conversation.a")).get("skill.review")?.status, "applied")
+  assert.equal(moments.length, 0)
+  machine.add("conversation.a", "applied")
+  await clock.tick(POLL_MS)
+  assert.equal(feed.ledger.after, 2)
+  assert.equal(moments.length, 1)
+  feed.stop()
+})
+
 /** About a thousand receipts over forty Sessions, as on a machine that has run roles for a while. */
 function busyMachine(filters = true): Machine {
   const machine = new Machine(filters)

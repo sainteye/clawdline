@@ -376,10 +376,19 @@ test("a terminal that finds the page's carrier already open borrows it instead o
   } finally { session.dispose(); m.transport.dispose() }
 })
 
-test("a terminal that negotiated the channel itself hands it to the page, and keeps it when the terminal goes", async () => {
+test("a terminal that opens direct first uses the machine carrier that survives leaving the Session", async () => {
   const m = await machineFixture()
+  let offers = 0
   const client = { deviceID: viewer, ready: true, retired: false,
-    publishCarrierOffer: async () => { throw new Error("a page with an open carrier offered a second") },
+    publishCarrierOffer: async (_machine: string, offer: { connection: string; key: Uint8Array }) => {
+      offers++
+      const nonce = crypto.getRandomValues(new Uint8Array(12))
+      const key = await crypto.subtle.importKey("raw", offer.key.slice().buffer, "AES-GCM", false, ["encrypt"])
+      const data = new TextEncoder().encode("v=0 answer")
+      const aad = new TextEncoder().encode("clawdline-direct-answer-v1/" + offer.connection)
+      const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: aad }, key, data)
+      return { sdpSealed: bytesBase64(Uint8Array.of(...nonce, ...new Uint8Array(ct))), directReceipts: true }
+    },
     receiveCarrierEnvelope: (_machine: string, envelope: TerminalEnvelope) => { m.sessionEnvelopes.push(envelope) },
     carrierSupported: () => true }
   const carrier = DirectCarrier.for(client, machine, () => m.peer)
@@ -397,21 +406,23 @@ test("a terminal that negotiated the channel itself hands it to the page, and ke
     await acquiring
     await m.frame((session as unknown as { connection: string }).connection, false)
     await serve(m, () => false, () => session.snapshot.carrier === "direct")
-    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 1,
-      "a page with no carrier yet must offer one")
-    assert.equal(carrier.open, true, "the terminal's own channel did not become the page's carrier")
+    assert.equal(offers, 1, "no machine-wide offer was sent")
+    assert.equal(m.sent.filter((request) => request.operation === "direct_offer").length, 0,
+      "a terminal-owned peer would close when the machine retires this Session's terminal")
+    assert.equal(carrier.open, true)
     assert.equal(carrier.directReceipts, true)
 
-    // The terminal goes. The channel is the page's now, and reads keep taking it.
-    m.transport.dispose()
-    assert.equal(carrier.open, true, "disposing the terminal closed the page's carrier")
-
-    // Closing the terminal view releases the terminal's own offer. Releasing a
-    // terminal releases the terminal: the channel it handed to the carrier is
-    // what every later read travels on, and closing it would leave this page
-    // reading over the relay with the machine still holding the carrier.
     session.dispose()
-    assert.equal(carrier.open, true, "closing the terminal closed the page's carrier")
+    m.transport.dispose()
+    assert.equal(carrier.open, true, "leaving the Session closed the machine carrier")
+    assert.equal(await carrier.ensure(), true, "the next Session cannot use the open carrier")
+    assert.equal(offers, 1, "switching Sessions negotiated again")
+
+    m.peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: { v: 1,
+      ch: `t/${machine}/next_session`, seq: 1, ts: 1, class: "stream",
+      key_id: "ms-1", nonce: "", ct: "", sender: machine, sig: "" } }) })
+    await settle()
+    assert.deepEqual(m.sessionEnvelopes.map((envelope) => envelope.ch), [`t/${machine}/next_session`])
   } finally { session.dispose() }
 })
 

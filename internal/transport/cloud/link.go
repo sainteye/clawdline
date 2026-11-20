@@ -921,8 +921,13 @@ func (l *Link) wire() error {
 		// it the publisher cannot tell a list that moved from one that did
 		// not, and read it on every pass to find out (tasklist.go).
 		TaskListMoved: l.takeTaskListMoved,
-		Publish:       l.relay.Publish,
-		Log:           opts.Log,
+		DirectWatching: func() bool {
+			l.directMu.Lock()
+			defer l.directMu.Unlock()
+			return len(l.directPeers) > 0
+		},
+		Publish: l.relay.Publish,
+		Log:     opts.Log,
 	}
 	l.mu.Unlock()
 	// The publisher hears every viewer the relay hears from, which is how a
@@ -955,6 +960,9 @@ func (l *Link) wire() error {
 func (l *Link) publicationAcked(frame adaptercloud.AckFrame) {
 	if l.publisher != nil {
 		l.publisher.Acked(frame.Ch, frame.Fanout)
+		if frame.Status == adaptercloud.AckDelivered && mirroredStatusChannel(frame.Ch) {
+			l.publisher.richRowAcked(frame.Ch, frame.Seq, frame.Fanout)
+		}
 	}
 }
 

@@ -12,6 +12,8 @@ import type { InputReceipt } from "./browser-keyboard.js"
 import { webAddress } from "./browser-address.js"
 import { extensionCurrent } from "./browser-extension.js"
 import { catalogWord } from "../catalog.js"
+import { visibleInterval } from "../legacy/screen-bridge.js"
+import { useBrowserActivityFeed } from "./BrowserActivity.js"
 import "./browser-panel.css"
 
 /**
@@ -81,7 +83,7 @@ function assistantName(row: SessionRow | null): string {
   return "Agent"
 }
 
-export function BrowserPanel({ row = null, target: destination, open, onClose }: { row?: SessionRow | null; target?: BrowserPanelTarget; open: boolean; onClose: (restore: boolean) => void }) {
+export function BrowserPanel({ row = null, target: destination, open, onClose, activityScope }: { row?: SessionRow | null; target?: BrowserPanelTarget; open: boolean; activityScope?: string; onClose: (restore: boolean) => void }) {
   const target=destination?.kind==="bot"?destination:undefined
   row=destination?.kind==="session"?destination.row:row
   const call = target?.call ?? defaultCall
@@ -99,7 +101,6 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
   const [controlBusy, setControlBusy] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [reminded, setReminded] = useState(false)
-  const [activity, setActivity] = useState<Activity[]>([])
   const [audit, setAudit] = useState<Activity[]>([])
   const [auditError, setAuditError] = useState<unknown>(null)
   const [statusTick, setStatusTick] = useState(0)
@@ -115,6 +116,7 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
   const mine = status?.status.tabs.filter((t) => t.conversation === (target ? status?.owner : conversation) && (!t.browser_mode || t.browser_mode === status?.mode)) ?? []
   const tab = mine.find((t) => t.current) ?? mine[mine.length - 1] ?? null
   const tabID = tab?.tab ?? 0
+  const activity = useBrowserActivityFeed(open && tabID ? conversation || undefined : undefined, call, activityScope)?.data ?? []
   const browserMode = status?.mode
   const scopeKey = (target?.id ?? row?.id ?? "") + ":" + conversation + ":" + (browserMode ?? "legacy") + ":" + tabID
   const scope = useRef(scopeKey)
@@ -128,16 +130,20 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
   useEffect(() => {
     if (!open) return
     let alive = true
+    let inFlight = false
     const read = () => {
+      if (inFlight || document.hidden) return
+      inFlight = true
       const revision = controlRevision.current
       return call<Status>("GET", "/v1/browser/status?conversation=" + encodeURIComponent(conversation)).then(
         (s) => { if (alive && revision === controlRevision.current && !controlPending.current) { setStatus(s); setStatusError(null) } },
         (e: unknown) => { if (alive && revision === controlRevision.current && !controlPending.current) setStatusError(e) },
-      )
+      ).finally(() => { inFlight = false })
     }
     read()
-    const timer = window.setInterval(() => { if (!document.hidden) read() }, STATUS_MS)
-    return () => { alive = false; window.clearInterval(timer) }
+    const timer = visibleInterval(read, STATUS_MS)
+    timer.start()
+    return () => { alive = false; timer.stop() }
   }, [open, relay, conversation, statusTick, call])
 
   useEffect(() => {
@@ -158,26 +164,10 @@ export function BrowserPanel({ row = null, target: destination, open, onClose }:
       ).finally(() => { inFlight = false })
     }
     read()
-    const timer = window.setInterval(read, SHOT_MS)
-    return () => { alive = false; window.clearInterval(timer) }
+    const timer = visibleInterval(read, SHOT_MS)
+    timer.start()
+    return () => { alive = false; timer.stop() }
   }, [open, relay, tabID, browserMode, scopeKey, shotTick, call])
-
-  // What the agent did, with the picture of the page after each action.
-  useEffect(() => {
-    setActivity([])
-    if (!open || !conversation || !tabID) return
-    let alive = true
-    const read = () => {
-      if (document.hidden) return
-      call<{ rows: Activity[] }>("GET", "/v1/browser/activity?conversation=" + encodeURIComponent(conversation)).then(
-        (r) => { if (alive) setActivity(r.rows ?? []) },
-        () => {},
-      )
-    }
-    read()
-    const timer = window.setInterval(read, STATUS_MS)
-    return () => { alive = false; window.clearInterval(timer) }
-  }, [open, conversation, tabID, call])
 
   useEffect(() => { if (open) closeRef.current?.focus({ preventScroll: true }) }, [open])
   useEffect(() => {

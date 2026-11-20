@@ -43,6 +43,8 @@ export interface TerminalCloudClient {
 export interface SharedCarrier {
   readonly open: boolean
   readonly directReceipts: boolean
+  supported(): boolean
+  ensure(): Promise<boolean>
   current(): DirectLink | null
   adopt(link: DirectLink, directReceipts: boolean): void
   receive(envelope: TerminalEnvelope): void
@@ -275,10 +277,12 @@ export class TerminalChannelTransport {
     const state = this.keys.get(connection)
     if (!this.peers || !state || !this.confirmed.has(connection)) throw fail("terminal_direct_unavailable")
     const shared = this.shared
-    // The shared carrier is already open — a Session read of this machine opened it. The machine
-    // would refuse a second peer for this viewer, and there is nothing to negotiate: the terminal
-    // rekeys onto the channel that is already there.
-    if (shared?.open) {
+    // A machine that supports a viewer-owned carrier can keep it when this
+    // terminal's connection is retired. Join the same negotiation as Session
+    // reads and manual Direct, even when this terminal is first to need it.
+    if (shared && (shared.open || shared.supported())) {
+      if (!shared.open && !await shared.ensure()) throw fail("terminal_direct_unavailable")
+      if (this.keys.get(connection) !== state || !this.confirmed.has(connection)) throw fail("terminal_direct_stale")
       this.listenShared(shared)
       let stop: (() => void) | null = shared.whenDown((code) => {
         this.observation?.record("direct_down", { connection, code })

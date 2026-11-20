@@ -25,6 +25,7 @@
 import { useEffect, useSyncExternalStore } from "react"
 import type { Icon } from "@clawdline/contract"
 import { client } from "../client.js"
+import { documentVisibility } from "../poll.js"
 import { builtinDisplay } from "../builtin-display.js"
 import type { WireNames } from "../pages/squad/wire.js"
 import { MAX_SQUAD_SNAPSHOT_CONVERSATIONS, squadEventIDValid } from "./skill-event-bounds.js"
@@ -90,7 +91,7 @@ class MachineSkills {
     this.machine = machine
     this.feed = new SkillFeed((path) => readJSON(on(machine, path)), () => this.changed(), (moment) => {
       for (const listener of [...this.momentListeners]) { try { listener(moment) } catch (error) { console.error(error) } }
-    })
+    }, undefined, documentVisibility())
   }
 
   changed(): void { this.version++; for (const listener of [...this.listeners]) listener() }
