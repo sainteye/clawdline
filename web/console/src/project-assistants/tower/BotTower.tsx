@@ -225,8 +225,11 @@ export default function BotTower({ items, w, language, paused = false, highlight
   useEffect(() => {
     const view = viewRef.current
     if (!view || view.scrollWidth <= view.clientWidth + 1 || !bots.length) return
+    // Busy Bots first; otherwise the one active most recently, so an all-idle
+    // floor never opens on the empty middle between two far-apart Bots.
     const focus = bots.filter(b => b.mood === "wait" || b.mood === "error" || b.mood === "work")
-    const pick = focus.length ? focus : bots
+    const recent = [...bots].sort((a, z) => (Date.parse(z.item.activity_at) || 0) - (Date.parse(a.item.activity_at) || 0))
+    const pick = focus.length ? focus : recent.slice(0, 1)
     const xs = pick.map(b => locate(b, 0, true).at[0])
     const mid = xs.reduce((a, x) => a + x, 0) / xs.length
     view.scrollLeft = Math.max(0, mid / scene.width * view.scrollWidth - view.clientWidth / 2)
