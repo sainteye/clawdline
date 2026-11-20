@@ -197,6 +197,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.tower_floor_project_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_floor_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_floors` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_zone_shown` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |

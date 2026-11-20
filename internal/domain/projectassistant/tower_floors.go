@@ -11,6 +11,11 @@ import (
 // spread by the console's default rule.
 const MaxTowerFloors = 4
 
+// MaxTowerZoneShown is how many Bots one zone of a tower floor draws (its
+// desks, queue, lounge…); the rest are counted as "+N". The console's
+// TowerZoneShown must equal it.
+const MaxTowerZoneShown = 3
+
 // MaxTowerFloorProjects bounds the placements one machine keeps. A removed
 // Project keeps its row so that registering it again does not move its Bots,
 // which is why the bound is generous rather than the number of live Projects.

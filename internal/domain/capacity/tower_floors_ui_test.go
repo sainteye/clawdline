@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -39,5 +40,30 @@ func TestTowerFloorsMatchTheConsole(t *testing.T) {
 	}
 	if int64(floors) != row.Limit || row.Limit != pa.MaxTowerFloors {
 		t.Fatalf("the console draws %d floors, the register says %d, the domain %d", floors, row.Limit, pa.MaxTowerFloors)
+	}
+}
+
+// One zone draws TowerZoneShown Bots (tower-state.ts) before counting "+N";
+// the register's row and the domain constant say the same number.
+func TestTowerZoneShownMatchesTheConsole(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "web", "console", "src", "project-assistants", "tower", "tower-state.ts"))
+	if err != nil {
+		t.Fatalf("read tower-state.ts: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^export const TowerZoneShown = (\d+)$`).FindStringSubmatch(string(raw))
+	if m == nil {
+		t.Fatal("TowerZoneShown is not a literal in tower-state.ts")
+	}
+	var row Entry
+	for _, e := range Register() {
+		if e.Name == "bots.tower_zone_shown" {
+			row = e
+		}
+	}
+	if row.Name == "" {
+		t.Fatal("bots.tower_zone_shown is not registered")
+	}
+	if m[1] != strconv.FormatInt(row.Limit, 10) || row.Limit != pa.MaxTowerZoneShown {
+		t.Fatalf("the console draws %s per zone, the register says %d, the domain %d", m[1], row.Limit, pa.MaxTowerZoneShown)
 	}
 }
