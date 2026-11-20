@@ -194,18 +194,27 @@ func (p presser) press(ctx context.Context, bytes []byte) error {
 // read is the menu on screen now. The gate is open: this path only exists
 // behind a menu the page already drew buttons for.
 func (p presser) read(ctx context.Context) (session.Menu, bool) {
+	menu, _, found := p.look(ctx)
+	return menu, found
+}
+
+// look is read, telling apart a screen that could not be captured (`seen`
+// false) from one that was captured and shows no question (`seen` true,
+// `found` false). Only the second is evidence that a picker has closed.
+func (p presser) look(ctx context.Context) (menu session.Menu, seen, found bool) {
 	if p.screen == nil {
-		return session.Menu{}, false
+		return session.Menu{}, false, false
 	}
 	screen, ok := p.screen.Capture(ctx, p.s)
 	if !ok {
-		return session.Menu{}, false
+		return session.Menu{}, false, false
 	}
 	assistant := p.s.Assistant
 	if assistant == "" {
 		assistant = session.AssistantClaude
 	}
-	return session.ReadMenu(screen, assistant, true)
+	menu, found = session.ReadMenu(screen, assistant, true)
+	return menu, true, found
 }
 
 // expected is the menu on screen now, if it is the question the answer names.
@@ -286,7 +295,7 @@ func (p presser) answer(ctx context.Context, want int, bytes []byte, seen *sessi
 		p.note["verdict"] = "toggled"
 		return nil
 	}
-	return p.confirm(ctx, want, asked)
+	return p.confirm(ctx, want, asked, true)
 }
 
 // highlight answers a picker that takes no digits by walking its highlight
@@ -304,14 +313,26 @@ func (p presser) highlight(ctx context.Context, want int, menu session.Menu) err
 			return err
 		}
 	}
-	return p.confirm(ctx, want, &menu)
+	return p.confirm(ctx, want, &menu, false)
 }
 
 // confirm is Targets.confirmSelection: Return only once the screen shows the
 // digit landed on the wanted row of the same question. Two reads, because a
 // terminal repaints on its own schedule. No menu on screen is either an answer
 // that closed the picker or an unreadable screen; neither is a reason to type.
-func (p presser) confirm(ctx context.Context, want int, asked *session.Menu) error {
+//
+// **A digit that closed the picker answered it.** A numbered Claude Code
+// picker takes its digit as the whole answer — a lone question, the last of a
+// set, the review screen's "Submit answers" — and the next screen is the
+// session working again. When `closes` is set (the digit path) and both reads
+// captured a screen with no question on it, the press is done: no Return, and
+// no failure. Reporting that as a failure left the page saying it did not know
+// whether the answer arrived, on every last answer (thirteen recorded presses
+// ended `no_return` this way before 2026-11-20). A screen that could not be
+// captured is still nobody's evidence, and arrow keys never close a picker,
+// so the highlight walk does not take this rule.
+func (p presser) confirm(ctx context.Context, want int, asked *session.Menu, closes bool) error {
+	closed := 0
 	for attempt := 0; attempt < 2; attempt++ {
 		wait := 120 * time.Millisecond
 		if attempt > 0 {
@@ -320,9 +341,14 @@ func (p presser) confirm(ctx context.Context, want int, asked *session.Menu) err
 		if err := sleep(ctx, wait); err != nil {
 			return err
 		}
-		now, ok := p.read(ctx)
+		now, seen, ok := p.look(ctx)
 		if !ok {
-			p.note[fmt.Sprintf("confirm%d", attempt)] = "no_menu"
+			if seen {
+				closed++
+				p.note[fmt.Sprintf("confirm%d", attempt)] = "closed"
+			} else {
+				p.note[fmt.Sprintf("confirm%d", attempt)] = "no_screen"
+			}
 			continue
 		}
 		verdict := session.Confirm(want, asked, now)
@@ -335,6 +361,10 @@ func (p presser) confirm(ctx context.Context, want int, asked *session.Menu) err
 			p.note["verdict"] = "moved_on"
 			return nil
 		}
+	}
+	if closes && closed == 2 {
+		p.note["verdict"] = "closed"
+		return nil
 	}
 	p.note["verdict"] = "no_return"
 	return errors.New("the requested selection could not be confirmed; refresh before trying again")

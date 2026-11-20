@@ -261,3 +261,45 @@ func TestAMenuWhoseHighlightDoesNotMoveCannotReportSuccess(t *testing.T) {
 		}
 	}
 }
+
+// A numbered Claude Code picker takes its digit as the whole answer: the
+// picker closes and the next screen is the session working again. Both reads
+// after the digit find a screen with no question on it. That is the answer
+// landing, not a failure: no Return follows it, and the press is reported done
+// (measured 2026-11-20 — thirteen recorded presses ended `no_return` this way,
+// and each left the phone saying it did not know whether the answer arrived).
+func TestADigitThatClosesThePickerIsAnAnswer(t *testing.T) {
+	pane := &menuTerminal{s: paneFor("%7"), screen: permissionPrompt("rm -rf build", 1)}
+	pane.onKey = func(p *menuTerminal, b []byte) {
+		if string(b) == "1" {
+			p.show("✻ Working… (1s · esc to interrupt)\n\n> \n")
+		}
+	}
+	expect := session.MenuFingerprint(seenMenu(t, permissionPrompt("rm -rf build", 1)))
+	if _, err := menuActions(pane).Key(context.Background(), "%7", "1", expect); err != nil {
+		t.Fatalf("err %v, want the closed picker read as answered", err)
+	}
+	if typed := pane.keys(); len(typed) != 1 || typed[0] != "1" {
+		t.Fatalf("typed %q, want the digit alone", typed)
+	}
+}
+
+// A screen that could not be read after the digit is not evidence of
+// anything: the press stays a failure the page reports as unknown.
+func TestADigitFollowedByAnUnreadableScreenIsNotReportedAnswered(t *testing.T) {
+	pane := &menuTerminal{s: paneFor("%7"), screen: permissionPrompt("rm -rf build", 1)}
+	pane.onKey = func(p *menuTerminal, b []byte) {
+		p.mu.Lock()
+		p.blind = true
+		p.mu.Unlock()
+	}
+	expect := session.MenuFingerprint(seenMenu(t, permissionPrompt("rm -rf build", 1)))
+	if _, err := menuActions(pane).Key(context.Background(), "%7", "1", expect); err == nil {
+		t.Fatal("a press nobody could see land was reported as answered")
+	}
+	for _, key := range pane.keys() {
+		if key == "\r" {
+			t.Fatal("typed Return at a screen nobody could read")
+		}
+	}
+}

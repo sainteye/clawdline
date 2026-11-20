@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs } from "./tower-state.ts"
+import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList } from "./tower-state.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "../words.ts"
 
@@ -89,4 +89,17 @@ test("floors follow a stable sort of Projects and wrap past the last floor", () 
   assert.deepEqual([...floors.values()], [0, 1, 2, 3, 0])
   assert.equal(floors.get(projectOf(items[1])), floors.get(projectOf(items[3])))
   assert.deepEqual(assignFloors([...items].reverse(), 4), floors)
+})
+
+test("the waiting list holds only waiting Bots, longest quiet first", () => {
+  const at = (min: number) => new Date(now - min * 60_000).toISOString()
+  const list = waitingList(towerBots([
+    bot("fresh", { status: "needsInput", activity_at: at(2) }),
+    bot("busy", { status: "working", activity_at: at(90) }),
+    bot("old", { status: "needsInput", activity_at: at(40) }),
+    bot("unknown", { status: "needsInput", activity_at: "" }),
+    bot("tie-b", { status: "needsInput", activity_at: at(10) }),
+    bot("tie-a", { pending_permissions: 1, status: undefined, activity_at: at(10) }),
+  ], now, w))
+  assert.deepEqual(list.map(b => b.item.bot.name), ["old", "tie-a", "tie-b", "fresh", "unknown"])
 })

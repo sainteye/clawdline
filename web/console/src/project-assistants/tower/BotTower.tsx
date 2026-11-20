@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
-import { assignFloors, projectOf, slotPoint, strollPoint, towerBots, towerSummary, type TowerBot, type TowerMood } from "./tower-state"
+import { assignFloors, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
 import { ramenScene, sectionScene, towerFloors, type TowerScene } from "./tower-scene"
 import { drawBot } from "./tower-draw"
 import "./tower.css"
@@ -79,6 +79,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const sceneRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null), viewRef = useRef<HTMLDivElement>(null)
   // On a phone the layout switch and floor map fold behind one floor button.
   const [panelOpen, setPanelOpen] = useState(false)
+  // The waiting list opens from the HUD's waiting chip and closes once nobody waits.
+  const [waitOpen, setWaitOpen] = useState(false)
   const buttons = useRef(new Map<string, HTMLButtonElement>())
   // Item changes place Bots at once; the idle tiers also age once a minute.
   const now = useMemo(() => Date.now(), [items, tick])
@@ -86,6 +88,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const [chosenFloor, setChosenFloor] = useState<number | null>(() => { const v = readPref(floorKey); if (v === "section") return Section; const n = Number(v); return v !== null && Number.isInteger(n) && n >= 0 && n < towerFloors.length ? n : null })
   const allBots = useMemo(() => towerBots(items, now, w as unknown as Record<string, string>), [items, now, w])
   const summary = towerSummary(allBots)
+  const waiting = useMemo(() => waitingList(allBots), [allBots])
+  const listOpen = waitOpen && waiting.length > 0
   const floorOf = useMemo(() => assignFloors(items, towerFloors.length), [items])
   const floors = towerFloors.map((f, i) => {
     const here = allBots.filter(b => floorOf.get(projectOf(b.item)) === i)
@@ -252,8 +256,28 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const figure = (text: string) => text.split(/(\d+)/).map((part, i) => i % 2 ? <b key={i}>{part}</b> : part)
   const hud = <div className="pa-tower-hud">
     <p className="pa-hud-facts" role="status">
-      {summary.total ? chips.map(c => <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
+      {summary.total ? chips.map(c => c.key === "wait"
+        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
+        : <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
     </p>
+  </div>
+  // Read-only: each row says who waits, where, on what, and since when; it
+  // opens that Bot's chat, or rides to its floor when the building shows another.
+  const waitList = listOpen && <div id="pa-tower-waitlist" className="pa-tower-waitlist" role="region" aria-label={w.towerWaitList}
+    onKeyDown={e => { if (e.key === "Escape") setWaitOpen(false) }}>
+    <header><b>{w.towerWaitList}</b><button type="button" aria-label={w.towerWaitListClose} onClick={() => setWaitOpen(false)}>×</button></header>
+    <ol>{waiting.map(b => {
+      const at = floorOf.get(projectOf(b.item)) ?? 0, project = projectName(b.item) || w.unnamedProject, when = ago(b.item.activity_at, now, language)
+      const elsewhere = building && at !== floor
+      return <li key={b.key} data-bot-key={b.key}>
+        <p><strong>{b.item.bot.name}</strong><span>{building ? `${floors[at].label} · ${project}` : project}</span></p>
+        <p>{b.caption && <small>{b.caption}</small>}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
+        <div>
+          <button type="button" onClick={() => onSelect(b.item)}>{w.towerOpenChat}</button>
+          {elsewhere && <button type="button" aria-label={w.towerRideTo.replace("{floor}", floors[at].label)} onClick={() => { setWaitOpen(false); goFloor(at) }}>{w.towerRide}</button>}
+        </div>
+      </li>
+    })}</ol>
   </div>
   const layoutSwitch = <div className="pa-hud-switch" role="group" aria-label={w.towerLayout}>
     <button type="button" aria-pressed={!building} onClick={() => setLayout("floor")}>{w.towerLayoutFloor}</button>
@@ -281,7 +305,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
         {hud}
-        {canBuild && <button type="button" className="pa-tower-floorbtn" aria-expanded={panelOpen} aria-label={w.towerFloorsMenu} onClick={() => setPanelOpen(o => !o)}>
+        {canBuild && <button type="button" className="pa-tower-floorbtn" aria-expanded={panelOpen} aria-label={w.towerFloorsMenu} onClick={() => { setWaitOpen(false); setPanelOpen(o => !o) }}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5 8 2.5l6 3-6 3zM2 8.5l6 3 6-3M2 11.5l6 3 6-3"/></svg>
           <b>{!building ? w.towerLayoutFloor : section ? w.towerSection : floors[floor].label}</b>
         </button>}
@@ -319,6 +343,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
           })}
         </div>
         </div>
+        {waitList}
       </div>
     </div>
   </section>
