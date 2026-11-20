@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13548,
-  "riskKeys": 5812,
-  "nonRiskCount": 7736,
+  "englishContentKeys": 13569,
+  "riskKeys": 5820,
+  "nonRiskCount": 7749,
   "groups": [
     {
       "name": "acp / other",
@@ -6096,7 +6096,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 431,
+      "count": 444,
       "sources": [
         null
       ],
@@ -6510,6 +6510,19 @@
         "projectAssistants.thinking",
         "projectAssistants.thisMachine",
         "projectAssistants.total",
+        "projectAssistants.towerAllIdle",
+        "projectAssistants.towerBackToList",
+        "projectAssistants.towerBots",
+        "projectAssistants.towerLatest",
+        "projectAssistants.towerLoading",
+        "projectAssistants.towerMoodIdle",
+        "projectAssistants.towerMoodSleep",
+        "projectAssistants.towerMoodUnread",
+        "projectAssistants.towerMoodWork",
+        "projectAssistants.towerStale",
+        "projectAssistants.towerUnread",
+        "projectAssistants.towerView",
+        "projectAssistants.towerWorking",
         "projectAssistants.trace",
         "projectAssistants.traceLoading",
         "projectAssistants.traceNarration",

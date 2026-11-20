@@ -23,10 +23,11 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,errors,onMore,projectNames,projectIcons,status,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection}: {
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
+  view?:"list"|"tower";onView?:(view:"list"|"tower")=>void;tower?:ReactNode;
   onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;onGroupOpenChange?:(open:boolean)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary,fromGroup?:boolean)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
@@ -205,14 +206,15 @@ export function BotRoster({rosterScope,items,machines,selected,query,onQuery,mac
           <header className="pa-toolbar">
             <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
             <h1>{w.allBots}</h1>
+            {onView&&!sorting&&<button type="button" className="pa-circle pa-view-toggle" aria-pressed={view==="tower"} aria-label={w.towerView} title={w.towerView} onClick={()=>onView(view==="tower"?"list":"tower")}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 14.5V3.5l5-2 5 2v11M1.5 14.5h13M6 5.5h1M9 5.5h1M6 8.5h1M9 8.5h1M7 14.5v-3h2v3"/></svg></button>}
             {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
             {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
           </header>
-          <label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>
+          {view!=="tower"&&<label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>}
           {several&&<div className="pa-roster-filter"><span>{!shown.length&&errors.length?(errors.some(([, ,retryable])=>retryable)?w.sourceConnecting:w.sourceError):<>{w.total} {loading&&!items.length?"…":shown.length}</>}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
           <div className="pa-roster-scroll">
             {loading&&items.length>0&&<p role="status">{w.loading}</p>}{skeleton&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
-            {renderRows(group.rows,group.open,group.selected,group.dismiss)}
+            {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
             {group.content}
             {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
           </div>

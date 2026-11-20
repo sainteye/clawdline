@@ -58,3 +58,5 @@ html.pa-roster-dragging,html.pa-roster-dragging * { cursor:grabbing!important;us
   position:absolute; bottom:-2px; right:-2px; display:grid; place-items:center; border-radius:50%;
   width:15px; height:15px; color:#17130c; background:#f3bf68; font-size:10px; line-height:1;
 }
+.project-assistants .pa-view-toggle svg { width:16px;height:16px;display:block; }
+.project-assistants .pa-view-toggle[aria-pressed="true"] { color:var(--pa-accent,#e39567);background:#e395671a; }

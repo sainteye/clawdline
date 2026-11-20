@@ -1,0 +1,24 @@
+.project-assistants .pa-tower { display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;padding:14px 18px 18px;box-sizing:border-box; }
+.project-assistants .pa-tower-summary { margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-tower-stale { color:#e39567; }
+.project-assistants .pa-tower-stage { flex:1;min-height:0;display:grid;place-items:center;container-type:size; }
+.project-assistants .pa-tower-pan { width:min(100cqw, 100cqh * 1672 / 941); }
+.project-assistants .pa-tower-scene { position:relative;width:100%;aspect-ratio:1672 / 941;border:1px solid var(--pa-line);border-radius:12px;overflow:hidden;background:#0b0812; }
+.project-assistants .pa-tower-scene > img,
+.project-assistants .pa-tower-scene > canvas { position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated;user-select:none; }
+.project-assistants .pa-tower-scene > canvas { pointer-events:none; }
+.project-assistants .pa-tower-scene[data-stale] > img { filter:saturate(.45) brightness(.7); }
+.project-assistants .pa-tower-bot { position:absolute;padding:0;margin:0;border:0;border-radius:40%;background:transparent;cursor:pointer;min-width:24px;min-height:24px; }
+.project-assistants .pa-tower-bot:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
+.project-assistants .pa-tower-tip { position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);display:none;flex-direction:column;gap:1px;padding:6px 9px;border:1px solid var(--pa-line);border-radius:8px;background:rgba(20,20,20,.94);color:#fafafa;font-size:12px;line-height:1.4;text-align:left;white-space:nowrap;max-width:260px;pointer-events:none;z-index:2; }
+.project-assistants .pa-tower-tip > span,.project-assistants .pa-tower-tip > small { color:var(--pa-dim);overflow:hidden;text-overflow:ellipsis; }
+.project-assistants .pa-tower-bot:hover .pa-tower-tip,.project-assistants .pa-tower-bot:focus-visible .pa-tower-tip { display:flex; }
+.project-assistants .pa-tower-fallback { display:grid;place-items:center;gap:12px;height:100%;color:var(--pa-dim);text-align:center;padding:20px; }
+
+/* On a phone the tower sits in the roster below its toolbar and pans inside its own frame. */
+@media(max-width:700px) {
+  .project-assistants .pa-tower { height:auto;padding:4px 0 12px; }
+  .project-assistants .pa-tower-stage { display:block;container-type:normal;overflow-x:auto;overscroll-behavior-x:contain;border-radius:12px; }
+  .project-assistants .pa-tower-pan { width:max(100%, 720px); }
+  .project-assistants .pa-tower-bot { min-width:44px;min-height:44px; }
+}
