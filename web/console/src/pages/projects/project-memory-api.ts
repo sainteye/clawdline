@@ -5,11 +5,17 @@ export class ProjectMemoryError extends Error {
 }
 
 async function memoryRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...init })
+  let response: Response
+  try {
+    response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...init })
+  } catch (error) {
+    const code = error instanceof TypeError && /^(cloud_[a-z_]+): /.exec(error.message)?.[1]
+    throw new ProjectMemoryError(code || "network", 0)
+  }
   const data = await response.json().catch(() => null)
   if (!response.ok || !data) {
     const code = typeof data?.error === "string" ? data.error : data?.error?.code
-    throw new ProjectMemoryError(code || "unavailable", response.status)
+    throw new ProjectMemoryError(typeof code === "string" && /^[a-z_]+$/.test(code) ? code : "invalid_response", response.status)
   }
   return data as T
 }
