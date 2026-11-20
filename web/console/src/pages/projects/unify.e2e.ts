@@ -161,7 +161,7 @@ function daemon(): Server {
     })
     if (path === memoryBase + "-dream") return json(res, 200, {
       counts: { active: memoryArchived ? 1 : 2, pending: 0, archived: memoryArchived ? 1 : 0 },
-      active_limit: 1024, pending_limit: 128, archive_limit: 512, archive: [],
+      active_limit: 1024, pending_limit: 128, archive_limit: 512, archive: [], last_run: "2026-11-20T01:00:00Z",
       review: memoryArchived ? [] : [memoryChange], archived: memoryArchived ? [{ ...memoryChange, reason: "archived_reviewed" }] : [],
     })
     if (path === memoryBase + "-search") return json(res, 200, {
@@ -833,6 +833,10 @@ for (const [name, size] of [["phone", PHONE], ["desk", DESK]] as const) {
       )
       await click("記憶", ".project-setup-views button")
       await tab.until("both entries are visible", `document.querySelectorAll(".project-memory-list li").length === 2`)
+      const counts = await tab.run(`[...document.querySelectorAll(".project-memory-counts dd")].map(row => row.textContent)`)
+      assert.deepEqual(counts, ["2 / 1024", "0 / 128", "0 / 512"])
+      const lastRun = await tab.run(`document.querySelector(".project-memory-head .project-memory-muted").textContent`)
+      assert.match(lastRun, /^上次整理 [^{}]+$/u)
       await tab.run(`(() => {
         const input = document.querySelector(".project-memory-search input")
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "Original-only evidence")
