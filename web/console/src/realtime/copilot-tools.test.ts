@@ -2148,6 +2148,23 @@ test('focused explanations use the shared analyzer while summaries keep their ex
  assert.equal(asked.length,1,'ordinary summaries never start focused analysis')
 })
 
+test('a rejected analysis answers from the same Session’s saved replies on an older machine', async () => {
+  const m = fakeMachine({}, { transcripts: { '%2': { entries: [
+    { role: 'user', text: 'What did the reviewer find?' },
+    { role: 'assistant', text: 'The reviewer found two stop controls.' },
+  ] } } })
+  let analyses = 0
+  const deps: ToolDeps = { ...m.deps, analyzeQuestion: async () => {
+    analyses++
+    return { error: 'copilot_question_unusable', analysis_unavailable: true }
+  } }
+  const out = JSON.parse((await runCopilotTool('explain_session_reply', '{"session_id":"%2","question":"What did the reviewer find?"}', deps)).output)
+  assert.equal(out.analysis_error, 'copilot_question_unusable')
+  assert.equal(out.error, undefined)
+  assert.equal(out.reply, 'The reviewer found two stop controls.')
+  assert.equal(analyses, 1)
+})
+
 
 test("a Cloud carried question is answered from its returned row without polling the display list", async () => {
  const {deps,calls,sleeps}=fakeMachine({})

@@ -862,6 +862,66 @@ test('a Live screen switch waits for speech and only the newest Session opens', 
   } finally { Date.now = realNow; f.c.dc.readyState = 'closed' }
 })
 
+test('a new Live question supersedes an opening refresh that is already reading', async () => {
+  const f = fixture(false)
+  f.c.live = true
+  f.c.liveQuietMs = 0
+  const recap = { text: 'The review is complete.', at: Math.floor(Date.now() / 1000) - 1200, current: false }
+  let finishRefresh
+  const refresh = new Promise(resolve => { finishRefresh = resolve })
+  let refreshStarted = false
+  f.c.toolDeps = () => ({
+    ...RealtimeCopilotClient.prototype.toolDeps.call(f.c), fleet: undefined, tasks: undefined,
+    recapMode: () => 'background',
+    fetch: async path => {
+      if (path === '/v1/sessions') return Response.json({ sessions: [{ ...row, recap }] })
+      if (path === '/v1/voice/copilot-recap') {
+        refreshStarted = true
+        await refresh
+        return Response.json({ recap: 'The review is complete and the build is installed.', at: 1, current: true })
+      }
+      return Response.json({ entries: [] })
+    },
+  })
+  const opening = f.c.openFromOrigin()
+  await tick()
+  assert.equal(refreshStarted, true)
+  f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'The review is complete.' })
+  f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: 'What did the reviewer find?' })
+  finishRefresh()
+  f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'I will check.' })
+  await opening
+  const notes = f.sent.filter(event => event.type === 'session.commentary.append')
+  assert.equal(notes.length, 1, 'the opening refresh must not compete with the new question')
+})
+
+test('a Live review reply and an explicit recap both reach the speaking model', async () => {
+  const f = fixture(false)
+  f.c.live = true
+  f.c.toolDeps = () => ({
+    ...RealtimeCopilotClient.prototype.toolDeps.call(f.c), fleet: undefined, tasks: undefined,
+    fetch: async path => {
+      if (path === '/v1/sessions') return Response.json({ sessions: [row] })
+      if (path === '/v1/voice/copilot-question') return Response.json({
+        session_id: '%7', conversation: row.sessionId, context: 'test-context', analysis: { answer: 'The reviewer found two stop controls.' },
+      })
+      if (path === '/v1/voice/copilot-recap') return Response.json({ recap: 'The team captured six screenshots and compared them with the reference.' })
+      assert.fail(`Unexpected read: ${path}`)
+    },
+  })
+  for (const [tool, question, expected] of [
+    ['explain_session_reply', 'What did the reviewer find?', /two stop controls/],
+    ['get_session_recap', 'Please recap this Session.', /six screenshots/],
+  ]) {
+    f.sent.length = 0
+    f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: question })
+    await f.c.runLiveTool(tool, tool, JSON.stringify({ session_id: '%7', question }))
+    assert.match(JSON.stringify(f.sent.filter(event => /^session\.(?:commentary|thinking)\.append$/.test(event.type))), expected)
+    assert.equal(f.sent.filter(event => event.type === 'session.commentary.append').length, 1)
+    f.c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: 'Spoken result.' })
+  }
+})
+
 test('a GPT-Live call switched to another Session says its summary at once and goes on with the latest one', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
@@ -1090,6 +1150,8 @@ test('both call engines reuse the exact analysis context and include its text-mo
   }})
   const selected={id:'%7',label:'Compare options',conversation:'conversation-seven'}
   await f.c.analyzeQuestion(selected,'Why A?',3)
+  if (live) f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: 'What about cost?' })
+  else await f.c.handleRealtimeEvent({ type: 'input_audio_buffer.speech_started' })
   await f.c.analyzeQuestion(selected,'What about cost?',3)
   assert.equal(calls[0].context,undefined)
   assert.equal(calls[1].context,'context-one')
@@ -1105,6 +1167,32 @@ test('an old daemon has no question endpoint and cannot spend on an unrelated re
  f.c.toolDeps=()=>({fetch:async(path)=>{assert.equal(path,'/v1/voice/copilot-question');reads++;return new Response('',{status:404})}})
  assert.equal(await f.c.analyzeQuestion({id:'%7',label:'Compare',conversation:'c'},'Why?',3),undefined)
  assert.equal(reads,1)
+})
+
+test('Live plays source evidence once when the backend rephrases a rejected analysis', async () => {
+  const f = fixture(false)
+  f.c.live = true
+  let analyses = 0
+  f.c.toolDeps = () => ({
+    ...RealtimeCopilotClient.prototype.toolDeps.call(f.c), fleet: undefined, tasks: undefined,
+    fetch: async (path, init) => {
+      if (path === '/v1/sessions') return Response.json({ sessions: [row] })
+      assert.equal(path, '/v1/voice/copilot-question')
+      assert.equal(JSON.parse(init.body).allow_source_fallback, true)
+      analyses++
+      return Response.json({
+        session_id: '%7', conversation: row.sessionId, context: 'review',
+        analysis_error: 'copilot_question_unusable', analysis_failure: 'quote_not_found',
+        source_fallback: [{ role: 'review', text: 'The reviewer found two stop controls.' }],
+      })
+    },
+  })
+  f.c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: 'What did the reviewer find?' })
+  await f.c.runLiveTool('analysis', 'explain_session_reply', '{"session_id":"%7","replies":5}')
+  await f.c.runLiveTool('rephrased', 'explain_session_reply', '{"session_id":"%7","question":"reviewer feedback","replies":3}')
+  assert.equal(analyses, 1)
+  assert.equal(f.sent.filter(event => event.type === 'session.commentary.append').length, 1)
+  assert.match(f.sent.find(event => event.type === 'session.commentary.append').content, /two stop controls/)
 })
 
 

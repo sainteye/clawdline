@@ -2,13 +2,13 @@
   "version": 1,
   "englishKeys": 13509,
   "counts": {
-    "negation": 3531,
-    "state": 2289,
+    "negation": 3530,
+    "state": 2290,
     "permission": 820,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5808,
+  "unionCount": 5807,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3424,7 +3424,6 @@
       "transparency.card.voice-polish.how",
       "transparency.card.voice-polish.summary",
       "transparency.card.voice-question-menu.effect",
-      "transparency.card.voice-question-menu.how",
       "transparency.card.voice-session-boards.effect",
       "transparency.card.voice-work.condition",
       "transparency.card.voice-work.effect",
@@ -5742,6 +5741,7 @@
       "transparency.card.voice-live-pacing.how",
       "transparency.card.voice-polish.effect",
       "transparency.card.voice-polish.how",
+      "transparency.card.voice-question-menu.effect",
       "transparency.card.voice-question-menu.summary",
       "transparency.card.voice-session-boards.how",
       "transparency.card.voice-work.effect",
@@ -13116,7 +13116,6 @@
     "transparency.card.voice-polish.how",
     "transparency.card.voice-polish.summary",
     "transparency.card.voice-question-menu.effect",
-    "transparency.card.voice-question-menu.how",
     "transparency.card.voice-question-menu.summary",
     "transparency.card.voice-session-boards.effect",
     "transparency.card.voice-session-boards.how",

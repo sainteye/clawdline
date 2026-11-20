@@ -793,6 +793,17 @@ The revised bilingual voice-question-menu entry covers this provider input, its 
 its demand-only trigger and its failure behavior. A new route fails on an older machine instead
 of accidentally starting an unrelated paid recap. No live paid call was used for local tests.
 
+## Results for explicit voice reads (2026-11-20)
+
+Focused review questions can include the reviewer's recorded completion summary when the
+notice and the dispatch owner match the selected conversation. The small text model treats
+both the review and the main Session replies as source data. If analysis is unavailable or its
+quotes fail validation, supported clients receive bounded source excerpts with the failure stage
+and returned usage. Rephrasing the same read for a Session within one spoken turn reuses the
+request. GPT-Live hands explicit answers and recaps to the speaking model and discards a pending
+opening update when the person starts a question. The bilingual explanation distinguishes this
+handoff from observable speech. No live provider call is required to test these paths.
+
 ## Voice menu receipts and usage estimates (2026-11-17)
 
 The voice-work, list-briefing, live-pacing and question-menu explanations were
