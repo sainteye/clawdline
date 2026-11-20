@@ -228,7 +228,7 @@ func TestProjectAssistantJointCapturedSourceAndRealReadViews(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtures := map[string]*paJointFixture{"main": newPAJointFixture(t), "capacity": newPAJointFixture(t), "revoked": newPAJointFixture(t), "scope": newPAJointFixture(t)}
+	fixtures := map[string]*paJointFixture{"create": newPAJointFixture(t), "main": newPAJointFixture(t), "capacity": newPAJointFixture(t), "revoked": newPAJointFixture(t), "scope": newPAJointFixture(t)}
 	fixtures["main"].seedHistory(t)
 	fixtures["capacity"].seedCapacity(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -308,7 +308,7 @@ func TestProjectAssistantJointCapturedSourceAndRealReadViews(t *testing.T) {
 				if keyErr != nil {
 					t.Fatal(keyErr)
 				}
-				bridge = cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return false }}
+				bridge = cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return frame.Fixture == "create" }}
 				command.Channel, command.Sender, command.VerifiedKey = "ctl/"+f.key.MachineID, frame.Sender, ed25519.PublicKey(key)
 			}
 			answer := bridge.Handle(ctx, command)

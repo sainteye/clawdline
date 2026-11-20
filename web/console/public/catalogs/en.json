@@ -11712,6 +11712,7 @@
   "projectAssistants.rosterUpdated": "Sidebar updated",
   "projectAssistants.backgroundStopConfirm": "Stop the background work?",
   "projectAssistants.backgroundStopEffects": "Changes already made will stay.",
+  "projectAssistants.chatReconnecting": "Reconnecting to the conversation…",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

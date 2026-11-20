@@ -9,7 +9,8 @@ const root=process.argv[2]
 const {ProjectAssistantSourceClient,capturedAssistantRelayFetch}=await import(pathToFileURL(root+"/web/console/src/cloud/project-assistants.ts"))
 const {readView,mergeTimeline,eventTimeline}=await import(pathToFileURL(root+"/web/console/src/project-assistants/read-views.ts"))
 const {CARRIED}=await import(pathToFileURL(root+"/web/console/src/cloud/carry-generated.ts"))
-const {errorCode}=await import(pathToFileURL(root+"/web/console/src/project-assistants/client.ts"))
+const {withApproval}=await import(pathToFileURL(root+"/web/console/src/project-assistants/approvals.ts"))
+const {command,errorCode}=await import(pathToFileURL(root+"/web/console/src/project-assistants/client.ts"))
 const lines=createInterface({input:process.stdin}),pending=new Map()
 let sequence=0
 lines.on("line",line=>{const message=JSON.parse(line),resolve=pending.get(message.id);assert.ok(resolve,"unmatched Go frame");pending.delete(message.id);resolve(message)})
@@ -24,14 +25,16 @@ const scope=name=>({...boot.fixtures[name],conversation_id:boot.fixtures[name].c
 function sourceFor(name,sender="owner",changes={},advertised=words){
  const meta=boot.fixtures[name]
  let live={accountKey:"synthetic-account",readerID:sender,machineID:meta.key.machine_id,authorizationRevision:"revision-1",apiLevel:61,paired:true,online:true,writable:sender==="owner",...changes}
- const connection={machineDescriptor:()=>({machine:{commands:advertised}}),async _machineRequest(machine,word,fields){
+ async function call(ref,machine,word,fields){
   assert.equal(machine,meta.key.machine_id)
-  const ref=word==="project-assistants.view"&&fields.mode==="snapshot"?"<".repeat(128):"joint-"+(sequence+1)
   const answer=await exchange({kind:"bridge",fixture:name,sender,word,fields,ref})
   assert.match(answer.sha256,/^[0-9a-f]{64}$/)
   trace.push({fixture:name,sender,word,fields,...answer})
   return answer.body
- }}
+ }
+ const connection={machineDescriptor:()=>({machine:{commands:advertised}}),
+  _machineRequest:(machine,word,fields)=>call(word==="project-assistants.view"&&fields.mode==="snapshot"?"<".repeat(128):"joint-"+(sequence+1),machine,word,fields),
+  _machineRequestAs:call}
  const relay=capturedAssistantRelayFetch(meta.key.machine_id,()=>connection,words)
  let hold=null,started=null
  const source=new ProjectAssistantSourceClient(live,async(input,init)=>{const response=await relay(input,init);if(hold){started();await hold}return response},()=>live)
@@ -194,6 +197,41 @@ await assert.rejects(missing.source.view(request("main"),signal()),error=>errorC
 assert.equal(trace.length,beforeMissing,"unadvertised View must refuse before transport")
 checks.push("JRV-07")
 
+const createSource=sourceFor("create","owner",{apiLevel:96}).source
+await createSource.status(signal())
+const target={machine_id:boot.fixtures.create.key.machine_id,project_id:boot.fixtures.create.project.project_id}
+for(const [index,agent,choice] of [
+ [1,"codex","approve"],
+ [2,"codex","mode:read-only"],
+ [3,"claude","mode:acceptEdits"],
+ [4,"codex","mode:auto"],
+]){
+ const key={machine_id:target.machine_id,bot_id:"created-through-cloud-"+index}
+ const approval=withApproval(choice)
+ const input={command:command(key,"create","joint-create-"+index),settings:{
+  target,name:"Synthetic Bot "+index,appearance:{shape:"blob",color:"#e39567"},agent,
+  instructions:"Synthetic standing instructions.",role_snapshot_ref:"",...approval
+ }}
+ const created=await createSource.create(input,signal()).catch(error=>{
+  const reply=trace.at(-1)
+  throw Error(choice+" create failed at the bridge: "+JSON.stringify({status:reply.status,body:reply.body}),{cause:error})
+ })
+ assert.equal(trace.at(-1).status,200,JSON.stringify(trace.at(-1).body))
+ assert.deepEqual(created.bot.key,key)
+ assert.equal(created.bot.permission_policy,approval.permission_policy)
+ assert.equal(created.bot.mode??"",approval.mode??"")
+ if(index===1){
+  const replay=await createSource.create(input,signal())
+  assert.equal(replay.bot.conversation_id,created.bot.conversation_id)
+  assert.deepEqual(replay.receipt,created.receipt)
+ }
+ const latest=await createSource.get(key,signal())
+ assert.equal(latest.bot.conversation_id,created.bot.conversation_id)
+ assert.equal(latest.bot.permission_policy,approval.permission_policy)
+ assert.equal(latest.bot.mode??"",approval.mode??"")
+}
+checks.push("Cloud create approval settings")
+
 const legacySuffixes=["status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","observed","forget","memory"]
 const legacyWords=new Set(legacySuffixes.map(word=>"project-assistants."+word))
 const rows=JSON.parse(readFileSync(root+"/internal/domain/cloudvocab/vocabulary.json","utf8")).operations.filter(row=>legacyWords.has(row.op))
@@ -238,7 +276,7 @@ assert.equal(allMethods.size,18)
 assert.equal(trace.filter(row=>row.word==="project-assistants.export").length,0,"View scenarios must not use archive fallback")
 assert.deepEqual(new Set(trace.filter(row=>row.word==="project-assistants.view"&&row.status===200).map(row=>row.fields.mode)),new Set(["snapshot","history","events","permissions","traces","detail"]))
 checks.push("JRV-08")
-assert.equal(new Set(checks).size,8)
+assert.equal(new Set(checks).size,9)
 await exchange({kind:"report",report:{checks:checks.sort(),successful_modes:6,strict_single_field_mutants:mutants,actual_methods:allMethods.size,legacy_api58_methods:captured.length,carried_words:words.length,handoff_read_methods:1,handoff_mutation_calls:0,real_source_responses:trace.length,archive_fallback_calls:0,native_model_calls:0}})
 lines.close()
 process.stdin.destroy()

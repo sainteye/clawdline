@@ -11712,6 +11712,7 @@
   "projectAssistants.rosterUpdated": "已更新側邊欄",
   "projectAssistants.backgroundStopConfirm": "要停止背景任務嗎？",
   "projectAssistants.backgroundStopEffects": "已完成的變更會保留。",
+  "projectAssistants.chatReconnecting": "正在重新連線並同步對話…",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",

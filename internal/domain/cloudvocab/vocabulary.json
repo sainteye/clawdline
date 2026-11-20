@@ -2904,8 +2904,12 @@
                 "type": "string",
                 "enum": [
                   "ask",
-                  "auto_read"
+                  "auto_read",
+                  "approve"
                 ]
+              },
+              "mode": {
+                "type": "string"
               },
               "instructions": {
                 "type": "string",

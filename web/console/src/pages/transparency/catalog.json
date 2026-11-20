@@ -5145,7 +5145,7 @@
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "9796e406fdbb19e0796fc0e9e3d11fe105fb7398d3a94d88bd5cb2b406b56891",
-    "web/console/src/project-assistants/Chat.tsx": "62a90458c9014fe48b4224275f82a111bf71f6ccb3ac0b1ef4d3c53761b5ad05",
+    "web/console/src/project-assistants/Chat.tsx": "a51c201c63d942d79cf5bafd9c10399f5d8f0541ad7c08751b582d0e6ef29a34",
     "web/console/src/project-assistants/ChatRows.tsx": "61a45c5d597ce52c728bee184e9e2e369ee8fb38d3bb397c0e03ae700d45f3dc",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "e8cd94f2de386031aeecb10d3c0a89f8c133a9684b4cdfe77bcd0422f07d8d15",

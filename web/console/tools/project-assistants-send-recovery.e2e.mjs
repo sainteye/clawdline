@@ -26,13 +26,14 @@ import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = path.resolve(process.env.SEND_RECOVERY_SOURCE ?? path.join(here, "..", "src"))
 const artifacts = process.env.SEND_RECOVERY_ARTIFACTS
 const legacy = process.argv.includes("--legacy")
+const readRecovery = process.argv.includes("--read-recovery")
 const refuseLegacyStorage = legacy && process.argv.includes("--refuse-storage")
 const query = "?lang=en" + (legacy ? "&legacy=1" : "") + (refuseLegacyStorage ? "&refuse-storage=1" : "")
 const serveOnly = process.argv.includes("--serve-only")
@@ -55,6 +56,7 @@ export function mountFixture() {
   const legacy = new URLSearchParams(location.search).has("legacy")
   if (legacy) fixture.seedPending(0, 1)
   const turns = []
+  const readFaults = []
   const persisted = (() => { try { return JSON.parse(sessionStorage.getItem("send-recovery.synthetic-source") ?? "null") } catch { return null } })()
   const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], failed: null, ...(persisted ?? {}) }
   const persist = () => sessionStorage.setItem("send-recovery.synthetic-source", JSON.stringify({ mode: state.mode, sends: state.sends, transported: state.transported, exports: state.exports, admitted: state.admitted, failed: state.failed }))
@@ -80,6 +82,10 @@ export function mountFixture() {
       const bot = decodeURIComponent(match[1]), tail = match[2], key = { machine_id: "studio", bot_id: bot }
       if (bot === "status") return json(await fixture.status(signal))
       if (method === "GET" && tail === "/view") {
+        if (q.mode === "snapshot" && readFaults.length) {
+          const code = readFaults.shift()
+          return json({contract_version:"project-assistants.v1",error:{code,field:"synthetic_read",retry_after_seconds:0}},code==="pa_cursor_expired"?410:503)
+        }
         const answer = await fixture.view({ key, conversation_id: q.conversation_id, mode: q.mode, source_epoch: q.source_epoch, cursor: q.cursor, after_seq: Number(q.after_seq), page_size: Number(q.page_size) }, signal)
         return json(answer)
       }
@@ -97,6 +103,7 @@ export function mountFixture() {
         const answer = await admit(request, signal)
         state.admitted.push(request); persist()
         if (mode === "lose") lose()
+        if (mode === "recover-read") readFaults.push("pa_cursor_expired","pa_offline","pa_offline")
         return json(answer)
       }
       if (method === "POST" && tail === "/read") return json(await fixture.markRead(JSON.parse(init.body), signal))
@@ -138,6 +145,7 @@ export function mountFixture() {
         sessionStorage.setItem("send-recovery.storage-allowed", "yes"); refuseStorage = false; paint()
       }),
       !legacy && button("Test: lose next response", mode("lose")),
+      !legacy && button("Test: interrupt reads after an accepted send", mode("recover-read")),
       !legacy && button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       !legacy && button("Test: next send leaves no receipt", mode("missing")),
       !legacy && button("Test: next send records failure", mode("failed")),
@@ -206,7 +214,39 @@ const typeDraft = async text => { click("Message"); await settle(200); browser(.
 const results = []
 const record = (name, detail) => { results.push({ name, ...detail }); console.log("✔", name) }
 
-try {
+if (readRecovery) {
+  try {
+    const module=process.env.PLAYWRIGHT_MODULE
+    if (!module) throw new Error("Set PLAYWRIGHT_MODULE for the isolated mobile read recovery case")
+    const {chromium}=await import(pathToFileURL(module).href)
+    const engine=await chromium.launch({headless:true,args:["--disable-features=OmniboxEverywhere"]})
+    try {
+      const context=await engine.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true})
+      await context.route("**/*",route=>new URL(route.request().url()).origin===origin?route.continue():route.abort())
+      const page=await context.newPage()
+      await page.goto(origin+"/"+query)
+      await page.getByText("I split the work into five tasks",{exact:false}).first().waitFor()
+      const draft=page.locator(".pa-composer textarea"),send=page.getByRole("button",{name:"Send message",exact:true})
+      await page.getByRole("button",{name:"Test: interrupt reads after an accepted send"}).click()
+      const text="Synthetic send during a read interruption"
+      await draft.fill(text);await send.click()
+      const reconnect=page.getByText("Reconnecting to the conversation…",{exact:true})
+      try{await reconnect.waitFor({timeout:5000})}
+      catch(error){throw new Error("expected automatic recovery after one admitted send: "+await page.locator(".pa-chat-error").innerText(),{cause:error})}
+      const followUp="A fresh draft during recovery"
+      await draft.fill(followUp)
+      assert.equal(await send.isDisabled(),true,"draft may change while source authority is rechecked")
+      await reconnect.waitFor({state:"hidden",timeout:12000})
+      await page.locator(".pa-chat-content").getByText(text,{exact:true}).waitFor()
+      assert.equal(await draft.inputValue(),followUp)
+      assert.equal(await send.isEnabled(),true,"a fresh snapshot enables the next manual send")
+      const state=await page.evaluate(()=>({sends:window.sendRecovery.state.sends,exports:window.sendRecovery.state.exports}))
+      assert.deepEqual(state,{sends:1,exports:0},"automatic recovery issues no mutation and reads no archive")
+      await page.screenshot({path:path.join(artifacts,"read-recovery.png")})
+      record("accepted send recovers from cursor expiry and offline without resending",state)
+    } finally { await engine.close() }
+  } finally { if (server.listening) await new Promise(resolve=>server.close(resolve)) }
+} else try {
   // An open that timed out may still have run: find it by URL, never open twice.
   const url = origin + "/" + query
   if (process.env.SEND_RECOVERY_TAB) tab = Number(process.env.SEND_RECOVERY_TAB)
