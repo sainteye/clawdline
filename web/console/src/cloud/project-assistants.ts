@@ -103,7 +103,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
   groupReact(r:W.ProjectAssistantGroupReactRequest,s:AbortSignal) {
     return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/reactions",s,r,"POST",true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL)
   }
-  groups(r:W.ProjectAssistantGroupListRequest,s:AbortSignal) { if(r.machine_id!==this.machineID)throw notSent(failure("pa_scope_denied"));return this.request<W.ProjectAssistantGroupListResponse>(base+"/rooms/groups"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  async groups(r:W.ProjectAssistantGroupListRequest,s:AbortSignal) {
+    this.key({machine_id:r.machine_id,bot_id:""})
+    const answer=await this.request<W.ProjectAssistantGroupListResponse>(base+"/rooms/groups"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL)
+    return {...answer,source:this.observeRosterSource(answer.contract_version,answer.source)}
+  }
   groupHistory(r:W.ProjectAssistantGroupHistoryRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantGroupHistoryResponse>(base+"/rooms/groups/"+encodeURIComponent(r.key.bot_id)+query({machine_id:this.machineID,before_seq:r.before_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   editGroup(r:W.ProjectAssistantGroupEditRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"PATCH",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
@@ -259,7 +263,18 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.rememberSource(source)
     return {...answer,source}
   }
-  list(r: W.ProjectAssistantListRequest,s: AbortSignal) { this.key({machine_id:r.machine_id,bot_id:""}); return this.request<W.ProjectAssistantListResponse>(base+query({...r}),s) }
+  async list(r: W.ProjectAssistantListRequest,s: AbortSignal) {
+    this.key({machine_id:r.machine_id,bot_id:""})
+    const answer=await this.request<W.ProjectAssistantListResponse>(base+query({...r}),s)
+    const source=this.observeRosterSource(answer.contract_version,answer.sources?.find(item=>item.machine_id===this.machineID))
+    return {...answer,sources:[source]}
+  }
+  private observeRosterSource(version: string,source: W.ProjectAssistantSourceStatus|undefined) {
+    if(version!=="project-assistants.v1"||!source||source.machine_id!==this.machineID)throw failure("pa_invalid")
+    const effective={...source,writable:source.writable&&this.currentGrant()?.writable===true}
+    this.rememberSource(effective)
+    return effective
+  }
   canRoster() {
     if (this.grant.accountKey !== "local" || (this.grant.apiLevel ?? 0) < PROJECT_ASSISTANTS_ROSTER_API_LEVEL) return false
     try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_ROSTER_API_LEVEL); return true } catch { return false }

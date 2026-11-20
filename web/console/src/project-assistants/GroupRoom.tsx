@@ -54,7 +54,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   useLayoutEffect(()=>{setHost(anchor.current?.closest<HTMLElement>(".pa-shell")??null)},[])
   useLayoutEffect(()=>{
     if(!active||!host)return
-    const viewport=window.visualViewport,status=host.querySelector<HTMLElement>(".pa-status-bar"),header=room.current?.querySelector<HTMLElement>(".pa-chat-header"),footer=room.current?.querySelector<HTMLElement>(".pa-chat-footer")
+    const viewport=window.visualViewport,header=room.current?.querySelector<HTMLElement>(".pa-chat-header"),footer=room.current?.querySelector<HTMLElement>(".pa-chat-footer")
     const measure=()=>{
       // DOM rectangles and hit testing use client coordinates. iOS can scroll
       // the document when a focused field opens its keyboard while offsetTop
@@ -65,34 +65,18 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       host.style.setProperty("--pa-room-visible-top",`${Math.max(0,top-box.top)}px`)
       host.style.setProperty("--pa-room-visible-bottom",`${Math.max(0,box.bottom-bottom)}px`)
       host.style.setProperty("--pa-room-visible-height",`${Math.max(0,bottom-top)}px`)
-      // Keep both the composer (including its quote) and history reachable when
-      // connection details and the keyboard are open at the same time.
-      const statusHeight=status?.getBoundingClientRect().height??0
-      const available=bottom-top-statusHeight-(header?.getBoundingClientRect().height??0)-(footer?.getBoundingClientRect().height??0)
-      host.style.setProperty("--pa-room-details-height",`${Math.max(0,available/2)}px`)
-      const details=status?.querySelector<HTMLElement>(".pa-source-checks")
-      host.style.setProperty("--pa-room-status-height",`${statusHeight+(details?.getBoundingClientRect().height??0)}px`)
       if(position.current.following&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight
     }
     const sizes=new ResizeObserver(measure)
     sizes.observe(host)
-    if(status)sizes.observe(status)
     if(header)sizes.observe(header)
     if(footer)sizes.observe(footer)
     if(scroll.current)sizes.observe(scroll.current)
-    let observedDetails:HTMLElement|null=null
-    const watchDetails=()=>{
-      const details=status?.querySelector<HTMLElement>(".pa-source-checks")??null
-      if(details!==observedDetails){if(observedDetails)sizes.unobserve(observedDetails);if(details)sizes.observe(details);observedDetails=details}
-      measure()
-    }
-    const changes=new MutationObserver(watchDetails)
-    if(status)changes.observe(status,{childList:true,subtree:true})
     viewport?.addEventListener("resize",measure);viewport?.addEventListener("scroll",measure);window.addEventListener("resize",measure);host.parentElement?.addEventListener("animationend",measure)
-    watchDetails()
+    measure()
     return()=>{
-      sizes.disconnect();changes.disconnect();viewport?.removeEventListener("resize",measure);viewport?.removeEventListener("scroll",measure);window.removeEventListener("resize",measure);host.parentElement?.removeEventListener("animationend",measure)
-      for(const name of ["--pa-room-visible-top","--pa-room-visible-bottom","--pa-room-visible-height","--pa-room-status-height","--pa-room-details-height"])host.style.removeProperty(name)
+      sizes.disconnect();viewport?.removeEventListener("resize",measure);viewport?.removeEventListener("scroll",measure);window.removeEventListener("resize",measure);host.parentElement?.removeEventListener("animationend",measure)
+      for(const name of ["--pa-room-visible-top","--pa-room-visible-bottom","--pa-room-visible-height"])host.style.removeProperty(name)
     }
   },[active,host])
   useLayoutEffect(()=>{

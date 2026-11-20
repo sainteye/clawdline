@@ -130,28 +130,28 @@ try{
   if(scenario==="inspect"){
     await fetch(origin+"/control?fail=1")
     await evaluate(sessionId,"document.querySelector('.pa-held-send button').click()")
-    await until(sessionId,"document.body.innerText.includes('pa_offline')")
+    await until(sessionId,"!!document.querySelector('.pa-chat-error[data-reconnecting][role=status]')")
     const checked=await capture(sessionId,"confirmed-admission-read-failed")
     assert.ok(checked.text.includes(text),"an explicit confirmed admission must keep its text until the canonical row is observed")
     assert.equal(traffic.filter(p=>p.word==='project-assistants.export').length,1)
     await fetch(origin+"/control?recover=1")
-    await evaluate(sessionId,"document.querySelector('.pa-chat [role=alert] button').click()")
+    await evaluate(sessionId,"document.querySelector('.pa-chat-error[data-reconnecting] button').click()")
   }
   if(scenario==="busy"){
     await evaluate(sessionId,"window.chatObservation.visibility('visible')")
     await fetch(origin+"/control?release=1")
   }
   if(scenario==="read-failure"){
-    await until(sessionId,"document.body.innerText.includes('pa_offline')")
+    await until(sessionId,"!!document.querySelector('.pa-chat-error[data-reconnecting][role=status]')")
     await send("Page.reload",{},sessionId)
     await until(sessionId,"!!document.querySelector('[data-bot-key]')")
     await evaluate(sessionId,"document.querySelector('[data-bot-key]').click()")
-    await until(sessionId,"document.body.innerText.includes('pa_offline')")
+    await until(sessionId,"!!document.querySelector('.pa-chat-error[data-reconnecting][role=status]')")
     const failed=await capture(sessionId,"accepted-read-failed-after-reopen")
     assert.ok(failed.text.includes(text),"accepted text must survive a failed read and reload")
     assert.equal(traffic.filter(p=>p.word==='project-assistants.send').length,1)
     await fetch(origin+"/control?recover=1")
-    await evaluate(sessionId,"document.querySelector('.pa-chat [role=alert] button').click()")
+    await evaluate(sessionId,"document.querySelector('.pa-chat-error[data-reconnecting] button').click()")
   }
   await until(sessionId,"window.chatObservation.phases.some(p=>p.phase==='returned'&&p.head?.current_fence.generation>=2)")
   if(scenario==="busy")await evaluate(sessionId,"window.chatObservation.visibility('hidden')")

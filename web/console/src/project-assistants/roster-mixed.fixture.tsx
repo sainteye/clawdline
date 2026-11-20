@@ -31,7 +31,7 @@ function App(){
  const [memberCount,setMemberCount]=useState(delayMembers?0:bots.length)
  counts.setMemberCount=setMemberCount
  const roster=bots.slice(0,memberCount)
- return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope="mixed-fixture" items={roster.filter(item=>!query||item.bot.name.toLowerCase().includes(query.toLowerCase())||"fixture project".includes(query.toLowerCase()))} groupsItems={roster} machines={[source.machineID]} selected={selected} query={query} onQuery={setQuery} machine="" onMachine={()=>{}} onSelect={item=>setSelected(JSON.stringify([item.bot.key.machine_id,item.bot.key.bot_id]))} onClose={()=>{}} w={words(language)} language={language} loading={delayMembers&&memberCount===0} errors={[]} projectNames={names} sources={sources}/><section className="pa-main"><output>{selected}</output></section></main>
+ return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope="mixed-fixture" items={roster.filter(item=>!query||item.bot.name.toLowerCase().includes(query.toLowerCase())||"fixture project".includes(query.toLowerCase()))} groupsItems={roster} machines={[source.machineID]} selected={selected} query={query} onQuery={setQuery} machine="" onMachine={()=>{}} onSelect={item=>setSelected(JSON.stringify([item.bot.key.machine_id,item.bot.key.bot_id]))} onClose={()=>{}} w={words(language)} language={language} loading={delayMembers&&memberCount===0} projectNames={names} sources={sources}/><section className="pa-main"><output>{selected}</output></section></main>
 }
 function historySource(){
  const base=fixtureSource("fixture-machine")

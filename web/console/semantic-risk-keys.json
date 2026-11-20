@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13629,
+  "englishKeys": 13630,
   "counts": {
-    "negation": 3541,
+    "negation": 3542,
     "state": 2307,
     "permission": 827,
     "deletion": 315,
     "uncertainty": 552
   },
-  "unionCount": 5842,
+  "unionCount": 5843,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3133,6 +3133,7 @@
       "projectAssistants.reject_always",
       "projectAssistants.resumedNotice",
       "projectAssistants.roomOutcomeQuiet",
+      "projectAssistants.rosterUnavailable",
       "projectAssistants.rosterUnsaved",
       "projectAssistants.routineHeld",
       "projectAssistants.routineJournalUnreadable",
@@ -12673,6 +12674,7 @@
     "projectAssistants.roomOutcomeUnavailable",
     "projectAssistants.roomOutcomeUnknown",
     "projectAssistants.rosterSortDone",
+    "projectAssistants.rosterUnavailable",
     "projectAssistants.rosterUnsaved",
     "projectAssistants.routineConfirmDelete",
     "projectAssistants.routineDelete",

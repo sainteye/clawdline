@@ -34,7 +34,7 @@ const server=createServer(async(req,res)=>{
       const chunks=[];for await(const chunk of req)chunks.push(chunk)
       const raw=Buffer.concat(chunks).toString(),envelope=JSON.parse(raw)
       const record={scenario:url.searchParams.get("scenario"),word:envelope.type,acceptedAt:performance.now()};traffic.push(record)
-      if(record.scenario==="offline"&&envelope.type==="project-assistants.status"){
+      if(record.scenario==="offline"&&envelope.type==="project-assistants.list"){
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline"}}}));return
       }
       const answer=await fetch(cloud,{method:"POST",body:raw}),payload=await answer.text()
@@ -75,15 +75,15 @@ try{
       assert.equal(state.phases.some(p=>p.phase==="emitted"&&/\.(status|list)$/.test(p.word)),false)
       results.push({tree,scenario,lang,width,hidden:true,loading:true,rosterRequests:0})
     }else{
-      await until(sessionId,scenario==="ready"?"document.querySelectorAll('[data-bot-key]').length>0&&!document.querySelector('[data-loading-id=\"bots-roster\"]')":"window.rosterEntry.phases.some(p=>p.phase==='failure'&&p.code==='pa_offline')&&!document.querySelector('[data-loading-id=\"bots-roster\"]')")
+      await until(sessionId,scenario==="ready"?"document.querySelectorAll('[data-bot-key]').length>0&&!document.querySelector('[data-loading-id=\"bots-roster\"]')":"document.querySelector('.pa-empty[role=status]')&&!document.querySelector('[data-loading-id=\"bots-roster\"]')")
       const state=await capture(sessionId,name),reads=traffic.slice(start).filter(p=>/\.(status|list)$/.test(p.word))
       assert.equal(state.visibility,"hidden");assert.equal(state.loading,false)
       if(scenario==="ready"){
-        assert.deepEqual(reads.map(r=>[r.word,r.status]),[["project-assistants.status",200],["project-assistants.list",200]])
+        assert.deepEqual(reads.map(r=>[r.word,r.status]),[["project-assistants.list",200]])
         assert.ok(state.phases.find(p=>p.phase==="snapshot-received"));assert.ok(state.rows>0)
       }else{
-        assert.deepEqual(reads.map(r=>[r.word,r.status]),[["project-assistants.status",503]])
-        assert.equal(state.rows,0);assert.ok(await evaluate(sessionId,"!!document.querySelector('.pa-source-status:not([data-ok])')&&!document.querySelector('.pa-empty')"))
+        assert.deepEqual(reads.map(r=>[r.word,r.status]),[["project-assistants.list",503]])
+        assert.equal(state.rows,0);assert.ok(await evaluate(sessionId,"!!document.querySelector('.pa-empty[role=status]')&&!document.querySelector('.pa-source-status,.pa-status-bar')"))
       }
       results.push({tree,scenario,lang,width,hidden:true,loading:false,rows:state.rows,reads,phases:state.phases})
     }

@@ -10,6 +10,6 @@ export function GroupRosterRow({entry,bots,selected,onSelect,projectName,machine
   const preview=last?`${last.speaker}: ${plainPreview(last.text)}`:[grouped?undefined:projectName,`${group.members.length} ${groupWord("groupMembers")}`].filter(Boolean).join(" · ")
   return <button type="button" className="pa-bot-row pa-group-row" data-group-key={botIdentity(group.key)} aria-current={selected||undefined} disabled={!canRead(status)} onClick={event=>onSelect(event.currentTarget)} aria-label={`${group.name}, ${groupWord("groups")}, ${group.members.length} ${groupWord("groupMembers")}, ${preview}`}>
     <GroupAvatar keys={group.members.map(member=>member.key)} bots={bots} size={44}/>
-    <span className="pa-row-body"><strong>{group.name}</strong><span className="pa-row-preview" title={preview}><span>{preview}</span></span>{!grouped&&(projectName||machineName)&&<small>{[projectName,machineName].filter(Boolean).join(" · ")}</small>}{(!status.fresh||status.state!=="online")&&<small>{groupWord("stale")}</small>}</span>
+    <span className="pa-row-body"><strong>{group.name}</strong><span className="pa-row-preview" title={preview}><span>{preview}</span></span>{!grouped&&(projectName||machineName)&&<small>{[projectName,machineName].filter(Boolean).join(" · ")}</small>}</span>
   </button>
 }
