@@ -6902,6 +6902,31 @@ type ProjectLinksReply struct {
 	Unreadable ProjectGitFailure `json:"unreadable,omitempty"`
 }
 
+// Read-only preview of Project memory maintenance and the current reversible
+// archive.
+type ProjectMemoryDream struct {
+	ActiveLimit  int64                      `json:"active_limit"`
+	Archive      []ProjectMemoryDreamChange `json:"archive"`
+	ArchiveLimit int64                      `json:"archive_limit"`
+	Archived     []ProjectMemoryDreamChange `json:"archived"`
+	Counts       ProjectMemoryDreamCounts   `json:"counts"`
+	LastRun      string                     `json:"last_run,omitempty"`
+	PendingLimit int64                      `json:"pending_limit"`
+	Review       []ProjectMemoryDreamChange `json:"review"`
+}
+
+type ProjectMemoryDreamChange struct {
+	Name        string `json:"name"`
+	Reason      string `json:"reason"`
+	Replacement string `json:"replacement"`
+}
+
+type ProjectMemoryDreamCounts struct {
+	Active   int64 `json:"active"`
+	Archived int64 `json:"archived"`
+	Pending  int64 `json:"pending"`
+}
+
 // One entry in full: the body of POST /v1/projects/:id/memory and of PUT
 // /v1/projects/:id/memory/:name, whose name must be the path's, and the answer
 // to GET /v1/projects/:id/memory/:name.
@@ -6938,11 +6963,12 @@ type ProjectMemoryGroupSet struct {
 	Description string `json:"description"`
 }
 
-// GET /v1/projects/:id/memory: every entry, every group, and the index a
-// launched session is given. The index lists resident entries and one line per
-// group; when resident entries alone would pass its 8 KiB bound they are cut,
-// which index_cut and the index's own note say, and the group lines are kept.
-// entries always lists every entry.
+// GET /v1/projects/:id/memory: active and pending entries, every group, and the
+// index a launched session is given. The index lists resident entries and one
+// line per group; when resident entries alone would pass its 8 KiB bound they
+// are cut, which index_cut and the index's own note say, and the group lines
+// are kept. Archived entries can be found in the Dream plan and read by their
+// original name.
 type ProjectMemoryList struct {
 	Entries []ProjectMemorySummary `json:"entries"`
 
@@ -6984,8 +7010,12 @@ type ProjectMemorySummary struct {
 	Group string `json:"group,omitempty"`
 
 	// Lowercase letters, digits and single hyphens, at most 64 bytes.
-	Name string            `json:"name"`
-	Type ProjectMemoryType `json:"type"`
+	Name string `json:"name"`
+
+	// True when the entry has been durably saved and is waiting for space in the
+	// active index.
+	Pending bool              `json:"pending,omitempty"`
+	Type    ProjectMemoryType `json:"type"`
 }
 
 // An entry's kind, the four Claude Code's auto-memory uses.

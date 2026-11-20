@@ -406,6 +406,7 @@ const (
 	// one Project holds, and how large one entry, its description and its
 	// name may be.
 	MemoryEntries          = "memory.entries"
+	MemoryArchiveEntries   = "memory.archive_entries"
 	MemoryEntryBytes       = "memory.entry_bytes"
 	MemoryDescriptionBytes = "memory.description_bytes"
 	MemoryNameBytes        = "memory.name_bytes"

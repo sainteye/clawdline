@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -41,9 +42,12 @@ const (
 	IndexByteLimit = 8 << 10
 	// EntryBodyLimit is the largest body one entry holds.
 	EntryBodyLimit = 64 << 10
-	// EntryCountLimit is how many entries one Project holds. One more is
-	// refused; only a person (or a session they asked) forgets one.
-	EntryCountLimit = 1024
+	// EntryCountLimit is the active set's size. Overflow is durable and
+	// readable before a maintenance pass can make room.
+	EntryCountLimit   = 1024
+	PendingEntryLimit = 128
+	ArchiveEntryLimit = 512
+	LiveEntryLimit    = EntryCountLimit + PendingEntryLimit
 	// DescriptionByteLimit is the longest one-line description.
 	DescriptionByteLimit = 512
 	// nameByteLimit is the longest entry name, and the longest group slug.
@@ -104,6 +108,8 @@ type Entry struct {
 	Type        Type
 	Group       string
 	Body        string
+	Storage     Storage
+	Replacement string
 }
 
 // Group is a named set of entries a session reads when its description
@@ -228,36 +234,31 @@ func (s *Store) List(key string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return list(dir)
 }
 
-// MostEntries is the number of entries in the fullest Project's store, which
-// is what the memory.entries row reports. No store at all is a known zero; a
-// root or a Project directory that cannot be read is an error.
-func (s *Store) MostEntries() (int, error) {
-	keys, err := os.ReadDir(s.root)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
+// MostEntries measures the fullest live and archive stores independently.
+func (s *Store) MostEntries(archive bool) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys, err := s.projectKeys()
 	if err != nil {
 		return 0, err
 	}
 	most := 0
-	for _, k := range keys {
-		if !k.IsDir() || !keyShape.MatchString(k.Name()) {
-			continue
-		}
-		files, err := os.ReadDir(filepath.Join(s.root, k.Name()))
+	for _, key := range keys {
+		entries, err := readEntries(filepath.Join(s.root, key), false)
 		if err != nil {
 			return 0, err
 		}
-		n := 0
-		for _, f := range files {
-			if name, ok := strings.CutSuffix(f.Name(), ".md"); ok && f.Name() != IndexFile && ValidName(name) && f.Type().IsRegular() {
-				n++
-			}
+		counts := countStorage(entries)
+		if archive {
+			most = max(most, counts.Archived)
+		} else {
+			most = max(most, counts.Active+counts.Pending)
 		}
-		most = max(most, n)
 	}
 	return most, nil
 }
@@ -288,6 +289,11 @@ func (s *Store) MostGroups() (int, error) {
 }
 
 func list(dir string) ([]Entry, error) {
+	entries, err := readEntries(dir, false)
+	return slices.DeleteFunc(entries, func(e Entry) bool { return e.Storage.archived() }), err
+}
+
+func readEntries(dir string, bodies bool) ([]Entry, error) {
 	names, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return []Entry{}, nil
@@ -308,7 +314,9 @@ func list(dir string) ([]Entry, error) {
 		if e.Name != name {
 			return nil, fmt.Errorf("%s names itself %q", d.Name(), e.Name)
 		}
-		e.Body = ""
+		if !bodies {
+			e.Body = ""
+		}
 		out = append(out, e)
 	}
 	sortEntries(out)
@@ -371,8 +379,6 @@ func (s *Store) write(key string, e Entry, replace bool) (Outcome, error) {
 	if err := Validate(e); err != nil {
 		return "", err
 	}
-	// As Format writes it and Parse reads it back, so a retry compares equal.
-	e.Body = strings.Trim(e.Body, "\n") + "\n"
 	dir, err := s.Dir(key)
 	if err != nil {
 		return "", err
@@ -385,8 +391,17 @@ func (s *Store) write(key string, e Entry, replace bool) (Outcome, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
-	if exists && old == e {
-		return Unchanged, nil
+	e.Storage, e.Replacement = old.Storage, old.Replacement
+	if exists {
+		// Compare the persisted representation, including newline and
+		// frontmatter normalization, so the same request is a safe retry.
+		normalized, err := Parse(Format(e))
+		if err != nil {
+			return "", err
+		}
+		if old == normalized {
+			return Unchanged, nil
+		}
 	}
 	if e.Group != "" {
 		groups, err := readGroups(dir)
@@ -408,8 +423,12 @@ func (s *Store) write(key string, e Entry, replace bool) (Outcome, error) {
 		if err != nil {
 			return "", err
 		}
-		if len(current) >= EntryCountLimit {
-			return "", fmt.Errorf("%w: this Project already holds %d entries; forget one first", ErrFull, EntryCountLimit)
+		counts := countStorage(current)
+		if counts.Active >= EntryCountLimit {
+			if counts.Pending >= PendingEntryLimit {
+				return "", fmt.Errorf("%w: the Project's active memory and %d pending entries are full", ErrFull, PendingEntryLimit)
+			}
+			e.Storage = Pending
 		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -418,8 +437,10 @@ func (s *Store) write(key string, e Entry, replace bool) (Outcome, error) {
 	if err := writeAtomic(path, []byte(Format(e))); err != nil {
 		return "", err
 	}
-	if err := writeIndex(dir); err != nil {
-		return "", err
+	if e.Storage.active() {
+		if err := writeIndex(dir); err != nil {
+			return "", err
+		}
 	}
 	if exists {
 		return Updated, nil
@@ -469,6 +490,8 @@ func (s *Store) Listing(key string) (Listing, error) {
 	if err != nil {
 		return Listing{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return listing(dir)
 }
 
@@ -482,7 +505,8 @@ func listing(dir string) (Listing, error) {
 		return Listing{}, err
 	}
 	groups := countGroups(entries, described)
-	text, cut := RenderIndex(entries, groups)
+	active := slices.DeleteFunc(slices.Clone(entries), func(e Entry) bool { return !e.Storage.active() })
+	text, cut := RenderIndex(active, countGroups(active, described))
 	return Listing{Entries: entries, Groups: groups, Index: text, Cut: cut}, nil
 }
 
@@ -707,7 +731,8 @@ func RenderIndex(entries []Entry, groups []Group) (string, bool) {
 
 // LaunchInstruction is what a launched session is told before the index.
 const LaunchInstruction = "This Project's shared memory index is below; read an entry with `clawdline memory show <name>`; " +
-	"record a lesson for this Project with `clawdline memory add`, not in your own assistant's memory."
+	"record a lesson for this Project with `clawdline memory add`, not in your own assistant's memory. " +
+	"Use `clawdline memory dream` to find archived entries and review candidates."
 
 // LaunchText is what a session launched in dir is given, or "" when the
 // Project has no entries — and a launch with "" is exactly the launch
@@ -719,7 +744,7 @@ func (s *Store) LaunchText(dir string) (string, error) {
 		return "", nil
 	}
 	index, entries, _, err := s.Index(key)
-	if err != nil || entries == 0 {
+	if err != nil || entries == 0 || index == "" {
 		return "", err
 	}
 	return LaunchInstruction + "\n\n" + index, nil
@@ -773,19 +798,27 @@ func writeAtomic(path string, body []byte) error {
 }
 
 func readEntry(path string) (Entry, error) {
-	f, err := os.Open(path)
+	data, err := readEntryData(path)
 	if err != nil {
 		return Entry{}, err
+	}
+	return Parse(data)
+}
+
+func readEntryData(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, entryFileReadLimit+1))
 	if err != nil {
-		return Entry{}, err
+		return "", err
 	}
 	if len(data) > entryFileReadLimit {
-		return Entry{}, fmt.Errorf("%s is larger than an entry may be", filepath.Base(path))
+		return "", fmt.Errorf("%s is larger than an entry may be", filepath.Base(path))
 	}
-	return Parse(string(data))
+	return string(data), nil
 }
 
 // Format is an entry as its file holds it.
@@ -804,7 +837,7 @@ func Format(e Entry) string {
 		group = "\n  group: " + e.Group
 	}
 	return "---\nname: " + e.Name + "\ndescription: " + description +
-		"\nmetadata:\n  type: " + string(e.Type) + group + "\n---\n\n" + body + "\n"
+		"\nmetadata:\n  type: " + string(e.Type) + group + e.storageFields() + "\n---\n\n" + body + "\n"
 }
 
 // Parse reads an entry file: this store's own, or one of Claude Code's
@@ -834,7 +867,7 @@ func Parse(text string) (Entry, error) {
 			continue
 		}
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
-		if indented && k != "type" && k != "group" {
+		if indented && k != "type" && k != "group" && k != storageKey && k != replacementKey {
 			continue
 		}
 		if v == ">" || v == "|" || v == ">-" || v == "|-" {
@@ -852,6 +885,10 @@ func Parse(text string) (Entry, error) {
 			fields[k] = v
 		}
 	}
-	return Entry{Name: fields["name"], Description: fields["description"], Type: Type(fields["type"]),
-		Group: fields["group"], Body: strings.TrimLeft(body, "\n")}, nil
+	e := Entry{Name: fields["name"], Description: fields["description"], Type: Type(fields["type"]),
+		Group: fields["group"], Body: strings.TrimLeft(body, "\n"), Storage: Storage(fields[storageKey]), Replacement: fields[replacementKey]}
+	if !e.validStorage() {
+		return Entry{}, fmt.Errorf("%w: unknown memory storage metadata", ErrInvalid)
+	}
+	return e, nil
 }

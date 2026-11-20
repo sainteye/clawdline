@@ -132,21 +132,49 @@ func TestWritesAreIdempotentAndRefusalsAreTyped(t *testing.T) {
 	}
 }
 
-func TestAFullProjectRefusesOneMore(t *testing.T) {
-	s := New(t.TempDir())
+func TestAFullProjectAcceptsDurableOverflowUntilPendingIsFull(t *testing.T) {
+	state := t.TempDir()
+	s := New(state)
 	full := make([]Entry, 0, EntryCountLimit)
-	for i := 0; i < EntryCountLimit; i++ {
-		full = append(full, invented(fmt.Sprintf("lesson-%03d", i), TypeProject))
+	for i := range EntryCountLimit {
+		full = append(full, invented(fmt.Sprintf("lesson-%04d", i), TypeProject))
 	}
 	seed(t, s, full...)
-	if _, err := s.Add(testKey, invented("one-too-many", TypeProject)); !errors.Is(err, ErrFull) {
-		t.Fatalf("one past the limit: %v", err)
+	newEntry := invented("a-new-entry", TypeUser)
+	newEntry.Body = "New overflow content.\r\nSecond line.\r\n"
+	if outcome, err := s.Add(testKey, newEntry); err != nil || outcome != Created {
+		t.Fatalf("first overflow entry: %s %v", outcome, err)
 	}
-	// An update of an entry already there is not one more.
-	changed := invented("lesson-000", TypeProject)
-	changed.Body = "changed"
-	if _, err := s.Update(testKey, changed); err != nil {
-		t.Fatalf("an update in a full store: %v", err)
+	s = New(state)
+	if outcome, err := s.Add(testKey, newEntry); err != nil || outcome != Unchanged {
+		t.Fatalf("retry after reopening: %s %v", outcome, err)
+	}
+	list, err := s.Listing(testKey)
+	if err != nil || len(list.Entries) != EntryCountLimit+1 || strings.Contains(list.Index, newEntry.Name) {
+		t.Fatalf("restart list has %d rows, error %v", len(list.Entries), err)
+	}
+	for _, original := range full {
+		if got, err := s.Get(testKey, original.Name); err != nil || got != original {
+			t.Fatalf("old entry %s changed: %v", original.Name, err)
+		}
+	}
+	if got, err := s.Get(testKey, newEntry.Name); err != nil || !got.IsPending() || got.Body != strings.ReplaceAll(newEntry.Body, "\r\n", "\n") {
+		t.Fatalf("reopened pending entry: %+v %v", got, err)
+	}
+	for i := range PendingEntryLimit - 1 {
+		pending := invented(fmt.Sprintf("pending-%04d", i), TypeProject)
+		pending.Storage = Pending
+		seed(t, s, pending)
+	}
+	if _, err := s.Add(testKey, invented("one-too-many", TypeProject)); !errors.Is(err, ErrFull) {
+		t.Fatalf("when both limits are full: %v", err)
+	}
+	newEntry.Body = "Edited pending body."
+	if _, err := s.Update(testKey, newEntry); err != nil {
+		t.Fatalf("pending update at the limit: %v", err)
+	}
+	if got, err := s.Get(testKey, newEntry.Name); err != nil || !got.IsPending() || got.Body != newEntry.Body+"\n" {
+		t.Fatalf("updated pending entry: %+v %v", got, err)
 	}
 }
 
@@ -263,7 +291,7 @@ func TestAStoreThatCannotBeReadIsAnErrorNotAnEmptyList(t *testing.T) {
 func TestMostEntriesIsTheFullestProject(t *testing.T) {
 	state := t.TempDir()
 	s := New(state)
-	if n, err := s.MostEntries(); err != nil || n != 0 {
+	if n, err := s.MostEntries(false); err != nil || n != 0 {
 		t.Fatalf("no store: %d %v", n, err)
 	}
 	for i := range 3 {
@@ -274,14 +302,14 @@ func TestMostEntriesIsTheFullestProject(t *testing.T) {
 	if _, err := s.Add("another-project-89abcdef", invented("only-one", TypeUser)); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.MostEntries(); err != nil || n != 3 {
+	if n, err := s.MostEntries(false); err != nil || n != 3 {
 		t.Fatalf("two Projects: %d %v, want 3", n, err)
 	}
 	blocked := New(t.TempDir())
 	if err := os.WriteFile(blocked.root, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := blocked.MostEntries(); err == nil {
+	if n, err := blocked.MostEntries(false); err == nil {
 		t.Fatalf("read %d from a store root that is a file", n)
 	}
 }
