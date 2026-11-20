@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13668,
+  "englishKeys": 13671,
   "counts": {
-    "negation": 3552,
-    "state": 2325,
+    "negation": 3553,
+    "state": 2327,
     "permission": 829,
     "deletion": 314,
     "uncertainty": 554
   },
-  "unionCount": 5863,
+  "unionCount": 5865,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2546,6 +2546,7 @@
       "next.documentsTasks",
       "next.documentsWalked",
       "next.doorAskWhyBody",
+      "next.endBackgroundUnknown",
       "next.endProcessRecoveryWarning",
       "next.endWorkCloseUnknown",
       "next.endWorkNoOpen",
@@ -5206,6 +5207,8 @@
       "next.documentsWalked",
       "next.doorAskWhyBody",
       "next.doorCodeExpired",
+      "next.endBackgroundChanged",
+      "next.endBackgroundUnknown",
       "next.endWorkCompletedSummary",
       "next.endWorkReleaseFailed",
       "next.firstSessionAgentMacHint",
@@ -11660,6 +11663,8 @@
     "next.doorAskStep1",
     "next.doorAskWhyBody",
     "next.doorCodeExpired",
+    "next.endBackgroundChanged",
+    "next.endBackgroundUnknown",
     "next.endProcessRecoveryWarning",
     "next.endWorkCloseUnknown",
     "next.endWorkCompletedSummary",

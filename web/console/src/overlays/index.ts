@@ -3,7 +3,7 @@
 export { Overlays, closeKeys, shown, toggleKeys } from "./Overlays.js"
 export { Info, hostInfo } from "./info.js"
 export { RoleDetail } from "./role-detail.js"
-export { ActionConfirm, endedIfGone, hostConfirm } from "./action-confirm.js"
+export { ActionConfirm, hostConfirm } from "./action-confirm.js"
 export { SessionFacts } from "./facts.js"
 export {
   GO_PAGE,

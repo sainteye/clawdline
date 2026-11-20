@@ -1371,15 +1371,17 @@ export class RelayWriter {
         return this.press(current, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"), generation, typed)
       }
       case "end": {
+        const unopened = isUnopenedRead(init)
+        // Closing the detail can change the selected destination in the same press.
+        const pinned = unopened ? undefined : this.fleetTarget(route.session)
         const body = await bodyOf(init)
-        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, isUnopenedRead(init), unopenedMachine(init))
-        // What the page last read of this session's close gates. The Go daemon
-        // carries it and does not compare it yet (cloudops `Divergences`); a
-        // Swift Mac refuses a close against a reading that has moved.
-        const row = await this.row(current, route.session)
-        const closeability = row?.closeability as { version?: unknown } | undefined
-        const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
-          ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
+        const { identity, generation, client: current } = await this.mutationTarget(client, route.session, route.word, unopened, unopenedMachine(init), pinned)
+        let version = typeof body.expected_closeability_version === "string" ? body.expected_closeability_version : ""
+        if (!version) {
+          const row = await this.row(current, route.session)
+          const closeability = row?.closeability as { version?: unknown } | undefined
+          if (typeof closeability?.version === "string") version = closeability.version
+        }
         const request = headerOf(init, "idempotency-key")
         if (!request.trim()) throw failure("idempotency_key_required", "This action needs an Idempotency-Key.", 400)
         const answer = await current._read!(identity, "end", {
@@ -2589,7 +2591,8 @@ export class RelayWriter {
     return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
   }
 
-  private async mutationTarget(client: CloudWriteClient, session: string, word: string, unopened = false, machine: string | null = null): Promise<{ identity: CloudIdentity; generation: string; client: CloudWriteClient }> {
+  private async mutationTarget(client: CloudWriteClient, session: string, word: string, unopened = false,
+    machine: string | null = null, pinned?: SessionContentTarget | null): Promise<{ identity: CloudIdentity; generation: string; client: CloudWriteClient }> {
     // The voice copilot acting on a Session other than the opened one
     // (`unopened-read.ts`): that Session's current execution, resolved and
     // admitted exactly as a newly started Session's is, never the opened one's.
@@ -2597,7 +2600,8 @@ export class RelayWriter {
     // is open, e.g. when voice dictation finishes transcribing after switching away.
     const opened = this.host.exactTarget?.() ?? null
     const useUnopened = unopened || (opened !== null && opened.sessionID !== session && word === "send" && !!this.host.resolveSession)
-    const exact = useUnopened ? await this.unopenedMutationTarget(session, machine ?? this.host.machine) : this.fleetTarget(session)
+    const exact = useUnopened ? await this.unopenedMutationTarget(session, machine ?? this.host.machine)
+      : pinned === undefined ? this.fleetTarget(session) : pinned
     // The opened fleet detail is pinned to an exact execution. Its current
     // status projection is checked below. The legacy rich-row replay is a
     // separate stream and can temporarily omit that Session during recovery;

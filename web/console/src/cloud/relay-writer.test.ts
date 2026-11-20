@@ -3181,6 +3181,29 @@ test("end and archive notify the shared list only after the exact execution was 
   }
 })
 
+test("close keeps the selected execution when the detail immediately selects another Session", async () => {
+  const client = new FakeClient()
+  const original = { machineID: "mac-a", sessionID: "s1", executionGeneration: EXECUTION }
+  let selected = original
+  const admitted: unknown[] = []
+  const reader = new RelayReader("mac-a", {
+    fleetTarget: () => selected,
+    admitFleetMutation: async (target) => { admitted.push(target) },
+  })
+  const writer = new RelayWriter(reader.writeHost)
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  const answer = reader.fetch("/v1/sessions/s1/close",
+    post({ expected_closeability_version: "cl1_original" }, { "Idempotency-Key": "close-pinned" }))
+  selected = { ...original, sessionID: "s2" }
+  assert.equal((await answer).status, 200)
+  assert.deepEqual(admitted, [original])
+  assert.deepEqual(client.calls[0]?.slice(1, 4), [{ machine: "mac-a", session: "s1" }, "end", {
+    request: "close-pinned", execution_generation: EXECUTION, accept_loss: false,
+    expected_closeability_version: "cl1_original",
+  }])
+})
+
 
 test("a new Grok Session reads full and summary facts before rich-row replay",async()=>{
  const client=new FakeClient(),target={machineID:"mac-a",sessionID:"owned:acp:grok",executionGeneration:EXECUTION}

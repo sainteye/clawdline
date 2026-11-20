@@ -31,6 +31,7 @@ import { machineLight, type CarrierReading } from "./carrier-state.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
 import { FleetInstaBoxWake } from "./FleetInstaBoxWake.js"
+import { closingRowKey, observeClosingRows, useClosingRows } from "../session/closing-rows.js"
 
 export type MachineToolbarAction = "terminal" | "voice" | "work" | "start" | "start_terminal" | "cloud_setup"
 type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionProjection }
@@ -58,6 +59,19 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   onArchiveRequest: (target: SessionDestination, title: string) => void
 }) {
   const [readings, setReadings] = useState<Record<string, Reading>>({})
+  const closingRows = useClosingRows()
+  const rowKey = ({ destination }: ProjectedSession) => closingRowKey(destination.machineID, {
+    id: destination.sessionID, execution_generation: destination.executionGeneration,
+  })
+  useEffect(() => {
+    if (!closingRows.size) return
+    for (const [machine, reading] of Object.entries(readings)) {
+      if (reading.phase === "settled" && reading.value.kind === "ready" && reading.value.complete) {
+        observeClosingRows(machine, new Set(reading.value.rows.map(rowKey)))
+      }
+    }
+  }, [readings, closingRows])
+  const isVisible = (row: ProjectedSession) => !closingRows.has(rowKey(row))
   const [filterSlot, setFilterSlot] = useState<HTMLElement | null>(null)
   useEffect(() => { setFilterSlot(document.getElementById("session-state-filter-slot")) }, [])
   useEffect(() => {
@@ -318,7 +332,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
 
   const filterRows = machines.flatMap((machine) => {
     const reading = readings[machine.id]
-    return reading?.phase === "settled" ? reading.value.rows ?? [] : []
+    return reading?.phase === "settled" ? (reading.value.rows ?? []).filter(isVisible) : []
   })
   const filterIncomplete = machines.some((machine) => {
     const reading = readings[machine.id]
@@ -338,7 +352,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const presentationFailed = !!missingTitle && presentationFailures.current.get(machine.id) === pass
     const presentationLoading = !!missingTitle && !presentationFailed
     const filtered = reading?.phase === "settled" && reading.value.rows
-      ? reading.value.rows.filter((row) => matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
+      ? reading.value.rows.filter((row) => isVisible(row) && matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
         (!search || `${machine.name} ${machine.id} ${machine.platform} ${row.machineScope ? "Clawdfather" : (confirmedTitles?.get(destinationKey(row.destination)) ?? presentations.current.get(destinationKey(row.destination))?.title ?? "")} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search))) : []
     const shown = filtered.map((row) => {
