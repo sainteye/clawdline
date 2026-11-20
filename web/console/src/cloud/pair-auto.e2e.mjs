@@ -96,6 +96,9 @@ createRoot(document.getElementById('root')).render(<React.StrictMode><Example/><
         await load();await start();await page.evaluate(()=>window.finish())
         await page.waitForFunction(()=>document.querySelector('#cloud-pair-progress')?.getAttribute('data-stage')==='done')
         assert.equal(await page.evaluate(()=>window.pairClosedCount),0,'helper success alone does not finish')
+        const status=page.locator('#cloud-pair-agent-said')
+        assert.match(await status.textContent(),lang==='zh-Hant'?/正在等這個瀏覽器接收並確認/:/Waiting for this browser/)
+        assert.equal(await page.getByText('Finished',{exact:true}).count(),0,'the task summary is not a browser confirmation')
         await page.evaluate(()=>window.handover());await page.waitForFunction(()=>window.pairClosedCount===1)
         if(lang==='zh-Hant'&&width===390){
           const wakePath='**/v1/machines/mac_target/instabox-wake'

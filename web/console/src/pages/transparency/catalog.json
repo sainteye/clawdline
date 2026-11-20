@@ -1968,6 +1968,9 @@
         "   invent, complete, or substitute values. If either line is missing, omit the field;\n",
         "   the browser will keep manual comparison. The InstaBox dashboard terminal is\n",
         "   the remote connection. The person's Clawdline pairing page belongs to them.\n",
+        "   In your task summary and final reply, say the target machine accepted the\n",
+        "   handover and the browser still needs to receive and verify it. A successful\n",
+        "   target command does not confirm browser pairing.\n",
         "\n",
         "If a step fails, report which step failed (lookup, wake, connection, identity, or\n",
         "pairing), with the relevant refusal and any retry time. Remove the pairing code\n",
@@ -5120,7 +5123,7 @@
     "internal/app/orchestrator/brief.go": "c972bc12d78e728177d0ea800eca27c4907579be3f0bb16f6b6de41648bc4891",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
-    "internal/app/orchestrator/detached_pairing.go": "096893ab5fc59f83b57a7aa9a641f5799dec6ba08f2e3cbee15fda8d137ea169",
+    "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/dispatch.go": "f8f4c93385fa6c7b6f0e06f8209eff22946e1104e20ef149a8e975b6bcb51001",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
@@ -5241,7 +5244,7 @@
     "web/console/src/cloud/project-assistants.ts": "10590e35a409af61f53bc2d7eb44f4134d939eeddfe9c241a77cb5b3f584fb79",
     "web/console/src/cloud/relay-writer.ts": "7d78b8a2964cac7efae7690f242b140ecf9700827bb64090a20019392e921941",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "122d6dcb3305e6207eec4d8a945e3068ab55ecaf16b0947871798069f12df02a",
+    "web/console/src/next-strings.ts": "3c7e098efe93e439917f8c4c171967492f83717c61d62225c603c59db1288bc6",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
@@ -5297,7 +5300,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "35932708b2e36bc1ad847bf69422393f861a5e5ece36f74cdfae9b64a7b6c679",
-    "zh-Hant": "74168231b2688d2de1d94e8b0f934c72715698b9dd2127ef82c3678b73d0582a"
+    "en": "e0767e0c854739f9569da471e7beef8e381750bb2e8859039db14bfd83076268",
+    "zh-Hant": "41f06c719b5b0b50ce6c625994ba2b35ecbdf1f38a70cc1243c5252095ca5bcd"
   }
 }

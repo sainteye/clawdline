@@ -153,6 +153,9 @@ PAIRING_OFFER
    invent, complete, or substitute values. If either line is missing, omit the field;
    the browser will keep manual comparison. The InstaBox dashboard terminal is
    the remote connection. The person's Clawdline pairing page belongs to them.
+   In your task summary and final reply, say the target machine accepted the
+   handover and the browser still needs to receive and verify it. A successful
+   target command does not confirm browser pairing.
 
 If a step fails, report which step failed (lookup, wake, connection, identity, or
 pairing), with the relevant refusal and any retry time. Remove the pairing code
