@@ -11961,6 +11961,7 @@
     "Sources": [
       "internal/adapters/memory.EntryBodyLimit",
       "internal/adapters/memory.entryFileReadLimit",
+      "internal/adapters/memory.RequestBodyLimit",
       "internal/transport/http.memoryRequestBodyLimit"
     ]
   },

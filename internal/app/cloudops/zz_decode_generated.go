@@ -178,6 +178,12 @@ var generatedDecoders = map[string]genDecoder{
 	"project-folders":                          genDecodeProjectFolders,
 	"project-hide":                             genDecodeProjectHide,
 	"project-manifest":                         genDecodeProjectManifest,
+	"project-memory-dream":                     genDecodeProjectMemoryDream,
+	"project-memory-list":                      genDecodeProjectMemoryList,
+	"project-memory-read":                      genDecodeProjectMemoryRead,
+	"project-memory-restore":                   genDecodeProjectMemoryRestore,
+	"project-memory-review":                    genDecodeProjectMemoryReview,
+	"project-memory-search":                    genDecodeProjectMemorySearch,
 	"project-mirror":                           genDecodeProjectMirror,
 	"project-mirror-apply":                     genDecodeProjectMirrorApply,
 	"project-mirror-detach":                    genDecodeProjectMirrorDetach,
@@ -4978,6 +4984,139 @@ func genDecodeProjectManifest(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/project-sync/manifest"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectMemoryDream is the `project-memory-dream` row's decode.
+func genDecodeProjectMemoryDream(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory-dream"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectMemoryList is the `project-memory-list` row's decode.
+func genDecodeProjectMemoryList(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectMemoryRead is the `project-memory-read` row's decode.
+func genDecodeProjectMemoryRead(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "entry", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entry", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory/" + segment(genText(b["entry"]))
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProjectMemoryRestore is the `project-memory-restore` row's decode.
+func genDecodeProjectMemoryRestore(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "entry", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entry", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory/" + segment(genText(b["entry"])) + "/restore"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectMemoryReview is the `project-memory-review` row's decode.
+func genDecodeProjectMemoryReview(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "entry", "item", "project", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entry", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("item", genRule{kind: "object", maxBytes: 135168}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory/" + segment(genText(b["entry"])) + "/review"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genObject("item")
+	return p, req, true
+}
+
+// genDecodeProjectMemorySearch is the `project-memory-search` row's decode.
+func genDecodeProjectMemorySearch(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "project", "query", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("query", genRule{kind: "string", nonEmpty: true, maxBytes: 512}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/projects/" + segment(genText(b["project"])) + "/memory-search"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"query": genValue{from: "query"}})
 	return p, req, true
 }
 

@@ -7,7 +7,8 @@
 .project-setup-eyebrow { margin: 0; color: var(--accent); font: 600 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .project-setup-dialog { box-sizing: border-box; width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 80px #0008; }
 .project-setup-dialog[data-view="files"],
-.project-setup-dialog[data-view="devstack"] { width: min(1000px, calc(100vw - 32px)); }
+.project-setup-dialog[data-view="devstack"],
+.project-setup-dialog[data-view="memory"] { width: min(1000px, calc(100vw - 32px)); }
 .project-setup-views { display: flex; flex-wrap: nowrap; gap: 5px; margin-bottom: 18px; padding: 4px; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 .project-setup-views button { flex: none; min-height: 40px; padding: 6px 14px; white-space: nowrap; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
 .project-setup-views button:disabled { opacity: 0.5; cursor: default; }

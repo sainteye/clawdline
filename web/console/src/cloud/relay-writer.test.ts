@@ -276,6 +276,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh", "project-worktree-lifecycle-refresh"],
     ["DELETE", "/v1/projects/%2Frepo/worktrees/wt-0123456789abcdef01234567", "project-worktree-remove"],
+    ["POST", "/v1/projects/cloud-p1/memory/release-local/review", "project-memory-review"],
+    ["POST", "/v1/projects/cloud-p1/memory/release-local/restore", "project-memory-restore"],
     ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
     ["POST", "/v1/projects/cloud-p1/antigravity-consent", "project-antigravity-consent-change"],
     ["POST", "/v1/projects/cloud-p1/unify", "project-unify-apply"],
@@ -1901,6 +1903,27 @@ test("a Project file save keeps its key, Project machine and exact file id", asy
   const wrongMachine = await reader.fetch(path, { ...post(item), method: "PUT", headers: { "Idempotency-Key": "save-2" } })
   assert.equal(wrongMachine.status, 409)
   assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/files/%2Fetc%2Fpasswd"), null)
+})
+
+test("Project memory review and restore keep their receipt keys and source machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const base = "/v1/projects/cloud-p1/memory/release-local"
+  const item = { action: "merge", expected: "old", replacement: "release-shipped", expected_replacement: "new", body: "Combined evidence." }
+  const reviewed = await reader.fetch(base + "/review", { ...post(item), headers: { "Idempotency-Key": "review-1" } })
+  assert.equal(reviewed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "review-1", "mac-a", "project-memory-review",
+    { project: "p1", entry: "release-local", item }, "action"])
+  const restore = await reader.fetch(base + "/restore", { method: "POST", headers: { "Idempotency-Key": "restore-1" } })
+  assert.equal(restore.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "restore-1", "mac-a", "project-memory-restore",
+    { project: "p1", entry: "release-local" }, "action"])
+  const invalidRestore = await reader.fetch(base + "/restore", { ...post(item), headers: { "Idempotency-Key": "restore-2" } })
+  assert.equal(invalidRestore.status, 400)
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
+  const foreign = await reader.fetch(base + "/review", { ...post(item), headers: { "Idempotency-Key": "review-2" } })
+  assert.equal(foreign.status, 409)
+  assert.deepEqual(client.calls, [])
 })
 
 test("an Antigravity consent change keeps its key, exact approval and Project machine", async () => {

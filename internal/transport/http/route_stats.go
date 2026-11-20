@@ -65,7 +65,7 @@ var routeWords = func() map[string]bool {
 		fail file files finish focus gate-decision gate-evidence gate-export gate-purge gate-result git
 		graphs handoffs head health history human human-interventions icon images inbox inflight info
 		input install intents interrupt inventory items key keys landing landings language lease leases links
-		logout machine machines manifest memory memory-dream memory-groups messages mirror motion next notes notify
+		logout machine machines manifest memory memory-dream memory-groups memory-search messages mirror motion next notes notify
 		obligations observed offer open orchestrator outbox pair pairing pairings password paste pauses
 		peer persona-suggestion personas phase places preview progress project project-sync projects
 		promotions proposals push rebind receipts reclaim reconcile refresh register release remind

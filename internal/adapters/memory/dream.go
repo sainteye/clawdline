@@ -31,10 +31,13 @@ const (
 	retained           Storage = "retained"
 	ArchivedDuplicate  Storage = "archived_duplicate"
 	ArchivedSuperseded Storage = "archived_superseded"
+	archivedReviewed   Storage = "archived_reviewed"
 )
 
-func (s Storage) active() bool   { return s == "" || s == retained }
-func (s Storage) archived() bool { return s == ArchivedDuplicate || s == ArchivedSuperseded }
+func (s Storage) active() bool { return s == "" || s == retained }
+func (s Storage) archived() bool {
+	return s == ArchivedDuplicate || s == ArchivedSuperseded || s == archivedReviewed
+}
 
 func (e Entry) IsPending() bool { return e.Storage == Pending || e.Storage == pendingRetained }
 
@@ -42,7 +45,7 @@ func (e Entry) validStorage() bool {
 	switch e.Storage {
 	case "", retained, Pending, pendingRetained:
 		return e.Replacement == ""
-	case ArchivedDuplicate, ArchivedSuperseded:
+	case ArchivedDuplicate, ArchivedSuperseded, archivedReviewed:
 		return e.Name != e.Replacement && ValidName(e.Replacement)
 	}
 	return false
@@ -83,6 +86,7 @@ type DreamChange struct {
 	Name        string `json:"name"`
 	Replacement string `json:"replacement"`
 	Reason      string `json:"reason"`
+	Description string `json:"description,omitempty"`
 }
 
 type DreamPlan struct {
@@ -181,7 +185,7 @@ func planDream(entries []Entry, stamp dreamStamp) DreamPlan {
 	targets := make(map[string]bool)
 	for _, e := range entries {
 		if e.Storage.archived() {
-			p.Archived = append(p.Archived, DreamChange{e.Name, e.Replacement, string(e.Storage)})
+			p.Archived = append(p.Archived, DreamChange{Name: e.Name, Replacement: e.Replacement, Reason: string(e.Storage), Description: e.Description})
 			continue
 		}
 		byName[e.Name] = e
@@ -210,7 +214,8 @@ func planDream(entries []Entry, stamp dreamStamp) DreamPlan {
 		}
 		topic := subject{e.Type, e.Group, e.Description}
 		key := exact{topic, sha256.Sum256([]byte(e.Body))}
-		safeToMove := e.Storage != retained && e.Storage != pendingRetained && !targets[e.Name]
+		kept := e.Storage == retained || e.Storage == pendingRetained
+		safeToMove := !kept && !targets[e.Name]
 		reason, next := "", replacements[e.Name]
 		_, successorHasSuccessor := replacements[next]
 		switch {
@@ -221,16 +226,16 @@ func planDream(entries []Entry, stamp dreamStamp) DreamPlan {
 		}
 		if reason != "" {
 			if p.Counts.Archived+len(p.Archive) < ArchiveEntryLimit {
-				p.Archive = append(p.Archive, DreamChange{e.Name, next, reason})
+				p.Archive = append(p.Archive, DreamChange{Name: e.Name, Replacement: next, Reason: reason})
 			} else {
-				p.Review = append(p.Review, DreamChange{e.Name, next, "archive_full"})
+				p.Review = append(p.Review, DreamChange{Name: e.Name, Replacement: next, Reason: "archive_full"})
 			}
 			continue
 		}
-		if next != "" {
-			p.Review = append(p.Review, DreamChange{e.Name, next, "successor_chain"})
-		} else if other := bySubject[topic]; other != "" && byContent[key] == "" {
-			p.Review = append(p.Review, DreamChange{e.Name, other, "same_description"})
+		if !kept && next != "" {
+			p.Review = append(p.Review, DreamChange{Name: e.Name, Replacement: next, Reason: "successor_chain"})
+		} else if other := bySubject[topic]; !kept && other != "" && byContent[key] == "" {
+			p.Review = append(p.Review, DreamChange{Name: e.Name, Replacement: other, Reason: "same_description"})
 		}
 		if byContent[key] == "" {
 			byContent[key] = e.Name
@@ -239,6 +244,7 @@ func planDream(entries []Entry, stamp dreamStamp) DreamPlan {
 			bySubject[topic] = e.Name
 		}
 	}
+	p.Review = append(p.Review, relatedDeliveries(entries, p)...)
 	return p
 }
 

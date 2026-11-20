@@ -282,6 +282,12 @@ export const CARRIED = {
   // asked of *another* paired machine by `cloud/project-sync.ts`, which is how
   // a mirror reads its source without either machine reaching the other.
   "project-manifest": "GET /v1/project-sync/manifest",
+  "project-memory-dream": "GET /v1/projects/{project}/memory-dream",
+  "project-memory-list": "GET /v1/projects/{project}/memory",
+  "project-memory-read": "GET /v1/projects/{project}/memory/{entry}",
+  "project-memory-restore": "POST /v1/projects/{project}/memory/{entry}/restore",
+  "project-memory-review": "POST /v1/projects/{project}/memory/{entry}/review",
+  "project-memory-search": "GET /v1/projects/{project}/memory-search?query=",
   "project-mirror": "GET /v1/project-sync/mirror",
   "project-mirror-apply": "POST /v1/project-sync/mirror",
   "project-mirror-detach": "DELETE /v1/project-sync/mirror?repo=",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13700,
-  "riskKeys": 5877,
-  "nonRiskCount": 7823,
+  "englishContentKeys": 13753,
+  "riskKeys": 5891,
+  "nonRiskCount": 7862,
   "groups": [
     {
       "name": "acp / other",
@@ -6628,6 +6628,54 @@
         "projectFiles.antigravityInstructions",
         "projectFiles.applicability",
         "projectFiles.sharedInstructions"
+      ]
+    },
+    {
+      "name": "projectMemory / other",
+      "count": 39,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "projectMemory.active",
+        "projectMemory.archive",
+        "projectMemory.archiveFull",
+        "projectMemory.archiveSource",
+        "projectMemory.archived",
+        "projectMemory.archivedNotice",
+        "projectMemory.chain",
+        "projectMemory.closeDetail",
+        "projectMemory.count",
+        "projectMemory.detail",
+        "projectMemory.duplicate",
+        "projectMemory.entries",
+        "projectMemory.feedback",
+        "projectMemory.full",
+        "projectMemory.invalid",
+        "projectMemory.keep",
+        "projectMemory.kept",
+        "projectMemory.lastRun",
+        "projectMemory.loading",
+        "projectMemory.merge",
+        "projectMemory.mergedBody",
+        "projectMemory.preferences",
+        "projectMemory.projectNotes",
+        "projectMemory.reference",
+        "projectMemory.refresh",
+        "projectMemory.relatedDelivery",
+        "projectMemory.replacement",
+        "projectMemory.reviewed",
+        "projectMemory.sameDescription",
+        "projectMemory.saveMerge",
+        "projectMemory.search",
+        "projectMemory.searchAction",
+        "projectMemory.searching",
+        "projectMemory.source",
+        "projectMemory.suggestions",
+        "projectMemory.superseded",
+        "projectMemory.title",
+        "projectMemory.uniqueLines",
+        "projectMemory.upgrade"
       ]
     },
     {

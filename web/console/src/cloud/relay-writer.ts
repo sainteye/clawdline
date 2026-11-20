@@ -268,6 +268,7 @@ export type WriteRoute =
   | { op: "project-hide"; word: Carried<"project-hide"> }
   | { op: "project-add"; word: Carried<"project-add"> }
   | { op: "project-folder-create"; word: Carried<"project-folder-create"> }
+  | { op: "project-memory-write"; word: Carried<"project-memory-restore" | "project-memory-review">; project: string; entry: string }
   | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
   | { op: "project-ops-write"; word: Carried<"project-ops-create" | "project-ops-update" | "project-ops-delete" | "project-ops-resolve-request">; project: string; id: string }
   | { op: "project-antigravity-consent-change"; word: Carried<"project-antigravity-consent-change">; project: string }
@@ -758,6 +759,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "places" && segments.length === 1 && method === "DELETE") return { op: "project-hide", word: "project-hide" }
   if (head === "project-folders" && segments.length === 1 && method === "POST") return { op: "project-folder-create", word: "project-folder-create" }
   if (head === "places" && segments.length === 1 && method === "POST") return { op: "project-add", word: "project-add" }
+  if (head === "projects" && a && b === "memory" && c && /^[a-z0-9-]{1,64}$/u.test(c) && segments.length === 5 && method === "POST") {
+    if (d === "restore" || d === "review") return { op: "project-memory-write", word: d === "restore" ? "project-memory-restore" : "project-memory-review", project: a, entry: c }
+  }
   if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
     return { op: "project-file-save", word: "project-file-save", project: a, file: c }
   }
@@ -1150,6 +1154,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-add":
     case "project-folder-create":
     case "project-file-save":
+    case "project-memory-write":
     case "project-ops-write":
     case "project-codegraph-build":
     case "session-codegraph-build":
@@ -2334,6 +2339,18 @@ export class RelayWriter {
         const request = headerOf(init, "idempotency-key")
         if (!request) throw failure("idempotency_key_required", "Adding a Project needs an Idempotency-Key.", 400)
         return this.machineWorkV2(client, route.word, { path: body.paths[0] }, request, url.searchParams.get("machine") || this.host.machine)
+      }
+      case "project-memory-write": {
+        if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
+        if ([...url.searchParams].length) throw failure("bad_request", "Project memory changes take no query fields.", 400)
+        const place = client._place(route.project)
+        if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "Changing Project memory needs an Idempotency-Key.", 400)
+        const item = await bodyOf(init)
+        if (route.word === "project-memory-restore" && Object.keys(item).length) throw failure("bad_request", "Restore takes no fields.", 400)
+        return client._machineRequestAs(request, place.machine, route.word,
+          { project: place.id, entry: route.entry, ...(route.word === "project-memory-review" ? { item } : {}) }, "action")
       }
       case "project-file-save": {
         if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)

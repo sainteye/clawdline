@@ -7930,6 +7930,10 @@ export interface ProjectMemoryDream {
 }
 
 export interface ProjectMemoryDreamChange {
+  /**
+   * Description of an archived entry.
+   */
+  description?: string
   name: string
   reason: string
   replacement: string
@@ -7959,6 +7963,11 @@ export interface ProjectMemoryEntry {
    */
   group?: string
   name: string
+
+  /**
+   * Read-only revision used when reviewing an entry.
+   */
+  revision?: string
   type: ProjectMemoryType
 }
 
@@ -8036,6 +8045,29 @@ export type ProjectMemoryOutcome =
   | "forgotten"
 
 export const ProjectMemoryOutcomeValues: readonly ProjectMemoryOutcome[] = ["created", "updated", "unchanged", "forgotten"] as const
+
+/**
+ * Review one compared memory and, for archive or merge, its replacement.
+ */
+export interface ProjectMemoryReview {
+  action: string
+
+  /**
+   * The edited replacement text for a merge.
+   */
+  body?: string
+  expected: string
+  expected_replacement?: string
+  replacement?: string
+}
+
+/**
+ * Names of memories whose stored text or metadata matches the query, including
+ * archived originals.
+ */
+export interface ProjectMemorySearch {
+  matches: string[]
+}
 
 /**
  * One entry as a listing shows it, without its body.

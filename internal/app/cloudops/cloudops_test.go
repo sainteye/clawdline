@@ -824,6 +824,32 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "project-devstack", "session": machine, "request": "req-devstack", "project": "p1"},
 		session: machine, name: "read:req-devstack", method: "GET", path: "/v1/projects/p1/devstack",
 	}, {
+		word:    "project-memory-dream",
+		body:    map[string]any{"type": "project-memory-dream", "session": machine, "request": "req-memory-dream", "project": "p1"},
+		session: machine, name: "read:req-memory-dream", method: "GET", path: "/v1/projects/p1/memory-dream",
+	}, {
+		word:    "project-memory-list",
+		body:    map[string]any{"type": "project-memory-list", "session": machine, "request": "req-memory-list", "project": "p1"},
+		session: machine, name: "read:req-memory-list", method: "GET", path: "/v1/projects/p1/memory",
+	}, {
+		word:    "project-memory-read",
+		body:    map[string]any{"type": "project-memory-read", "session": machine, "request": "req-memory-read", "project": "p1", "entry": "release-local"},
+		session: machine, name: "read:req-memory-read", method: "GET", path: "/v1/projects/p1/memory/release-local",
+	}, {
+		word:    "project-memory-search",
+		body:    map[string]any{"type": "project-memory-search", "session": machine, "request": "req-memory-search", "project": "p1", "query": "checks"},
+		session: machine, name: "read:req-memory-search", method: "GET", path: "/v1/projects/p1/memory-search",
+		query: map[string]string{"query": "checks"},
+	}, {
+		word:    "project-memory-restore",
+		body:    map[string]any{"type": "project-memory-restore", "session": machine, "request": "req-memory-restore", "project": "p1", "entry": "release-local"},
+		session: machine, name: "action:req-memory-restore", method: "POST", path: "/v1/projects/p1/memory/release-local/restore",
+	}, {
+		word:    "project-memory-review",
+		body:    map[string]any{"type": "project-memory-review", "session": machine, "request": "req-memory-review", "project": "p1", "entry": "release-local", "item": map[string]any{"action": "keep", "expected": "rev"}},
+		session: machine, name: "action:req-memory-review", method: "POST", path: "/v1/projects/p1/memory/release-local/review",
+		body2: `{"action":"keep","expected":"rev"}`,
+	}, {
 		word:    "project-file-list",
 		body:    map[string]any{"type": "project-file-list", "session": machine, "request": "req-file-list", "project": "p1"},
 		session: machine, name: "read:req-file-list", method: "GET", path: "/v1/projects/p1/files",

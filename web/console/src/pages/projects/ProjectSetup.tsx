@@ -17,6 +17,7 @@ import { ProjectFiles } from "./ProjectFiles.js"
 import { AntigravityConsent } from "./AntigravityConsent.js"
 import { ProjectUnify } from "./ProjectUnify.js"
 import { ProjectDevStack } from "./ProjectDevStack.js"
+import { ProjectMemory, memoryWord } from "./ProjectMemory.js"
 import { ProjectExplorer } from "./ProjectExplorer.js"
 import { nextWord } from "../../next-strings.js"
 import {
@@ -95,7 +96,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const pendingSelection = useRef<ProjectPlace | null>(null)
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
-  const [view, setView] = useState<"settings" | "devstack" | "files">("settings")
+  const [view, setView] = useState<"settings" | "devstack" | "files" | "memory">("settings")
   // A readiness row's sharing press: which Project's unify preview to open,
   // and a count so a second press on the same one opens it again.
   const [unifyRequest, setUnifyRequest] = useState({ place: "", count: 0 })
@@ -262,7 +263,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       <div className="project-setup-dialog-heading">
         <div>
           <p className="project-setup-eyebrow">{catalogWord("inline", "c6325b98fd0c")}</p>
-          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || catalogWord("literal", "faec0867e1cc")} · ${view === "files" ? catalogWord("literal", "f207dc293b4f") : view === "devstack" ? nextWord("devStackTab") : catalogWord("literal", "91c1ae775198")}` : catalogWord("literal", "6a6633400d3e")}</h2>
+          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || catalogWord("literal", "faec0867e1cc")} · ${view === "files" ? catalogWord("literal", "f207dc293b4f") : view === "memory" ? memoryWord("title") : view === "devstack" ? nextWord("devStackTab") : catalogWord("literal", "91c1ae775198")}` : catalogWord("literal", "6a6633400d3e")}</h2>
         </div>
         <button className="project-setup-close" type="button" aria-label={catalogWord("inline", "dfc889eaa026")} onClick={requestClose}>{catalogWord("inline", "c7fdddf79eaa")}</button>
       </div>
@@ -285,6 +286,11 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
             filesState.current = { dirty: false, busy: false }
             setView("devstack")
           }}>{nextWord("devStackTab")}</button>
+          <button type="button" aria-pressed={view === "memory"} onClick={async () => {
+            if (view === "memory" || !await mayLeave()) return
+            filesState.current = { dirty: false, busy: false }
+            setView("memory")
+          }}>{memoryWord("title")}</button>
           <button type="button" aria-pressed={view === "files"} onClick={async () => {
             if (view === "files") return
             if (!await mayLeave()) return
@@ -292,6 +298,12 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
             setView("files")
           }}>{catalogWord("inline", "a11ac5efe91d")}</button>
         </div>}
+        {view === "memory" && projectPath && <>
+          {loading && !visiblePlaces[0] && <LoadingSkeleton id="project-memory-place" kind="cards" label={memoryWord("loading")} />}
+          {error && !visiblePlaces[0] && <p role="alert">{error} <button type="button" onClick={() => void load()}>{memoryWord("refresh")}</button></p>}
+          {!loading && !error && !visiblePlaces[0] && <p role="status">{memoryWord("unavailable")}</p>}
+          {visiblePlaces[0] && <ProjectMemory key={visiblePlaces[0].id} project={visiblePlaces[0].id} onState={updateFilesState} />}
+        </>}
         {view === "files" && projectPath && <>
           {loading && <LoadingSkeleton id="SK-14" kind="cards" label={catalogWord("inline", "a33893db1b83")} />}
           {!loading && error && <p role="alert">{error} <button type="button" onClick={() => void load()}>{catalogWord("inline", "7e59d0f16293")}</button></p>}

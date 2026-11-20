@@ -9959,6 +9959,80 @@
       "decode": {"reply": "machine", "route": {"path": "/v1/project-sync/manifest"}}
     },
     {
+      "op": "project-memory-dream",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/memory-dream",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"project": "p1", "request": "memory-dream", "session": "__clawdline_machine__"},
+      "shapes": [{"path": "/v1/projects/{project}/memory-dream", "body": ["project", "request", "session"]}],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}}, "route": {"path": "/v1/projects/{project}/memory-dream"}}
+    },
+    {
+      "op": "project-memory-list",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/memory",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"project": "p1", "request": "memory-list", "session": "__clawdline_machine__"},
+      "shapes": [{"path": "/v1/projects/{project}/memory", "body": ["project", "request", "session"]}],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}}, "route": {"path": "/v1/projects/{project}/memory"}}
+    },
+    {
+      "op": "project-memory-read",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/memory/{entry}",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"project": "p1", "request": "memory-read", "session": "__clawdline_machine__", "entry": "delivery-local"},
+      "shapes": [{"path": "/v1/projects/{project}/memory/{entry}", "body": ["entry", "project", "request", "session"]}],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "entry": {"type": "string", "non_empty": true, "max_bytes": 64}}, "route": {"path": "/v1/projects/{project}/memory/{entry}"}}
+    },
+    {
+      "op": "project-memory-restore",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/memory/{entry}/restore",
+      "console_seam": "writer",
+      "local": {"method": "POST", "device": true},
+      "example": {"project": "p1", "request": "memory-restore", "session": "__clawdline_machine__", "entry": "delivery-local"},
+      "shapes": [{"path": "/v1/projects/{project}/memory/{entry}/restore", "body": ["entry", "project", "request", "session"]}],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "entry": {"type": "string", "non_empty": true, "max_bytes": 64}}, "route": {"path": "/v1/projects/{project}/memory/{entry}/restore"}}
+    },
+    {
+      "op": "project-memory-review",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/projects/{project}/memory/{entry}/review",
+      "console_seam": "writer",
+      "local": {"method": "POST", "device": true},
+      "example": {"project": "p1", "request": "memory-review", "session": "__clawdline_machine__", "entry": "delivery-local", "item": {"action": "keep", "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+      "shapes": [{"path": "/v1/projects/{project}/memory/{entry}/review", "local_body": ["action", "expected"], "body": ["entry", "item", "project", "request", "session"]}],
+      "decode": {"reply": "action", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "entry": {"type": "string", "non_empty": true, "max_bytes": 64}, "item": {"type": "object", "max_bytes": 135168, "copies": {"max_bytes": "memory.RequestBodyLimit"}}}, "route": {"path": "/v1/projects/{project}/memory/{entry}/review", "body": {"object": "item"}}}
+    },
+    {
+      "op": "project-memory-search",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/projects/{project}/memory-search?query=",
+      "console_seam": "reader",
+      "local": {"method": "GET"},
+      "example": {"project": "p1", "query": "release", "request": "memory-search", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["project", "query", "request", "session"], "path": "/v1/projects/{project}/memory-search", "query": ["query"]}
+      ],
+      "decode": {"reply": "machine", "fields": {"project": {"type": "string", "non_empty": true, "max_bytes": 200}, "query": {"type": "string", "non_empty": true, "max_bytes": 512, "copies": {"max_bytes": "memory.DescriptionByteLimit"}}}, "route": {"path": "/v1/projects/{project}/memory-search", "query": {"query": {"from": "query"}}}}
+    },
+    {
       "op": "project-mirror",
       "kind": "read",
       "write_gate": false,

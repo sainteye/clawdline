@@ -1,9 +1,14 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/memory"
@@ -11,9 +16,9 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
-func (s *Server) projectMemoryDreamRoute(w http.ResponseWriter, r *http.Request, placeID, restore string) {
+func (s *Server) projectMemoryDreamRoute(w http.ResponseWriter, r *http.Request, placeID, name, action string) {
 	method := http.MethodGet
-	if restore != "" {
+	if name != "" {
 		method = http.MethodPost
 	}
 	if r.Method != method {
@@ -21,11 +26,11 @@ func (s *Server) projectMemoryDreamRoute(w http.ResponseWriter, r *http.Request,
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "")
 		return
 	}
-	if r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+	if (action != "memory-search" && r.URL.RawQuery != "") || action != "review" && (r.ContentLength != 0 || len(r.TransferEncoding) != 0) {
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "")
 		return
 	}
-	if restore != "" && !machineAuthed(r) && !maySend(r) {
+	if name != "" && !machineAuthed(r) && !maySend(r) {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "")
 		return
 	}
@@ -40,13 +45,52 @@ func (s *Server) projectMemoryDreamRoute(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	store := s.memoryStore()
-	if restore != "" {
-		result, err := store.Restore(key, restore)
+	if action == "memory-search" {
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(query) != 1 || len(query["query"]) != 1 {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "")
+			return
+		}
+		matches, err := store.Search(key, query.Get("query"))
 		if err != nil {
 			writeMemoryRefusal(w, err)
 			return
 		}
-		writeJSON(w, contract.ProjectMemoryWriteAnswer{Name: restore, Outcome: contract.ProjectMemoryOutcome(result)})
+		writeJSON(w, struct {
+			Matches []string `json:"matches"`
+		}{matches})
+		return
+	}
+	if name != "" {
+		var result memory.Outcome
+		var err error
+		switch action {
+		case "restore":
+			result, err = store.Restore(key, name)
+		case "review":
+			body, readErr := io.ReadAll(io.LimitReader(r.Body, memoryRequestBodyLimit+1))
+			if readErr != nil || len(body) > memoryRequestBodyLimit {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "")
+				return
+			}
+			var review memory.ReviewRequest
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.DisallowUnknownFields()
+			if decoder.Decode(&review) != nil || decoder.Decode(new(any)) != io.EOF {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "")
+				return
+			}
+			result, err = store.Review(key, name, review)
+		}
+		if errors.Is(err, memory.ErrReviewStale) {
+			writeRefusal(w, http.StatusConflict, "memory_review_stale", "")
+			return
+		}
+		if err != nil {
+			writeMemoryRefusal(w, err)
+			return
+		}
+		writeJSON(w, contract.ProjectMemoryWriteAnswer{Name: name, Outcome: contract.ProjectMemoryOutcome(result)})
 		return
 	}
 	plan, err := store.PlanDream(key)

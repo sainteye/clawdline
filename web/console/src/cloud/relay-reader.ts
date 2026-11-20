@@ -986,6 +986,18 @@ export class RelayReader {
             client.readForGeneration?.(target, "session-codegraph", {}, init?.signal ?? undefined)) :
             client._read?.({ machine: this.machine, session: id }, "session-codegraph", {}, "session-codegraph"))
       }
+      const projectMemory = /^\/v1\/projects\/([^/]+)\/(memory-dream|memory-search|memory)(?:\/([a-z0-9-]{1,64}))?$/u.exec(path)
+      if (projectMemory && !(projectMemory[2] !== "memory" && projectMemory[3])) {
+        const search = projectMemory[2] === "memory-search"
+        const query = this.only(url, path, ...(search ? ["query"] : []))
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(decodeURIComponent(projectMemory[1]!))
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        const entry = projectMemory[3]
+        const word = search ? "project-memory-search" : projectMemory[2] === "memory-dream" ? "project-memory-dream" : entry ? "project-memory-read" : "project-memory-list"
+        return await this.machineRead(init?.signal, method, path, word, { project: place.id, ...(entry ? { entry } : {}), ...(search ? { query: query.query ?? "" } : {}) })
+      }
       const projectFile = projectFileRoute(path)
       if (projectFile) {
         this.only(url, path)

@@ -6942,6 +6942,8 @@ type ProjectMemoryDream struct {
 }
 
 type ProjectMemoryDreamChange struct {
+	// Description of an archived entry.
+	Description string `json:"description,omitempty"`
 	Name        string `json:"name"`
 	Reason      string `json:"reason"`
 	Replacement string `json:"replacement"`
@@ -6963,9 +6965,12 @@ type ProjectMemoryEntry struct {
 
 	// A group set with PUT /v1/projects/:id/memory-groups/:slug; absent or empty for a
 	// resident entry. An unknown group is refused with memory_group_not_found.
-	Group string            `json:"group,omitempty"`
-	Name  string            `json:"name"`
-	Type  ProjectMemoryType `json:"type"`
+	Group string `json:"group,omitempty"`
+	Name  string `json:"name"`
+
+	// Read-only revision used when reviewing an entry.
+	Revision string            `json:"revision,omitempty"`
+	Type     ProjectMemoryType `json:"type"`
 }
 
 // A group of entries the index a launch carries names in one line instead of
@@ -7025,6 +7030,23 @@ const (
 
 // ProjectMemoryOutcomeValues is every value the contract allows, in contract order.
 var ProjectMemoryOutcomeValues = []ProjectMemoryOutcome{ProjectMemoryOutcomeCreated, ProjectMemoryOutcomeUpdated, ProjectMemoryOutcomeUnchanged, ProjectMemoryOutcomeForgotten}
+
+// Review one compared memory and, for archive or merge, its replacement.
+type ProjectMemoryReview struct {
+	Action string `json:"action"`
+
+	// The edited replacement text for a merge.
+	Body                string `json:"body,omitempty"`
+	Expected            string `json:"expected"`
+	ExpectedReplacement string `json:"expected_replacement,omitempty"`
+	Replacement         string `json:"replacement,omitempty"`
+}
+
+// Names of memories whose stored text or metadata matches the query, including
+// archived originals.
+type ProjectMemorySearch struct {
+	Matches []string `json:"matches"`
+}
 
 // One entry as a listing shows it, without its body.
 type ProjectMemorySummary struct {

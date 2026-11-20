@@ -136,6 +136,28 @@ and [its preservation of lines moved out of launch memory](https://github.com/le
 Clawdline uses deterministic local rules for its shared Project store and keeps originals in the
 same files. The normal add path does not wait for a Dreaming run.
 
+## Managing memory in Projects
+
+Open a Project and select **Memory** beside its Settings and Files. The list shows active and
+pending entries, and Archive shows the original names and reasons. Search matches names,
+descriptions, groups, and the stored original text, including archived entries. Suggestions
+show the original and the retained candidate together with lines found only in the original.
+Different stages of the same delivery can be suggested for review. Their names alone never
+cause an automatic archive.
+
+Keep marks the original to skip future organizing. Archive preserves the original by name and
+keeps its selected replacement as it is. Merge saves the text you confirm into the replacement,
+then archives the original. Archive and merge check both revisions you saw. If the last write
+fails, both originals remain readable and any saved replacement must be reviewed again before
+archiving. Restore brings the original back into the live set, using pending storage if needed.
+The Cloud console carries these reads and mutations to the Project's machine. Mutations require
+the same write access as other Project settings.
+
+| Route | Answer |
+|---|---|
+| `GET /v1/projects/{place}/memory-search?query=…` | `ProjectMemorySearch` contains the matching entry names. |
+| `POST /v1/projects/{place}/memory/{name}/review` | `ProjectMemoryReview` selects keep, archive, or merge. A stale comparison returns `memory_review_stale` (409). |
+
 ## Launch delivery
 
 Every launch Clawdline makes — a Session started from the console, a dispatched child, a handoff —

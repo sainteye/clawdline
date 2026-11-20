@@ -22,7 +22,7 @@ import (
 
 // memoryRequestBodyLimit is the largest add or update: an entry's body bound
 // and room for its other fields and their JSON escaping.
-const memoryRequestBodyLimit = 2*memory.EntryBodyLimit + 4<<10
+const memoryRequestBodyLimit = memory.RequestBodyLimit
 
 // memoryGroupRequestBodyLimit is the largest group set: a description at its
 // bound, JSON-escaped, with room to spare. Past it the body does not parse.
@@ -118,8 +118,11 @@ func (s *Server) projectMemoryRoute(w http.ResponseWriter, r *http.Request, plac
 			writeMemoryRefusal(w, err)
 			return
 		}
-		writeJSON(w, contract.ProjectMemoryEntry{Name: e.Name, Description: e.Description,
-			Type: contract.ProjectMemoryType(e.Type), Group: e.Group, Body: e.Body})
+		writeJSON(w, struct {
+			contract.ProjectMemoryEntry
+			Revision string `json:"revision"`
+		}{contract.ProjectMemoryEntry{Name: e.Name, Description: e.Description,
+			Type: contract.ProjectMemoryType(e.Type), Group: e.Group, Body: e.Body}, memory.EntryRevision(e)})
 	case one && r.Method == http.MethodDelete:
 		outcome, err := store.Forget(key, name)
 		if err != nil {

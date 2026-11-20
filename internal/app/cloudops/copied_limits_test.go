@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/memory"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -23,6 +24,8 @@ import (
 // copy of, by the name the table's `copies` gives it. The generated decoders
 // read the table's number; this is what keeps that number the constant's.
 var copiedConstants = map[string]int64{
+	"memory.RequestBodyLimit":                          memory.RequestBodyLimit,
+	"memory.DescriptionByteLimit":                      memory.DescriptionByteLimit,
 	"app.MaxSecretHandoffBytes":                        app.MaxSecretHandoffBytes,
 	"projectassistant.MaxBotExtensions":                projectassistant.MaxBotExtensions,
 	"projectassistant.MaxConfigurationOptions":         projectassistant.MaxConfigurationOptions,

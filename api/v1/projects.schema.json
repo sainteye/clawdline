@@ -643,7 +643,8 @@
         "description": { "type": "string" },
         "type": { "$ref": "#/$defs/ProjectMemoryType" },
         "group": { "description": "A group set with PUT /v1/projects/:id/memory-groups/:slug; absent or empty for a resident entry. An unknown group is refused with memory_group_not_found.", "type": "string" },
-        "body": { "description": "Markdown, at most 64 KiB.", "type": "string" }
+        "body": { "description": "Markdown, at most 64 KiB.", "type": "string" },
+        "revision": { "description": "Read-only revision used when reviewing an entry.", "type": "string" }
       }
     },
     "ProjectMemoryGroup": {
@@ -703,7 +704,28 @@
       "properties": {
         "name": { "type": "string" },
         "replacement": { "type": "string" },
-        "reason": { "type": "string", "enum": ["archived_duplicate", "archived_superseded", "archive_full", "successor_chain", "same_description"] }
+        "reason": { "type": "string", "enum": ["archived_duplicate", "archived_superseded", "archived_reviewed", "archive_full", "successor_chain", "same_description", "related_delivery"] },
+        "description": { "description": "Description of an archived entry.", "type": "string" }
+      }
+    },
+    "ProjectMemorySearch": {
+      "description": "Names of memories whose stored text or metadata matches the query, including archived originals.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matches"],
+      "properties": { "matches": { "type": "array", "items": { "type": "string" } } }
+    },
+    "ProjectMemoryReview": {
+      "description": "Review one compared memory and, for archive or merge, its replacement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "expected"],
+      "properties": {
+        "action": { "type": "string", "enum": ["keep", "archive", "merge"] },
+        "expected": { "type": "string" },
+        "replacement": { "type": "string" },
+        "expected_replacement": { "type": "string" },
+        "body": { "description": "The edited replacement text for a merge.", "type": "string" }
       }
     },
     "ProjectMemoryGroupSet": {

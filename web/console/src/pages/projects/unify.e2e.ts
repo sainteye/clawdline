@@ -120,6 +120,11 @@ function page(): string {
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
+let memoryArchived = false
+let mergedMemory = ""
+const memoryOld = { name: "launch-local", description: "Launch checks", type: "project", body: "Shared detail.\nOriginal-only evidence.\n", revision: "old-rev" }
+const memoryNew = { name: "launch-shipped", description: "Published launch", type: "project", body: "Shared detail.\n", revision: "new-rev" }
+
 let generation = 0
 function daemon(): Server {
   return createServer((req, res) => {
@@ -148,6 +153,37 @@ function daemon(): Server {
         repo: "github.com/example/project",
         setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready", ...placeUnify } }],
     })
+    const memoryBase = "/v1/projects/fixture-place/memory"
+    const memoryChange = { name: memoryOld.name, replacement: memoryNew.name, reason: "related_delivery" }
+    if (path === memoryBase && req.method === "GET") return json(res, 200, {
+      project_key: "fixture", entries: memoryArchived ? [memoryNew] : [memoryOld, memoryNew],
+      groups: [], index: "", index_cut: false,
+    })
+    if (path === memoryBase + "-dream") return json(res, 200, {
+      counts: { active: memoryArchived ? 1 : 2, pending: 0, archived: memoryArchived ? 1 : 0 },
+      active_limit: 1024, pending_limit: 128, archive_limit: 512, archive: [],
+      review: memoryArchived ? [] : [memoryChange], archived: memoryArchived ? [{ ...memoryChange, reason: "archived_reviewed" }] : [],
+    })
+    if (path === memoryBase + "-search") return json(res, 200, {
+      matches: url.searchParams.get("query") === "Original-only evidence" ? [memoryOld.name] : [],
+    })
+    if (path === memoryBase + "/launch-local" && req.method === "GET") return json(res, 200, memoryOld)
+    if (path === memoryBase + "/launch-shipped" && req.method === "GET") return json(res, 200, { ...memoryNew, body: mergedMemory || memoryNew.body })
+    if (path === memoryBase + "/launch-local/review" && req.method === "POST") {
+      void requestJSON(req).then(body => {
+        if (body.expected !== "old-rev" || body.expected_replacement !== "new-rev" || body.action !== "merge") {
+          return json(res, 409, { error: "memory_review_stale" })
+        }
+        mergedMemory = String(body.body)
+        memoryArchived = true
+        return json(res, 200, { name: memoryOld.name, outcome: "updated" })
+      }, () => json(res, 400, { error: "bad_request" }))
+      return
+    }
+    if (path === memoryBase + "/launch-local/restore" && req.method === "POST") {
+      memoryArchived = false
+      return json(res, 200, { name: memoryOld.name, outcome: "updated" })
+    }
     if (path === "/v1/projects/fixture-place/files" && req.method === "GET") return json(res, 200, { files: [
       { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", assistants: ["codex", "antigravity"], kind: "instruction", status: "ready", editable: true },
       { id: "claude-file", name: "CLAUDE.md", location: "CLAUDE.md", source: "project", assistant: "claude", kind: "instruction", status: "ready", editable: true },
@@ -778,4 +814,59 @@ for (const lang of ["en", "zh-Hant"]) for (const [name, size] of [["phone", PHON
   await tab.shot(`project-icon-default-${lang}-${name}`)
   assert.deepEqual(await tab.run(SIDEWAYS), { page: false, body: false })
  }))
+}
+
+for (const [name, size] of [["phone", PHONE], ["desk", DESK]] as const) {
+  test(`Project memory ${name}: search, compare, merge, and restore from Projects`, () =>
+    inTab(size, async tab => {
+      reset()
+      memoryArchived = false
+      mergedMemory = ""
+      await tab.go("/#page=projects")
+      await tab.until("the Project opens its own dialog", `(() => {
+        if (document.querySelector(".project-setup-dialog[open]:not(.devstack-modal)")) return true
+        document.querySelector('button.project-row[data-place-id="fixture-place"]')?.click()
+        return false
+      })()`)
+      const click = (label: string, scope: string) => tab.run(
+        `[...document.querySelectorAll(${JSON.stringify(scope)})].find(el => el.textContent === ${JSON.stringify(label)}).click()`,
+      )
+      await click("記憶", ".project-setup-views button")
+      await tab.until("both entries are visible", `document.querySelectorAll(".project-memory-list li").length === 2`)
+      await tab.run(`(() => {
+        const input = document.querySelector(".project-memory-search input")
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "Original-only evidence")
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+      })()`)
+      await tab.run(`document.querySelector(".project-memory-search").requestSubmit()`)
+      await tab.until("text search finds the source", `document.querySelectorAll(".project-memory-list li").length === 1 && document.querySelector(".project-memory-list").textContent.includes("Launch checks")`)
+      await click("整理建議", ".project-memory-tabs button")
+      await tab.run(`document.querySelector(".project-memory-list button").click()`)
+      await tab.until("the text comparison renders", `!!document.querySelector(".project-memory-comparison mark")`)
+      const layout = await tab.run(`(() => {
+        const [a, b] = [...document.querySelectorAll(".project-memory-comparison > section")].map(section => section.getBoundingClientRect())
+        return { viewport: innerWidth, sameRow: a.top === b.top, overflow: document.documentElement.scrollWidth > innerWidth,
+          highlight: document.querySelector(".project-memory-comparison mark")?.textContent }
+      })()`)
+      assert.equal(layout.viewport, size.width)
+      assert.equal(layout.sameRow, !size.mobile)
+      assert.equal(layout.overflow, false)
+      assert.match(layout.highlight, /Original-only evidence/u)
+      await click("整合到替代記憶", ".project-memory-actions button")
+      await tab.run(`(() => {
+        const input = document.querySelector(".project-memory-merge textarea")
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, "Combined release evidence.")
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+      })()`)
+      await click("儲存並歸檔原文", ".project-memory-actions button")
+      await tab.until("merge is acknowledged", `document.querySelector(".project-memory").textContent.includes("原文已歸檔")`)
+      assert.equal(mergedMemory, "Combined release evidence.")
+      await click("歸檔", ".project-memory-tabs button")
+      await tab.until("archive is searchable", `document.querySelectorAll(".project-memory-list li").length === 1`)
+      await tab.run(`document.querySelector(".project-memory-list button").click()`)
+      await tab.until("the same original is displayed", `document.querySelector(".project-memory-body")?.textContent.includes("Original-only evidence")`)
+      await click("還原記憶", ".project-memory-detail button")
+      await tab.until("restore is acknowledged", `document.querySelector(".project-memory").textContent.includes("已還原原始記憶")`)
+      assert.equal(memoryArchived, false)
+    }))
 }

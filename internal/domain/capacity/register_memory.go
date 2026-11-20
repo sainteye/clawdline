@@ -29,7 +29,7 @@ func memoryBounds() []Entry {
 			Limit: 64 << 10, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
-			Sources: []string{"internal/adapters/memory.EntryBodyLimit", "internal/adapters/memory.entryFileReadLimit",
+			Sources: []string{"internal/adapters/memory.EntryBodyLimit", "internal/adapters/memory.entryFileReadLimit", "internal/adapters/memory.RequestBodyLimit",
 				"internal/transport/http.memoryRequestBodyLimit"},
 		},
 		{

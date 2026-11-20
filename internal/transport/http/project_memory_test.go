@@ -268,3 +268,56 @@ func TestProjectMemoryDreamThroughDaemonRoutes(t *testing.T) {
 		t.Fatalf("restored original should wait for an active slot and stay out of the next archive: %+v %v", dream, err)
 	}
 }
+
+func TestProjectMemoryManagementSearchesAndReviewsTheSelectedProject(t *testing.T) {
+	f := projectCloudStandIn(t)
+	base := "/v1/projects/" + f.place + "/memory"
+	request := func(method, path, body string, token bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://127.0.0.1:7757"+path, strings.NewReader(body))
+		if token {
+			req.Header.Set("X-Clawdline-Orchestrator", f.machine)
+		}
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		out := httptest.NewRecorder()
+		f.handler.ServeHTTP(out, req)
+		return out
+	}
+	for name, body := range map[string]string{"release-local": "Original validation evidence", "release-shipped": "Published result"} {
+		payload, _ := json.Marshal(contract.ProjectMemoryEntry{Name: name, Description: name, Type: "project", Body: body})
+		if got := request("POST", base, string(payload), true); got.Code != 201 {
+			t.Fatalf("add: %d %s", got.Code, got.Body.String())
+		}
+	}
+	source, target := base+"/release-local", base+"/release-shipped"
+	getRevision := func(path string) string {
+		t.Helper()
+		var value struct{ Revision string }
+		got := request("GET", path, "", true)
+		if err := json.Unmarshal(got.Body.Bytes(), &value); err != nil || got.Code != 200 || value.Revision == "" {
+			t.Fatalf("revision: %d %s %v", got.Code, got.Body.String(), err)
+		}
+		return value.Revision
+	}
+	if got := request("GET", base+"-search?query=validation", "", false); got.Code < 400 {
+		t.Fatal("search leaked memory without a credential")
+	}
+	proposal := memory.ReviewRequest{Action: "merge", Expected: getRevision(source), Replacement: "release-shipped",
+		ExpectedReplacement: getRevision(target), Body: "Combined release and validation evidence"}
+	data, _ := json.Marshal(proposal)
+	if got := request("POST", source+"/review", string(data), false); got.Code < 400 {
+		t.Fatal("review wrote without a credential")
+	}
+	if got := request("POST", source+"/review", string(data), true); got.Code != 200 {
+		t.Fatalf("review: %d %s", got.Code, got.Body.String())
+	}
+	got := request("GET", base+"-search?query=original%20validation", "", true)
+	if got.Code != 200 || !strings.Contains(got.Body.String(), "release-local") {
+		t.Fatalf("search archived text: %d %s", got.Code, got.Body.String())
+	}
+	got = request("GET", target, "", true)
+	if got.Code != 200 || !strings.Contains(got.Body.String(), "Combined release and validation evidence") {
+		t.Fatalf("merged replacement: %d %s", got.Code, got.Body.String())
+	}
+}
