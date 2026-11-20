@@ -146,6 +146,7 @@ interface EarlierPages {
 
 interface TranscriptProps extends MessageSenderView {
   id: string
+  activityScope: string
   row?: SessionRow
   agentId?: string
   onAgent?: (id: string) => void
@@ -165,7 +166,7 @@ function TranscriptFrame(props: TranscriptProps) {
   </div>
 }
 
-function TranscriptOf({ id, row, agentId, onAgent, onFilling, ...senderView }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
+function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...senderView }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
   // The page last read, and whether the pane is on its fast pace: the read
   // asks only for what was appended to it unless this is the safety read of
   // the whole page (`transcript-follow.ts`).
@@ -215,7 +216,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, ...senderView }: T
   const session = useSession(id, row)
   // The role's Skill use, as cards at their receipts' times (SkillUse.tsx).
   const skillState = useSessionSkills(agentId ? null : session)
-  const browserCards = useBrowserActivity(agentId ? undefined : session?.sessionId)
+  const browserCards = useBrowserActivity(agentId ? undefined : session?.sessionId, activityScope)
   const nativeSendAt = useRef(0)
   const cardSendAt = cards.reduce((at, card) => (card.state !== "failed" && card.sentAt > at ? card.sentAt : at), 0)
   // A native echo removes the delivery card before the reply exists. Keep the

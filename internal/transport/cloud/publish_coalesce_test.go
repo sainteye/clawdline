@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 )
 
 // workingRow is one working Session as the shared list states it.
@@ -66,6 +68,48 @@ func countPrefix(names []string, prefix string) int {
 		}
 	}
 	return n
+}
+
+func TestUnsubscribedRichRowsCoalesceVolatileUpdatesUntilTheNextProbe(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(5000, 0)
+	row := workingRow{id: "%7", state: "working", verb: "Thinking", activity: 100, tokens: 50}
+	body := scanOf(0, []workingRow{row})
+	out := &collector{}
+	p := drivenPublisher(out, &body, &now)
+	link := &Link{publisher: p}
+	channel, light := "s/mac-01/%257", "ss/mac-01/%257"
+	p.firstPass(ctx)
+	ack := func(seq uint64, fanout int) {
+		link.publicationAcked(adaptercloud.AckFrame{Ch: channel, Seq: seq, Status: adaptercloud.AckDelivered, Fanout: fanout})
+	}
+	ack(10, 0)
+	step := func(seconds int) {
+		now = time.Unix(5000+int64(seconds), 0)
+		row.activity = 100 + int64(seconds)
+		body = scanOf(seconds, []workingRow{row})
+		out.reset()
+		p.Pass(ctx)
+	}
+	step(15)
+	if countPrefix(out.channels(), channel) != 0 || countPrefix(out.channels(), light) != 1 {
+		t.Fatalf("a zero-audience rich row was not deferred independently of its lightweight status: %v", out.channels())
+	}
+	step(30)
+	if countPrefix(out.channels(), channel) != 1 {
+		t.Fatalf("deferred content did not leave at the probe interval: %v", out.channels())
+	}
+	row.verb = "Reading"
+	step(35)
+	if countPrefix(out.channels(), channel) != 1 {
+		t.Fatalf("a meaningful update waited behind a zero-audience observation: %v", out.channels())
+	}
+	ack(12, 1)
+	ack(11, 0)
+	step(50)
+	if countPrefix(out.channels(), channel) != 1 {
+		t.Fatalf("an older zero-fanout receipt overrode the subscriber's cadence: %v", out.channels())
+	}
 }
 
 // The activity time, the sub-agents and the token count move on nearly every

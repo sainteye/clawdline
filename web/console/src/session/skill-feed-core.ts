@@ -25,6 +25,7 @@
  * receipts still play.
  */
 import type { SquadReceipt } from "../pages/squad/model.js"
+import type { Visibility } from "../poll.js"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
 import { MAX_SQUAD_EVENT_CONVERSATIONS, squadEventIDValid } from "./skill-event-bounds.ts"
 // @ts-expect-error -- Node loads the source extension in focused behavior tests.
@@ -69,6 +70,7 @@ export class SkillFeed {
   private running = false
   private busy = false
   private timer: unknown = null
+  private unwatch: (() => void) | undefined
   private live = true
   private delay = POLL_MS
   /** The machine answered a filtered read with its whole log: every conversation is read. */
@@ -78,10 +80,13 @@ export class SkillFeed {
   private readonly changed: () => void
   private readonly moment: (moment: SkillMoment) => void
   private readonly clock: FeedClock
+  private readonly visibility?: Visibility
 
   constructor(read: FeedRead, changed: () => void, moment: (moment: SkillMoment) => void,
-    clock: FeedClock = { set: (run, ms) => setTimeout(run, ms), clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) }) {
+    clock: FeedClock = { set: (run, ms) => setTimeout(run, ms), clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>) },
+    visibility?: Visibility) {
     this.read = read; this.changed = changed; this.moment = moment; this.clock = clock
+    this.visibility = visibility
   }
 
   /** Marks a conversation on screen until the returned function is called. */
@@ -108,33 +113,48 @@ export class SkillFeed {
     this.unfiltered = false
     this.live = true
     this.delay = POLL_MS
-    void this.poll(this.generation)
+    this.unwatch = this.visibility?.subscribe(() => {
+      if (this.visibility?.hidden()) {
+        // Keep the last cursor. Receipts accumulated while hidden become still state.
+        this.live = false
+        this.cancelTimer()
+        return
+      }
+      this.wake()
+    })
+    this.wake()
   }
 
   stop(): void {
     this.running = false
     this.generation++
     this.busy = false
-    if (this.timer !== null) this.clock.clear(this.timer)
-    this.timer = null
+    this.unwatch?.()
+    this.unwatch = undefined
+    this.cancelTimer()
   }
 
   /** A newly shown conversation is read now rather than at the next poll. */
   private wake(): void {
-    if (!this.running || this.busy) return
+    if (!this.running || this.busy || this.visibility?.hidden()) return
+    this.cancelTimer()
+    void this.poll(this.generation)
+  }
+
+  private cancelTimer(): void {
     if (this.timer !== null) this.clock.clear(this.timer)
     this.timer = null
-    void this.poll(this.generation)
   }
 
   private later(mine: number, ms: number): void {
     if (mine !== this.generation) return
     this.busy = false
+    if (this.visibility?.hidden()) return
     this.timer = this.clock.set(() => { this.timer = null; void this.poll(mine) }, ms)
   }
 
   private async poll(mine: number): Promise<void> {
-    if (mine !== this.generation || this.busy) return
+    if (mine !== this.generation || this.busy || this.visibility?.hidden()) return
     this.busy = true
     try {
       if (!this.ledger.baselined) {
@@ -150,6 +170,7 @@ export class SkillFeed {
         // The live poll starts at the head; what came before is still state.
         this.ledger.advance(seq)
       }
+      if (this.visibility?.hidden()) { this.later(mine, 0); return }
       const pending: string[] = []
       for (const conversation of this.shown.keys()) {
         if (this.loaded.has(conversation)) continue
@@ -159,7 +180,7 @@ export class SkillFeed {
       }
       if (pending.length) {
         try {
-          await this.readStill(mine, pending)
+          if (!await this.readStill(mine, pending)) { this.later(mine, 0); return }
         } catch {
           // No live receipt was skipped, so `live` stays as it was.
           if (mine !== this.generation) return
@@ -191,7 +212,7 @@ export class SkillFeed {
       this.ledger.advance(page.next_after)
       if (moved) this.changed()
       // Every page of a catch-up after a failure stays quiet, the last one too.
-      if (!page.has_more) this.live = true
+      if (!page.has_more && !this.visibility?.hidden()) this.live = true
       this.delay = POLL_MS
       this.later(mine, page.has_more ? 0 : this.delay)
     } catch {
@@ -207,24 +228,29 @@ export class SkillFeed {
    * A receipt after the cursor is left for the live poll, which decides
    * whether it plays.
    */
-  private async readStill(mine: number, conversations: string[]): Promise<void> {
+  private async readStill(mine: number, conversations: string[]): Promise<boolean> {
     const until = this.ledger.after
     const asked = new Set(conversations)
     const query = conversations.map((conversation) => "conversation=" + encodeURIComponent(conversation)).join("&")
     let after = 0
-    for (;;) {
+    let unfiltered = this.unfiltered
+    while (!this.visibility?.hidden()) {
       const reply = await this.read("/v1/squad/events?" + query + "&after=" + after + "&limit=" + STILL_PAGE_ROWS)
-      if (mine !== this.generation) return
+      if (mine !== this.generation) return false
       const page = pageOf(reply.value)
       if (!page) throw new Error("events")
-      if (page.unfiltered === true) this.unfiltered = true
+      if (page.unfiltered === true) unfiltered = true
       for (const entry of page.events) {
-        if (!asked.has(entry.conversation_id)) this.unfiltered = true
-        if (entry.seq > until) return
+        if (!asked.has(entry.conversation_id)) unfiltered = true
+        if (entry.seq > until) { this.unfiltered = unfiltered; return true }
         this.ledger.record(receiptOf(entry))
       }
-      if (!page.has_more || page.next_after <= after || page.next_after >= until) return
+      if (!page.has_more || page.next_after <= after || page.next_after >= until) {
+        this.unfiltered = unfiltered
+        return true
+      }
       after = page.next_after
     }
+    return false
   }
 }
