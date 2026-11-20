@@ -7,6 +7,7 @@ import { pairingAppLink, pairingCommand, type PairState } from "./pair.js"
 import { catalogWord } from "../catalog.js"
 import { nativePairing, nativePairingAvailable } from "./native-pairing.js"
 import { instaBoxWakeReason, wakeBeforeAssistedPairing } from "./instabox-wake.js"
+import type { PairHelperFollow, PairProgressStatus } from "./pair-progress.js"
 import { PairScanner } from "./PairScanner.js"
 import {
   agentOutcome,
@@ -41,11 +42,20 @@ export type PairRequest =
   | { mode: "offer"; machine: PairTarget | null; startLocal?: boolean }
   | { mode: "invitation"; ok: boolean; code: string }
 
-export function PairingProgressButton({ onShow }: { onShow: () => void }) {
+const PAIR_PROGRESS_WORD = {
+  working: "cloudPairBackgroundWorking",
+  checking: "cloudPairBackgroundChecking",
+  confirm: "cloudPairBackgroundConfirm",
+  attention: "cloudPairBackgroundAttention",
+} as const
+
+export function PairingProgressButton({ status, onShow }: { status: PairProgressStatus; onShow: () => void }) {
   const resume = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => { resume.current?.focus({ preventScroll: true }) }, [])
+  const busy = status === "working" || status === "checking"
   return <button ref={resume} className="chip cloud-pair-resume" type="button" onClick={onShow}>
-    {nextWord("cloudPairBackgroundProgress")}
+    <span className={busy ? "cloud-pair-spinner" : "cloud-pair-attention"} aria-hidden="true" />
+    <span role="status" aria-live="polite">{nextWord(PAIR_PROGRESS_WORD[status])}</span>
   </button>
 }
 
@@ -79,6 +89,10 @@ export function PairingOverlay({ pairing, overConsole }: {
 export function PairPanel(props: {
   visible?: boolean
   onHide?: () => void
+  onStatus?: (status: PairProgressStatus) => void
+  restoredHelper?: PairHelperFollow
+  restoredExpiry?: number
+  onFollow?: (helper: PairHelperFollow) => void
   request: PairRequest
   state: PairState
   /** The name the list shows for a machine id, for a handover from another machine than asked. */
@@ -92,7 +106,7 @@ export function PairPanel(props: {
   readHelperQuota?: (helper: string) => Promise<unknown>
   wakeOrigin?: string
   targetOnline?: boolean
-  onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }, assistant: PairAssistant) => Promise<PairAgentReply>
+  onAgentStart?: (helper: string, offer: string, target: { id: string; name: string }, assistant: PairAssistant, requestID: string) => Promise<PairAgentReply>
   onAgentStatus?: (helper: string, task: string) => Promise<PairAgentProgress>
   /** Which device this is: the Home Screen app and a phone browser scan the machine's QR here; a computer copies a code. */
   device: PairDevice
@@ -103,6 +117,7 @@ export function PairPanel(props: {
 }) {
   const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onPaired, device, onScan, onMismatch, visible = true, onHide } = props
   const T = L.strings
+  const restored = props.restoredHelper
   const [localMachine, setLocalMachine] = useState("")
   const [localName, setLocalName] = useState("")
   const [mismatched, setMismatched] = useState(false)
@@ -114,23 +129,30 @@ export function PairPanel(props: {
   const [codeCopied, setCodeCopied] = useState<"" | "yes" | "no">("")
   // The hand-off to the Mac app's assistant: nothing yet, the native sheet is
   // up, or what the shell answered.
-  const [agent, setAgent] = useState<null | "sending" | PairAgentReply>(null)
+  const [agent, setAgent] = useState<null | "sending" | PairAgentReply>(() => {
+    if (restored?.taskID) return { ok: true, mode: "agent", taskID: restored.taskID, trust: restored.trust }
+    return restored?.requestID && state.phase === "waiting" ? "sending" : null
+  })
   // Where the AI task is, from the shell's events, and when it was handed.
   const [progress, setProgress] = useState<PairAgentProgress | null>(null)
-  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [startedAt, setStartedAt] = useState<number | null>(restored?.taskID ? restored.startedAt : null)
   const [now, setNow] = useState(() => Date.now())
   // Other methods stay folded during assisted pairing; an explicit manual start opens them.
-  const [manualOpen, setManualOpen] = useState(false)
+  const [manualOpen, setManualOpen] = useState(state.phase === "waiting" && !restored)
   const [assistantOverride, setAssistantOverride] = useState<PairAssistant | null>(null)
   const [quotaRead, setQuotaRead] = useState<{ helper: string; snapshot: unknown } | null>(null)
-  const [helperFlow, setHelperFlow] = useState(false)
-  const [helperID, setHelperID] = useState("")
-  const [runningHelper, setRunningHelper] = useState("")
+  const [helperFlow, setHelperFlow] = useState(!!restored)
+  const [helperID, setHelperID] = useState(restored?.helperID ?? "")
+  const [runningHelper, setRunningHelper] = useState(restored?.helperID ?? "")
   const waking = useRef<AbortController | null>(null)
   const [wakeStage, setWakeStage] = useState<"idle" | "checking" | "waking">("idle")
   const [wakeError, setWakeError] = useState("")
   const autoHelper = useRef<{ helper: { id: string; name: string }; assistant: PairAssistant } | null>(null)
-  const [agentExpected, setAgentExpected] = useState<{ machineID: string; offerDigest: string; expiresAt: number } | null>(null)
+  const [agentExpected, setAgentExpected] = useState<{ machineID: string; offerDigest: string; expiresAt: number } | null>(() => {
+    if (!restored || request.mode !== "offer" || !request.machine || !props.restoredExpiry) return null
+    return { machineID: request.machine.id, offerDigest: restored.offerDigest, expiresAt: props.restoredExpiry }
+  })
+  const resumeHelper = useRef(restored?.requestID && !restored.taskID ? restored : undefined)
   const attempt = useRef(0)
   const completed = useRef(false)
   const localStarted = useRef(false)
@@ -157,7 +179,10 @@ export function PairPanel(props: {
   useLayoutEffect(() => {
     if (visible) focusModalContainer(panel.current)
   }, [requestKey, visible])
+  const lastView = useRef({ phase, requestKey })
   useLayoutEffect(() => {
+    if (lastView.current.phase === phase && lastView.current.requestKey === requestKey) return
+    lastView.current = { phase, requestKey }
     setWakeStage("idle")
     setWakeError("")
     // Handover can arrive before the helper finishes reporting its observation.
@@ -195,16 +220,17 @@ export function PairPanel(props: {
         }
         pending = true
         void props.onAgentStatus!(runningHelper, followed).then((next) => {
-          if (active) setProgress(next)
+          if (active && (!agentExpected || Date.now() < agentExpected.expiresAt)) setProgress(next)
           if (next.stage === "done" || next.stage === "failed") active = false
-        }).catch((error) => {
-          if (active) {
-            setProgress({ stage: "failed", summary: "", failedReason: error instanceof Error ? error.message : String(error) })
-            active = false
-          }
+        }).catch((error: unknown) => {
+          const code = (error as { code?: unknown } | null)?.code
+          if (!active || code === "cloud_reconnecting" || code === "cloud_read_timeout" ||
+              code === "cloud_read_unavailable" || code === "cloud_read_abandoned") return
+          setProgress({ stage: "failed", summary: "", failedReason: error instanceof Error ? error.message : String(error) })
+          active = false
         }).finally(() => { pending = false })
       }
-      read()
+      queueMicrotask(read)
       const timer = setInterval(read, 2000)
       return () => { active = false; clearInterval(timer) }
     }
@@ -263,34 +289,54 @@ export function PairPanel(props: {
     }
   }
 
-  function startAgent(helper: { id: string; name: string } | null, target: { id: string; name: string }, choice: PairAssistant) {
+  async function startAgent(helper: { id: string } | null, target: { id: string; name: string }, choice: PairAssistant, resume?: PairHelperFollow) {
+    if (state.phase !== "waiting") return
     const generation = ++attempt.current
-    const fragment = state.phase === "waiting" ? state.fragment : ""
-    const expiresAt = state.phase === "waiting" ? state.expiresAt : Date.now()
+    const { fragment, expiresAt } = state
     setAgentExpected(null)
-    void pairingOfferDigest(fragment).then(offerDigest => {
-      if (attempt.current === generation) setAgentExpected({ machineID: target.id, offerDigest, expiresAt })
-    }).catch(() => {})
     setManualOpen(false)
     setAgent("sending")
     setProgress(null)
     setRunningHelper(helper?.id ?? "")
-    const started = helper && props.onAgentStart
-      ? props.onAgentStart(helper.id, state.phase === "waiting" ? state.fragment : "", target, choice)
-      : handPairToAgent({ offer: state.phase === "waiting" ? state.fragment : "", machineID: target.id, machineName: target.name })
-    void started.then((reply) => {
+    try {
+      const offerDigest = resume?.offerDigest ?? await pairingOfferDigest(fragment)
+      if (attempt.current !== generation) return
+      const follow: PairHelperFollow = resume ?? {
+        helperID: helper?.id ?? "", requestID: helper ? crypto.randomUUID() : "", assistant: choice,
+        taskID: "", trust: "", startedAt: Date.now(), offerDigest,
+      }
+      setAgentExpected({ machineID: target.id, offerDigest, expiresAt })
+      if (follow.requestID) props.onFollow?.(follow)
+      const reply = helper && props.onAgentStart
+        ? await props.onAgentStart(helper.id, fragment, target, choice, follow.requestID)
+        : await handPairToAgent({ offer: fragment, machineID: target.id, machineName: target.name })
       if (attempt.current !== generation) return
       setAgent(reply)
-      if (reply.ok && reply.mode === "agent") setStartedAt(Date.now())
-    }).catch((error) => {
+      if (reply.ok && reply.mode === "agent" && reply.taskID) {
+        setStartedAt(follow.startedAt)
+        props.onFollow?.({ ...follow, taskID: reply.taskID, trust: reply.trust })
+      }
+    } catch (error) {
       if (attempt.current === generation) setAgent({ ok: false, error: error instanceof Error ? error.message : String(error) })
-    })
+    }
   }
+  useEffect(() => {
+    if (state.phase !== "waiting" || !asked || !resumeHelper.current || !props.onAgentStart) return
+    let active = true
+    queueMicrotask(() => {
+      const saved = resumeHelper.current
+      if (!active || !saved) return
+      resumeHelper.current = undefined
+      // The same encrypted request uses the helper's original idempotency key.
+      void startAgent({ id: saved.helperID }, asked, saved.assistant, saved)
+    })
+    return () => { active = false }
+  }, [state.phase, asked?.id])
   useEffect(() => {
     const queued = autoHelper.current
     if (state.phase !== "waiting" || !asked || !queued) return
     autoHelper.current = null
-    startAgent(queued.helper, asked, queued.assistant)
+    void startAgent(queued.helper, asked, queued.assistant)
   }, [state.phase, state.phase === "waiting" ? state.fragment : "", asked?.id])
   useEffect(() => {
     let active = true
@@ -300,11 +346,6 @@ export function PairPanel(props: {
     }, () => {})
     return () => { active = false }
   }, [])
-  useEffect(() => {
-    if (completed.current || !pairAgentMatches(state, progress, agentExpected)) return
-    completed.current = true
-    onPaired()
-  }, [state, progress, agentExpected, onPaired])
   useEffect(() => () => { attempt.current++; localAttempt.current++ }, [])
 
   const localAvailable = !!asked && asked.id === localMachine
@@ -314,13 +355,21 @@ export function PairPanel(props: {
     localRequested.current = true
     onBegin()
   }, [phase, localAvailable, request, onBegin])
+  const assistedMatch = pairAgentMatches(state, progress, agentExpected)
+  const localMatch = phase === "paired" && !!localProof &&
+    localProof.machineID === state.machineID && localProof.viewerFingerprint === state.fingerprint &&
+    localProof.machineFingerprint === state.machineFingerprint
+  const automaticallyVerified = assistedMatch || localMatch
+  const verifying = phase === "paired" && (automaticallyVerified || agent === "sending" || running || localBusy)
+  const needsAttention = progress?.stage === "failed" || wakeError || agent !== null && agent !== "sending" && !agent.ok ||
+    phase !== "idle" && phase !== "asking" && phase !== "waiting"
+  const status: PairProgressStatus = verifying ? "checking" : phase === "paired" && !mismatched ? "confirm" : needsAttention ? "attention" : "working"
+  useLayoutEffect(() => { props.onStatus?.(status) }, [props.onStatus, status])
   useEffect(() => {
-    if (completed.current || state.phase !== "paired" || !localProof ||
-        localProof.machineID !== state.machineID || localProof.viewerFingerprint !== state.fingerprint ||
-        localProof.machineFingerprint !== state.machineFingerprint) return
+    if (completed.current || !automaticallyVerified) return
     completed.current = true
     onPaired()
-  }, [state, localProof, onPaired])
+  }, [automaticallyVerified, onPaired])
   async function finishLocally(fragment: string) {
     if (!asked || !localAvailable) return
     const generation = ++localAttempt.current
@@ -518,10 +567,10 @@ export function PairPanel(props: {
         // the shell needs to say which machine it is about to reach.
         const helper = props.helpers?.find((machine) => machine.id === helperID) ?? props.helpers?.[0]
         const cloudHandOff = offer && asked && helper && props.onAgentStart ? helper : null
-        const handOff = offer && asked && (cloudHandOff || pairAgentAvailable()) ? asked : null
+        const handOff = offer && asked && (cloudHandOff || pairAgentAvailable() || !!runningHelper && (following || agent === "sending")) ? asked : null
         const send = () => {
           if (!handOff) return
-          if (!cloudHandOff) startAgent(null, handOff, assistant)
+          if (!cloudHandOff) void startAgent(null, handOff, assistant)
           else if (!quotaPending) void prepareHelper(handOff, () => startAgent(cloudHandOff, handOff, assistant))
         }
         // The complete offer is the direct path; an agent hand-off is optional.
@@ -692,12 +741,15 @@ export function PairPanel(props: {
       case "paired": {
         const name = asked && asked.id === state.machineID ? asked.name : nameOf(state.machineID)
         const assisted = agent !== null && agent !== "sending" && agent.ok && agent.mode === "agent"
-        const starting = agent === "sending"
-        const verifying = starting || assisted && progress?.stage !== "done" && progress?.stage !== "failed"
+        if (!offer || verifying) return <>
+          <p className="cloud-pair-wait" role="status">
+            <span className="cloud-pair-spinner" aria-hidden="true" />{nextWord("cloudPairAutoChecking")}
+          </p>
+          {canHide && <div className="buttons">{hideButton()}</div>}
+        </>
         return (
           <>
-            {verifying && <p role="status" aria-live="polite">{nextWord("cloudPairAutoChecking")}</p>}
-            {assisted && !verifying && !pairAgentMatches(state, progress, agentExpected) && <p role="status">{nextWord("cloudPairAutoManual")}</p>}
+            {assisted && <p role="status">{nextWord("cloudPairAutoManual")}</p>}
             <p className="cloud-pair-question" id="cloud-pair-said" data-paired={state.machineID}>
               {nextWord("cloudPairCompareTitle")}
             </p>

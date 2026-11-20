@@ -66,13 +66,14 @@ import { clearPersonaDisplayCache } from "./persona-cache.js"
 import { accountMachineForConfirmation, accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, withAccountRegistrations, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { MachinePlatformIcon } from "./MachinePlatformIcon.js"
-import { PairingRun, dropInvitation, watchInvitations, type PairStart, type PairState } from "./pair.js"
+import { PairingRun, dropInvitation, pairingEnding, watchInvitations, type OpenedPairing, type PendingOffer, type PairStart, type PairState } from "./pair.js"
 import {
   browserPendingPairings,
   durablePairViewer,
   durablePairViewerFromInvitation,
   resumePendingPairing,
 } from "./pair-pending.js"
+import { readPairProgress, writePairProgress, type PairHelperFollow, type PairProgress, type PairProgressStatus } from "./pair-progress.js"
 import { PairingOverlay, PairingProgressButton, type PairDevice, type PairRequest, type PairTarget } from "./PairPanel.js"
 import { FleetUpdateRow } from "./FleetUpdateRow.js"
 import { FleetUpdateNotice } from "./FleetUpdateNotice.js"
@@ -516,15 +517,24 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // names for the machines this browser cannot name itself.
   const [pairRequest, setPairRequest] = useState<PairRequest | null>(null)
   const [pairHidden, setPairHidden] = useState(false)
+  const [pairStatus, setPairStatus] = useState<PairProgressStatus>("working")
+  const [restoredHelper, setRestoredHelper] = useState<PairHelperFollow>()
   const pairHiddenRef = useRef(false)
-  function showPairing() {
+  const pairProgress = useRef<PairProgress | null>(null)
+  const keepPairProgress = useCallback((progress: PairProgress | null) => {
+    pairProgress.current = progress
+    writePairProgress(progress)
+  }, [])
+  const showPairing = useCallback(() => {
     pairHiddenRef.current = false
     setPairHidden(false)
-  }
-  function hidePairing() {
+    if (pairProgress.current) keepPairProgress({ ...pairProgress.current, hidden: false })
+  }, [keepPairProgress])
+  const hidePairing = useCallback(() => {
     pairHiddenRef.current = true
     setPairHidden(true)
-  }
+    if (pairProgress.current) keepPairProgress({ ...pairProgress.current, hidden: true })
+  }, [keepPairProgress])
   const [pairState, setPairState] = useState<PairState>({ phase: "idle" })
   const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
   const [registered, setRegistered] = useState<ReadonlyMap<string, AccountName>>(new Map())
@@ -1055,30 +1065,79 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setConnectionVersion((version) => version + 1)
   }, [listMachines])
 
+  const keepPairHandover = useCallback((pending: PendingOffer, opened: OpenedPairing) => {
+    const progress = pairProgress.current
+    if (progress?.pairingID !== pending.pairingID) return
+    keepPairProgress({
+      ...progress,
+      handover: { ...opened, phase: "paired", fingerprint: pending.fingerprint },
+    })
+  }, [keepPairProgress])
+
   /**
-   * Finish a pairing whose waiting card went away. The X25519 private half is
-   * in IndexedDB, not in this component; after the handover opens, reconnect
-   * so retained envelopes are read with the keys just stored.
+   * Continue a live claim after dismissal or reload. Only this tab's saved
+   * offer can restore its presentation and the task that was already started.
    */
   const recoverPairing = useCallback(() => {
     const current = session.current
-    // A stop can leave an HTTP claim in flight. Wait for that claim before
-    // recovering the same offer, which the control plane delivers only once.
-    if (!current || claimingPairing.current || recoveringPairing.current) return
-    const recovery = resumePendingPairing(current, pairingStore)
+    const account = current?.account
+    const device = current?.deviceID
+    if (!current || !account || !device || claimingPairing.current || recoveringPairing.current) return
+    const active = pairProgress.current
+    if (active && (active.account !== account || active.device !== device)) {
+      keepPairProgress(null)
+      setRestoredHelper(undefined)
+      setPairRequest(null)
+      setPairState({ phase: "idle" })
+    }
+    if (pairProgress.current?.handover) return
+    const saved = pairProgress.current ? null : readPairProgress(account, device)
+    const previousRun = run.current
+    const restore = (progress: PairProgress, state: PairState) => {
+      if (run.current !== previousRun || session.current?.account !== account || session.current.deviceID !== device) return
+      pairProgress.current = progress
+      pairHiddenRef.current = progress.hidden
+      setPairHidden(progress.hidden)
+      setPairStatus(state.phase === "waiting" ? "working" : state.phase === "paired" ? "checking" : "attention")
+      setRestoredHelper(state.phase === "waiting" || state.phase === "paired" ? progress.helper : undefined)
+      setPairRequest({ mode: "offer", machine: progress.machine })
+      setPairState(state)
+    }
+    if (saved?.handover) {
+      restore(saved, saved.handover)
+      return
+    }
+
+    const recovery = resumePendingPairing(current, pairingStore, {
+      onOffer(pending) {
+        if (saved?.pairingID === pending.pairingID) {
+          const { fragment, fingerprint, expiresAt } = pending
+          restore(saved, { phase: "waiting", fragment, fingerprint, expiresAt })
+        }
+      },
+      onOpened(pending, opened) {
+        keepPairHandover(pending, opened)
+        const progress = pairProgress.current
+        if (progress?.pairingID === pending.pairingID && progress.handover) setPairState(progress.handover)
+      },
+    })
       .then((opened) => {
         if (opened) pairingClaimed(opened.machineID)
+        else if (saved && !pairProgress.current) {
+          restore(saved, saved.expiresAt <= current.now() ? { phase: "expired" } : { phase: "refused", code: "pairing_gone" })
+        }
       })
       .catch((error: unknown) => {
-        // A live untyped interruption stays durable for the next reconnect.
-        // Typed terminal answers remove themselves in `pair-pending.ts`.
+        if (saved && (!pairProgress.current || pairProgress.current.pairingID === saved.pairingID && !pairProgress.current.handover)) {
+          restore(saved, pairingEnding(error))
+        }
         console.warn("clawdline: pending browser pairing was not settled", error)
       })
       .finally(() => {
         if (recoveringPairing.current === recovery) recoveringPairing.current = null
       })
     recoveringPairing.current = recovery
-  }, [pairingClaimed, pairingStore])
+  }, [keepPairHandover, keepPairProgress, pairingClaimed, pairingStore])
 
   useEffect(() => {
     if (!pairingRecoveryActive) return
@@ -1100,6 +1159,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
    */
   const pair = useCallback((request: PairRequest, start: PairStart) => {
     run.current?.stop()
+    keepPairProgress(null)
+    setRestoredHelper(undefined)
     setAsking(null)
     setNaming(null)
     setPairRequest(request)
@@ -1119,16 +1180,29 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       // the previous claim has finished.
       if (state.phase === "stopped") recoverPairing()
     })
-  }, [pairingClaimed, recoverPairing])
+  }, [keepPairProgress, pairingClaimed, recoverPairing])
 
   /** Show this browser's code for `machine`, or for whichever machine runs it. */
   const pairOffer = useCallback(
     (machine: PairTarget | null) => {
       const current = session.current
-      if (!current) return
-      pair({ mode: "offer", machine }, durablePairViewer(current, pairingStore))
+      const account = current?.account
+      const device = current?.deviceID
+      if (!current || !account || !device) return
+      let expectedRun: PairingRun | null = null
+      pair({ mode: "offer", machine }, durablePairViewer(current, pairingStore, {
+        onOffer(pending) {
+          if (run.current !== expectedRun) return
+          keepPairProgress({
+            account, device, pairingID: pending.pairingID, machine,
+            expiresAt: pending.expiresAt, hidden: pairHiddenRef.current,
+          })
+        },
+        onOpened: keepPairHandover,
+      }))
+      expectedRun = run.current
     },
-    [pair, pairingStore],
+    [keepPairHandover, keepPairProgress, pair, pairingStore],
   )
 
   /** Open the guide first; choosing the browser-first path is what mints an offer. */
@@ -1141,7 +1215,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setNaming(null)
     setPairState({ phase: "idle" })
     setPairRequest({ mode: "offer", machine, startLocal: nativePairingAvailable() })
-  }, [pairHidden, pairRequest])
+  }, [pairHidden, pairRequest, showPairing])
 
   /** Answer the machine's link this page was opened with, once the person has said so. */
   const pairInvitation = useCallback(() => {
@@ -1158,10 +1232,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (pairRequest?.mode === "invitation") dropInvitation(sessionStorage)
     invitation.current = null
     setPairRequest(null)
+    keepPairProgress(null)
+    setRestoredHelper(undefined)
     showPairing()
     setPairState({ phase: "idle" })
     recoverPairing()
-  }, [pairRequest, recoverPairing])
+  }, [keepPairProgress, pairRequest, recoverPairing, showPairing])
 
   // A pairing from the machine's own QR or link needs no comparison
   // afterwards. The invitation's secret travelled only in the fragment, the
@@ -2094,7 +2170,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   )
   const readPairAgentStatus = useCallback(async (helper: string, task: string): Promise<PairAgentProgress> => {
     const request = client.current?._machineRequestAs
-    if (!request) throw new Error("helper_unavailable")
+    if (!request) throw Object.assign(new Error("helper_unavailable"), { code: "cloud_reconnecting" })
     const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-status",
       { task_id: task }, "read", 30_000) as Record<string, unknown>
     const states = ["starting", "dialog", "working", "done", "failed"] as const
@@ -2114,6 +2190,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // A pairing is drawn over whatever is on screen, the console included, but
   // only once this browser is signed in with a device key: a link opened
   // before signing in waits in this tab's storage for the round trip.
+  const displayedPairingID = pairProgress.current?.pairingID
   const pairing =
     pairRequest && SIGNED_IN.has(screen.at)
       ? {
@@ -2138,6 +2215,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
           onAgain: () => pairOffer(pairRequest.mode === "offer" ? pairRequest.machine : null),
           onClose: closePairing,
           onHide: hidePairing,
+          onStatus: setPairStatus,
+          restoredHelper,
+          restoredExpiry: pairProgress.current?.expiresAt,
+          onFollow: (helper: PairHelperFollow) => {
+            const progress = pairProgress.current
+            if (progress && progress.pairingID === displayedPairingID) keepPairProgress({ ...progress, helper })
+          },
           visible: !pairHidden,
           // Pairing already reconnected the line and bootstrapped the row from
           // the authenticated handover. Closing reveals that updated list;
@@ -2162,11 +2246,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
               pairingMachine?.kind === "linux_aws" || pairingPlatform === "linux")
             ? transport.config.apiOrigin : undefined,
           targetOnline: pairingMachine?.freshness === "current",
-          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex"): Promise<PairAgentReply> => {
+          onAgentStart: async (helper: string, offer: string, target: { id: string; name: string }, assistant: "claude" | "codex", requestID: string): Promise<PairAgentReply> => {
             const request = client.current?._machineRequestAs
             if (!request) return { ok: false, error: "helper_unavailable" }
             try {
-              const answer = await request.call(client.current, crypto.randomUUID(), helper, "pair-agent-start",
+              const answer = await request.call(client.current, requestID, helper, "pair-agent-start",
                 { offer, machine_id: target.id, machine_name: target.name, assistant }, "action", 130_000) as Record<string, unknown>
               if (answer?.mode === "agent" && typeof answer.task_id === "string" && answer.task_id) {
                 // The helper owns the new AI Session. Keep its Console mounted
@@ -2193,7 +2277,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // Once drawn, the console stays: the copied modules bind to the document
   // once, so a refusal after that (a revoked device, a line that gave up) is
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
-  const pairingProgress = pairHidden && pairing ? <PairingProgressButton onShow={showPairing} /> : null
+  const pairingProgress = pairHidden && pairing ? <PairingProgressButton status={pairStatus} onShow={showPairing} /> : null
   const fleetTargetRow = useMemo(() => {
     if (!fleetScope || !fleetTarget) return null
     const presentation = fleetPresentations.current.get(destinationKey(fleetTarget))
