@@ -361,6 +361,8 @@ func (s *Store) sync() {
 // past its age. shed deletes exactly one sealed segment to make room on a full
 // disk. It reports whether anything was deleted.
 func (s *Store) prune(shed bool) bool {
+	blocked := false
+	defer func() { s.st.pruneBlocked.Store(blocked) }()
 	now := s.clock.Now().Wall.UnixNano()
 	horizon := now - int64(MaxStoreAgeSeconds)*int64(time.Second)
 	deleted := false
@@ -394,6 +396,7 @@ func (s *Store) prune(shed bool) bool {
 		}
 		if err := s.removeOwned(old); err != nil {
 			s.st.pruneFailures.Add(1)
+			blocked = true
 			return deleted
 		}
 		reason.Add(1)

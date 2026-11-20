@@ -19,7 +19,7 @@ func healthJournalBounds() []Entry {
 		{
 			// The retention target. A sealed segment whose newest record is
 			// older is deleted; bytes may cut retention shorter.
-			Name: "cloud.health_store_seconds", Class: Journal, Unit: Seconds,
+			Name: "cloud.health_store_seconds", Class: Journal, Unit: Seconds, RetentionTarget: true,
 			Limit: 7 * 24 * 60 * 60, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/healthjournal.MaxStoreAgeSeconds"},

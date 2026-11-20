@@ -35,3 +35,19 @@ func TestDurableStoreCapacityReadsSegmentsRecoveryAndLostRanges(t *testing.T) {
 		t.Fatal("truncated recovery was hidden", got)
 	}
 }
+
+func TestHealthRetentionReportsPruneFailuresWithoutHidingTheActualAge(t *testing.T) {
+	now := time.Now()
+	age := int64(healthjournal.MaxStoreAgeSeconds + 142)
+	oldest := now.Add(-time.Duration(age) * time.Second)
+	st := healthjournal.Status{State: healthjournal.StateOK, Floor: &oldest, PruneFailures: 3, PruneBlocked: true}
+	got := storeReading("cloud.health_store_seconds", st, now)
+	if !got.Known || got.Used != age || !got.OldestAt.Equal(oldest) || !got.Failing || got.Counters.WriteErrors != 3 {
+		t.Fatalf("blocked prune: %+v", got)
+	}
+	st.PruneBlocked = false
+	got = storeReading("cloud.health_store_seconds", st, now)
+	if got.Failing || got.Counters.WriteErrors != 3 {
+		t.Fatalf("recovered prune: %+v", got)
+	}
+}

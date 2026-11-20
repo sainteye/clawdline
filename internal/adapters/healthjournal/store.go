@@ -291,6 +291,7 @@ type counters struct {
 	written, lost, droppedAtClose                  atomic.Uint64
 	prunedAge, prunedBytes, prunedCount            atomic.Uint64
 	prunedRecords, pruneFailures, shed             atomic.Uint64
+	pruneBlocked                                   atomic.Bool
 	syncs, writes                                  atomic.Uint64
 }
 

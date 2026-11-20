@@ -432,7 +432,8 @@ func TestOverridesOnlyLower(t *testing.T) {
 func TestRoutineOccupancyKeepsRealFailuresVisible(t *testing.T) {
 	for _, name := range []string{"cache.transcript_delta_pages", CacheGitNotRepo, LogDaemon,
 		ITermStallDiagnoses, "cloud.health_store_seconds", "cloud.health_store_segment_bytes",
-		"cloud.health_upload_receipts", "antigravity.history_connections"} {
+		"cloud.health_upload_receipts", "antigravity.history_connections", "antigravity.acp_trace_connections",
+		"diagnostics.api_minutes", "diagnostics.api_hours"} {
 		t.Run(name, func(t *testing.T) {
 			e := entryNamed(t, name)
 			res := Resolved{Entry: e, Limit: e.Limit}
@@ -461,6 +462,22 @@ func TestRoutineOccupancyKeepsRealFailuresVisible(t *testing.T) {
 	}
 }
 
+func TestSegmentedHealthAgeIsARetentionTarget(t *testing.T) {
+	e := entryNamed(t, "cloud.health_store_seconds")
+	tr := NewTracker()
+	res := Resolved{Entry: e, Limit: e.Limit}
+	reading := Reading{Known: true, Used: e.Limit + 142}
+	st, events := tr.Observe(res, reading, t0)
+	if st.State != OK || st.Reading.Used != reading.Used || strings.Contains(kinds(events), EventNotify) {
+		t.Fatalf("overlapping segment changed the retention target into a failure: %+v %v", st, events)
+	}
+	res.Overridden, res.Limit = true, e.Limit-600
+	st, _ = tr.Observe(res, reading, t0)
+	if st.State != Full {
+		t.Fatalf("ignored the explicit lower limit: %+v", st)
+	}
+}
+
 func theRoutineRow(t *testing.T, e Entry) {
 	t.Helper()
 	limit := min(e.Limit, 20)
@@ -482,7 +499,7 @@ func theRoutineRow(t *testing.T, e Entry) {
 	}
 	st, _ := tr.Observe(res, Reading{Known: true, Used: limit + 1}, t0.Add(time.Hour))
 	want := Full
-	if e.AtLimit == Rotate {
+	if e.AtLimit == Rotate || e.RetentionTarget {
 		want = OK
 	}
 	if st.State != want {

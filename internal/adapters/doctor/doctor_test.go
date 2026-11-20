@@ -42,6 +42,29 @@ func TestHistorySurvivesRestartDeduplicatesAndExplainsRecovery(t *testing.T) {
 	assertHistoryPermissions(t, filepath.Join(dir, "doctor", "history.json"))
 }
 
+func TestHistoryKeepsChangesWhenOnlyObservationTimeAdvances(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().Unix()
+	record := func(r *Recorder, at int64, used float64, stale bool) {
+		s := providerquota.Snapshot{At: at, Providers: []providerquota.Row{{
+			ID: "codex", ObservedAt: &at, Stale: stale,
+			Windows: []providerquota.Window{{UsedPercent: used}},
+		}}}
+		r.Record(s)
+	}
+	r := New(dir)
+	record(r, now, 0, false)
+	record(New(dir), now+1, 0, false)
+	r = New(dir)
+	record(r, now+2, 25, false)
+	record(r, now+3, 25, true)
+	h, c := New(dir).Evidence(time.Unix(now+4, 0))
+	if len(h) != 3 || h[0].At != now || *h[0].Provider.UsedPercent != 0 ||
+		*h[1].Provider.UsedPercent != 25 || !h[2].Provider.Stale || c.Dropped != 0 {
+		t.Fatalf("time-only refresh took a history slot or genuine changes were lost: %+v %+v", h, c)
+	}
+}
+
 func TestHistoryBoundsAndExpiryCountMissingEvidence(t *testing.T) {
 	dir := t.TempDir()
 	r := New(dir)
@@ -80,10 +103,19 @@ func TestCorruptAndUnwritableHistoryAreNotSuccessfulEmptyEvidence(t *testing.T) 
 		t.Fatal(err)
 	}
 	r := New(blocked)
-	r.Record(sample(time.Now().Unix(), "no_record"))
+	at := time.Now().Unix()
+	r.Record(sample(at, "no_record"))
 	h, c = r.Evidence(time.Now())
 	if len(h) != 1 || c.State != "write_failed" {
 		t.Fatalf("write failure disappeared: %+v %+v", h, c)
+	}
+	if err := os.Remove(blocked); err != nil {
+		t.Fatal(err)
+	}
+	r.Record(sample(at+1, "no_record"))
+	h, c = New(blocked).Evidence(time.Now())
+	if len(h) != 1 || c.State != "ok" || h[0].At != at {
+		t.Fatalf("repeat observation did not recover the failed write: %+v %+v", h, c)
 	}
 }
 

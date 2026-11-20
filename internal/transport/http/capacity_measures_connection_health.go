@@ -162,6 +162,8 @@ func storeReading(name string, st healthjournal.Status, now time.Time) capacity.
 		r.Used = st.Bytes
 		r.Note = st.CrashLoss
 	case "cloud.health_store_seconds":
+		r.Failing = r.Failing || st.PruneBlocked
+		r.Counters.WriteErrors = int64(st.PruneFailures)
 		if st.Floor == nil {
 			r.Note = "nothing is retained yet"
 			break
