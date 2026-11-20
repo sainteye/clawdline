@@ -34,6 +34,17 @@ func TestRouteKeyIsAShapeNotAPath(t *testing.T) {
 		{"BREW", "/v1/health", "/v1/health", "OTHER /v1/health"},
 		{"GET", "", "/nowhere", "GET (unmatched)"},
 		{"GET", "GET /v1/x/", "/v1/x/yz", "GET /v1/x/:id"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/session/view", "GET /v1/project-assistants/:id/view"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/private/configuration", "GET /v1/project-assistants/:id/configuration"},
+		{"POST", "/v1/project-assistants/", "/v1/project-assistants/edit/permissions/notes/answer", "POST /v1/project-assistants/:id/permissions/:id/answer"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/rooms/groups/status", "GET /v1/project-assistants/rooms/groups/(unmatched)"},
+		{"POST", "/v1/project-assistants/", "/v1/project-assistants/rooms/groups/notes/reactions", "POST /v1/project-assistants/rooms/groups/:id/reactions"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/private/dev-servers/start/logs", "GET /v1/project-assistants/:id/dev-servers/:id/logs"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/private/routines/preview", "GET /v1/project-assistants/:id/routines/preview"},
+		{"POST", "/v1/project-assistants/", "/v1/project-assistants/private/routines/preview/runs", "POST /v1/project-assistants/:id/routines/:id/runs"},
+		{"GET", "/v1/project-assistants/", "/v1/project-assistants/private%2Fmessages/view", "GET /v1/project-assistants/(unmatched)"},
+		{"POST", "POST /hooks/routines/", "/hooks/routines/events", "POST /hooks/routines/:id"},
+		{"POST", "POST /v1/bot-network/consents/", "/v1/bot-network/consents/start/sync", "POST /v1/bot-network/consents/:id/sync"},
 	} {
 		if got := routeKey(c.method, c.pattern, c.path); got != c.want {
 			t.Errorf("routeKey(%s, %q, %q) = %q, want %q", c.method, c.pattern, c.path, got, c.want)

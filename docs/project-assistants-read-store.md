@@ -181,3 +181,89 @@ regression test; it keeps the existing shape, fence, relationship and byte-budge
 checks. Malformed facts, nested foreign events, missing event bindings and
 Trace-to-Turn ownership remain refusals. The bounded transport/Bridge deadline
 guard and exact response-envelope verification belong to the integration owner.
+
+### Read-path performance follow-up (2026-11-20)
+
+The statement still materializes the scalar projection `a`. SQLite can inline
+its inner Bot lookup, eliminating a second temporary copy of the aggregate.
+The HTTP packer still checks each legal prefix against the same local and Cloud
+byte limits. It counts the bytes of the already escaped JSON items and measures
+the fixed Cloud wrapper with the existing serializer, then assembles the
+selected page once. The cost is exact byte accounting in the packer, covered by
+the Cloud serializer's exact-fit and one-byte-overflow tests. There are no new
+dependencies, indexes, migrations, or cache lifetimes.
+
+The timed path is Cloud Bridge → Router → HTTP → SQLite → serialized reply.
+The source baseline was commit `775a8e8eb`. On an Apple
+M4 Pro (24 GB, darwin/arm64, Go 1.27.1), each fixture ran five times per binary,
+in alternating baseline/candidate order under shared machine load. P95 is the
+maximum of five samples. Snapshot opens a conversation, history loads the next
+older page, and events resumes at the current frontier with no unseen events.
+
+| Synthetic fixture and read | Baseline median / P95 (ms) | Candidate median / P95 (ms) |
+| --- | ---: | ---: |
+| 9,001 short messages, snapshot | 1560 / 3995 | 1106 / 1204 |
+| 9,001 short messages, history | 1375 / 1596 | 1157 / 1224 |
+| 9,001 short messages, events | 338 / 455 | 280 / 374 |
+| 200 rich messages, snapshot | 602 / 609 | 346 / 635 |
+| 200 rich messages, history | 626 / 665 | 326 / 417 |
+| 200 rich messages, events | 220 / 257 | 168 / 296 |
+
+The fixtures read 100 messages per page. The rich fixture uses about 8 KB of
+plain text per message, with Traditional Chinese and HTML-escaped characters.
+The baseline profile placed 4.53 seconds of sampled CPU under the SQLite view
+reader on the long fixture, with temporary B-tree writes visible in the stack.
+On the rich fixture, 340 ms of sampled CPU were under repeated page packing.
+The rich snapshot and empty resume tails varied. These samples do not establish
+a tail improvement for those cases. The owner-local monitor exposed no
+attributed Bot route in the sampled 24-hour interval, so real route frequency
+is unknown. The fixtures exclude relay/network transit, browser rendering and
+provider execution. Both snapshot fixtures met the existing 60-second budget.
+
+Reproduce with the same test files on both commits. Build the baseline with
+`go test -overlay=/path/to/baseline-overlay.json -c -o /tmp/bot-before.test ./internal/transport/http`,
+mapping only `internal/adapters/projectassistantstore/read_view_query.go` and
+`internal/transport/http/project_assistants_view.go` to copies from `775a8e8eb`.
+Build the candidate with `go test -c -o /tmp/bot-after.test ./internal/transport/http`.
+Run both from `internal/transport/http`, alternating order and repeating five times:
+
+```sh
+"$BOT_TEST_BINARY" -test.v \
+  -test.run '^TestProjectAssistantViewServer(LongHistoryFitsExistingCloudReadDeadline|RichHistory)$'
+```
+
+### Reuse event validation inside a read transaction
+
+An event page can contain many updates with the same persisted binding or
+trace turn. Verify a binding once per `(binding ID, generation)` and a trace
+turn once per `(binding ID, generation, turn ID)`. Each result belongs to the
+current SQLite transaction and page. The per-page row limit bounds both maps.
+All event envelopes, nested facts, foreign-source checks and publication
+authority are checked as before. Different bindings and generations still
+require independent checks, and no result survives the read transaction.
+
+`TestProjectAssistantViewServerBoundEventReplay` uses a 9,001-message Bot,
+100 source events referencing one real stored binding, and a later machine
+frontier from another Bot. It asserts that every event keeps its sequence and
+binding, with no phantom continuation. Through the in-process Cloud Bridge,
+100-event replay fell from **7,391 to 988 ms** median and from **19,776 to
+1,575 ms** nearest-rank P95. Five alternating runs per binary on an Apple
+M4 Pro (24 GB, darwin/arm64, Go 1.27.1) under shared machine load supplied the
+samples. The preceding integrated source was `641717fab`. An empty event page
+and the conversation snapshot and history checks showed variable times. Those
+operations do not reuse validation across a page of events. They establish
+no performance gain for these cases or for relay/browser transit.
+
+To repeat, build both trees with this same test fixture, using
+`go test -c -o /tmp/bot-replay.test ./internal/transport/http`. For the baseline,
+use `-overlay` with `read_view.go` and `route_stats.go` from `641717fab`.
+Invoke both binaries five times, in alternating order, from
+`internal/transport/http`:
+
+```sh
+"$BOT_TEST_BINARY" -test.v -test.run '^TestProjectAssistantViewServerBoundEventReplay$'
+```
+
+Use the `mode=events after_seq=1` completion for the backlog read. A separate
+trial that slimmed snapshot metadata and timeline relation SQL did not produce
+a consistent improvement on both complete-page fixtures and was reverted.
