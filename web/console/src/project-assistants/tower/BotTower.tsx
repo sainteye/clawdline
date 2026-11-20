@@ -30,6 +30,9 @@ const layoutKey = "clawdline.bots.towerLayout", floorKey = "clawdline.bots.tower
 const readPref = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const writePref = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* This page keeps the choice only. */ } }
 const BotSize = 74
+/** A building is offered only when one floor would be crowded: more Bots than
+ * this, across at least two Projects. A presentation threshold, not a bound. */
+export const TowerBuildingMinBots = 7
 const RecomputeMs = 60_000
 const moodWord: Record<TowerMood, keyof Words> = {
   wait: "towerMoodWait", work: "towerMoodWork", error: "towerMoodError",
@@ -89,7 +92,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const floor = chosenFloor !== null && floors[chosenFloor].bots.length ? chosenFloor
     : (floors.find(f => f.wait)?.index ?? floors.find(f => f.bots.length)?.index ?? 0)
   const goFloor = (i: number) => { setChosenFloor(i); writePref(floorKey, String(i)) }
-  const building = layout === "building"
+  // Few Bots share one floor; the building is a choice only when one floor would crowd.
+  const canBuild = allBots.length >= TowerBuildingMinBots && new Set(allBots.map(b => projectOf(b.item))).size >= 2
+  const building = canBuild && layout === "building"
   const list = new Intl.ListFormat(language, { style: "narrow", type: "unit" })
   const scene = building ? floors[floor].scene : ramenScene
   const bots = building ? floors[floor].bots : allBots
@@ -188,17 +193,23 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <p className="pa-hud-facts" role="status">
       {summary.total ? chips.map(c => <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
     </p>
-    <div className="pa-hud-switch" role="group" aria-label={w.towerLayout}>
+    {canBuild && <div className="pa-hud-switch" role="group" aria-label={w.towerLayout}>
       <button type="button" aria-pressed={!building} onClick={() => setLayout("floor")}>{w.towerLayoutFloor}</button>
       <button type="button" aria-pressed={building} onClick={() => setLayout("building")}>{w.towerLayoutBuilding}</button>
-    </div>
+    </div>}
   </div>
+  // The elevator is a small glowing wireframe of the building: one isometric
+  // slab per floor, its Bot count beside it, a lit pixel where someone waits.
   const elevator = building && <nav className="pa-tower-elevator" aria-label={w.towerElevator}>
-    {floors.map(f => <button key={f.label} type="button" aria-pressed={f.index === floor} data-wait={f.wait || undefined} disabled={!f.bots.length}
-      title={list.format(f.names)} onClick={() => goFloor(f.index)}>
-      <b>{f.label}</b><span>{f.bots.length ? list.format(f.names) : w.towerFloorEmpty}</span>
-      {f.bots.length > 0 && <small>{f.wait ? w.towerWaiting.replace("{count}", String(f.wait)) : w.towerBots.replace("{count}", String(f.bots.length))}</small>}
-    </button>)}
+    <svg className="pa-elevator-shaft" viewBox="0 0 96 132" aria-hidden="true"><path d="M8 18V114M48 6V102M88 18V114"/></svg>
+    {floors.map(f => {
+      const detail = f.bots.length ? `${list.format(f.names)} · ${f.wait ? w.towerWaiting.replace("{count}", String(f.wait)) : w.towerBots.replace("{count}", String(f.bots.length))}` : w.towerFloorEmpty
+      return <button key={f.label} type="button" aria-pressed={f.index === floor} data-wait={f.wait || undefined} disabled={!f.bots.length}
+        aria-label={`${f.label}, ${detail}`} title={detail} onClick={() => goFloor(f.index)}>
+        <svg viewBox="0 0 96 26" aria-hidden="true"><path d="M8 13 48 1 88 13 48 25Z"/><text x="48" y="16.5">{f.label}</text></svg>
+        <b>{f.bots.length}</b>
+      </button>
+    })}
   </nav>
 
   return <section className="pa-tower" aria-label={w.towerView}>

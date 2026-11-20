@@ -8,17 +8,20 @@
 .project-assistants .pa-hud-switch button { min-height:28px;padding:0 10px; }
 .project-assistants .pa-hud-switch button[aria-pressed="true"] { color:#120a10;background:#e39567; }
 .project-assistants .pa-hud-switch button:focus-visible,.project-assistants .pa-tower-elevator button:focus-visible { outline:2px solid #e39567;outline-offset:1px; }
-/* Elevator: one pixel button per floor, a lit dot where someone waits. */
-.project-assistants .pa-tower-elevator { display:flex;flex-direction:column;gap:4px;font:600 12px/1.2 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace; }
-.project-assistants .pa-tower-elevator button { display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;min-height:44px;width:168px;padding:6px 10px;text-align:left;background:rgba(12,9,20,.86);box-shadow:inset 0 0 0 2px rgba(156,166,179,.35);position:relative; }
-.project-assistants .pa-tower-elevator b { grid-row:1 / 3;font-size:15px;color:#efe6dc; }
-.project-assistants .pa-tower-elevator span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.project-assistants .pa-tower-elevator small { color:#99999f;font-size:11px; }
-.project-assistants .pa-tower-elevator button[aria-pressed="true"] { box-shadow:inset 0 0 0 2px #e39567,inset 0 -8px 14px -10px #e39567; }
+/* Elevator: a glowing isometric wireframe, one slab per floor. */
+.project-assistants .pa-tower-elevator { position:relative;display:flex;flex-direction:column;gap:2px;padding:8px 10px 8px 8px;background:rgba(12,9,20,.78);box-shadow:inset 0 0 0 2px rgba(156,166,179,.25);font:700 11px/1 ui-monospace,"SF Mono",Menlo,monospace; }
+.project-assistants .pa-elevator-shaft { position:absolute;left:8px;top:8px;width:96px;height:132px;fill:none;stroke:rgba(227,149,103,.35);stroke-width:1;stroke-dasharray:2 3;pointer-events:none; }
+.project-assistants .pa-tower-elevator button { position:relative;display:flex;align-items:center;gap:8px;height:31px;padding:0;color:#cfc8c0; }
+.project-assistants .pa-tower-elevator button svg { width:96px;height:26px;overflow:visible; }
+.project-assistants .pa-tower-elevator button path { fill:rgba(227,149,103,.04);stroke:#9ca6b3;stroke-width:1.2;filter:drop-shadow(0 0 2px rgba(156,166,179,.6)); }
+.project-assistants .pa-tower-elevator button text { fill:currentColor;font:inherit;font-size:9px;text-anchor:middle;letter-spacing:.08em; }
+.project-assistants .pa-tower-elevator button b { min-width:22px;font-size:14px;color:#efe6dc;text-align:right; }
+.project-assistants .pa-tower-elevator button:hover path { stroke:#efe6dc; }
+.project-assistants .pa-tower-elevator button[aria-pressed="true"] { color:#120a10; }
+.project-assistants .pa-tower-elevator button[aria-pressed="true"] path { fill:#e39567;stroke:#ffd2b5;filter:drop-shadow(0 0 6px #e39567); }
 .project-assistants .pa-tower-elevator button[aria-pressed="true"] b { color:#e39567;text-shadow:0 0 6px #e39567; }
-.project-assistants .pa-tower-elevator button[data-wait]::after { content:"";position:absolute;right:8px;top:8px;width:6px;height:6px;background:#e39567;box-shadow:0 0 6px #e39567; }
-.project-assistants .pa-tower-elevator button[data-wait] small { color:#e39567; }
-.project-assistants .pa-tower-elevator button:disabled { opacity:.45;cursor:default; }
+.project-assistants .pa-tower-elevator button[data-wait]::after { content:"";position:absolute;right:-4px;top:6px;width:6px;height:6px;background:#e39567;box-shadow:0 0 6px #e39567;animation:pa-hud-blink 1.2s steps(2,jump-none) infinite; }
+.project-assistants .pa-tower-elevator button:disabled { opacity:.4;cursor:default; }
 /* Elevator doors close and open over the floor when it changes. */
 .project-assistants .pa-tower-doors { position:absolute;inset:0;pointer-events:none;z-index:2; }
 .project-assistants .pa-tower-doors::before,.project-assistants .pa-tower-doors::after { content:"";position:absolute;top:0;bottom:0;width:50%;background:repeating-linear-gradient(90deg,#16121c 0 14px,#1d1824 14px 16px);animation:pa-door .55s steps(8,end) both; }
@@ -63,7 +66,6 @@
   .project-assistants .pa-tower-stage { overflow-x:auto;overscroll-behavior-x:contain;border-radius:12px; }
   .project-assistants .pa-tower-pan { width:max(100%, 720px); }
   .project-assistants .pa-tower-hud { position:sticky;left:0;width:calc(100vw - 32px);margin-bottom:8px;flex-direction:column; }
-  .project-assistants .pa-tower-elevator { position:sticky;left:0;width:calc(100vw - 32px);flex-direction:row;overflow-x:auto;margin-bottom:8px; }
-  .project-assistants .pa-tower-elevator button { width:auto;min-width:96px;flex:none; }
+  .project-assistants .pa-tower-elevator { position:sticky;left:0;width:max-content;margin-bottom:8px; }
   .project-assistants .pa-tower-bot { min-width:44px;min-height:44px; }
 }
