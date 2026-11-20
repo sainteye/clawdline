@@ -26,6 +26,8 @@ export interface TowerBot {
   /** False when the source is not fresh: the pose is a cached guess. */
   live: boolean
   seed: number
+  /** Unfinished work handed elsewhere (work links and background tasks); 0 on older sources. */
+  work: number
 }
 
 export const zoneOf: Record<TowerMood, TowerZone> = {
@@ -60,8 +62,29 @@ export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Re
 export function towerBots(items: readonly W.ProjectAssistantBotSummary[], now: number, w: Record<string, string>): TowerBot[] {
   return items.map(item => {
     const key = botIdentity(item.bot.key) as string, m = towerMood(item, now, w)
-    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key) }
+    return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key), work: activeWork(item) }
   }).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+}
+
+/** A count the source may omit (older daemons) or garble; only a whole number counts. */
+export function activeWork(item: W.ProjectAssistantBotSummary): number {
+  const n = item.active_work
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : 0
+}
+
+/** Helpers drawn on a portal, each Bot's in turn, at most `cap` in all; the
+ * rest are only counted. A presentation limit, not a capacity bound. */
+export function portalHelpers(bots: readonly TowerBot[], cap: number): { bot: TowerBot, index: number }[] {
+  const out: { bot: TowerBot, index: number }[] = []
+  const busy = bots.filter(b => b.work > 0)
+  for (let round = 0; out.length < cap; round++) {
+    let added = false
+    for (const bot of busy) {
+      if (round < bot.work && out.length < cap) { out.push({ bot, index: round }); added = true }
+    }
+    if (!added) break
+  }
+  return out
 }
 
 export interface TowerSummary {
@@ -70,6 +93,8 @@ export interface TowerSummary {
   work: number
   error: number
   unread: number
+  /** Unfinished work handed elsewhere, across all Bots. */
+  helpers: number
   stale: boolean
   /** The Bot with the most recent valid activity. */
   latest?: TowerBot
@@ -82,7 +107,7 @@ export function towerSummary(bots: readonly TowerBot[]): TowerSummary {
     const at = Date.parse(b.item.activity_at)
     if (Number.isFinite(at) && at > 0 && at > best) { best = at; latest = b }
   }
-  return { total: bots.length, wait: count("wait"), work: count("work"), error: count("error"), unread: bots.filter(b => b.unread).length, stale: bots.some(b => !b.live), latest }
+  return { total: bots.length, wait: count("wait"), work: count("work"), error: count("error"), unread: bots.filter(b => b.unread).length, helpers: bots.reduce((n, b) => n + b.work, 0), stale: bots.some(b => !b.live), latest }
 }
 
 type Point = readonly [number, number]

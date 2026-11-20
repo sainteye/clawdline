@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
-import { assignFloors, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
+import { assignFloors, portalHelpers, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, type TowerBot, type TowerMood } from "./tower-state"
 import { ramenScene, sectionScene, towerFloors, type TowerScene } from "./tower-scene"
 import { drawBot } from "./tower-draw"
 import { TowerAllowCard, type TowerAllow } from "./TowerAllowCard"
@@ -40,6 +40,10 @@ const layoutKey = "clawdline.bots.towerLayout", floorKey = "clawdline.bots.tower
 const readPref = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const writePref = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* This page keeps the choice only. */ } }
 const BotSize = 74, SectionBotSize = 44, WalkMs = 1000
+/** Helpers drawn on one portal at most, and where each stands around its
+ * centre; more are counted on their Bot's card. Presentation, not a bound. */
+const PortalHelpers = 6
+const portalRing: readonly (readonly [number, number])[] = [[-46, 6], [46, 6], [0, -22], [-88, -14], [88, -14], [0, 30]]
 /** The cross-section is a view of its own, beside the four floors. */
 const Section = -1
 /** A building is offered only when one floor would be crowded: more Bots than
@@ -90,6 +94,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const [panelOpen, setPanelOpen] = useState(false)
   // The waiting list opens from the HUD's waiting chip and closes once nobody waits.
   const [waitOpen, setWaitOpen] = useState(false)
+  // A tapped Bot shows its card first; tapping it again opens the chat.
+  const [picked, setPicked] = useState<string | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   // The row showing its full request, and every offer already sent from here.
   const [shown, setShown] = useState<string | null>(null)
   const attempted = useRef(new Map<string, AllowReason | "allowed">())
@@ -186,8 +193,10 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // What to draw lives in a ref: a parent re-render (a roster hover, a new
   // roster frame) swaps the picture without restarting the loop or resizing
   // the canvas, since resizing clears it and showed as a flash of every Bot.
-  const scenery = useRef({ bots, running, scene, locate, size })
-  scenery.current = { bots, running, scene, locate, size }
+  const helpers = section ? [] : portalHelpers(bots, PortalHelpers)
+  const portal = section ? undefined : (scene as TowerScene).portal
+  const scenery = useRef({ bots, running, scene, locate, size, helpers, portal, picked })
+  scenery.current = { bots, running, scene, locate, size, helpers, portal, picked }
   const drawRef = useRef<(t: number) => void>(() => {})
   // Where each Bot was last drawn and where it is heading: a change of spot
   // (allowed, finished, woke) walks there for WalkMs instead of jumping.
@@ -198,16 +207,24 @@ export default function BotTower({ items, w, language, paused = false, highlight
     const g = canvas.getContext("2d")
     if (!g) return
     let dpr = 1
+    // Layout size, not getBoundingClientRect: the Bots window opens with a
+    // scale-in transform, a transformed rect measured mid-animation is a few
+    // percent of the real size, and a transform never fires the ResizeObserver,
+    // so the canvas stayed tiny and its Bots were drawn as blocks.
     const fit = () => {
-      const r = el.getBoundingClientRect()
       dpr = Math.min(2, window.devicePixelRatio || 1)
-      const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr))
+      const w = Math.max(1, Math.round(el.clientWidth * dpr)), h = Math.max(1, Math.round(el.clientHeight * dpr))
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
     }
     drawRef.current = (t: number) => {
-      const { bots, running, scene, locate, size } = scenery.current
+      const { bots, running, scene, locate, size, helpers, portal, picked } = scenery.current
       const k = canvas.width / scene.width, still = !running
       g.clearRect(0, 0, canvas.width, canvas.height)
+      // Helpers stand on the portal, smaller and fainter than the Bots they work for.
+      if (portal) helpers.forEach(({ bot: b }, i) => {
+        const [dx, dy] = portalRing[i % portalRing.length]
+        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: "work", seed: b.seed + i }, (portal[0] + dx) * k, (portal[1] + dy) * k, size * .58 * k, false, t, still, dpr, b.live ? .72 : .4)
+      })
       const placed = bots.map(b => {
         const spot = locate(b, t, still), sig = `${scene.picture}:${b.mood === "idle" && scene.picture !== "building" ? "stroll" : `${spot.at[0]},${spot.at[1]}`}`
         const prev = trail.current.get(b.key)
@@ -232,6 +249,10 @@ export default function BotTower({ items, w, language, paused = false, highlight
           button.style.width = `${size / scene.width * 100}%`
           button.style.height = `${(size + 6) / scene.height * 100}%`
         }
+        if (picked === b.key && cardRef.current) {
+          cardRef.current.style.left = `${at[0] / scene.width * 100}%`
+          cardRef.current.style.top = `${(at[1] - size - 8) / scene.height * 100}%`
+        }
       }
     }
     fit()
@@ -248,7 +269,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     return () => cancelAnimationFrame(frame)
   }, [running])
   // A still picture (reduced motion, hidden) redraws when its Bots change.
-  useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running, scene])
+  useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running, scene, picked])
   // A phone shows part of the floor: open where the Bots are, busy ones first.
   useEffect(() => {
     const view = viewRef.current
@@ -270,6 +291,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   if (summary.wait) chips.push({ key: "wait", tone: "wait", text: w.towerWaiting.replace("{count}", String(summary.wait)) })
   if (summary.work) chips.push({ key: "work", tone: "work", text: w.towerWorking.replace("{count}", String(summary.work)) })
   if (summary.error) chips.push({ key: "error", tone: "error", text: w.towerErrors.replace("{count}", String(summary.error)) })
+  if (summary.helpers) chips.push({ key: "helpers", tone: "work", text: w.towerHelpers.replace("{count}", String(summary.helpers)) })
   if (summary.unread) chips.push({ key: "unread", tone: "unread", text: w.towerUnread.replace("{count}", String(summary.unread)) })
   if (summary.total && !summary.wait && !summary.work && !summary.error) chips.push({ key: "idle", tone: "idle", text: w.towerAllIdle })
   if (summary.latest) {
@@ -327,6 +349,23 @@ export default function BotTower({ items, w, language, paused = false, highlight
     })}
   </nav>
 
+  // The tapped Bot's card: what it is doing now, and the way into its chat.
+  const pickedBot = bots.find(b => b.key === picked)
+  const pickedCard = pickedBot && (() => {
+    const b = pickedBot, when = ago(b.item.activity_at, now, language), busy = b.mood === "work" || b.mood === "wait" || b.mood === "error"
+    const line = (busy ? b.caption : b.item.latest_message).split("\n").find(l => l.trim()) ?? ""
+    return <div ref={cardRef} className="pa-tower-card" data-mood={b.mood} role="dialog" aria-label={b.item.bot.name}
+      onKeyDown={e => { if (e.key === "Escape") setPicked(null) }}>
+      <header><strong>{b.item.bot.name}</strong><button type="button" aria-label={w.towerCardClose} onClick={() => setPicked(null)}>×</button></header>
+      <p className="pa-tower-card-state"><i aria-hidden="true"/>{w[moodWord[b.mood]]}{when && <time dateTime={b.item.activity_at}>{when}</time>}</p>
+      <p className="pa-tower-card-project">{projectName(b.item) || w.unnamedProject}</p>
+      {line && <p className="pa-tower-card-line">{line}</p>}
+      {b.work > 0 && <p className="pa-tower-card-meta">{w.towerCardHelpers.replace("{count}", String(b.work))}</p>}
+      {b.unread && <p className="pa-tower-card-meta">{w.towerCardUnread.replace("{count}", String(b.item.unread_count))}</p>}
+      {!b.live && <p className="pa-tower-card-meta">{w.towerStale}</p>}
+      <button type="button" className="pa-tower-card-open" onClick={() => { setPicked(null); onSelect(b.item) }}>{w.towerOpenChat}</button>
+    </div>
+  })()
   return <section className="pa-tower" aria-label={w.towerView}>
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
@@ -337,7 +376,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
         </button>}
         {canBuild && <div className="pa-tower-controls" data-open={panelOpen || undefined}>{layoutSwitch}{elevator}</div>}
         <div className="pa-tower-view" ref={viewRef}>
-        <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}>
+        <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}
+          onClick={e => { if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null) }}>
           <img key={scene.picture} src={pictures[scene.picture]} alt="" draggable={false} decoding="async"/>
           {building && <span key={`door-${floor}`} className="pa-tower-doors" aria-hidden="true"/>}
           <canvas ref={canvasRef} aria-hidden="true"/>
@@ -359,7 +399,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
             return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={!section && (b.mood === "wait" || b.mood === "error") || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}
               style={{ width: `${size / scene.width * 100}%`, height: `${(size + 6) / scene.height * 100}%` }}
-              onClick={() => onSelect(b.item)}>
+              aria-expanded={picked === b.key} data-picked={picked === b.key || undefined}
+              onClick={() => { if (picked === b.key) { setPicked(null); onSelect(b.item) } else setPicked(b.key) }}>
               <span className="pa-tower-tip" aria-hidden="true">
                 <strong>{b.item.bot.name}</strong>
                 <span>{[project, mood].filter(Boolean).join(" · ")}</span>
@@ -367,6 +408,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
               </span>
             </button>
           })}
+          {pickedCard}
         </div>
         </div>
         {waitList}

@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList } from "./tower-state.ts"
+import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList, activeWork, portalHelpers } from "./tower-state.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "../words.ts"
 
@@ -102,4 +102,18 @@ test("the waiting list holds only waiting Bots, longest quiet first", () => {
     bot("tie-a", { pending_permissions: 1, status: undefined, activity_at: at(10) }),
   ], now, w))
   assert.deepEqual(list.map(b => b.item.bot.name), ["old", "tie-a", "tie-b", "fresh", "unknown"])
+})
+
+test("active work reads only whole positive counts, so an older source means none", () => {
+  assert.equal(activeWork(bot("a", { active_work: 3 })), 3)
+  assert.equal(activeWork(bot("a")), 0)
+  for (const bad of [-1, 1.5, "2", null, Number.NaN]) assert.equal(activeWork(bot("a", { active_work: bad })), 0)
+  assert.equal(towerSummary(towerBots([bot("a", { active_work: 2 }), bot("b", { active_work: 1 }), bot("c")], now, w)).helpers, 3)
+})
+
+test("portal helpers take turns between Bots and stop at the cap", () => {
+  const bots = towerBots([bot("a", { active_work: 4 }), bot("b", { active_work: 1 }), bot("c")], now, w)
+  assert.deepEqual(portalHelpers(bots, 6).map(h => `${h.bot.key.includes("a") ? "a" : "b"}${h.index}`), ["a0", "b0", "a1", "a2", "a3"])
+  assert.equal(portalHelpers(bots, 2).length, 2)
+  assert.deepEqual(portalHelpers(towerBots([bot("c")], now, w), 6), [])
 })
