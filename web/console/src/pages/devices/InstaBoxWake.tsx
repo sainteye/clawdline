@@ -69,7 +69,7 @@ export function InstaBoxWake({ origin, machine, online, linkOnly = false }: {
   const [choices, setChoices] = useState<MachineChoice[] | null>(null)
   const [selected, setSelected] = useState("")
   const [editing, setEditing] = useState(false)
-  const [state, setState] = useState<"idle" | "checking" | "binding" | "waking" | "accepted">("idle")
+  const [state, setState] = useState<"idle" | "checking" | "binding" | "waking" | "accepted" | "schedule-webhooks">("idle")
   const [message, setMessage] = useState("")
   const pending = useRef(false)
 
@@ -77,7 +77,7 @@ export function InstaBoxWake({ origin, machine, online, linkOnly = false }: {
     const read = new AbortController()
     void readInstaBoxBinding(origin, machine, read.signal).then(setBinding, () => {})
     return () => read.abort()
-  }, [origin, machine])
+  }, [origin, machine, online])
 
   async function act(action: "checking" | "binding" | "waking") {
     if (!binding || pending.current) return
@@ -92,7 +92,7 @@ export function InstaBoxWake({ origin, machine, online, linkOnly = false }: {
         setEditing(true)
       } else if (action === "binding") {
         await instaBoxRequest(origin, path, "PUT", { provider_machine_id: selected })
-        setBinding({ ...binding, configured: true })
+        setBinding({ ...binding, configured: true, schedule_webhook_wake_enabled: binding.schedule_webhook_wake_enabled === undefined ? undefined : false, schedule_webhook_wake_status: null })
         setEditing(false)
       } else {
         await wakeInstaBox(origin, machine)
@@ -103,13 +103,33 @@ export function InstaBoxWake({ origin, machine, online, linkOnly = false }: {
     } catch (error) { setMessage(instaBoxWakeReason(error)); setState("idle") }
     finally { pending.current = false }
   }
+  async function setScheduleWebhookWake(enabled: boolean) {
+    if (!binding || pending.current) return
+    pending.current = true
+    setMessage("")
+    setState("schedule-webhooks")
+    try {
+      const settings = await instaBoxRequest<Pick<InstaBoxBinding, "schedule_webhook_wake_enabled" | "schedule_webhook_wake_status">>(
+        origin, `${path}/schedule-webhooks`, "PUT", { enabled },
+      )
+      setBinding({ ...binding, ...settings })
+    } catch (error) { setMessage(instaBoxWakeReason(error)) }
+    finally { pending.current = false; setState("idle") }
+  }
   if (!binding?.credential_ready && !binding?.configured) return null
-  const busy = state === "checking" || state === "binding" || state === "waking"
+  const busy = state === "checking" || state === "binding" || state === "waking" || state === "schedule-webhooks"
   return <div className="am-stack">
     {!linkOnly && binding.configured && !online && !editing && <button type="button" className="am-primary am-wide"
       disabled={busy || !binding.credential_ready} aria-busy={state === "waking"} onClick={() => void act("waking")}>
       {nextWord(state === "waking" ? "msInstaWaking" : "msInstaWake")}
     </button>}
+    {!linkOnly && binding.configured && typeof binding.schedule_webhook_wake_enabled === "boolean" && <div className="am-stack">
+      <label><input type="checkbox" aria-label={nextWord("msInstaScheduleWebhookWake")} checked={binding.schedule_webhook_wake_enabled} disabled={busy || (!binding.credential_ready && !binding.schedule_webhook_wake_enabled)}
+        onChange={event => void setScheduleWebhookWake(event.currentTarget.checked)} /> {nextWord("msInstaScheduleWebhookWake")}</label>
+      <p className="am-say">{nextWord("msInstaScheduleWebhookWakeHelp")}</p>
+      {binding.schedule_webhook_wake_enabled && binding.schedule_webhook_wake_status && !["provider_running", "wake_accepted", "wake_changed"].includes(binding.schedule_webhook_wake_status) &&
+        <p className="am-say" role="status">{nextWord("msInstaScheduleWebhookWakeIssue")} {instaBoxWakeReason(new Error(binding.schedule_webhook_wake_status))}</p>}
+    </div>}
     {state === "accepted" && <p className="am-say" role="status">{nextWord(online ? "msInstaOnline" : "msInstaAccepted")}</p>}
     {binding.configured && !binding.credential_ready && <p className="am-say">{nextWord("msInstaKeyMissing")}</p>}
     {binding.credential_ready && !editing && <button type="button" className="am-ghost am-wide" disabled={busy}

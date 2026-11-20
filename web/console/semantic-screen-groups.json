@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13635,
-  "riskKeys": 5846,
-  "nonRiskCount": 7789,
+  "englishContentKeys": 13638,
+  "riskKeys": 5847,
+  "nonRiskCount": 7791,
   "groups": [
     {
       "name": "acp / other",
@@ -4216,7 +4216,7 @@
     },
     {
       "name": "next / other",
-      "count": 1313,
+      "count": 1315,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4874,6 +4874,8 @@
         "next.msInstaManualStart",
         "next.msInstaOnline",
         "next.msInstaRelink",
+        "next.msInstaScheduleWebhookWake",
+        "next.msInstaScheduleWebhookWakeIssue",
         "next.msInstaSelectMachine",
         "next.msInstaSessionHelp",
         "next.msInstaWake",

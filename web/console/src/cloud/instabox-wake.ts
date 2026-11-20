@@ -34,7 +34,7 @@ export function instaBoxWakeReason(error: unknown) {
   }
 }
 
-export type InstaBoxBinding = { configured: boolean; credential_ready: boolean }
+export type InstaBoxBinding = { configured: boolean; credential_ready: boolean; schedule_webhook_wake_enabled?: boolean; schedule_webhook_wake_status?: string | null }
 
 export function readInstaBoxBinding(origin: string, machine: string, signal?: AbortSignal) {
   return instaBoxRequest<InstaBoxBinding>(origin, instaBoxWakePath(machine), "GET", undefined, signal)

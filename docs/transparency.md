@@ -1087,3 +1087,8 @@ A pairing helper reports the target machine's acceptance and observed fingerprin
 The originating browser owns final confirmation after opening the handover and
 checking the fingerprints. The reviewed briefing and both languages distinguish
 these two outcomes.
+
+The English and Taiwan Traditional Chinese Schedule Webhook wake setting explains
+the account owner's opt-in and possible InstaBox runtime costs. It is console
+copy. The existing assisted-pairing, setup and Session rotation instruction
+excerpts still describe their respective flows.
