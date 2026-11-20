@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { assignFloors, floorOfBot, leadPlace, leadPoint, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList, activeWork, portalHelpers } from "./tower-state.ts"
+import { assignFloors, crowd, TowerZoneShown, floorOfBot, leadPlace, leadPoint, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList, activeWork, portalHelpers } from "./tower-state.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "../words.ts"
 
@@ -166,4 +166,25 @@ test("the lead patrols its beat before the screen and stands still when it must 
     assert.deepEqual(leadPlace(beat, { ...lead, mood }, 0, now + 7777, false), { at: [940, 332], moving: false }, mood)
   }
   assert.deepEqual(leadPlace(beat, { ...lead, mood: "work" }, 0, now + 4321, true), { at: [940, 332], moving: false }, "reduced motion stands")
+})
+
+test("a crowded zone draws its first three and counts the rest, keeping who needs the person", () => {
+  const at = (min: number) => new Date(now - min * 60_000).toISOString()
+  const bots = towerBots([
+    bot("a", { status: "working", activity_at: at(50) }), bot("b", { status: "working", activity_at: at(5) }),
+    bot("c", { status: "working", activity_at: at(30) }), bot("d", { status: "working", activity_at: at(10) }),
+    bot("e", { status: "working", activity_at: at(1) }), bot("x", { status: "needsInput", activity_at: at(90) }),
+  ], now, {})
+  assert.equal(TowerZoneShown, 3)
+  // Everyone in one crowd: the waiting Bot stays drawn although it is the oldest.
+  const { shown, extra } = crowd(bots, () => "floor", 3)
+  assert.deepEqual(shown.map(b => b.item.bot.key.bot_id).sort(), ["b", "e", "x"])
+  assert.deepEqual(extra.get("floor")!.map(b => b.item.bot.key.bot_id), ["d", "c", "a"])
+  // Drawn Bots keep the input order, so nothing reshuffles on screen.
+  assert.deepEqual(shown.map(b => b.key), bots.filter(b => ["b", "e", "x"].includes(b.item.bot.key.bot_id)).map(b => b.key))
+  // A zone at or under the cap has no +N, and an uncapped Bot is never counted.
+  assert.equal(crowd(bots.slice(0, 3), () => "z").extra.size, 0)
+  const lead = crowd(bots, b => b.item.bot.key.bot_id === "a" ? undefined : "z", 3)
+  assert.ok(lead.shown.some(b => b.item.bot.key.bot_id === "a"))
+  assert.equal(lead.extra.get("z")!.length, 2)
 })

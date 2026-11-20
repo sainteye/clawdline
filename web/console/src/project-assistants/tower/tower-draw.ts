@@ -28,7 +28,11 @@ export interface DrawBot {
   unread?: boolean
   /** The lead Bot wears a short cape and a star badge. */
   lead?: boolean
+  /** Neon outline (the default) or a body filled with its colour's gradient. */
+  style?: TowerStyle
 }
+
+export type TowerStyle = "neon" | "gradient"
 
 const Gold = "#e3bc6b"
 
@@ -79,10 +83,20 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     g.lineJoin = "round"; g.shadowColor = glow; g.shadowBlur = 10 * dpr; g.strokeStyle = color; g.lineWidth = 4; g.stroke()
     g.restore()
   }
-  g.fillStyle = "rgba(9,6,22,.86)"; g.fill(p)
-  g.lineJoin = "round"; g.shadowColor = glow; g.shadowBlur = 16 * dpr; g.strokeStyle = color; g.lineWidth = 6; g.stroke(p)
-  g.shadowBlur = 5 * dpr; g.strokeStyle = lighten(color, .55); g.lineWidth = 2.2; g.stroke(p)
-  g.lineCap = "round"; g.lineWidth = 6.5; g.shadowColor = color; g.shadowBlur = 8 * dpr; g.strokeStyle = color
+  if (b.style === "gradient") {
+    // The same outline, filled from a light top to the full colour, with dark
+    // eyes: the picker's gradient avatar rather than a lit tube.
+    const fill = g.createLinearGradient(0, 5, 0, 105)
+    fill.addColorStop(0, lighten(color, .5)); fill.addColorStop(1, color)
+    g.fillStyle = fill; g.shadowColor = glow; g.shadowBlur = 8 * dpr; g.fill(p)
+    g.lineJoin = "round"; g.shadowBlur = 0; g.strokeStyle = lighten(color, .7); g.lineWidth = 3; g.stroke(p)
+    g.lineCap = "round"; g.lineWidth = 6.5; g.strokeStyle = "#120a26"
+  } else {
+    g.fillStyle = "rgba(9,6,22,.86)"; g.fill(p)
+    g.lineJoin = "round"; g.shadowColor = glow; g.shadowBlur = 16 * dpr; g.strokeStyle = color; g.lineWidth = 6; g.stroke(p)
+    g.shadowBlur = 5 * dpr; g.strokeStyle = lighten(color, .55); g.lineWidth = 2.2; g.stroke(p)
+    g.lineCap = "round"; g.lineWidth = 6.5; g.shadowColor = color; g.shadowBlur = 8 * dpr; g.strokeStyle = color
+  }
   g.beginPath()
   if (sleeping) { g.moveTo(30, 55); g.lineTo(42, 55); g.moveTo(57, 55); g.lineTo(69, 55) }
   else {

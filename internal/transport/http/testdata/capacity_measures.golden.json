@@ -948,6 +948,11 @@
     "Note": true
   },
   {
+    "Name": "bots.tower_zone_shown",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.write_ms",
     "Known": true,
     "Note": true

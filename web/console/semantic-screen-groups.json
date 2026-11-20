@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13756,
-  "riskKeys": 5892,
-  "nonRiskCount": 7864,
+  "englishContentKeys": 13764,
+  "riskKeys": 5894,
+  "nonRiskCount": 7870,
   "groups": [
     {
       "name": "acp / other",
@@ -567,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 704,
+      "count": 705,
       "sources": [
         null
       ],
@@ -734,6 +734,7 @@
         "capacityRow.bots.tool_probe_ms.what",
         "capacityRow.bots.tower_floor_project_bytes.what",
         "capacityRow.bots.tower_floors.what",
+        "capacityRow.bots.tower_zone_shown.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -6128,7 +6129,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 485,
+      "count": 490,
       "sources": [
         null
       ],
@@ -6587,11 +6588,16 @@
         "projectAssistants.towerMoodSleep",
         "projectAssistants.towerMoodUnread",
         "projectAssistants.towerMoodWork",
+        "projectAssistants.towerMoreLabel",
         "projectAssistants.towerPictureReload",
         "projectAssistants.towerRide",
         "projectAssistants.towerRideTo",
         "projectAssistants.towerSection",
         "projectAssistants.towerStale",
+        "projectAssistants.towerStyle",
+        "projectAssistants.towerStyleGradient",
+        "projectAssistants.towerStyleNeon",
+        "projectAssistants.towerTags",
         "projectAssistants.towerUnread",
         "projectAssistants.towerView",
         "projectAssistants.towerWorking",

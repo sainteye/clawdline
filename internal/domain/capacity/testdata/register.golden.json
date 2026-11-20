@@ -3844,6 +3844,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.tower_zone_shown",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxTowerZoneShown"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.write_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

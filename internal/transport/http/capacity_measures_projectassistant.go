@@ -138,6 +138,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsManagerApprovalSeconds: unobserved,
 		capacity.BotsManagerPending:         unobserved,
 		"bots.routine_event_name_bytes":     pure,
+		"bots.tower_zone_shown":             pure,
 		"bots.tower_floors":                 pure,
 		"bots.tower_floor_projects":         pure,
 		"bots.tower_floor_project_bytes":    pure,

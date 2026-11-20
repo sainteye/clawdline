@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13756,
+  "englishKeys": 13764,
   "counts": {
     "negation": 3561,
-    "state": 2338,
+    "state": 2340,
     "permission": 831,
     "deletion": 318,
     "uncertainty": 554
   },
-  "unionCount": 5892,
+  "unionCount": 5894,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3807,6 +3807,7 @@
       "capacityRow.bots.tower_floor_project_bytes.full",
       "capacityRow.bots.tower_floor_projects.full",
       "capacityRow.bots.tower_floors.full",
+      "capacityRow.bots.tower_zone_shown.full",
       "capacityRow.browser.activity_picture_rows.full",
       "capacityRow.browser.close_receipt_bytes.full",
       "capacityRow.browser.close_receipt_rows.full",
@@ -5631,6 +5632,7 @@
       "projectAssistants.towerMoodRecent",
       "projectAssistants.towerMoodWait",
       "projectAssistants.towerOpenChat",
+      "projectAssistants.towerTagsHint",
       "projectAssistants.towerWaitList",
       "projectAssistants.towerWaitListClose",
       "projectAssistants.towerWaiting",
@@ -8109,6 +8111,7 @@
     "capacityRow.bots.tower_floor_projects.full",
     "capacityRow.bots.tower_floor_projects.what",
     "capacityRow.bots.tower_floors.full",
+    "capacityRow.bots.tower_zone_shown.full",
     "capacityRow.bots.write_ms.full",
     "capacityRow.bots.write_ms.what",
     "capacityRow.browser.activity_picture_bytes.full",
@@ -12821,6 +12824,7 @@
     "projectAssistants.towerMoodWait",
     "projectAssistants.towerOpenChat",
     "projectAssistants.towerPictureMissing",
+    "projectAssistants.towerTagsHint",
     "projectAssistants.towerWaitList",
     "projectAssistants.towerWaitListClose",
     "projectAssistants.towerWaiting",

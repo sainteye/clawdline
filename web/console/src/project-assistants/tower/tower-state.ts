@@ -168,6 +168,34 @@ export function leadPlace(beat: readonly Point[], b: TowerBot, index: number, no
   return strollPoint(beat, b.seed + index * 977, now, false)
 }
 
+/** Bots drawn in one zone (one floor's desks, queue, lounge…) before the rest
+ * are counted as "+N". Must equal internal/domain/projectassistant.MaxTowerZoneShown. */
+export const TowerZoneShown = 3
+
+/** Who keeps a drawn place when a zone is crowded: the person's attention first. */
+const crowdRank: Record<TowerMood, number> = { wait: 0, error: 1, work: 2, recent: 3, idle: 4, sleep: 5 }
+
+/**
+ * Split Bots into those drawn and, per crowd, those only counted. `group`
+ * names a Bot's crowd; undefined is never capped (the lead's own spot). Within
+ * a crowd, waiting and failing Bots stay drawn first, then the most recently
+ * active; the drawn ones keep the input order so nothing reshuffles on screen.
+ */
+export function crowd(bots: readonly TowerBot[], group: (b: TowerBot) => string | undefined, cap = TowerZoneShown): { shown: TowerBot[], extra: Map<string, TowerBot[]> } {
+  const groups = new Map<string, TowerBot[]>()
+  for (const b of bots) { const g = group(b); if (g !== undefined) groups.set(g, [...(groups.get(g) ?? []), b]) }
+  const at = (b: TowerBot) => { const t = Date.parse(b.item.activity_at); return Number.isFinite(t) ? t : -Infinity }
+  const hidden = new Set<string>(), extra = new Map<string, TowerBot[]>()
+  for (const [g, members] of groups) {
+    if (members.length <= cap) continue
+    const ranked = [...members].sort((a, z) => crowdRank[a.mood] - crowdRank[z.mood] || at(z) - at(a) || (a.key < z.key ? -1 : 1))
+    const over = ranked.slice(cap)
+    for (const b of over) hidden.add(b.key)
+    extra.set(g, over)
+  }
+  return { shown: bots.filter(b => !hidden.has(b.key)), extra }
+}
+
 /** Bots waiting for the person, longest quiet first. A summary carries no
  * time the wait began, so the last activity stands in for it; a Bot whose
  * time cannot be read goes last, and ties keep the tower's key order. */
