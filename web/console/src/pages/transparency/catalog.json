@@ -5284,7 +5284,7 @@
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
     "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
-    "internal/transport/http/start.go": "b480690e8ab1ce47e8d7b2e10e9640ce02e23bf7dd584024a89faaa24cfcb344",
+    "internal/transport/http/start.go": "a53a13572d3e69e28e687f6285f083d213abb93bd40238725b624182b692da99",
     "internal/transport/http/voice_polish.go": "b8c10d3898ee1d04ed815468011fb43d57efbc1f7488143982a8bc6f02f753cd",
     "internal/transport/http/work_v2.go": "6b7722188e33c06f1230150707d5d691fca7c17fc369d2f23bba3c28b0d8a623",
     "internal/transport/http/work_v2_brief.go": "44ff50bb8f55e1fba32605cb10f887be4860aebfad5856e58b4222e562e9a3e3",

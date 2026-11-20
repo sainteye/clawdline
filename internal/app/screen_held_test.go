@@ -560,3 +560,17 @@ func TestAScreenIsReadLiveRightAfterAPress(t *testing.T) {
 		t.Fatalf("after the window the held screen is served again; got %q", text)
 	}
 }
+
+func TestFirstReadOfAConfirmedTmuxLaunchUsesTheCurrentScreen(t *testing.T) {
+	host := &slowTerminal{answer: func() (string, bool) { return "current prompt", true }}
+	held := NewHeldScreens(host)
+	row := session.Session{ID: "%52", Backend: session.BackendTmux}
+	held.Pressed(row.ID)
+	if held.Rows() != 0 {
+		t.Fatal("an arbitrary look created an entry for an unobserved pane")
+	}
+	held.OpenedTmux(row.ID)
+	if text, ok := held.Capture(context.Background(), row); !ok || text != "current prompt" {
+		t.Fatalf("first read = %q, %t", text, ok)
+	}
+}

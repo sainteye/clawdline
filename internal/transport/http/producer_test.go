@@ -12,9 +12,51 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
+
+func TestConfirmedStartsShareAnEarlyInventoryReadForWatchingStreams(t *testing.T) {
+	p := &listProducer{every: 700 * time.Millisecond, subs: map[int]chan struct{}{}}
+	reads := make(chan bool, 2)
+	p.sessions.build = func(ctx context.Context) (sessionsSnapshotWire, error) {
+		_, fresh := app.ReadingSince(ctx)
+		reads <- fresh
+		return sessionsSnapshotWire{}, nil
+	}
+	p.tasks.build = func(context.Context) (contract.TaskList, error) { return contract.TaskList{}, nil }
+	p.startConfirmed()
+	if p.launchCheck != nil {
+		t.Fatal("an unwatched launch scheduled a scan")
+	}
+	token, wake := p.subscribe()
+	defer p.unsubscribe(token)
+	p.startConfirmed()
+	p.mu.Lock()
+	active := p.launchCheck
+	p.mu.Unlock()
+	p.startConfirmed()
+	p.mu.Lock()
+	shared := p.launchCheck == active
+	p.mu.Unlock()
+	if active == nil || !shared {
+		t.Fatal("confirmed starts did not share one early check")
+	}
+	select {
+	case fresh := <-reads:
+		if !fresh {
+			t.Fatal("the early check reused the pre-launch inventory")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the launch did not start discovery")
+	}
+	select {
+	case <-wake:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the early discovery did not wake the stream")
+	}
+}
 
 // openStream reads one `/v1/events` connection and reports each `sessions`
 // frame's line on the channel.

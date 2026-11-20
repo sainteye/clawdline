@@ -60,3 +60,59 @@ steps were traced in code and lacked paired click-to-composer timings.
 
 Run the comparison with
 `go test ./internal/transport/http -run '^TestStartRegisteredProjectDoesNotWaitForSessionDiscovery$' -count=3 -v`.
+
+## Browser follow-up on the tmux path
+
+Chrome created six new Sessions against the running local daemon at `04d2735ea`,
+alternating three Codex and three Claude starts in a registered Project.
+Chromium network timing put the successful creation reply at 462–600 ms.
+Sampling the newly created tmux pane found its native prompt at 1,517–2,853 ms.
+The browser received the exact new execution in a Session event at 2,496–4,118 ms.
+No prompts were submitted during these runs.
+
+Three separate stages contribute to the visible wait.
+
+- A tmux launch waited at least 250 ms after its shell received the first Enter.
+  The shared send path uses that wait to check whether an assistant composer
+  still holds a pasted message. A new login shell now returns after the launch
+  line is visible and the single Enter succeeds.
+- The native assistant initializes after the terminal accepts the command.
+  That work remains on its own clock.
+- The periodic list could miss a new process or represent it as unknown while
+  the first screen capture ran in the background. Confirmed launches now share
+  one early fresh inventory read when a console is watching. A launched tmux
+  pane uses the existing two-second live screen window, so that first read can
+  return its current prompt or menu. Outside this window and after a failed
+  read, ordinary discovery and screen capture continue.
+
+### Controlled browser comparison
+
+The same built console, registered Project, private tmux socket configuration
+and native assistant binaries were used for each variant. Each variant opened
+three Codex and three Claude Sessions through fresh Chrome instances. The
+baseline daemon was `04d2735ea`. Each test began when Chrome activated the
+Project button. The network column used the launch POST's resource timestamps.
+The native prompt was sampled on the exact pane returned by that POST. The last
+two rows used the first browser Session event matching that pane and its first
+idle state. Every test ended through the ordinary close route.
+
+| Milestone | Baseline median | Candidate median |
+|---|---:|---:|
+| Creation reply | 498 ms | 207 ms |
+| Editable browser composer | 542 ms | 254 ms |
+| Native prompt observed | 646 ms | 634 ms |
+| First Session list event | 1,886 ms | 1,389 ms |
+| Session list reports idle | 3,930 ms | 1,389 ms |
+
+All six baseline list entries first reported unknown. All six candidate list
+entries first reported idle. The candidate's idle observations ranged from
+1,318 to 1,532 ms versus 1,968 to 5,857 ms on the baseline. The native prompt
+measurements overlap. The browser wait improved through the receipt and
+discovery paths. These are local results with low background load. The
+production Cloud relay, other terminal backends and sending an actual prompt
+remain separate measurements.
+
+The early-read test covers a single coalesced fresh pass and waking its stream.
+The terminal tests exercise the verified single-Enter launch and the ordinary
+composer path. The first-read test checks that a confirmed pane can read its
+current screen and that arbitrary unobserved pane IDs cannot seed the cache.

@@ -153,10 +153,11 @@ type listProducer struct {
 	sessions latest[sessionsSnapshotWire]
 	tasks    latest[contract.TaskList]
 
-	mu     sync.Mutex
-	subs   map[int]chan struct{}
-	next   int
-	cancel context.CancelFunc
+	mu          sync.Mutex
+	subs        map[int]chan struct{}
+	next        int
+	cancel      context.CancelFunc
+	launchCheck *time.Timer
 }
 
 // lists is this server's producer, made on first use so that a Server built
@@ -200,6 +201,52 @@ func (p *listProducer) unsubscribe(id int) {
 	if len(p.subs) == 0 && p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
+		if p.launchCheck != nil {
+			p.launchCheck.Stop()
+			p.launchCheck = nil
+		}
+	}
+}
+
+// startConfirmed advances one discovery pass for watching consoles. The
+// launch receipt proves that the terminal was opened, but the assistant
+// needs time to appear in process discovery. A pending pass also covers
+// intervening launches. Late assistants still arrive on the ordinary tick.
+func (p *listProducer) startConfirmed() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.subs) == 0 || p.launchCheck != nil {
+		return
+	}
+	var check *time.Timer
+	check = time.AfterFunc(p.every/2, func() {
+		p.mu.Lock()
+		if p.launchCheck != check {
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
+		// The last shared snapshot may have read the machine before the
+		// launch. Reuse the single build lane with a fresh inventory fence.
+		_, err := p.sessions.since(time.Now())
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.launchCheck == check {
+			p.launchCheck = nil
+			if err == nil {
+				p.wakeSubscribersLocked()
+			}
+		}
+	})
+	p.launchCheck = check
+}
+
+func (p *listProducer) wakeSubscribersLocked() {
+	for _, wake := range p.subs {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -216,12 +263,7 @@ func (p *listProducer) run(ctx context.Context) {
 			_, _ = p.sessions.refresh()
 			_, _ = p.tasks.refresh()
 			p.mu.Lock()
-			for _, wake := range p.subs {
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
-			}
+			p.wakeSubscribersLocked()
 			p.mu.Unlock()
 		}
 	}

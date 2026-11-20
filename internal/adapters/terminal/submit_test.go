@@ -190,6 +190,18 @@ func fastSubmit(t *testing.T) {
 	nudgePauses = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 }
 
+func TestLaunchPasteConfirmsTheLineAndPressesEnterOnce(t *testing.T) {
+	line := "exec synthetic-assistant"
+	empty, shown := composerScreen(""), composerScreen(line)
+	in := &fakeInput{screens: []string{empty, shown}}
+	if _, err := pasteAndEnter(context.Background(), in, line, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(in.events, "\n"), strings.Join([]string{"look:" + empty, "paste", "look:" + shown, "enter"}, "\n"); got != want {
+		t.Fatalf("launch did not stop after the single confirmed Enter: %v", in.events)
+	}
+}
+
 // The Enter comes after the first look that shows the paste, never before,
 // however many looks that takes.
 func TestSubmitPressesEnterOnlyAfterTheScreenShowsThePaste(t *testing.T) {

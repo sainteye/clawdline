@@ -1120,3 +1120,8 @@ preparing the launch context. The English and Taiwan Traditional Chinese
 language, Project memory, role, workflow and CodeGraph explanations still
 describe when their context is selected and how it reaches the assistant.
 The reviewed start-route receipt follows the Project lookup.
+
+Project starts give a known tmux pane an early inventory and screen read.
+The English and Taiwan Traditional Chinese launch-context explanations still
+describe the same language, memory, role, workflow and integration inputs.
+The reviewed start-route receipt follows the observation timing change.
