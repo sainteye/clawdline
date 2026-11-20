@@ -27,7 +27,7 @@ const pictures: Record<TowerScene["picture"], string> = {
   building: new URL("./building.webp", import.meta.url).href,
 }
 export type TowerLayout = "floor" | "building"
-const layoutKey = "clawdline.bots.towerLayout", floorKey = "clawdline.bots.towerFloor"
+const layoutKey = "clawdline.bots.towerLayout", floorKey = "clawdline.bots.towerFloor", sceneKey = "clawdline.bots.towerScene"
 const readPref = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const writePref = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* This page keeps the choice only. */ } }
 const BotSize = 74, SectionBotSize = 44, WalkMs = 1000
@@ -82,7 +82,6 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const now = useMemo(() => Date.now(), [items, tick])
   const [layout, setLayoutState] = useState<TowerLayout>(() => readPref(layoutKey) === "building" ? "building" : "floor")
   const [chosenFloor, setChosenFloor] = useState<number | null>(() => { const v = readPref(floorKey); if (v === "section") return Section; const n = Number(v); return v !== null && Number.isInteger(n) && n >= 0 && n < towerFloors.length ? n : null })
-  const setLayout = (next: TowerLayout) => { setLayoutState(next); writePref(layoutKey, next) }
   const allBots = useMemo(() => towerBots(items, now, w as unknown as Record<string, string>), [items, now, w])
   const summary = towerSummary(allBots)
   const floorOf = useMemo(() => assignFloors(items, towerFloors.length), [items])
@@ -94,13 +93,24 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // The chosen floor, or else the first floor someone waits on, or else the first lived-in floor.
   const floor = chosenFloor === Section ? Section : chosenFloor !== null && floors[chosenFloor].bots.length ? chosenFloor
     : (floors.find(f => f.wait)?.index ?? floors.find(f => f.bots.length)?.index ?? 0)
-  const goFloor = (i: number) => { setChosenFloor(i); writePref(floorKey, i === Section ? "section" : String(i)) }
+  // The last real floor visited also dresses the one-floor layout.
+  const [sceneFloor, setSceneFloor] = useState<number | null>(() => { const v = readPref(sceneKey); const n = Number(v); return v !== null && Number.isInteger(n) && n >= 0 && n < towerFloors.length ? n : null })
+  const goFloor = (i: number) => {
+    setChosenFloor(i); writePref(floorKey, i === Section ? "section" : String(i))
+    if (i !== Section) { setSceneFloor(i); writePref(sceneKey, String(i)) }
+  }
   // Few Bots share one floor; the building is a choice only when one floor would crowd.
   const canBuild = allBots.length >= TowerBuildingMinBots && new Set(allBots.map(b => projectOf(b.item))).size >= 2
   const building = canBuild && layout === "building"
+  const setLayout = (next: TowerLayout) => {
+    // Leaving the building for one floor keeps the floor being looked at.
+    if (next === "floor" && building && floor !== Section) { setSceneFloor(floor); writePref(sceneKey, String(floor)) }
+    setLayoutState(next); writePref(layoutKey, next)
+  }
   const list = new Intl.ListFormat(language, { style: "narrow", type: "unit" })
   const section = building && floor === Section
-  const scene: { picture: TowerScene["picture"], width: number, height: number } = section ? sectionScene : building ? floors[floor].scene : ramenScene
+  const scene: { picture: TowerScene["picture"], width: number, height: number } = section ? sectionScene : building ? floors[floor].scene
+    : (sceneFloor !== null ? towerFloors[sceneFloor].scene : ramenScene)
   const bots = section ? allBots : building ? floors[floor].bots : allBots
   const size = section ? SectionBotSize : BotSize
   // In the cross-section every Bot stands on its own floor's strip: busy ones at
