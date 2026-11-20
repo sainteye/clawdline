@@ -1125,3 +1125,8 @@ Project starts give a known tmux pane an early inventory and screen read.
 The English and Taiwan Traditional Chinese launch-context explanations still
 describe the same language, memory, role, workflow and integration inputs.
 The reviewed start-route receipt follows the observation timing change.
+
+Project launches in tmux can use the pane's ready screen to advance discovery.
+The English and Taiwan Traditional Chinese explanations still describe the
+language, role, workflow, Project memory and integration inputs at launch.
+The reviewed start-route receipt follows the change to discovery timing.

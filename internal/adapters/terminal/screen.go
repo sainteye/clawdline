@@ -73,7 +73,14 @@ func (t *Tmux) Pipe(ctx context.Context, paneID, command string) bool {
 	if !IsPaneID(paneID) || command == "" {
 		return false
 	}
-	return t.run(ctx, "pipe-pane", "-t", paneID, command) == nil
+	// Testing and installing in one tmux command queue preserves a pipe
+	// installed by a user or a new-window hook. Quote for tmux's nested
+	// command parser. The command itself already has its shell quoting.
+	quote := strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "$", "\\$")
+	install := "pipe-pane -t " + paneID + " \"" + quote.Replace(command) + "\""
+	out, err := t.call(ctx, "", "if-shell", "-F", "-t", paneID, "#{pane_pipe}",
+		"display-message -p pipe-already-present", install)
+	return err == nil && out == ""
 }
 
 // Unpipe takes the pipe off that pane. `pipe-pane` with no command is tmux's

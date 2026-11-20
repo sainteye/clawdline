@@ -206,12 +206,20 @@ type screenWatch struct {
 	at            time.Time
 	readable      bool
 	capturing     bool
+	attaching     bool
+	launch        *launchScreenWatch
 	captures      int
 	signals       int
 	promptText    string
 	promptID      string
 	promptAt      time.Time
 	promptVersion int64
+}
+
+// launchScreenWatch wakes discovery once without publishing a screen for a
+// pane whose assistant execution has not yet been discovered.
+type launchScreenWatch struct {
+	ready func()
 }
 
 // Screens is demand-driven live screens: who is watching what, what their last
@@ -300,6 +308,31 @@ func (s *Screens) Read(item session.Session, now time.Time) ScreenReading {
 	return s.snapshot(item, until)
 }
 
+// ObserveTmuxLaunch takes a short screen lease on the pane from a successful
+// launch receipt. It is a hint to read inventory, never proof of a running
+// execution. Ordinary screen demand can take over the same pane.
+func (s *Screens) ObserveTmuxLaunch(id string, assistant session.Assistant, ready func()) {
+	if s == nil || s.signal == nil || id == "" || session.IsTerminalPane(id) || ready == nil ||
+		(assistant != session.AssistantCodex && assistant != session.AssistantClaude) {
+		return
+	}
+	s.mu.Lock()
+	if s.stopped || s.watches[id] != nil || len(s.watches) >= ScreenWatches {
+		s.mu.Unlock()
+		return
+	}
+	watch := &screenWatch{
+		session:   session.Session{ID: id, Backend: session.BackendTmux, Assistant: assistant},
+		until:     time.Now().Add(ScreenLiveAfterPress),
+		attaching: true,
+		launch:    &launchScreenWatch{ready: ready},
+	}
+	s.watches[id] = watch
+	s.startSweepingLocked()
+	s.mu.Unlock()
+	go s.attach(id, watch)
+}
+
 func (s *Screens) snapshot(item session.Session, until time.Time) ScreenReading {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -310,7 +343,7 @@ func (s *Screens) snapshot(item session.Session, until time.Time) ScreenReading 
 		Revision:      ScreenUnreadable,
 		WatchingUntil: until,
 	}
-	if held := s.watches[item.ID]; held != nil && sameScreenExecution(held.session, item) {
+	if held := s.watches[item.ID]; held != nil && held.launch == nil && sameScreenExecution(held.session, item) {
 		out.Text = held.text
 		out.Revision = held.revision
 		out.At = held.at
@@ -336,7 +369,7 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 		return
 	}
 	watch := s.watches[item.ID]
-	if watch == nil || !sameScreenExecution(watch.session, item) || !watch.until.After(now) {
+	if watch == nil || watch.launch != nil || !sameScreenExecution(watch.session, item) || !watch.until.After(now) {
 		if live := s.liveWatchesLocked(now); watch == nil && live >= ScreenWatches {
 			s.mu.Unlock()
 			// Once per refusal rather than once per read: the page renews
@@ -344,12 +377,15 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 			s.refuseWatch(item.ID, live)
 			return
 		}
-		watch = &screenWatch{revision: ScreenUnreadable}
+		watch = &screenWatch{revision: ScreenUnreadable, attaching: watch != nil && watch.attaching}
 		s.watches[item.ID] = watch
 	}
 	watch.session = item
 	watch.until = until
-	wantSignal := s.channel(item) == ScreenSignalled
+	wantSignal := s.channel(item) == ScreenSignalled && !watch.attaching
+	if wantSignal {
+		watch.attaching = true
+	}
 	capture := s.shouldCaptureOnRead(watch, now)
 	if capture {
 		s.beginCaptureLocked(item.ID, now)
@@ -360,7 +396,31 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 	// Outside the lock: attaching is a subprocess, and nothing that can start
 	// one may hold the lock a request reads under.
 	if wantSignal {
-		s.signal.Attach(item.ID)
+		s.attach(item.ID, nil)
+	}
+}
+
+// attach shares the in-flight operation with a screen lease that replaces a
+// launch lease. For a launch, sample once after attachment in case the prompt
+// appeared before the pipe was listening.
+func (s *Screens) attach(id string, launch *screenWatch) {
+	attached := s.signal.Attach(id)
+	s.mu.Lock()
+	if watch := s.watches[id]; watch != nil {
+		watch.attaching = false
+		if watch == launch {
+			if attached {
+				s.beginCaptureLocked(id, time.Now())
+			} else {
+				delete(s.watches, id)
+				s.coalescer.forget(id)
+			}
+		}
+	}
+	stopped := s.stopped
+	s.mu.Unlock()
+	if stopped && attached {
+		s.signal.Detach(id)
 	}
 }
 
@@ -414,7 +474,7 @@ func (s *Screens) paneMoved(paneID string) {
 	now := time.Now()
 	s.mu.Lock()
 	watch := s.watches[paneID]
-	if watch == nil || s.stopped {
+	if watch == nil || s.stopped || (watch.launch != nil && (watch.launch.ready == nil || !watch.until.After(now))) {
 		s.mu.Unlock()
 		return
 	}
@@ -447,13 +507,20 @@ func (s *Screens) beginCaptureLocked(id string, now time.Time) {
 	if watch == nil || watch.capturing {
 		return
 	}
+	lines, budget := ScreenLines, 20*time.Second
+	if watch.launch != nil {
+		if watch.launch.ready == nil || !watch.until.After(now) {
+			return
+		}
+		lines, budget = 0, time.Until(watch.until)
+	}
 	watch.capturing = true
 	watch.captures++
 	s.coalescer.captured(id, now)
 	item := watch.session
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		text, ok := s.capture(ctx, item)
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		text, ok := s.capture(ctx, item, lines)
 		cancel()
 		if ok {
 			s.finish(id, watch, &text)
@@ -465,12 +532,12 @@ func (s *Screens) beginCaptureLocked(id string, now time.Time) {
 
 // capture is the one reader. A second one here would be a second answer to the
 // same question.
-func (s *Screens) capture(ctx context.Context, item session.Session) (string, bool) {
+func (s *Screens) capture(ctx context.Context, item session.Session, lines int) (string, bool) {
 	for _, h := range s.hosts {
 		if h.Name() != string(item.Backend) {
 			continue
 		}
-		return h.Screen(ctx, item, ScreenLines)
+		return h.Screen(ctx, item, lines)
 	}
 	return "", false
 }
@@ -490,6 +557,24 @@ func (s *Screens) finish(id string, expected *screenWatch, text *string) {
 		return
 	}
 	watch.capturing = false
+	if watch.launch != nil {
+		ready := watch.launch.ready
+		if ready == nil || !watch.until.After(time.Now()) || text == nil {
+			s.mu.Unlock()
+			return
+		}
+		assistant := watch.session.Assistant
+		state, _ := session.ReadState(*text, assistant)
+		_, menu := session.ReadMenu(*text, assistant, false)
+		if state != session.StateIdle && !menu {
+			s.mu.Unlock()
+			return
+		}
+		watch.launch.ready = nil
+		s.mu.Unlock()
+		ready()
+		return
+	}
 	readable := text != nil
 	unchanged := readable == watch.readable &&
 		((text == nil && watch.text == nil) || (text != nil && watch.text != nil && *text == *watch.text))
@@ -558,7 +643,7 @@ func (s *Screens) Sweep(now time.Time) {
 	s.mu.Lock()
 	var expired []string
 	for id, watch := range s.watches {
-		if !watch.until.After(now) {
+		if !watch.attaching && !watch.until.After(now) {
 			expired = append(expired, id)
 		}
 	}

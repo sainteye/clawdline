@@ -116,3 +116,52 @@ The early-read test covers a single coalesced fresh pass and waking its stream.
 The terminal tests exercise the verified single-Enter launch and the ordinary
 composer path. The first-read test checks that a confirmed pane can read its
 current screen and that arbitrary unobserved pane IDs cannot seed the cache.
+
+## Waking discovery when the native prompt appears
+
+Once the explicit Project lookup and tmux Enter are fast, the scheduled
+inventory pass can still leave a ready pane waiting for the rest of its
+half-tick. In Chrome, the prior local build's median per-start interval between
+the observed native prompt and the idle list event was 759 ms. This is on a
+frequently used path. The machine's day of retained requests above contained
+33 successful Codex and Claude starts.
+
+For a confirmed Codex or Claude tmux launch with a watching list stream, the
+daemon borrows a short lease in its existing pane signal service. One capture
+after attachment covers a prompt already on screen. Later signals are
+coalesced, then the visible pane is read and checked for the assistant's idle
+composer or menu. This advances the shared fresh inventory pass. The inventory
+still verifies the new execution and classifies its state before publication.
+
+The lease uses the existing two-second launch window and screen watch limit.
+It samples until the first ready screen or until the window ends. It publishes
+no provisional screen to clients. A pane with an existing pipe stays with its
+current owner. Unsupported backends, refused leases, missing signals, early
+inventory misses and coalesced launches keep the scheduled discovery pass.
+There is at most one early pass per coalesced check and no retry of the launch
+itself. Ordinary discovery also continues.
+
+The remaining costs after a native prompt include signal coalescing, capture,
+inventory, and delivery of the Session event. The added path uses the same
+bounded screen watcher and shared inventory lane. Tests cover unrelated pane
+signals, shell text, already-owned pipes, inventory misses and duplicate
+signals, and the case with no watching list stream.
+
+Chrome repeated three Codex and three Claude launches per build using the same
+registered Project, console, and private tmux setup. Each launch used a fresh
+browser. The comparison started at the Project button and used the exact pane
+returned by the POST. No prompt was sent. The baseline was `4e05c59ab`.
+
+| Milestone | Baseline median | Signal candidate median |
+|---|---:|---:|
+| Creation reply | 183 ms | 213 ms |
+| Editable browser composer | 231 ms | 259 ms |
+| Native prompt observed | 589 ms | 648 ms |
+| First verified Session list event (idle in all runs) | 1,394 ms | 810 ms |
+| Observed prompt to idle list event (median of per-start intervals) | 759 ms | 206 ms |
+
+The list event took 1,316–1,526 ms on the baseline and 730–1,066 ms on the
+signal candidate, a median saving of 584 ms. Creation, editable composer, and
+native prompt timings overlap between the two runs. The gain measured here is
+in discovery and publication. These timings cover the local tmux path; they
+do not include a Cloud relay or time to send a model prompt.

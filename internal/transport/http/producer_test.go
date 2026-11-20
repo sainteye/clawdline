@@ -26,17 +26,17 @@ func TestConfirmedStartsShareAnEarlyInventoryReadForWatchingStreams(t *testing.T
 		return sessionsSnapshotWire{}, nil
 	}
 	p.tasks.build = func(context.Context) (contract.TaskList, error) { return contract.TaskList{}, nil }
-	p.startConfirmed()
+	p.startConfirmed("%1")
 	if p.launchCheck != nil {
 		t.Fatal("an unwatched launch scheduled a scan")
 	}
 	token, wake := p.subscribe()
 	defer p.unsubscribe(token)
-	p.startConfirmed()
+	p.startConfirmed("%1")
 	p.mu.Lock()
 	active := p.launchCheck
 	p.mu.Unlock()
-	p.startConfirmed()
+	p.startConfirmed("%1")
 	p.mu.Lock()
 	shared := p.launchCheck == active
 	p.mu.Unlock()
@@ -55,6 +55,63 @@ func TestConfirmedStartsShareAnEarlyInventoryReadForWatchingStreams(t *testing.T
 	case <-wake:
 	case <-time.After(3 * time.Second):
 		t.Fatal("the early discovery did not wake the stream")
+	}
+}
+
+func TestLaunchSignalAdvancesOnlyItsPendingInventoryCheck(t *testing.T) {
+	// The test drives the check via the signal, well before any timer can fire.
+	p := &listProducer{every: time.Hour, subs: map[int]chan struct{}{}}
+	p.sessions.build = func(ctx context.Context) (sessionsSnapshotWire, error) {
+		if _, fresh := app.ReadingSince(ctx); !fresh {
+			t.Error("a launch signal reused the pre-launch inventory")
+		}
+		return sessionsSnapshotWire{Sessions: []sessionRowWire{
+			{SessionRow: contract.SessionRow{ID: "%1", State: contract.SessionStateIdle}},
+		}}, nil
+	}
+	token, wake := p.subscribe()
+	defer p.unsubscribe(token)
+	first := p.startConfirmed("%1")
+	first()
+	second := p.startConfirmed("%2")
+	first()
+	if got := p.sessions.builds.Load(); got != 1 {
+		t.Fatalf("an old signal advanced a later launch: %d builds", got)
+	}
+	select {
+	case <-wake:
+	default:
+		t.Fatal("the signalled pass did not wake the watching stream")
+	}
+	p.unsubscribe(token)
+	second()
+	if got := p.sessions.builds.Load(); got != 1 {
+		t.Fatalf("a signal with no watching streams read inventory: %d builds", got)
+	}
+}
+
+func TestEarlyInventoryMissKeepsTheScheduledLaunchCheck(t *testing.T) {
+	p := &listProducer{every: time.Hour, subs: map[int]chan struct{}{}}
+	p.sessions.build = func(context.Context) (sessionsSnapshotWire, error) {
+		return sessionsSnapshotWire{Sessions: []sessionRowWire{
+			{SessionRow: contract.SessionRow{ID: "%9", State: contract.SessionStateIdle}},
+		}}, nil
+	}
+	token, _ := p.subscribe()
+	defer p.unsubscribe(token)
+	first := p.startConfirmed("%1")
+	second := p.startConfirmed("%2")
+	p.mu.Lock()
+	check := p.launchCheck
+	p.mu.Unlock()
+	first()
+	second()
+	if got := p.sessions.builds.Load(); got != 1 {
+		t.Fatalf("several signals triggered %d early reads", got)
+	}
+	p.checkLaunches(check, "")
+	if got := p.sessions.builds.Load(); got != 2 {
+		t.Fatalf("the scheduled read was lost after missing the launched panes: %d builds", got)
 	}
 }
 

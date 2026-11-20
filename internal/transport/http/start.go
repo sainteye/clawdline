@@ -460,7 +460,7 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 			return
 		}
 		writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.BackendOwned, Assistant: assistant, Model: model, Persona: made.Persona, Place: place.ID, CWD: place.Path, At: time.Now().Unix()})
-		s.lists().startConfirmed()
+		s.lists().startConfirmed(made.ID)
 		return
 	}
 	if assistantNeedsSignIn(ctx, assistant) {
@@ -481,13 +481,17 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	}
 	log.Printf("audit place.start place=%s cwd=%q assistant=%s persona=%s ok=1 id=%s",
 		place.ID, place.Path, assistant, persona, made.ID)
-	if made.Backend == string(session.BackendTmux) {
+	isTmux := made.Backend == string(session.BackendTmux)
+	if isTmux {
 		s.inventory.Held.OpenedTmux(made.ID)
 	}
 	writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.Backend(made.Backend),
 		Assistant: assistant, Model: made.Model, Persona: persona, Place: place.ID, CWD: place.Path, Attach: made.Attach,
 		At: time.Now().Unix()})
-	s.lists().startConfirmed()
+	ready := s.lists().startConfirmed(made.ID)
+	if isTmux {
+		s.screens.ObserveTmuxLaunch(made.ID, session.Assistant(assistant), ready)
+	}
 }
 
 // A known signed-out CLI needs a guided retry before opening its tmux pane.
