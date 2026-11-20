@@ -58,7 +58,7 @@ Call the voice copilot to hear what needs you, ask about a Session's progress or
 
 *Current Cloud/dev interface with synthetic example data. Voice calls use your own OpenAI API key.*
 
-[Voice copilot guide and demo](https://clawdline.com/docs/voice-copilot/) · [Watch the English demo video](https://media.clawdline.com/voice-copilot/demo-en-b206a48a82f1.mp4). The recorded film uses an earlier call layout; its voices, Sessions and costs are demonstration data.
+[Voice copilot guide and demo](https://clawdline.com/docs/voice-copilot/) · [Desktop video (1:51)](https://media.clawdline.com/voice-copilot/demo-en-d2857cd36962.mp4) · [Phone video (1:55)](https://media.clawdline.com/voice-copilot/demo-en-phone-21cfaf2e686a.mp4). Recorded GPT-Live calls with fictional Sessions and prerecorded AI user speech; on-screen amounts are examples. The call sheet stays open for 30 seconds before shrinking to a floating bubble.
 
 ## Sessions that work across machines (Cloud)
 

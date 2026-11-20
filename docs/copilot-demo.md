@@ -2,10 +2,34 @@
 
 # The voice copilot demo film
 
-A continuous screen recording of the built React console making a voice copilot call, in English
-and in Taiwan Traditional Chinese, about a minute and a half each at 1920 × 1080. It is the
-console as it is built, not drawn screens: the call sheet, the cloud orb and its meters, the
-captions, the cost and memory rows, the bubble, and the copilot's own tools all run unchanged.
+The recorder captures the built React console making a voice copilot call, in English and
+Taiwan Traditional Chinese. These are running console screens, not drawn mockups. The stand-in
+daemon supplies fictional Sessions, and the person's lines are prerecorded AI speech.
+
+## Published films, 20 November 2026
+
+The four published cuts use console commit `e3a2eb645ba3be524af750fa05feed065b505764`.
+The full call sheet stays visible for at least 30 seconds, the central orb is resized from
+112 to 80 and held for five seconds, and the call is minimized to its floating bubble before
+opening Search rebuild and Release 2.4. Offline sync remains in the list but has no separate
+switch or report. The recording-only presentation adapter preserves these holds when cutting
+silent waits; it does not change the product's sheet and bubble modes.
+
+Desktop films are 1920 × 1080 (English 1:51, Chinese 2:43). Phone films are 1080 × 2338
+(English 1:55, Chinese 2:35), with a full-width 390 × 808 CSS viewport at device scale 2,
+scaled to 1080 pixels wide and 100 pixels of top safe space. No side or bottom padding is added.
+This is browser capture, not a physical iPhone recording.
+
+The published media and posters are immutable content-addressed R2 objects selected in
+`web/console/src/realtime/copilot-demo-films.ts`. The homepage, voice guide and both README
+languages link to the same cuts. Full public readback hashes, byte ranges and cache hits were
+checked. All four calls ended through the copilot, with both requested switches and no detected
+10 ms silence holes. Three cuts retain amplitude warnings from the recorder; these are
+inspection flags, and automated analysis does not establish subjective listening quality.
+On-screen amounts are demonstration examples, not a provider invoice.
+
+The commands below describe the general recorder; the published presentation was applied in a
+recording-only adapter and is not the default three-Session tour.
 
 ```sh
 tools/copilot-demo.sh <output directory> [en] [zh-Hant] [--phone] [--live]

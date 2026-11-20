@@ -56,7 +56,7 @@ Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使�
 
 *目前 Cloud／dev 介面，使用合成示範資料。語音通話使用你自己的 OpenAI API key。*
 
-[語音助理使用指南與示範](https://clawdline.com/docs/voice-copilot/) · [觀看中文示範影片](https://media.clawdline.com/voice-copilot/demo-zh-Hant-9eac800f8c01.mp4)。預錄影片使用較早的通話版面，語音、Session 與費用皆為示範資料。
+[語音助理使用指南與示範](https://clawdline.com/docs/voice-copilot/?lang=zh-TW) · [桌機影片（2:43）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-f3a541a44435.mp4) · [手機影片（2:35）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-phone-c85af090b6cb.mp4)。實際 GPT-Live 通話使用虛構 Session 與預錄的 AI 使用者語音，畫面金額為示例。先保留 30 秒通話畫面，再縮小圓球、收成浮球後操作。
 
 ## 跨機器 Session 協作（Cloud）
 
