@@ -5321,7 +5321,7 @@
     "web/console/src/project-assistants/OutputLibrary.tsx": "693c8423e715bb97632afd1f8bd03800880cec332b97de43c9b0d5ebc76f38d7",
     "web/console/src/project-assistants/OutputViewer.tsx": "03b62bdb496276744945bfea985f6d60a8c864c98fb85ffa294cf1e265ff9eb1",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
-    "web/console/src/project-assistants/Routines.tsx": "0bdfe681e6e4c1f5b7060a6373a2e849e7f639edbe495a60fa4070bcc3bf6084",
+    "web/console/src/project-assistants/Routines.tsx": "3b9ce2124325e7fd005d660ccd4c9adc618ed79f4bb86db967482cb9ea4141f1",
     "web/console/src/project-assistants/dev-server-observation.ts": "994d3629c3040b9f3cf64acf3b553935530c431fafb87f8f45c3cd8d1b8e6f25",
     "web/console/src/project-assistants/exchanges.ts": "ad012dd5931dcb75149736a2b2b4c128e56ee4cf0e4eb0ff71fde30e7fdfb47b",
     "web/console/src/project-assistants/group-editor-order.ts": "bca022ab6e2aa9bb7dbb995f9d08b987829923db9730ff0ebe19d806d58000c3",

@@ -104,16 +104,21 @@ try {
       await browser("screenshot","--out",path.join(artifacts,"en-routine-held-after-reload.jpg"));await browser("click",copy.routineReplay)
     }
     await waitText("Browser interval "+language)
-    await browser("click",w.edit);await waitText(w.instructions)
+    await browser("screenshot","--out",path.join(artifacts,`${language}-routine-list.jpg`))
+    await browser("click",`${copy.routineEdit}: Browser interval ${language}`);await waitText(w.instructions)
     // Appending verifies an actual edit while keeping the trigger untouched.
-    await browser("click",w.name);await browser("type"," edited");await browser("click",w.save)
+    await browser("click",w.name);await browser("key","ArrowDown");await browser("type"," edited");await browser("click",w.save)
     await waitText("edited")
-    await browser("click",w.test)
-    for(let i=0;i<8;i++){await pause(250);await browser("click",copy.routineHistory);const read=await browser("read");if(read.text?.includes("Actual isolated routine result"))break}
+    // Test run, history, delete and the switch follow Codync: one row per routine, actions in its editor.
+    const edited=`Browser interval ${language} edited`
+    await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions);await browser("click",w.test)
+    for(let i=0;i<8;i++){await pause(250);const read=await browser("read");if(read.text?.includes("Actual isolated routine result"))break;if(i%3===2){await browser("click",copy.routineHistory);await browser("click",copy.routineHistory)}}
     await waitText("Actual isolated routine result")
     await browser("scroll","down")
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-result.jpg`))
-    await browser("click",w.pause);await waitText(w.paused);await browser("click",w.enable)
+    await browser("key","Escape")
+    await browser("click",`${copy.routineEnabled}: ${edited}`);await waitText(w.paused);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-paused.jpg`));await browser("click",`${copy.routineEnabled}: ${edited}`)
+    await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions)
     await browser("click",w.remove);await waitText(w.confirm);await browser("click",w.confirm);await waitText(w.empty)
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-deleted-history.jpg`))
     await browser("close");tab=undefined
