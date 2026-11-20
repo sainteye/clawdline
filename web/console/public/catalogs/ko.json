@@ -6247,7 +6247,7 @@
   "settings.settingsRemoteHint": "이 설정을 끄면 이 기기 밖에서는 접근할 수 없습니다. 켜면 127.0.0.1에서 세션 목록을 읽을 수 있습니다. 이 기기의 브라우저, 터널로 연결한 휴대전화나 스크립트가 접근할 수 있습니다. 저장소 이름, 브랜치와 작업 제목이 노출되므로 사용자가 켜기 전에는 꺼진 상태입니다.",
   "settings.settingsRemoteServe": "브라우저 또는 휴대전화에서 세션 보기 허용",
   "settings.settingsRemoteWrite": "페어링된 기기는 보낼 수 있음",
-  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
   "settings.settingsReopen": "터미널과 함께 입력 막대 표시·숨기기",
   "settings.settingsReopenHint": "터미널에서 다른 곳으로 이동하면 입력창이 숨겨지고 돌아오면 다시 표시됩니다. 지금 사용을 마쳤다면 Esc를 누르세요.",
   "settings.settingsScope": "작동하는 곳",

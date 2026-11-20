@@ -57,7 +57,6 @@ export type CloudPairing = {
 
 export type CloudStatus = {
   enabled: boolean
-  commands: boolean
   terminal_direct: boolean
   /** Whether direct connections may use same-network addresses; absent from an older daemon. */
   direct_local_network?: boolean
@@ -168,10 +167,6 @@ export function setCloudEnabled(enabled: boolean): Promise<{ enabled: boolean }>
   return cloudCall("POST", "/v1/cloud/enabled", { enabled })
 }
 
-export function setCloudCommands(enabled: boolean): Promise<{ commands: boolean }> {
-  return cloudCall("POST", "/v1/cloud/commands", { enabled })
-}
-
 export function setCloudDirect(enabled: boolean): Promise<{ terminal_direct: boolean }> {
   return cloudCall("POST", "/v1/cloud/direct", { enabled })
 }
@@ -198,4 +193,9 @@ export function offerCloudPairing(code: string): Promise<CloudPairing> {
 /** Throw one browser out of this Mac. Local, immediate, and not the account's list. */
 export function revokeCloudViewer(device: string): Promise<{ device: string; revoked: boolean }> {
   return cloudCall("POST", "/v1/cloud/devices/revoke", { device })
+}
+
+// Older daemons still need the enable request after connecting during setup.
+export function enableLegacyCloudOperation(): Promise<{ commands: boolean }> {
+  return cloudCall("POST", "/v1/cloud/commands", { enabled: true })
 }

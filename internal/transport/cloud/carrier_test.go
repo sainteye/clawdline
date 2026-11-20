@@ -235,10 +235,10 @@ func TestACarrierClosesOnlyWhenItsDeviceIsDenied(t *testing.T) {
 	f := newDirectFixture(t)
 	f.carrier(t)
 	file := nextconfig.Open(t.TempDir())
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	// Cloud on, commands on, the device's key authenticated, and no roster to
+	// Cloud on, the device's key authenticated, and no roster to
 	// ask: unverified, not denied.
 	f.l.file = file
 	f.l.settings = adaptercloud.Settings{Enabled: true, TerminalDirect: true}
@@ -253,11 +253,11 @@ func TestACarrierClosesOnlyWhenItsDeviceIsDenied(t *testing.T) {
 		t.Fatal("a carrier was closed over a verdict the machine could not reach")
 	}
 
-	if _, err := file.Set(map[string]any{adaptercloud.KeyCommands: false}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: false}); err != nil {
 		t.Fatal(err)
 	}
 	if verdict, _ := f.l.terminalAuthority("viewer", true); verdict != TerminalDenied {
-		t.Fatalf("commands off is not a denial: %v", verdict)
+		t.Fatalf("disconnecting Cloud is not a denial: %v", verdict)
 	}
 	f.l.sweepDirectCarriers()
 	deadline := time.Now().Add(2 * time.Second)

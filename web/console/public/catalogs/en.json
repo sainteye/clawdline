@@ -12153,7 +12153,7 @@
   "settings.settingsRemoteHint": "When this is off, nothing outside this machine can reach it. When it is on, the session list is available on 127.0.0.1 — to a browser here, a phone connected through a tunnel, or a script. What it exposes is repository names, branches, and work titles, so it stays off until you turn it on.",
   "settings.settingsRemoteServe": "Let a browser or your phone view your sessions",
   "settings.settingsRemoteWrite": "Paired devices can send",
-  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
   "settings.settingsReopen": "Show and hide the input bar with the terminal",
   "settings.settingsReopenHint": "The input bar hides when you switch away from the terminal and returns when you switch back. Press Esc when you are done with it for now.",
   "settings.settingsScope": "Where it works",

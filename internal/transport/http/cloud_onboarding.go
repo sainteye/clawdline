@@ -256,31 +256,30 @@ func (s *Server) cloudEnabledRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"enabled": on})
 }
 
+// cloudCommandsRoute acknowledges the older setup guide's enable request.
+// The Cloud connection now owns machine-wide access.
 func (s *Server) cloudCommandsRoute(w http.ResponseWriter, r *http.Request) {
 	if !requireLocal(w, r) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "Cloud operation access is changed with POST.")
+		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "The legacy Cloud setup request requires POST.")
 		return
 	}
 	on, ok := readCloudSwitch(w, r)
 	if !ok {
 		return
 	}
-	file := nextconfig.Open(s.cfg.Dir)
-	settings, err := adaptercloud.ReadSettings(file)
+	if !on {
+		writeAuthRefusal(w, http.StatusGone, "bad_request", "Cloud operations follow this machine's Cloud connection and the device's grant.")
+		return
+	}
+	settings, err := adaptercloud.ReadSettings(nextconfig.Open(s.cfg.Dir))
 	if err != nil {
 		writeCloudOnboardingFailure(w, err)
 		return
 	}
-	if settings.Commands != on {
-		if err := adaptercloud.SetCommands(file, on); err != nil {
-			writeCloudOnboardingFailure(w, err)
-			return
-		}
-	}
-	writeJSON(w, map[string]bool{"commands": on})
+	writeJSON(w, map[string]bool{"commands": settings.Enabled})
 }
 
 // cloudDirectRoute changes the machine's shared Terminal and Session carrier.
@@ -348,8 +347,8 @@ func (s *Server) cloudDirectLocalNetworkRoute(w http.ResponseWriter, r *http.Req
 	// write gate has already rechecked its permission. Keep the relay alive
 	// for the receipt; subsequent candidate exchanges read the new policy.
 	if cloudtransport.ViaCloud(r.Context()) {
-		if !on || cloudtransport.CloudViewerOf(r.Context()) == "" || !settings.Enabled || !settings.TerminalDirect || !settings.Commands {
-			writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This machine must allow Cloud operations and direct connections to enable same-network connections.")
+		if !on || cloudtransport.CloudViewerOf(r.Context()) == "" || !settings.Enabled || !settings.TerminalDirect {
+			writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This machine must have Cloud and direct connections enabled to enable same-network connections.")
 			return
 		}
 		if err := adaptercloud.SetDirectLocalNetwork(file, true); err != nil {

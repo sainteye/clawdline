@@ -6247,7 +6247,7 @@
   "settings.settingsRemoteHint": "Cuando está desactivado, nada fuera de esta máquina puede acceder a ella. Cuando está activado, la lista de sesiones queda disponible en 127.0.0.1 para un navegador local, un teléfono conectado por túnel o un script. Expone nombres de repositorios, ramas y títulos de trabajo; por eso permanece desactivado hasta que tú lo actives.",
   "settings.settingsRemoteServe": "Permitir que un navegador o tu teléfono vean tus sesiones",
   "settings.settingsRemoteWrite": "Los dispositivos emparejados pueden enviar",
-  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
   "settings.settingsReopen": "Mostrar y ocultar la barra de entrada con la terminal",
   "settings.settingsReopenHint": "La barra de entrada se esconde cuando se cambia de la terminal y regresa cuando se cambia de nuevo. Presione Esc cuando termine con él por ahora.",
   "settings.settingsScope": "Dónde funciona",

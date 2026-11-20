@@ -5,7 +5,7 @@ import type { CloudStatus, CloudViewer } from "../pages/settings/cloud.js"
 import { completionChange, parseSkipped, readSetup, setupChip, SETUP_FOLD_AFTER_SECONDS, SETUP_ITEMS } from "./progress.ts"
 
 const status = (devices: CloudViewer[], extra: Partial<CloudStatus> = {}): CloudStatus => ({
-  enabled: true, commands: false, terminal_direct: true, configured: true, state: "connected",
+  enabled: true, terminal_direct: true, configured: true, state: "connected",
   connects: 1, reconnects: 0, published: 0, acked: 0, publish_errors: 0, inbound_total: 0,
   answered: 0, refused: 0, queue_refused: 0, queue_unanswered: 0, roster_readable: true,
   pinned_readable: true, devices, ...extra,

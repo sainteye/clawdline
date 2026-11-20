@@ -19,7 +19,6 @@ import {
   MACHINE_ONLY,
   readCloudStatus,
   revokeCloudViewer,
-  setCloudCommands,
   setCloudDirect,
   setCloudDirectLocalNetwork,
   setCloudEnabled,
@@ -850,11 +849,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
         )}
         {cloud?.enabled && (
           <>
-            <Note dot={cloud.commands ? "live" : "idle"}>{W.cloudCommandsTitle}</Note>
-            <Note dot="idle">{W.cloudCommandsHint}</Note>
-            <Chip disabled={cloudSetupBusy} onClick={() => run(() => setCloudCommands(!cloud.commands))}>
-              {cloud.commands ? W.cloudCommandsOff : W.cloudCommandsOn}
-            </Chip>
             <Note dot={cloud.terminal_direct ? "live" : "idle"}>{W.cloudDirectTitle}</Note>
             <Note dot="idle">{W.cloudDirectHint}</Note>
             <Chip disabled={cloudSetupBusy} onClick={() => run(() => setCloudDirect(!cloud.terminal_direct))}>
@@ -909,9 +903,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
     // catalog: it is whatever went wrong, and paraphrasing it into one of five
     // canned lines is how a person ends up in the log anyway.
     if (cloud.last_error) lines.push({ text: cloud.last_error, dot: "warn" })
-    if (cloud.enabled && !cloud.commands) {
-      lines.push({ text: W.webFailMacWritesOff, dot: "idle" })
-    }
     const drops = Object.entries(cloud.inbound_dropped ?? {}).filter(([, count]) => count > 0)
     if (cloud.enabled && cloud.connected_since) {
       const at = new Date(cloud.connected_since * 1000).toLocaleString()

@@ -6247,7 +6247,7 @@
   "settings.settingsRemoteHint": "Wenn diese Option deaktiviert ist, kann nichts außerhalb dieser Maschine darauf zugreifen. Ist sie aktiviert, ist die Session-Liste unter 127.0.0.1 erreichbar — für einen Browser auf dieser Maschine, ein Telefon über einen Tunnel oder ein Skript. Sie zeigt Repository-Namen, Branches und Arbeitstitel; deshalb bleibt die Option aus, bis Sie sie selbst aktivieren.",
   "settings.settingsRemoteServe": "Lassen Sie einen Browser oder Ihr Telefon Ihre Sitzungen anzeigen",
   "settings.settingsRemoteWrite": "Gekoppelte Geräte können senden",
-  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
   "settings.settingsReopen": "Eingabeleiste zusammen mit dem Terminal ein- und ausblenden",
   "settings.settingsReopenHint": "Die Eingabeleiste verbirgt sich, wenn Sie vom Terminal wegschalten, und kehrt zurück, wenn Sie zurückschalten. Drücken Sie Esc, wenn Sie damit fertig sind.",
   "settings.settingsScope": "Wo es funktioniert",

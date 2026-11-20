@@ -182,9 +182,7 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 
 ### 配對一個 Cloud 瀏覽器
 
-配對會改變誰能讀這台機器。配對過的瀏覽器立刻就能讀；Cloud 的 `commands` 開啟時，它還能操作這台
-機器。只有在人明確要求配對該瀏覽器，或直接給了完整配對指令或 offer 時，才執行配對指令。配對本身
-不會開啟 commands；那是另一個獨立設定。
+主機連上 Cloud 後，已配對的瀏覽器可以讀取 Session。具有操作權限的裝置還可以傳送訊息、回答問題和開啟 Session。只有使用者明確要求配對該瀏覽器，或提供完整配對指令或 offer 時，才執行配對指令。
 
 支援兩個方向：
 
@@ -206,8 +204,10 @@ machine fingerprint 與該機器顯示的值比對。對不上就不算成功：
 `clawdline cloud revoke <device-id>`，再回報指紋不符。`clawdline cloud devices` 會列出目前的瀏覽器
 roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 
+在目標主機執行 `clawdline cloud grant <device-id> operate` 可調整已配對裝置的權限。使用者核准該裝置操作後，才執行這項指令。
+
 這些指令都透過本機正在執行的 daemon。失敗時回報 stderr 原文。除非使用者另外要求，否則不要順手
-開啟 Cloud、登入、開啟 commands、rotate key，也不要替換使用者給的 offer。
+開啟 Cloud、登入、rotate key，也不要替換使用者給的 offer。
 
 **讓兩台機器互通以處理 Agent 工作。** 瀏覽器配對本身不會授予機器間權限。在 Cloud
 側邊欄的「跨機器權限」頁，打開兩台在線且已由瀏覽器驗證的機器之間的開關。頁面會經由

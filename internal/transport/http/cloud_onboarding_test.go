@@ -40,21 +40,25 @@ func TestCloudOnboardingSwitchesRequireTheMachineAndAnApprovedIdentity(t *testin
 	}
 	file := nextconfig.Open(s.cfg.Dir)
 	settings, err := adaptercloud.ReadSettings(file)
-	if err != nil || settings.Enabled || settings.Commands {
+	if err != nil || settings.Enabled {
 		t.Fatalf("unexpected defaults: %+v %v", settings, err)
 	}
-	for _, on := range []bool{true, true, false} {
-		body := `{"enabled":false}`
-		if on {
-			body = `{"enabled":true}`
-		}
-		if rec := onboardingRequest(t, s, s.cloudCommandsRoute, http.MethodPost, "/v1/cloud/commands", body, true); rec.Code != http.StatusOK {
-			t.Fatalf("operation switch: %d %s", rec.Code, rec.Body)
-		}
-		settings, err = adaptercloud.ReadSettings(file)
-		if err != nil || settings.Commands != on || settings.Enabled {
-			t.Fatalf("operation switch changed another setting: %+v %v", settings, err)
-		}
+}
+
+func TestLegacyCloudSetupCanEnableButCannotChangeOperationAccess(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	file := nextconfig.Open(s.cfg.Dir)
+	if err := adaptercloud.SetEnabled(file, true); err != nil {
+		t.Fatal(err)
+	}
+	if rec := onboardingRequest(t, s, s.cloudCommandsRoute, http.MethodPost, "/v1/cloud/commands", `{"enabled":true}`, true); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"commands":true`) {
+		t.Fatalf("legacy setup: %d %s", rec.Code, rec.Body)
+	}
+	if rec := onboardingRequest(t, s, s.cloudCommandsRoute, http.MethodPost, "/v1/cloud/commands", `{"enabled":false}`, true); rec.Code != http.StatusGone {
+		t.Fatalf("legacy disable request: %d %s", rec.Code, rec.Body)
+	}
+	if settings, err := adaptercloud.ReadSettings(file); err != nil || !settings.Enabled {
+		t.Fatalf("legacy request changed the Cloud connection: %+v %v", settings, err)
 	}
 	if rec := onboardingRequest(t, s, s.cloudCommandsRoute, http.MethodPost, "/v1/cloud/commands", `{"enabled":"yes"}`, true); rec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed switch: %d %s", rec.Code, rec.Body)
@@ -64,7 +68,7 @@ func TestCloudOnboardingSwitchesRequireTheMachineAndAnApprovedIdentity(t *testin
 func TestCloudDirectSwitchReloadsAnEnabledLineAndKeepsOtherSettings(t *testing.T) {
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{cfg: config.Config{Dir: dir}}
@@ -80,7 +84,7 @@ func TestCloudDirectSwitchReloadsAnEnabledLineAndKeepsOtherSettings(t *testing.T
 			t.Fatalf("direct switch: %d %s", rec.Code, rec.Body)
 		}
 		settings, err := adaptercloud.ReadSettings(file)
-		if err != nil || settings.TerminalDirect != on || !settings.Enabled || !settings.Commands {
+		if err != nil || settings.TerminalDirect != on || !settings.Enabled {
 			t.Fatalf("direct switch changed another setting: %+v %v", settings, err)
 		}
 	}
@@ -95,7 +99,7 @@ func TestCloudDirectSwitchReloadsAnEnabledLineAndKeepsOtherSettings(t *testing.T
 func TestCloudSameNetworkSwitchReloadsAnEnabledLineAndKeepsOtherSettings(t *testing.T) {
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{cfg: config.Config{Dir: dir}}
@@ -114,7 +118,7 @@ func TestCloudSameNetworkSwitchReloadsAnEnabledLineAndKeepsOtherSettings(t *test
 			t.Fatalf("same-network switch: %d %s", rec.Code, rec.Body)
 		}
 		settings, err := adaptercloud.ReadSettings(file)
-		if err != nil || settings.DirectLocalNetwork != on || !settings.Enabled || !settings.Commands || !settings.TerminalDirect {
+		if err != nil || settings.DirectLocalNetwork != on || !settings.Enabled || !settings.TerminalDirect {
 			t.Fatalf("same-network switch changed another setting: %+v %v", settings, err)
 		}
 	}
@@ -222,8 +226,8 @@ func TestCloudOnboardingLoginIsIdempotentAndConnectsWithoutRestart(t *testing.T)
 		t.Fatalf("reloads=%d polls=%d", reloads, polls)
 	}
 	settings, err := adaptercloud.ReadSettings(file)
-	if err != nil || !settings.Enabled || settings.Commands {
-		t.Fatalf("approval silently enabled operations: %+v %v", settings, err)
+	if err != nil || !settings.Enabled {
+		t.Fatalf("approval did not connect Cloud: %+v %v", settings, err)
 	}
 	if rec = onboardingRequest(t, s, s.cloudEnabledRoute, http.MethodPost, "/v1/cloud/enabled", `{"enabled":false}`, true); rec.Code != http.StatusOK || reloads != 2 {
 		t.Fatalf("disconnect: %d %s reloads=%d", rec.Code, rec.Body, reloads)
@@ -270,7 +274,7 @@ func TestCloudViewerEnablesSameNetworkWithoutLosingItsReceipt(t *testing.T) {
 	h := newPushStandIn(t)
 	h.bridge.AllowCommands = func() bool { return true }
 	file := nextconfig.Open(h.server.cfg.Dir)
-	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	reloads := 0
@@ -282,19 +286,19 @@ func TestCloudViewerEnablesSameNetworkWithoutLosingItsReceipt(t *testing.T) {
 		}
 	}
 	settings, err := adaptercloud.ReadSettings(file)
-	if err != nil || !settings.DirectLocalNetwork || !settings.Commands || !settings.TerminalDirect || reloads != 0 {
+	if err != nil || !settings.DirectLocalNetwork || !settings.TerminalDirect || reloads != 0 {
 		t.Fatalf("settings %+v, reloads %d, err %v", settings, reloads, err)
 	}
-	if _, err := file.Set(map[string]any{adaptercloud.KeyCommands: false, adaptercloud.KeyDirectLocalNetwork: false}); err != nil {
+	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: false, adaptercloud.KeyDirectLocalNetwork: false}); err != nil {
 		t.Fatal(err)
 	}
-	// The route rechecks the persisted write switch even after bridge admission.
+	// The route rechecks the persisted connection setting even after bridge admission.
 	a, _ := h.ask(t, 3, map[string]any{"type": "direct-local-network-enable", "session": cloudops.MachineReplySession, "request": "blocked"})
 	if a.Status != http.StatusForbidden {
-		t.Fatalf("disabled operation gate: %+v", a)
+		t.Fatalf("disconnected Cloud: %+v", a)
 	}
 	settings, _ = adaptercloud.ReadSettings(file)
 	if settings.DirectLocalNetwork {
-		t.Fatal("disabled operations changed the policy")
+		t.Fatal("a disconnected Cloud viewer changed the policy")
 	}
 }

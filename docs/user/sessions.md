@@ -7,9 +7,7 @@ project, stop the turn it is on, and close it safely.
 ## Before you start
 
 - The daemon is running and the console is open ([install.md](install.md)).
-- To type into sessions, sign in and pair the browser with the target machine. This includes
-  devices previously issued read-only keys. Cloud also needs `clawdline cloud commands on` on
-  that machine ([remote-access.md](remote-access.md)).
+- To type into sessions, sign in and pair the browser with the target machine using an operation grant. For Cloud, keep the target machine connected. See [Remote access](remote-access.md).
 - Sessions are found in tmux on macOS and Linux, and in iTerm2 on macOS. Windows cannot list
   sessions yet ([platforms.md](platforms.md)).
 

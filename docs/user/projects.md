@@ -106,8 +106,7 @@ for it.
 ### Before you start
 
 - Both machines run this version. An older one is listed with **Clawdline needs an update** and cannot be chosen.
-- For the Cloud route: the browser is paired with both machines, and the receiving machine lets it
-  act (`./bin/clawdline cloud commands on` there; [remote-access.md](remote-access.md)).
+- For the Cloud route, pair the browser with both connected machines using an operation grant on the receiving machine. See [Remote access](remote-access.md).
 - Each project has an `origin` remote the other machine can reach. A project with no origin, or a
   folder that is not a git repository, is listed as skipped with its reason.
 

@@ -6247,7 +6247,7 @@
   "settings.settingsRemoteHint": "オフにすると、このマシンの外部からはアクセスできません。オンにするとセッション一覧が 127.0.0.1 で利用可能になり、このマシンのブラウザ、トンネル経由で接続したスマートフォン、スクリプトから読めます。リポジトリ名、ブランチ、作業タイトルが公開されるため、あなたが有効にするまでオフのままです。",
   "settings.settingsRemoteServe": "ブラウザやスマートフォンからセッションを閲覧できるようにする",
   "settings.settingsRemoteWrite": "ペアリング済みデバイスは送信できます",
-  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+  "settings.settingsRemoteWriteHint": "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
   "settings.settingsReopen": "ターミナルと一緒に入力バーを表示／非表示にする",
   "settings.settingsReopenHint": "ターミナルから別の画面に切り替えると入力バーが隠れ、戻ると再表示されます。使い終わったら Esc を押してください。",
   "settings.settingsScope": "有効なアプリ",

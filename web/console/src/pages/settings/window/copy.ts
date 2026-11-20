@@ -27,7 +27,7 @@ const ownWords = {
       "Clawdline no longer runs a Cloudflare tunnel, so the tunnel this machine used to open stays closed and its settings are no longer read. To reach this machine from your phone, use Tailscale Serve (the Tailscale address above) or Clawdline Cloud.",
     settingsCloudflareRetiredDone: "Got it",
     settingsRemoteWriteHint:
-      "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. Clawdline Cloud operation is a separate switch for this whole machine: clawdline cloud commands off.",
+      "Each device paired directly with this machine is read only or read and operate, chosen per device on the Devices page. A paired Cloud device can operate when the machine is connected and the device has an operation grant.",
     settingsOrchestratorMaxHint:
       "The default is five. The limit is per session, not per machine. Each child is a terminal tab with an assistant doing work in it.",
     settingsHotkeyHint:
@@ -67,10 +67,6 @@ const ownWords = {
     cloudLineNeedsLogin: "Finish account sign-in before connecting this machine.",
     cloudLineState: "Machine connection: {state}",
     cloudLineFailure: "Connection blocked by {kind}: {detail}",
-    cloudCommandsTitle: "Allow Cloud devices to operate this machine",
-    cloudCommandsHint: "Applies only to browsers and phones that reach this machine through Clawdline Cloud: sending messages, starting Sessions, and published terminal features. Devices paired directly with this machine are set one by one on the Devices page. This machine checks the switch on every request; turning it off takes effect on the next request.",
-    cloudCommandsOn: "Allow Cloud operation",
-    cloudCommandsOff: "Stop Cloud operation",
     cloudDirectTitle: "Direct connection for Terminal and Session reads",
     cloudDirectHint: "When off, these use the Cloud relay. Changing this briefly reconnects this machine to Cloud and moves open direct connections back to the relay.",
     cloudDirectOn: "Turn on direct connection",
@@ -162,7 +158,7 @@ const ownWords = {
       "Clawdline 不再內建 Cloudflare 通道，這台機器以前開的通道不會再開，它的設定也不再讀取。要從手機連回這台機器，請改用 Tailscale Serve（上面的 Tailscale 位址）或 Clawdline Cloud。",
     settingsCloudflareRetiredDone: "知道了",
     settingsRemoteWriteHint:
-      "直接配對這台機器的裝置，各自是只讀或可讀可操作，在「裝置」頁逐台設定。Clawdline Cloud 的操作是整台機器另一個開關：clawdline cloud commands off。",
+      "直接配對這台機器的裝置，各自是只讀或可讀可操作，在「裝置」頁逐台設定。主機連上 Clawdline Cloud 後，具有操作權限的配對裝置就能操作。",
     settingsOrchestratorMaxHint:
       "預設五個，一個 session 算一份，不是整台機器算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
     settingsHotkeyHint:
@@ -200,10 +196,6 @@ const ownWords = {
     cloudLineNeedsLogin: "先完成帳號登入，才能連接這台機器。",
     cloudLineState: "機器連線：{state}",
     cloudLineFailure: "連線受 {kind} 阻擋：{detail}",
-    cloudCommandsTitle: "允許 Cloud 裝置操作這台機器",
-    cloudCommandsHint: "只適用於透過 Clawdline Cloud 連到這台機器的瀏覽器與手機：傳送訊息、開始 Session，以及已發布的終端功能。直接配對這台機器的裝置，請在「裝置」頁逐台設定。這台機器每次請求都檢查開關；關閉後下一次請求立即生效。",
-    cloudCommandsOn: "允許 Cloud 操作",
-    cloudCommandsOff: "停止 Cloud 操作",
     cloudDirectTitle: "終端機與 Session 讀取直連",
     cloudDirectHint: "關閉後改走 Cloud 中繼。切換時這台機器會短暫重新連接 Cloud，已開啟的直連會回到中繼。",
     cloudDirectOn: "開啟直連",
@@ -480,10 +472,6 @@ const baseW = {
   cloudLineNeedsLogin: ownWord("cloudLineNeedsLogin"),
   cloudLineState: ownWord("cloudLineState"),
   cloudLineFailure: ownWord("cloudLineFailure"),
-  cloudCommandsTitle: ownWord("cloudCommandsTitle"),
-  cloudCommandsHint: ownWord("cloudCommandsHint"),
-  cloudCommandsOn: ownWord("cloudCommandsOn"),
-  cloudCommandsOff: ownWord("cloudCommandsOff"),
   cloudDirectTitle: ownWord("cloudDirectTitle"),
   cloudDirectHint: ownWord("cloudDirectHint"),
   cloudDirectOn: ownWord("cloudDirectOn"),
@@ -553,7 +541,6 @@ const baseW = {
   webCloudPairRevoked: ownWord("webCloudPairRevoked"),
   webCloudPairRevoke: "撤銷",
   webCloudPairPinnedFailed: ownWord("webCloudPairPinnedFailed"),
-  webFailMacWritesOff: ownWord("webFailMachineWritesOff"),
 
   // **Not from the Swift app.** Its voice tab had no language row — the key was
   // only ever hand-edited, and `auto` meant whisper's own habit, which writes

@@ -89,8 +89,6 @@ func TestThePreflightStopsBeforeThePersonsStepOnlyWhenItShould(t *testing.T) {
 			ready: true, row: "identity", result: PreflightWarn, next: "the person's step"},
 		{name: "already signed in to production", identity: adaptercloud.DefaultAPIBase,
 			ready: true, row: "identity", result: PreflightOK, next: "clawdline cloud on"},
-		{name: "commands already on", settings: `{"cloud_commands":true}`,
-			ready: true, row: "commands", result: PreflightWarn},
 		{name: "an identity file that cannot be read", identity: "unreadable", row: "identity", result: PreflightBlock},
 	} {
 		t.Run(c.name, func(t *testing.T) {

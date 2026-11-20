@@ -536,11 +536,10 @@ capability，**不記 channel 名字**）。
 **Machine 實際查什麼（2026-10-19）。** 每台裝置都有完整權限，沒有唯讀裝置：每個 Cloud viewer 都持有
 上表四個 capability，所以 machine 不在 `ctl/` 上區分 viewer 的 capability，以上表格只描述 relay 的
 閘門。`ctl/` 上的請求，machine 依序只查：channel 是不是自己的、字在不在詞彙表裡、寄件者在不在帳號
-roster 上且沒被撤銷、簽章金鑰與 roster（及本機 pin）一致、`cloud_commands` 寫入開關（讀取與
-read-level 字不查），以及 Session 動作的 execution 收據與各字自己的 guard
+roster 上且沒被撤銷、簽章金鑰與 roster（及本機 pin）一致、主機的 Cloud 連線設定與裝置操作權限（讀取及 read-level 指令有各自的授權），以及 Session 動作的 execution 收據與各字自己的 guard
 （`internal/transport/cloud/link.go` 的 `authority`、`internal/app/cloudops/cloudops.go`）。
 `start_session` 在 machine 上沒有任何檢查：`start`、`resume`、`restore-*`、`pair-agent-start` 只需要
-roster 與寫入開關。`ctl/` 上舊形狀的 Session 內容讀取（`transcript`、`info`、`screen`、`git` 等）
+有效配對、Cloud 連線及裝置操作權限。`ctl/` 上舊形狀的 Session 內容讀取（`transcript`、`info`、`screen`、`git` 等）
 也不查 `read_transcript`；只有 `r/` 這條內容軌道會在讀之前與封裝之前再查一次。
 
 通過之後，請求以這台 machine 自己的 local token 進本機路由。帶 `X-Clawdline-Actor: device` 的字只
@@ -924,7 +923,7 @@ The dated implementation mapping, differences, next-wave notes, and stage measur
 
 The local `paired-devices-v1.json` record adds optional `devices[].scope`, with
 `readonly` and `operate` values. Omission means the existing legacy operate
-eligibility, still ANDed with `cloud_commands` and account identity checks.
+eligibility, subject to the Cloud connection setting and account identity checks.
 Unknown values refuse effects. No content-key, CloudDB or envelope format changes
 are implied. Pre-scope daemons ignore this optional field and do not enforce its
 ceiling; rollback to such a binary is not a safe readonly downgrade path. Downgrading a pin does not rotate the content key or revoke reads.
@@ -943,10 +942,7 @@ shapes are owned by `transport/cloud` and consumed by the local CLI.
 `viewer_read_only` (403) identifies an effect refused by this pin. It is also a
 member of the closed `TerminalRefusalCode` enum in `api/v1/terminals.schema.json`;
 the console's write-off set and relay status table recognise it alongside the
-older `cloud_read_only`. The machine
-switch independently returns `cloud_commands_disabled` (403). Read-level push
-registration and content reads remain available. The dedicated terminal rail
-keeps its current total-switch prerequisite even for readonly screen reads.
+older `cloud_read_only`. The machine retains `cloud_commands_disabled` (403) as the refusal code for a failed connection recheck. Read-level push registration and content reads follow their own authorization rules. The dedicated terminal rail requires an active Cloud connection even for readonly screen reads.
 The same original sender grant governs relay and direct ingress; carriers confer
 no additional authority. Terminal lease changes and host effects recheck operate
 separately from screen access, including after service lane waits. Session

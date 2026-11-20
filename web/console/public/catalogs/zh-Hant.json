@@ -12153,7 +12153,7 @@
   "settings.settingsRemoteHint": "關著的時候，這台機器以外的東西什麼都碰不到。打開之後，session 清單就在 127.0.0.1 上讀得到——給這裡的瀏覽器、隔著通道連進來的手機，或一支腳本。交出去的是儲存庫名稱、分支和工作標題，所以在你開口之前，它一直是關著的。",
   "settings.settingsRemoteServe": "讓瀏覽器或你的手機看得到你的 session",
   "settings.settingsRemoteWrite": "已配對裝置可傳送",
-  "settings.settingsRemoteWriteHint": "直接配對這台機器的裝置，各自是只讀或可讀可操作，在「裝置」頁逐台設定。Clawdline Cloud 的操作是整台機器另一個開關：clawdline cloud commands off。",
+  "settings.settingsRemoteWriteHint": "直接配對這台機器的裝置，各自是只讀或可讀可操作，在「裝置」頁逐台設定。主機連上 Clawdline Cloud 後，具有操作權限的配對裝置就能操作。",
   "settings.settingsReopen": "輸入條跟著終端機出現和收起",
   "settings.settingsReopenHint": "從終端機切到別的地方，輸入條就收起來；切回終端機，它就回來。Esc 才是「這次用完了」的意思。",
   "settings.settingsScope": "在哪裡生效",
