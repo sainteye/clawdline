@@ -350,12 +350,17 @@ func openDirectOffer(c *terminalConnection, body json.RawMessage) (string, error
 	return string(plain), nil
 }
 
-// directOfferAdmitted applies every rule of an offer except the SDP's own:
-// the switch, one peer per viewer, the machine's peer bound and the
-// viewer's offer rate. It reserves the viewer's place when it admits.
 func (l *Link) directOfferAdmitted(viewer string) error {
+	_, err := l.reserveDirectOffer(viewer, false)
+	return err
+}
+
+// reserveDirectOffer checks the offer budget and reserves a slot as one
+// operation. A carrier offer can reuse its own viewer's slot, but only after
+// admission succeeds. Keep pending offers and terminal-owned peers in place.
+func (l *Link) reserveDirectOffer(viewer string, replaceCarrier bool) (*directPeer, error) {
 	if !l.directEnabled() {
-		return terminal.Refuse(terminal.CodeDirectDisabled, "this machine does not offer direct terminal connections")
+		return nil, terminal.Refuse(terminal.CodeDirectDisabled, "this machine does not offer direct terminal connections")
 	}
 	now := l.opts.Now()
 	l.directMu.Lock()
@@ -371,20 +376,21 @@ func (l *Link) directOfferAdmitted(viewer string) error {
 	}
 	l.directOffers[viewer] = recent
 	if len(recent) >= CloudTerminalDirectOffersPerMinuteLimit {
-		return terminal.Refuse(terminal.CodeBusy, "this device asked for too many direct connections this minute")
+		return nil, terminal.Refuse(terminal.CodeBusy, "this device asked for too many direct connections this minute")
 	}
-	if _, held := l.directPeers[viewer]; held {
-		return terminal.Refuse(terminal.CodeBusy, "this device already has a direct connection")
+	peer, held := l.directPeers[viewer]
+	if held && (!replaceCarrier || peer == nil || !peer.carrier) {
+		return nil, terminal.Refuse(terminal.CodeBusy, "this device already has a direct connection")
 	}
-	if len(l.directPeers) >= CloudTerminalDirectPeersLimit {
-		return terminal.Refuse(terminal.CodeBusy, "this machine already serves as many direct connections as it can")
+	if !held && len(l.directPeers) >= CloudTerminalDirectPeersLimit {
+		return nil, terminal.Refuse(terminal.CodeBusy, "this machine already serves as many direct connections as it can")
 	}
 	l.directOffers[viewer] = append(l.directOffers[viewer], now)
 	if l.directPeers == nil {
 		l.directPeers = map[string]*directPeer{}
 	}
 	l.directPeers[viewer] = nil // reserved while the answer is made
-	return nil
+	return peer, nil
 }
 
 func (l *Link) directEnabled() bool {

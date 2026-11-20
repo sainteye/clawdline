@@ -91,10 +91,16 @@ func (l *Link) handleCarrierOffer(ctx context.Context, svc *terminals.Service, p
 		refuse(terminal.Refuse(terminal.CodeForbidden, "this device may not open a direct carrier to this machine"))
 		return
 	}
-	l.supersedeCarrier(viewer)
-	if err := l.directOfferAdmitted(viewer); err != nil {
+	previous, err := l.reserveDirectOffer(viewer, true)
+	if err != nil {
 		refuse(err)
 		return
+	}
+	// A channel that died without this machine hearing it must still be
+	// replaceable. The reservation above is already in place, so neither
+	// closing the old channel nor another offer can take its slot.
+	if previous != nil {
+		l.closeDirectPeer(previous, "its viewer offered a new carrier")
 	}
 	go func() {
 		answer, err := l.answerDirectOffer(viewer, "", true, req.Connection, body.SDP)
@@ -288,32 +294,6 @@ func (l *Link) mirrorStatusRow(channel string, sealed []byte) {
 		// the row is on the relay, where that page reads it.
 		_ = peer.sendWithinEpoch(data)
 	}
-}
-
-// supersedeCarrier lets go of the carrier a viewer already holds, because that
-// viewer is asking for a new one.
-//
-// Measured on 2026-10-11: a page's carrier went at 04:17 without this machine
-// hearing it go — no `OnClose`, no connection state change, nothing in
-// daemon.log — and every offer the page made afterwards was refused `busy`
-// because this machine still had the peer. A carrier has no idle bound on
-// purpose, so nothing else would ever have retired it: that page read over the
-// relay for the rest of its life (63 reads, all 922-1031 ms, while the carrier
-// answered in 610 ms). The closed side cannot be the only one that may let go.
-//
-// The newest offer wins, and only over a carrier: a peer a terminal negotiated
-// is borrowed by the page rather than offered for (terminal-transport.ts), and
-// a reservation still being answered is left to the busy refusal. Closing one
-// retires that viewer's direct terminal connections, which rekey back to the
-// relay like any other carrier loss.
-func (l *Link) supersedeCarrier(viewer string) {
-	l.directMu.Lock()
-	peer := l.directPeers[viewer]
-	l.directMu.Unlock()
-	if peer == nil || !peer.carrier {
-		return
-	}
-	l.closeDirectPeer(peer, "its viewer offered a new carrier")
 }
 
 // sweepDirectCarriers closes a carrier whose viewer this machine or the
