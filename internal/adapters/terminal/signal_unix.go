@@ -49,10 +49,13 @@ type paneSignal struct {
 }
 
 type signalEntry struct {
-	fifo  string
-	read  *os.File
-	write *os.File
-	done  chan struct{}
+	fifo      string
+	read      *os.File
+	write     *os.File
+	done      chan struct{}
+	installed chan struct{}
+	ownsPipe  bool // Published by installed.
+	detaching bool // Protected by paneSignal.mu.
 }
 
 // NewPaneSignal is the tmux change signal on a platform that has FIFOs.
@@ -115,35 +118,66 @@ func pipeCommand(path string) (string, bool) {
 func (p *paneSignal) IsAttached(paneID string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.entries[paneID] != nil
+	entry := p.entries[paneID]
+	if entry == nil || entry.detaching {
+		return false
+	}
+	select {
+	case <-entry.installed:
+		return entry.ownsPipe
+	default:
+		return false
+	}
 }
 
 // Attach puts the signal on a pane, or reports why not. Idempotent: a pane
 // already attached is already the answer.
 func (p *paneSignal) Attach(paneID string) bool {
 	p.mu.Lock()
-	if p.entries[paneID] != nil {
+	if entry := p.entries[paneID]; entry != nil {
+		detaching := entry.detaching
 		p.mu.Unlock()
-		return true
+		if detaching {
+			return false
+		}
+		<-entry.installed
+		return entry.ownsPipe
 	}
+	entry, command := p.openFIFO(paneID)
+	if entry == nil {
+		p.mu.Unlock()
+		return false
+	}
+	p.entries[paneID] = entry
 	p.mu.Unlock()
 
+	go p.watch(paneID, entry)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	entry.ownsPipe = p.pipe.Pipe(ctx, paneID, command)
+	cancel()
+	close(entry.installed)
+	if !entry.ownsPipe {
+		p.detach(paneID, entry)
+	}
+	return entry.ownsPipe
+}
+
+// openFIFO creates the local descriptors before the tmux command. The caller
+// holds mu so a concurrent attachment cannot replace this entry's FIFO.
+func (p *paneSignal) openFIFO(paneID string) (*signalEntry, string) {
 	fifo, ok := p.fifoPath(paneID)
 	if !ok {
-		return false
+		return nil, ""
 	}
 	command, ok := pipeCommand(fifo)
-	if !ok {
-		return false
-	}
-	if os.MkdirAll(p.dir, 0o700) != nil {
-		return false
+	if !ok || os.MkdirAll(p.dir, 0o700) != nil {
+		return nil, ""
 	}
 	// A leftover from a previous life is replaced rather than reused: its
 	// permissions and its readers are not knowable from here.
 	_ = os.Remove(fifo)
 	if syscall.Mkfifo(fifo, 0o600) != nil {
-		return false
+		return nil, ""
 	}
 	// The reading end first, and non-blocking, because opening a FIFO for
 	// reading blocks until somebody opens it for writing — and the writer is
@@ -162,30 +196,17 @@ func (p *paneSignal) Attach(paneID string) bool {
 	fd, err := syscall.Open(fifo, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		_ = os.Remove(fifo)
-		return false
+		return nil, ""
 	}
 	read := os.NewFile(uintptr(fd), fifo)
 	write, err := os.OpenFile(fifo, os.O_WRONLY, 0)
 	if err != nil {
 		_ = read.Close()
 		_ = os.Remove(fifo)
-		return false
+		return nil, ""
 	}
 
-	entry := &signalEntry{fifo: fifo, read: read, write: write, done: make(chan struct{})}
-	p.mu.Lock()
-	p.entries[paneID] = entry
-	p.mu.Unlock()
-	go p.watch(paneID, entry)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	attached := p.pipe.Pipe(ctx, paneID, command)
-	cancel()
-	if !attached {
-		p.Detach(paneID)
-		return false
-	}
-	return true
+	return &signalEntry{fifo: fifo, read: read, write: write, done: make(chan struct{}), installed: make(chan struct{})}, command
 }
 
 // watch reads and discards. The bytes are a perfect record of what the pane
@@ -200,9 +221,10 @@ func (p *paneSignal) watch(paneID string, entry *signalEntry) {
 		n, err := entry.read.Read(buf)
 		if n > 0 {
 			p.mu.Lock()
-			moved, current := p.moved, p.entries[paneID]
+			moved := p.moved
+			active := p.entries[paneID] == entry && !entry.detaching
 			p.mu.Unlock()
-			if current != entry {
+			if !active {
 				return
 			}
 			if moved != nil {
@@ -235,20 +257,31 @@ func (p *paneSignal) watch(paneID string, entry *signalEntry) {
 // that order, because the directory listing is the ownership record and a FIFO
 // removed before the pipe is gone would be a pane nothing can find again.
 func (p *paneSignal) Detach(paneID string) {
+	p.detach(paneID, nil)
+}
+
+func (p *paneSignal) detach(paneID string, expected *signalEntry) {
 	p.mu.Lock()
 	entry := p.entries[paneID]
-	delete(p.entries, paneID)
-	p.mu.Unlock()
-	if entry == nil {
+	if entry == nil || entry.detaching || (expected != nil && entry != expected) {
+		p.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	p.pipe.Unpipe(ctx, paneID)
-	cancel()
+	entry.detaching = true
+	p.mu.Unlock()
+	<-entry.installed
+	if entry.ownsPipe {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		p.pipe.Unpipe(ctx, paneID)
+		cancel()
+	}
 	_ = entry.read.Close()
 	_ = entry.write.Close()
 	<-entry.done
 	_ = os.Remove(entry.fifo)
+	p.mu.Lock()
+	delete(p.entries, paneID)
+	p.mu.Unlock()
 }
 
 func (p *paneSignal) DetachAll() {

@@ -5,6 +5,9 @@ package terminal
 import (
 	"context"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -131,5 +134,56 @@ func TestPipeCommandRefusesAQuote(t *testing.T) {
 	}
 	if got, ok := pipeCommand("/tmp/a b/874.fifo"); !ok || got != "cat > '/tmp/a b/874.fifo'" {
 		t.Fatalf("a path with a space came out %q (%v)", got, ok)
+	}
+}
+
+func TestSessionSignalPreservesAnExistingTmuxPipe(t *testing.T) {
+	bin, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("/tmp", "clawdline-pipe-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := &Tmux{Binary: bin, Socket: filepath.Join(dir, "private.sock")}
+	id, err := host.call(ctx, "", "-f", "/dev/null", "new-session", "-d", "-P", "-F", "#{pane_id}", "cat")
+	if err != nil {
+		t.Fatalf("start private server: %v", err)
+	}
+	defer host.run(ctx, "kill-server")
+	id = strings.TrimSpace(id)
+	if err := host.run(ctx, "pipe-pane", "-t", id, "cat >/dev/null"); err != nil {
+		t.Fatal(err)
+	}
+	fifoDir := filepath.Join(dir, "space $and \"quotes\"")
+	signal := NewPaneSignal(fifoDir, host)
+	defer signal.DetachAll()
+	moved := make(chan string, 8)
+	signal.OnMoved(func(id string) { moved <- id })
+	if signal.Attach(id) {
+		t.Fatal("signal took ownership of a pipe it did not install")
+	}
+	if !host.PipedPanes(ctx)[id] || len(signal.Abandoned()) != 0 {
+		t.Fatal("refusal removed the existing pipe or left a false ownership record")
+	}
+	if !host.Unpipe(ctx, id) || !signal.Attach(id) {
+		t.Fatal("the vacant pane did not accept a signal pipe")
+	}
+	if err := host.run(ctx, "send-keys", "-t", id, "-l", "redraw"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-moved:
+		if got != id {
+			t.Fatalf("woke for %q, expected %q", got, id)
+		}
+	case <-ctx.Done():
+		t.Fatal("the newly installed pipe did not deliver a signal")
 	}
 }

@@ -60,3 +60,108 @@ steps were traced in code and lacked paired click-to-composer timings.
 
 Run the comparison with
 `go test ./internal/transport/http -run '^TestStartRegisteredProjectDoesNotWaitForSessionDiscovery$' -count=3 -v`.
+
+## Browser follow-up on the tmux path
+
+Chrome created six new Sessions against the running local daemon at `04d2735ea`,
+alternating three Codex and three Claude starts in a registered Project.
+Chromium network timing put the successful creation reply at 462–600 ms.
+Sampling the newly created tmux pane found its native prompt at 1,517–2,853 ms.
+The browser received the exact new execution in a Session event at 2,496–4,118 ms.
+No prompts were submitted during these runs.
+
+Three separate stages contribute to the visible wait.
+
+- A tmux launch waited at least 250 ms after its shell received the first Enter.
+  The shared send path uses that wait to check whether an assistant composer
+  still holds a pasted message. A new login shell now returns after the launch
+  line is visible and the single Enter succeeds.
+- The native assistant initializes after the terminal accepts the command.
+  That work remains on its own clock.
+- The periodic list could miss a new process or represent it as unknown while
+  the first screen capture ran in the background. Confirmed launches now share
+  one early fresh inventory read when a console is watching. A launched tmux
+  pane uses the existing two-second live screen window, so that first read can
+  return its current prompt or menu. Outside this window and after a failed
+  read, ordinary discovery and screen capture continue.
+
+### Controlled browser comparison
+
+The same built console, registered Project, private tmux socket configuration
+and native assistant binaries were used for each variant. Each variant opened
+three Codex and three Claude Sessions through fresh Chrome instances. The
+baseline daemon was `04d2735ea`. Each test began when Chrome activated the
+Project button. The network column used the launch POST's resource timestamps.
+The native prompt was sampled on the exact pane returned by that POST. The last
+two rows used the first browser Session event matching that pane and its first
+idle state. Every test ended through the ordinary close route.
+
+| Milestone | Baseline median | Candidate median |
+|---|---:|---:|
+| Creation reply | 498 ms | 207 ms |
+| Editable browser composer | 542 ms | 254 ms |
+| Native prompt observed | 646 ms | 634 ms |
+| First Session list event | 1,886 ms | 1,389 ms |
+| Session list reports idle | 3,930 ms | 1,389 ms |
+
+All six baseline list entries first reported unknown. All six candidate list
+entries first reported idle. The candidate's idle observations ranged from
+1,318 to 1,532 ms versus 1,968 to 5,857 ms on the baseline. The native prompt
+measurements overlap. The browser wait improved through the receipt and
+discovery paths. These are local results with low background load. The
+production Cloud relay, other terminal backends and sending an actual prompt
+remain separate measurements.
+
+The early-read test covers a single coalesced fresh pass and waking its stream.
+The terminal tests exercise the verified single-Enter launch and the ordinary
+composer path. The first-read test checks that a confirmed pane can read its
+current screen and that arbitrary unobserved pane IDs cannot seed the cache.
+
+## Waking discovery when the native prompt appears
+
+Once the explicit Project lookup and tmux Enter are fast, the scheduled
+inventory pass can still leave a ready pane waiting for the rest of its
+half-tick. In Chrome, the prior local build's median per-start interval between
+the observed native prompt and the idle list event was 759 ms. This is on a
+frequently used path. The machine's day of retained requests above contained
+33 successful Codex and Claude starts.
+
+For a confirmed Codex or Claude tmux launch with a watching list stream, the
+daemon borrows a short lease in its existing pane signal service. One capture
+after attachment covers a prompt already on screen. Later signals are
+coalesced, then the visible pane is read and checked for the assistant's idle
+composer or menu. This advances the shared fresh inventory pass. The inventory
+still verifies the new execution and classifies its state before publication.
+
+The lease uses the existing two-second launch window and screen watch limit.
+It samples until the first ready screen or until the window ends. It publishes
+no provisional screen to clients. A pane with an existing pipe stays with its
+current owner. Unsupported backends, refused leases, missing signals, early
+inventory misses and coalesced launches keep the scheduled discovery pass.
+There is at most one early pass per coalesced check and no retry of the launch
+itself. Ordinary discovery also continues.
+
+The remaining costs after a native prompt include signal coalescing, capture,
+inventory, and delivery of the Session event. The added path uses the same
+bounded screen watcher and shared inventory lane. Tests cover unrelated pane
+signals, shell text, already-owned pipes, inventory misses and duplicate
+signals, and the case with no watching list stream.
+
+Chrome repeated three Codex and three Claude launches per build using the same
+registered Project, console, and private tmux setup. Each launch used a fresh
+browser. The comparison started at the Project button and used the exact pane
+returned by the POST. No prompt was sent. The baseline was `4e05c59ab`.
+
+| Milestone | Baseline median | Signal candidate median |
+|---|---:|---:|
+| Creation reply | 183 ms | 213 ms |
+| Editable browser composer | 231 ms | 259 ms |
+| Native prompt observed | 589 ms | 648 ms |
+| First verified Session list event (idle in all runs) | 1,394 ms | 810 ms |
+| Observed prompt to idle list event (median of per-start intervals) | 759 ms | 206 ms |
+
+The list event took 1,316–1,526 ms on the baseline and 730–1,066 ms on the
+signal candidate, a median saving of 584 ms. Creation, editable composer, and
+native prompt timings overlap between the two runs. The gain measured here is
+in discovery and publication. These timings cover the local tmux path; they
+do not include a Cloud relay or time to send a model prompt.

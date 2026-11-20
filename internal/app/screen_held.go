@@ -213,7 +213,7 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	entry.backend = s.Backend
 	if s.Backend == session.BackendTmux && now.Before(entry.liveUntil) {
 		h.mu.Unlock()
-		return h.captureNow(s)
+		return h.captureNow(s, entry)
 	}
 	previous := entry.asked
 	entry.asked = now
@@ -251,7 +251,7 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	h.mu.Unlock()
 
 	if start {
-		go h.refresh(s)
+		go h.refresh(s, entry)
 	}
 	if !readable {
 		return "", false
@@ -338,9 +338,23 @@ func (h *HeldScreens) Pressed(id string) {
 	entry.at = time.Time{}
 }
 
+// OpenedTmux prepares the same live window for a pane this daemon just
+// launched. The first inventory read can use the current screen even before
+// a background capture has established a held one.
+func (h *HeldScreens) OpenedTmux(id string) {
+	if h == nil || h.host == nil || id == "" {
+		return
+	}
+	now := h.now()
+	h.mu.Lock()
+	h.held[id] = &heldScreen{backend: session.BackendTmux, asked: now, liveUntil: now.Add(ScreenLiveAfterPress)}
+	h.evictLocked(now)
+	h.mu.Unlock()
+}
+
 // captureNow takes one tmux capture on the caller's goroutine, for a read
 // inside a press's live window, and holds it as a refresh would.
-func (h *HeldScreens) captureNow(s session.Session) (string, bool) {
+func (h *HeldScreens) captureNow(s session.Session, expected *heldScreen) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), ScreenCaptureBudget)
 	text, ok := h.host.Capture(ctx, s)
 	cancel()
@@ -348,15 +362,17 @@ func (h *HeldScreens) captureNow(s session.Session) (string, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.counts.Captures++
-	if entry := h.held[s.ID]; entry != nil {
-		entry.asked = now
-		if ok {
-			entry.text, entry.readable, entry.at = text, true, now
-			entry.failures, entry.quietUntil = 0, time.Time{}
-		}
-		if !ok && entry.readable {
-			return entry.text, true
-		}
+	entry := h.held[s.ID]
+	if entry != expected {
+		return "", false
+	}
+	entry.asked = now
+	if ok {
+		entry.text, entry.readable, entry.at = text, true, now
+		entry.failures, entry.quietUntil = 0, time.Time{}
+	}
+	if !ok && entry.readable {
+		return entry.text, true
 	}
 	if !ok {
 		h.counts.Failed++
@@ -367,7 +383,7 @@ func (h *HeldScreens) captureNow(s session.Session) (string, bool) {
 }
 
 // refresh takes one capture, on a clock of its own.
-func (h *HeldScreens) refresh(s session.Session) {
+func (h *HeldScreens) refresh(s session.Session, expected *heldScreen) {
 	ctx, cancel := context.WithTimeout(context.Background(), ScreenCaptureBudget)
 	var text string
 	var ok, sourceFailed bool
@@ -383,8 +399,8 @@ func (h *HeldScreens) refresh(s session.Session) {
 	defer h.mu.Unlock()
 	h.inflight--
 	entry := h.held[s.ID]
-	if entry == nil {
-		// Let go while this was in flight. The slot is what mattered.
+	if entry != expected {
+		// Let go or replaced by a new pane while this was in flight.
 		return
 	}
 	entry.capturing = false

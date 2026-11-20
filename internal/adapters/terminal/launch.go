@@ -206,7 +206,7 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	in := tmuxInput{target: id, call: func(ctx context.Context, stdin string, args ...string) (string, error) {
 		return runTmuxInput(ctx, bin, stdin, args...)
 	}}
-	if err := submit(ctx, in, command, openConfirm); err != nil {
+	if _, err := pasteAndEnter(ctx, in, command, openConfirm); err != nil {
 		l.discard(ctx, bin, id)
 		var unsent Unsent
 		var unsubmitted Unsubmitted

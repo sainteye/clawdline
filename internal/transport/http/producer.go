@@ -153,10 +153,19 @@ type listProducer struct {
 	sessions latest[sessionsSnapshotWire]
 	tasks    latest[contract.TaskList]
 
-	mu     sync.Mutex
-	subs   map[int]chan struct{}
-	next   int
-	cancel context.CancelFunc
+	mu          sync.Mutex
+	subs        map[int]chan struct{}
+	next        int
+	cancel      context.CancelFunc
+	launchCheck *launchInventoryCheck
+}
+
+type launchInventoryCheck struct {
+	timer       *time.Timer
+	running     bool
+	signalled   bool
+	shared      bool
+	fallbackDue bool
 }
 
 // lists is this server's producer, made on first use so that a Server built
@@ -200,6 +209,80 @@ func (p *listProducer) unsubscribe(id int) {
 	if len(p.subs) == 0 && p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
+		if p.launchCheck != nil {
+			p.launchCheck.timer.Stop()
+			p.launchCheck = nil
+		}
+	}
+}
+
+// startConfirmed schedules a fresh discovery pass for watching consoles. One
+// signal can bring it forward. Keep the original deadline if the early read
+// misses that exact assistant or if several launches share the check.
+func (p *listProducer) startConfirmed(id string) func() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.subs) == 0 {
+		return nil
+	}
+	check := p.launchCheck
+	if check == nil {
+		check = &launchInventoryCheck{}
+		p.launchCheck = check
+		check.timer = time.AfterFunc(p.every/2, func() { p.checkLaunches(check, "") })
+	} else {
+		check.shared = true
+	}
+	return func() { p.checkLaunches(check, id) }
+}
+
+func (p *listProducer) checkLaunches(check *launchInventoryCheck, readyID string) {
+	p.mu.Lock()
+	if p.launchCheck != check || (readyID != "" && check.signalled) {
+		p.mu.Unlock()
+		return
+	}
+	if check.running {
+		check.fallbackDue = check.fallbackDue || readyID == ""
+		p.mu.Unlock()
+		return
+	}
+	check.running = true
+	check.signalled = readyID != ""
+	p.mu.Unlock()
+	// The last shared snapshot may have read the machine before the
+	// launch. Reuse the single build lane with a fresh inventory fence.
+	snapshot, err := p.sessions.since(time.Now())
+	ready := false
+	for _, row := range snapshot.Sessions {
+		if row.ID == readyID && (row.State == contract.SessionStateIdle || row.Menu != nil) {
+			ready = true
+			break
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.launchCheck != check {
+		return
+	}
+	check.running = false
+	if readyID == "" || (err == nil && ready && !check.shared) {
+		check.timer.Stop()
+		p.launchCheck = nil
+	} else if check.fallbackDue {
+		check.timer.Reset(0)
+	}
+	if err == nil {
+		p.wakeSubscribersLocked()
+	}
+}
+
+func (p *listProducer) wakeSubscribersLocked() {
+	for _, wake := range p.subs {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -216,12 +299,7 @@ func (p *listProducer) run(ctx context.Context) {
 			_, _ = p.sessions.refresh()
 			_, _ = p.tasks.refresh()
 			p.mu.Lock()
-			for _, wake := range p.subs {
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
-			}
+			p.wakeSubscribersLocked()
 			p.mu.Unlock()
 		}
 	}

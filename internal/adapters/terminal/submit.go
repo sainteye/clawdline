@@ -498,17 +498,24 @@ type input interface {
 	screen(ctx context.Context) (string, bool)
 }
 
-// submit is the four steps above against one session. window bounds step 2.
-func submit(ctx context.Context, in input, text string, window time.Duration) error {
+// pasteAndEnter is the confirmed, single-Enter path used by a new pane's
+// login shell. The optional nudges are for an assistant's framed composer.
+func pasteAndEnter(ctx context.Context, in input, text string, window time.Duration) (string, error) {
 	before, _ := in.screen(ctx)
 	if err := in.paste(ctx, text); err != nil {
-		return err
+		return "", err
 	}
 	confirmed, err := awaitShown(ctx, in, before, text, window)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := in.enter(ctx); err != nil {
+	return confirmed, in.enter(ctx)
+}
+
+// submit is the four steps above against one session. window bounds step 2.
+func submit(ctx context.Context, in input, text string, window time.Duration) error {
+	confirmed, err := pasteAndEnter(ctx, in, text, window)
+	if err != nil {
 		return err
 	}
 	for _, pause := range nudgePauses {
