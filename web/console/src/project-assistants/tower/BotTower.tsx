@@ -189,6 +189,34 @@ export default function BotTower({ items, w, language, paused = false, highlight
     return { at: slotPoint(f[sectionGroup(b)], slots.get(b.key) ?? 0), moving: false }
   }
   const running = !paused && visible && pageShown && !reduced
+  // A page opened before a deployment still names that deployment's pictures,
+  // which the host may already have removed (it answers them with its HTML).
+  // The building fetches every floor's picture as soon as it shows, while the
+  // names are most likely current, and a picture that still fails says so.
+  // The host has also once answered a just-deployed file with that HTML, which
+  // the browser may then keep for hours; one fresh request steps past it.
+  const [broken, setBroken] = useState<readonly TowerScene["picture"][]>([])
+  const [retried, setRetried] = useState<Readonly<Partial<Record<TowerScene["picture"], string>>>>({})
+  const retriedRef = useRef(retried); retriedRef.current = retried
+  const pictureSrc = (name: TowerScene["picture"]) => retried[name] ? `${pictures[name]}?retry=${retried[name]}` : pictures[name]
+  // Only the fresh request's failure is final; a first request failing late changes nothing.
+  const pictureFailed = (name: TowerScene["picture"], fresh: boolean) => {
+    if (fresh) { setBroken(b => b.includes(name) ? b : [...b, name]); return }
+    if (retriedRef.current[name]) return
+    retriedRef.current = { ...retriedRef.current, [name]: String(Date.now()) }
+    setRetried(retriedRef.current)
+  }
+  const preloaded = useRef<HTMLImageElement[]>([])
+  useEffect(() => {
+    if (!building || preloaded.current.length || typeof Image !== "function") return
+    preloaded.current = (Object.keys(pictures) as TowerScene["picture"][]).map(name => {
+      const img = new Image()
+      img.decoding = "async"
+      img.onerror = () => pictureFailed(name, false)
+      img.src = pictures[name]
+      return img
+    })
+  }, [building])
 
   useEffect(() => {
     if (paused || !pageShown) return
@@ -425,7 +453,12 @@ export default function BotTower({ items, w, language, paused = false, highlight
         <div className="pa-tower-view" ref={viewRef}>
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}
           onClick={e => { if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null) }}>
-          <img key={scene.picture} src={pictures[scene.picture]} alt="" draggable={false} decoding="async"/>
+          {!broken.includes(scene.picture) && <img key={`${scene.picture}:${retried[scene.picture] ?? ""}`} src={pictureSrc(scene.picture)} alt="" draggable={false} decoding="async"
+            onError={() => pictureFailed(scene.picture, !!retried[scene.picture])}/>}
+          {broken.includes(scene.picture) && <div className="pa-tower-fallback pa-tower-picture-missing" role="alert">
+            <p>{w.towerPictureMissing}</p>
+            <button type="button" className="pa-pill" onClick={() => location.reload()}>{w.towerPictureReload}</button>
+          </div>}
           {building && <span key={`door-${floor}`} className="pa-tower-doors" aria-hidden="true"/>}
           <canvas ref={canvasRef} aria-hidden="true"/>
           {section && sectionScene.floors.map((f, i) => {

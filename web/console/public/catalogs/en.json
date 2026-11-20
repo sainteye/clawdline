@@ -11833,6 +11833,8 @@
   "projectAssistants.towerFloorsUnsupported": "This machine needs a newer Clawdline to arrange floors.",
   "projectAssistants.towerFloorsLocked": "This machine cannot be changed from here right now.",
   "projectAssistants.towerFloorsRefused": "The floor was not saved ({code}).",
+  "projectAssistants.towerPictureMissing": "This floor's picture did not load. Clawdline may have just been updated.",
+  "projectAssistants.towerPictureReload": "Reload",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
