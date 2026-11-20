@@ -116,6 +116,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.transcript_quiet_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Err: "live browser transcript recovery timers are not observed by the daemon"}
 		},
+		"console.transcript_fling_gap_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console wheel fling guard; daemon cannot observe a browser's wheel events"}
+		},
+		"console.transcript_fling_hold_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console wheel fling guard; daemon cannot observe a browser's wheel events"}
+		},
 		"console.transcript_slow_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Err: "live browser transcript loading timers are not observed by the daemon"}
 		},

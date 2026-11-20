@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13694,
-  "riskKeys": 5876,
-  "nonRiskCount": 7818,
+  "englishContentKeys": 13700,
+  "riskKeys": 5877,
+  "nonRiskCount": 7823,
   "groups": [
     {
       "name": "acp / other",
@@ -567,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 700,
+      "count": 704,
       "sources": [
         null
       ],
@@ -955,6 +955,10 @@
         "capacityRow.console.transcript_backoff_seconds.full",
         "capacityRow.console.transcript_backoff_seconds.what",
         "capacityRow.console.transcript_fill_pages.full",
+        "capacityRow.console.transcript_fling_gap_milliseconds.full",
+        "capacityRow.console.transcript_fling_gap_milliseconds.what",
+        "capacityRow.console.transcript_fling_hold_milliseconds.full",
+        "capacityRow.console.transcript_fling_hold_milliseconds.what",
         "capacityRow.console.transcript_follow_later_seconds.what",
         "capacityRow.console.transcript_quiet_failures.full",
         "capacityRow.console.transcript_quiet_failures.what",
@@ -6122,7 +6126,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 484,
+      "count": 485,
       "sources": [
         null
       ],
@@ -6581,6 +6585,7 @@
         "projectAssistants.towerMoodSleep",
         "projectAssistants.towerMoodUnread",
         "projectAssistants.towerMoodWork",
+        "projectAssistants.towerPictureReload",
         "projectAssistants.towerRide",
         "projectAssistants.towerRideTo",
         "projectAssistants.towerSection",

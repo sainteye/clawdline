@@ -53,6 +53,8 @@ const ROW = {
 let turns = 60
 let paged = false
 let structured = false
+// How long the fixture takes to answer an older page; a fling keeps going meanwhile.
+let olderDelayMs = 0
 let toolDone = false
 function transcript(before = false) {
   const entries = Array.from({ length: turns }, (_, i) => ({
@@ -104,7 +106,11 @@ function daemon(): Server {
     }
     if (path === "/v1/strings") return json(res, 200,
       JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
-    if (path === "/v1/transcript") return json(res, 200, transcript(new URL(req.url ?? "/", "http://fixture").searchParams.has("before")))
+    if (path === "/v1/transcript") {
+      const older = new URL(req.url ?? "/", "http://fixture").searchParams.has("before")
+      if (older && olderDelayMs) { setTimeout(() => json(res, 200, transcript(true)), olderDelayMs); return }
+      return json(res, 200, transcript(older))
+    }
     if (path.startsWith("/v1/")) return json(res, 404, { error: "not_found", detail: path })
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" })
@@ -397,6 +403,62 @@ for (const provider of ["Claude", "Gemini"]) test(provider + " phone: loading an
     paged = false
     structured = false
     toolDone = false
+    await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
+  }
+})
+
+test("desk: the rest of a wheel fling to the top does not carry the reader into the older page", async () => {
+  turns = 60
+  paged = true
+  olderDelayMs = 150
+  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+  const { sessionId: s } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+  const run = async (expression: string) => {
+    const { result, exceptionDetails } = await browser.send("Runtime.evaluate",
+      { expression, returnByValue: true, awaitPromise: true }, s)
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+    return result.value
+  }
+  const wheel = (deltaY: number) => browser.send("Input.dispatchMouseEvent",
+    { type: "mouseWheel", x: 900, y: 400, deltaX: 0, deltaY }, s)
+  const turnTop = `(() => [...document.querySelectorAll("#tx .entry")].find((el) => el.textContent.includes("Turn 31."))?.getBoundingClientRect().top)()`
+  const scrollTop = `document.getElementById("tx-scroll").scrollTop`
+  try {
+    await browser.send("Page.enable", {}, s)
+    await browser.send("Runtime.enable", {}, s)
+    await browser.send("Page.addScriptToEvaluateOnNewDocument",
+      { source: `localStorage.setItem("ui_language", "zh-Hant")` }, s)
+    await browser.send("Emulation.setDeviceMetricsOverride", { ...DESK, deviceScaleFactor: 1 }, s)
+    const mark = browser.loadCount
+    await browser.send("Page.navigate", { url: origin + "/#session=" + ID }, s)
+    await browser.loaded(s, mark)
+    const deadline = Date.now() + 8_000
+    while (!(await run(`document.querySelector(".tx-older .go") && ${turnTop} !== undefined`))) {
+      if (Date.now() > deadline) assert.fail("the newest page did not appear")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    await run(`document.getElementById("tx-scroll").scrollTop = 1500`)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    // One fast fling upward, decaying like trackpad momentum: events keep
+    // arriving after the top is reached and the older page has landed above.
+    let landed: number | null = null
+    for (let i = 0; i < 45; i++) {
+      await wheel(-Math.max(10, Math.round(120 * 0.95 ** i)))
+      await new Promise((resolve) => setTimeout(resolve, 16))
+      if (landed === null && await run(`document.getElementById("tx").textContent.includes("Turn 3.")`)) landed = await run(turnTop)
+    }
+    assert.ok(landed !== null, "the fling did not load the older page")
+    const drift = (await run(turnTop)) - landed
+    assert.ok(Math.abs(drift) <= 40, `the rest of the fling carried the reader ${Math.round(drift)}px into the older page`)
+    // A new scroll after the fling has paused moves the conversation normally.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const held = await run(scrollTop)
+    await wheel(-120)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.ok((await run(scrollTop)) < held - 20, "a scroll after the fling paused was swallowed")
+  } finally {
+    paged = false
+    olderDelayMs = 0
     await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
   }
 })

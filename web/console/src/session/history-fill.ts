@@ -68,3 +68,33 @@ export function holdReadingPlace(el: HTMLElement, top: number, touched: boolean)
     el.scrollTop = top
   })
 }
+
+/** Registered as console.transcript_fling_gap_milliseconds: wheel events closer than this are one fling. */
+export const FLING_GAP_MS = 120
+/** Registered as console.transcript_fling_hold_milliseconds: the longest a fling is held after a page lands. */
+export const FLING_HOLD_MS = 3000
+
+/**
+ * A trackpad or mouse fling to the top keeps sending wheel events after the
+ * finger leaves: the older page lands, the reading place is restored, and the
+ * rest of the fling would carry the reader up into the page just loaded. The
+ * fling that was running when the page landed is swallowed until it pauses,
+ * turns around, or runs past FLING_HOLD_MS; a slow scroll has no fling to hold.
+ */
+export class FlingGuard {
+  private last = -Infinity
+  private until = -Infinity
+
+  /** The reading place was restored at `at`. */
+  held(at: number): void {
+    this.until = at - this.last < FLING_GAP_MS ? at + FLING_HOLD_MS : -Infinity
+  }
+
+  /** A wheel event at `at`; true when it belongs to the held fling and must not scroll. */
+  swallow(at: number, towardOlder: boolean): boolean {
+    const held = at < this.until && at - this.last < FLING_GAP_MS && towardOlder
+    this.last = at
+    if (!held) this.until = -Infinity
+    return held
+  }
+}

@@ -2532,6 +2532,16 @@
     "Note": true
   },
   {
+    "Name": "console.transcript_fling_gap_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.transcript_fling_hold_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.transcript_follow_fast_seconds",
     "Known": true,
     "Note": true

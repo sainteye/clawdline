@@ -68,7 +68,7 @@ import "./transcript-error.css"
 import "./activity.css"
 import { atNewest, jumpOffered } from "./jump.js"
 import { joinTranscript, pendingHistoryPages } from "./history.js"
-import { HistoryFill, firstFillCover, heldReadingTop, historyAdvanced, holdReadingPlace } from "./history-fill.js"
+import { FlingGuard, HistoryFill, firstFillCover, heldReadingTop, historyAdvanced, holdReadingPlace } from "./history-fill.js"
 import { recordSendDiagnostic } from "../cloud/install.js"
 import "./jump.css"
 import "./history.css"
@@ -363,6 +363,8 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
   // Whether the reader's last gesture on the conversation was a finger, so the
   // place they were reading survives an iOS fling (`holdReadingPlace`).
   const touching = useRef(false)
+  // The rest of a wheel fling that was running when an older page landed.
+  const fling = useRef(new FlingGuard())
   // The list row's spinner and live line, repeated under the conversation's
   // newest end, where the reader's eye already is. Only the session's own
   // transcript: a provider subagent's page is not what the row's state is about.
@@ -466,7 +468,9 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     if (!anchor) return
     olderAnchor.current = null
     const scroll = document.getElementById("tx-scroll")
-    if (scroll) holdReadingPlace(scroll, heldReadingTop(anchor, scroll.scrollHeight, newestFirst), touching.current)
+    if (!scroll) return
+    holdReadingPlace(scroll, heldReadingTop(anchor, scroll.scrollHeight, newestFirst), touching.current)
+    fling.current.held(performance.now())
   }, [earlier, restartedPage, newestFirst])
   const hasData = !!data
   useEffect(() => {
@@ -474,10 +478,14 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
     if (!scroll) return
     const finger = () => { touching.current = true }
     const pointer = (event: PointerEvent) => { touching.current = event.pointerType === "touch" }
-    const wheel = () => { touching.current = false }
+    const wheel = (event: WheelEvent) => {
+      touching.current = false
+      const towardOlder = order.current ? event.deltaY > 0 : event.deltaY < 0
+      if (fling.current.swallow(performance.now(), towardOlder)) event.preventDefault()
+    }
     scroll.addEventListener("touchstart", finger, { passive: true })
     scroll.addEventListener("pointerdown", pointer, { passive: true })
-    scroll.addEventListener("wheel", wheel, { passive: true })
+    scroll.addEventListener("wheel", wheel, { passive: false })
     return () => {
       scroll.removeEventListener("touchstart", finger)
       scroll.removeEventListener("pointerdown", pointer)
