@@ -2,11 +2,13 @@ package http
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/memory"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -183,5 +185,86 @@ func TestProjectMemoryGroupsAreSetThenNamedByEntries(t *testing.T) {
 	var shown contract.ProjectMemoryEntry
 	if out := request("GET", base+"/tag-first", "", session); json.Unmarshal(out.Body.Bytes(), &shown) != nil || shown.Group != "release-steps" {
 		t.Fatalf("show: %s", out.Body.String())
+	}
+}
+
+func TestProjectMemoryDreamThroughDaemonRoutes(t *testing.T) {
+	f := projectCloudStandIn(t)
+	project, ok := f.server.workV2Project(t.Context(), f.place)
+	if !ok {
+		t.Fatal("fixture Project is missing")
+	}
+	key, ok := memory.KeyFor(project.Path)
+	if !ok {
+		t.Fatal("fixture Project key is missing")
+	}
+	store := f.server.memoryStore()
+	dir, err := store.Dir(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := range memory.EntryCountLimit {
+		name := fmt.Sprintf("fixture-%04d", i)
+		description, body := name, "Memory "+name+"."
+		if i < 2 {
+			description, body = "Duplicate fixture", "The same content."
+		}
+		entry := memory.Entry{Name: name, Description: description, Type: memory.TypeProject, Body: body}
+		if err := os.WriteFile(filepath.Join(dir, name+".md"), []byte(memory.Format(entry)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := "/v1/projects/" + f.place + "/memory"
+	request := func(method, path, body string, authenticated bool, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://127.0.0.1:7757"+path, strings.NewReader(body))
+		if authenticated {
+			r.Header.Set("X-Clawdline-Orchestrator", f.machine)
+		}
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		out := httptest.NewRecorder()
+		f.handler.ServeHTTP(out, r)
+		if status == 0 && out.Code < 400 || status != 0 && out.Code != status {
+			t.Fatalf("%s %s: got %d, expected %d: %s", method, path, out.Code, status, out.Body.String())
+		}
+		return out
+	}
+	payload := `{"name":"new-memory","description":"new at capacity","type":"user","body":"New durable content."}`
+	request("POST", base, payload, true, 201)
+	request("POST", base, payload, true, 200)
+	out := request("GET", base+"/new-memory", "", true, 200)
+	if !strings.Contains(out.Body.String(), "New durable content.") {
+		t.Fatalf("the pending entry is not readable: %s", out.Body.String())
+	}
+	out = request("GET", base, "", true, 200)
+	var listing contract.ProjectMemoryList
+	if err := json.Unmarshal(out.Body.Bytes(), &listing); err != nil || len(listing.Entries) != memory.EntryCountLimit+1 ||
+		!listing.Entries[0].Pending || listing.Entries[0].Name != "new-memory" {
+		t.Fatalf("live listing: %d entries, %v", len(listing.Entries), err)
+	}
+	request("GET", base+"-dream", "", false, 0)
+	out = request("GET", base+"-dream", "", true, 200)
+	var dream contract.ProjectMemoryDream
+	if err := json.Unmarshal(out.Body.Bytes(), &dream); err != nil || dream.Counts.Pending != 1 || len(dream.Archive) != 1 {
+		t.Fatalf("preview: %+v %v", dream, err)
+	}
+	if err := store.MaintainDreams(t.Context(), time.Now().Add(2*memory.DreamQuietTime), func(string) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	original := base + "/fixture-0001"
+	out = request("GET", original, "", true, 200)
+	if !strings.Contains(out.Body.String(), "The same content.") {
+		t.Fatalf("archived content did not survive: %s", out.Body.String())
+	}
+	request("POST", original+"/restore", "", false, 0)
+	request("POST", original+"/restore", "", true, 200)
+	out = request("GET", base+"-dream", "", true, 200)
+	if err := json.Unmarshal(out.Body.Bytes(), &dream); err != nil || dream.Counts.Pending != 1 || len(dream.Archived) != 0 || len(dream.Archive) != 0 {
+		t.Fatalf("restored original should wait for an active slot and stay out of the next archive: %+v %v", dream, err)
 	}
 }

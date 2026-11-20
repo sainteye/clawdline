@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13672,
-  "riskKeys": 5863,
-  "nonRiskCount": 7809,
+  "englishContentKeys": 13697,
+  "riskKeys": 5877,
+  "nonRiskCount": 7820,
   "groups": [
     {
       "name": "acp / other",
@@ -567,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 701,
+      "count": 704,
       "sources": [
         null
       ],
@@ -732,6 +732,8 @@
         "capacityRow.bots.survey_ms.what",
         "capacityRow.bots.tool_probe_bytes.what",
         "capacityRow.bots.tool_probe_ms.what",
+        "capacityRow.bots.tower_floor_project_bytes.what",
+        "capacityRow.bots.tower_floors.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -1030,6 +1032,7 @@
         "capacityRow.iterm.osascript_kinds.what",
         "capacityRow.iterm.stall_cooldown_seconds.what",
         "capacityRow.iterm.stall_section_bytes.what",
+        "capacityRow.memory.archive_entries.what",
         "capacityRow.memory.description_bytes.what",
         "capacityRow.memory.entry_bytes.what",
         "capacityRow.memory.group_description_bytes.what",
@@ -4166,11 +4169,12 @@
     },
     {
       "name": "next / end",
-      "count": 12,
+      "count": 13,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
+        "next.endBackgroundFailure",
         "next.endNamedTitle",
         "next.endProcessRecoveryGo",
         "next.endWorkBoardLabel",
@@ -6122,7 +6126,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 473,
+      "count": 482,
       "sources": [
         null
       ],
@@ -6558,8 +6562,16 @@
         "projectAssistants.towerCardUnread",
         "projectAssistants.towerElevator",
         "projectAssistants.towerEnterFloor",
+        "projectAssistants.towerFloorAuto",
         "projectAssistants.towerFloorEmpty",
+        "projectAssistants.towerFloorsClose",
+        "projectAssistants.towerFloorsEdit",
+        "projectAssistants.towerFloorsFor",
         "projectAssistants.towerFloorsMenu",
+        "projectAssistants.towerFloorsPick",
+        "projectAssistants.towerFloorsStale",
+        "projectAssistants.towerFloorsTitle",
+        "projectAssistants.towerFloorsUnsupported",
         "projectAssistants.towerHelpers",
         "projectAssistants.towerLatest",
         "projectAssistants.towerLayout",
@@ -6570,6 +6582,7 @@
         "projectAssistants.towerMoodSleep",
         "projectAssistants.towerMoodUnread",
         "projectAssistants.towerMoodWork",
+        "projectAssistants.towerPictureReload",
         "projectAssistants.towerRide",
         "projectAssistants.towerRideTo",
         "projectAssistants.towerSection",
@@ -7879,7 +7892,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 216,
+      "count": 214,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -7973,9 +7986,7 @@
         "transparency.card.machine.effect",
         "transparency.card.machine.how",
         "transparency.card.machine.title",
-        "transparency.card.memory-body.condition",
         "transparency.card.memory-body.effect",
-        "transparency.card.memory-body.how",
         "transparency.card.memory-body.summary",
         "transparency.card.memory-body.title",
         "transparency.card.memory-index.condition",

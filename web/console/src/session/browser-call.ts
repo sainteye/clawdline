@@ -21,10 +21,10 @@ export type BrowserPanelTarget = {kind:"session";row:SessionRow|null} | {
  * path reaches the machine as its chrome-* word. A refusal keeps its code, so
  * the caller can name it (refusals/scan.ts).
  */
-export async function browserCall<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+export async function browserCall<T>(method: "GET" | "POST", path: string, body?: unknown, request = globalThis.fetch.bind(globalThis)): Promise<T> {
   let res: Response
   try {
-    res = await fetch(path, {
+    res = await request(path, {
       method,
       credentials: "same-origin",
       cache: "no-store",

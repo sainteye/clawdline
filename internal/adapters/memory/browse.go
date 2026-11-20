@@ -27,31 +27,33 @@ type BrowseView struct {
 func (s *Store) Browse(key, name string) (BrowseView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entries, err := s.List(key)
+	dir, err := s.Dir(key)
+	if err != nil {
+		return BrowseView{}, err
+	}
+	entries, err := readEntries(dir, true)
 	if err != nil {
 		return BrowseView{}, err
 	}
 	view := BrowseView{Entries: []BrowseEntry{}}
 	h := sha256.New()
 	for _, entry := range entries {
-		full, err := s.Get(key, entry.Name)
-		if err != nil {
-			return BrowseView{}, err
+		if !entry.Storage.archived() || entry.Name == name {
+			bytes, _ := json.Marshal(entry)
+			h.Write(bytes)
 		}
-		bytes, _ := json.Marshal(full)
-		h.Write(bytes)
-		dir, err := s.Dir(key)
-		if err != nil {
-			return BrowseView{}, err
+		if entry.Name == name {
+			view.Text = entry.Body
+		}
+		if entry.Storage.archived() {
+			continue
 		}
 		info, err := os.Stat(filepath.Join(dir, entry.Name+".md"))
 		if err != nil {
 			return BrowseView{}, err
 		}
+		entry.Body = ""
 		view.Entries = append(view.Entries, BrowseEntry{Entry: entry, UpdatedAt: info.ModTime().UTC().Format(time.RFC3339Nano)})
-		if entry.Name == name {
-			view.Text = full.Body
-		}
 	}
 	if name != "" && view.Text == "" {
 		return BrowseView{}, ErrNotFound

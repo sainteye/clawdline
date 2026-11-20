@@ -364,6 +364,7 @@ const openedLooks: string[] = []
 let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
 let closes: { id: string; key: string; force: unknown; version: unknown }[] = []
+let holdClose: ((id: string, res: ServerResponse) => boolean) | undefined
 let staleCloseOnce: "off" | "first" | "changed" = "off"
 let sessionWorkReads = 0
 let machineStarts: { path: string; key: string }[] = []
@@ -930,6 +931,7 @@ function daemon(): Server {
           force,
           version,
         })
+        if (holdClose?.(decodeURIComponent(closing[1]), res)) return
         if (decodeURIComponent(closing[1]) === BLOCKED && staleCloseOnce === "first") {
           staleCloseOnce = "changed"
           return json(res, 409, { error: "close_not_proven", detail: "The Session changed since it was shown." })
@@ -4181,6 +4183,55 @@ test("the second press is what closes it, once, under a key a retry can be answe
       assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
     } finally {
       readingScenario = "normal"
+    }
+  }))
+
+test("a confirmed close immediately leaves detail and allows another close before either answer", () =>
+  inTab(async (tab) => {
+    const answers = new Map<string, ServerResponse>()
+    holdClose = (id, res) => { answers.set(id, res); return true }
+    const toastText = () => tab.run(
+      `document.getElementById("toast")?.hidden ? null : document.getElementById("toast")?.textContent`)
+    try {
+      await list(tab)
+      await tab.press(`li.row[data-id="${SAFE}"]`)
+      await tab.until("the Session detail is open", (s) => s.open === SAFE)
+      await tab.press("#detail-actions-trigger")
+      await tab.press("#session-end")
+      await tab.until("the first confirmation is ready", (s) => s.confirmDisabled === false)
+      await tab.press("#action-confirm-go")
+      await tab.until("the first close reaches the server", () => answers.has(SAFE))
+      await tab.until("the sheet, detail and row go before the server answers", (s) =>
+        s.sheet === null && s.open === null && !s.order.includes(SAFE), 1800)
+      assert.equal(await toastText(), null)
+
+      await tab.press(`li.row[data-id="${SPARE}"]`)
+      await tab.until("another Session detail can open", (s) => s.open === SPARE)
+      await tab.press("#detail-actions-trigger")
+      await tab.press("#session-end")
+      await tab.until("the second confirmation is ready", (s) => s.confirmDisabled === false)
+      await tab.press("#action-confirm-go")
+      await tab.until("a different Session can close while the first is pending", (s) =>
+        answers.has(SPARE) && s.sheet === null && !s.order.includes(SPARE), 1800)
+      pushSessions()
+      assert.deepEqual(closes.map(({ id }) => id), [SAFE, SPARE])
+      json(answers.get(SPARE)!, 200, { ok: true })
+      json(answers.get(SAFE)!, 502, { error: "close_failed", detail: "The terminal refused to close." })
+      await tab.until("only the failed row comes back", (s) =>
+        s.order.includes(SAFE) && !s.order.includes(SPARE) && s.open === null)
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 2000
+        const read = () => {
+          const toast = document.querySelector("#toast.err:not([hidden])")
+          if (toast?.textContent.includes("Alpha is finished")) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error("No named close failure appeared"))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+    } finally {
+      holdClose = undefined
+      for (const answer of answers.values()) if (!answer.writableEnded) json(answer, 200, { ok: true })
     }
   }))
 

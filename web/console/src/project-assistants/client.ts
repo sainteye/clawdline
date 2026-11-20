@@ -12,6 +12,10 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 export interface SourceClient {
  canReactions?():boolean
  react?(request:W.ProjectAssistantReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
+ /** The machine's Bots tower floor placements (API 97). */
+ canTowerFloors?():boolean
+ towerFloors?(signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
+ saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean
  networkSettings?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>
  saveNetworkSettings?(request:W.ProjectAssistantNetworkSettingsRequest,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>

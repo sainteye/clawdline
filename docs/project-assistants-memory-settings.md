@@ -42,9 +42,9 @@ and Bot entry caps, not invented token usage. Project modification time is
 filesystem metadata; its format has no author, so the UI says author not
 recorded. Missing storage is empty; an unreadable store fails the read and
 never reports a successful empty layer. A missing integration is explicitly
-unavailable. The Project view returns up to its existing 1,024-entry cap.
-Every entry permitted by the two stores is therefore reachable. Out-of-band
-data beyond those caps is marked truncated rather than presented as complete.
+unavailable. The Project view lists up to 1,152 active and pending entries. Archived Project
+originals remain reachable through `clawdline memory dream` and `memory show`.
+Out-of-band data beyond the live caps is marked truncated rather than presented as complete.
 
 The console uses production `ProjectAssistantSourceClient`, not export, for
 these reads. It refreshes an open panel when the current Bot memory revision

@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) projectAssistantProjectMemory(ctx context.Context, resolved pa.ProjectResolution, id string) (pa.MemoryLayer, string, error) {
-	layer := pa.MemoryLayer{Layer: "project", Cap: memory.EntryCountLimit, Available: true, Entries: []pa.MemoryRow{}}
+	layer := pa.MemoryLayer{Layer: "project", Cap: memory.LiveEntryLimit, Available: true, Entries: []pa.MemoryRow{}}
 	key, ok := memory.KeyFor(resolved.Directory)
 	if !ok {
 		return layer, "", paHTTPFailure(pa.ScopeDenied, "project_memory_key")
@@ -26,9 +26,9 @@ func (s *Server) projectAssistantProjectMemory(ctx context.Context, resolved pa.
 	}
 	layer.Revision = v.Revision
 	layer.Used = len(v.Entries)
-	layer.Truncated = layer.Used > memory.EntryCountLimit
+	layer.Truncated = layer.Used > memory.LiveEntryLimit
 	for _, entry := range v.Entries {
-		if len(layer.Entries) == memory.EntryCountLimit {
+		if len(layer.Entries) == memory.LiveEntryLimit {
 			break
 		}
 		layer.Entries = append(layer.Entries, pa.MemoryRow{ID: entry.Entry.Name, Text: entry.Entry.Description, UpdatedAt: entry.UpdatedAt, Sources: []pa.MemorySource{}})

@@ -41,6 +41,8 @@ let activityReads = 0
 let statusReads = 0
 let heldControl: (() => void) | null = null
 let holdControl = false
+let handbacks = 0
+let failHandback = false
 let holdType = false
 let heldType: (() => void) | null = null
 let failNextType = false
@@ -91,8 +93,9 @@ function fixture(): Server {
     if (path === "/__fixture/no-tab") { noTab = true; opened = []; person = false; return json(res, 200, {}) }
     if (req.method === "POST" && path === "/v1/browser/open") { const b = await body(req); if (b.conversation !== CONVERSATION) return json(res, 409, { error: "session_unresolved", detail: "A tab can be opened only for a live Session." }); opened.push(b.url); openLayouts.push(b.layout ?? ""); if (b.layout === "mobile") layout = "mobile"; noTab = false; person = true; return json(res, 200, { ok: true, value: { tab: TAB } }) }
     if (path === "/__fixture/host-version") { hostVersion = url.searchParams.get("v") || "0.3.0"; return json(res, 200, {}) }
-    if (path === "/__fixture/reset") { noTab = false; opened = []; navigated = []; navigationAvailable = true; pageURL = "https://www.console.example.com/sign-in"; openLayouts = []; reloads = 0; hostVersion = "0.5.0"; headerCount = null; person = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { noTab = false; opened = []; navigated = []; navigationAvailable = true; pageURL = "https://www.console.example.com/sign-in"; openLayouts = []; reloads = 0; hostVersion = "0.5.0"; headerCount = null; person = false; handbacks = 0; failHandback = false; channelMode="isolated";shotModes=[]; muted = false; clicks = []; typed = []; keys = []; fieldValue = ""; mangleNext = false; replaced = []; layout = "desktop"; frames = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/channel-mode") { const b=await body(req);channelMode=b.mode;person=true;shotModes=[];return json(res,200,{ok:true}) }
+    if (path === "/__fixture/fail-handback") { failHandback = true; return json(res, 200, {}) }
     if (path === "/__fixture/hold-control") { holdControl = true; return json(res, 200, {}) }
     if (path === "/__fixture/admit") { holdControl = false; heldControl?.(); heldControl = null; return json(res, 200, {}) }
     if (path === "/__fixture/hold-type") { holdType = true; return json(res, 200, {}) }
@@ -101,7 +104,7 @@ function fixture(): Server {
     if (path === "/__fixture/hold-status") { holdNextStatus = true; return json(res, 200, {}) }
     if (path === "/__fixture/release-status") { heldStatus?.(); heldStatus = null; return json(res, 200, {}) }
     if (path === "/__fixture/mangle-next") { mangleNext = true; return json(res, 200, { ok: true }) }
-    if (path === "/__fixture/log") return json(res, 200, { opened, navigated, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, activityReads, statusReads, channelMode, shotModes, statusHeld: !!heldStatus, fieldValue, replaced })
+    if (path === "/__fixture/log") return json(res, 200, { opened, navigated, openLayouts, reloads, person, muted, clicks, typed, keys, layout, frames, activityReads, statusReads, channelMode, shotModes, handbacks, controlHeld: !!heldControl, statusHeld: !!heldStatus, fieldValue, replaced })
     if (path === "/v1/browser/activity") {
       activityReads++
       return json(res, 200, { ok: true, rows: [
@@ -133,7 +136,17 @@ function fixture(): Server {
       if (holdNextStatus) { holdNextStatus = false; await new Promise<void>(resolve => { heldStatus = resolve }) }
       return json(res, 200, value)
     }
-    if (req.method === "POST" && path === "/v1/browser/control") { const b = await body(req); if (b.browser_mode!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve }); person = !!b.person; return json(res, 200, { ok: true, tab: b.tab, person }) }
+    if (req.method === "POST" && path === "/v1/browser/control") {
+      const b = await body(req)
+      if (b.browser_mode !== channelMode) return json(res, 409, { error: "browser_wrong_mode", detail: "stale profile viewer" })
+      if (holdControl && b.person) await new Promise<void>(resolve => { heldControl = resolve })
+      if (!b.person) {
+        handbacks++
+        if (failHandback) return json(res, 503, { error: "browser_state_write_failed", detail: "Synthetic handback refusal." })
+      }
+      person = !!b.person
+      return json(res, 200, { ok: true, tab: b.tab, person })
+    }
     if (path === "/v1/browser/screenshot") { if (url.searchParams.get("browser_mode")!==channelMode) return json(res,409,{error:"browser_wrong_mode",detail:"stale profile viewer"}); shotModes.push(channelMode);frames++; return json(res, 200, { ok: true, value: { tab: TAB, url: pageURL, title: "Sign in", width: layout === "mobile" ? 390 : 1280, height: 720, layout, editables: layout === "mobile" ? mobileFields : desktopFields, data: (layout === "mobile" ? mobilePage : page).toString("base64") } }) }
     if (req.method === "POST" && path === "/v1/browser/person") {
       const b = await body(req)
@@ -723,7 +736,54 @@ for (const [width, ui] of [[390, "zh-Hant"], [360, "en"], [1280, "en"]] as const
       assert.equal((await (await fetch(origin + "/__fixture/log")).json()).reloads, 1, "an outdated extension is not asked to reload")
       await run(`document.querySelector('.browser-setup .setup-x').click()`)
       if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, `browser-panel-opened-${ui}-${width}.png`), Buffer.from(data, "base64")) }
+      await run(`document.querySelector('.browser-close').click()`)
+      await until(`document.getElementById('pane-detail')?.dataset.panel !== 'browser'`)
+      const returned = await (await fetch(origin + "/__fixture/log")).json()
+      assert.equal(returned.person, false, "returning to the Session hands back the tab")
+      assert.deepEqual(returned.opened, ["https://github.com/login"], "the Session keeps the open tab")
+      if (width === 1280) {
+        const openPanel = async () => {
+          await run(`document.getElementById('detail-actions-trigger').click()`)
+          await until(`!!document.getElementById('session-browser')`)
+          await run(`document.getElementById('session-more').click()`)
+          await run(`document.getElementById('session-browser').click()`)
+          await until(`!!document.querySelector('#browser-panel:not([hidden]) .browser-shot')`)
+        }
+        const closePanel = () => run(`document.querySelector('.browser-close').click()`)
+        const inConversation = `document.getElementById('pane-detail')?.dataset.panel !== 'browser'`
+
+        await openPanel()
+        await closePanel()
+        await until(inConversation)
+        assert.equal((await (await fetch(origin + "/__fixture/log")).json()).handbacks, 1, "watching does not change control")
+
+        await openPanel()
+        await fetch(origin + "/__fixture/hold-control")
+        await run(`document.querySelector('.browser-keys button[aria-label="Tab"]').click()`)
+        await until(`fetch('/__fixture/log').then(r => r.json()).then(log => log.controlHeld)`)
+        await closePanel()
+        assert.equal(await run(inConversation), false, "close waits for the pending takeover")
+        await fetch(origin + "/__fixture/admit")
+        await until(inConversation)
+        const afterTakeover = await (await fetch(origin + "/__fixture/log")).json()
+        assert.equal(afterTakeover.person, false)
+        assert.equal(afterTakeover.handbacks, 2)
+        assert.deepEqual(afterTakeover.keys, returned.keys, "leaving fences the pending key")
+
+        await openPanel()
+        await run(`document.querySelector('.browser-take').click()`)
+        await until(`document.querySelector('.browser-who')?.dataset.person === 'true'`)
+        await fetch(origin + "/__fixture/fail-handback")
+        await closePanel()
+        await until(inConversation)
+        assert.ok(await run(`document.querySelector('#toast:not([hidden])')?.textContent.includes('Could not confirm control was returned')`))
+        const failed = await (await fetch(origin + "/__fixture/log")).json()
+        assert.equal(failed.person, true)
+        assert.equal(failed.handbacks, 3, "a failed handback is reported without replay")
+      }
+
     } finally {
+      await fetch(origin + "/__fixture/admit")
       await fetch(origin + "/__fixture/reset")
       await browser.send("Target.closeTarget", { targetId })
     }

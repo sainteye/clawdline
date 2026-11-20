@@ -11,11 +11,18 @@ func (s *Server) memoryCapacityMeasures() map[string]func() capacity.Reading {
 		// A Project's shared memory (docs/project-memory.md): the fullest
 		// Project's entries and groups, and four per-write guards.
 		capacity.MemoryEntries: func() capacity.Reading {
-			n, err := s.memoryStore().MostEntries()
+			n, err := s.memoryStore().MostEntries(false)
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
-			return capacity.Reading{Known: true, Used: int64(n), Note: "entries in the fullest Project"}
+			return capacity.Reading{Known: true, Used: int64(n), Note: "active and pending entries in the fullest Project"}
+		},
+		capacity.MemoryArchiveEntries: func() capacity.Reading {
+			n, err := s.memoryStore().MostEntries(true)
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: int64(n), Note: "archived entries in the fullest Project"}
 		},
 		capacity.MemoryEntryBytes:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-write guard"} },
 		capacity.MemoryDescriptionBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-write guard"} },

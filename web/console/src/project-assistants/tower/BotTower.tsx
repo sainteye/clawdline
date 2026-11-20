@@ -7,6 +7,9 @@ import { drawBot } from "./tower-draw"
 import { TowerAllowCard, type TowerAllow } from "./TowerAllowCard"
 import { allowOnce, readWaiting, AllowError, type AllowReason } from "./tower-allow"
 import type { SourceClient } from "../client"
+import { canWrite } from "../view-state"
+import { placeFloor, placedFloors, readFloors, FloorError, type FloorDoc } from "./tower-floors"
+import { TowerFloorsPanel, type FloorRow } from "./TowerFloorsPanel"
 import "./tower.css"
 
 export interface BotTowerProps {
@@ -121,7 +124,22 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const summary = towerSummary(allBots)
   const waiting = useMemo(() => waitingList(allBots), [allBots])
   const listOpen = waitOpen && waiting.length > 0
-  const floorOf = useMemo(() => assignFloors(items, towerFloors.length), [items])
+  // Each machine's placements, read from its own source. A machine that cannot
+  // answer keeps the default rule for its Projects.
+  const [docs, setDocs] = useState<ReadonlyMap<string, FloorDoc>>(() => new Map())
+  const [floorsOpen, setFloorsOpen] = useState(false)
+  const floorSources = (sources ?? []).filter(s => s.canTowerFloors?.() === true)
+  const floorSourceKey = floorSources.map(s => `${s.machineID}:${s.authorizationRevision}`).join(",")
+  const loadFloors = (source: SourceClient, signal: AbortSignal) => readFloors(source, current ?? (() => sourceRef.current ?? []), towerFloors.length, signal)
+    .then(doc => { if (!signal.aborted) setDocs(m => new Map(m).set(doc.machine, doc)) })
+  useEffect(() => {
+    const c = new AbortController()
+    // Re-read when the panel opens, so a choice starts from the machine's floors.
+    for (const s of floorSources) void loadFloors(s, c.signal).catch(() => { /* The default rule stands. */ })
+    return () => c.abort()
+  }, [floorSourceKey, floorsOpen])
+  const placed = useMemo(() => placedFloors(docs.values()), [docs])
+  const floorOf = useMemo(() => assignFloors(items, towerFloors.length, placed), [items, placed])
   const floors = towerFloors.map((f, i) => {
     const here = allBots.filter(b => floorOf.get(projectOf(b.item)) === i)
     const names = [...new Set(here.map(b => projectName(b.item) || w.unnamedProject))]
@@ -171,6 +189,34 @@ export default function BotTower({ items, w, language, paused = false, highlight
     return { at: slotPoint(f[sectionGroup(b)], slots.get(b.key) ?? 0), moving: false }
   }
   const running = !paused && visible && pageShown && !reduced
+  // A page opened before a deployment still names that deployment's pictures,
+  // which the host may already have removed (it answers them with its HTML).
+  // The building fetches every floor's picture as soon as it shows, while the
+  // names are most likely current, and a picture that still fails says so.
+  // The host has also once answered a just-deployed file with that HTML, which
+  // the browser may then keep for hours; one fresh request steps past it.
+  const [broken, setBroken] = useState<readonly TowerScene["picture"][]>([])
+  const [retried, setRetried] = useState<Readonly<Partial<Record<TowerScene["picture"], string>>>>({})
+  const retriedRef = useRef(retried); retriedRef.current = retried
+  const pictureSrc = (name: TowerScene["picture"]) => retried[name] ? `${pictures[name]}?retry=${retried[name]}` : pictures[name]
+  // Only the fresh request's failure is final; a first request failing late changes nothing.
+  const pictureFailed = (name: TowerScene["picture"], fresh: boolean) => {
+    if (fresh) { setBroken(b => b.includes(name) ? b : [...b, name]); return }
+    if (retriedRef.current[name]) return
+    retriedRef.current = { ...retriedRef.current, [name]: String(Date.now()) }
+    setRetried(retriedRef.current)
+  }
+  const preloaded = useRef<HTMLImageElement[]>([])
+  useEffect(() => {
+    if (!building || preloaded.current.length || typeof Image !== "function") return
+    preloaded.current = (Object.keys(pictures) as TowerScene["picture"][]).map(name => {
+      const img = new Image()
+      img.decoding = "async"
+      img.onerror = () => pictureFailed(name, false)
+      img.src = pictures[name]
+      return img
+    })
+  }, [building])
 
   useEffect(() => {
     if (paused || !pageShown) return
@@ -303,7 +349,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const hud = <div className="pa-tower-hud">
     <p className="pa-hud-facts" role="status">
       {summary.total ? chips.map(c => c.key === "wait"
-        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
+        ? <button key={c.key} type="button" className="pa-hud-chip" data-tone={c.tone} aria-expanded={listOpen} aria-controls="pa-tower-waitlist" onClick={() => { setPanelOpen(false); setFloorsOpen(false); setWaitOpen(o => !o) }}>{figure(c.text)}<i className="pa-hud-caret" aria-hidden="true"/></button>
         : <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{loading ? w.loading : w.towerEmpty}</span>}
     </p>
   </div>
@@ -331,6 +377,33 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <button type="button" aria-pressed={!building} onClick={() => setLayout("floor")}>{w.towerLayoutFloor}</button>
     <button type="button" aria-pressed={building} onClick={() => setLayout("building")}>{w.towerLayoutBuilding}</button>
   </div>
+  const floorRows: FloorRow[] = useMemo(() => {
+    const seen = new Map<string, FloorRow>()
+    for (const item of items) {
+      const key = projectOf(item)
+      if (seen.has(key)) continue
+      const machine = item.bot.key.machine_id, doc = docs.get(machine), writable = items.some(i => i.bot.key.machine_id === machine && canWrite(i.source))
+      const supported = floorSources.some(s => s.machineID === machine)
+      seen.set(key, { key, machine, project: item.bot.project.project_id, name: projectName(item) || w.unnamedProject, floor: floorOf.get(key) ?? 0,
+        placed: placed.has(key), ready: !!doc && writable,
+        locked: !supported ? w.towerFloorsUnsupported : !writable ? w.towerFloorsLocked : !doc ? w.loading : undefined })
+    }
+    // By name, so a row never moves under the finger that just placed it.
+    return [...seen.values()].sort((a, z) => a.name.localeCompare(z.name, language) || (a.key < z.key ? -1 : 1))
+  }, [items, docs, placed, floorOf, floorSourceKey, w, language])
+  const placeRow = async (row: FloorRow, floor: number) => {
+    const source = sourceRef.current?.find(s => s.machineID === row.machine), doc = docs.get(row.machine)
+    if (!source || !doc) throw new FloorError("refused", "pa_revoked")
+    const live = current ?? (() => sourceRef.current ?? [])
+    try {
+      const next = await placeFloor(source, live, doc, row.project, floor, towerFloors.length, new AbortController().signal)
+      setDocs(m => new Map(m).set(next.machine, next))
+    } catch (error) {
+      // After a stale or unknown outcome the machine's floors decide what shows.
+      if (error instanceof FloorError && (error.outcome === "stale" || error.outcome === "unknown")) await loadFloors(source, new AbortController().signal).catch(() => undefined)
+      throw error
+    }
+  }
   // The elevator is a small glowing wireframe of the building: one isometric
   // slab per floor, its Bot count beside it, a lit pixel where someone waits.
   const elevator = building && <nav className="pa-tower-elevator" aria-label={w.towerElevator}>
@@ -347,6 +420,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
         <b>{f.bots.length}</b>
       </button>
     })}
+    {floorSources.length > 0 && <button type="button" className="pa-elevator-edit" aria-expanded={floorsOpen} aria-controls="pa-tower-floorset"
+      onClick={() => { setWaitOpen(false); setPanelOpen(false); setFloorsOpen(o => !o) }}>{w.towerFloorsEdit}</button>}
   </nav>
 
   // The tapped Bot's card: what it is doing now, and the way into its chat.
@@ -378,7 +453,12 @@ export default function BotTower({ items, w, language, paused = false, highlight
         <div className="pa-tower-view" ref={viewRef}>
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}
           onClick={e => { if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null) }}>
-          <img key={scene.picture} src={pictures[scene.picture]} alt="" draggable={false} decoding="async"/>
+          {!broken.includes(scene.picture) && <img key={`${scene.picture}:${retried[scene.picture] ?? ""}`} src={pictureSrc(scene.picture)} alt="" draggable={false} decoding="async"
+            onError={() => pictureFailed(scene.picture, !!retried[scene.picture])}/>}
+          {broken.includes(scene.picture) && <div className="pa-tower-fallback pa-tower-picture-missing" role="alert">
+            <p>{w.towerPictureMissing}</p>
+            <button type="button" className="pa-pill" onClick={() => location.reload()}>{w.towerPictureReload}</button>
+          </div>}
           {building && <span key={`door-${floor}`} className="pa-tower-doors" aria-hidden="true"/>}
           <canvas ref={canvasRef} aria-hidden="true"/>
           {section && sectionScene.floors.map((f, i) => {
@@ -412,6 +492,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
         </div>
         </div>
         {waitList}
+        {building && floorsOpen && <TowerFloorsPanel rows={floorRows} labels={towerFloors.map(f => f.label)} w={w} onPlace={placeRow} onClose={() => setFloorsOpen(false)}/>}
       </div>
     </div>
   </section>

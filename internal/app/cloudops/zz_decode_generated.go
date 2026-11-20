@@ -162,6 +162,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.team-answer":           genDecodeProjectAssistantsTeamAnswer,
 	"project-assistants.team-plans":            genDecodeProjectAssistantsTeamPlans,
 	"project-assistants.team-settings":         genDecodeProjectAssistantsTeamSettings,
+	"project-assistants.tower-floor-save":      genDecodeProjectAssistantsTowerFloorSave,
+	"project-assistants.tower-floors":          genDecodeProjectAssistantsTowerFloors,
 	"project-assistants.upload":                genDecodeProjectAssistantsUpload,
 	"project-assistants.view":                  genDecodeProjectAssistantsView,
 	"project-assistants.visibility":            genDecodeProjectAssistantsVisibility,
@@ -4578,6 +4580,63 @@ func genDecodeProjectAssistantsTeamSettings(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "settings": genValue{from: "settings"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsTowerFloorSave is the `project-assistants.tower-floor-save` row's decode.
+func genDecodeProjectAssistantsTowerFloorSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_version", "floor", "idempotency_key", "machine_id", "project_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("floor", genRule{kind: "integer", min: genInt(0), max: genInt(3)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-floors"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "floor": genValue{from: "floor"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsTowerFloors is the `project-assistants.tower-floors` row's decode.
+func genDecodeProjectAssistantsTowerFloors(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-floors"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

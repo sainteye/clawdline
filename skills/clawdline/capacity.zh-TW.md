@@ -194,6 +194,9 @@
 | `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.tool_probe_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floor_project_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floor_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.tower_floors` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.write_ms` | 2000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
@@ -615,8 +618,9 @@
 | `iterm.viewer_open_seconds` | 20 | `seconds` | `refuse` | `diagnostics, log` | — |
 | `leases.queue` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `log.daemon` | 10485760 | `bytes` | `rotate` | `diagnostics, notice` | — |
+| `memory.archive_entries` | 512 | `rows` | `refuse` | `diagnostics, health` | — |
 | `memory.description_bytes` | 512 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `memory.entries` | 1024 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `memory.entries` | 1152 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `memory.entry_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.group_description_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.groups` | 16 | `rows` | `refuse` | `diagnostics, sender, health` | — |

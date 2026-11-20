@@ -168,7 +168,7 @@ func MemoryListAnswer(key string, l memory.Listing) contract.ProjectMemoryList {
 		Groups: []contract.ProjectMemoryGroup{}, Index: l.Index, IndexCut: l.Cut}
 	for _, e := range l.Entries {
 		out.Entries = append(out.Entries, contract.ProjectMemorySummary{Name: e.Name,
-			Description: e.Description, Type: contract.ProjectMemoryType(e.Type), Group: e.Group})
+			Description: e.Description, Type: contract.ProjectMemoryType(e.Type), Group: e.Group, Pending: e.IsPending()})
 	}
 	for _, g := range l.Groups {
 		out.Groups = append(out.Groups, contract.ProjectMemoryGroup{Slug: g.Slug, Description: g.Description, Entries: int64(g.Entries)})

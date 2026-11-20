@@ -92,7 +92,10 @@ about once a second while it is open and the page visible, because Chrome stops 
 that is covered, minimized or behind another tab. **Take over** (`POST /v1/browser/control`) stops
 the agent's commands to that tab; only then does a tap on the picture become a click at the same
 point of the page, and the text box, Tab, Enter, Delete and scroll reach it. What the person types
-is not recorded. **Hand back** returns the tab to the agent.
+is not recorded. **Hand back** returns the tab to the agent. Closing the Chrome panel to return
+to the Session conversation also hands its controlled tabs back and leaves them open. If opening
+a tab or taking over is still in progress, the panel waits for the result before checking control.
+If handback cannot be confirmed, the conversation shows an error.
 
 The everyday keys sit in the panel's bottom row (2026-11-14): keyboard, Tab, Enter, scroll up and
 scroll down, each taking the tab over first like a tap. **More** holds the new-site notification
@@ -119,7 +122,7 @@ back. Agent native tools have no tab to open. `GET /v1/browser/status?conversati
 Chrome as `person_open` ("" when none is connected), and the panel offers the address field
 whenever it is set, even while the Session's own selection is native tools. The tab belongs to the
 Session and starts taken over by the person, so the agent's commands to it answer
-`browser_person_controlling` until **Hand back**. The emergency stop applies as to an agent's
+`browser_person_controlling` until **Hand back** or the person closes the Chrome panel. The emergency stop applies as to an agent's
 open. The audit row is the person's (`person: true`); its site counts as seen for
 the Session but sends no new-site notification, since the person chose it.
 

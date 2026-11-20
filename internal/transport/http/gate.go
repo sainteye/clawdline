@@ -456,7 +456,7 @@ func machineScoped(p string) bool {
 		// A Project's shared memory: a session of either assistant reads
 		// and writes it through `clawdline memory` (project_memory.go).
 		// A Project's Ops documents: `clawdline ops` adds links (ops_documents.go).
-		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory" || parts[1] == "memory-groups" || parts[1] == "ops")
+		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory" || parts[1] == "memory-dream" || parts[1] == "memory-groups" || parts[1] == "ops")
 	}
 	return false
 }

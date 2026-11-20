@@ -7536,6 +7536,38 @@ export interface ProjectAssistantTeamSettingsRequest {
 }
 
 /**
+ * One of this machine's Projects placed on a Bots tower floor, counted from the top
+ * (0 is 4F, 3 is B1).
+ */
+export interface ProjectAssistantTowerFloor {
+  floor: number
+  project_id: string
+}
+
+/**
+ * Place one Project while the document is still at expected_version. A repeated
+ * write that already took effect answers the current document.
+ */
+export interface ProjectAssistantTowerFloorRequest {
+  expected_version: number
+  floor: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * The machine's tower floor placements. Version 0 means none were ever made;
+ * Projects without a placement follow the console's default rule.
+ */
+export interface ProjectAssistantTowerFloorsResponse {
+  contract_version: string
+  floors: ProjectAssistantTowerFloor[]
+  machine_id: string
+  version: number
+}
+
+/**
  * Trace is not a visible message and never advances unread. Secrets and raw
  * provider credentials are redacted by source.
  */
@@ -7883,6 +7915,33 @@ export interface ProjectLinksReply {
 }
 
 /**
+ * Read-only preview of Project memory maintenance and the current reversible
+ * archive.
+ */
+export interface ProjectMemoryDream {
+  active_limit: number
+  archive: ProjectMemoryDreamChange[]
+  archive_limit: number
+  archived: ProjectMemoryDreamChange[]
+  counts: ProjectMemoryDreamCounts
+  last_run?: string
+  pending_limit: number
+  review: ProjectMemoryDreamChange[]
+}
+
+export interface ProjectMemoryDreamChange {
+  name: string
+  reason: string
+  replacement: string
+}
+
+export interface ProjectMemoryDreamCounts {
+  active: number
+  archived: number
+  pending: number
+}
+
+/**
  * One entry in full: the body of POST /v1/projects/:id/memory and of PUT
  * /v1/projects/:id/memory/:name, whose name must be the path's, and the answer to
  * GET /v1/projects/:id/memory/:name.
@@ -7935,11 +7994,11 @@ export interface ProjectMemoryGroupSet {
 }
 
 /**
- * GET /v1/projects/:id/memory: every entry, every group, and the index a launched
- * session is given. The index lists resident entries and one line per group; when
- * resident entries alone would pass its 8 KiB bound they are cut, which index_cut
- * and the index's own note say, and the group lines are kept. entries always lists
- * every entry.
+ * GET /v1/projects/:id/memory: active and pending entries, every group, and the
+ * index a launched session is given. The index lists resident entries and one line
+ * per group; when resident entries alone would pass its 8 KiB bound they are cut,
+ * which index_cut and the index's own note say, and the group lines are kept.
+ * Archived entries can be found in the Dream plan and read by their original name.
  */
 export interface ProjectMemoryList {
   entries: ProjectMemorySummary[]
@@ -7997,6 +8056,12 @@ export interface ProjectMemorySummary {
    * Lowercase letters, digits and single hyphens, at most 64 bytes.
    */
   name: string
+
+  /**
+   * True when the entry has been durably saved and is waiting for space in the
+   * active index.
+   */
+  pending?: boolean
   type: ProjectMemoryType
 }
 

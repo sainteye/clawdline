@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/memory"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -73,6 +74,20 @@ func (f *fakeMemoryDaemon) request(method, path string, _ url.Values, body any, 
 	entryOf := func() memory.Entry {
 		e := body.(contract.ProjectMemoryEntry)
 		return memory.Entry{Name: e.Name, Description: e.Description, Type: memory.Type(e.Type), Group: e.Group, Body: e.Body}
+	}
+	if name == "-dream" && method == http.MethodGet {
+		plan, err := f.store.PlanDream(key)
+		if err != nil {
+			return storeRefusal(err)
+		}
+		return reply(http.StatusOK, plan)
+	}
+	if archived, ok := strings.CutSuffix(name, "/restore"); ok && method == http.MethodPost {
+		outcome, err := f.store.Restore(key, archived)
+		if err != nil {
+			return storeRefusal(err)
+		}
+		return reply(http.StatusOK, contract.ProjectMemoryWriteAnswer{Name: archived, Outcome: contract.ProjectMemoryOutcome(outcome)})
 	}
 	switch {
 	case name == "" && method == http.MethodGet:
@@ -427,5 +442,29 @@ func TestMemoryListByGroupAndGroupCommands(t *testing.T) {
 	}
 	if got, _ := f.store.Get(key, "tag-first"); got.Group != "" {
 		t.Fatalf("--group '' left the entry grouped: %+v", got)
+	}
+}
+
+func TestMemoryDreamCLIShowsAndRestoresAnArchive(t *testing.T) {
+	f := newFakeMemoryDaemon(t)
+	for _, name := range []string{"a-fixture", "b-fixture"} {
+		if code, _, errs := f.run("Invented duplicate.", "add", "--name", name, "--description", "fixture", "--type", "project"); code != 0 {
+			t.Fatalf("add %s: %s", name, errs)
+		}
+	}
+	if code, out, errs := f.run("", "dream"); code != 0 || !strings.Contains(out, "b-fixture → a-fixture (identical content)") {
+		t.Fatalf("preview: %d %s %s", code, out, errs)
+	}
+	if err := f.store.MaintainDreams(t.Context(), time.Now().Add(2*memory.DreamQuietTime), func(string) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := f.run("", "dream", "--json"); code != 0 || !strings.Contains(out, `"archived_duplicate"`) {
+		t.Fatalf("archive JSON: %d %s %s", code, out, errs)
+	}
+	if code, out, errs := f.run("", "restore", "b-fixture"); code != 0 || out != "b-fixture: updated\n" {
+		t.Fatalf("restore: %d %s %s", code, out, errs)
+	}
+	if code, out, errs := f.run("", "list"); code != 0 || !strings.Contains(out, "b-fixture") {
+		t.Fatalf("restored entry: %d %s %s", code, out, errs)
 	}
 }

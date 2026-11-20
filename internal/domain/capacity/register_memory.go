@@ -4,16 +4,22 @@ package capacity
 func memoryBounds() []Entry {
 	return []Entry{
 		{
-			// <state dir>/memory/<repo key>/: one Project's shared memory
-			// entries. Each is a lesson somebody recorded, so nothing is let
-			// go at the limit: one more is refused with 409 memory_full in
-			// the answer to the add, and only a person (or a session they
-			// asked) forgets one.
+			// The active set and the durable overflow share the live listing.
+			// Refuse only once both have reached their safety bounds.
 			Name: MemoryEntries, Class: Evidence, Unit: Rows,
-			Limit: 1024, AtLimit: Refuse,
+			Limit: 1152, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
-			Sources:   []string{"internal/adapters/memory.EntryCountLimit"},
+			Sources:   []string{"internal/adapters/memory.LiveEntryLimit", "internal/adapters/memory.EntryCountLimit", "internal/adapters/memory.PendingEntryLimit"},
+		},
+		{
+			// At the archive bound, candidates stay in the live set. Explicit
+			// restore and forget can make room without losing any other entry.
+			Name: MemoryArchiveEntries, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/memory.ArchiveEntryLimit"},
 		},
 		{
 			// One entry's body. An add or update past it is refused before
