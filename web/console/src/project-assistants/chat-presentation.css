@@ -19,30 +19,62 @@
 .project-assistants .pa-chat-surface .pa-info-tabs button { min-height:34px;padding:6px 10px; }
 .project-assistants .pa-chat-surface .pa-info-actions { display:flex;flex-wrap:wrap;gap:8px; }
 .project-assistants .pa-chat-surface .pa-info-actions button { min-height:44px; }
-.project-assistants .pa-chat-surface .pa-info-actions + .pa-settings-editor { margin-top:16px; }
-.project-assistants .pa-chat-surface .pa-info-data { margin-top:20px;padding-top:14px;border-top:1px solid var(--pa-line); }
-.project-assistants .pa-chat-surface .pa-settings-editor .pa-form-body { margin-top:0; }
-.project-assistants .pa-chat-surface .pa-settings-savebar { justify-content:space-between;position:sticky;top:0;z-index:2;background:var(--pa-bg);padding:0 0 12px; }
-.project-assistants .pa-chat-surface .pa-settings-instruction-section h3,
-.project-assistants .pa-chat-surface .pa-settings-agent-section h3 { font-size:14px;font-weight:600;margin:0 0 10px; }
-.project-assistants .pa-chat-surface .pa-settings-instruction-card { border:1px solid var(--pa-line);border-radius:16px;padding:14px; }
+/* Codync's Settings tab: titled groups, always open; each card's rows are split by hairlines. */
+.project-assistants .pa-chat-surface .pa-info-actions + .pa-info-editor:not([hidden]) { margin-top:16px; }
+.project-assistants .pa-chat-surface .pa-settings-editor .pa-form-body,
+.project-assistants .pa-chat-surface .pa-settings-editor fieldset { gap:28px; }
+.project-assistants .pa-chat-surface .pa-settings-group { display:flex;flex-direction:column;gap:10px;min-width:0; }
+.project-assistants .pa-chat-surface .pa-settings-group>h3 { margin:0;padding-left:2px;font-size:14px;font-weight:600; }
+.project-assistants .pa-chat-surface .pa-settings-card { display:flex;flex-direction:column;min-width:0;padding:0 14px;border:1px solid var(--pa-line);border-radius:16px; }
+.project-assistants .pa-chat-surface .pa-settings-card>* { min-width:0;margin:0;padding-block:12px; }
+.project-assistants .pa-chat-surface .pa-settings-card>*+* { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-chat-surface .pa-settings-card>:is(.pa-rules,.pa-manage,.pa-network-settings) { display:flex;flex-direction:column;gap:0;margin:0;padding:0;border:0; }
+.project-assistants .pa-chat-surface .pa-settings-card>:is(.pa-rules,.pa-manage,.pa-network-settings)>* { margin:0;padding-block:12px; }
+.project-assistants .pa-chat-surface .pa-settings-card>:is(.pa-rules,.pa-manage,.pa-network-settings)>*+* { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-rules ul li:first-child { border-top:0; }
+.project-assistants .pa-chat-surface .pa-settings-footer { margin:0;padding:0 2px;color:var(--pa-dim);font-size:12px;line-height:1.45; }
+.project-assistants .pa-chat-surface .pa-settings-note { margin:0;color:var(--pa-dim);font-size:12px;line-height:1.5; }
+.project-assistants .pa-chat-surface .pa-settings-row { display:flex;align-items:center;gap:12px; }
+.project-assistants .pa-chat-surface .pa-settings-row>div { display:flex;flex:1;flex-direction:column;gap:3px;min-width:0; }
+.project-assistants .pa-chat-surface .pa-settings-row strong { font-size:13px;font-weight:500;overflow-wrap:anywhere; }
+.project-assistants .pa-chat-surface .pa-settings-row small,.project-assistants .pa-chat-surface .pa-settings-row p { margin:0;color:var(--pa-dim);font-size:12px;line-height:1.45; }
+.project-assistants .pa-chat-surface .pa-settings-value { display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:13px; }
+.project-assistants .pa-chat-surface .pa-settings-value span { flex:none; }
+.project-assistants .pa-chat-surface .pa-settings-value strong { min-width:0;color:var(--pa-dim);font-weight:400;text-align:end;overflow-wrap:anywhere; }
+.project-assistants .pa-chat-surface .pa-settings-field { font-size:13px;font-weight:500; }
+.project-assistants .pa-chat-surface .pa-settings-card :is(input:not([type="checkbox"]),select,textarea) { border:0;border-radius:10px;background:#141414;padding:8px 10px; }
 .project-assistants .pa-chat-surface .pa-settings-instructions { gap:6px;font-size:13px;font-weight:500; }
 .project-assistants .pa-chat-surface .pa-settings-instructions small { font-size:12px;font-weight:400;line-height:1.5; }
-.project-assistants .pa-chat-surface .pa-settings-instructions textarea { min-height:110px;margin-top:4px;padding:10px;border:0;border-radius:10px;background:#141414;font-size:13px;line-height:1.5; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card { border:1px solid var(--pa-line);border-radius:16px;padding:0 12px; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure { border:0;border-radius:0; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary { display:flex;align-items:center;gap:8px;min-height:48px;padding:12px 0;list-style:none; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card summary::-webkit-details-marker { display:none; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary>.pa-settings-chevron { margin-left:auto;color:var(--pa-dim);transition:transform .15s; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary strong { font-size:13px;font-weight:500; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure>summary span { font-size:12px;margin-left:auto; }
-.project-assistants .pa-chat-surface .pa-settings-primary { border-bottom:1px solid var(--pa-line); }
+.project-assistants .pa-chat-surface .pa-settings-instructions textarea { min-height:110px;margin-top:4px;font-size:13px;line-height:1.5; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure { border:0;border-radius:0;padding:0; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary { display:flex;align-items:center;gap:8px;min-height:48px;padding:12px 0;list-style:none; }
+.project-assistants .pa-chat-surface .pa-settings-card summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary>.pa-settings-chevron { margin-left:auto;color:var(--pa-dim);transition:transform .15s; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary strong { font-size:13px;font-weight:500; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary span { font-size:12px;margin:0 0 0 auto; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure-body { padding:0 0 12px; }
+.project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-primary { padding:0; }
 .project-assistants .pa-chat-surface .pa-settings-primary>details>summary strong { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-primary>details>summary span { color:inherit;font-size:14px;margin:0;flex:1;text-align:left; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-compact { margin-top:0;border:0;border-bottom:1px solid var(--pa-line);border-radius:0;padding:12px 0; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-compact>label { display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-size:13px; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-compact>label select { width:64%;min-height:32px;padding:5px 8px;margin:0;font-size:12px; }
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-login-management>summary { font-size:11px;padding:5px 0;color:var(--pa-dim); }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-primary>details>summary span { color:inherit;font-size:14px;margin:0;flex:1;text-align:left; }
+.project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-disclosure { padding:0; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact { margin:0;border:0;border-radius:0; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>label { display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-size:13px; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>label select { width:64%;min-height:32px;padding:5px 8px;margin:0;font-size:12px; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-management>summary { font-size:11px;padding:5px 0;color:var(--pa-dim); }
+.project-assistants .pa-chat-surface .pa-settings-link { display:block;width:100%;min-height:44px;padding:12px 0;border:0;border-radius:0;background:none;text-align:start;font-size:13px; }
+.project-assistants .pa-chat-surface .pa-settings-link:not(:disabled):hover { color:#fff; }
+/* Unsaved changes: one bar pinned to the bottom of the inspector. */
+.project-assistants .pa-chat-surface .pa-settings-savebar:not([hidden]) { position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:8px;margin-top:20px;padding:12px 0 calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--pa-line);background:var(--pa-bg); }
+.project-assistants .pa-chat-surface .pa-settings-savebar small { flex:1;min-width:0;font-size:12px; }
+.project-assistants .pa-chat-surface .pa-settings-savebar .pa-settings-save:not(:disabled) { border-color:#e39567;background:#e39567;color:#17100b; }
+/* A switch: track and knob. The accessible state is aria-checked. */
+.project-assistants .pa-switch { position:relative;flex:none;width:38px;min-width:38px;height:22px;min-height:22px;margin:0;padding:0;border:0;border-radius:11px;background:var(--pa-line);transition:background-color 160ms ease; }
+.project-assistants .pa-switch>span { position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .3);transition:transform 160ms ease; }
+.project-assistants .pa-switch[aria-checked="true"] { background:#e39567; }
+.project-assistants .pa-switch[aria-checked="true"]>span { transform:translateX(16px); }
+.project-assistants .pa-switch::after { content:"";position:absolute;inset:-11px -6px; }
+@media(prefers-reduced-motion:reduce) { .project-assistants .pa-switch,.project-assistants .pa-switch>span { transition:none; } }
 @media(max-width:1000px) {
  .project-assistants .pa-chat-surface .pa-info-panel { width:min(400px,100%); }
 }
@@ -113,7 +145,6 @@
 
 .project-assistants .pa-chat-surface .pa-message.pa-sending { padding:8px 10px;border-radius:18px;background:#343436; }
 
-.project-assistants .pa-chat-surface .pa-settings-agent-card .pa-settings-disclosure[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
 @media(prefers-reduced-motion:reduce) { .project-assistants .pa-settings-disclosure>summary>.pa-settings-chevron { transition:none; } }
 
 /* The lead's first-message suggestion: quiet text, one tappable message shaped like the person's own bubble. */
@@ -121,3 +152,5 @@
 .project-assistants .pa-lead-starter p { margin:0;font-size:12px;color:var(--pa-dim); }
 .project-assistants .pa-lead-starter button { max-width:min(85%, 520px);min-height:44px;padding:10px 16px;border:1px dashed var(--pa-line);border-radius:18px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer; }
 .project-assistants .pa-lead-starter button:hover,.project-assistants .pa-lead-starter button:focus-visible { background:var(--pa-card); }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>p { margin:0;color:var(--pa-dim);font-size:12px;line-height:1.5; }
+.project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-link+.pa-settings-link { border-top:1px solid var(--pa-line); }

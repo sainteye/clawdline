@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react"
+import { useMemo } from "react"
 import type * as W from "@clawdline/contract"
 import { currentCatalogTag } from "../catalog"
 import type { Words } from "./words"
@@ -9,31 +9,21 @@ function title(entry: W.ProjectAssistantMemoryRow) {
   return entry.title || entry.text || entry.id
 }
 
-function MemoryConcepts({ entries, onOpen, w }: {
-  entries: W.ProjectAssistantMemoryRow[]; onOpen: OpenMemory; w: Words
+/** Entries sharing a source with the one being read: shown in its detail, as Codync keeps the list flat. */
+export function MemoryRelated({ entry, entries, onOpen, w }: {
+  entry?: W.ProjectAssistantMemoryRow; entries: W.ProjectAssistantMemoryRow[]; onOpen: OpenMemory; w: Words
 }) {
-  const selectID = useId()
-  const [selected, setSelected] = useState("")
-  const concept = entries.find(entry => entry.id === selected) ?? entries.find(entry => entry.kind === "note") ?? entries[0]
   const related = useMemo(() => {
-    if (!concept) return []
-    const sourceIDs = new Set(concept.sources.map(source => source.id).filter(Boolean))
-    return entries.filter(entry => entry.id !== concept.id && entry.sources.some(source => sourceIDs.has(source.id)))
-  }, [concept, entries])
-
-  if (!concept) return null
-  return <section className="pa-memory-concepts">
-    <header>
-      <h4><label htmlFor={selectID}>{w.memoryConcepts}</label></h4>
-      <select id={selectID} value={concept.id} onChange={event => setSelected(event.target.value)}>
-        {entries.map(entry => <option key={entry.id} value={entry.id}>{title(entry)}</option>)}
-      </select>
-    </header>
-    <button type="button" className="pa-memory-node pa-memory-node-primary" onClick={event => onOpen(concept, event.currentTarget)}>{title(concept)}</button>
+    if (!entry) return []
+    const sourceIDs = new Set(entry.sources.map(source => source.id).filter(Boolean))
+    return entries.filter(other => other.id !== entry.id && other.sources.some(source => sourceIDs.has(source.id)))
+  }, [entry, entries])
+  if (!entry) return null
+  return <section className="pa-memory-related" aria-label={w.memoryRelated}>
     <h5>{w.memoryRelated}</h5>
-    {related.length > 0 ? <ul className="pa-memory-branches">
-      {related.map(entry => <li key={entry.id}>
-        <button type="button" className="pa-memory-node" onClick={event => onOpen(entry, event.currentTarget)}>{title(entry)}</button>
+    {related.length > 0 ? <ul>
+      {related.map(other => <li key={other.id}>
+        <button type="button" className="pa-memory-node" onClick={event => onOpen(other, event.currentTarget)}>{title(other)}</button>
       </li>)}
     </ul> : <p className="pa-memory-muted">{w.memoryNoRelated}</p>}
   </section>
@@ -69,7 +59,6 @@ export function MemoryBrowser({ layer, onOpen, w }: {
   const notes = layer.entries.filter(entry => entry.kind === "note")
   const facts = layer.entries.filter(entry => entry.kind !== "note")
   return <>
-    <MemoryConcepts entries={layer.entries} onOpen={onOpen} w={w}/>
     <MemoryRows heading={w.memoryTopicNotes} entries={notes} onOpen={onOpen} w={w}/>
     <MemoryRows heading={w.memoryFacts} entries={facts} onOpen={onOpen} w={w}/>
   </>

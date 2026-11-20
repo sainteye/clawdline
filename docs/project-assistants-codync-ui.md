@@ -8,16 +8,28 @@ opener. The tab list supports Left, Right, Home and End; Escape closes the inspe
 after a save has removed focus from a temporarily disabled control. On narrow screens the
 inspector occupies the conversation area and the underlying conversation is hidden from focus.
 
-Details starts with the selected Bot's standing instruction editor. The Agent/model summary,
-login selection and fallback summary share one card. Clean drafts omit the duplicate edit
-toolbar; changed drafts expose explicit Save and Cancel. Project and source information remain
-bound to the selected Bot. Its routine controls lead to the existing scoped implementation. Settings keeps the
-existing login profiles, native runtime options, extensions, fallbacks, permission modes,
-notifications, rules, management and network controls. A successful save resets that editor to
-the returned version; a stale or unknown save keeps the form and its existing protection.
-Cancelling settings discards that form explicitly. Changing tabs does not cancel it.
+Details holds the conversation's work: background threads, development servers, the quick
+actions and routines, as in Codync's `DetailsPanel`. Settings holds the whole Bot setup as
+Codync's `BotSettingsPanel` does: titled groups that are always open — Instructions, Agent
+(model, login profile and fallbacks), Name and appearance, Workspace, Permissions and
+notifications, Application skills and connectors, Network access, Saved permission rules, the
+template and export actions, and Remove from the list. On/off choices are switches. The
+Agent row and fallbacks still open in place because they hold sub-editors and model discovery.
 
-Library embeds the existing conversation-owned file library. Memory still uses the existing
+One mounted editor still owns the draft. It stays mounted, hidden, while Details is shown, so
+switching tabs keeps an unsaved change. Unlike Codync, which autosaves, changes are saved
+explicitly: a bar pinned to the bottom of the inspector appears only when the draft differs and
+offers Cancel and Save. The save keeps its expected version, stale and unknown-outcome
+protection; a successful save resets the editor to the returned version, and Cancel discards
+the draft. Autosave would turn every keystroke into a version-checked write whose unknown
+outcome locks the form, so it was deliberately not copied.
+
+Library embeds the existing conversation-owned file library without its own title or close
+button; the inspector already provides both. Memory follows Codync's `MemoryCard`: compact
+scope tabs, then one outlined card with the layer's usage, its actions and its entries. Entries
+sharing a source are listed inside the entry being read instead of a separate concept picker.
+The person's own tools (scope note, remember a short fact, forget selected sources) are rows of
+one card below it. Memory still uses the existing
 memory-view, save and forget operations, revision checks and unknown-command retention. The
 inspector does not introduce a new store, credential, permission or API version. All of these
 surfaces remain bound to the selected account, source, Bot and conversation.

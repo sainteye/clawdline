@@ -33,7 +33,7 @@ export function BotSidePanel({inactive,opener,bot,open,tab,onTab,onClose,childre
     }}>{label(value)}</button>)}</div>
     <div className="pa-info-content">
       {editor&&(visited.some(value=>value==="details"||value==="settings")||open&&(tab==="details"||tab==="settings"))&&<section role="tabpanel" id={`${id}-${tab==="settings"?"settings":"details"}-panel`} aria-labelledby={`${id}-${tab==="settings"?"settings":"details"}`} hidden={tab!=="details"&&tab!=="settings"}>
-        {tab==="details"&&detailsActions}{editor}{tab==="settings"?children.settings:children.details}
+        {tab==="details"&&detailsActions}<div className="pa-info-editor" hidden={tab!=="settings"}>{editor}</div>{tab==="settings"?children.settings:children.details}
       </section>}
       {tabs.filter(value=>(!editor||value!=="details"&&value!=="settings")&&(visited.includes(value)||open&&tab===value)).map(value=><section key={value} role="tabpanel" id={`${id}-${value}-panel`} aria-labelledby={`${id}-${value}`} hidden={tab!==value}>{children[value]}</section>)}
     </div>

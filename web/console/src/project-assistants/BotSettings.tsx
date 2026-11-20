@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,type ReactNode} from "react"
+import {useState,type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {AppearancePicker} from "./BotAvatar"
 import type {Words} from "./words"
@@ -16,7 +16,6 @@ import {catalogWord} from "../catalog"
 import {botFailureText} from "./source-errors"
 import "./bot-settings.css"
 
-export type BotSettingsPart="all"|"often"|"rarely"
 
 function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):string {
   if(code==="pa_outcome_unknown")return w.fallbackSaveUnknown
@@ -26,11 +25,8 @@ function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):s
 }
 
 /** One mounted editor owns the draft across the Details and Settings tabs. */
-export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",rules,manage,teamAvailable=false,embedded=false,part="all"}:{bot:W.ProjectAssistantBot;onSave:(settings:W.ProjectAssistantEditSettings)=>Promise<void>;onClose:()=>void;onFrequent?:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;teamAvailable?:boolean;embedded?:boolean;part?:BotSettingsPart}) {
+export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false}:{bot:W.ProjectAssistantBot;onSave:(settings:W.ProjectAssistantEditSettings)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
   const [name,setName]=useState(bot.name),[appearance,setAppearance]=useState(bot.appearance),[instructions,setInstructions]=useState(bot.instructions.text)
-  const instructionsField=useRef<HTMLTextAreaElement>(null),focusInstructions=useRef(false)
-  useEffect(()=>{if(part!=="rarely"&&focusInstructions.current){focusInstructions.current=false;instructionsField.current?.focus()}},[part])
-  const editFrequent=()=>{focusInstructions.current=true;onFrequent?.()}
   const [busy,setBusy]=useState(false),[error,setError]=useState<{code:string;field?:string}>(),[unknown,setUnknown]=useState(false)
   const [approval,setApproval]=useState<{permission_policy:W.ProjectAssistantPermissionPolicy;mode?:string}>(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})
   const [original]=useState(()=>({version:bot.version,fallbacks:bot.fallback_agents,steps:bot.fallback_steps??(bot.fallback_agents??[]).map(agent=>({agent}))}))
@@ -40,7 +36,7 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
   const [extensions,setExtensions]=useState<W.ProjectAssistantExtensionSelection>(bot.extensions??{skills:[],connectors:[]})
   const [loginProfile,setLoginProfile]=useState(bot.login_profile??""),[loginState,setLoginState]=useState("")
-  const selectedFallbacks=source?.canFallbackProfiles?.()===true,frequent=part!=="rarely",rare=part!=="often"
+  const selectedFallbacks=source?.canFallbackProfiles?.()===true
   const [modelsVisited,setModelsVisited]=useState(false)
   const discovery=useModelCatalog(source,bot,agent,runtime.model,loginProfile,loginState,modelsVisited&&enabled)
   const runtimeChanged=JSON.stringify(runtime)!==JSON.stringify(bot.runtime_settings??{model:"",options:{}})
@@ -74,46 +70,63 @@ export function BotSettings({bot,onSave,onClose,onFrequent,w,enabled,reason="",r
   }
   const dirty=name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||manageTeam!==(bot.manage_team??false)||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
+  // Codync's Settings tab: titled groups, always open, one row per control.
+  const switchRow=(title:string,hint:string,on:boolean,disabled:boolean,change:(on:boolean)=>void)=><div className="pa-settings-row">
+    <div><strong>{title}</strong><small>{hint}</small></div>
+    <button type="button" role="switch" className="pa-switch" aria-checked={on} aria-label={title} disabled={disabled} onClick={()=>change(!on)}><span/></button>
+  </div>
+  const savebar=<footer className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}>
+    {embedded&&<small>{w.settingsDraftHint}</small>}
+    <button type="button" onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" className="pa-settings-save" disabled={!enabled||busy||unknown||awaitingModel||!name.trim()} onClick={()=>void save()}>{w.save}</button>
+  </footer>
   return <section className={`${embedded?"pa-embedded-form":"pa-form-panel"} pa-settings-editor`} role={embedded?undefined:"dialog"} aria-modal={embedded?undefined:true} aria-label={w.settings}>
-    <header className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}><button type="button" onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" disabled={!enabled||busy||unknown||awaitingModel||!name.trim()} onClick={()=>void save()}>{w.save}</button></header>
+    {!embedded&&savebar}
     <div className="pa-form-body">
-      {part==="rarely"&&<button type="button" className="pa-settings-often-link" onClick={editFrequent}>{w.settingsFrequent}</button>}
       <fieldset disabled={!enabled||busy||unknown}>
-        <div className="pa-settings-part" hidden={!frequent}>
-          <section className="pa-settings-instruction-section"><h3>{w.settingsInstructionsHeading}</h3><div className="pa-settings-instruction-card"><label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea ref={instructionsField} value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label></div></section>
-          {dirty&&<p className="pa-settings-hint">{w.settingsDraftHint}</p>}
-          <section className="pa-settings-agent-section"><h3>{w.settingsAgentHeading}</h3><div className="pa-settings-agent-card"><div className="pa-settings-primary">
-          <SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`} onOpen={()=>setModelsVisited(true)}>
+        <SettingsGroup title={w.settingsInstructionsHeading} footer={w.nextIdle}>
+          <label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label>
+        </SettingsGroup>
+        <SettingsGroup title={w.settingsAgentHeading}>
+          <div className="pa-settings-primary"><SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`} onOpen={()=>setModelsVisited(true)}>
             <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
             <RuntimeSettings discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
-          </SettingsDisclosure>
-          </div><LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>
+          </SettingsDisclosure></div>
+          <LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
             {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={validSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={validFallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}
-          </SettingsDisclosure></div></section>
-        </div>
-        <div className="pa-settings-part" hidden={!rare}>
-          <SettingsDisclosure title={w.settingsIdentity} summary={name}>
-            <label>{w.name}<input aria-label={w.name} value={name} onChange={e=>setName(e.target.value)}/></label>
-            <AppearancePicker value={appearance} onChange={setAppearance} w={w}/>
           </SettingsDisclosure>
-          <SettingsDisclosure title={w.settingsAccess}>
-            <label className="pa-settings-check"><input type="checkbox" checked={notify} disabled={!modern} onChange={e=>setNotify(e.target.checked)}/>{w.botNotify}</label><p className="pa-settings-hint">{w.botNotifyHint}</p>
-            <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
-            <label className="pa-settings-check"><input type="checkbox" checked={manageTeam} disabled={!teamAvailable} onChange={e=>setManageTeam(e.target.checked)}/>{catalogWord("projectAssistants","teamManage")}</label>
-            <p className="pa-settings-hint">{catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint")}</p>
-          </SettingsDisclosure>
-          <SettingsDisclosure title={w.extensions} summary={w.settingsExtensionsSummary.replace("{skills}",String(extensions.skills.length)).replace("{connectors}",String(extensions.connectors.length))}><ExtensionSettings source={source} bot={{...bot,agent}} value={extensions} onChange={setExtensions} w={w}/></SettingsDisclosure>
-        </div>
+        </SettingsGroup>
+        <SettingsGroup title={w.settingsIdentity}>
+          <label className="pa-settings-field">{w.name}<input aria-label={w.name} value={name} onChange={e=>setName(e.target.value)}/></label>
+          <AppearancePicker value={appearance} onChange={setAppearance} w={w}/>
+        </SettingsGroup>
+        {workspace&&<SettingsGroup title={w.workspace}>
+          <div className="pa-settings-value"><span>{w.workspace}</span><strong>{workspace.project||w.unnamedProject}</strong></div>
+          <div className="pa-settings-value"><span>{w.machine}</span><strong>{workspace.machine||w.thisMachine}</strong></div>
+        </SettingsGroup>}
+        <SettingsGroup title={w.settingsAccess}>
+          {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
+          <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
+          {switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
+        </SettingsGroup>
+        <SettingsGroup title={w.extensions}><ExtensionSettings bare source={source} bot={{...bot,agent}} value={extensions} onChange={setExtensions} w={w}/></SettingsGroup>
       </fieldset>
-      <div className="pa-settings-part" hidden={!rare}>
-        {source&&<SettingsDisclosure title={w.settingsNetwork}><NetworkSettingsPanel source={source} bot={bot} enabled={enabled&&!busy&&!unknown} w={w}/></SettingsDisclosure>}
-        {rules&&<SettingsDisclosure title={w.settingsRules}>{rules}</SettingsDisclosure>}
-        {manage&&<SettingsDisclosure title={w.manageTitle}>{manage}</SettingsDisclosure>}
-      </div>
+      {source&&source.canNetworkSettings?.()===true&&<SettingsGroup title={w.settingsNetwork}><NetworkSettingsPanel bare source={source} bot={bot} enabled={enabled&&!busy&&!unknown} w={w}/></SettingsGroup>}
+      {rules&&<SettingsGroup title={w.settingsRules}>{rules}</SettingsGroup>}
+      {data&&<SettingsGroup>{data}</SettingsGroup>}
+      {manage&&<SettingsGroup title={w.manageTitle}>{manage}</SettingsGroup>}
       {!enabled&&reason&&<p role="status" className="pa-warning">{w.cannotEdit}: {reason}</p>}
-      <p className="pa-settings-hint">{w.nextIdle}</p>
       {error&&<p role="alert">{settingsSaveFailure(error,w)}</p>}
     </div>
+    {embedded&&savebar}
+  </section>
+}
+
+/** One titled settings group: the title above an outlined card whose rows are separated by hairlines. */
+function SettingsGroup({title,footer,children}:{title?:string;footer?:string;children:ReactNode}) {
+  return <section className="pa-settings-group" aria-label={title}>
+    {title&&<h3>{title}</h3>}
+    <div className="pa-settings-card">{children}</div>
+    {footer&&<p className="pa-settings-footer">{footer}</p>}
   </section>
 }

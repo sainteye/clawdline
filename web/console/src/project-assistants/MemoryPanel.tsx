@@ -4,6 +4,8 @@ import { errorCode } from "./client"
 import type { MemoryReadDetail, ProjectMemoryPage } from "./client"
 import { MemoryBrowser } from "./MemoryBrowser"
 import { MemoryDreams } from "./MemoryDreams"
+import { MemoryRelated } from "./MemoryBrowser"
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import type { Words } from "./words"
 import { LoadingSkeleton } from "../LoadingSkeleton"
 import "./topic-memory.css"
@@ -133,9 +135,8 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
         <button key={id} type="button" aria-pressed={layer === id} onClick={() => switchLayer(id)}>{label}</button>
       )}
     </nav>
-    <div className="pa-memory-refresh">
-      <button type="button" onClick={refresh}>{w.memoryRefresh}</button>
-    </div>
+    <div className="pa-memory-card">
+    {layer==="dreams"&&<div className="pa-memory-content-head"><p className="pa-memory-usage">{w.memoryDreams}</p><button className="pa-memory-refresh" type="button" onClick={refresh}>{w.memoryRefresh}</button></div>}
     {reading && <p role="status">{w.memoryLoading}</p>}
     {detail && <section className="pa-memory-detail" aria-label={w.memoryRead}>
       <header>
@@ -155,6 +156,7 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       </div>}
       <pre tabIndex={0}>{detail.text}</pre>
       {detail.truncated && <p>{w.memoryTruncated}</p>}
+      {shown && layer !== "project" && <MemoryRelated entry={shown.entries.find(entry => entry.id === detail.id)} entries={shown.entries} onOpen={(entry, opener) => void open(entry, opener)} w={w}/>}
     </section>}
     {layer==="bot"&&note&&onSaveNote&&<form ref={noteForm} className="pa-memory-note-editor" aria-label={w.memoryEditNote} onSubmit={event=>{event.preventDefault();void run(()=>onSaveNote(note),()=>setNote(null))}}>
       <label>{w.memoryNoteTitle}<input value={note.title} disabled={!enabled||busy||uncertain} onChange={event=>setNote({...note,title:event.target.value})}/></label>
@@ -173,26 +175,31 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
         <button type="button" onClick={()=>changeProjectPage(currentProjectPage.error==="pa_context_stale"?1:pageRequest.page)}>{w.retry}</button></p> : !shown?.available ? <p role="status">{w.memoryUnavailable}</p> : <>
       <div className="pa-memory-content-head">
         <p className="pa-memory-usage">{w.memoryUsage.replace("{used}", String(shown.used)).replace("{cap}", String(shown.cap))}</p>
+        <span className="pa-memory-head-actions">
         {layer === "bot" && onSaveNote && <button className="pa-memory-create-note" type="button" disabled={!enabled || busy || !!note || uncertain}
           onClick={() => setNote({ entry_id: crypto.randomUUID(), title: "", summary: "", text: "", expected_revision: value.view.memory.revision })}>{w.memoryCreateNote}</button>}
+        <button className="pa-memory-refresh" type="button" onClick={refresh}>{w.memoryRefresh}</button>
+        </span>
       </div>
       {shown.truncated && <p role="status">{w.memoryTruncated}</p>}
       <MemoryBrowser key={value.source_epoch} layer={shown} onOpen={(entry, opener) => void open(entry, opener)} w={w}/>
     </>}
-    <details className="pa-memory-policy"><summary>{w.memoryPolicyLabel}</summary><p>{w.memoryPolicy}</p></details>
-    {layer==="bot"&&<><details className="pa-memory-short-facts" open={!!pendingText||undefined}><summary>{w.memoryShortFacts}</summary><p>{w.forgetScope}</p>
+    </div>
+    <div className="pa-memory-tools">
+    <details className="pa-memory-policy"><summary><span>{w.memoryPolicyLabel}</span><ChevronIcon className="pa-settings-chevron"/></summary><p>{w.memoryPolicy}</p></details>
+    {layer==="bot"&&<><details className="pa-memory-short-facts" open={!!pendingText||undefined}><summary><span>{w.memoryShortFacts}</span><ChevronIcon className="pa-settings-chevron"/></summary><p>{w.forgetScope}</p>
     <form onSubmit={event=>{event.preventDefault();void run(()=>onSave(text.trim()),()=>setText(""))}}>
       <label>{w.memoryNote}<textarea value={text} disabled={!enabled||busy} onChange={event=>setText(event.target.value)}/></label>
       <button type="submit" disabled={!enabled||busy||!text.trim()}>{w.remember}</button>
     </form>
-    </details><details className="pa-memory-forget"><summary>{w.forget}</summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
+    </details><details className="pa-memory-forget"><summary><span>{w.forget}</span><ChevronIcon className="pa-settings-chevron"/></summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
       {entries.length?entries.map(entry=><label className="pa-memory-entry" key={entry.id}>
         <input type="checkbox" checked={selected.includes(entry.id)} disabled={!entry.sources.length} onChange={event=>setSelected(old=>event.target.checked?[...old,entry.id]:old.filter(id=>id!==entry.id))}/>
         <span>{entry.title||entry.text}</span>
       </label>):<p>{w.emptyMemory}</p>}
       <button type="button" disabled={!enabled||busy||!sourceIDs.length} onClick={()=>void run(()=>onForget(sourceIDs),()=>setSelected([]))}>{w.forget}</button>
     </fieldset></details>
-    </>}<p className="pa-memory-revision">{w.memoryRevision}: {value.view.memory.revision} · {w.forgotten}: {value.view.memory.forgotten_count}</p>
+    </>}</div><p className="pa-memory-revision">{w.memoryRevision}: {value.view.memory.revision} · {w.forgotten}: {value.view.memory.forgotten_count}</p>
     {error&&<p role="alert">{uncertain?w.unknown:["pa_context_stale","pa_stale_version"].includes(error)?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");refresh()}}>{w.memoryRefresh}</button></p>}
     {busy&&<p role="status">{w.savingMemory}</p>}
   </section>

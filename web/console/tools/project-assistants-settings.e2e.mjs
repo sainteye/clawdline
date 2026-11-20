@@ -80,39 +80,41 @@ async function open(query="",mobile=false){touch=mobile;await browser("open",ori
 async function close(){await browser("close");tab=undefined}
 const posts=()=>requests.filter(r=>r.method!=="GET")
 const field=".pa-settings-instructions textarea"
-async function openDetails(){await hit(".pa-chat-identity");await waitFor('!!document.querySelector(".pa-settings-instructions textarea")')}
+const editorShown='document.querySelector(".pa-settings-instructions textarea")?.getClientRects().length>0'
+// The identity opens Details; the settings editor lives on the Settings tab, as in Codync.
+async function openDetails(){await hit(".pa-chat-identity");await waitFor('!!document.querySelector(".pa-info-tabs")');await tabAt(4);await waitFor(editorShown)}
 async function tabAt(n){await hit('.pa-info-tabs [role="tab"]:nth-child('+n+')')}
-async function save(){await hit('.pa-settings-editor>.pa-toolbar button:last-child')}
+async function save(){await hit('.pa-settings-savebar .pa-settings-save')}
+async function cancel(){await hit('.pa-settings-savebar button:not(.pa-settings-save)')}
 try{
  await connect()
  for(const [lang,mobile] of [["en",false],["zh-Hant",true]]){
   const zh=lang!=="en",initial="Synthetic saved instructions "+lang
   await open("lang="+lang,mobile);await openDetails()
-  assert.equal(await evaluate('document.querySelector(".pa-settings-savebar").hidden && document.querySelector(".pa-settings-savebar").getClientRects().length===0'),true,"clean Details starts at Instructions without a duplicate toolbar")
+  assert.equal(await evaluate('document.querySelector(".pa-settings-savebar").hidden && document.querySelector(".pa-settings-savebar").getClientRects().length===0'),true,"clean Settings starts at Instructions without a save bar")
   assert.equal(await evaluate('document.querySelectorAll(".pa-settings-instructions textarea").length'),1)
   assert.equal(await evaluate('document.querySelectorAll(".pa-settings-disclosure[open]").length'),0)
-  await capture(lang+"-details")
+  await capture(lang+"-settings")
   await fill(field,initial)
   assert.equal(await evaluate('document.querySelector(".pa-settings-savebar").hidden'),false,"dirty drafts expose explicit save and cancel")
-  await tabAt(4);await waitFor('!!document.querySelector(".pa-settings-often-link")')
+  // Details holds work and routines only; the hidden editor keeps the draft.
+  await tabAt(1);await waitFor('document.querySelector(".pa-info-editor").hidden')
   assert.equal(await evaluate('[...document.querySelectorAll(".pa-settings-instructions textarea")].filter(el=>el.getClientRects().length).length'),0)
-  assert.equal(await evaluate('document.querySelectorAll(".pa-settings-disclosure[open]").length'),0)
-  await capture(lang+"-secondary")
-  await hit('.pa-settings-often-link');await waitFor('document.querySelector(".pa-settings-instructions textarea").getClientRects().length>0');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
-  assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-settings-instructions textarea")'),true)
+  await capture(lang+"-details")
+  await tabAt(4);await waitFor(editorShown);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   await tabAt(2);await tabAt(1);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   await hit('.pa-info-close');await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   await save();await waitFor('document.querySelector(".pa-info-panel").hidden')
   const edit=posts().filter(r=>r.method==="PATCH").at(-1);assert.equal(edit.status,200);assert.equal(edit.body.settings.instructions,initial)
   await close();await open("lang="+lang,mobile);await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
-  const writesBeforeCancel=posts().length;await fill(field,"Synthetic discarded draft");await hit('.pa-settings-editor>.pa-toolbar button:first-child');await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial);assert.equal(posts().length,writesBeforeCancel,"cancel does not write settings")
+  const writesBeforeCancel=posts().length;await fill(field,"Synthetic discarded draft");await cancel();await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial);assert.equal(posts().length,writesBeforeCancel,"cancel does not write settings")
   // Source conflict and unknown outcomes keep the exact draft without replay.
   for(const fault of ["stale","unknown"]){
    await fill(field,"Synthetic protected "+fault);saveFault=fault;const before=posts().length;await save();await waitFor('!!document.querySelector(".pa-settings-editor [role=alert]")');assert.equal(posts().length,before+1)
    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
-   await tabAt(4);await hit('.pa-settings-often-link');await waitFor('document.querySelector(".pa-settings-instructions textarea").getClientRects().length>0');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
-   if(fault==="unknown"){assert.equal(await evaluate('document.querySelector(".pa-settings-editor>.pa-toolbar button:last-child").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
-   await capture(lang+"-"+fault);saveFault="";await hit('.pa-settings-editor>.pa-toolbar button:first-child');await openDetails()
+   await tabAt(1);await tabAt(4);await waitFor(editorShown);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
+   if(fault==="unknown"){assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
+   await capture(lang+"-"+fault);saveFault="";await cancel();await openDetails()
   }
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true)
   assert.equal(await evaluate('(()=>{const panel=document.querySelector(".pa-info-panel").getBoundingClientRect();return [...document.querySelectorAll(".pa-settings-editor input,.pa-settings-editor select,.pa-settings-editor textarea,.pa-settings-disclosure>summary")].filter(el=>el.getClientRects().length).every(el=>{const r=el.getBoundingClientRect();return r.left>=panel.left-1&&r.right<=panel.right+1})})()'),true)
@@ -149,7 +151,7 @@ try{
   await capture(mobile?'mobile-actions':'desktop-actions');await close()
  }
 
- await open("lang=en&read=1",true);await openDetails();assert.equal(await evaluate('document.querySelector(".pa-settings-editor>.pa-toolbar button:last-child").disabled'),true);await capture('readonly');await close()
+ await open("lang=en&read=1",true);await openDetails();assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await capture('readonly');await close()
  assert.equal(posts().filter(r=>r.path.endsWith("/react")).length,0,"opening and dismissing actions does not write reactions")
  results.push({settingsPersisted:true,tabDraftPreserved:true,closeDraftPreserved:true,cancelDiscards:true,staleKept:true,unknownLockedNoReplay:true,desktop:[1280,900],mobile:[390,720],externalModelRequests:0})
  console.log("PASS: production Chat settings crossed authenticated HTTP/Host/SQLite; unique editor, drafts, reopen, conflict/unknown fences and next scripted ACP turn; external model requests=0")

@@ -4,27 +4,14 @@
 .project-assistants .pa-memory-note-editor label{display:grid;gap:6px;min-width:0}
 .project-assistants .pa-memory-note-editor input,.project-assistants .pa-memory-note-editor textarea{width:100%;box-sizing:border-box}
 .project-assistants .pa-memory-note-body{min-height:16em;resize:vertical}
-.project-assistants .pa-memory-policy,.project-assistants .pa-memory-short-facts,.project-assistants .pa-memory-forget{margin-block:12px}
 .project-assistants .pa-memory-detail{min-width:0}
 .project-assistants .pa-memory { min-width:0;line-height:1.6; }
 .project-assistants .pa-memory-embedded { padding:0 0 24px; }
-.project-assistants .pa-memory-scopes { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--pa-card); }
-.project-assistants .pa-memory-scopes button { border:0;border-radius:10px;background:transparent;min-height:48px;padding:8px 10px;font-size:13px;line-height:1.45; }
-.project-assistants .pa-memory-scopes button[aria-pressed="true"] { background:var(--pa-line);color:#fafafa; }
-.project-assistants .pa-memory-refresh { display:flex;justify-content:flex-end;margin:8px 0 20px; }
-.project-assistants .pa-memory-refresh button { border:0;background:transparent;color:var(--pa-dim);font-size:12px;min-height:44px;padding:8px; }
-.project-assistants .pa-memory .pa-memory-policy { margin:24px 0 0; }
-.project-assistants .pa-memory summary { cursor:pointer;padding:10px 0;min-height:44px;font-size:13px; }
-.project-assistants .pa-memory details>p { margin:8px 0 16px;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-memory-create-note { min-height:44px;font-size:13px; }
 .project-assistants .pa-memory-usage { font-size:12px;color:var(--pa-dim); }
-.project-assistants .pa-memory article.pa-memory-entry { padding:16px 0;border-bottom:1px solid var(--pa-line); }
 .project-assistants .pa-memory-index { border:0;border-radius:0;background:transparent;padding:0;line-height:1.6;font-size:14px; }
 .project-assistants .pa-memory-index strong { font-weight:550; }
 .project-assistants .pa-memory-entry small { display:block;margin-top:8px; }
-.project-assistants .pa-memory .pa-memory-short-facts { margin:0; }
-.project-assistants .pa-memory .pa-memory-forget { margin:0 0 24px; }
-.project-assistants .pa-memory-detail { margin-top:20px;padding:16px 0;border-bottom:1px solid var(--pa-line); }
 .project-assistants .pa-memory-detail header { display:flex; align-items:center; justify-content:space-between; gap:12px; overflow-wrap:anywhere; margin-bottom:12px; }
 .project-assistants .pa-memory-detail h4 { margin:0; }
 .project-assistants .pa-memory-detail-close { flex:none; min-height:44px; }
@@ -34,13 +21,7 @@
 
 .project-assistants .pa-memory-content-head { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:8px; }
 
-.project-assistants .pa-memory-concepts { padding:16px; border:1px solid var(--pa-line); border-radius:14px; background:var(--pa-card); }
-.project-assistants .pa-memory-concepts header { display:grid; gap:8px; margin-bottom:16px; }
-.project-assistants .pa-memory-concepts h4,
 .project-assistants .pa-memory-collection h4 { margin:0; font-size:14px; font-weight:650; }
-.project-assistants .pa-memory-concepts h5 { margin:14px 0 4px; color:var(--pa-dim); font-size:12px; font-weight:550; }
-.project-assistants .pa-memory-concepts h4 label { margin:0; color:inherit; font:inherit; }
-.project-assistants .pa-memory-concepts select { width:100%; min-width:0; min-height:44px; padding-inline:8px; color-scheme:dark; background:var(--pa-card); border:1px solid var(--pa-line); border-radius:8px; }
 .project-assistants .pa-memory-node { min-width:0; min-height:44px; width:100%; text-align:start; white-space:normal; overflow-wrap:anywhere; }
 .project-assistants .pa-memory-node-primary { font-weight:650; }
 .project-assistants .pa-memory-muted { margin:8px 0; color:var(--pa-dim); font-size:13px; }
@@ -60,3 +41,45 @@
 .project-assistants .pa-memory-pages { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; }
 .project-assistants .pa-memory-pages button { min-height:44px; }
 .project-assistants .pa-memory-pages [aria-disabled="true"] { opacity:.55; cursor:default; }
+
+/* Codync's memory card: pill scopes like the inspector tabs, then one outlined card for the layer. */
+.project-assistants .pa-memory-scopes { display:flex;justify-content:safe center;gap:2px;overflow-x:auto;margin-bottom:14px; }
+.project-assistants .pa-memory-scopes button { flex:none;min-height:34px;padding:6px 12px;border:0;border-radius:17px;background:transparent;color:var(--pa-dim);font-size:13px;white-space:nowrap; }
+.project-assistants .pa-memory-scopes button[aria-pressed="true"] { background:var(--pa-line);color:#fafafa; }
+.project-assistants .pa-memory-card { display:flex;flex-direction:column;min-width:0;padding:4px 14px;border:1px solid var(--pa-line);border-radius:16px; }
+.project-assistants .pa-memory-card>*+* { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-memory-card .pa-memory-content-head { margin:0;padding:8px 0; }
+.project-assistants .pa-memory-card .pa-memory-usage { margin:0; }
+.project-assistants .pa-memory-head-actions { display:flex;align-items:center;gap:4px; }
+.project-assistants .pa-memory-refresh,.project-assistants .pa-memory-create-note { min-height:36px;padding:6px 10px;border:0;border-radius:10px;background:transparent;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-memory-refresh:hover,.project-assistants .pa-memory-create-note:not(:disabled):hover { background:var(--pa-card);color:#fafafa; }
+.project-assistants .pa-memory-card>p { margin:0;padding:12px 0;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-memory-card .pa-memory-collection { margin:0;padding:12px 0 0; }
+.project-assistants .pa-memory-card .pa-memory-collection h4 { color:var(--pa-dim);font-size:12px;font-weight:600; }
+.project-assistants .pa-memory-card article.pa-memory-entry { padding:12px 0; }
+.project-assistants .pa-memory-card article.pa-memory-entry+article.pa-memory-entry { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-memory-card .pa-memory-index span { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden; }
+.project-assistants .pa-memory-card .pa-memory-entry small { margin-top:4px;font-size:12px; }
+.project-assistants .pa-memory-card .pa-memory-dreams { padding:12px 0; }
+.project-assistants .pa-memory-detail { min-width:0;padding:14px 0; }
+.project-assistants .pa-memory-related h5 { margin:14px 0 4px;color:var(--pa-dim);font-size:12px;font-weight:550; }
+.project-assistants .pa-memory-related ul { list-style:none;margin:0;padding:0; }
+/* The person's own memory tools: one card of rows that open in place. */
+.project-assistants .pa-memory-tools { display:flex;flex-direction:column;margin-top:24px;padding:0 14px;border:1px solid var(--pa-line);border-radius:16px; }
+.project-assistants .pa-memory-tools>details+details { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-memory-tools summary { display:flex;align-items:center;gap:8px;min-height:48px;padding:12px 0;cursor:pointer;list-style:none;font-size:13px; }
+.project-assistants .pa-memory-tools summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-memory-tools summary>.pa-settings-chevron { margin-left:auto;color:var(--pa-dim);transition:transform .15s; }
+.project-assistants .pa-memory-tools details[open]>summary>.pa-settings-chevron { transform:rotate(180deg); }
+.project-assistants .pa-memory-tools details>p { margin:0 0 12px;color:var(--pa-dim);font-size:12px;line-height:1.5; }
+.project-assistants .pa-memory-tools details>form,.project-assistants .pa-memory-tools details>fieldset { margin:0 0 14px; }
+.project-assistants .pa-memory-revision { margin:12px 2px 0; }
+@media(prefers-reduced-motion:reduce) { .project-assistants .pa-memory-tools summary>.pa-settings-chevron { transition:none; } }
+.project-assistants .pa-memory-card .pa-memory-index { align-content:start;min-height:0;padding-block:2px; }
+.project-assistants .pa-memory-card .pa-memory-index span { color:inherit; }
+.project-assistants .pa-memory-card .pa-memory-index { font-weight:400; }
+.project-assistants .pa-memory-card .pa-memory-index strong { font-weight:500; }
+.project-assistants .pa-memory-card .pa-memory-detail pre { margin:0;font:inherit;font-size:14px;line-height:1.55; }
+.project-assistants .pa-memory-card .pa-memory-detail h4 { font-size:14px;font-weight:600; }
+.project-assistants .pa-memory-card .pa-memory-detail-close { min-height:36px;padding:6px 10px;border:0;border-radius:10px;background:transparent;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-library-head { display:flex;justify-content:flex-end;margin:-6px 0 6px; }

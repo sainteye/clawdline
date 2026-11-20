@@ -569,10 +569,6 @@
 .project-assistants .pa-info-content .pa-form-body { margin-top:16px; }
 .project-assistants .pa-embedded-form { min-width:0; }
 .project-assistants .pa-embedded-form .pa-toolbar { flex-wrap:wrap; }
-.project-assistants .pa-bot-details h3 { font-size:14px; }
-.project-assistants .pa-info-instructions { white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:16px; }
-.project-assistants .pa-bot-details dt { color:var(--pa-dim);font-size:12px; }
-.project-assistants .pa-bot-details dd { margin:0 0 14px;overflow-wrap:anywhere; }
 .project-assistants .pa-room-message { position:relative;max-width:min(86%,calc(100% - 52px));width:fit-content;margin:0;overflow-wrap:anywhere; }
 .project-assistants .pa-room-message + .pa-room-message { margin-top:12px; }
 .project-assistants .pa-room-message + .pa-room-message[data-continued] { margin-top:4px; }
