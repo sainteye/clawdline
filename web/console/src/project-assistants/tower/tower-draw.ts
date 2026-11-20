@@ -26,7 +26,11 @@ export interface DrawBot {
   mood: TowerMood
   seed: number
   unread?: boolean
+  /** The lead Bot wears a short cape and a star badge. */
+  lead?: boolean
 }
+
+const Gold = "#e3bc6b"
 
 /** One neon BR-06 Bot standing on (x, y) in canvas pixels; size is its height. */
 export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: number, size: number, moving: boolean, now: number, still: boolean, dpr: number, alpha = 1) {
@@ -64,6 +68,17 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
   const k = size / 110
   g.translate(-size / 2, -size); g.scale(k, k); g.translate(5, 5)
   const p = pathOf(b.shape)
+  // The lead's cape hangs behind the body, in the body's own 110-unit space,
+  // and sways a little unless motion is reduced.
+  if (b.lead) {
+    // Walking, the cape streams behind; working, it flutters.
+    const sway = still ? 0 : moving ? 8 + Math.sin(now / 140) * 3 : Math.sin(now / (b.mood === "work" ? 220 : 650) + b.seed) * 4
+    g.save()
+    g.beginPath(); g.moveTo(24, 46); g.quadraticCurveTo(4 - sway, 78, 2 - sway, 106); g.lineTo(98 - sway, 106); g.quadraticCurveTo(96 - sway, 78, 76, 46); g.closePath()
+    g.fillStyle = `rgba(${hexRgb(color)},.32)`; g.fill()
+    g.lineJoin = "round"; g.shadowColor = glow; g.shadowBlur = 10 * dpr; g.strokeStyle = color; g.lineWidth = 4; g.stroke()
+    g.restore()
+  }
   g.fillStyle = "rgba(9,6,22,.86)"; g.fill(p)
   g.lineJoin = "round"; g.shadowColor = glow; g.shadowBlur = 16 * dpr; g.strokeStyle = color; g.lineWidth = 6; g.stroke(p)
   g.shadowBlur = 5 * dpr; g.strokeStyle = lighten(color, .55); g.lineWidth = 2.2; g.stroke(p)
@@ -77,6 +92,20 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     g.moveTo(63, top + (15 - len) / 2); g.lineTo(63, top + (15 + len) / 2)
   }
   g.stroke()
+  if (b.lead) {
+    // A gold star on the chest, lit so it reads at the smallest size.
+    g.beginPath()
+    // Every few seconds the star swells and flashes four rays.
+    const t = still ? 1 : ((now + b.seed * 37) % 3800) / 3800, flash = t < .12 ? Math.sin(t / .12 * Math.PI) : 0, grow = 1 + flash * .35
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = (i % 2 ? 6.5 : 14) * grow; g.lineTo(70 + Math.cos(a) * r, 78 + Math.sin(a) * r) }
+    g.closePath(); g.shadowColor = Gold; g.shadowBlur = (10 + flash * 14) * dpr; g.fillStyle = Gold; g.fill()
+    g.shadowBlur = 0; g.lineWidth = 2; g.strokeStyle = "#fff3d6"; g.stroke()
+    if (flash > 0) {
+      g.globalAlpha *= flash; g.lineWidth = 2.5; g.beginPath()
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; g.moveTo(70 + Math.cos(a) * 18, 78 + Math.sin(a) * 18); g.lineTo(70 + Math.cos(a) * 30, 78 + Math.sin(a) * 30) }
+      g.stroke()
+    }
+  }
   g.restore()
   // Working: a few pixels drift up from the keyboard and fade, a pure function of time.
   if (b.mood === "work" && !still) {

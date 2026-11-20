@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { assignFloors, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList, activeWork, portalHelpers } from "./tower-state.ts"
+import { assignFloors, floorOfBot, leadPlace, leadPoint, projectOf, idleMood, slotPoint, strollPoint, towerBots, towerMood, towerSummary, TowerRecentMs, TowerSleepMs, waitingList, activeWork, portalHelpers } from "./tower-state.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "../words.ts"
 
@@ -132,4 +132,38 @@ test("portal helpers take turns between Bots and stop at the cap", () => {
   assert.deepEqual(portalHelpers(bots, 6).map(h => `${h.bot.key.includes("a") ? "a" : "b"}${h.index}`), ["a0", "b0", "a1", "a2", "a3"])
   assert.equal(portalHelpers(bots, 2).length, 2)
   assert.deepEqual(portalHelpers(towerBots([bot("c")], now, w), 6), [])
+})
+
+test("the lead stands on the top floor whatever floor its Project has, in its own spot", () => {
+  const at = (id: string, project: string, lead: boolean) => ({ ...(bot(id) as object), bot: { key: { machine_id: "m", bot_id: id }, name: id, project: { machine_id: "m", project_id: project }, lead } }) as never
+  const items = [at("a", "alpha", false), at("b", "beta", false), at("lead", "beta", true)]
+  const bots = towerBots(items, now, {})
+  const floors = assignFloors(items, 4, new Map([[projectOf(items[1]), 2]]))
+  const by = (id: string) => bots.find(b => b.item.bot.key.bot_id === id)!
+  assert.equal(by("lead").lead, true)
+  assert.equal(by("a").lead, false)
+  assert.equal(floorOfBot(by("lead"), floors), 0, "the lead is on 4F although beta is on 2F")
+  assert.equal(floorOfBot(by("b"), floors), 2)
+  // A second machine's lead stands beside the first, then on the other side.
+  assert.deepEqual([0, 1, 2].map(n => leadPoint([780, 332], n)), [[780, 332], [696, 332], [864, 332]])
+})
+
+test("the lead patrols its beat before the screen and stands still when it must be read", () => {
+  const beat = [[620, 330], [940, 332], [780, 326]] as const
+  const [lead] = towerBots([{ ...(bot("lead") as object), bot: { key: { machine_id: "m", bot_id: "lead" }, name: "lead", project: { machine_id: "m", project_id: "p" }, lead: true } } as never], now, {})
+  const seen = new Set<string>()
+  let walked = false
+  for (let t = 0; t < 120_000; t += 500) {
+    const p = leadPlace(beat, { ...lead, mood: "work" }, 0, now + t, false)
+    walked ||= p.moving
+    // Within the beat's span, give or take the stroll's small jitter.
+    assert.ok(p.at[0] >= 590 && p.at[0] <= 970 && p.at[1] >= 314 && p.at[1] <= 344, `${p.at}`)
+    seen.add(`${Math.round(p.at[0] / 40)}`)
+  }
+  assert.ok(walked && seen.size >= 3, "it walks between more than one spot")
+  for (const mood of ["wait", "error", "sleep"] as const) {
+    assert.deepEqual(leadPlace(beat, { ...lead, mood }, 0, now, false), { at: [940, 332], moving: false }, mood)
+    assert.deepEqual(leadPlace(beat, { ...lead, mood }, 0, now + 7777, false), { at: [940, 332], moving: false }, mood)
+  }
+  assert.deepEqual(leadPlace(beat, { ...lead, mood: "work" }, 0, now + 4321, true), { at: [940, 332], moving: false }, "reduced motion stands")
 })

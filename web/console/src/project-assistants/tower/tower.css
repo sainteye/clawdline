@@ -202,3 +202,4 @@
 .project-assistants .pa-tower-picture-missing { position:absolute;left:50%;top:64px;z-index:3;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);height:auto;grid-auto-flow:column;gap:12px;padding:8px 12px;background:rgba(12,9,20,.88);box-shadow:inset 0 0 0 1px rgba(156,166,179,.35); }
 .project-assistants .pa-tower-picture-missing p { margin:0; }
 @media(max-width:700px) { .project-assistants .pa-tower-picture-missing { top:52px;grid-auto-flow:row; } }
+.project-assistants .pa-tower-card-lead { margin-left:8px;color:#e3bc6b;font-size:11px;font-weight:700;letter-spacing:.04em; }
