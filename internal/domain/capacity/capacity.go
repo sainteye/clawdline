@@ -646,6 +646,9 @@ type Entry struct {
 	// Routine marks a shared pool or rolling receipt history whose occupancy
 	// alone is not pressure. Failures and readings above the bound still alert.
 	Routine bool `json:",omitempty"`
+	// RetentionTarget is a rolling age target for whole-segment pruning.
+	// The oldest retained record can legitimately be older than the target.
+	RetentionTarget bool `json:",omitempty"`
 	// Sources are the declarations in this repository that bound this row, as
 	// the register guard spells them (guard_test.go). A bounded declaration
 	// that is neither a row's source nor on the guard's baseline is a failing

@@ -188,6 +188,19 @@ func (r *Recorder) prune(now int64) {
 		r.data.Events = kept[n:]
 	}
 }
+
+// sameReading compares changes in quota evidence. The current snapshot
+// reports its own observation time and an advancing clock is not a transition.
+func sameReading(a, b Provider) bool {
+	if a.ID != b.ID || a.Source != b.Source || a.State != b.State || a.Problem != b.Problem || a.Stale != b.Stale {
+		return false
+	}
+	if a.UsedPercent == nil || b.UsedPercent == nil {
+		return a.UsedPercent == b.UsedPercent
+	}
+	return *a.UsedPercent == *b.UsedPercent
+}
+
 func (r *Recorder) Record(s providerquota.Snapshot) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -205,9 +218,7 @@ func (r *Recorder) Record(s providerquota.Snapshot) {
 				break
 			}
 		}
-		a, _ := json.Marshal(last)
-		b, _ := json.Marshal(p)
-		if string(a) == string(b) {
+		if last != nil && sameReading(*last, p) {
 			continue
 		}
 		r.data.Events = append(r.data.Events, Event{At: s.At, Provider: p})
@@ -215,10 +226,11 @@ func (r *Recorder) Record(s providerquota.Snapshot) {
 	}
 	before := len(r.data.Events)
 	r.prune(s.At)
-	if !changed && before == len(r.data.Events) {
+	if changed || before != len(r.data.Events) {
+		r.data.Through = s.At
+	} else if r.state != "write_failed" {
 		return
 	}
-	r.data.Through = s.At
 	if err := r.save(); err != nil {
 		r.state = "write_failed"
 	} else {

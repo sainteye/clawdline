@@ -224,24 +224,27 @@ func (s *Store) UpdateBrokerNotice(ctx context.Context, expect NoticeExpect, nex
 
 // NoticeCounts is the ledger's shape at one moment, for /v1/diagnostics.
 type NoticeCounts struct {
-	Pending       int
-	Delivered     int
-	DeadLetter    int
-	Acknowledged  int
-	OldestPending time.Time
+	Pending             int
+	Delivered           int
+	DeadLetter          int
+	DeadLetterDelivered int
+	Acknowledged        int
+	OldestPending       time.Time
 }
 
 // BrokerNoticeCounts reads the ledger's totals.
 func (s *Store) BrokerNoticeCounts(ctx context.Context) (NoticeCounts, error) {
 	var out NoticeCounts
-	rows, err := s.rd.QueryContext(ctx, `SELECT state, COUNT(*) FROM broker_notices GROUP BY state`)
+	rows, err := s.rd.QueryContext(ctx, `
+		SELECT state, COUNT(*), SUM(CASE WHEN state = 'dead_letter' AND delivered_at > 0 THEN 1 ELSE 0 END)
+		FROM broker_notices GROUP BY state`)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var state string
-		var n int
-		if err := rows.Scan(&state, &n); err != nil {
+		var n, delivered int
+		if err := rows.Scan(&state, &n, &delivered); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -252,6 +255,7 @@ func (s *Store) BrokerNoticeCounts(ctx context.Context) (NoticeCounts, error) {
 			out.Delivered = n
 		case "dead_letter":
 			out.DeadLetter = n
+			out.DeadLetterDelivered = delivered
 		case "acknowledged":
 			out.Acknowledged = n
 		}

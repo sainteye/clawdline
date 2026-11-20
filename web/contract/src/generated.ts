@@ -609,6 +609,15 @@ export interface BrokerChild {
 }
 
 /**
+ * Transport evidence for the current dead letters, independent of browser push.
+ * Absent in older daemons.
+ */
+export interface BrokerDeadLetterDelivery {
+  delivered: number
+  unrecorded: number
+}
+
+/**
  * The broker block of /v1/diagnostics: the beat, what its last pass did, the notice
  * ledger, the store, and what the beat has only observed.
  */
@@ -1178,6 +1187,7 @@ export interface BrokerNotice {
 export interface BrokerNoticeCounts {
   acknowledged: number
   dead_letter: number
+  dead_letter_delivery?: BrokerDeadLetterDelivery
   delivered: number
   oldest_open_seconds?: number
   pending: number
@@ -2470,8 +2480,8 @@ export interface CapacityLastPush {
  * /v1/diagnostics — no state directory, no ports — because a person reads the
  * panel from a browser that is a paired device, and /v1/diagnostics is this
  * machine's own token's. Beside it, the count of completion notices that went
- * unanswered through their whole ladder (limits N7): a dead letter is pushed once
- * when it happens, and this is where it stays visible.
+ * unanswered through their whole ladder (limits N7): it stays visible independently
+ * of whether browser push was accepted.
  */
 export interface CapacityPanel {
   at: number

@@ -131,15 +131,7 @@ func (s *Server) brokerDiagnostics(ctx context.Context) *contract.BrokerDiagnost
 		out.Store.Status = contract.BrokerStoreStatusUnavailable
 	}
 	if counts, err := s.store.BrokerNoticeCounts(ctx); err == nil {
-		out.Notices = contract.BrokerNoticeCounts{
-			Pending:      int64(counts.Pending),
-			Delivered:    int64(counts.Delivered),
-			DeadLetter:   int64(counts.DeadLetter),
-			Acknowledged: int64(counts.Acknowledged),
-		}
-		if !counts.OldestPending.IsZero() {
-			out.Notices.OldestOpenSeconds = int64(now.Sub(counts.OldestPending) / time.Second)
-		}
+		out.Notices = brokerNoticeCountsWire(counts, now)
 	}
 
 	seen := s.broker.Observed()

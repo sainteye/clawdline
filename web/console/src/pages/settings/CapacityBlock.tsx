@@ -35,7 +35,7 @@ const POLL_MS = 15_000
  *   press away;
  * - a row that could not be measured says so and draws no bar — unknown is
  *   not empty;
- * - dead letters are shown, since they are pushed only once;
+ * - dead letters show transport evidence independently of browser push;
  * - a patrol that is not running, or has stalled, is said above the rows,
  *   because then every number under it is old or absent.
  *
@@ -90,6 +90,7 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
   const listed = all ? rows : loud
   const beat = panel?.capacity.beat
   const dead = panel?.completions?.dead_letter ?? 0
+  const delivery = panel?.completions?.dead_letter_delivery
 
   return (
     <div className="block settings-capacity" id="settings-capacity">
@@ -126,11 +127,9 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
         </p>
       )}
       {dead > 0 && (
-        <p className="cap-warn cap-dead" title={catalogWord("inline", "c34776cd2efc")}>
-          {words(
-            `${dead} completion notices were never taken up to the end (dead letter); each was pushed once when it happened.`,
-            catalogFormat("template", "d4bddd9e5d03", [dead]),
-          )}
+        <p className="cap-warn cap-dead">
+          {catalogFormat("capacity", "stoppedNotices", [dead])}
+          {delivery && <> {catalogFormat("capacity", "noticeDelivery", [delivery.delivered, delivery.unrecorded])}</>}
         </p>
       )}
       {panel && loud.length === 0 && !all && rows.length > 0 && (
@@ -170,14 +169,14 @@ function CapacityRow({ row }: { row: CapacityEntry }) {
         <span className="cap-name" title={row.class}>
           {row.name}
         </span>
-        <span className="cap-state">{stateWord(row.state)}</span>
+        <span className="cap-state">{row.failing ? catalogWord("capacity", "operationFailed") : stateWord(row.state)}</span>
         <span className="cap-amount">{reading(row)}</span>
       </div>
       <div className="cap-meter" aria-hidden="true">
         {pct != null && <i style={{ width: `${pct}%` }} />}
       </div>
       <div className="cap-meta">
-        <span>{evicts(row)}</span>
+        <span>{row.name === "diagnostics.api_routes" ? catalogWord("capacity", "routesGrouped") : evicts(row)}</span>
         <span>{lastAlert(row)}</span>
         {row.projected_full_at ? <span>{fullBy(row.projected_full_at)}</span> : null}
         {row.overridden && <span>{catalogWord("literal", "0bd13da58a88")}</span>}

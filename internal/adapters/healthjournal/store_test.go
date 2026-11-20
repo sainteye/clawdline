@@ -319,6 +319,30 @@ func TestRetentionByAgeBytesAndCountKeepsAnHonestFloor(t *testing.T) {
 	}
 }
 
+func TestPruneBlockClearsOnRecoveryAndKeepsItsFailureCount(t *testing.T) {
+	dir := t.TempDir()
+	clock := newClock(t0)
+	first := open(t, Options{Dir: dir, BootID: "boot-a", Build: "b", Clock: clock})
+	offerAll(t, first, newProducer(t, clock, "boot-a", "b").next(t, 2))
+	closeNow(t, first)
+	clock.advance((MaxStoreAgeSeconds + 60) * time.Second)
+	s := open(t, Options{Dir: dir, BootID: "boot-b", Build: "b", Clock: clock,
+		remove: func(string) error { return os.ErrPermission }})
+	closeNow(t, s) // The worker has stopped before the remover is replaced.
+	before := s.Status()
+	if !before.PruneBlocked || before.PruneFailures != 1 || before.Segments != 1 {
+		t.Fatalf("failed retention pass: %+v", before)
+	}
+	s.remove = os.Remove
+	if !s.prune(false) {
+		t.Fatal("retention did not recover")
+	}
+	after := s.Status()
+	if after.PruneBlocked || after.PruneFailures != 1 || after.PrunedAge != 1 {
+		t.Fatalf("recovered retention pass: %+v", after)
+	}
+}
+
 func TestTooManySegmentsArePrunedByCount(t *testing.T) {
 	dir := t.TempDir()
 	clock := newClock(t0)

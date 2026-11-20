@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13665,
-  "riskKeys": 5864,
-  "nonRiskCount": 7801,
+  "englishContentKeys": 13670,
+  "riskKeys": 5866,
+  "nonRiskCount": 7804,
   "groups": [
     {
       "name": "acp / other",
@@ -541,13 +541,15 @@
     },
     {
       "name": "capacity / other",
-      "count": 2,
+      "count": 4,
       "sources": [
         null
       ],
       "keys": [
         "capacity.estimatedTokens",
-        "capacity.milliseconds"
+        "capacity.milliseconds",
+        "capacity.routesGrouped",
+        "capacity.stoppedNotices"
       ]
     },
     {
@@ -565,7 +567,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 697,
+      "count": 698,
       "sources": [
         null
       ],
@@ -796,6 +798,7 @@
         "capacityRow.cloud.health_sealed_store_attachments.what",
         "capacityRow.cloud.health_sealed_store_bytes.what",
         "capacityRow.cloud.health_store_lost_ranges.what",
+        "capacityRow.cloud.health_store_seconds.full",
         "capacityRow.cloud.health_upload_attempt_seconds.what",
         "capacityRow.cloud.health_upload_attempts.what",
         "capacityRow.cloud.health_upload_batch_bytes.what",

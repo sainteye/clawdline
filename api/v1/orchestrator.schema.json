@@ -641,6 +641,16 @@
         "store_error": { "description": "Why the pass could not read the store. A pass that could not read is not a pass that found nothing.", "type": "string" }
       }
     },
+    "BrokerDeadLetterDelivery": {
+      "description": "Transport evidence for the current dead letters, independent of browser push. Absent in older daemons.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivered", "unrecorded"],
+      "properties": {
+        "delivered": { "type": "integer" },
+        "unrecorded": { "type": "integer" }
+      }
+    },
     "BrokerNoticeCounts": {
       "type": "object",
       "additionalProperties": false,
@@ -649,6 +659,7 @@
         "pending": { "type": "integer" },
         "delivered": { "type": "integer" },
         "dead_letter": { "type": "integer" },
+        "dead_letter_delivery": { "$ref": "#/$defs/BrokerDeadLetterDelivery" },
         "acknowledged": { "type": "integer" },
         "oldest_open_seconds": { "type": "integer" }
       }

@@ -11,7 +11,7 @@ func apiPerformanceBounds() []Entry {
 		for i := range sources {
 			sources[i] = "internal/domain/apiperformance." + sources[i]
 		}
-		return Entry{Name: "diagnostics.api_" + name, Class: class, Unit: unit, Limit: n, AtLimit: action, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: sources}
+		return Entry{Name: "diagnostics.api_" + name, Class: class, Unit: unit, Limit: n, AtLimit: action, Routine: action == EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: sources}
 	}
 	return []Entry{
 		row("queue", Rows, 1024, Refuse, "MaxQueue", "New:chan(queue)"),
