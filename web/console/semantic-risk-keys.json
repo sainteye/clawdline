@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13764,
+  "englishKeys": 13775,
   "counts": {
     "negation": 3561,
-    "state": 2340,
+    "state": 2341,
     "permission": 831,
     "deletion": 318,
     "uncertainty": 554
   },
-  "unionCount": 5894,
+  "unionCount": 5895,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3628,6 +3628,7 @@
       "botHandoff.adopted",
       "botRoutineControls.followUps",
       "botRoutineControls.hookHeld",
+      "botRoutineControls.lastRunFailed",
       "botRoutineControls.publicHint",
       "botRoutineControls.retryHook",
       "botRoutineControls.waitingEvent",
@@ -7816,6 +7817,7 @@
     "botRoutineControls.hookHeld",
     "botRoutineControls.hookReadOnly",
     "botRoutineControls.invalidEvent",
+    "botRoutineControls.lastRunFailed",
     "botRoutineControls.localHint",
     "botRoutineControls.previewUnavailable",
     "botRoutineControls.publicHint",

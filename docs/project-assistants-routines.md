@@ -126,3 +126,25 @@ SQLite checks cover failed-forget rollback, receipt replay without resurrection,
 restart and archive transfer. These local fixtures make zero vendor/model
 requests; installed-native and production Cloud qualification remain separate.
 Webhook/event triggers, follow-ups and execution retries are still pending.
+
+
+## Routine list follows Codync's RoutinesView
+
+The Bot details list now matches Codync `apps/desktop/src/renderer/views/routines/RoutinesView.tsx`
+(inspected at `876492dbcd250d11cb4fcafe861730bf3d22186f`). Each routine is one outlined card with
+its name, one summary line and an enable switch. The summary shows an active run's state, a failed
+last run, or the schedule in words with the next run; a paused routine says so. Several fixed hours
+on the same days (`0 9,18 * * *`) read as a list of times instead of raw Cron, and the time zone
+appears only when it differs from the viewing device's. The instruction text is no longer repeated
+in the list.
+
+Opening a row opens the existing editor. Delete (with an inline confirmation), test run and run
+history and results moved into it, as did webhook key management. A test run keeps the editor open,
+marks itself started and opens the history, as Codync's editor does. Bot-set follow-ups appear under
+Later as dashed cards with a clock and a cancel button, above the routines.
+
+The production component and the existing human TCP browser harness
+(`TestProjectAssistantRoutineHumanBrowser`) cover create, lost-save replay after reload, edit, test
+run with its actual result, pause and enable through the switch, and delete, in desktop English and
+mobile Taiwan Traditional Chinese. It still makes two scripted routine sends and no native, vendor or
+model requests; it does not establish production Cloud or a physical phone.

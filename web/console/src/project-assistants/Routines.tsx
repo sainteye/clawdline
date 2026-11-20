@@ -25,14 +25,43 @@ export function Routines(props:Props) {
   return <RoutinePanel key={routineScopeIdentity(props.source,props.bot)+":"+capture.current.epoch} {...props}/>
 }
 
-function RoutineTriggerSummary({trigger:t,w}:{trigger:W.ProjectAssistantRoutineTrigger;w:Words}) {
-  if(!editableRoutineTrigger(t))return <p>{t.type}</p>
-  if(t.type==="event")return <><p>{tr("event")} · {tr("source")}: {t.source} · {tr("eventName")}: {t.event}</p>{!!t.filters?.length&&<div><p>{tr("filters")}</p><dl>{t.filters.map((row,n)=><div key={n}><dt>{row.key}</dt><dd>{row.value}</dd></div>)}</dl></div>}</>
-  if(t.type==="webhook")return <p>{tr("webhook")}</p>
-  if(t.type==="interval")return <p>{w.routineSeconds}: {t.seconds}</p>
-  if(t.type==="once")return <p>{w.routineOnce}: {new Date(t.at).toLocaleString()}</p>
-  return <p><RoutineCalendarSummary trigger={t} calendar={readRoutineCalendar(t.expression)}/></p>
+const deviceZone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"
+const shortTime=(at:string|number)=>new Intl.DateTimeFormat(currentCatalogTag(),{dateStyle:"medium",timeStyle:"short"}).format(new Date(at))
+
+/** Several fixed hours on the same days ("0 9,18 * * *") read as times, not as raw Cron. */
+function cronTimes(expression:string):{repeat:"daily"|"weekdays"|"weekly";times:string;weekday:number}|null {
+  const m=/^(\d{1,2}) (\d{1,2}(?:,\d{1,2})+) \* \* (\*|1-5|[0-6])$/u.exec(expression.trim())
+  if(!m||Number(m[1])>59)return null
+  const hours=m[2].split(",").map(Number)
+  if(hours.some(h=>h>23))return null
+  const times=hours.map(h=>`${String(h).padStart(2,"0")}:${m[1].padStart(2,"0")}`)
+  const list=new Intl.ListFormat(currentCatalogTag(),{style:"long",type:"conjunction"}).format(times)
+  return {repeat:m[3]==="*"?"daily":m[3]==="1-5"?"weekdays":"weekly",times:list,weekday:Number(m[3])||0}
 }
+
+/** One trigger as a short sentence for the routine's row. The zone shows only when it is not this device's. */
+function triggerLine(t:W.ProjectAssistantRoutineTrigger,w:Words):string {
+  if(!editableRoutineTrigger(t))return t.type
+  if(t.type==="event")return `${tr("event")} · ${t.source} · ${t.event}`
+  if(t.type==="webhook")return tr("webhook")
+  if(t.type==="once")return `${w.routineOnce} · ${shortTime(t.at)}`
+  if(t.type==="interval"){
+    const [unit,amount]=t.seconds%3600===0?["hour",t.seconds/3600]:t.seconds%60===0?["minute",t.seconds/60]:["second",t.seconds]
+    return tr("everyInterval").replace("{time}",new Intl.NumberFormat(currentCatalogTag(),{style:"unit",unit,unitDisplay:"long"}).format(amount))
+  }
+  const zone=t.timeZone&&t.timeZone!=="host"&&t.timeZone!==deviceZone()?t.timeZone:""
+  const calendar=readRoutineCalendar(t.expression)
+  const several=calendar.repeat==="custom"?cronTimes(t.expression):null
+  if(calendar.repeat==="custom"&&!several)return zone?`${t.expression} · ${zone}`:t.expression
+  const values={minute:calendar.time.slice(3),time:several?.times??calendar.time,day:routineWeekday(several?.weekday??calendar.weekday)}
+  const text=tr(`${several?.repeat??calendar.repeat}Line` as "dailyLine").replace(/\{(minute|time|day)\}/gu,(_,key:keyof typeof values)=>values[key])
+  return zone?`${text} · ${zone}`:text
+}
+
+function ClockIcon(){return <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10H6.5" strokeLinecap="round"/></svg>}
+function TrashIcon(){return <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 5.5h13M8 5.5V4h4v1.5M5.5 5.5l.8 10.5h7.4l.8-10.5M8.5 8.5v5M11.5 8.5v5"/></svg>}
+function PlayIcon(){return <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M8.5 7v6l5-3z" fill="currentColor" strokeLinejoin="round"/></svg>}
+function CheckIcon(){return <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 10.5l3.2 3L15 6.5"/></svg>}
 
 const routineMinutes = Array.from({length: 60}, (_, minute) => String(minute).padStart(2, "0"))
 const routineWeekdays = [1, 2, 3, 4, 5, 6, 0]
@@ -227,6 +256,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
   const [name,setName]=useState(""),[instruction,setInstruction]=useState(""),[triggers,setTriggers]=useState<RoutineTriggerDraft[]>([]),[timeout,setTimeout]=useState(3600),[active,setActive]=useState(true)
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{id:string;page:W.ProjectAssistantRoutineListResponse}|null>(null),[confirm,setConfirm]=useState<string|null>(null),[held,setHeld]=useState<Intent|null>(null),[journalBlocked,setJournalBlocked]=useState(false)
   const [hookID,setHookID]=useState<string|null>(null)
+  const [started,setStarted]=useState(false),[historyOpen,setHistoryOpen]=useState(false)
   const live=useRef(enabled);live.current=enabled
   const pending=useRef(false),control=useRef(new AbortController()),mounted=useRef(true)
   const editorID=useId()
@@ -272,6 +302,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
     setSchedule(single&&first?.calendar?first:newRoutineTriggerDraft())
     setMode(d===null||single&&first?.calendar?"schedule":single&&first?.trigger.type==="webhook"?"webhook":"advanced")
     setTimeout(d?.timeout_seconds??3600);setActive(d?.enabled??true);setError("")
+    setStarted(false);setHistoryOpen(false);setConfirm(null)
   }
   const cancelEdit=()=>{if(!busy&&!closing){setClosing(true);setError("")}}
   const selectedTriggers=mode==="schedule"?[schedule]:mode==="webhook"?[newRoutineTriggerDraft("webhook")]:triggers
@@ -310,8 +341,10 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
       }
       sessionStorage.removeItem(durableKey)
       if(!mounted.current||!live.current||source.current?.()===false)return null
-      setHeld(null);if(editing!==undefined)setClosing(true);setConfirm(null)
+      // A test run keeps its editor open on the run it started, as in Codync.
+      setHeld(null);if(editing!==undefined&&(intent.action==="save"||intent.action==="delete"))setClosing(true);setConfirm(null)
       if(intent.action==="hook")return hook
+      if(intent.action==="test"){setStarted(true);setHistoryOpen(true)}
       await load();if(intent.action==="test")await load(intent.request.id)
       if(saved)setHookID(saved)
     } catch(e) {
@@ -340,10 +373,38 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
   const refresh=async()=>{setBusy(true);try{await load();if(history)await load(history.id);setError("")}catch(e){setError(errorCode(e))}finally{setBusy(false)}}
   const editError=error&&!journalBlocked?error==="routine_event_fields"?tr("invalidEvent"):error==="resume_unsupported"?w.routineResumeUnsupported:error==="pa_outcome_unknown"?w.unknown:w.unavailable:""
   const editorValid=!!name.trim()&&!!instruction.trim()&&selectedTriggers.every(({trigger})=>editableRoutineTrigger(trigger)&&validRoutineTrigger(trigger,events))
+  const routines=page?.definitions.filter(d=>!d.follow_up)??[]
+  const followUps=page?.definitions.filter(d=>d.follow_up&&d.enabled&&!!d.next_due)??[]
+  // The row's second line, as in Codync: what is happening now, else when it runs.
+  const summary=(d:W.ProjectAssistantRoutineDefinition):{text:string;tone?:"danger"|"active"}=>{
+    const latest=page?.runs.filter(r=>r.routine_id===d.id).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]
+    if(latest&&["accepted","queued","running","waiting_permission"].includes(latest.state))return {text:w[latest.state as keyof Words]??latest.state,tone:"active"}
+    if(latest?.state==="failed")return {text:tr("lastRunFailed"),tone:"danger"}
+    const schedule=d.triggers.map(t=>triggerLine(t,w)).join(" · ")
+    if(!d.enabled)return {text:`${w.routinePaused} · ${schedule}`}
+    if(d.next_due)return {text:`${schedule} · ${tr("nextPreview").replace("{time}",shortTime(d.next_due))}`}
+    return {text:d.triggers.some(isHookTrigger)?`${schedule} · ${tr("waitingEvent")}`:`${schedule} · ${w.routineSpent}`}
+  }
+  const hasHook=!!editing&&editing.triggers.some(isHookTrigger)
+  const hookPanel=hookID&&events&&<RoutineHook key={hookID} id={hookID} allowed={!!authority} busy={busy} held={held} blocked={journalBlocked} w={w} onClose={()=>setHookID(null)} onRun={async(rotate,replay)=>{
+    if(replay)return held?.action==="hook"&&held.request.id===hookID?run(held,true):null
+    const d=page?.definitions.find(d=>d.id===hookID)
+    if(!d||!page||!writable)return null
+    return run({action:"hook",request:{command:command(bot.key,"edit"),fence:page.fence,id:d.id,expected_revision:d.version,rotate}})
+  }}/>
+  const editorHistory=editing&&history?.id===editing.id?history.page:null
   return <section className="pa-routines pa-routines-embedded" aria-label={w.routines}>
+    {followUps.length>0&&<div className="pa-routine-group" aria-label={tr("later")} role="group">
+      <h3 className="pa-routine-group-title">{tr("later")}</h3>
+      <ul className="pa-routine-list">{followUps.map(d=><li key={d.id} className="pa-routine-card pa-routine-follow">
+        <span className="pa-routine-follow-icon"><ClockIcon/></span>
+        <div className="pa-routine-follow-text"><p>{d.instruction||d.name}</p><small>{Date.parse(d.next_due)<=Date.now()?tr("followUpDue"):tr("followUpAt").replace("{time}",shortTime(d.next_due))}</small></div>
+        <button type="button" className="pa-routine-icon-button" disabled={!writable||busy} aria-label={`${tr("cancelFollowUp")}: ${d.name}`} title={tr("cancelFollowUp")} onClick={()=>action(d,"delete")}>×</button>
+      </li>)}</ul>
+    </div>}
     <header className="pa-routine-section-header"><h3>{w.routines}</h3><button type="button" className="pa-routine-plus" disabled={!writable||busy} aria-label={tr("setUp")} title={tr("setUp")} onClick={event=>edit(null,event.currentTarget)}>+</button></header>
-    {!supported?<p role="status">{w.routinesUnsupported}</p>:<>
-      {!page&&!error&&<p role="status">{w.loading}</p>}
+    {!supported?<p className="pa-routines-empty" role="status">{w.routinesUnsupported}</p>:<>
+      {!page&&!error&&<p className="pa-routines-empty" role="status">{w.loading}</p>}
       {editing!==undefined&&<dialog ref={dialog} className="pa-routine-dialog" data-closing={closing||undefined} aria-labelledby={editorID}
         onCancel={event=>{event.preventDefault();cancelEdit()}}
         onKeyDown={event=>{
@@ -377,6 +438,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
               <button type="button" className="pa-routine-add" disabled={triggers.length>=20}
                 onClick={()=>setTriggers(old=>[...old,newRoutineTriggerDraft()])}>{w.routineAddTrigger}</button>
             </>}
+            {!events&&<p className="pa-routine-caption" role="status">{tr("eventUnsupported")}</p>}
             <details className="pa-routine-run-settings">
               <summary><span>{tr("runSettings")}</span><small>{tr("timeoutSummary").replace("{time}",new Intl.NumberFormat(currentCatalogTag(),{style:"unit",unit:timeout===3600?"hour":"second",unitDisplay:"long"}).format(timeout===3600?1:timeout))}</small></summary>
               <div className="pa-routine-options">
@@ -386,35 +448,48 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
               {mode!=="advanced"&&<button type="button" className="pa-routine-advanced" onClick={()=>{setTriggers(selectedTriggers);setMode("advanced")}}>{tr("advancedTriggers")}</button>}
             </details>
           </fieldset>
+          {editing&&hasHook&&<button type="button" className="pa-routine-secondary" disabled={!authority||busy||!events||!!held||journalBlocked} onClick={()=>setHookID(editing.id)}>{tr("manageHook")}</button>}
+          {editing&&hookID===editing.id&&hookPanel}
+          {editing&&<details className="pa-routine-run-settings pa-routine-history" open={historyOpen} onToggle={event=>{
+            const open=event.currentTarget.open;setHistoryOpen(open)
+            if(open)void load(editing.id).catch(e=>setError(errorCode(e)))
+          }}>
+            <summary><span>{w.routineHistory}</span></summary>
+            {!editorHistory?<p className="pa-routine-caption" role="status">{w.loading}</p>:editorHistory.runs.length===0?<p className="pa-routine-caption">{w.routineNoRuns}</p>:<ol className="pa-routine-runs">{editorHistory.runs.map(run=><li className="pa-routine-run" key={run.id}>
+              <p className="pa-routine-run-head"><strong data-state={run.state}>{w[run.state as keyof Words]??run.state}</strong><small>{shortTime(run.created_at)} · {run.source==="test"?tr("testRun"):run.source==="schedule"?tr("scheduledRun"):run.source==="webhook"?tr("eventRun"):run.source==="follow_up"?tr("followUp"):`${tr("otherRun")}: ${run.source}`}</small></p>
+              {(run.delivery_id||run.retry_count!==undefined||run.not_before)&&<p className="pa-routine-caption">{[run.delivery_id&&`${tr("delivery")}: ${run.delivery_id}`,run.retry_count!==undefined&&`${tr("retryCount")}: ${run.retry_count}`,run.not_before&&`${tr("retryAt")}: ${shortTime(run.not_before)}`].filter(Boolean).join(" · ")}</p>}
+              {run.state==="unknown"&&<p role="alert">{tr("unknownRun")}</p>}
+              {run.result&&<p className="pa-routine-result">{run.result}</p>}
+              {run.failure&&<p role="alert">{run.failure.code} ({run.failure.field})</p>}
+            </li>)}</ol>}
+            {editorHistory?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load(editing.id,editorHistory.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
+          </details>}
           {editError&&<p role="alert">{editError} ({error})</p>}
-          {held&&held.action!=="hook"&&!journalBlocked&&<button type="button" disabled={busy||!authority} onClick={()=>void run(held,true)}>{w.routineReplay}</button>}
+          {held&&held.action!=="hook"&&!journalBlocked&&<div className="pa-routine-confirm" role="alert"><p>{w.routineHeld}</p><div><button type="button" disabled={busy||!authority} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div></div>}
+          {editing&&confirm===editing.id&&<div className="pa-routine-confirm" role="alert"><p>{w.routineDeleteConfirm}</p><div><button type="button" onClick={()=>setConfirm(null)}>{w.cancel}</button><button type="button" className="pa-routine-danger" disabled={!writable||busy} onClick={()=>action(editing,"delete")}>{w.routineConfirmDelete}</button></div></div>}
           <footer className="pa-routine-footer">
+            {editing&&<>
+              <button type="button" className="pa-routine-icon-button" aria-label={w.routineDelete} title={w.routineDelete} disabled={!writable||busy} onClick={()=>setConfirm(editing.id)}><TrashIcon/></button>
+              <button type="button" className="pa-routine-icon-button" aria-label={started?tr("testStarted"):w.routineTest} title={started?tr("testStarted"):w.routineTest} disabled={!writable||busy||started} onClick={()=>action(editing,"test")}>{started?<CheckIcon/>:<PlayIcon/>}</button>
+            </>}
+            <span className="pa-routine-spacer"/>
             <button type="submit" disabled={!writable||busy||!editorValid}>{busy?w.routineSaving:editing?w.save:tr("createRoutine")} <kbd aria-hidden="true">{macKeyboard()?"⌘S":"Ctrl+S"}</kbd></button>
           </footer>
         </form>
       </dialog>}
-      {page&&!page.definitions.some(d=>!d.follow_up)&&<p className="pa-routines-empty">{tr("emptyRoutines")}</p>}
-      {page?.definitions.filter(d=>!d.follow_up).map(d=><article className="pa-routine" key={d.id}>
-        <h4>{d.name}</h4><p>{d.enabled?w.routineEnabled:w.routinePaused} · {d.next_due?`${w.routineNext}: ${new Date(d.next_due).toLocaleString()}`:d.triggers.some(isHookTrigger)?tr("waitingEvent"):w.routineSpent}</p>
-        <p>{d.instruction}</p>{d.triggers.map((trigger,n)=><RoutineTriggerSummary key={n} trigger={trigger} w={w}/>)}
-        <div className="pa-toolbar">{d.triggers.some(isHookTrigger)&&<button type="button" disabled={!authority||busy||!events||!!held||journalBlocked} onClick={()=>setHookID(d.id)}>{tr("manageHook")}</button>}<button type="button" disabled={!writable||busy||(d.triggers.some(isHookTrigger)&&!events)} onClick={event=>edit(d,event.currentTarget)}>{w.routineEdit}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"enable")}>{d.enabled?w.routinePause:w.routineEnable}</button><button type="button" disabled={!writable||busy} onClick={()=>action(d,"test")}>{w.routineTest}</button><button type="button" disabled={busy} onClick={()=>void load(d.id).catch(e=>setError(errorCode(e)))}>{w.routineHistory}</button><button type="button" disabled={!writable||busy} onClick={()=>setConfirm(d.id)}>{w.routineDelete}</button></div>
-        {confirm===d.id&&<div role="alert"><p>{w.routineDeleteConfirm}</p><button type="button" disabled={!writable||busy} onClick={()=>action(d,"delete")}>{w.routineConfirmDelete}</button><button type="button" onClick={()=>setConfirm(null)}>{w.cancel}</button></div>}
-      </article>)}
-      {!events&&<p role="status">{tr("eventUnsupported")}</p>}
-      {page?.definitions.some(d=>d.follow_up&&d.enabled&&!!d.next_due)&&<section aria-label={tr("followUps")}><h4>{tr("followUps")}</h4>{page.definitions.filter(d=>d.follow_up&&d.enabled&&!!d.next_due).map(d=><article key={d.id}><h5>{d.name}</h5><p>{d.instruction}</p><p>{d.next_due?new Date(d.next_due).toLocaleString():w.routineSpent} · {tr("followUpChain")}: {d.follow_up_chain??0}</p><button type="button" disabled={!writable||busy} aria-label={`${w.cancel}: ${d.name}`} onClick={()=>action(d,"delete")}>{w.cancel}</button><button type="button" disabled={busy} onClick={()=>void load(d.id).catch(e=>setError(errorCode(e)))}>{w.routineHistory}</button></article>)}</section>}
-      {hookID&&events&&<RoutineHook key={hookID} id={hookID} allowed={!!authority} busy={busy} held={held} blocked={journalBlocked} w={w} onClose={()=>setHookID(null)} onRun={async(rotate,replay)=>{
-        if(replay)return held?.action==="hook"&&held.request.id===hookID?run(held,true):null
-        const d=page?.definitions.find(d=>d.id===hookID)
-        if(!d||!page||!writable)return null
-        return run({action:"hook",request:{command:command(bot.key,"edit"),fence:page.fence,id:d.id,expected_revision:d.version,rotate}})
-      }}/>}
+      {page&&routines.length===0&&<p className="pa-routines-empty">{tr("emptyRoutines")}</p>}
+      {routines.length>0&&<ul className="pa-routine-list">{routines.map((d,i)=>{const line=summary(d);return <li className="pa-routine-card" key={d.id}>
+        <button type="button" className="pa-routine-row" aria-label={`${w.routineEdit}: ${d.name}`} aria-describedby={`${editorID}-line-${i}`} onClick={event=>edit(d,event.currentTarget)}>
+          <strong>{d.name}</strong><small id={`${editorID}-line-${i}`} data-tone={line.tone}>{line.text}</small>
+        </button>
+        <button type="button" role="switch" className="pa-routine-switch" aria-checked={d.enabled} aria-label={`${w.routineEnabled}: ${d.name}`} title={d.enabled?w.routinePause:w.routineEnable} disabled={!writable||busy} onClick={()=>action(d,"enable")}><span/></button>
+      </li>})}</ul>}
+      {editing===undefined&&hookPanel}
       {page?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load("",page.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
       {journalBlocked&&<p role="alert">{w.routineJournalUnreadable}</p>}
       {held?.action==="hook"&&!hookID&&<button type="button" onClick={()=>setHookID(held.request.id)}>{tr("retryHook")}</button>}
-      {held&&held.action!=="hook"&&!journalBlocked&&<div role="alert"><p>{w.routineHeld}</p><button type="button" disabled={busy||!authority||!supported} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div>}
-      {history&&<section aria-label={w.routineHistory}><h4>{w.routineHistory}</h4>{history.page.runs.length===0?<p>{w.routineNoRuns}</p>:history.page.runs.map(run=><article className="pa-routine-run" key={run.id}><p>{w[run.state as keyof Words]??run.state} · {new Date(run.created_at).toLocaleString()} · {run.source==="test"?tr("testRun"):run.source==="schedule"?tr("scheduledRun"):run.source==="webhook"?tr("eventRun"):run.source==="follow_up"?tr("followUp"):`${tr("otherRun")}: ${run.source}`}</p>{run.delivery_id&&<p>{tr("delivery")}: {run.delivery_id}</p>}{run.retry_count!==undefined&&<p>{tr("retryCount")}: {run.retry_count}</p>}{run.not_before&&<p>{tr("retryAt")}: {new Date(run.not_before).toLocaleString()}</p>}{run.state==="unknown"&&<p role="alert">{tr("unknownRun")}</p>}{run.result&&<p className="pa-routine-result">{run.result}</p>}{run.failure&&<p role="alert">{run.failure.code} ({run.failure.field})</p>}</article>)}{history.page.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load(history.id,history.page.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}</section>}
+      {editing===undefined&&held&&held.action!=="hook"&&!journalBlocked&&<div role="alert"><p>{w.routineHeld}</p><button type="button" disabled={busy||!authority||!supported} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div>}
     </>}
     {editing===undefined&&editError&&<p role="alert">{editError} ({error}) <button type="button" disabled={busy} onClick={()=>void refresh()}>{w.retry}</button></p>}
-    {busy&&<p role="status">{w.routineSaving}</p>}
   </section>
 }
