@@ -184,6 +184,34 @@ func TestACPPermissionUsesPromptDeadlineAndAnswersPastControlRPC(t *testing.T) {
 	}
 }
 
+func TestACPUntimedPromptKeepsNativePermissionAnswerable(t *testing.T) {
+	offers := make(chan pa.PermissionOffer, 1)
+	c := openPermissionLifetimeClient(t, "select", func(_ context.Context, e app.ProtocolEvent) error {
+		if e.Permission != nil {
+			offers <- *e.Permission
+		}
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pending, err := c.Send(ctx, app.PromptRequest{Turn: pa.Turn{ID: "turn", Fence: testFence()}, Text: "synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := receivePermissionOffer(t, offers)
+	if !offer.ExpiresAt.IsZero() {
+		t.Fatalf("native approval introduced a prompt deadline: %s", offer.ExpiresAt)
+	}
+	if err := c.Answer(ctx, offer.NativeRequestID, "read-once"); err != nil {
+		t.Fatal(err)
+	}
+	wait, stop := context.WithTimeout(ctx, time.Second)
+	defer stop()
+	if result, err := pending.Wait(wait); err != nil || result.FinalText != "selected-wire-receipt" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 func TestACPPermissionDeadlineRejectsLateSelectionAndCancelsNativePrompt(t *testing.T) {
 	offers := make(chan pa.PermissionOffer, 1)
 	c := openPermissionLifetimeClient(t, "deadline", func(_ context.Context, e app.ProtocolEvent) error {

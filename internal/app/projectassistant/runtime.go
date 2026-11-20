@@ -765,20 +765,12 @@ func (r *Engine) work(a *runtimeActor) {
 				}
 			}
 		}
-		timeout := r.o.Limits.PromptTimeout
-		if turn.RoutineRunID != "" {
-			x, e := r.o.Repository.Export(context.Background(), a.key)
-			if e != nil {
-				a.working = false
-				a.mu.Unlock()
-				return
-			}
-			d, _, e := routineForTurn(x, *turn)
-			if e == nil {
-				timeout = time.Duration(d.TimeoutSeconds) * time.Second
-			}
+		ctx, cancel, err := r.turnPromptContext(a.lifetime, *turn)
+		if err != nil {
+			a.working = false
+			a.mu.Unlock()
+			return
 		}
-		ctx, cancel := context.WithTimeout(a.lifetime, timeout)
 		a.cancel = cancel
 		a.turnID = turn.ID
 		a.pendingPermissions = 0
@@ -859,6 +851,32 @@ func (r *Engine) work(a *runtimeActor) {
 		}
 		a.mu.Unlock()
 	}
+}
+
+func (r *Engine) turnPromptContext(lifetime context.Context, turn pa.Turn) (context.Context, context.CancelFunc, error) {
+	timeout := r.o.Limits.PromptTimeout
+	if turn.RoutineRunID != "" {
+		x, err := r.o.Repository.Export(lifetime, turn.Fence.Key)
+		if err != nil {
+			return nil, nil, err
+		}
+		if d, _, err := routineForTurn(x, turn); err == nil {
+			timeout = time.Duration(d.TimeoutSeconds) * time.Second
+		}
+	} else if repo, ok := r.o.Repository.(backgroundOwnership); ok {
+		owner, err := repo.BackgroundOwner(lifetime, turn.Fence.Key)
+		if err != nil {
+			return nil, nil, err
+		}
+		if owner.BotID != "" {
+			// An owned background thread can run as long as its provider keeps the
+			// prompt open. Stop, shutdown and revocation still cancel its turn.
+			ctx, cancel := context.WithCancel(lifetime)
+			return ctx, cancel, nil
+		}
+	}
+	ctx, cancel := context.WithTimeout(lifetime, timeout)
+	return ctx, cancel, nil
 }
 
 func (r *Engine) execute(ctx context.Context, a *runtimeActor, t pa.Turn) error {

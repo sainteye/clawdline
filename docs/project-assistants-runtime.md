@@ -142,7 +142,7 @@ measurement wiring, translated notices and its selected integration values.
 | --- | ---: | --- |
 | RuntimeLimits.MaxBots | 64 | Refuse a new active actor before durable acceptance; idle actors are reclaimed. This is not the saved Bot count. |
 | RuntimeLimits.MaxProcesses | 4 | Keep accepted turns durably queued; wait cancellably. |
-| RuntimeLimits.PromptTimeout | 10 minutes | Stop waiting; retain unknown external effect, never replay. |
+| RuntimeLimits.PromptTimeout | 10 minutes | Default for ordinary chat turns. A durable background worker has no total turn deadline. A routine uses its configured deadline. When a deadline expires, retain unknown external effect without replaying. |
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
 | Limits.RPCPending | 32 | Refuse additional outgoing RPCs with typed capacity. |
 | Limits.IncomingPermissions | 8 | Fail the transport on overload; retain unknown effect. |
@@ -153,7 +153,7 @@ measurement wiring, translated notices and its selected integration values.
 | Limits.OwnedDescendants | 256 | Stop and surface typed capacity/unknown if the owned process census exceeds its budget. |
 | Limits.WriteTimeout | 2 seconds | A lock/deadline/partial-write failure is typed unknown; do not retry the frame. |
 | Limits.CleanupTimeout | 5 seconds | Bound native child cleanup and inventory commands. |
-| Limits.RPCTimeout | 120 seconds | Expire control RPC waits and native permission offers; unknown external effects remain inspectable. A prompt response instead waits on the runtime turn context, whose existing `RuntimeLimits.PromptTimeout` is 10 minutes. Stop, shutdown and revocation still cancel that context without replay. |
+| Limits.RPCTimeout | 120 seconds | Control RPC waits stay bounded. Native permissions follow the prompt lifetime, including for background work. A prompt response waits on its turn context. Stop, shutdown and revocation still cancel that context, and native termination and bounded cleanup still apply. |
 | Limits.DescendantPoll | 50 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. |
 
 Pending turns and person-visible message size use the existing domain limits

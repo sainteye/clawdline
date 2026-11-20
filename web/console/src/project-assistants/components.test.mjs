@@ -158,6 +158,8 @@ test("the waiting indicator retires known expired permissions even while the hea
   const snapshot=await source.view(base,signal)
   const response=await source.view({...base,mode:"permissions",source_epoch:snapshot.source_epoch},signal)
   const summary=response.items[0].permission_summary,deadline=Date.parse(summary.expires_at)
+  const openOffer={...summary,expires_at:"0001-01-01T00:00:00Z"}
+  assert.deepEqual(pendingPermissionView(response.head,[{summary:openOffer}],deadline+1),{count:1,nextDeadline:Infinity})
   const head={...response.head,conversation:{...response.head.conversation,active_turn_id:summary.turn_id}}
   assert.deepEqual(pendingPermissionView(head,[{summary}],deadline-1),{count:1,nextDeadline:deadline})
   assert.deepEqual(pendingPermissionView(head,[{summary}],deadline),{count:0,nextDeadline:Infinity})

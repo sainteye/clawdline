@@ -239,7 +239,7 @@ func interruptedPermission(turn pa.Turn, offers []pa.PermissionOffer) bool {
 }
 
 func terminalPermissionState(offer pa.PermissionOffer, turnState pa.TurnState, now time.Time) pa.PermissionState {
-	if !now.Before(offer.ExpiresAt) {
+	if !offer.ExpiresAt.IsZero() && !now.Before(offer.ExpiresAt) {
 		return pa.PermissionExpired
 	}
 	if turnState == pa.TurnUnknown {

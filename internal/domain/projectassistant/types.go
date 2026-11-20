@@ -343,15 +343,16 @@ type PermissionDiff struct {
 }
 
 type PermissionOffer struct {
-	Action           *PermissionAction  `json:"action,omitempty"`
-	ID               string             `json:"id"`
-	Fence            Fence              `json:"fence"`
-	TurnID           string             `json:"turn_id"`
-	NativeRequestID  string             `json:"native_request_id"`
-	Options          []PermissionOption `json:"options"`
-	ExpiresAt        time.Time          `json:"expires_at"`
-	State            PermissionState    `json:"state"`
-	SelectedOptionID string             `json:"selected_option_id"`
+	Action          *PermissionAction  `json:"action,omitempty"`
+	ID              string             `json:"id"`
+	Fence           Fence              `json:"fence"`
+	TurnID          string             `json:"turn_id"`
+	NativeRequestID string             `json:"native_request_id"`
+	Options         []PermissionOption `json:"options"`
+	// Zero means a native offer follows the life of its open turn.
+	ExpiresAt        time.Time       `json:"expires_at"`
+	State            PermissionState `json:"state"`
+	SelectedOptionID string          `json:"selected_option_id"`
 }
 
 type PermissionState string

@@ -416,8 +416,12 @@ func wrapSession(session app.ProviderSession, life *workLifetime) app.ProviderSe
 }
 
 func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime, NativeWork, error) {
-	deadline, ok := openCtx.Deadline()
-	if !ok {
+	deadline, bounded := openCtx.Deadline()
+	taskOwner, err := h.store.BackgroundOwner(openCtx, q.Bot.Key)
+	if err != nil {
+		return nil, NativeWork{}, err
+	}
+	if !bounded && taskOwner.BotID == "" {
 		return nil, NativeWork{}, failure(pa.Invalid, "native_work_deadline")
 	}
 	c, err := h.current(openCtx, q.Bot.Key)
@@ -448,7 +452,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	// refuse dispatch while chat remains usable under a missing work policy.
 	var actor pa.AssistantExecutionActor
 	if c.DispatchAllowed {
-		actor, err = a.Issue(openCtx, c.Fence, []pa.ActorOperation{pa.DispatchWork, pa.ReadWork}, deadline)
+		expires := deadline
+		if !bounded {
+			// An open background prompt does not extend a signed Board capability.
+			expires = h.o.Clock().Add(h.o.Limits.PromptTimeout)
+		}
+		actor, err = a.Issue(openCtx, c.Fence, []pa.ActorOperation{pa.DispatchWork, pa.ReadWork}, expires)
 		if err != nil {
 			return nil, NativeWork{}, err
 		}
@@ -467,7 +476,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if life.closed.Load() || openCtx.Err() != nil {
 			return nil, nil, failure(pa.Revoked, "native_work_lifetime")
 		}
-		ctx, cancel := context.WithDeadline(ctx, deadline)
+		var cancel context.CancelFunc
+		if bounded {
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+		} else {
+			ctx, cancel = context.WithCancel(ctx)
+		}
 		stop := context.AfterFunc(openCtx, cancel)
 		finish := func() { stop(); cancel() }
 		current, e := h.current(ctx, q.Bot.Key)
@@ -893,11 +907,6 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return app.BrowserResult{Value: botTabKept}, nil
 		}
 		return browser.Command(ctx, owner, command)
-	}
-	taskOwner, err := h.store.BackgroundOwner(openCtx, q.Bot.Key)
-	if err != nil {
-		life.invalidate()
-		return nil, NativeWork{}, err
 	}
 	if taskOwner.BotID == "" && pa.CanDelegateBackground(turn) {
 		tools.background = func(ctx context.Context, id, title, brief string) (pa.BackgroundTask, error) {

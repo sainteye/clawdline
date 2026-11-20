@@ -405,7 +405,7 @@ func CheckPermission(offer PermissionOffer, answer PermissionAnswer, context Per
 	if offer.State != PermissionPending {
 		return fail(StaleVersion, "permission_answered")
 	}
-	if !context.Now.Before(offer.ExpiresAt) {
+	if !offer.ExpiresAt.IsZero() && !context.Now.Before(offer.ExpiresAt) {
 		return fail(Expired, "permission")
 	}
 	for _, option := range offer.Options {

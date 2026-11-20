@@ -16,6 +16,7 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	f.o.Limits.MaxProcesses = 2
 	f.o.Reader = f.o.Database
 	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
+	f.p.promptContexts = make(chan context.Context, pa.MaxPendingTurns)
 	f.start(t)
 	f.enable(t)
 	bot := f.create(t, "coordinator")
@@ -28,6 +29,9 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	}
 	main := fixtureReceive(t, f.p.sessions)
 	fixtureReceive(t, f.p.sent)
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); !bounded {
+		t.Fatal("the main chat should retain its prompt deadline")
+	}
 	tools, ok := main.q.Tools.(app.BackgroundTools)
 	if !ok || !tools.BackgroundAvailable() {
 		t.Fatal("background tool is missing in the owner's main chat")
@@ -52,6 +56,9 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	f.h.tickBackgroundTasks(ctx)
 	worker := fixtureReceive(t, f.p.sessions)
 	brief := fixtureReceive(t, f.p.sent)
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); bounded {
+		t.Fatal("a Bot background thread inherited the main chat's prompt deadline")
+	}
 	if worker.q.Bot.Key == bot.Key || !strings.Contains(brief.Text, task.Brief) {
 		t.Fatal("worker did not receive the assignment in its own session")
 	}
@@ -84,6 +91,9 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	if chatTurn.q.Bot.Key != bot.Key {
 		t.Fatal("the main chat sent its next turn to a worker")
 	}
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); !bounded {
+		t.Fatal("a follow-up in the main chat lost its prompt deadline")
+	}
 	chatTurn.reply <- app.PromptResult{FinalText: "Quick answer."}
 	worker.reply <- app.PromptResult{FinalText: "The source records agree."}
 
@@ -111,6 +121,9 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	}
 	reopened := fixtureReceive(t, f.p.sessions)
 	followUp := fixtureReceive(t, f.p.sent)
+	if _, bounded := fixtureReceive(t, f.p.promptContexts).Deadline(); bounded {
+		t.Fatal("a reopened background thread inherited the main chat's prompt deadline")
+	}
 	if reopened.q.Bot.Key != worker.q.Bot.Key || !strings.Contains(followUp.Text, "Check the second record again.") {
 		t.Fatal("follow-up did not reopen the existing worker thread")
 	}

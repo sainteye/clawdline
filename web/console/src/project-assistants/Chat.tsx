@@ -4,7 +4,7 @@ import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, sameConversation, sameFence, type HeldInspection, type HeldOutcome, type ViewState } from "./view-state"
+import { botIdentity, canRead, canWrite, draftIdentity, inspectHeldSend, permissionDeadline, sameConversation, sameFence, type HeldInspection, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
@@ -81,7 +81,7 @@ export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,c
     const value=offer&&samePermission(summary,offer)?offer:summary
     if(permissionState(value,now)!=="pending")continue
     count++
-    nextDeadline=Math.min(nextDeadline,Date.parse(value.expires_at),Date.parse(summary.expires_at))
+    nextDeadline=Math.min(nextDeadline,permissionDeadline(value),permissionDeadline(summary))
   }
   return {count:Math.min(count,head.pending_permission_count),nextDeadline}
 }

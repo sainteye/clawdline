@@ -58,6 +58,7 @@ type fixtureProvider struct {
 	openStarted, openRelease chan struct{}
 	sent                     chan app.PromptRequest
 	sessions                 chan *fixtureSession
+	promptContexts           chan context.Context
 	answers                  chan [2]string
 	steerOutcome             app.SteerOutcome
 	steered                  chan string
@@ -94,6 +95,9 @@ func (s *fixtureSession) Send(_ context.Context, q app.PromptRequest) (app.Pendi
 	return s, nil
 }
 func (s *fixtureSession) Wait(ctx context.Context) (app.PromptResult, error) {
+	if s.p.promptContexts != nil {
+		s.p.promptContexts <- ctx
+	}
 	select {
 	case q := <-s.reply:
 		return q, nil

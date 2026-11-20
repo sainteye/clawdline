@@ -18,7 +18,6 @@ import (
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
-	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -478,10 +477,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	} else if q.MemoryChanged {
 		text = memoryUpdate(q.Context.Text) + "\n" + text
 	}
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(time.Duration(capacity.MaximumBotPromptMilliseconds) * time.Millisecond)
-	}
+	deadline, _ := ctx.Deadline()
 	c.mu.Lock()
 	if c.compaction != nil {
 		c.mu.Unlock()
@@ -531,8 +527,11 @@ type promptPending struct {
 }
 
 func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
-	ctx, cancel := context.WithDeadline(ctx, p.deadline)
-	defer cancel()
+	if !p.deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, p.deadline)
+		defer cancel()
+	}
 	b, err := p.rpc.waitResult(ctx)
 	if err != nil {
 		return app.PromptResult{}, err
@@ -858,7 +857,7 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 		return refusal(pa.NotFound, "native_permission")
 	}
 	deadline := c.promptDeadline
-	if !time.Now().Before(deadline) {
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
 		c.mu.Unlock()
 		return refusal(pa.Expired, "native_permission")
 	}
@@ -869,8 +868,11 @@ func (c *Client) Answer(ctx context.Context, nativeID, optionID string) error {
 	}
 	delete(c.permissions, nativeID)
 	c.mu.Unlock()
-	ctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
+	if !deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
 	return c.write(ctx, frame{ID: p.id, Result: raw(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": optionID}})})
 }
 func (c *Client) Cancel(ctx context.Context) error {

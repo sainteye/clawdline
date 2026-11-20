@@ -19,9 +19,14 @@ export type PermissionStatus = Pick<W.ProjectAssistantReadPermissionSummary, "st
 export function samePermission(a: PermissionIdentity, b: PermissionIdentity) {
   return a.id === b.id && a.turn_id === b.turn_id && sameFence(a.fence, b.fence)
 }
+/** The wire uses the Go zero timestamp when a native offer follows turn lifetime. */
+export function permissionDeadline(value: PermissionStatus) {
+  return value.expires_at === "0001-01-01T00:00:00Z" ? Infinity : Date.parse(value.expires_at)
+}
+
 /** A pending offer past its deadline reads as expired, whatever the source last said. */
 export function permissionState(value: PermissionStatus, now = Date.now()) {
-  return value.state === "pending" && !(Date.parse(value.expires_at) > now) ? "expired" : value.state
+  return value.state === "pending" && !(permissionDeadline(value) > now) ? "expired" : value.state
 }
 export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSummary[])[]): W.ProjectAssistantBotSummary[] {
   const byKey = new Map<string, W.ProjectAssistantBotSummary>()
