@@ -1,10 +1,23 @@
 .project-assistants .pa-tower { display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;padding:14px 18px 18px;box-sizing:border-box; }
-.project-assistants .pa-tower-summary { margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;color:var(--pa-dim);font-size:13px; }
-.project-assistants .pa-tower-stale { color:#e39567; }
+/* The summary is a game HUD: monospace, notched pixel chips, glowing figures. */
+.project-assistants .pa-tower-hud { margin:0;display:flex;flex-wrap:wrap;gap:6px;font:600 12px/1 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace;letter-spacing:.04em;pointer-events:none; }
+.project-assistants .pa-hud-chip { --tone:#e39567;display:inline-flex;align-items:center;gap:6px;padding:7px 10px;color:#efe6dc;background:rgba(12,9,20,.86);
+  clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px));
+  box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--tone) 55%,transparent),inset 0 -6px 12px -8px var(--tone);white-space:nowrap; }
+.project-assistants .pa-hud-chip b { color:var(--tone);font-weight:800;font-size:14px;text-shadow:0 0 6px var(--tone),0 0 1px #fff; }
+.project-assistants .pa-hud-chip[data-tone="wait"] { --tone:#e39567; }
+.project-assistants .pa-hud-chip[data-tone="work"] { --tone:#75c6a5; }
+.project-assistants .pa-hud-chip[data-tone="error"] { --tone:#d65c5c; }
+.project-assistants .pa-hud-chip[data-tone="unread"] { --tone:#e3bc6b; }
+.project-assistants .pa-hud-chip[data-tone="idle"],.project-assistants .pa-hud-chip[data-tone="latest"] { --tone:#9ca6b3;color:#cfc8c0; }
+.project-assistants .pa-hud-chip[data-tone="stale"] { --tone:#e39567;color:#e39567; }
+.project-assistants .pa-hud-live { width:6px;height:6px;background:var(--tone);box-shadow:0 0 6px var(--tone);animation:pa-hud-blink 1.6s steps(2,jump-none) infinite; }
+@keyframes pa-hud-blink { 50% { opacity:.25; } }
 /* Wide screens fit the whole floor in the pane; a phone pans it instead (below). */
 @media(min-width:701px) {
   .project-assistants .pa-tower-stage { flex:1;min-height:0;display:grid;place-items:center;container-type:size; }
-  .project-assistants .pa-tower-pan { width:min(100cqw, 100cqh * 1672 / 941); }
+  .project-assistants .pa-tower-pan { position:relative;width:min(100cqw, 100cqh * 1672 / 941); }
+  .project-assistants .pa-tower-hud { position:absolute;left:12px;top:12px;right:12px;z-index:4; }
 }
 .project-assistants .pa-tower-scene { position:relative;width:100%;aspect-ratio:1672 / 941;border:1px solid var(--pa-line);border-radius:12px;overflow:hidden;background:#0b0812; }
 .project-assistants .pa-tower-scene > img,
@@ -24,5 +37,6 @@
   .project-assistants .pa-tower { height:auto;padding:4px 0 12px; }
   .project-assistants .pa-tower-stage { overflow-x:auto;overscroll-behavior-x:contain;border-radius:12px; }
   .project-assistants .pa-tower-pan { width:max(100%, 720px); }
+  .project-assistants .pa-tower-hud { position:sticky;left:0;width:calc(100vw - 32px);margin-bottom:8px; }
   .project-assistants .pa-tower-bot { min-width:44px;min-height:44px; }
 }

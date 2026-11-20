@@ -144,24 +144,28 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // A still picture (reduced motion, hidden) redraws when its Bots change.
   useEffect(() => { if (!running) drawRef.current(performance.now()) }, [bots, slots, running])
 
-  const parts = [w.towerBots.replace("{count}", String(summary.total))]
-  if (summary.wait) parts.push(w.towerWaiting.replace("{count}", String(summary.wait)))
-  if (summary.work) parts.push(w.towerWorking.replace("{count}", String(summary.work)))
-  if (summary.error) parts.push(w.towerErrors.replace("{count}", String(summary.error)))
-  if (summary.unread) parts.push(w.towerUnread.replace("{count}", String(summary.unread)))
-  if (summary.total && !summary.wait && !summary.work && !summary.error) parts.push(w.towerAllIdle)
+  // HUD chips: each fact is its own chip, the count picked out as the glowing figure.
+  type Chip = { key: string, tone: string, text: string }
+  const chips: Chip[] = [{ key: "total", tone: "total", text: w.towerBots.replace("{count}", String(summary.total)) }]
+  if (summary.wait) chips.push({ key: "wait", tone: "wait", text: w.towerWaiting.replace("{count}", String(summary.wait)) })
+  if (summary.work) chips.push({ key: "work", tone: "work", text: w.towerWorking.replace("{count}", String(summary.work)) })
+  if (summary.error) chips.push({ key: "error", tone: "error", text: w.towerErrors.replace("{count}", String(summary.error)) })
+  if (summary.unread) chips.push({ key: "unread", tone: "unread", text: w.towerUnread.replace("{count}", String(summary.unread)) })
+  if (summary.total && !summary.wait && !summary.work && !summary.error) chips.push({ key: "idle", tone: "idle", text: w.towerAllIdle })
   if (summary.latest) {
     const when = ago(summary.latest.item.activity_at, now, language)
-    if (when) parts.push(w.towerLatest.replace("{time}", when).replace("{name}", summary.latest.item.bot.name))
+    if (when) chips.push({ key: "latest", tone: "latest", text: w.towerLatest.replace("{time}", when).replace("{name}", summary.latest.item.bot.name) })
   }
+  if (summary.stale) chips.push({ key: "stale", tone: "stale", text: w.towerStale })
+  const figure = (text: string) => text.split(/(\d+)/).map((part, i) => i % 2 ? <b key={i}>{part}</b> : part)
+  const hud = <p className="pa-tower-hud" role="status">
+    {summary.total ? chips.map(c => <span key={c.key} className="pa-hud-chip" data-tone={c.tone}>{c.key === "total" && <i className="pa-hud-live" aria-hidden="true"/>}{figure(c.text)}</span>) : <span className="pa-hud-chip" data-tone="idle">{w.towerEmpty}</span>}
+  </p>
 
   return <section className="pa-tower" aria-label={w.towerView}>
-    <p className="pa-tower-summary">
-      {summary.total ? parts.join(" · ") : w.towerEmpty}
-      {summary.stale && <span className="pa-tower-stale">{w.towerStale}</span>}
-    </p>
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
+        {hud}
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}>
           <img src={ramen} alt="" draggable={false} decoding="async"/>
           <canvas ref={canvasRef} aria-hidden="true"/>
