@@ -14,6 +14,8 @@ import type { TranscriptPage } from "@clawdline/contract"
 import { RelayReader, TRANSCRIPT_EXPECT_MS, TRANSCRIPT_EXPECT_REREAD_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { CARRIED_READS, RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
+// @ts-expect-error -- Node loads the actual voice tool with type stripping.
+import { runCopilotTool, toolTrace } from "../realtime/copilot-tools.ts"
 // The copied client's own failure constructor: what the machine's refusal really becomes.
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
 import { CatalogCloudClient } from "./refusal-client.js"
@@ -577,6 +579,65 @@ test("fleet focus and smart naming keep the selected Session execution", async (
     ["_read", "smart-title", { request: "smart-press-1", execution_generation: EXECUTION }],
   ])
 })
+
+for (const replaced of [0, 1, 2]) {
+  test(`voice smart naming pins each named machine and execution (replaced: ${replaced})`, async () => {
+    const targets = [
+      { machineID: "mac-a", sessionID: "%42", executionGeneration: "a".repeat(32) },
+      { machineID: "mac-b", sessionID: "%42", executionGeneration: "b".repeat(32) },
+    ]
+    const fleet = targets.map((target, index) => ({
+      machine: target.machineID,
+      machineName: `Machine ${index + 1}`,
+      row: { id: target.sessionID, execution_generation: target.executionGeneration, title: `Fixture ${index + 1}` },
+    }))
+    const names = fleet.map(({ machine, row: item }) => `fleet:${machine}:${encodeURIComponent(item.id)}`)
+    const resolved: [string, string][] = []
+    class NamingClient extends FakeClient {
+      override async _read(identity: CloudIdentity, word: string, fields: Record<string, unknown>, answer: string) {
+        await super._read(identity, word, fields, answer)
+        assert.equal(word, "smart-title")
+        return { ok: true, title: `New name on ${identity.machine}` }
+      }
+    }
+    const client = new NamingClient()
+    client.descriptors.set("mac-b", GO_DAEMON)
+    const reader = new RelayReader("mac-a", {
+      fleetTarget: () => ({ machineID: "mac-a", sessionID: "%99", executionGeneration: EXECUTION }),
+      resolveSession: async (machine, session) => {
+        resolved.push([machine, session])
+        const index = targets.findIndex(target => target.machineID === machine && target.sessionID === session)
+        if (index < 0) return null
+        const target = targets[index]
+        return index < replaced ? { ...target, executionGeneration: "c".repeat(32) } : target
+      },
+      admitFleetMutation: async () => {},
+    })
+    const writer = new RelayWriter(reader.writeHost)
+    reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+    reader.attach(client)
+
+    let request = 0
+    const { output } = await runCopilotTool("smart_rename_sessions", JSON.stringify({ sessions: names, confirmed: true }), {
+      fleet: async () => fleet,
+      fetch: (path, init) => reader.fetch(path, init),
+      sleep: async () => {},
+      newRequestID: () => `rename-${++request}`,
+    })
+    assert.deepEqual(resolved, targets.map(target => [target.machineID, target.sessionID]))
+    assert.deepEqual(client.calls.map(call => call.slice(0, 5)), targets.slice(replaced).map((target, index) => [
+      "_read", { machine: target.machineID, session: target.sessionID }, "smart-title",
+      { request: `rename-${replaced + index + 1}`, execution_generation: target.executionGeneration },
+      `action:rename-${replaced + index + 1}`,
+    ]))
+    const result = JSON.parse(output)
+    assert.deepEqual((result.renamed ?? []).map((item: {after:string}) => item.after),
+      targets.slice(replaced).map(target => `New name on ${target.machineID}`))
+    assert.deepEqual((result.failed ?? []).map((item: {code:string}) => item.code),
+      Array(replaced).fill("execution_generation_changed"))
+    assert.equal(toolTrace("smart_rename_sessions", output, 0).outcome, replaced ? "failed" : "done")
+  })
+}
 
 test("a stop reaches the session once under the press's idempotency key", async () => {
   const client = new FakeClient()

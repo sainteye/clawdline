@@ -1490,6 +1490,29 @@ test("a Session smart naming refuses, or a name that is not one, is said without
   assert.equal(out.failed[1].session, "No such Session")
 })
 
+for (const lostResponse of [false, true]) {
+  test(`smart naming needs a returned title and keeps the other Session's result (lost response: ${lostResponse})`, async () => {
+    const { deps, posts } = namingMachine()
+    const fetch = deps.fetch
+    let requests = 0
+    deps.fetch = async (path, init) => {
+      if (path !== "/v1/sessions/%252/smart-title") return fetch(path, init)
+      requests++
+      if (lostResponse) throw new Error("reply connection closed")
+      return Response.json({ ok: true })
+    }
+    const { output } = await runCopilotTool("smart_rename_sessions", JSON.stringify({
+      sessions: ["Prepare screenshots", "Fix the login test"], confirmed: true,
+    }), deps)
+    const result = JSON.parse(output)
+    assert.deepEqual(result.renamed, [{ before: "Fix the login test", after: "Named %9" }])
+    assert.deepEqual(result.failed.map((item: {code:string}) => item.code), ["request_outcome_unknown"])
+    assert.equal(toolTrace("smart_rename_sessions", output, 0).outcome, "failed")
+    assert.equal(requests, 1)
+    assert.equal(posts.length, 1)
+  })
+}
+
 test("a rename the machine did is a notice, and a claimed one it did not is caught", () => {
   assert.deepEqual(noticeOf("smart_rename_sessions", JSON.stringify({ renamed: [{ before: "a", after: "b" }] })), { key: "copilotDidRename", params: { count: "1" } })
   assert.equal(noticeOf("smart_rename_sessions", JSON.stringify({ failed: [{ session: "a", error: "x" }] })), null)

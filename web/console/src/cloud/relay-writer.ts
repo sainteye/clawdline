@@ -1426,8 +1426,16 @@ export class RelayWriter {
         if (typeof client._read !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
         }
-        const target = route.op === "interrupt" || this.host.exactTarget?.()
-          ? await this.mutationTarget(client, route.session, route.word) : null
+        const named = route.op === "smart-title" && isUnopenedRead(init)
+        const expected = named ? (await bodyOf(init)).execution_generation : undefined
+        if (expected !== undefined && (typeof expected !== "string" || !/^[0-9a-f]{32}$/.test(expected))) {
+          throw failure("bad_request", "The named Session execution generation is invalid.", 400)
+        }
+        const target = route.op === "interrupt" || named || this.host.exactTarget?.()
+          ? await this.mutationTarget(client, route.session, route.word, named, named ? unopenedMachine(init) : null) : null
+        if (expected !== undefined && expected !== target?.generation) {
+          throw failure("execution_generation_changed", "The named Session has a different execution from the one selected.", 409)
+        }
         return (target?.client ?? client)._read!(
           target?.identity ?? await this.identity(client, route.session),
           route.word,

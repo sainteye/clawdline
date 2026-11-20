@@ -273,6 +273,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 用名稱逐一說哪幾個要改、各用半句說為什麼（例如「『修 bug』其實在做語音匯報」），然後問一次「要用智慧命名重新命名這幾個嗎？」；都對得上就直接說「名稱都對得上，不用改」。
 - 使用者說好，才呼叫 smart_rename_sessions，sessions 填這些 Session 的完整名稱（label），一字不差照抄，並帶 confirmed: true。就算使用者已經點名是哪個 Session，也先用名稱問一次「要用智慧命名重新命名某某嗎？」，他說好才做。
 - 做完照結果逐一講「某某改成了某某」；失敗的照實說原因。新名稱是機器上的助理取的，不要自己改字。
+- 執行世代無法核對時，告知哪個 Session 未改名，等使用者重新選取並確認。結果未確認時，照實說結果未知。這兩種情況都不要自動重試。
 
 【開新的 Session】
 - 使用者要開新 Session 時，第一步一定先呼叫 list_machines，接著呼叫 list_projects，然後才開口問。機器、專案、助理、模型的名稱只能用這兩個工具回傳的，絕對不要自己編名稱或舉不存在的例子。
@@ -2933,13 +2934,14 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
 }
 
 /** What a smart-title refusal means aloud, by its code. */
-const SMART_TITLE_REFUSALS: Record<string, string> = {
+const SMART_TITLE_REFUSALS: Record<string, string | [string, string]> = {
   conversation_empty: '它還沒有第一則交代，沒有內容可以取名',
   conversation_unreadable: '讀不到它的對話',
   no_namer: '設定裡選的命名助理沒有安裝在這台機器上',
   namer_out_of_quota: '命名助理的帳號額度用完了',
   naming_failed: '命名助理沒有給出能用的名稱',
   busy: '機器正忙著另一個命名，稍後再試',
+  execution_generation_changed: ['The selected Session execution changed. Select it again and confirm.', '選取的 Session 執行世代已變更，請重新選取並確認。'],
 }
 
 async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: string[], confirmed: boolean): Promise<unknown> {
@@ -2953,7 +2955,7 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
     return { error: read.error }
   }
   const renamed: { before: string; after: string }[] = []
-  const failed: { session: string; error: string }[] = []
+  const failed: { session: string; error: string; code?: string }[] = []
   // One after another: the machine runs one naming turn at a time.
   for (const name of names) {
     const found = resolveForWrite(read.rows, name, deps.focus?.get())
@@ -2962,11 +2964,20 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
       continue
     }
     const { row } = found
+    const recordFailure = (why: string, code?: string) => {
+      failed.push({ session: row.label, error: why, ...(code ? { code } : {}) })
+      logs.push({ level: 'error', text: `${row.label} · ${why}` })
+    }
     const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/smart-title`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
-      body: '{}',
-    })
+      body: JSON.stringify(row.machine && row.execution ? { execution_generation: row.execution } : {}),
+    }).catch(() => undefined)
+    const unknown = () => recordFailure(say('The rename result could not be confirmed.', '無法確認是否已改名。'), 'request_outcome_unknown')
+    if (!res) {
+      unknown()
+      continue
+    }
     if (!res.ok) {
       let code = ''
       try {
@@ -2975,15 +2986,19 @@ async function smartRenameSessions(deps: ToolDeps, logs: ToolLog[], wanted: stri
       } catch {
         // refusal-ok: a refusal without a code is said by its HTTP status and message.
       }
-      const why = SMART_TITLE_REFUSALS[code] ?? (await refusalText(res) || `HTTP ${res.status}`)
-      failed.push({ session: row.label, error: why })
-      logs.push({ level: 'error', text: say(`"${row.label}" was not renamed: ${why}`, `「${row.label}」沒有重新命名：${why}`) })
+      const known = SMART_TITLE_REFUSALS[code]
+      const why = Array.isArray(known) ? say(...known) : known ?? (await refusalText(res) || `HTTP ${res.status}`)
+      recordFailure(why, code)
       continue
     }
-    const answer = (await res.json().catch(() => ({}))) as { title?: unknown; display_title?: unknown }
-    const after = str(answer.display_title) || str(answer.title)
+    const answer = (await res.json().catch(() => null)) as { ok?: boolean; title?: unknown; display_title?: unknown } | null
+    const after = str(answer?.display_title).trim() || str(answer?.title).trim()
+    if (!after || answer?.ok === false) {
+      unknown()
+      continue
+    }
     renamed.push({ before: row.label, after })
-    if (after) deps.titleSaved?.(sid(row), row.machine, after)
+    deps.titleSaved?.(sid(row), row.machine, after)
     logs.push({ level: 'info', text: say(`Renamed "${row.label}" to "${after}"`, `已把「${row.label}」重新命名為「${after}」`) })
   }
   return { ...(renamed.length ? { renamed } : {}), ...(failed.length ? { failed } : {}) }
@@ -3334,7 +3349,8 @@ export function toolTrace(name: string, output: string, ms: number): ToolTrace {
   const status = (o.status && typeof o.status === 'object' ? o.status : {}) as Record<string, unknown>
   const proposal=o.proposal&&typeof o.proposal==='object'?o.proposal as Record<string,unknown>:{}
   const target = str(proposal.target) || str(o.label) || str(o.sent_to) || str(o.session) || str(status.label) || str(o.project)
-  const ok = !!o && typeof o === 'object' && !('error' in o) && output.trim().startsWith('{')
+  const renameFailed = name === 'smart_rename_sessions' && Array.isArray(o.failed) && o.failed.length > 0
+  const ok = !!o && typeof o === 'object' && !('error' in o) && !renameFailed && output.trim().startsWith('{')
   // A list of Sessions to choose from, or to read one by one, is no failure.
   const preparedMessage=o.prepared===true&&o.message_delivered===false&&typeof proposal.message==='string'
   const outcome = o.error === 'copilot_question_superseded' ? 'cancelled' : preparedMessage||ok && o.prepared===true ? 'asked' : ok && name==='queue_voice_work' && o.accepted===true ? 'queued' : ok ? 'done' : o.many === true ? 'many' : Array.isArray(o.candidates) && o.candidates.length > 0 ? 'asked' : 'failed'

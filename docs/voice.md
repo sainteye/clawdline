@@ -213,7 +213,11 @@ from, and the machine still decides.
 `POST /v1/sessions/{id}/smart-title`, the route behind the console's Smart naming, one after
 another with its own Idempotency-Key, and says each old name and the title the machine chose; a
 refusal (no first request yet, naming assistant missing or out of usage) is said for that Session
-and the rest go on. At most 6 Sessions per call (`console.copilot_smart_rename_sessions`), since
+and the rest go on. Cloud resolves each named Session on its own machine and pins the execution
+from the selected row when available. A different execution requires a fresh selection and
+confirmation. A missing title receipt leaves that item's outcome unknown. The tool preserves
+confirmed titles in the per-Session results and marks an incomplete batch as failed in its
+history. At most 6 Sessions per call (`console.copilot_smart_rename_sessions`), since
 each spends one small model turn. A rename joins the actions the copilot may only claim once the
 machine confirmed it. Before this tool the copilot had no way to rename and, asked to, did not know
 what smart naming was.
