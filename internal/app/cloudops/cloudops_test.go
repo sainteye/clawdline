@@ -1594,6 +1594,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-session-board-read", method: "GET", path: "/v1/orchestrator/session-boards",
 		query: map[string]string{"board": "board-one", "after": "514"},
 	}, {
+		word: "session-boards.threads",
+		body: map[string]any{"type": "session-boards.threads", "session": machine, "request": "req-session-board-threads",
+			"board": "board-one", "thread": 3, "from": 5},
+		session: machine, name: "read:req-session-board-threads", method: "GET", path: "/v1/orchestrator/session-boards",
+		query: map[string]string{"board": "board-one", "thread": "3", "from": "5", "view": "threads"},
+	}, {
 		word: "session-boards.change",
 		body: map[string]any{"type": "session-boards.change", "session": machine, "request": "req-session-board-post",
 			"command": map[string]any{"action": "post", "board": "board-one", "text": "Evidence"}},

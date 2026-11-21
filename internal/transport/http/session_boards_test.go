@@ -153,6 +153,32 @@ func TestSessionBoardCloudOperationsCrossTheRealDeviceGate(t *testing.T) {
 	if !ok || len(posts) != 1 || posts[0].(map[string]any)["seq"] != float64(original.Seq+1) {
 		t.Fatalf("wrong board tail: %v", p)
 	}
+	answer, p = f.ask(t, 17, map[string]any{
+		"type": "session-boards.threads", "session": cloudops.MachineReplySession,
+		"request": "board-thread-overview", "board": result.ID, "seen": original.Seq,
+	})
+	if !answer.OK() {
+		t.Fatalf("read-only thread overview: %d %s", answer.Status, answer.Payload)
+	}
+	overview := bodyOf(t, p)
+	threadList, ok := overview["threads"].([]any)
+	if !ok || len(threadList) != sb.MaxPageRows ||
+		threadList[0].(map[string]any)["root"] != float64(original.Seq) ||
+		threadList[0].(map[string]any)["unread"] != float64(1) {
+		t.Fatalf("wrong thread overview: %v", overview)
+	}
+	answer, p = f.ask(t, 18, map[string]any{
+		"type": "session-boards.threads", "session": cloudops.MachineReplySession,
+		"request": "board-thread-replies", "board": result.ID, "thread": original.Seq, "from": original.Seq + 1,
+	})
+	if !answer.OK() {
+		t.Fatalf("read-only thread replies: %d %s", answer.Status, answer.Payload)
+	}
+	replies, ok = bodyOf(t, p)["posts"].([]any)
+	if !ok || len(replies) != 1 || replies[0].(map[string]any)["seq"] != float64(original.Seq+1) {
+		t.Fatalf("wrong thread replies: %v", p)
+	}
+
 }
 
 func TestPersonCanAddLiveSessionsToBoardWithoutActingAsThem(t *testing.T) {

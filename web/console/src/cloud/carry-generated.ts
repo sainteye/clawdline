@@ -340,6 +340,7 @@ export const CARRIED = {
   "session-boards.change": "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards",
   "session-boards.inbox": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards/inbox",
   "session-boards.read": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards",
+  "session-boards.threads": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads",
   "session-codegraph": "GET /v1/sessions/{id}/codegraph",
   "session-codegraph-build": "POST /v1/sessions/{id}/codegraph",
   "session-receipt": "GET /v1/sessions/{id}/cloud-receipts/{request}?action=&execution_generation=",
