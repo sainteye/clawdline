@@ -131,10 +131,10 @@
 .project-assistants .pa-tower-tip > strong { overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-tower-tip > span,.project-assistants .pa-tower-tip > small { color:var(--pa-dim);overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-tower-bot:hover .pa-tower-tip,.project-assistants .pa-tower-bot:focus-visible .pa-tower-tip,.project-assistants .pa-tower-bot[data-highlight] .pa-tower-tip,.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { display:flex; }
-/* Pinned tags show names, plus one activity line for busy Bots on a floor. */
+/* Pinned tags show the working state and keep activity captions on the floor. */
 .project-assistants .pa-tower-tip::after { content:"";position:absolute;left:50%;bottom:-5px;width:8px;height:8px;margin-left:-4px;background:inherit;border-right:1px solid var(--pa-line);border-bottom:1px solid var(--pa-line);transform:rotate(45deg); }
 .project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { max-width:220px;padding:5px 8px;gap:0; }
-.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip > span { display:none; }
+.project-assistants .pa-tower-bot[data-pinned]:not([data-mood="work"]) .pa-tower-tip > span { display:none; }
 .project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip > small { color:#cfc8c0;font:11px/1.35 ui-monospace,"SF Mono",Menlo,monospace; }
 .project-assistants .pa-tower-bot[data-mood="wait"][data-pinned] .pa-tower-tip { border-color:rgba(227,149,103,.7); }
 .project-assistants .pa-tower-bot[data-mood="wait"][data-pinned] .pa-tower-tip::after { border-color:rgba(227,149,103,.7); }

@@ -128,8 +128,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   // The Bots' look is this browser's choice, like the layout.
   const [look, setLook] = useState<TowerStyle>(() => readPref(styleKey) === "gradient" ? "gradient" : "neon")
   const chooseLook = (next: TowerStyle) => { setLook(next); writePref(styleKey, next) }
-  // Pinned name tags can crowd a busy floor; turned off, a tag shows only on
-  // hover, keyboard focus or roster highlight.
+  // Working Bots keep their tags pinned. The preference controls the others.
   const [tags, setTags] = useState(() => readPref(tagsKey) !== "off")
   const toggleTags = () => setTags(on => { writePref(tagsKey, on ? "off" : "on"); return !on })
   const [layout, setLayoutState] = useState<TowerLayout>(() => readPref(layoutKey) === "building" ? "building" : "floor")
@@ -529,9 +528,10 @@ export default function BotTower({ items, w, language, paused = false, highlight
           })}
           {bots.map(b => {
             const mood = b.unread ? `${w[moodWord[b.mood]]}, ${w.towerMoodUnread}` : w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
-            const busy = b.mood === "work" || b.mood === "wait" || b.mood === "error"
+            const working = b.mood === "work", busy = working || b.mood === "wait" || b.mood === "error"
+            const pinned = working || tags
             const label = w.towerBotLabel.replace("{name}", b.item.bot.name).replace("{state}", mood)
-            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={tags || undefined} data-compact={tags && (section || !busy) || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
+            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={pinned || undefined} data-compact={pinned && (section || !busy) || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}
               style={{ width: `${size / scene.width * 100}%`, height: `${(size + 6) / scene.height * 100}%` }}
               aria-expanded={picked === b.key} data-picked={picked === b.key || undefined}
@@ -539,7 +539,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
               {b.unread && <span className="pa-tower-unread" aria-hidden="true">{w.towerMoodUnread}</span>}
               <span className="pa-tower-tip" aria-hidden="true">
                 <strong>{b.item.bot.name}</strong>
-                <span>{[project, mood].filter(Boolean).join(" · ")}</span>
+                <span>{(working ? [mood, project] : [project, mood]).filter(Boolean).join(" · ")}</span>
                 {busy ? b.caption && <small>{b.caption}</small> : when && <small>{when}</small>}
               </span>
             </button>

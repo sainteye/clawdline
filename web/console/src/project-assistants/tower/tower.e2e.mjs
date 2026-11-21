@@ -56,10 +56,17 @@ const overlap = (a, b) => !!a && !!b && a.x < b.x + b.width && b.x < a.x + a.wid
 async function towerChecks(page, width, language, shot) {
   const w = words(language), phone = width < 701, checks = []
   await page.goto(`${origin}/?lang=${language}`)
-  await page.evaluate(async () => {
+  const workingName = await page.evaluate(async () => {
     localStorage.clear()
     const { a, b, open } = window.botsFixture
     for (const source of [a, b]) {
+      const working = source.bots[2]
+      const list = source.list.bind(source)
+      source.list = async (...args) => {
+        const result = await list(...args)
+        return { ...result, items: result.items.map(item => item.bot.key.bot_id === working.key.bot_id
+          ? { ...item, status: "working", activity: "thinking" } : item) }
+      }
       const bot = source.bots[5]
       await source.markRead({
         command: { key: bot.key, action: "read", idempotency_key: "fixture-read" },
@@ -68,6 +75,7 @@ async function towerChecks(page, width, language, shot) {
       source.scriptMessage(bot, "extra-reply", "assistant", "A reply from a crowded zone.", "extra-turn")
     }
     open()
+    return a.bots[2].name
   })
   // Every fixture Bot, so the building is offered (it needs seven across two Projects).
   const more = page.getByRole("button", { name: w.more, exact: true })
@@ -80,6 +88,11 @@ async function towerChecks(page, width, language, shot) {
   await scene.waitFor()
   const restingBot = scene.locator('.pa-tower-bot:is([data-mood="idle"], [data-mood="recent"], [data-mood="sleep"])').first()
   const restingTag = restingBot.locator(".pa-tower-tip")
+  const workingTag = scene.locator('.pa-tower-bot[data-mood="work"] .pa-tower-tip').first()
+  const assertWorkingTag = async () => {
+    assert.equal(await workingTag.getByText(workingName, { exact: true }).isVisible(), true, "a working Bot has no pinned name")
+    assert.equal(await workingTag.getByText(w.towerMoodWork).isVisible(), true, "a working Bot has no visible working state")
+  }
   await restingBot.waitFor()
   const menu = page.getByRole("button", { name: w.towerFloorsMenu, exact: true })
   const controls = page.locator(".pa-tower-controls")
@@ -91,6 +104,9 @@ async function towerChecks(page, width, language, shot) {
   await toggleTags.click()
   assert.equal(await toggleTags.getAttribute("aria-pressed"), "false")
   assert.equal(await restingTag.isVisible(), false, "a name tag is still pinned with tags off")
+  await assertWorkingTag()
+  assert.equal(await workingTag.getByText(w.thinking, { exact: true }).isVisible(), true, "a working Bot's current activity is hidden on the floor")
+  await shot("tower-working-tags-off")
   const unreadBadge = scene.locator(".pa-tower-bot").getByText(w.towerMoodUnread, { exact: true }).first()
   assert.equal(await unreadBadge.isVisible(), true, "a Bot with a new reply has no visible badge with name tags off")
   if (!phone) {
@@ -99,6 +115,7 @@ async function towerChecks(page, width, language, shot) {
   }
   await toggleTags.click()
   assert.equal(await restingTag.isVisible(), true, "turning name tags back on did not restore the resting Bot's name")
+  await assertWorkingTag()
   await toggleTags.press("Escape")
   assert.equal(await controls.isVisible(), false, "Escape did not close the controls")
   assert.equal(await menu.evaluate(el => document.activeElement === el), true, "Escape did not return focus to the menu button")
@@ -119,11 +136,13 @@ async function towerChecks(page, width, language, shot) {
   const elevator = page.getByRole("navigation", { name: w.towerElevator })
   await elevator.getByRole("button", { name: w.towerSection, exact: true }).click()
   assert.equal(await controls.isVisible(), false, "the controls stay open after choosing the building overview")
-  const sectionTag = scene.locator(".pa-tower-bot .pa-tower-tip").first()
+  const sectionTag = restingTag
   assert.equal(await sectionTag.isVisible(), true, "the building overview has no pinned name tags")
   await menu.click()
   await toggleTags.click()
-  assert.equal(await sectionTag.isVisible(), false, "a name tag is still pinned in the building overview with tags off")
+  assert.equal(await sectionTag.isVisible(), false, "a resting name tag is still pinned in the building overview with tags off")
+  await assertWorkingTag()
+  checks.push("working name tags and states stay visible with tags on and off on the floor and with tags off in the building overview")
   assert.equal(await unreadBadge.isVisible(), true, "a Bot with a new reply has no visible badge in the building overview")
   checks.push("new reply badges stay visible on a floor and in the building overview with name tags off")
   await toggleTags.click()
