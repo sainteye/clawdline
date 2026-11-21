@@ -218,6 +218,9 @@ func (l *Link) sendCarrierAtEpoch(viewer, channel string, class domaincloud.Clas
 	if peer == nil || l.relay == nil {
 		return ErrNoDirectCarrier
 	}
+	peer.carrierSendMu.Lock()
+	defer peer.carrierSendMu.Unlock()
+
 	peer.mu.Lock()
 	if !peer.open || peer.closed {
 		peer.mu.Unlock()
@@ -239,11 +242,11 @@ func (l *Link) sendCarrierAtEpoch(viewer, channel string, class domaincloud.Clas
 			return domaincloud.ErrRekey
 		}
 	}
-	peer.carrierSeq++
-	seq := peer.carrierSeq
 	peer.mu.Unlock()
+
+	peer.carrierSeq++
 	envelope, err := domaincloud.Seal(payload, domaincloud.SealParams{
-		Ch: channel, Seq: seq, Ts: uint64(l.opts.Now().UnixMilli()), Class: class,
+		Ch: channel, Seq: peer.carrierSeq, Ts: uint64(l.opts.Now().UnixMilli()), Class: class,
 		KeyID: keyID, Sender: l.identity.MachineID, Key: key, Signer: l.relay.Signer,
 	})
 	if err != nil {
