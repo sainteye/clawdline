@@ -10794,6 +10794,8 @@
   "next.voiceRealtimeSettingChanged": "The transcription engine changed. Start a new recording.",
   "next.voiceRealtimeUnsupported": "OpenAI Realtime transcription needs WebRTC in this browser.",
   "next.voiceRetryWithWhisper": "Retry with local Whisper",
+  "next.bgAskSession": "Ask Session",
+  "next.bgQuestion": "What is the current status of the background shells in this Session? For each one, is it still needed, when will it finish, and can it be stopped safely?",
   "notifications.botSound": "Bots completion sound",
   "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "notifications.destinationList": "Opens the list.",

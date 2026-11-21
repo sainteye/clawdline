@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13859,
+  "englishKeys": 13861,
   "counts": {
     "negation": 3568,
-    "state": 2344,
+    "state": 2345,
     "permission": 837,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5913,
+  "unionCount": 5914,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5055,6 +5055,7 @@
       "next.bgAgentRunningOne",
       "next.bgCancelled",
       "next.bgFailure",
+      "next.bgQuestion",
       "next.bgRunning",
       "next.bgShellsNone",
       "next.bgSuccess",
@@ -11189,6 +11190,7 @@
     "next.bgCancelled",
     "next.bgFailure",
     "next.bgMore",
+    "next.bgQuestion",
     "next.bgRunning",
     "next.bgShellsNone",
     "next.bgSuccess",

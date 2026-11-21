@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react"
 import type { SessionRow, SessionShell } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -7,6 +7,8 @@ import { backgroundCounts, backgroundLine, backgroundLive, showsBackground, type
 import { WorkTree } from "./WorkTree.js"
 import "./background.css"
 import { callbackWord } from "./callback-copy.js"
+import { deliverUntilSeen, nextMessages, pendingSends, queueSessionInputInBrowser } from "./send.js"
+import { toast } from "../overlays/toast.js"
 
 /**
  * The one line above the composer that says a session has work going on in
@@ -18,14 +20,18 @@ import { callbackWord } from "./callback-copy.js"
  * opens the Shell panel, and the provider's subagents, each of which opens its
  * transcript in the pane as the work tree always has.
  */
-export function BackgroundStrip({ row, selected, onAgent, onShell }: {
+export function BackgroundStrip({ row, selected, onAgent, onShell, canAsk, machineQueues, onAsked, onSent }: {
   row: SessionRow
   selected: string | null
   onAgent: (id: string | null) => void
   onShell: (shell: SessionShell) => void
+  canAsk: boolean
+  machineQueues: boolean
+  onAsked: () => void
+  onSent?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  useEffect(() => setOpen(false), [row.id])
+  useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const counts = backgroundCounts(row)
   const shows = showsBackground(counts) || !!row.background_omitted
   useEffect(() => {
@@ -42,6 +48,24 @@ export function BackgroundStrip({ row, selected, onAgent, onShell }: {
     if (restore) document.getElementById("bg-strip-line")?.focus({ preventScroll: true })
   }
   const shells = row.shells ?? []
+  const question = nextWord("bgQuestion")
+  const conversation = row.sessionId || undefined
+  const questionPending = () => pendingSends.of(row.id).some(card =>
+    card.conversation === conversation && (card.requestText ?? card.text) === question)
+  const ask = () => {
+    if (!canAsk || questionPending()) return
+    const queued = queueSessionInputInBrowser(row, machineQueues)
+    const now = Date.now()
+    const card = queued ? nextMessages.add(row.id, question, [], now, conversation)
+      : pendingSends.add(row.id, question, [], now, false, conversation)
+    if (!card) {
+      toast(nextWord("sendQueueFull"), true)
+      return
+    }
+    if (!queued) void deliverUntilSeen(card).then(code => { if (!code) onSent?.() })
+    close(true)
+    onAsked()
+  }
   return (
     <div className="bg-strip" data-open={open ? "on" : "off"}>
       <button
@@ -76,6 +100,14 @@ export function BackgroundStrip({ row, selected, onAgent, onShell }: {
           >
             <div className="bg-sheet-head">
               <h2 id="bg-sheet-title">{nextWord("bgTitle")}</h2>
+              {shells.length > 0 && <button className="chip bg-sheet-ask" type="button"
+                disabled={!canAsk || questionPending()} onClick={ask}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M22 2 15 22l-4-9-9-4L22 2ZM22 2 11 13" />
+                </svg>
+                {nextWord("bgAskSession")}
+              </button>}
               <button className="chip" id="bg-sheet-close" type="button" onClick={() => close(true)}>
                 {nextWord("bgClose")}
               </button>
