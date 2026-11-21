@@ -1,5 +1,5 @@
 import { ChevronIcon } from "../ui/ChevronIcon.js"
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState, type ReactNode } from "react"
 import { nextMenuState, type MenuEvent, type MenuState } from "./menu-state.js"
 
 export interface ManageMenuItem { label: string; onSelect: () => void }
@@ -9,8 +9,10 @@ export interface ManageMenuItem { label: string; onSelect: () => void }
  * instead of growing the card, so Open and Manage keep their places; Remove
  * asks once before it deletes the package and any previous version.
  */
-export function ManageMenu({ label, busy, items, packageId, remove }: {
+export function ManageMenu({ label, busy, items, packageId, remove, icon }: {
   label: string; busy: boolean; items: readonly ManageMenuItem[]; packageId: string
+  /** A compact trigger: the icon is shown and the label becomes its accessible name. */
+  icon?: ReactNode
   remove: { label: string; question: string; confirm: string; cancel: string; onConfirm: () => void }
 }) {
   const [state, setState] = useState<MenuState>("closed")
@@ -43,9 +45,9 @@ export function ManageMenu({ label, busy, items, packageId, remove }: {
   }, [state])
   const choose = (fn: () => void) => { dismiss(true); fn() }
   return <div className="vp-menu-wrap" ref={root} data-open={state !== "closed"}>
-    <button ref={button} type="button" className="vp-menu-button" aria-haspopup="menu" aria-expanded={state !== "closed"} aria-controls={state !== "closed" ? id : undefined}
+    <button ref={button} type="button" className={`vp-menu-button${icon ? " vp-menu-icon" : ""}`} aria-label={icon ? label : undefined} title={icon ? label : undefined} aria-haspopup="menu" aria-expanded={state !== "closed"} aria-controls={state !== "closed" ? id : undefined}
       onClick={() => state === "closed" ? send("toggle") : dismiss(false)}>
-      {label} <span aria-hidden="true"><ChevronIcon /></span>
+      {icon ?? <>{label} <span aria-hidden="true"><ChevronIcon /></span></>}
     </button>
     {state === "open" && <div className="vp-menu" id={id} role="menu" aria-label={label}>
       {items.map(item => <button key={item.label} type="button" role="menuitem" disabled={busy} onClick={() => choose(item.onSelect)}>{item.label}</button>)}

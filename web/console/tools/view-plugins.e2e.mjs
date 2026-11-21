@@ -51,8 +51,9 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  const manager=()=>page.locator("#manager").click()
  const dismiss=async()=>{await page.locator(".vp-close,.vp-frame-bar button[aria-label]").click();await page.locator(".vp-host").waitFor({state:"hidden"})}
  await page.getByRole("button",{name:entry,exact:true}).click()
- await page.getByRole("heading",{name:zh?"還沒有啟用的視圖":"No views enabled yet",exact:true}).waitFor()
- assert.equal(await page.locator('input[type=file]').count(),0,"The launcher has no package management")
+ await page.getByRole("heading",{name:zh?"用另一種方式看你的 Session":"See your Sessions another way",exact:true}).waitFor()
+ assert.equal(await page.locator('input[type=file]').count(),await page.locator('.vp-hero input[type=file]').count(),"The launcher offers ZIP import only from its empty introduction")
+ assert.equal(await page.locator('.vp-launcher .vp-menu-button').count(),0,"The launcher has no package management")
  assert.equal(await page.getByRole("button",{name:zh?"安裝星系":"Install Galaxy",exact:true}).count(),0)
  await dismiss();await manager()
  const covers=page.locator(".vp-example .vp-art img")
@@ -164,7 +165,7 @@ export async function runViewAcceptance({playwrightModule,artifacts,engines=["ch
  await other.goto(origin+"/?lang="+lang);await other.locator("#manager").waitFor()
  await other.evaluate(()=>fixture.disableCommunity())
  await page.locator("iframe").waitFor({state:"detached"})
- await page.getByRole("heading",{name:zh?"還沒有啟用的視圖":"No views enabled yet",exact:true}).waitFor()
+ await page.getByRole("heading",{name:zh?"用另一種方式看你的 Session":"See your Sessions another way",exact:true}).waitFor()
  await other.close()
  // Old fixed-URL caches must still be bypassed for the retained Galaxy installer.
  await dismiss()

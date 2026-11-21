@@ -308,18 +308,73 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
         onClick={() => here ? pinView(null) : pinHere(row.id)}><DockIcon on={here} /></button>}
     </article>
   }
+  const authorGuide = "https://github.com/sainteye/clawdline/blob/main/docs/plugins/view-plugin-v1.md"
+  const available = examples.filter(example => !rows.some(row => row.id === curatedID(example.id)))
+  const releaseOf = (row: Installed) => updates.catalog?.packages.find(item => item.id === row.id)
+  const newerOf = (row: Installed) => { const release = releaseOf(row); return release && newerStableVersion(release.version, row.active.manifest.version) ? release : undefined }
+  const summary = (() => {
+    const pending = rows.filter(row => newerOf(row) && updates.states[row.id] !== "updating"), busyRow = rows.find(row => updates.states[row.id] === "updating")
+    const minutes = updates.checkedAt === null ? -1 : Math.floor((Date.now() - updates.checkedAt) / 60000)
+    const checked = minutes < 0 ? w.notChecked : minutes < 1 ? w.checkedNow : w.checkedAgo.replace("{minutes}", String(minutes))
+    if (updates.failure) return { state: "failed", title: w.checkFailedTitle, detail: w.errors[updates.failure] || w.errors.update_check_failed }
+    if (busyRow) return { state: "updating", title: w.updatingNamed.replace("{name}", name(busyRow.active, language)), detail: w.updatingHint }
+    if (pending.length) return { state: "available", title: w.updatesAvailable.replace("{count}", String(pending.length)), detail: checked }
+    return { state: "current", title: updates.checking ? w.checkingUpdates : w.allCurrent, detail: `${checked} · ${w.officialAuto}` }
+  })()
+  const manageRow = (row: Installed) => {
+    const release = releaseOf(row), newer = newerOf(row), official = !!release && (row.official || isOfficialRevision(row, release))
+    const status = newer ? (updates.states[row.id] || "available") : "current", art = packageCover(row.active)
+    const update = (button: HTMLElement) => void reviewUpdate(row, button)
+    return <article className="vp-installed" key={row.id} data-enabled={row.enabled} data-package-id={row.id} data-update-state={status} tabIndex={-1}>
+      {art ? <img className="vp-row-cover" src={art} alt="" /> : <span className="vp-row-cover vp-cover-missing" title={w.coverRequired} aria-hidden="true" />}
+      <div className="vp-row-body">
+        <div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}{status === "updating" && newer ? ` → ${newer.version}` : ""}</span></div>
+        <div className="vp-row-meta">
+          {status === "updating" ? <span className="vp-row-note" data-tone="progress">{w.updating}</span>
+            : status === "updateFailed" ? <><span className="vp-row-note" data-tone="error">{w.updateFailedRow.replace("{version}", row.active.manifest.version)}</span>
+              <button type="button" className="vp-update-button vp-chip-button" disabled={isBusy || updates.checking} onClick={e => update(e.currentTarget)}>{w.retry}</button></>
+            : <>
+              <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
+              {!row.enabled && <span>{w.hiddenFromViews}</span>}
+              {newer && status !== "waitingClose" && <button type="button" className="vp-update-button vp-chip-button" title={w.updateTo.replace("{version}", newer.version)} disabled={isBusy || updates.checking} onClick={e => update(e.currentTarget)}>{w.updateChip.replace("{version}", newer.version)}</button>}
+              {status === "waitingClose" && <span className="vp-row-note" data-tone="progress">{w.waitingClose}</span>}
+              {row.enabled && !newer && (official ? <span>{row.official && !row.autoUpdate ? w.manualUpdate : w.autoUpdate}</span> : !curatedPackageIDs.includes(row.id) && <span className="vp-badge-inline">{w.sideloaded}</span>)}
+            </>}
+        </div>
+        {status === "updating" && <span className="vp-row-progress" aria-hidden="true"><i /></span>}
+      </div>
+      <div className="vp-row-actions">
+        <button type="button" className="vp-primary vp-row-open" aria-label={w.open} title={w.open} disabled={isBusy || !row.enabled} onClick={() => choose(row.active)}><span aria-hidden="true">↗</span></button>
+        <button type="button" role="switch" className="vp-switch-toggle" aria-checked={row.enabled} aria-label={`${row.enabled ? w.disable : w.enable} ${name(row.active, language)}`} title={row.enabled ? w.disable : w.enable} disabled={isBusy} onClick={() => void act(() => enablePackage(row, !row.enabled))}><i /></button>
+        <ManageMenu label={w.manage} busy={isBusy} packageId={row.id} icon={<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>} items={[
+          ...(row.enabled ? [{ label: w.open, onSelect: () => choose(row.active) }] : []),
+          ...(official ? [{ label: row.official && !row.autoUpdate ? w.autoUpdateOff : w.autoUpdateOn, onSelect: () => void act(() => officialUpdatePolicy(row, !(row.official ? !!row.autoUpdate : true))) }] : []),
+          ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
+        ]} remove={{ label: w.remove, cancel: w.cancel, confirm: w.remove,
+          question: `${w.removeQuestion.replace("{name}", name(row.active, language))}${row.previous ? w.removePrevious : ""}`,
+          onConfirm: () => void act(() => removePackage(row)) }} />
+      </div>
+    </article>
+  }
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onPin={desk && pinned !== grant.pkg.manifest.id ? () => pinHere(grant.pkg.manifest.id) : undefined}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
-      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}{mode === "launch" && <button type="button" className="vp-bar-manage" onClick={() => { setError(""); setMode("manage") }}><GearIcon />{w.manageInstall}</button>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
+      <header className="vp-bar"><div className="vp-bar-title">{mode === "manage" && <button type="button" className="vp-bar-back" onClick={() => { setError(""); setMode("launch") }}><span aria-hidden="true">‹</span>{w.backToViews}</button>}<ViewPluginIcon /><h1>{mode === "manage" ? w.manageTitle : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}{mode === "manage" && !loading && rows.length > 0 && importZip("vp-import vp-bar-manage")}{mode === "launch" && <button type="button" className="vp-bar-manage" onClick={() => { setError(""); setMode("manage") }}><GearIcon />{w.manageInstall}</button>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
       <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
         {error && !review && !installing && !loadError && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
         {loading ? <LoadingSkeleton label={w.loading} id="view-plugins" kind="cards" /> : <>
-          {mode === "manage" && <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div>{importZip("vp-import")}</div>}
           {panel && <section className="vp-review vp-card" data-package-id={panel.manifest.id} data-phase={installing ? "installing" : review ? "review" : "installed"} tabIndex={-1} aria-label={completed && !review && !installing ? w.added : w.review}>
-            <ViewArtwork cover={panel.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow" data-install-result={completed && !review && !installing ? true : undefined}>{completed && !review && !installing ? w.added : w.review}</p><h2>{name(panel, language)}</h2><p className="vp-package-id">{panel.manifest.id} · {panel.manifest.version}</p>
-            <p>{w.permissions}: {w.read}{panel.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
+            <ViewArtwork cover={packageCover(panel)} missing={w.coverRequired} small />
+            <div className="vp-review-body">
+            <p className="vp-eyebrow" data-install-result={completed && !review && !installing ? true : undefined}>{completed && !review && !installing ? w.added : w.reviewTitle}</p><h2>{name(panel, language)}</h2>
+            <p className="vp-package-id">{panel.manifest.id} · {panel.manifest.version}{curatedPackageIDs.includes(panel.manifest.id) ? "" : ` · ${w.communityWork}`}</p>
+            {!(completed && !review && !installing) && <ul className="vp-permissions" aria-label={w.permissions}>
+              <li data-allowed="true"><i aria-hidden="true">✓</i>{w.permRead}</li>
+              {panel.manifest.capabilities.includes("sessions.open") && <li data-allowed="true"><i aria-hidden="true">✓</i>{w.permNavigate}</li>}
+              <li data-allowed="false"><i aria-hidden="true">✕</i>{w.permNever}</li>
+            </ul>}
+            {!(completed && !review && !installing) && <p className="vp-muted">{(review ?? installing)?.official ? w.trustOfficial : w.trustCommunity}</p>}
             {error && (review || installing) && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
             <div className="vp-actions">{completed && !review && !installing ? <>
               <button className="vp-primary" disabled={isBusy || !rows.find(row => row.id === completed.manifest.id)?.enabled} onClick={() => choose(completed)}>{w.open} <span aria-hidden="true">↗</span></button>
@@ -330,7 +385,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
             </> : <>
               <button className="vp-primary" disabled={isBusy} onClick={() => void confirmInstall()}>{review?.expected || installing?.expected ? w.replace : w.confirmInstall}</button>
               <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
-            </>}</div></section>}
+            </>}</div></div></section>}
           {mode === "launch" ? loadError ? <div className="vp-state" role="alert">
             <span className="vp-state-glyph" aria-hidden="true">!</span><h2>{w.loadFailed}</h2>
             <p>{w.errors[loadError] || w.unavailable}<br />{w.sessionsSafe}</p>
@@ -352,31 +407,19 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
             </section>}
             {recommendations.length > 0 && gallery(recommendations, w.recommended, w.recommendedHint)}
           </> : <>
-          <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span><button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button></div>
-            {updates.failure && <p className="vp-update-error" role="status">{w.errors[updates.failure] || w.errors.update_check_failed}</p>}
-            {!rows.length && <div className="vp-empty"><ViewPluginIcon /><h3>{w.empty}</h3><p>{w.emptyHint}</p></div>}
-            <div className="vp-library-grid">{rows.map(row => {
-              const release=updates.catalog?.packages.find(item=>item.id===row.id), newer=release&&newerStableVersion(release.version,row.active.manifest.version)
-              const official=!!release&&(row.official||isOfficialRevision(row,release)), status=newer?(updates.states[row.id]||"available"):"current"
-              return <article className="vp-card vp-installed" key={row.id} data-enabled={row.enabled} data-package-id={row.id} data-update-state={status} tabIndex={-1}>
-              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><div className="vp-installed-body"><div className="vp-card-heading"><h3>{name(row.active, language)}</h3><span className="vp-version">v{row.active.manifest.version}</span></div>
-                <span className="vp-status"><i />{row.enabled ? w.enabled : w.disabled}</span>
-                {!packageCover(row.active) && <span className="vp-muted">{w.coverRequired}</span>}
-                <p className="vp-update-status" role="status">{updates.failure ? w.updateCheckUnavailable : release ? newer ? w[status] + " · v" + release.version : w.current : updates.checking ? w.checkingUpdates : w.updateSourceUnknown}</p>
-                {official && <label className="vp-auto-update"><input type="checkbox" checked={row.official ? !!row.autoUpdate : true} disabled={isBusy} onChange={e=>{const enabled=e.currentTarget.checked;void act(()=>officialUpdatePolicy(row,enabled))}} />{w.autoUpdate}</label>}
-                <div className="vp-card-footer"><button className="vp-primary" disabled={isBusy || !row.enabled} onClick={() => choose(row.active)}>{w.open} <span aria-hidden="true">↗</span></button>
-                  <button className="vp-update-button" disabled={isBusy || updates.checking} onClick={e=>void reviewUpdate(row,e.currentTarget)}>{newer ? w.updateTo.replace("{version}",release.version) : w.checkUpdates}</button>
-                  <ManageMenu label={w.manage} busy={isBusy} packageId={row.id} items={[
-                    { label: row.enabled ? w.disable : w.enable, onSelect: () => void act(() => enablePackage(row, !row.enabled)) },
-                    ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
-                  ]} remove={{ label: w.remove, cancel: w.cancel, confirm: w.remove,
-                    question: `${w.removeQuestion.replace("{name}", name(row.active, language))}${row.previous ? w.removePrevious : ""}`,
-                    onConfirm: () => void act(() => removePackage(row)) }} />
-                </div>
-              </div>
-            </article>})}</div>
-          </section>
-          {gallery(examples, w.preset, w.examplesHint)}
+          {rows.length ? <>
+            <section className="vp-update-summary" data-state={summary.state} role="status">
+              <span className="vp-summary-glyph" aria-hidden="true">{summary.state === "current" ? "✓" : summary.state === "failed" ? "!" : "↑"}</span>
+              <div><b>{summary.title}</b><small>{summary.detail}</small></div>
+              <button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button>
+            </section>
+            <section className={`vp-library${review || installing ? " vp-dimmed" : ""}`}>
+              <div className="vp-section-head"><h2>{w.installedShort}</h2><span className="vp-count">{rows.length}</span><p>{w.toggleHint}</p></div>
+              <div className="vp-library-list">{rows.map(manageRow)}</div>
+            </section>
+          </> : <section className="vp-hero vp-manage-empty"><div className="vp-hero-copy"><h2>{w.emptyManageTitle}</h2><p>{w.emptyManageText}</p>
+            <div className="vp-hero-actions">{importZip("vp-import")}<a className="vp-docs-link" href={authorGuide} target="_blank" rel="noreferrer">{w.howToMake}</a></div></div></section>}
+          {available.length > 0 && gallery(available, rows.length ? w.exploreMore : w.officialViews, w.recommendedHint)}
           <footer className="vp-local-note"><span aria-hidden="true">◌</span><p>{w.local}</p></footer>
           </>}
         </>}

@@ -8,7 +8,7 @@ export type UpdateState = "current" | "available" | "updating" | "waitingClose" 
 export function useViewUpdates(blocked: boolean) {
   const [catalog, setCatalog] = useState<OfficialCatalog | null>(null)
   const [states, setStates] = useState<Record<string, UpdateState>>({})
-  const [checking, setChecking] = useState(false), [failure, setFailure] = useState("")
+  const [checking, setChecking] = useState(false), [failure, setFailure] = useState(""), [checkedAt, setCheckedAt] = useState<number | null>(null)
   const live = useRef({ blocked }); live.current = { blocked }
   const life = useRef<AbortController | null>(null), running = useRef<Promise<OfficialCatalog | null> | null>(null)
   const check = useCallback((automatic = true): Promise<OfficialCatalog | null> => {
@@ -21,7 +21,7 @@ export function useViewUpdates(blocked: boolean) {
       try {
         const next = await readOfficialCatalog(curatedPackageIDs, signal)
         if (signal.aborted) return null
-        setCatalog(next)
+        setCatalog(next); setCheckedAt(Date.now())
         for (const initial of await installedPackages()) {
           if (signal.aborted) break
           const release = next.packages.find(item => item.id === initial.id)
@@ -74,5 +74,5 @@ export function useViewUpdates(blocked: boolean) {
     return () => { controller.abort(); running.current = null; window.removeEventListener("focus", foreground); document.removeEventListener("visibilitychange", foreground) }
   }, [check])
   useEffect(() => { if (!blocked) void check() }, [blocked, check])
-  return { catalog, states, checking, failure, check }
+  return { catalog, states, checking, failure, checkedAt, check }
 }

@@ -30,7 +30,7 @@ try{for(const engine of (process.env.MOTION_ENGINE?[process.env.MOTION_ENGINE]:[
   await page.locator('input[type=file]:not([disabled])').waitFor();const archive=await readFile(resolve(process.env.SOURCE_MOTION_ARCHIVE_DIR||root+'web/console/public/view-plugins','session-'+slug+'.zip'))
   await page.locator('input[type=file]').setInputFiles({name:slug+'.zip',mimeType:'application/zip',buffer:archive})
   await page.locator('.vp-review').waitFor();await page.getByRole('button',{name:width===390?'安裝套件':'Install package',exact:true}).click()
-  await page.locator('.vp-installed').getByRole('button',{name:width===390?'開啟':'Open',exact:true}).click()
+  await page.locator('.vp-review[data-phase=installed]').getByRole('button',{name:width===390?'開啟':'Open',exact:true}).click()
   const f=page.frameLocator('iframe');await f.locator('body').waitFor();await f.locator('#still').waitFor()
   if(process.env.MOTION_STALE_ENTRY){await f.locator(slug==='orrery'?'.planet':slug==='night-city'?'.window':'.row[data-ref]').first().waitFor();assert.equal(await f.locator('body').evaluate(n=>n.getAnimations({subtree:true}).length),0,'Cached stale rows do not consume the entrance');await page.evaluate(()=>{fixture.rows.forEach(r=>r.freshness='fresh');fixture.change()})}
   if(slug==='orrery'){

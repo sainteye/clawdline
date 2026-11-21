@@ -161,6 +161,8 @@ runs until the view is opened. Plan the cover and name for these places:
 | Launcher card | A 16:9 picture, then a 34-pixel cover, the name and one line below it |
 | Pinned pane picker | A 26-pixel cover and the name; the open menu shows a 38-pixel cover, the name and one line |
 | Pane loading and failure screens | An 84-pixel cover (greyed out on failure) and the name |
+| Manage views row | A 46-pixel cover (greyed out while disabled), the name and the version |
+| Install review | A 96-pixel cover, the name, the `id`, the version and the permissions listed below |
 
 Curated packages show a reviewed preview screenshot as the card picture and a short
 description as the line. A community package has neither: the card shows its cover
@@ -174,6 +176,14 @@ preview field in v1, so do not rely on one. Therefore:
   because the blurred copy fills the rest of the card;
 - choose a short name: the card, picker and pane header truncate long names to one line;
 - choose an `id` that a person can recognise, since it is the card's only description.
+
+The install review states, in plain words, what the manifest's capabilities allow: reading
+Session and Project names and states on every authorized machine, opening a Session when
+the person chooses one (only with `sessions.open`), and that the view cannot send messages,
+run commands or reach the network. A package that is not an exact official release is
+labelled as not maintained by Clawdline and not updated automatically. An official release
+newer than the installed one appears as the row's own version label; selecting it opens the
+same review before replacing anything.
 
 A card opens the view full screen. Its corner button pins it; that button and the
 **Pinned to the right** badge appear only where a pane exists. Disabled packages are
