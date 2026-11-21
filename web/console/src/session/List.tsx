@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithRe
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { lastActivityRelative } from "../relative-time.js"
 import { detailSessionName, projectedSessionIdentity, sessionCoordinatorBound, sessionMark } from "../brand-mark.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, actionWidth, archivable, revealFor, richSessionSwipeActions, swipes, type Reveal } from "./swipe.js"
@@ -381,23 +382,9 @@ export function sessionActivityWord(
   locale = typeof document === "undefined" ? undefined : document.documentElement.lang || undefined,
 ): string {
   const activity = row.activity
-  const at = activity?.at
-  if (!activity?.known || typeof at !== "number" || !Number.isFinite(at) || at <= 0) return ""
-  // A producer clock a little ahead of this browser still means "now", not
-  // that the session's last movement lies in the future.
-  const seconds = Math.min(0, at - now / 1000)
-  const absolute = Math.abs(seconds)
-  const unit: Intl.RelativeTimeFormatUnit = absolute < 90 * 60 ? "minute" : absolute < 36 * 3600 ? "hour" : "day"
-  const size = unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400
-  const value = Math.round(seconds / size)
-  let relative: string
-  try {
-    relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(value, unit)
-  } catch {
-    // refusal-ok: a browser refusing a locale is not a session-reading refusal.
-    relative = new Date(at * 1000).toLocaleString()
-  }
-  return nextWord("sessionLastActivity", { time: relative })
+  if (!activity?.known || typeof activity.at !== "number") return ""
+  const relative = lastActivityRelative(activity.at, now, locale)
+  return relative ? nextWord("sessionLastActivity", { time: relative }) : ""
 }
 
 /**
