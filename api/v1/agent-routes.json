@@ -790,6 +790,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/preview",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/setup",
       "guide": "connect"
     },

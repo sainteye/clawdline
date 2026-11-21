@@ -228,8 +228,13 @@ func voiceBinaryLookPath() string {
 // because a body that names the wrong rate is a body whose megabytes are not
 // worth turning into bytes.
 func voiceSamples(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	return voiceSamplesWithin(w, r, voiceBodyLimit, voiceCeiling,
+		"That recording is longer than five minutes, which is the limit here. Send it in pieces.")
+}
+
+func voiceSamplesWithin(w http.ResponseWriter, r *http.Request, bodyLimit int64, durationLimit time.Duration, tooLong string) ([]byte, bool) {
 	var body contract.VoiceRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, voiceBodyLimit))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimit))
 	if err := dec.Decode(&body); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
@@ -266,9 +271,8 @@ func voiceSamples(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 			"That was under a quarter of a second of audio, which is a tap and not a sentence.")
 		return nil, false
 	}
-	if seconds > voiceCeiling.Seconds() {
-		writeRefusal(w, http.StatusBadRequest, "bad_request",
-			"That recording is longer than five minutes, which is the limit here. Send it in pieces.")
+	if seconds > durationLimit.Seconds() {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", tooLong)
 		return nil, false
 	}
 	return samples, true

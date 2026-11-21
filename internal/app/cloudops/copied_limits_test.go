@@ -66,6 +66,7 @@ var copiedConstants = map[string]int64{
 	"snippetMaximumBytes":                          snippetMaximumBytes,
 	"verificationCloudBodyLimit":                   verificationCloudBodyLimit,
 	"verificationCriteriaMaximum-1":                verificationCriteriaMaximum - 1,
+	"voicePreviewEncodedBytes":                     voicePreviewEncodedBytes,
 	"voiceRate":                                    voiceRate,
 	"workV2CloudBodyLimit":                         workV2CloudBodyLimit,
 	"workV2CloudImageBodyLimit":                    workV2CloudImageBodyLimit,
