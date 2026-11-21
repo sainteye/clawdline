@@ -36,7 +36,7 @@ async function executable(){
 const profile=await mkdtemp(path.join(tmpdir(),"clawdline-search-748-")),results=[]
 let chrome,ws
 try{
-  chrome=spawn(await executable(),["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
+  chrome=spawn(await executable(),["--headless=new","--remote-debugging-port=0","--use-mock-keychain","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
   const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup: "+output)),20000);chrome.once("error",reject);chrome.once("exit",()=>{clearTimeout(timer);reject(Error("Chrome exited: "+output))});chrome.stderr.on("data",data=>{output+=data;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
   ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
   let serial=0;const pending=new Map()

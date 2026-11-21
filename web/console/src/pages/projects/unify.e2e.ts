@@ -409,7 +409,7 @@ before(async () => {
   origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
   console.log(`Projects fixture origin: ${origin}; page: ${origin}/#page=projects`)
   profile = mkdtempSync(join(process.env.CLAWDLINE_BROWSER_WORK || tmpdir(), "clawdline-unify-"))
-  browserProcess = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--user-data-dir=" + profile,
+  browserProcess = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--use-mock-keychain", "--user-data-dir=" + profile,
     "--no-first-run", "--no-default-browser-check", "about:blank"])
   const endpoint = await new Promise<string>((ok, fail) => {
     let said = ""

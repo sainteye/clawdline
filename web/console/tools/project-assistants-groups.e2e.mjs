@@ -68,7 +68,7 @@ if(process.env.BOTS_PREVIEW==="1"){
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));process.exit(0)
 }
 const profile=await mkdtemp(path.join(work,"groups-browser-")),executable=await testBrowser()
-const chrome=spawn(executable,["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
+const chrome=spawn(executable,["--headless=new","--remote-debugging-port=0","--use-mock-keychain","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
 let ws
 const results=[],operations=[]
 try{

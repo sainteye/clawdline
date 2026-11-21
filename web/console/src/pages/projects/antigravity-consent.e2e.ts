@@ -113,7 +113,7 @@ test("Antigravity consent has an explicit scope and recovers a lost answer on de
  const address = server.address(); assert.ok(address && typeof address !== "string")
  const origin = `http://127.0.0.1:${address.port}`
  const profile = mkdtempSync(join(tmpdir(), "clawdline-consent-browser-"))
- const process = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--user-data-dir="+profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
+ const process = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--use-mock-keychain", "--user-data-dir="+profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
  let browser: Browser | undefined
  try {
   const endpoint = await new Promise<string>((ok, fail) => { const timer = setTimeout(() => fail(new Error("Chrome startup timed out")), 15000); let said = ""; process.stderr?.on("data", chunk => { said += String(chunk); const m = /DevTools listening on (ws:\/\/\S+)/.exec(said); if (m) { clearTimeout(timer); ok(m[1]) } }); process.once("error", e => { clearTimeout(timer); fail(e) }) })
