@@ -78,6 +78,13 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   const sortFocus=useRef<string|undefined>(undefined),restoreOptions=useRef(false)
   const [active, setActive] = useState<RosterDrag | null>(null), [over, setOver] = useState<RosterDrag | null>(null)
   const shown = items.filter(i => (!machine || i.bot.key.machine_id === machine)&&(!unreadOnly||i.unread_count>0))
+  const [,tickClock]=useState(Date.now)
+  const showingBots=!tower&&shown.length>0
+  useEffect(()=>{
+    if(!showingBots)return
+    const timer=window.setInterval(()=>tickClock(Date.now()),60_000)
+    return()=>window.clearInterval(timer)
+  },[showingBots])
   const endDrag = () => gesture.cancel()
   const entryFor=(key:string)=>[...root.current?.querySelectorAll<HTMLElement>(".pa-roster-entry")??[]].find(row=>row.dataset.rosterDropKey===key)
   const pin=(key:string,pinned:boolean)=>{update(pinRosterBot(rosterState,key,pinned));requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}
@@ -107,6 +114,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   // The first read draws placeholder rows after 150ms; once Bots are listed, a later read only says so.
   const skeleton=useShowAfter(loading&&!items.length)
   const renderRows=(roomEntries:readonly GroupRosterEntry[],openGroup:(entry:GroupRosterEntry,opener?:HTMLElement)=>void,selectedGroup:string|null,dismissGroup:()=>void)=>{
+    const now=Date.now()
     const allRows=conversations(items,roomEntries)
     const override=preview&&pinAtStart.current?botIdentity(pinAtStart.current.item.bot.key):null
     const previewItems=override?shown.map(item=>botIdentity(item.bot.key)===override?{...item,bot:{...item.bot,sidebar_pinned:undefined}}:item):shown
@@ -190,7 +198,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
             return <div className="pa-roster-entry" key={key} {...targetProps({kind:"bot",key})}
               onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){if(item.kind==="bot")openContext(event,key);else{event.preventDefault();beginSorting(key)}}}}}
               onContextMenu={event=>{if(item.kind==="bot")openContext(event,key);else{event.preventDefault();if(!active)beginSorting(key)}}}>
-              {item.kind==="bot"?<BotRow item={item.item} grouped={!flat} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} projectName={item.item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!flat} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>}
+              {item.kind==="bot"?<BotRow item={item.item} grouped={!flat} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} now={now} projectName={item.item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!flat} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>}
               {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}/>}
               {sorting&&<div className="pa-roster-actions">{!lead&&<button type="button" className="pa-roster-pin" aria-label={`${pinLabel}: ${name}`} aria-pressed={pinned} title={pinLabel} disabled={item.kind==="bot"&&sharedRoster(item.item)&&!canWrite(item.item.source)} onClick={()=>item.kind==="bot"?setPinned(item.item,!pinned):pin(key,!pinned)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill={pinned?"currentColor":"none"} stroke="currentColor" strokeWidth="1.3"><path d="m8 1.7 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2.1.7-4.3-3.1-3 4.3-.6Z"/></svg></button>}{handle({kind:"bot",key},name,keys)}</div>}
             </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { RestorableSession, RestorableSessions, RestoreResult } from "@clawdline/contract"
 import { nextWord } from "../next-strings.js"
+import { lastActivityRelative } from "../relative-time.js"
 import { focusModalContainer } from "../modal-focus.js"
 import { failureSentence } from "../legacy/bridge.js"
 import { uuid } from "../legacy/js/core/util.js"
@@ -8,7 +9,6 @@ import {
   allOpened,
   allTicked,
   assistantName,
-  lastSeenRelative,
   liveOwesOffer,
   offerWasAnswered,
   outcomeLine,
@@ -314,7 +314,7 @@ export function RestoreSheet({
               const opened = outcome?.kind === "opened"
               const on = ticked.has(s.conversation_id)
               const line = outcomeLine(outcome, (key, holes) => nextWord(key, holes))
-              const seen = lastSeenRelative(s.last_seen, now, locale)
+              const seen = lastActivityRelative(s.last_seen, now, locale)
               return (
                 <li key={s.conversation_id}>
                   <button

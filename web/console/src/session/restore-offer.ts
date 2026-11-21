@@ -176,21 +176,6 @@ export function assistantName(assistant: string): string {
   return assistant
 }
 
-/** "last seen" as a relative time, in the page's language. */
-export function lastSeenRelative(at: number, now: number, locale?: string): string {
-  if (!Number.isFinite(at) || at <= 0) return ""
-  const seconds = Math.min(0, at - now / 1000)
-  const absolute = Math.abs(seconds)
-  const unit: Intl.RelativeTimeFormatUnit = absolute < 90 * 60 ? "minute" : absolute < 36 * 3600 ? "hour" : "day"
-  const size = unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400
-  try {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(seconds / size), unit)
-  } catch {
-    // refusal-ok: a browser refusing a locale is not a restore refusal.
-    return new Date(at * 1000).toLocaleString()
-  }
-}
-
 /**
  * Whether the line coming up owes a read of the offer.
  *
