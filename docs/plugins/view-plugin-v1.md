@@ -1,8 +1,10 @@
 # View Plugin v1
 
-Revision 10 describes the **experimental browser-local runtime** implemented in
+Revision 11 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
 Session Departures, Session Territory, World of Codecraft and Kaiju City. Public Release acceptance is separate from source and Cloud delivery.
+Revision 11 adds the embedded presentation: a desktop can pin a view beside its Session
+list ([Full screen and embedded](#full-screen-and-embedded)). The wire protocol is unchanged.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -13,7 +15,9 @@ directly and shows the launcher when there are zero or multiple enabled views.
 The launcher recommends Session Departures and World of Codecraft until each
 package is installed. Selecting a recommendation opens package review in place.
 The orbit entry follows the provider quota bar’s visibility.
-An opened view fills the app.
+An opened view fills the app. On a desktop (900 CSS pixels and wider) the launcher and a
+full-screen view also offer **Pin to the right**: the pinned view then fills the Session
+pane whenever no Session is open there, in place of the home screen.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
 The Session page, classifier and dispatch broker are not plugin extension points.
@@ -163,6 +167,70 @@ remain usable with an explicit **Cover required before publication** warning;
 they receive no generic cover and must be updated before being published or
 imported again. Existing rollback records remain readable by the same path.
 
+## Full screen and embedded
+
+A view runs in one of two presentations, reported as `context.presentation`. The
+same package, the same capabilities and the same wire protocol serve both; only the
+layout should change. Design both before submitting a view.
+
+| | `fullscreen` | `embedded` |
+|---|---|---|
+| Where | Fills the app, opened from the status bar | The desktop Session pane, beside the host's Session list |
+| Size | The whole window, phone or desktop | Roughly 540–1500 CSS pixels wide and 500–1200 tall; never narrower than 540 |
+| Host chrome | A return bar below the frame | A header above the frame: view name, switcher, **Full screen**, **Remove** |
+| Roster | The view must offer a readable list of every Session | The host's Session list beside it is already the complete readable roster |
+| `sessions.open` | Opens the Session and closes the view | Opens the Session in the pane; the view stays mounted behind it with `visible: false` and is shown again, same instance, when the person returns |
+| `view.close` | Closes the view | Does nothing: only the host's **Remove** unpins. Escape inside the frame therefore cannot remove a pinned view |
+
+The host owns which view is pinned (a per-browser preference), the header, switching,
+full screen and removal. A package never pins or unpins itself and never learns which
+other views are installed.
+
+**An embedded layout should:**
+
+1. Give the scene or board the whole frame. Drop the package's own title bar, Session
+   roster, search, footnotes, credits and legends that the host header or Session list
+   already provide. Keep licenses and credits reachable in the full-screen layout.
+2. Hide its own close control; the host's **Remove** replaces it.
+3. Keep every Session reachable from inside the scene and keep `sessions.open` one
+   explicit click away (a selected item's label or a compact selection bar).
+4. Follow the frame size, not a fixed canvas. Re-layout on `resize`: the person can
+   resize the window and the pane width changes with it.
+5. Stop motion while `visible` is false, as for a hidden tab: the frame stays loaded
+   behind an open Session.
+6. Never depend on `presentation` for data or permissions. It is a layout hint only.
+
+**Implementation pattern.** Toggle one body class from context and keep the rules in
+CSS, so a package's own re-render cannot drop the class:
+
+```js
+view.onContext(context => {
+  document.body.classList.toggle("embedded", context.presentation === "embedded");
+  render(context);
+});
+```
+
+```css
+body.embedded header, body.embedded aside, body.embedded footer { display: none; }
+body.embedded .scene { height: 100dvh; }
+```
+
+If the package assigns `document.body.className` while rendering, include
+`embedded` in that assignment instead (the supplied Codecraft and Kaiju do this).
+
+**Compatibility.** A package written before revision 11 still works embedded: it is
+shown at the pane's size with its full-screen layout, and its close control does
+nothing there. A new package on an older host never receives `presentation` and
+keeps its full-screen layout. No manifest field declares embedded support.
+
+**Trying it.** Import the ZIP from Sidebar → View plugins on a desktop browser at least
+900 pixels wide, open the status-bar launcher, and choose **Pin to the right**. Check
+both presentations in light and dark themes, with reduced motion, with zero Sessions
+and with more Sessions than fit, then open a Session from the embedded view and
+return. The supplied Session Departures and World of Codecraft are reference
+implementations of a board and a scene; `plugins/embedded-pane.acceptance.mjs`
+drives both presentations through the production host with synthetic Sessions.
+
 ## Consent and data ownership
 
 Every view uses the same fleet source: all currently authorized machines and all
@@ -259,16 +327,10 @@ scopeLabel, connection, presentation}`, with theme `dark|light`, connection
 `connected|disconnected` and presentation `fullscreen|embedded`. Stop motion when
 invisible or reduced motion is on.
 
-`presentation` is `embedded` when a desktop has pinned the view beside its
-Session list, in the pane that otherwise shows the home screen. The host draws the
-view's name, a switcher, full screen and removal above the frame, and its Session
-list is already a complete readable roster, so an embedded layout can drop its own
-roster, explanatory notes and close control and give the scene the whole pane. The
-pane stays mounted while a Session is open in it, with `visible` false; returning
-shows the same instance. Embedded, `view.close` leaves the view in place: only the
-host's remove control unpins it. `sessions.open` opens the Session in that pane
-without closing the view. Hosts before this field omit it; treat a missing value as
-`fullscreen`. The wire protocol version is unchanged.
+`presentation` is `embedded` when the view is pinned beside the Session list and
+`fullscreen` otherwise. Hosts before revision 11 omit it; treat a missing value as
+`fullscreen`. What changes when embedded is specified in
+[Full screen and embedded](#full-screen-and-embedded).
 Retained disconnected data is stale immediately; reconnect needs a new snapshot.
 For a fleet, `connection` is connected when at least one machine is connected;
 per-row freshness still reflects its own source. The host separately warns when
