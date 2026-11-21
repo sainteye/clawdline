@@ -22,7 +22,11 @@ const WORDS = {
     states: { ready: "待命，巡邏中", working: "工作中，正在戰鬥", holding: "暫停中，練劍", waiting_you: "在等你，一臉疑惑", waiting_session: "等其他 Session，攀牆中", unknown: "沒有回報狀態", milestone_complete: "階段完成，休息中", work_complete: "工作完成，休息中" },
   },
 };
-const ART = { ruins: "%%ART:bg-ruins%%", grotto: "%%ART:bg-grotto%%", crystal: "%%ART:bg-crystal%%" };
+const ART = { ruins: "%%ART:bg-ruins%%", grotto: "%%ART:bg-grotto%%", crystal: "%%ART:bg-crystal%%", "platform-ruins": "%%ART:platform-ruins%%", "platform-grotto": "%%ART:platform-grotto%%", "platform-crystal": "%%ART:platform-crystal%%", pillar: "%%ART:pillar%%", dummy: "%%ART:dummy%%", gate: "%%ART:gate%%", shell: "%%ART:shell%%", mushrooms: "%%ART:mushrooms%%" };
+const CAST = [], FOES = [];
+for (let i = 1; i <= 12; i++) CAST.push("char-" + String(i).padStart(2, "0"));
+for (let i = 1; i <= 6; i++) FOES.push("enemy-" + i);
+/*CAST_ART*/
 const BIOMES = [
   { key: "ruins", sky: ["#0a1422", "#12283a", "#060a12"], fog: [120, 170, 200], far: "#16303f", mid: "#0d1d2b", near: "#070d16", rim: "#7fb4cc", mote: [190, 230, 255], lamp: [200, 235, 255] },
   { key: "grotto", sky: ["#07160f", "#12331f", "#040a07"], fog: [120, 190, 140], far: "#143524", mid: "#0b2116", near: "#050e09", rim: "#8fd09a", mote: [200, 255, 190], lamp: [215, 255, 200] },
@@ -52,6 +56,12 @@ const projectName = r => r.project && r.project.label || w().unassigned;
 
 for (const key of Object.keys(ART)) if (ART[key].startsWith("data:")) { const img = new Image(); img.onload = () => { images[key] = img; if (!raf) draw(); }; img.src = ART[key]; }
 
+const greyCache = new Map();
+function grey(key) {
+  let g = greyCache.get(key); const img = images[key];
+  if (!g && img) { g = document.createElement("canvas"); g.width = img.width; g.height = img.height; const c = g.getContext("2d"); c.drawImage(img, 0, 0); const d = c.getImageData(0, 0, g.width, g.height), a = d.data; for (let i = 0; i < a.length; i += 4) { const v = (a[i] * .3 + a[i + 1] * .5 + a[i + 2] * .2) * .62 + 14; a[i] = v * .9; a[i + 1] = v * .96; a[i + 2] = v * 1.06; } c.putImageData(d, 0, 0); greyCache.set(key, g); }
+  return g;
+}
 /* ---------- glow sprites ---------- */
 const glowCache = new Map();
 function glow(color) {
@@ -68,6 +78,7 @@ function glow(color) {
 function drawGlow(x, y, r, color, alpha) { ctx.globalAlpha = alpha; ctx.drawImage(glow(color), x - r, y - r, r * 2, r * 2); ctx.globalAlpha = 1; }
 
 /* ---------- layout: Projects become chambers, states become stations ---------- */
+const TIER = [0, -128, -250, -372];
 function layout() {
   const map = new Map();
   for (const r of rows) { const key = r.project ? r.project.ref : "￿"; if (!map.has(key)) map.set(key, { key, label: projectName(r), rows: [] }); map.get(key).rows.push(r); }
@@ -77,30 +88,47 @@ function layout() {
   groups.forEach((g, index) => {
     const by = {}; for (const s of STATES) by[s] = [];
     for (const r of g.rows) by[live(r) ? status(r) : "unknown"].push(r);
-    const done = by.milestone_complete.concat(by.work_complete), ch = { key: g.key, label: g.label, index, biome: BIOMES[index % BIOMES.length], hue: SCARF[index % SCARF.length], x0: x, platforms: [], dummies: [], shafts: [], lamps: [], camps: [], statues: [], beacon: null, count: g.rows.length };
-    let at = x + 150;
-    ch.sign = x + 70;
-    // Puzzled wanderers gather beneath a tall beacon near the entrance.
-    if (by.waiting_you.length) { ch.beacon = at + 10; by.waiting_you.forEach((r, i) => stations.set(r.ref, { mode: "ponder", x: at + 52 + i * 66, y: 0, ch })); at += 80 + by.waiting_you.length * 66; }
-    // The arena: one lane per fighter.
-    const lane = by.working.length > 8 ? 92 : 124, arena0 = at, arenaW = Math.max(300, by.working.length * lane + 40);
-    by.working.forEach((r, i) => stations.set(r.ref, { mode: "fight", x: arena0 + 20 + lane * (i + .5), y: 0, lane: { cx: arena0 + 20 + lane * (i + .5), hw: lane / 2 - 8 }, ch }));
-    at += arenaW; ch.lamps.push(arena0 + arenaW / 2);
-    by.holding.forEach((r, i) => { const dx = at + 78 + i * 104; ch.dummies.push({ id: g.key + ":d" + i, x: dx }); stations.set(r.ref, { mode: "drill", x: dx - 42, y: 0, dummy: g.key + ":d" + i, dummyX: dx, ch }); });
-    if (by.holding.length) at += 60 + by.holding.length * 104;
+    const done = by.milestone_complete.concat(by.work_complete), rnd = rng(hash(g.key) + 17);
+    const ch = { key: g.key, label: g.label, index, biome: BIOMES[index % BIOMES.length], hue: SCARF[index % SCARF.length], x0: x, platforms: [], dummies: [], shafts: [], lamps: [], camps: [], pieces: [], beacon: null, count: g.rows.length };
+    let at = x + 150; ch.sign = x + 70;
+    // Puzzled wanderers gather on the floor beneath a tall beacon near the entrance.
+    if (by.waiting_you.length) { ch.beacon = at + 10; by.waiting_you.forEach((r, i) => stations.set(r.ref, { mode: "ponder", x: at + 52 + i * 66, y: 0, ch })); at += 90 + by.waiting_you.length * 66; }
+    // Everything else is a unit that can live on the floor or on a floating slab.
+    const kinds = { fight: by.working.map(r => [r]), drill: by.holding.map(r => [r]), camp: [], roam: [], statue: [] };
+    for (let i = 0; i < done.length; i += 3) kinds.camp.push(done.slice(i, i + 3));
+    for (let i = 0; i < by.ready.length; i += 2) kinds.roam.push(by.ready.slice(i, i + 2));
+    for (let i = 0; i < by.unknown.length; i += 3) kinds.statue.push(by.unknown.slice(i, i + 3));
+    const units = [];
+    for (let k = 0, more = true; more; k++) { more = false; for (const kind of ["fight", "roam", "drill", "camp", "statue"]) if (kinds[kind][k]) { units.push({ kind, rows: kinds[kind][k] }); more = true; } }
+    const high = Math.round(units.length * .62), slots = [];
+    for (let c = 0; slots.length < high; c++) for (const tier of c % 2 ? [2] : [1, 3]) slots.push({ c, tier });
+    slots.length = high; const cols = high ? slots[high - 1].c + 1 : 0, low = units.length - high;
+    const span = Math.max(340, cols * 236, low * 196), a0 = at, a1 = at + span;
+    // Slabs first take every other unit so each kind appears on several levels.
+    let hi = 0, lo = 0;
+    units.forEach((u, i) => {
+      const up = hi < high && (lo >= low || i % 5 !== 0 && (i * 7 + index) % 8 < 6);
+      if (up) { const slot = slots[hi++], cx = lerp(a0, a1, (slot.c + .5) / cols) + (rnd() - .5) * 26, wide = u.kind === "drill" || u.kind === "statue" ? 156 : 184, y = TIER[slot.tier] + Math.round((rnd() - .5) * 26); u.plat = { x0: cx - wide / 2, x1: cx + wide / 2, y, tier: slot.tier, biome: ch.biome.key }; ch.platforms.push(u.plat); u.cx = cx; u.y = y; u.hw = wide / 2 - 14; }
+      else { u.cx = lerp(a0, a1, (lo + .5) / low); u.y = 0; u.hw = Math.min(82, span / low / 2 - 12); lo++; }
+    });
+    for (const u of units) {
+      const base = { y: u.y, ch, plat: u.plat || null };
+      if (u.kind === "fight") stations.set(u.rows[0].ref, { ...base, mode: "fight", x: u.cx, lane: { cx: u.cx, hw: u.hw } });
+      else if (u.kind === "drill") { const id = g.key + ":d" + u.rows[0].ref; ch.dummies.push({ id, x: u.cx + 26, y: u.y }); stations.set(u.rows[0].ref, { ...base, mode: "drill", x: u.cx - 18, dummy: id, dummyX: u.cx + 26 }); }
+      else if (u.kind === "camp") { ch.camps.push({ x: u.cx, y: u.y }); u.rows.forEach((r, k) => { const dx = [-32, 32, 60][k]; stations.set(r.ref, { ...base, mode: "rest", x: u.cx + dx, face: dx < 0 ? 1 : -1 }); }); }
+      else if (u.kind === "roam") u.rows.forEach((r, k) => stations.set(r.ref, { ...base, mode: "roam", x: u.cx + (k ? 30 : -30), range: [u.cx - u.hw, u.cx + u.hw] }));
+      else u.rows.forEach((r, k) => stations.set(r.ref, { ...base, mode: "statue", x: u.cx + (k - (u.rows.length - 1) / 2) * 44 }));
+    }
+    ch.lamps.push(a0 + span * .3); if (span > 700) ch.lamps.push(a0 + span * .78);
+    // Ground set pieces stand behind everything else.
+    const pieceKinds = { ruins: ["gate", "shell"], grotto: ["mushrooms", "shell"], crystal: ["gate", "mushrooms"] }[ch.biome.key];
+    for (let k = 0, n = Math.max(1, Math.round(span / 520)); k < n; k++) ch.pieces.push({ kind: pieceKinds[k % 2], x: lerp(a0, a1, (k + .5) / n) + (rnd() - .5) * 120, flip: rnd() < .5, size: .85 + rnd() * .3 });
+    at = a1 + 30;
     const shaftCount = Math.ceil(by.waiting_session.length / 3);
     for (let s = 0; s < shaftCount; s++) ch.shafts.push({ left: at + 40 + s * 210, right: at + 40 + s * 210 + 96, top: -292 });
-    by.waiting_session.forEach((r, i) => stations.set(r.ref, { mode: "climb", x: ch.shafts[Math.floor(i / 3)].left + 30, y: 0, shaft: ch.shafts[Math.floor(i / 3)], slot: i % 3, ch }));
+    by.waiting_session.forEach((r, i) => stations.set(r.ref, { mode: "climb", x: ch.shafts[Math.floor(i / 3)].left + 30, y: 0, shaft: ch.shafts[Math.floor(i / 3)], slot: i % 3, ch, plat: null }));
     at += shaftCount * 210 + (shaftCount ? 30 : 0);
-    if (done.length) { const camps = Math.ceil(done.length / 4); for (let c = 0; c < camps; c++) ch.camps.push(at + 90 + c * 190); done.forEach((r, i) => { const c = Math.floor(i / 4), k = i % 4, side = k % 2 ? 1 : -1; stations.set(r.ref, { mode: "rest", x: ch.camps[c] + side * (30 + Math.floor(k / 2) * 30), y: 0, face: -side, ch }); }); at += camps * 190 + 20; }
-    by.unknown.forEach((r, i) => { stations.set(r.ref, { mode: "statue", x: at + 50 + i * 44, y: 0, ch }); ch.statues.push(at + 50 + i * 44); });
-    if (by.unknown.length) at += 50 + by.unknown.length * 44;
-    at += 110; ch.x1 = at; ch.arena = [arena0, arena0 + arenaW];
-    // Patrollers share the floor and a few floating slabs above the arena.
-    const slabs = Math.min(Math.ceil(by.ready.length / 3), Math.max(1, Math.floor((ch.x1 - ch.x0 - 300) / 230)));
-    for (let p = 0; p < slabs && by.ready.length > 1; p++) { const px = lerp(ch.x0 + 200, ch.x1 - 200, slabs === 1 ? .5 : p / (slabs - 1)); ch.platforms.push({ x0: px - 68, x1: px + 68, y: p % 2 ? -158 : -126 }); }
-    by.ready.forEach((r, i) => { const plat = ch.platforms.length && i % 2 ? ch.platforms[Math.floor(i / 2) % ch.platforms.length] : null; stations.set(r.ref, plat ? { mode: "roam", x: (plat.x0 + plat.x1) / 2, y: plat.y, plat, range: [plat.x0 + 12, plat.x1 - 12], ch } : { mode: "roam", x: lerp(ch.x0 + 120, ch.x1 - 120, (i + 1) / (by.ready.length + 1)), y: 0, range: [ch.x0 + 110, ch.x1 - 110], ch }); });
-    chambers.push(ch); x = at + 90;
+    at += 100; ch.x1 = at; chambers.push(ch); x = at + 90;
   });
   const total = chambers.length ? chambers[chambers.length - 1].x1 : 600;
   const half = W / scale / 2;
@@ -111,7 +139,7 @@ function layout() {
 
 /* ---------- characters ---------- */
 function makeChar(r, st) {
-  const c = { ref: r.ref, row: r, x: st.x, y: st.y, vx: 0, vy: 0, face: 1, ground: true, st: null, mode: "", sub: "", t: 0, cd: 0, step: 0, sq: 0, sqv: 0, hem: 0, hemv: 0, tilt: 0, tiltTo: 0, run: 0, sword: 1, swordTo: 1, slash: 0, slashKind: "", sit: 0, arm: 0, hit: 0, dash: 0, ghosts: [], scarf: [], alpha: 0, seed: rng(hash(r.ref)), enemy: null, plat: null, q: 0, blink: 2, look: 0, sx: 0, sy: 0 };
+  const c = { ref: r.ref, row: r, x: st.x, y: st.y, vx: 0, vy: 0, face: 1, ground: true, st: null, mode: "", sub: "", t: 0, cd: 0, step: 0, sq: 0, sqv: 0, hem: 0, hemv: 0, tilt: 0, tiltTo: 0, run: 0, sword: 1, swordTo: 1, slash: 0, slashKind: "", sit: 0, arm: 0, hit: 0, dash: 0, ghosts: [], scarf: [], alpha: 0, seed: rng(hash(r.ref)), enemy: null, plat: null, q: 0, blink: 2, look: 0, sx: 0, sy: 0, cast: 0 };
   for (let i = 0; i < 6; i++) c.scarf.push({ x: st.x - i * 4, y: st.y - 31, px: st.x - i * 4, py: st.y - 31 });
   return c;
 }
@@ -119,15 +147,15 @@ function assign(c, st, snap) {
   const prev = c.st; c.st = st;
   if (prev && prev.mode === st.mode && Math.abs(prev.x - st.x) < 1 && prev.y === st.y) return;
   if (c.enemy) { c.enemy.dead = true; c.enemy = null; }
-  if (snap || !motion() || Math.abs(st.x - c.x) > 1500 || !prev) {
-    if (prev && motion()) burst(c.x, c.y - 26, c.st.ch.biome.mote, 10);
+  if (snap || !motion() || Math.abs(st.x - c.x) > 1500 || !prev || (st.plat && st.plat.y < -150)) {
+    if (prev && motion()) { burst(c.x, c.y - 26, c.st.ch.biome.mote, 12); burst(st.x, st.y - 26, c.st.ch.biome.mote, 8); }
     c.x = st.x; c.y = st.y; c.vx = c.vy = 0; c.plat = st.plat || null; c.ground = true; c.alpha = prev && motion() ? 0 : 1;
     for (const p of c.scarf) { p.x = p.px = c.x; p.y = p.py = c.y - 31; }
     begin(c);
   } else { c.mode = "travel"; c.sub = ""; c.sit = 0; c.q = 0; }
 }
 function begin(c) {
-  const st = c.st; c.mode = st.mode; c.sub = "start"; c.t = c.seed() * 1.2; c.cd = 0; c.step = 0; c.tiltTo = 0; c.arm = 0; c.q = 0;
+  const st = c.st; c.mode = st.mode; c.sub = "start"; if (st.mode !== "climb") c.plat = st.plat || null; c.t = c.seed() * 1.2; c.cd = 0; c.step = 0; c.tiltTo = 0; c.arm = 0; c.q = 0;
   c.swordTo = st.mode === "rest" || st.mode === "statue" ? 3 : st.mode === "roam" || st.mode === "ponder" || st.mode === "climb" ? 0 : 1;
   if (st.face) c.face = st.face;
   if (st.mode === "rest" || st.mode === "statue" || st.mode === "ponder") { c.x = c.x; }
@@ -149,21 +177,21 @@ function runTo(c, x, speed, dt) {
   c.face = dir; c.vx = lerp(c.vx, dir * speed, Math.min(1, dt * 11)); return false;
 }
 function spawnEnemy(c) {
-  const lane = c.st.lane, side = c.seed() < .5 ? -1 : 1, flyer = c.seed() < .32;
-  const e = { type: flyer ? "flyer" : "crawler", x: lane.cx + side * lane.hw, y: flyer ? -78 : 0, vx: 0, vy: 0, hp: flyer ? 2 : 3, flash: 0, state: "emerge", t: 0, lane, face: -side, dead: false, phase: c.seed() * TAU, next: 1.5 + c.seed() * 2 };
-  enemies.push(e); c.enemy = e; dust(e.x, 0, flyer ? 0 : 6, [90, 70, 60]);
+  const lane = c.st.lane, side = c.seed() < .5 ? -1 : 1, skin = [0, 1, 2, 0, 4, 5, 3, 1, 2, 4][Math.floor(c.seed() * 10)], flyer = skin === 1 || skin === 3;
+  const base = c.st.y, e = { base, skin, type: flyer ? "flyer" : "crawler", x: lane.cx + side * lane.hw, y: base + (flyer ? -78 : 0), vx: 0, vy: 0, hp: skin === 5 ? 6 : flyer ? 3 : 4, flash: 0, state: "emerge", t: 0, lane, face: -side, dead: false, phase: c.seed() * TAU, next: 1.5 + c.seed() * 2 };
+  enemies.push(e); c.enemy = e; dust(e.x, base, flyer ? 0 : 6, [90, 70, 60]);
 }
 function strike(c, e, kx, ky) {
   e.hp--; e.flash = .12; e.vx = kx; if (e.type === "flyer") e.vy = ky; e.state = "roam"; e.next = 1.4 + Math.random() * 2;
   c.hit = .055; burst(e.x, e.y - 10, [255, 220, 170], 6);
   fx.push({ kind: "flash", x: e.x, y: e.y - 10, age: 0, life: .12, r: 34 });
-  if (e.hp <= 0) { e.dead = true; burst(e.x, e.y - 10, [255, 150, 70], 16); dust(e.x, e.y, 6, [60, 40, 50]); for (let i = 0; i < 3; i++) fx.push({ kind: "wisp", x: e.x, y: e.y - 12, c, age: -i * .08, life: .7, vx: (Math.random() - .5) * 200, vy: -160 - Math.random() * 80 }); c.enemy = null; c.sub = "flourish"; c.t = .9 + c.seed() * 1.8; c.q = 1; }
+  if (e.hp <= 0) { e.dead = true; burst(e.x, e.y - 10, [255, 150, 70], 16); dust(e.x, e.y, 6, [60, 40, 50]); for (let i = 0; i < 3; i++) fx.push({ kind: "wisp", x: e.x, y: e.y - 12, c, age: -i * .08, life: .7, vx: (Math.random() - .5) * 200, vy: -160 - Math.random() * 80 }); c.enemy = null; c.sub = "flourish"; c.t = .8 + c.seed() * .7; c.q = 1; }
 }
 function behave(c, dt) {
   const st = c.st; c.t -= dt; c.cd -= dt;
   switch (c.mode) {
     case "travel": {
-      c.plat = null; c.swordTo = 0;
+      if (c.plat && c.plat !== st.plat) c.plat = null; c.swordTo = 0;
       if (runTo(c, st.x, 300, dt) && c.ground) {
         if (st.plat && c.y > st.plat.y + 2) { c.plat = st.plat; jump(c, -Math.sqrt(2 * G * (-st.plat.y + 22))); c.mode = "hop"; }
         else begin(c);
@@ -172,7 +200,6 @@ function behave(c, dt) {
     }
     case "hop": if (c.ground) begin(c); break;
     case "roam": {
-      c.plat = st.plat || null;
       if (c.sub === "start" || (c.sub === "pause" && c.t <= 0)) {
         const pick = c.seed();
         if (pick < .16 && c.ground) { c.sub = "flick"; c.t = .7; c.swordTo = 1; slash(c, pick < .08 ? "up" : "fwd"); }
@@ -185,30 +212,30 @@ function behave(c, dt) {
     }
     case "fight": {
       const lane = st.lane, e = c.enemy; c.swordTo = 1;
-      if (c.sub === "start") { if (!runTo(c, lane.cx, 150, dt)) break; c.sub = "idle"; c.t = .4 + c.seed() * 1.2; }
-      if (c.sub === "flourish") { c.vx = lerp(c.vx, 0, dt * 10); if (c.t <= 0) { c.sub = "idle"; c.t = .3 + c.seed() * 1.4; c.q = 0; } break; }
-      if (c.sub === "idle") { c.vx = lerp(c.vx, 0, dt * 10); if (c.t <= 0) { spawnEnemy(c); c.sub = "engage"; } break; }
+      if (c.sub === "start") { if (!runTo(c, lane.cx, 150, dt)) break; c.sub = "idle"; c.t = .2 + c.seed() * .6; }
+      if (c.sub === "flourish") { c.vx = lerp(c.vx, 0, dt * 10); if (c.t <= 0) { c.sub = "idle"; c.t = .2 + c.seed() * .7; c.q = 0; } break; }
+      if (c.sub === "idle") { runTo(c, lane.cx, 90, dt); if (c.t <= 0) { spawnEnemy(c); c.sub = "engage"; } break; }
       if (!e || e.dead) { c.enemy = null; c.sub = "idle"; c.t = .6; break; }
       if (c.dash > 0) break;
       const dx = e.x - c.x, ad = Math.abs(dx);
       if (c.ground) c.face = sign(dx);
       if (e.type === "crawler") {
         if (!c.ground) {
-          if (ad < 20 && c.vy > 40 && c.y > -64 && c.cd <= 0) { slash(c, "down"); c.vy = -470; c.cd = .35; strike(c, e, 0, 0); }
+          if (ad < 20 && c.vy > 40 && c.y > st.y - 64 && c.cd <= 0) { slash(c, "down"); c.vy = -470; c.cd = .35; strike(c, e, 0, 0); }
           else c.vx = lerp(c.vx, clamp(dx * 4, -210, 210), dt * 6);
         } else if (e.state === "lunge" && ad < 96) { jump(c, -560); c.vx = sign(dx) * 150; }
         else if (ad > 42) runTo(c, clamp(e.x - sign(dx) * 34, lane.cx - lane.hw - 6, lane.cx + lane.hw + 6), 160, dt);
         else {
           c.vx = lerp(c.vx, 0, dt * 14);
           if (c.cd <= 0 && e.state !== "emerge") {
-            slash(c, "fwd"); c.cd = .4 + c.seed() * .22; c.step++; strike(c, e, c.face * 190, 0);
+            slash(c, "fwd"); c.cd = .4 + c.seed() * .22; c.step++; strike(c, e, c.face * 150, 0);
             if (c.enemy && c.step % 3 === 2) { c.dash = .15; c.vx = -c.face * 430; c.cd = .5; dust(c.x, c.y, 3); }
           }
         }
       } else {
         if (!c.ground) { if (c.cd <= 0 && Math.hypot(dx, e.y - (c.y - 30)) < 48) { const up = Math.abs(dx) < 16; slash(c, up ? "up" : "fwd"); c.cd = .5; strike(c, e, sign(dx || c.face) * 150, -120); c.vy = Math.min(c.vy, -120); } }
         else if (ad > 26) runTo(c, clamp(e.x - sign(dx) * 16, lane.cx - lane.hw, lane.cx + lane.hw), 160, dt);
-        else { c.vx = lerp(c.vx, 0, dt * 12); if (c.cd <= 0) { jump(c, -Math.sqrt(2 * G * clamp(-e.y - 26, 30, 110))); c.vx = sign(dx) * 40; c.cd = .12; } }
+        else { c.vx = lerp(c.vx, 0, dt * 12); if (c.cd <= 0) { jump(c, -Math.sqrt(2 * G * clamp(st.y - e.y - 26, 30, 110))); c.vx = sign(dx) * 40; c.cd = .12; } }
       }
       break;
     }
@@ -216,14 +243,14 @@ function behave(c, dt) {
       const home = st.x, d = props.get(st.dummy), SEQ = ["slash", "slash", "up", "back", "in", "slash", "leap", "rest"]; c.swordTo = 1;
       if (c.sub === "start") { if (runTo(c, home, 140, dt)) { c.sub = "seq"; c.step = 0; c.t = .5; c.face = 1; } break; }
       if (c.sub === "leap") {
-        if (!c.ground && c.vy > 0 && c.y > -66 && Math.abs(c.x - st.dummyX) < 22 && c.cd <= 0) { slash(c, "down"); c.vy = -340; c.vx = -120; c.cd = 1; if (d) d.va -= 5; burst(st.dummyX, -40, [240, 220, 170], 5); c.hit = .05; }
+        if (!c.ground && c.vy > 0 && c.y > st.y - 66 && Math.abs(c.x - st.dummyX) < 22 && c.cd <= 0) { slash(c, "down"); c.vy = -340; c.vx = -120; c.cd = 1; if (d) d.va -= 5; burst(st.dummyX, st.y - 40, [240, 220, 170], 5); c.hit = .05; }
         if (c.ground && c.cd > 0) { c.sub = "seq"; c.t = .5; }
         break;
       }
       if (c.dash > 0) break;
       if (c.t > 0) { if (c.step % SEQ.length === 0 || SEQ[(c.step - 1) % SEQ.length] === "rest") runTo(c, home, 90, dt), c.face = Math.abs(c.x - home) < 4 ? 1 : c.face; else c.vx = lerp(c.vx, 0, dt * 14); break; }
       const act = SEQ[c.step++ % SEQ.length]; c.face = 1;
-      if (act === "slash") { if (Math.abs(c.x - home) < 22) { slash(c, "fwd"); if (d) d.va += 7 + c.seed() * 3; burst(st.dummyX - 6, -36, [240, 220, 170], 4); c.hit = .04; } c.t = .36; }
+      if (act === "slash") { if (Math.abs(c.x - home) < 22) { slash(c, "fwd"); if (d) d.va += 7 + c.seed() * 3; burst(st.dummyX - 6, st.y - 36, [240, 220, 170], 4); c.hit = .04; } c.t = .36; }
       else if (act === "up") { slash(c, "up"); c.t = .5; }
       else if (act === "back") { c.dash = .15; c.vx = -430; c.t = .5; dust(c.x, c.y, 3); }
       else if (act === "in") { c.dash = .15; c.vx = 430; c.t = .2; dust(c.x, c.y, 3); }
@@ -276,6 +303,7 @@ function physics(c, dt) {
   if (c.dash > 0) { c.dash -= dt; c.vy = 0; if (c.ghosts.length < 6) c.ghosts.push({ x: c.x, y: c.y, face: c.face, a: .5 }); if (c.dash <= 0) c.vx *= .25; }
   else if (!(c.mode === "climb" && c.sub === "cling")) c.vy += G * dt;
   const prevY = c.y; c.x += c.vx * dt; c.y += c.vy * dt;
+  if (c.plat && c.st.plat === c.plat && c.mode !== "travel" && c.mode !== "hop" && c.mode !== "climb") c.x = clamp(c.x, c.plat.x0 + 8, c.plat.x1 - 8);
   let floor = 0; const p = c.plat;
   if (p && c.x >= p.x0 && c.x <= p.x1 && prevY <= p.y + .5) floor = p.y;
   if (c.vy >= 0 && c.y >= floor) { if (!c.ground) { squash(c, -Math.min(5, c.vy / 150)); if (c.vy > 240) dust(c.x, floor, 4); } c.y = floor; c.vy = 0; c.ground = true; }
@@ -302,12 +330,12 @@ function updateEnemy(e, dt) {
   if (e.state === "emerge") { if (e.t > .55) { e.state = "roam"; e.t = 0; } return; }
   if (e.type === "crawler") {
     if (e.state === "roam") { e.vx = lerp(e.vx, e.face * 26, dt * 3); if (e.next <= 0) { e.state = "tele"; e.t = 0; } }
-    else if (e.state === "tele") { e.vx = lerp(e.vx, 0, dt * 10); if (e.t > .5) { e.state = "lunge"; e.t = 0; e.vx = e.face * 300; dust(e.x, 0, 4, [90, 70, 60]); } }
+    else if (e.state === "tele") { e.vx = lerp(e.vx, 0, dt * 10); if (e.t > .5) { e.state = "lunge"; e.t = 0; e.vx = e.face * 300; dust(e.x, e.base, 4, [90, 70, 60]); } }
     else if (e.state === "lunge") { if (e.t > .42) { e.state = "roam"; e.next = 2 + Math.random() * 2.5; } }
     e.x += e.vx * dt;
   } else {
     e.vx = lerp(e.vx, e.face * 30, dt * 2); e.vy = lerp(e.vy, 0, dt * 3); e.x += e.vx * dt; e.y += e.vy * dt;
-    e.y = lerp(e.y, -80 + Math.sin(now * 2.2 + e.phase) * 12, dt * 2.2);
+    e.y = lerp(e.y, e.base - 80 + Math.sin(now * 2.2 + e.phase) * 12, dt * 2.2);
   }
   if (e.x < lane.cx - lane.hw) { e.x = lane.cx - lane.hw; e.face = 1; if (e.state === "lunge") e.state = "roam"; }
   if (e.x > lane.cx + lane.hw) { e.x = lane.cx + lane.hw; e.face = -1; if (e.state === "lunge") e.state = "roam"; }
@@ -429,9 +457,10 @@ function drawGround() {
     const sx = X(ch.sign); ctx.strokeStyle = "#04070b"; ctx.lineWidth = 4 * scale; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(sx, groundY + 3); ctx.lineTo(sx + 2 * scale, groundY - 66 * scale); ctx.stroke();
     ctx.font = "600 " + Math.max(10, 11 * scale) + "px Georgia,'Songti TC','Noto Serif TC',serif"; const label = clip(ch.label, 16), tw = ctx.measureText(label).width + 16 * scale;
     ctx.save(); ctx.translate(sx + 2 * scale, groundY - 62 * scale); ctx.rotate(-.04); ctx.fillStyle = "#070b12"; ctx.strokeStyle = rgba(b.fog, .5); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-tw / 2, -11 * scale); ctx.lineTo(tw / 2 + 8 * scale, -11 * scale); ctx.lineTo(tw / 2 + 15 * scale, 0); ctx.lineTo(tw / 2 + 8 * scale, 11 * scale); ctx.lineTo(-tw / 2, 11 * scale); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = rgba(b.lamp, .92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, 4 * scale, 1); ctx.restore();
-    for (const l of ch.lamps) drawLamp(l, 150, b.lamp, 0);
+    for (const pc of ch.pieces) { const img = images[pc.kind]; if (!img) continue; const ht = ({ gate: 250, shell: 130, mushrooms: 120 })[pc.kind] * pc.size * scale, wd = ht * img.width / img.height, px = X(pc.x); ctx.save(); ctx.translate(px, groundY + ht * .04); if (pc.flip) ctx.scale(-1, 1); ctx.globalAlpha = .92; ctx.drawImage(img, -wd / 2, -ht, wd, ht); ctx.restore(); if (pc.kind === "mushrooms") { ctx.globalCompositeOperation = "lighter"; drawGlow(px, groundY - ht * .7, ht * .9, [150, 255, 160], .22 + .05 * Math.sin(now * 1.3 + pc.x)); ctx.globalCompositeOperation = "source-over"; } }
+    for (const l of ch.lamps) drawLamp(l, 104, b.lamp, 0);
     if (ch.beacon !== null) drawLamp(ch.beacon, 176, [255, 170, 120], .5 + .5 * Math.sin(now * 2.4));
-    for (const cx of ch.camps) drawCamp(cx, b);
+    for (const cp of ch.camps) drawCamp(cp.x, cp.y, b);
     for (const s of ch.shafts) drawShaft(s, b);
     for (const d of ch.dummies) drawDummy(d, b);
     for (const p of ch.platforms) drawSlab(p, b);
@@ -453,14 +482,18 @@ function drawGround() {
 }
 function drawSlab(p, b) {
   const x0 = X(p.x0), x1 = X(p.x1), y = Y(p.y), t = 13 * scale, r = rng(Math.round(p.x0 * 3));
+  const art = images["platform-" + p.biome];
+  if (p.tier >= 2) { ctx.strokeStyle = "rgba(4,7,11,.85)"; ctx.lineWidth = 1.6 * scale; ctx.setLineDash([5 * scale, 3 * scale]); ctx.beginPath(); ctx.moveTo(x0 + 16 * scale, y); ctx.lineTo(x0 + 26 * scale, -4); ctx.moveTo(x1 - 16 * scale, y); ctx.lineTo(x1 - 26 * scale, -4); ctx.stroke(); ctx.setLineDash([]); }
+  if (art) { const wd = x1 - x0 + 16 * scale, ht = wd * art.height / art.width; ctx.drawImage(art, x0 - 8 * scale, y - ht * .035, wd, ht); return; }
   ctx.fillStyle = "#05080d"; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.quadraticCurveTo(x1 + 5 * scale, y + t * .6, x1 - 14 * scale, y + t); ctx.lineTo((x0 + x1) / 2 + 6 * scale, y + t * 2.1); ctx.lineTo(x0 + 16 * scale, y + t * 1.1); ctx.quadraticCurveTo(x0 - 5 * scale, y + t * .6, x0, y); ctx.fill();
   ctx.strokeStyle = rgba(b.fog, .42); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.moveTo(x0 + 1, y); ctx.lineTo(x1 - 1, y); ctx.stroke();
   ctx.strokeStyle = "#05080d"; ctx.lineWidth = 1.2 * scale;
   for (let i = 0; i < 4; i++) { const rx = lerp(x0 + 14 * scale, x1 - 14 * scale, r()), len = (14 + r() * 30) * scale, sw = Math.sin(now * .9 + i + p.x0) * 3 * scale; ctx.beginPath(); ctx.moveTo(rx, y + t); ctx.quadraticCurveTo(rx + sw * .4, y + t + len * .6, rx + sw, y + t + len); ctx.stroke(); }
 }
 function drawShaft(s, b) {
-  const base = groundY + 4, top = Y(s.top);
-  for (const [x0, x1, y] of [[s.left - 34, s.left, s.top - 120], [s.right, s.right + 46, s.top]]) {
+  const base = groundY + 4, top = Y(s.top), pil = images.pillar;
+  if (pil) { for (const [inner, y, side] of [[s.left, s.top - 120, -1], [s.right, s.top, 1]]) { const ht = base - Y(y) + 6 * scale, wd = Math.min(ht * pil.width / pil.height, 58 * scale), x = side < 0 ? X(inner) - wd + 5 * scale : X(inner) - 5 * scale; ctx.drawImage(pil, x, Y(y) - 4 * scale, wd, ht); } }
+  else   for (const [x0, x1, y] of [[s.left - 34, s.left, s.top - 120], [s.right, s.right + 46, s.top]]) {
     const a = X(x0), z = X(x1), yy = Y(y), r = rng(Math.round(x0 * 7));
     ctx.fillStyle = "#05080d"; ctx.beginPath(); ctx.moveTo(a - 5 * scale, base); ctx.lineTo(a, yy + 6 * scale); ctx.quadraticCurveTo(a, yy, a + 6 * scale, yy); ctx.lineTo(z - 3 * scale, yy); ctx.quadraticCurveTo(z, yy, z, yy + 6 * scale); ctx.lineTo(z + 5 * scale, base); ctx.fill();
     ctx.fillRect(a - 5 * scale, yy - 7 * scale, z - a + 10 * scale, 9 * scale);
@@ -473,15 +506,16 @@ function drawShaft(s, b) {
   ctx.fillStyle = rgba(b.lamp, .95); ctx.beginPath(); ctx.arc(X(s.right + 34), top - 16 * scale, 3 * scale, 0, TAU); ctx.fill(); ctx.strokeStyle = "#05080d"; ctx.lineWidth = 2 * scale; ctx.beginPath(); ctx.moveTo(X(s.right + 34), top); ctx.lineTo(X(s.right + 34), top - 12 * scale); ctx.stroke();
 }
 function drawDummy(d, b) {
-  const p = props.get(d.id) || { a: 0 }, x = X(d.x), y = groundY;
+  const p = props.get(d.id) || { a: 0 }, x = X(d.x), y = Y(d.y);
   ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale); ctx.rotate(clamp(p.a, -1, 1) * .12);
+  if (images.dummy) { const ht = 66, wd = ht * images.dummy.width / images.dummy.height; ctx.drawImage(images.dummy, -wd / 2, -ht + 3, wd, ht); ctx.restore(); return; }
   ctx.strokeStyle = "#05080d"; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(0, 3); ctx.lineTo(0, -52); ctx.moveTo(-15, -36); ctx.lineTo(15, -36); ctx.stroke();
   ctx.fillStyle = "#0a0f17"; ctx.strokeStyle = rgba(b.fog, .4); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(0, -30, 10, 15, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(0, -55, 8, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.strokeStyle = rgba(b.fog, .3); ctx.beginPath(); ctx.moveTo(-8, -34); ctx.lineTo(8, -26); ctx.moveTo(-7, -24); ctx.lineTo(7, -20); ctx.moveTo(-4, -57); ctx.lineTo(4, -53); ctx.stroke();
   ctx.restore();
 }
-function drawCamp(wx, b) {
-  const x = X(wx), y = groundY, flick = .85 + .15 * Math.sin(now * 6 + wx);
+function drawCamp(wx, wy, b) {
+  const x = X(wx), y = Y(wy), flick = .85 + .15 * Math.sin(now * 6 + wx);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 16 * scale, 96 * scale * flick, [255, 190, 120], .42); drawGlow(x, y - 14 * scale, 22 * scale, [255, 240, 210], .9); ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#05080d"; ctx.beginPath(); ctx.moveTo(x - 9 * scale, y + 2); ctx.lineTo(x - 6 * scale, y - 6 * scale); ctx.lineTo(x + 6 * scale, y - 6 * scale); ctx.lineTo(x + 9 * scale, y + 2); ctx.fill();
   ctx.fillStyle = "rgba(255,226,170,.95)"; ctx.beginPath(); ctx.moveTo(x - 4 * scale, y - 7 * scale); ctx.quadraticCurveTo(x - 5 * scale, y - 16 * scale, x + Math.sin(now * 7 + wx) * 1.5 * scale, y - (23 + flick * 4) * scale); ctx.quadraticCurveTo(x + 5 * scale, y - 16 * scale, x + 4 * scale, y - 7 * scale); ctx.fill();
@@ -489,7 +523,31 @@ function drawCamp(wx, b) {
 function clip(text, n) { const a = Array.from(text); return a.length > n ? a.slice(0, n - 1).join("") + "…" : text; }
 
 function drawBlade(len) { ctx.strokeStyle = "#dfe9f2"; ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(len, 0); ctx.stroke(); ctx.strokeStyle = "#0a0e18"; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(3.5, -3.5); ctx.lineTo(3.5, 3.5); ctx.stroke(); }
+const CAST_SIZE = [60, 66, 58, 60, 68, 58, 60, 62, 54, 66, 54, 58], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
+function drawPuppet(c, ghost) {
+  const key = CAST[c.cast], img = images[key]; if (!img) return false;
+  const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
+  const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
+  const breathe = Math.sin(now * 2.1 + c.x * .02) * .014, sy = (1 + c.sq + breathe + (air ? clamp(Math.abs(c.vy) / 5200, 0, .1) : 0)) * (1 - c.sit * .16), sx = 1 - c.sq * .7 - breathe + c.sit * .06;
+  const bob = moving ? Math.abs(Math.sin(c.run)) * -3 : 0, waddle = moving ? Math.sin(c.run) * .09 : 0, kS = c.slash > 0 ? 1 - easeOut(clamp(c.slash * 1.7, 0, 1)) : 0;
+  const lean = clamp(c.vx * .0011, -.24, .24) * face + (cling ? -.2 : 0) + (air ? clamp(c.vy * .0002, -.12, .12) : 0) + kS * (c.slashKind === "down" ? .5 : c.slashKind === "up" ? -.3 : .28) + c.tilt * .6 + waddle;
+  const ht = CAST_SIZE[c.cast], wd = ht * img.width / img.height, hand = CAST_HAND[c.cast];
+  ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
+  ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
+  if (!ghost && state !== "unknown") { // a small state-coloured wisp trails each wanderer
+    const col = EYE[state], s = c.scarf, tail = s[s.length - 1], wx = tail.x - x, wy = tail.y - y - 16 + Math.sin(now * 3 + c.x * .1) * 2.5;
+    ctx.globalCompositeOperation = "lighter"; for (let i = 2; i < s.length; i++) { ctx.globalAlpha = c.alpha * .1 * i; ctx.drawImage(glow(col), s[i].x - x - 5, s[i].y - y - 21, 10, 10); } ctx.globalAlpha = c.alpha; ctx.drawImage(glow(col), wx - 13, wy - 13, 26, 26); ctx.drawImage(glow([255, 255, 255]), wx - 4, wy - 4, 8, 8); ctx.globalCompositeOperation = "source-over";
+  }
+  ctx.scale(face * sx, sy); ctx.translate(kS * 5, bob); ctx.rotate(lean);
+  const slashing = c.slash > 0 && !ghost, carry = c.sword;
+  if (!slashing && carry < .5 && !ghost) { ctx.save(); ctx.translate(-wd * .12, -ht * .5); ctx.rotate(-2.15); drawBlade(27); ctx.restore(); }
+  ctx.drawImage(ok ? img : grey(key) || img, -wd / 2, -ht + 2, wd, ht);
+  if (slashing) { const k = easeOut(clamp(c.slash * 1.7, 0, 1)), kind = c.slashKind, a = kind === "up" ? lerp(.5, -2.7, k) : kind === "down" ? lerp(-1.2, 1.9, k) : lerp(-2.4, .85, k); ctx.save(); ctx.translate(hand[0], hand[1]); ctx.rotate(a); drawBlade(30); ctx.restore(); }
+  else if (carry >= .5 && !ghost) { const planted = clamp(carry - 2, 0, 1), rest = clamp(carry - 1, 0, 1) - planted, spin = c.mode === "fight" && c.sub === "flourish" && c.t > .5 ? (c.t - .5) * 14 : 0; ctx.save(); if (planted > .5) { ctx.translate(wd * .5 + 4, -30); ctx.rotate(Math.PI / 2); } else { ctx.translate(hand[0], hand[1]); ctx.rotate(lerp(.45, 1.2, rest) + Math.sin(now * 2 + c.x) * .04 + spin); } drawBlade(planted > .5 ? 30 : 28); ctx.restore(); }
+  ctx.restore(); ctx.globalAlpha = 1; return true;
+}
 function drawChar(c, ghost) {
+  if (drawPuppet(c, ghost)) return;
   const r = c.row, ok = live(r), state = ok ? status(r) : "unknown", hue = c.st.ch.hue, x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
   const sit = c.sit, cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
   const breathe = Math.sin(now * 2.1 + c.x * .02) * .012, sy = 1 + c.sq + breathe + (air ? clamp(Math.abs(c.vy) / 5200, 0, .1) : 0), sx = 1 - c.sq * .7 - breathe;
@@ -534,12 +592,34 @@ function drawQuestion(c) {
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 26 * s, [255, 150, 120], .55); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(now * 1.7 + c.x) * .12); ctx.font = "700 " + 22 * s + "px Georgia,serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3 * s; ctx.strokeStyle = "#1a0b10"; ctx.strokeText("?", 0, 0); ctx.fillStyle = "#ffd9c4"; ctx.fillText("?", 0, 0); ctx.restore();
   // an attention ring on the ground
-  const p = (now * .7 + c.x * .01) % 1; ctx.strokeStyle = rgba([255, 160, 130], (1 - p) * .5); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.ellipse(X(c.x), groundY + 1, (10 + p * 22) * scale, (2 + p * 4) * scale, 0, 0, TAU); ctx.stroke();
+  const p = (now * .7 + c.x * .01) % 1; ctx.strokeStyle = rgba([255, 160, 130], (1 - p) * .5); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.ellipse(X(c.x), Y(c.st.y) + 1, (10 + p * 22) * scale, (2 + p * 4) * scale, 0, 0, TAU); ctx.stroke();
+}
+const FOE_SIZE = [30, 36, 34, 40, 30, 56], FOE_FLIP = [1, 1, 1, 1, 1, 1];
+function drawFoe(e) {
+  const img = images[FOES[e.skin]]; if (!img) return false;
+  const grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : 0, ht = FOE_SIZE[e.skin], wd = ht * img.width / img.height;
+  let hop = 0, rot = 0, sqx = 1, sqy = 1;
+  if (e.skin === 2) { const ph = (now * 1.6 + e.phase) % 1; hop = e.state === "roam" ? -Math.sin(ph * Math.PI) * 14 : e.state === "lunge" ? -Math.sin(clamp(e.t / .42, 0, 1) * Math.PI) * 30 : 0; sqy = 1 + (hop < -2 ? .1 : -.06); sqx = 2 - sqy; }
+  else if (e.skin === 4) rot = e.x * .09;
+  else if (e.skin === 1) { sqx = 1 + Math.sin(now * 22 + e.phase) * .07; sqy = 1 - Math.sin(now * 22 + e.phase) * .05; }
+  else if (e.skin === 3) rot = Math.sin(now * 1.8 + e.phase) * .12;
+  else { sqy = 1 + Math.sin(now * 7 + e.phase) * .035; sqx = 2 - sqy; rot = e.skin === 5 ? Math.sin(now * 3 + e.phase) * .05 : 0; }
+  if (e.state === "tele") { sqy *= .84; sqx *= 1.1; } else if (e.state === "lunge" && e.skin !== 2) { sqx *= 1.14; sqy *= .92; }
+  const x = X(e.x) + shake * scale, y = Y(e.y + hop);
+  if (e.skin === 3) { ctx.strokeStyle = "rgba(200,210,220,.4)"; ctx.lineWidth = 1 * scale; ctx.beginPath(); ctx.moveTo(x, y - ht * scale * .9); ctx.lineTo(x + Math.sin(now * 1.8 + e.phase) * 6 * scale, y - 260 * scale); ctx.stroke(); }
+  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - ht * .5 * scale, ht * 1.1 * scale * grow, [255, 110, 40], .26 + .08 * Math.sin(now * 5 + e.phase)); ctx.globalCompositeOperation = "source-over";
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale * e.face * FOE_FLIP[e.skin] * grow * sqx, scale * grow * sqy);
+  if (e.skin === 4) { ctx.translate(0, -ht / 2); ctx.rotate(rot); ctx.translate(0, ht / 2); } else ctx.rotate(rot);
+  ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht);
+  if (e.flash > 0) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .9; ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht); ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; }
+  ctx.restore(); return true;
 }
 function drawEnemy(e) {
+  if (drawFoe(e)) return;
   const x = X(e.x), y = Y(e.y), grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : 0;
-  ctx.save(); ctx.translate(x + shake * scale, y); ctx.scale(scale * e.face * grow, scale * grow);
-  const body = e.flash > 0 ? "#fff3e0" : "#17101c", rim = e.flash > 0 ? "#ffffff" : "#5a3a4a";
+  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 14 * scale, 40 * scale * grow, [255, 110, 40], .3 + .08 * Math.sin(now * 5 + e.phase)); ctx.globalCompositeOperation = "source-over";
+  ctx.save(); ctx.translate(x + shake * scale, y); ctx.scale(scale * e.face * grow * 1.4, scale * grow * 1.4);
+  const body = e.flash > 0 ? "#fff3e0" : "#1c1018", rim = e.flash > 0 ? "#ffffff" : "#d2643a";
   if (e.type === "crawler") {
     const sq = e.state === "tele" ? .82 : e.state === "lunge" ? 1.12 : 1 + Math.sin(now * 6 + e.phase) * .03; ctx.scale(2 - sq, sq);
     ctx.strokeStyle = "#17101c"; ctx.lineWidth = 2.4; ctx.lineCap = "round"; for (let i = -1; i <= 1; i++) { const sw = Math.sin(now * 13 + i * 2 + e.phase) * 2.5; ctx.beginPath(); ctx.moveTo(i * 7, -4); ctx.lineTo(i * 8 + sw, 0); ctx.stroke(); }
@@ -643,11 +723,12 @@ function announce() {
 function reconcile() {
   layout();
   const seenRefs = new Set();
-  for (const r of rows) { seenRefs.add(r.ref); const st = stations.get(r.ref); let c = chars.get(r.ref); if (!c) { c = makeChar(r, st); chars.set(r.ref, c); c.row = r; assign(c, st, true); c.alpha = placed && motion() ? 0 : 1; } else { c.row = r; assign(c, st, false); } }
+  let order = 0;
+  for (const r of rows) { seenRefs.add(r.ref); const st = stations.get(r.ref); let c = chars.get(r.ref); const castIndex = (order++ * 5 + 1) % 12; if (!c) { c = makeChar(r, st); c.cast = castIndex; chars.set(r.ref, c); c.row = r; assign(c, st, true); c.alpha = placed && motion() ? 0 : 1; } else { c.row = r; assign(c, st, false); } }
   for (const [ref, c] of chars) if (!seenRefs.has(ref)) { if (c.enemy) c.enemy.dead = true; chars.delete(ref); }
   if (!placed && rows.length) { placed = true; const first = rows.find(r => r.focused) || rows.find(r => live(r) && status(r) === "waiting_you") || null; cam = camTarget = clamp(first ? stations.get(first.ref).x : (chambers[0].x0 + Math.min(chambers[0].x1, chambers[0].x0 + W / scale)) / 2, camMin, camMax); }
   const focus = rows.find(r => r.focused); if (focus && focus.ref !== lastFocus) { selected = focus.ref; followSel = true; camTarget = clamp(chars.get(focus.ref).x, camMin, camMax); } lastFocus = focus ? focus.ref : null;
-  if (!motion()) { now += .001; for (const c of chars.values()) { c.sit = c.mode === "rest" ? 1 : 0; c.sword = c.swordTo; c.q = 1; c.alpha = 1; if (c.mode === "travel") { c.x = c.st.x; c.y = c.st.y; begin(c); } if (c.mode === "fight" && !c.enemy) { c.x = c.st.x - 14; c.face = 1; spawnEnemy(c); c.enemy.state = "roam"; c.enemy.x = c.st.x + 30; c.enemy.face = -1; c.sub = "engage"; } if (c.mode === "climb") { const sh = c.st.shaft, k = c.st.slot; c.vx = c.vy = 0; if (k === 1) { c.x = sh.left + 9; c.y = sh.top * .5; c.face = 1; c.sub = "cling"; c.ground = false; } else if (k === 2) { c.x = sh.right + 22; c.y = sh.top; c.face = -1; c.sub = "top"; c.ground = true; } else { c.x = c.st.x; c.y = 0; c.sub = "base"; c.ground = true; } } for (const q of c.scarf) { q.x = q.px = c.x - c.face * 3; q.y = q.py = c.y - 31; } } cam = camTarget; }
+  if (!motion()) { now += .001; for (const c of chars.values()) { c.sit = c.mode === "rest" ? 1 : 0; c.sword = c.swordTo; c.q = 1; c.alpha = 1; if (c.mode === "travel") { c.x = c.st.x; c.y = c.st.y; begin(c); } if (c.mode === "fight" && !c.enemy) { c.x = c.st.x - 14; c.y = c.st.y; c.face = 1; spawnEnemy(c); c.enemy.state = "roam"; c.enemy.x = c.st.x + 30; c.enemy.face = -1; c.sub = "engage"; } if (c.mode === "climb") { const sh = c.st.shaft, k = c.st.slot; c.vx = c.vy = 0; if (k === 1) { c.x = sh.left + 9; c.y = sh.top * .5; c.face = 1; c.sub = "cling"; c.ground = false; } else if (k === 2) { c.x = sh.right + 22; c.y = sh.top; c.face = -1; c.sub = "top"; c.ground = true; } else { c.x = c.st.x; c.y = 0; c.sub = "base"; c.ground = true; } } for (const q of c.scarf) { q.x = q.px = c.x - c.face * 3; q.y = q.py = c.y - 31; } } cam = camTarget; }
 }
 function panTo(ref) { const c = chars.get(ref); if (!c) return; followSel = true; userPanAt = -1e9; camTarget = clamp(c.x, camMin, camMax); if (!motion()) { cam = camTarget; draw(); } }
 

@@ -5,11 +5,19 @@ from pathlib import Path
 
 here = Path(__file__).resolve().parent
 scene = (here / 'scene.js').read_text(encoding='utf-8')
+cast = []
 for art in sorted((here / 'art').glob('*.webp')):
+    data = 'data:image/webp;base64,' + base64.b64encode(art.read_bytes()).decode()
+    if art.stem.startswith(('char-', 'enemy-')):
+        cast.append(f'ART[{art.stem!r}] = {data!r};')
+        continue
     marker = f'%%ART:{art.stem}%%'
     if marker not in scene:
         raise SystemExit(f'{art.name} is not referenced by scene.js')
-    scene = scene.replace(marker, 'data:image/webp;base64,' + base64.b64encode(art.read_bytes()).decode())
+    scene = scene.replace(marker, data)
+if scene.count('/*CAST_ART*/') != 1:
+    raise SystemExit('scene.js needs exactly one cast marker')
+scene = scene.replace('/*CAST_ART*/', '\n'.join(cast))
 if '%%ART:' in scene:
     raise SystemExit('scene.js references artwork that is missing from art/')
 page = (here / 'src.html').read_text(encoding='utf-8')
