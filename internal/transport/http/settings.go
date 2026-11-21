@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -44,7 +46,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_agent_notify": true, "orchestrator_enabled": true,
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
-	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true, "codex_permission_mode": true,
+	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true, "codex_permission_mode": true, "warm_shells": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 	// The browser setup guide (web/console/src/session/BrowserSetup.tsx).
 	"browser_policy": true, "browser_mode": true, "browser_enabled": true, "browser_notify_new_site": true,
@@ -305,6 +307,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		autoTake := v.SessionTodoAutoTake()
 		grokFull := v.GrokFullPermission()
 		codexPermission := v.CodexSessionPermission()
+		warmShells := v.WarmShells()
 		choice, _ := v.String("terminal")
 		terminalChoice := string(projects.ParseTerminalChoice(choice))
 		return contract.WorkflowSettingsSnapshot{
@@ -316,6 +319,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			SessionTodoAutoTake:    &autoTake,
 			GrokFullPermission:     &grokFull,
 			CodexPermissionMode:    &codexPermission,
+			WarmShells:             &warmShells,
 		}, nil
 	}
 	switch r.Method {
@@ -339,7 +343,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" && name != "codex_permission_mode" && name != "terminal" {
+			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" && name != "codex_permission_mode" && name != "terminal" && name != "warm_shells" {
 				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a workflow setting key: "+name)
 				return
 			}
@@ -377,6 +381,15 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, changed := changes["iterm_integration"]; changed {
 			applyITermScan(values)
+		}
+		if _, changed := changes["warm_shells"]; changed && !values.WarmShells() {
+			// Turned off: the shells already waiting are closed now, not at
+			// the next start.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				s.warmShells().Clear(ctx, newLauncher().TmuxBinary(ctx))
+			}()
 		}
 		answer, err := read()
 		if err != nil {

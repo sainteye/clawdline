@@ -9910,6 +9910,10 @@ type SettingsSnapshot struct {
 	// Whether this machine's project folder names join the vocabulary. Absent is off.
 	VoiceVocabularyProjects *bool `json:"voice_vocabulary_projects"`
 
+	// Keep a login shell ready in recently started Project directories; absent means
+	// on.
+	WarmShells *bool `json:"warm_shells"`
+
 	// The bar's width in points.
 	Width                 *float64 `json:"width"`
 	WorkflowProfile       *string  `json:"workflow_profile"`
@@ -13107,6 +13111,10 @@ type WorkflowSettingsRequest struct {
 
 	// Terminal preference for new Sessions on the selected machine.
 	Terminal *string `json:"terminal"`
+
+	// Whether a login shell is kept ready in recently started Project directories for
+	// new tmux Sessions.
+	WarmShells *bool `json:"warm_shells"`
 }
 
 type WorkflowSettingsSnapshot struct {
@@ -13136,6 +13144,11 @@ type WorkflowSettingsSnapshot struct {
 
 	// Terminal preference for new Sessions. Older daemons omit this field.
 	Terminal *string `json:"terminal"`
+
+	// Whether a login shell is kept ready in recently started Project directories so a
+	// new tmux Session does not wait for the person's shell startup files. True by
+	// default; a daemon before this setting omits the field.
+	WarmShells *bool `json:"warm_shells"`
 }
 
 type WorkflowStage struct {

@@ -56,6 +56,8 @@ export const DEFAULTS = {
   iterm_scan: true,
   iterm_integration: false,
   session_auto_discovery: true,
+  /** Login shells kept ready in recent Project folders; on unless turned off. */
+  warm_shells: true,
   orchestrator_enabled: true,
   /** Explicit opt-in; the daemon starts or stops Bots with this write. */
   project_assistants_enabled: false,

@@ -13881,5 +13881,14 @@
   "capacityRow.sessions.launch_hold_rows.full": "The launch remembered longest ago is forgotten; a message to that pane is refused while it is still a shell.",
   "capacityRow.sessions.launch_hold_rows.what": "Limits how many just-started Sessions are remembered so an early message can wait for the assistant.",
   "capacityRow.sessions.launch_hold_seconds.full": "After this, a message to a pane that is still a shell is refused, and nothing is typed into the shell.",
-  "capacityRow.sessions.launch_hold_seconds.what": "Limits how long a message sent to a just-started Session waits for Claude or Codex to start."
+  "capacityRow.sessions.launch_hold_seconds.what": "Limits how long a message sent to a just-started Session waits for Claude or Codex to start.",
+  "workflowSettings.warm_shellsOff": "Every new Session opens a fresh shell and waits for your shell startup files to load before the assistant starts, as before.",
+  "workflowSettings.warm_shellsOn": "Clawdline keeps a shell ready in each of your three most recently started Project folders. A new Session there skips the wait for your shell startup files. Shells are restarted every 30 minutes so changes to those files are picked up.",
+  "workflowSettings.warm_shellsScope": "Applies to new tmux Sessions you start on this machine. A folder without a ready shell opens one as before. Turning this off closes the ready shells.",
+  "workflowSettings.warm_shellsTitle": "Keep a shell ready for new Sessions",
+  "workflowSettings.warm_shellsUpdateRequired": "Update Clawdline on this machine to use this setting.",
+  "capacityRow.terminal.warm_shells.what": "Limits how many Project folders keep a shell ready for new Sessions.",
+  "capacityRow.terminal.warm_shells.full": "The folder started in longest ago loses its ready shell; a new Session there opens a fresh shell.",
+  "capacityRow.terminal.warm_shell_seconds.what": "Limits how long a ready shell is kept before it is restarted.",
+  "capacityRow.terminal.warm_shell_seconds.full": "The shell is closed and a new one started, so changes to shell startup files are picked up."
 }

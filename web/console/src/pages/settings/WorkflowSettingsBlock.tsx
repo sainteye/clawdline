@@ -81,12 +81,12 @@ export function WorkflowSettingsBlock({ shown, codexOnly = false, machine }: {
         {word("codexPermissionHelp_" + snapshot.codex_permission_mode)}
       </p>}
     </div>
-    {!codexOnly && (["dispatch_full_permission", "session_auto_discovery", "iterm_integration", "gemini_step_explanations", "grok_full_permission", "session_todo_auto_take"] as const).map(key => {
+    {!codexOnly && (["dispatch_full_permission", "session_auto_discovery", "iterm_integration", "gemini_step_explanations", "grok_full_permission", "session_todo_auto_take", "warm_shells"] as const).map(key => {
       const id = "workflow-" + key
       const title = word(key + "Title")
       const expanded = open === key
       // A daemon from before this setting omits it: say so instead of drawing a switch that cannot be read.
-      const unsupported = snapshot !== null && (key === "iterm_integration" || key === "session_todo_auto_take" || key === "grok_full_permission") && typeof snapshot[key] !== "boolean"
+      const unsupported = snapshot !== null && (key === "iterm_integration" || key === "session_todo_auto_take" || key === "grok_full_permission" || key === "warm_shells") && typeof snapshot[key] !== "boolean"
       return <div className="workflow-setting" key={key}>
         <div className="workflow-setting-row">
           <div className="workflow-setting-label">

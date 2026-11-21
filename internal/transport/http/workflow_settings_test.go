@@ -126,3 +126,40 @@ func TestWorkflowSettingsRejectUnrelatedOrMalformedChanges(t *testing.T) {
 		}
 	}
 }
+
+// Warm shells are on for every machine until the person turns them off, and
+// the start route's launcher follows the switch.
+func TestWarmShellsAreOnByDefaultAndFollowTheSwitch(t *testing.T) {
+	s := &Server{cfg: config.Config{Dir: filepath.Join(t.TempDir(), "state")}}
+	call := func(method, body string) contract.WorkflowSettingsSnapshot {
+		t.Helper()
+		r := httptest.NewRequest(method, "/v1/settings/workflow", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.workflowSettingsRoute(w, r)
+		if w.Code != 200 {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		var got contract.WorkflowSettingsSnapshot
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	warm := s.personLauncher().Warm
+	if warm == nil || warm.Enabled == nil {
+		t.Fatal("the start route's launcher has no warm shells")
+	}
+	if got := call("GET", ""); got.WarmShells == nil || !*got.WarmShells || !warm.Enabled() {
+		t.Fatalf("warm shells are not on by default: %+v", got)
+	}
+	if got := call("POST", `{"warm_shells":false}`); got.WarmShells == nil || *got.WarmShells || warm.Enabled() {
+		t.Fatalf("turning warm shells off: %+v, enabled %v", got, warm.Enabled())
+	}
+	if got := call("POST", `{"warm_shells":true}`); !*got.WarmShells || !warm.Enabled() {
+		t.Fatalf("turning warm shells back on: %+v", got)
+	}
+	if newLauncher().Warm != nil {
+		t.Fatal("the broker's launcher takes warm shells")
+	}
+}

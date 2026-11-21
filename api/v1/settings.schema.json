@@ -39,6 +39,7 @@
         "session_auto_discovery": { "type": "boolean", "nullable": true },
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "session_todo_auto_take": { "type": "boolean", "nullable": true },
+        "warm_shells": { "type": "boolean", "nullable": true, "description": "Keep a login shell ready in recently started Project directories; absent means on." },
         "grok_full_permission": { "type": "boolean", "nullable": true },
         "codex_permission_mode": { "type": "string", "enum": ["full", "auto_review", "native"], "nullable": true },
         "project_assistants_enabled": { "type": "boolean", "nullable": true, "description": "Explicit local-owner Bot opt-in; absent or malformed means false. Actual runtime state and retained history are reported by Bot status." },
@@ -727,6 +728,11 @@
           "type": "boolean",
           "nullable": true,
           "description": "Whether every new Grok Session on this machine starts in Grok's always-approve mode, running tools without asking. False by default; a daemon before this setting omits the field."
+        },
+        "warm_shells": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether a login shell is kept ready in recently started Project directories so a new tmux Session does not wait for the person's shell startup files. True by default; a daemon before this setting omits the field."
         }
       },
       "required": [
@@ -764,6 +770,11 @@
           "type": "boolean",
           "nullable": true,
           "description": "Whether every new Grok Session on this machine starts in Grok's always-approve mode."
+        },
+        "warm_shells": {
+          "type": "boolean",
+          "nullable": true,
+          "description": "Whether a login shell is kept ready in recently started Project directories for new tmux Sessions."
         }
       }
     }
