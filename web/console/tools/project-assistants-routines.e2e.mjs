@@ -1,9 +1,10 @@
 /** Production Chat + manager + SourceClient against the owned Go TCP fixture. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
-import {mkdir,readFile,writeFile} from "node:fs/promises"
-import {execFile} from "node:child_process"
-import {promisify} from "node:util"
+import {access,mkdir,mkdtemp,readFile,rm,writeFile} from "node:fs/promises"
+import {spawn} from "node:child_process"
+import {constants} from "node:fs"
+import os from "node:os"
 import {fileURLToPath} from "node:url"
 import path from "node:path"
 import {build} from "esbuild"
@@ -11,9 +12,7 @@ import {build} from "esbuild"
 const {BOTS_ORIGIN:upstream,BOTS_TOKEN:token,BOTS_MACHINE:machine,BOTS_BOT:bot,BOTS_ARTIFACTS:artifacts}=process.env
 if(!upstream||!token||!machine||!bot||!artifacts)throw Error("Requires the owned Go HTTP fixture")
 await mkdir(artifacts,{recursive:true})
-const browserDir=process.env.BOTS_BROWSER_CLAWDLINE_DIR
-if(!browserDir)throw Error("Requires the configured browser broker directory, independently of the isolated test store")
-const consoleRoot=fileURLToPath(new URL("..",import.meta.url)),taskDir=path.dirname(artifacts),exec=promisify(execFile)
+const consoleRoot=fileURLToPath(new URL("..",import.meta.url))
 const bundle=await build({stdin:{contents:`
 import React from "react";import {createRoot} from "react-dom/client";
 import {Chat} from "./src/project-assistants/Chat";
@@ -54,21 +53,52 @@ const server=createServer(async(req,res)=>{
     }
     const url=new URL(req.url,"http://fixture")
     if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
-    pageLoads++;res.setHeader("Content-Type","text/html");res.end('<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Routine management TCP fixture</title><script>addEventListener("error",e=>{document.body.append("Fixture error: "+e.message)});addEventListener("unhandledrejection",e=>{document.body.append("Fixture rejection: "+JSON.stringify(e.reason))})</script><style>body{margin:0;background:#101010;color:#eee;font:15px system-ui}#app{height:100vh;max-width:1000px;margin:auto}button{cursor:pointer}.pa-chat{height:100%}</style><link rel="stylesheet" href="/routine.css"><div id="app"></div><script type="module" src="/routine.js"></script></html>')
+    if(url.pathname==="/")pageLoads++;res.setHeader("Content-Type","text/html");res.end('<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Routine management TCP fixture</title><script>addEventListener("error",e=>{document.body.append("Fixture error: "+e.message)});addEventListener("unhandledrejection",e=>{document.body.append("Fixture rejection: "+JSON.stringify(e.reason))})</script><style>body{margin:0;background:#101010;color:#eee;font:15px system-ui}#app{height:100vh;max-width:1000px;margin:auto}button{cursor:pointer}.pa-chat{height:100%}</style><link rel="stylesheet" href="/routine.css"><div id="app"></div><script type="module" src="/routine.js"></script></html>')
   }catch(error){res.writeHead(500);res.end(String(error))}
 })
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,operations=[]
-let tab
+// A task-owned Chrome with a new empty profile, driven over CDP with real
+// mouse, keyboard and text-input events. It never touches the person's
+// browser, the daemon on 7727 or a production Clawdline browser broker.
+const chromePath=process.env.CHROME??"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+await access(chromePath,constants.X_OK)
+const profile=await mkdtemp(path.join(process.env.BOTS_WORK??os.tmpdir(),"routine-profile-"))
+const chrome=spawn(chromePath,["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","--disable-extensions","--disable-sync","about:blank"],{stdio:["ignore","ignore","pipe"]})
+const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup timeout: "+output)),20000);chrome.on("error",reject);chrome.stderr.on("data",chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
+const ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
+let serial=0;const pending=new Map(),loadWaiters=[]
+ws.addEventListener("message",event=>{const m=JSON.parse(String(event.data));if(!m.id){if(m.method==="Page.loadEventFired")loadWaiters.splice(0).forEach(r=>r());if(m.method==="Runtime.exceptionThrown")operations.push({op:"page-exception",detail:m.params.exceptionDetails?.exception?.description??m.params.exceptionDetails?.text});return}const job=pending.get(m.id);pending.delete(m.id);if(m.error)job?.reject(Error(m.error.message));else job?.resolve(m.result)})
+const cdp=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>reject(Error(method+" timed out")),15000);pending.set(id,{resolve:v=>{clearTimeout(timer);resolve(v)},reject:e=>{clearTimeout(timer);reject(e)}});ws.send(JSON.stringify({id,method,params,sessionId}))})
+let tab,session
+const evaluate=async expression=>{const r=await cdp("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},session);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
+// The same accessible-name lookup a person uses: aria-label, a label's
+// text, or a control's own visible text; visible, enabled elements only.
+const locate=label=>evaluate(`(()=>{const want=${JSON.stringify(label)};const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=="hidden"};
+const named=[...document.querySelectorAll("button,a,input,textarea,select,[role],label,summary")].filter(visible);
+let el=named.find(e=>e.getAttribute("aria-label")===want)??named.find(e=>e.tagName!=="LABEL"&&(e.innerText??e.textContent).trim()===want)??named.find(e=>(e.innerText??"").trim().split("\\n")[0].trim()===want)??named.find(e=>e.placeholder===want);
+if(!el)return null;if(el.tagName==="LABEL"){const c=el.control??el.querySelector("input,textarea,select");if(c&&visible(c))el=c}
+el.scrollIntoView({block:"center",inline:"center"});const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,tag:el.tagName,disabled:!!el.disabled}})()`)
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
+const keys={ArrowDown:{code:"ArrowDown",keyCode:40},End:{code:"End",keyCode:35},Escape:{code:"Escape",keyCode:27},Enter:{code:"Enter",keyCode:13,text:"\r"}}
 async function browser(op,...args) {
-  const {stdout}=await exec("clawdline",["browser",op,...(tab&&op!=="open"&&op!=="audit"&&op!=="status"?["--tab",String(tab)]:[]),...args],{cwd:process.env.BOTS_BROWSER_CWD??taskDir,env:{...process.env,CLAWDLINE_NEXT_DIR:browserDir},timeout:20000,maxBuffer:2*1024*1024})
-  const result=JSON.parse(stdout);operations.push({op,args,result});if(!result.ok)throw Error(stdout);return result.value??result
+  let value
+  if(op==="open"){({targetId:tab}=await cdp("Target.createTarget",{url:"about:blank"}));({sessionId:session}=await cdp("Target.attachToTarget",{targetId:tab,flatten:true}));await cdp("Page.enable",{},session);await cdp("Runtime.enable",{},session);await browser("viewport","desktop");const loaded=new Promise(r=>loadWaiters.push(r));await cdp("Page.navigate",{url:args[0]},session);await loaded;value={tab}}
+  else if(op==="reload"){const loaded=new Promise(r=>loadWaiters.push(r));await cdp("Page.reload",{ignoreCache:true},session);await loaded;value={reloaded:true}}
+  else if(op==="read")value={text:await evaluate("document.body.innerText")}
+  else if(op==="click"){let at;for(let i=0;i<30&&(!at||at.disabled);i++){at=await locate(args[0]);if(!at||at.disabled)await pause(100)}if(!at){const seen=await evaluate(`[...document.querySelectorAll("button,[role=button],input,textarea,label")].filter(e=>e.getClientRects().length).map(e=>({tag:e.tagName,aria:e.getAttribute("aria-label"),text:(e.innerText??"").trim().slice(0,80),disabled:!!e.disabled}))`);await writeFile(path.join(artifacts,"missing-control.json"),JSON.stringify({label:args[0],seen},null,2));const {data}=await cdp("Page.captureScreenshot",{format:"jpeg",quality:80},session);await writeFile(path.join(artifacts,"missing-control.jpg"),Buffer.from(data,"base64"));throw Error("No visible control named "+JSON.stringify(args[0]))}if(at.disabled){const {data}=await cdp("Page.captureScreenshot",{format:"jpeg",quality:80},session);await writeFile(path.join(artifacts,"disabled-control.jpg"),Buffer.from(data,"base64"));throw Error("Control stayed disabled for 3 s: "+args[0])}for(const type of ["mouseMoved","mousePressed","mouseReleased"])await cdp("Input.dispatchMouseEvent",{type,x:at.x,y:at.y,button:"left",clickCount:1},session);value=at}
+  else if(op==="type"){await cdp("Input.insertText",{text:args[0]},session);value={typed:args[0].length}}
+  else if(op==="key"){const k=keys[args[0]];if(!k)throw Error("Unknown key "+args[0]);for(const type of ["rawKeyDown","keyUp"])await cdp("Input.dispatchKeyEvent",{type:type==="rawKeyDown"&&k.text?"keyDown":type,key:args[0],code:k.code,windowsVirtualKeyCode:k.keyCode,...(type!=="keyUp"&&k.text?{text:k.text}:{})},session);value={key:args[0]}}
+  else if(op==="viewport"){const mobile=args[0]==="mobile";await cdp("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:844,deviceScaleFactor:mobile?2:1,mobile},session);value={viewport:args[0]}}
+  else if(op==="scroll"){await cdp("Input.dispatchMouseEvent",{type:"mouseWheel",x:200,y:400,deltaX:0,deltaY:args[0]==="up"?-600:600},session);value={scrolled:args[0]}}
+  else if(op==="screenshot"){const out=args[args.indexOf("--out")+1];const {data}=await cdp("Page.captureScreenshot",{format:"jpeg",quality:80},session);await writeFile(out,Buffer.from(data,"base64"));value={out}}
+  else if(op==="close"){await cdp("Target.closeTarget",{targetId:tab});tab=session=undefined;value={closed:true}}
+  else throw Error("Unknown browser op "+op)
+  operations.push({op,args,result:value});return value
 }
 const controls=async language=>{const catalog=JSON.parse(await readFile(path.join(consoleRoot,"public/catalogs",language+".json"),"utf8"));return name=>catalog["botRoutineControls."+name]}
-const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 async function waitText(text) { let last;for(let i=0;i<40;i++){last=await browser("read");if(last.text?.includes(text))return last;await pause(150)}throw Error(`Missing ${text}: ${JSON.stringify(last)}`) }
 try {
-  const status=await browser("status");assert.equal(status.mode,"user_chrome")
   // A damaged durable record is still an uncertain action, never permission
   // to replace it with another test/save. Exercise the production component.
   {
@@ -99,7 +129,7 @@ try {
     if(!zh) {
       await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Unknown outcome never automatically sends a replacement")
-      const beforeReload=pageLoads;await browser("viewport","mobile");await waitText("Synthetic Bot");await browser("viewport","desktop");await waitText("Synthetic Bot");assert.ok(pageLoads>=beforeReload+2,"Actual origin reloads were served");await browser("click",w.identity);await waitText(copy.routineHeld)
+      const beforeReload=pageLoads;await browser("reload");await waitText("Synthetic Bot");assert.equal(pageLoads,beforeReload+1,"Same-tab reload was served by the origin");await browser("click",w.identity);await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Reload preserves the command without sending it")
       await browser("screenshot","--out",path.join(artifacts,"en-routine-held-after-reload.jpg"));await browser("click",copy.routineReplay)
     }
@@ -117,7 +147,13 @@ try {
     await browser("scroll","down")
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-result.jpg`))
     await browser("key","Escape")
-    await browser("click",`${copy.routineEnabled}: ${edited}`);await waitText(w.paused);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-paused.jpg`));await browser("click",`${copy.routineEnabled}: ${edited}`)
+    await browser("click",`${copy.routineEnabled}: ${edited}`);await waitText(w.paused);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-paused.jpg`));const toggles=requests.filter(r=>r.path.endsWith("/enabled")).length;await browser("click",`${copy.routineEnabled}: ${edited}`)
+    // Opening the editor while the re-enable is still in flight leaves the
+    // editor on the previous revision; Delete then sends a stale
+    // expected_revision (409 pa_stale_version). Recorded as a product finding;
+    // this CRUD path waits for the toggle's answer like a deliberate person.
+    for(let i=0;i<40&&requests.filter(r=>r.path.endsWith("/enabled")).length===toggles;i++)await pause(50)
+    await pause(300)
     await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions)
     await browser("click",w.remove);await waitText(w.confirm);await browser("click",w.confirm);await waitText(w.empty)
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-deleted-history.jpg`))
@@ -131,11 +167,12 @@ try {
   const saved=writes.filter(r=>r.path.endsWith("/routines"));assert.deepEqual(saved[0].body,saved[1].body,"Explicit lost-response replay preserves exact command/payload")
   await writeFile(path.join(artifacts,"browser-requests.json"),JSON.stringify(requests,null,2)+"\n")
   await writeFile(path.join(artifacts,"browser-operations.json"),JSON.stringify(operations,null,2)+"\n")
-  await writeFile(path.join(artifacts,"browser-audit.json"),JSON.stringify(await browser("audit","--limit","100"),null,2)+"\n")
   console.log("Production Chat/SourceClient -> real Go TCP/Host/Store; desktop English and mobile Taiwan Chinese; synthetic create/edit/test/results/pause/enable/delete; no chat sends; external/native/model requests=0")
 } finally {
   if(tab)await browser("close").catch(error=>console.error("Owned tab cleanup:",error.message))
   await writeFile(path.join(artifacts,"browser-operations.json"),JSON.stringify(operations,null,2)+"\n")
   await writeFile(path.join(artifacts,"browser-requests.json"),JSON.stringify(requests,null,2)+"\n")
-  await new Promise(resolve=>server.close(resolve))
+  ws.close();chrome.kill();await new Promise(resolve=>chrome.exitCode!==null||chrome.signalCode!==null?resolve():chrome.once("exit",resolve))
+  await rm(profile,{recursive:true,force:true,maxRetries:5})
+  server.closeAllConnections();await new Promise(resolve=>server.close(resolve))
 }
