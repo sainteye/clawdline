@@ -66,6 +66,11 @@ async function browser(op,...args){
   else throw Error("Unsupported test operation: "+op)
   operations.push({op,args,result});return result
 }
+// Trusted CDP pointer press at the centre of the element the expression returns.
+async function tap(expression){const box=await evaluate(`(()=>{const el=(${expression});if(!el)return null;el.scrollIntoView({block:"center"});const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);if(!box)throw Error("Missing tap target: "+expression);for(const type of ["mouseMoved","mousePressed","mouseReleased"])await send("Input.dispatchMouseEvent",{type,x:box.x,y:box.y,button:"left",buttons:type==="mousePressed"?1:0,clickCount:1},session)}
+// The model note lives inside the collapsed Primary Agent picker; open it with a real pointer press.
+async function openAgentPicker(zh){const prefix=JSON.stringify(zh?"主要 Agent:":"Primary Agent:"),find=`[...document.querySelectorAll("button.pa-agent-picker-summary")].find(b=>b.getAttribute("aria-label")?.startsWith(${prefix}))`;if(await evaluate(`${find}?.getAttribute("aria-expanded")==="true"`))return;await tap(find)}
+async function waitSettled(){for(let n=0;n<100;n++){const r=await fetch(upstream+`/v1/project-assistants/${bot}/export?machine_id=${machine}`,{headers:{Authorization:"Bearer "+token}});const x=await r.json();if(x.turns?.length&&x.turns.every(t=>!["accepted","queued","running","waiting_permission"].includes(t.state)))return;await new Promise(r=>setTimeout(r,100))}throw Error("Scripted turn did not settle")}
 async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=await browser("read");if(last.text?.includes(text)===present)return last;await new Promise(r=>setTimeout(r,100))}throw Error(`Text ${text} present=${present}: ${JSON.stringify(last)}`)}
 async function select(label,value){await evaluate(`(()=>{const el=[...document.querySelectorAll("select")].find(e=>(e.getAttribute("aria-label")??e.closest("label")?.firstChild.textContent)===${JSON.stringify(label)});if(!el)throw Error("Missing select: "+${JSON.stringify(label)});el.value=${JSON.stringify(value)};el.dispatchEvent(new Event("change",{bubbles:true}))})()`)}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
@@ -84,13 +89,15 @@ try{
       await evaluate(`(()=>{document.querySelector('textarea[aria-label="${zh?"API 金鑰":"API key"}"]').value="SYNTHETIC_PROFILE_KEY_ONLY";})()`);
       await browser("click",zh?"安全交付金鑰":"Deliver key securely");
       for(let i=0;i<20;i++){await browser("click",refresh);const view=await browser("read");if(view.text.includes(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)"))break;await new Promise(r=>setTimeout(r,100))}
-      await waitText(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)");await waitText(zh?"這個 Agent 未提供模型選單。":"This Agent does not expose a model selector.");
+      await waitText(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)");await openAgentPicker(zh);await waitText(zh?"這個 Agent 未提供模型選單。":"This Agent does not expose a model selector.");
       await browser("click",zh?"新增替代 Agent":"Add alternate Agent");
       const alternate=zh?"Codex · Synthetic first browser key":"Codex · Default login profile";
       await waitText(alternate);await evaluate(`(()=>{const option=[...document.querySelectorAll('[role="option"]')].find(o=>o.textContent===${JSON.stringify(alternate)});if(!option)throw Error("Missing selected-login fallback");option.click()})()`);
       await waitText(alternate);await browser("screenshot","--out",path.join(artifacts,language+"-fallbacks.jpg"));
       await waitText("Synthetic installed skill");await evaluate(`(()=>{for(const label of document.querySelectorAll("label")){if(label.textContent==="Synthetic installed skill"||label.textContent==="fixture-connector"){const checkbox=label.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked)checkbox.click()}}})()`);await browser("screenshot","--out",path.join(artifacts,language+"-login.jpg"));await writeFile(path.join(artifacts,language+"-login.html"),await evaluate("document.documentElement.outerHTML"));assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
       await evaluate(`document.querySelector('section[aria-label="${zh?"應用程式技能與連接器":"Application skills and connectors"}"]').scrollIntoView()`);await browser("screenshot","--out",path.join(artifacts,language+"-extensions.jpg"));await browser("click",save);await waitText("Settings saved");await browser("click","Send scripted input");await waitText("Scripted input accepted");
+      // The accepted turn advances the Bot version; reopen from a full reload so the refusal under test is the referenced-key scope, not a stale head.
+      await waitSettled();await browser("close");await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);
       await browser("click",settings);await evaluate('document.querySelector(".pa-login-management>summary").click()');await waitText(zh?"輸入或更換 API 金鑰":"Enter or replace API key");await browser("click",zh?"輸入或更換 API 金鑰":"Enter or replace API key");await waitText("pa_scope_denied");
       assert.equal(await evaluate(`Object.keys(localStorage).filter(k=>k.startsWith("clawdline.bot-login-intent:")).length`),0,"a refused referenced-key replacement must not trap the settings journal");
     }

@@ -14,7 +14,7 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-// Optional browser driver uses the installed Clawdline CLI, never a model/native adapter.
+// Optional browser acceptance drives a task-owned fresh Chrome over CDP, never the installed CLI or a model/native adapter.
 func TestProjectAssistantFallbackSettingsBrowser(t *testing.T) {
 	dir := os.Getenv("CLAWDLINE_FALLBACK_SETTINGS_E2E_DIR")
 	if dir == "" {
