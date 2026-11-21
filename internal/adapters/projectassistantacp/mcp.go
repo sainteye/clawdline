@@ -24,6 +24,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // ownedMCPServer implements the JSON response profile of MCP Streamable HTTP
@@ -681,13 +682,14 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	case "dispatch_work":
 		var q struct {
 			ID     string   `json:"idempotency_key"`
+			Title  string   `json:"title"`
 			Brief  string   `json:"brief"`
 			Claims []string `json:"claims"`
 		}
 		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || len(q.Claims) == 0 {
 			return nil, refusal(pa.Invalid, "mcp_dispatch")
 		}
-		return s.tools.Dispatch(ctx, q.ID, q.Brief, q.Claims)
+		return s.tools.Dispatch(ctx, q.ID, q.Title, q.Brief, q.Claims)
 	case "work_status":
 		var q struct {
 			TaskID string `json:"task_id"`
@@ -827,7 +829,12 @@ func mcpTools() []any {
 		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
 			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": map[string]any{"type": "object"}, "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
 		tool("send_message", "Send the user one Markdown chat message immediately as its own bubble. Send several for several thoughts in the same turn; use a different idempotency key for each distinct message. After sending any message, final reply text stays in the trace: send all user-facing results here. Reuse the same key and text after an uncertain response; do not invent a replacement key. 立即傳送一則獨立的 Markdown 訊息；同一回合可傳多則，不同訊息各用自己的冪等鍵。傳送後最後文字只留在處理過程，所有要讓使用者看到的結果都要在此傳送。結果不確定時沿用相同鍵與文字。", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
-		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{"idempotency_key": text(), "brief": text(), "claims": map[string]any{"type": "array", "items": text()}}, "idempotency_key", "brief", "claims"),
+		tool("dispatch_work", "Dispatch isolated work under the current Project policy. Unknown effects require receipt inspection, never automatic replay with a new key.", map[string]any{
+			"idempotency_key": text(),
+			"title": map[string]any{"type": "string", "minLength": 1, "maxLength": work.OutcomeTitleLimit,
+				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
+			"brief": text(), "claims": map[string]any{"type": "array", "items": text()},
+		}, "idempotency_key", "title", "brief", "claims"),
 		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
 		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),

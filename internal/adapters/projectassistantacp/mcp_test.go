@@ -17,7 +17,7 @@ import (
 
 type mcpTestTools struct {
 	message  func(context.Context, string, string) error
-	dispatch func(context.Context, string, string, []string) (pa.WorkLink, error)
+	dispatch func(context.Context, string, string, string, []string) (pa.WorkLink, error)
 	status   func(context.Context, string) (pa.WorkLink, error)
 	memory   []pa.MemoryEntry
 	edits    *[]app.MemoryEdit
@@ -26,8 +26,8 @@ type mcpTestTools struct {
 func (t mcpTestTools) SendMessage(ctx context.Context, id, text string) error {
 	return t.message(ctx, id, text)
 }
-func (t mcpTestTools) Dispatch(ctx context.Context, id, brief string, claims []string) (pa.WorkLink, error) {
-	return t.dispatch(ctx, id, brief, claims)
+func (t mcpTestTools) Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error) {
+	return t.dispatch(ctx, id, title, brief, claims)
 }
 func (t mcpTestTools) Status(ctx context.Context, id string) (pa.WorkLink, error) {
 	return t.status(ctx, id)
@@ -119,9 +119,9 @@ func TestOwnedMCPRoutesOnlyAuthenticatedExecutionTools(t *testing.T) {
 			sent.Add(1)
 			return nil
 		},
-		dispatch: func(_ context.Context, id, brief string, claims []string) (pa.WorkLink, error) {
-			if id != "stable-work" || brief != "Change one file" || len(claims) != 1 || claims[0] != "one.go" {
-				t.Error(id, brief, claims)
+		dispatch: func(_ context.Context, id, title, brief string, claims []string) (pa.WorkLink, error) {
+			if id != "stable-work" || title != "Keep drafts after reconnecting" || brief != "Change one file" || len(claims) != 1 || claims[0] != "one.go" {
+				t.Error(id, title, brief, claims)
 			}
 			dispatched.Add(1)
 			return pa.WorkLink{TaskID: "owned-task"}, nil
@@ -156,7 +156,7 @@ func TestOwnedMCPRoutesOnlyAuthenticatedExecutionTools(t *testing.T) {
 	if sent.Load() != 0 {
 		t.Fatal("authority rejection had effects")
 	}
-	for _, body := range []string{message, mcpCall("dispatch_work", map[string]any{"idempotency_key": "stable-work", "brief": "Change one file", "claims": []string{"one.go"}}), mcpCall("work_status", map[string]any{"task_id": "owned-task"})} {
+	for _, body := range []string{message, mcpCall("dispatch_work", map[string]any{"idempotency_key": "stable-work", "title": "Keep drafts after reconnecting", "brief": "Change one file", "claims": []string{"one.go"}}), mcpCall("work_status", map[string]any{"task_id": "owned-task"})} {
 		code, b := f.post(t, body, nil)
 		if code != 200 || !bytes.Contains(b, []byte(`"isError":false`)) {
 			t.Fatalf("tool %d %s", code, b)
@@ -197,7 +197,7 @@ func TestOwnedMCPRoutesOnlyAuthenticatedExecutionTools(t *testing.T) {
 
 func TestOwnedMCPUnknownToolEffectIsTypedAndNeverRetried(t *testing.T) {
 	var calls atomic.Int32
-	f := newMCPFixture(t, mcpTestTools{dispatch: func(context.Context, string, string, []string) (pa.WorkLink, error) {
+	f := newMCPFixture(t, mcpTestTools{dispatch: func(context.Context, string, string, string, []string) (pa.WorkLink, error) {
 		calls.Add(1)
 		return pa.WorkLink{}, refusal(pa.OutcomeUnknown, "broker")
 	}})

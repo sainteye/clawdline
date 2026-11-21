@@ -2,7 +2,12 @@ package projectassistant
 
 import (
 	"slices"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 type ActorOperation string
@@ -54,8 +59,19 @@ type WorkRequest struct {
 	Actor   AssistantExecutionActor
 	Command Command
 	TurnID  string
+	Title   string
 	Brief   string
 	Claims  []string
+}
+
+// ValidateWorkTitle applies the broker's task title rules before an effect
+// receipt is written. Titles are displayed independently of the full brief.
+func ValidateWorkTitle(title string) error {
+	if !utf8.ValidString(title) || strings.IndexFunc(title, unicode.IsControl) >= 0 ||
+		strings.ContainsAny(title, "\u2028\u2029") || work.OutcomeTitleRefusal(title) != "" {
+		return fail(Invalid, "work_title")
+	}
+	return nil
 }
 
 // CheckWorkRequest does not replace the broker's path/claims validation. It
@@ -75,6 +91,11 @@ func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 	}
 	if request.TurnID == "" || request.Brief == "" || len(request.Claims) == 0 {
 		return fail(Invalid, "work")
+	}
+	if request.Title != "" {
+		if err := ValidateWorkTitle(request.Title); err != nil {
+			return err
+		}
 	}
 	for _, claim := range request.Claims {
 		if claim == "" {

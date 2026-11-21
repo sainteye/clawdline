@@ -358,7 +358,7 @@ func (w *commonFlowTools) EditMemory(context.Context, string, app.MemoryEdit) er
 	w.batch.stop("unapproved_memory_edit")
 	return failure(pa.ScopeDenied, "common_flow_memory_edit")
 }
-func (w *commonFlowTools) Dispatch(context.Context, string, string, []string) (pa.WorkLink, error) {
+func (w *commonFlowTools) Dispatch(context.Context, string, string, string, []string) (pa.WorkLink, error) {
 	w.batch.stop("dispatch_forbidden")
 	return pa.WorkLink{}, failure(pa.ScopeDenied, "common_flow_dispatch")
 }

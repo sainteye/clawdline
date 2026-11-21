@@ -81,7 +81,7 @@ func TestNativeWorkScopesMessageIdentityAndClosesExactlyOnce(t *testing.T) {
 	if e = n.tools.SendMessage(ctx, "late", "late"); e == nil {
 		t.Fatal("closed tool accepted")
 	}
-	if _, e = n.tools.Dispatch(ctx, "late", "Change a.go", []string{"a.go"}); e == nil {
+	if _, e = n.tools.Dispatch(ctx, "late", "", "Change a.go", []string{"a.go"}); e == nil {
 		t.Fatal("closed tool dispatched")
 	}
 	if _, e = n.tools.Status(ctx, "a1111111-1111-4111-8111-111111111111"); e == nil {
@@ -182,7 +182,7 @@ func TestNativeWorkRejectsCurrentRevocationAndCapturedTurnChanges(t *testing.T) 
 			if e = n.tools.SendMessage(context.Background(), "stale", "must not publish"); e == nil {
 				t.Fatal("stale closure succeeded")
 			}
-			if _, e = n.tools.Dispatch(context.Background(), "stale", "Change a.go", []string{"a.go"}); e == nil {
+			if _, e = n.tools.Dispatch(context.Background(), "stale", "", "Change a.go", []string{"a.go"}); e == nil {
 				t.Fatal("stale closure dispatched")
 			}
 			after, e := n.f.h.store.Export(context.Background(), n.bot.Key)
@@ -278,7 +278,7 @@ func TestOpenEndedNativeWorkStillRequiresBindingAndDispatchPolicy(t *testing.T) 
 	if e := n.tools.SendMessage(context.Background(), "visible", "Chat remains usable."); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := n.tools.Dispatch(context.Background(), "work", "Change a.go", []string{"a.go"}); pa.Code(e) != pa.ScopeDenied {
+	if _, e := n.tools.Dispatch(context.Background(), "work", "", "Change a.go", []string{"a.go"}); pa.Code(e) != pa.ScopeDenied {
 		t.Fatal(e)
 	}
 	if _, _, e := n.f.h.tools(context.Background(), app.OpenRequest{Bot: n.bot}); pa.Code(e) != pa.StaleGeneration {
@@ -353,7 +353,7 @@ func TestHostRealStoreBrokerProjectsOneWorkResultAndRecoversDisabledHistory(t *t
 	n := startNative(t, nil)
 	f := n.f
 	ctx := context.Background()
-	link, e := n.tools.Dispatch(ctx, "work", "Change only a.go in the isolated worktree.", []string{"a.go"})
+	link, e := n.tools.Dispatch(ctx, "work", "Keep draft messages after reconnecting", "Change only a.go in the isolated worktree.", []string{"a.go"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -370,10 +370,13 @@ func TestHostRealStoreBrokerProjectsOneWorkResultAndRecoversDisabledHistory(t *t
 	if updates != 1 || len(x.WorkLinks) != 1 {
 		t.Fatalf("duplicate acceptance: updates=%d links=%d", updates, len(x.WorkLinks))
 	}
-	if _, e = n.tools.Dispatch(ctx, "work", "Change only a.go in the isolated worktree.", []string{"a.go"}); pa.Code(e) != pa.OutcomeUnknown {
+	if _, e = n.tools.Dispatch(ctx, "work", "Keep draft messages after reconnecting", "Change only a.go in the isolated worktree.", []string{"a.go"}); pa.Code(e) != pa.OutcomeUnknown {
 		t.Fatal(e)
 	}
-	if _, e = n.tools.Dispatch(ctx, "work", "Different intent.", []string{"a.go"}); pa.Code(e) != pa.IdempotencyConflict {
+	if _, e = n.tools.Dispatch(ctx, "work", "Retain drafts during reconnect", "Change only a.go in the isolated worktree.", []string{"a.go"}); pa.Code(e) != pa.IdempotencyConflict {
+		t.Fatalf("changed title reused dispatch key: %v", e)
+	}
+	if _, e = n.tools.Dispatch(ctx, "work", "Keep draft messages after reconnecting", "Different intent.", []string{"a.go"}); pa.Code(e) != pa.IdempotencyConflict {
 		t.Fatal(e)
 	}
 	var original pa.Receipt

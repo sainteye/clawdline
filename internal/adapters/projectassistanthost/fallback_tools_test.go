@@ -52,7 +52,7 @@ func TestEveryNativeWorkToolStopsBeforeEffectWhenJournalFails(t *testing.T) {
 			return w.SendMessage(c, "message", "Must not be published")
 		},
 		"dispatch": func(c context.Context, w NativeWork, _ string) error {
-			_, e := w.Dispatch(c, "dispatch", "Change a.go", []string{"a.go"})
+			_, e := w.Dispatch(c, "dispatch", "", "Change a.go", []string{"a.go"})
 			return e
 		},
 		"status": func(c context.Context, w NativeWork, _ string) error { _, e := w.Status(c, "task"); return e },
