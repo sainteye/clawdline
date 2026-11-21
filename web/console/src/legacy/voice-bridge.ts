@@ -588,14 +588,14 @@ function stop(): void {
     // A refusal is not evidence that final bytes have been delivered. Keep
     // the callbacks and collected chunks until the bounded recovery path.
   } finally {
-    // Do not await onstop (or a redraw) to stop capturing. Keep data/stop
-    // handlers attached: release() would throw away the final encoded bytes.
+    const take = recording
+    if (take?.live) {
+      // Commit while the sender still has a live track. Do not wait for a
+      // reply or for MediaRecorder to deliver its final bytes.
+      take.liveAnswer = take.live.finish()
+      void take.liveAnswer.catch(() => undefined)
+    }
     stopCapture()
-  }
-  const take = recording
-  if (take?.live) {
-    take.liveAnswer = take.live.finish()
-    void take.liveAnswer.catch(() => undefined)
   }
   show()
 }
@@ -708,7 +708,8 @@ function finishLive(take: Recording, answer: Promise<string>): void {
     else job?.sink(said)
   }, (error: unknown) => {
     if (!current()) return
-    recover("processing_failed")
+    recover(error instanceof LiveDictationError && error.code === "voice_realtime_audio_empty"
+      ? "realtime_audio_empty" : "processing_failed")
     speak(liveFailure(error), true)
   })
 }

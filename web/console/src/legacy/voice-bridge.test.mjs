@@ -80,7 +80,7 @@ function harness(options = {}) {
       if (path.endsWith("live-dictation.js")) return {
         usesLiveDictation: async () => Boolean(options.live),
         connectLiveDictation: options.live,
-        LiveDictationError: class extends Error {},
+        LiveDictationError: options.liveError ?? Error,
       }
       if (path.endsWith("voice-events.js")) return { recordVoiceDiagnostic: row => diagnostics.push(row) }
       if (path.endsWith("i18n.js")) return { T: new Proxy({}, { get: (_, key) => english[`legacy.${String(key)}`] ?? key }), fill: (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key])) }
@@ -118,6 +118,45 @@ test("Done closes microphone capture before a delayed browser stop notification"
   assert.equal(h.voice.voiceState(), "stopping"); assert.equal(h.posts, 0)
   h.recorders[0].finish(); await h.flush()
   assert.deepEqual(h.words, ["Recovered speech"]); assert.equal(h.posts, 1)
+})
+
+test("Realtime commits the audio before closing the microphone in the same stop action", async () => {
+  const committed = []
+  const h = harness({ live: async (_, stream) => ({
+    finish() {
+      committed.push(stream.getAudioTracks()[0].readyState)
+      return Promise.resolve("Final Realtime draft")
+    },
+    close() {},
+  }) })
+  await h.start()
+  h.click("go")
+  assert.deepEqual(committed, ["live"])
+  assert.equal(h.tracks[0].readyState, "ended")
+  await h.flush()
+  assert.deepEqual(h.words, ["Final Realtime draft"])
+  assert.deepEqual(h.sent, [])
+})
+
+test("an empty Realtime commit keeps the original audio for an explicit Whisper retry", async () => {
+  class EmptyAudio extends Error { code = "voice_realtime_audio_empty" }
+  const decoded = []
+  const h = harness({ liveError: EmptyAudio, decoded, live: async () => ({
+    finish: async () => { throw new EmptyAudio() },
+    close() {},
+  }) })
+  await h.start()
+  h.click("go")
+  await h.flush()
+  assert.equal(h.voice.voiceState(), "recoverable")
+  assert.equal(h.diagnostics.at(-1).code, "realtime_audio_empty")
+  assert.equal(h.posts, 0)
+  h.click("go")
+  await h.flush()
+  assert.deepEqual(decoded, ["encoded ending"])
+  assert.deepEqual(h.words, ["Recovered speech"])
+  assert.deepEqual(h.sent, [])
+  assert.equal(h.opens, 1)
 })
 
 test("the normal final-data path still inserts words once and releases the microphone", async () => {
