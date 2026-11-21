@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "com.clawdline.session-lantern-deep",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "hostApi": 1,
   "name": {
     "en": "Lantern Deep",

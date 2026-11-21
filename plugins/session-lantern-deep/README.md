@@ -9,8 +9,8 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 | State | What the wanderer does |
 |---|---|
 | `working` | Fights one of six enemies in its own lane, on the floor or a slab: slashes, back-dashes, leaps over a lunge and strikes downward |
-| `holding` | Drills against a training post: combinations, dashes and a leaping strike |
-| `ready` | Patrols the floor or a floating slab, with an occasional practice swing |
+| `holding` | Drills against a training post: combinations and dashes |
+| `ready` | Patrols the floor or a floating slab, with an occasional practice swing; it never hops in place |
 | `waiting_session` | Climbs a shaft by kicking between two walls, rests on the ledge, then drops |
 | `waiting_you` | Stands puzzled under a warm beacon with a floating question mark |
 | `milestone_complete`, `work_complete` | Sits by a small fire with the blade planted |
@@ -19,7 +19,8 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 A struck enemy recoils in its own hurt frame with a flash, impact lines and a brief
 hit-stop, and breaks apart over three frames when defeated. A fight keeps two enemies in its lane, the second stepping in when the first falls.
 Wild creatures also drift through the air, hang from the ceiling and cross the floor;
-they belong to no Session. A fight draws the nearest one in as its next enemy before
+they belong to no Session. A wanderer leaves the ground only to strike an enemy, to
+climb its shaft or to reach its slab. A fight draws the nearest one in as its next enemy before
 conjuring a new one, and a patroller swats a floor creature that walks past. Enemies, strikes and climbing are decoration. They do not measure progress, count
 anything or imply that work was accepted. Stale and disconnected readings never animate.
 

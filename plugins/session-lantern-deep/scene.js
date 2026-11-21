@@ -225,7 +225,6 @@ function behave(c, dt) {
       if (c.sub === "start" || (c.sub === "pause" && c.t <= 0)) {
         const pick = c.seed();
         if (pick < .16 && c.ground) { c.sub = "flick"; c.t = .7; c.swordTo = 1; slash(c, pick < .08 ? "up" : "fwd"); }
-        else if (pick < .26 && c.ground) { c.sub = "pause"; c.t = .7; jump(c, -360); }
         else { c.sub = "walk"; c.goal = lerp(st.range[0], st.range[1], c.seed()); }
       } else if (c.sub === "walk") { if (runTo(c, c.goal, 58, dt)) { c.sub = "pause"; c.t = 1 + c.seed() * 2.6; c.look = c.seed() < .5 ? 1 : 0; } }
       else if (c.sub === "flick") { c.vx = lerp(c.vx, 0, dt * 12); if (c.t <= 0) { c.sub = "pause"; c.t = .6; c.swordTo = 0; } }
@@ -264,7 +263,7 @@ function behave(c, dt) {
       break;
     }
     case "drill": {
-      const home = st.x, d = props.get(st.dummy), SEQ = ["slash", "slash", "up", "back", "in", "slash", "leap", "rest"]; c.swordTo = 1;
+      const home = st.x, d = props.get(st.dummy), SEQ = ["slash", "slash", "up", "back", "in", "slash", "slash", "rest"]; c.swordTo = 1;
       if (c.sub === "start") { if (runTo(c, home, 140, dt)) { c.sub = "seq"; c.step = 0; c.t = .5; c.face = 1; } break; }
       if (c.sub === "leap") {
         if (!c.ground && c.vy > 0 && c.y > st.y - 66 && Math.abs(c.x - st.dummyX) < 22 && c.cd <= 0) { slash(c, "down"); c.vy = -340; c.vx = -120; c.cd = 1; if (d) d.va -= 5; burst(st.dummyX, st.y - 40, [240, 220, 170], 5); c.hit = .05; }
