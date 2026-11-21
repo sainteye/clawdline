@@ -61,7 +61,7 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
 }
 
 /** The outcome of reading the source after an unconfirmed save. */
-export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"failed"
+export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"failed"|"superseded"
 
 /** One mounted editor owns the draft across the Details and Settings tabs. */
 export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
@@ -94,7 +94,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     return {fallback_steps:validSteps,...(validSteps.length===0?{fallback_agents:[]}: {})}
   }
   const save=async()=>{
-    if(!enabled||busy||unknown||check==="diverged"||awaitingModel||!name.trim())return
+    if(!enabled||busy||unknown||check==="diverged"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim())return
     setBusy(true);setError(undefined);setCheck("")
     const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
@@ -114,12 +114,13 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     if(!onCheck||!intended||!unknown||check==="checking")return
     setCheck("checking")
     let fresh:W.ProjectAssistantBot
-    try{fresh=await onCheck()}catch{setCheck("failed");return}
+    // An older answer than the source already observed keeps the draft locked until a fresh read decides.
+    try{fresh=await onCheck()}catch(e){setCheck(errorCode(e)==="pa_stale_version"?"superseded":"failed");return}
     if(attemptedSettingsPersisted(intended,fresh)){setOriginal(fresh);setCheck("confirmed")}
     else setCheck(sameEditableSettings(original,fresh)?"unchanged":"diverged")
     attempted.current=undefined;setUnknown(false);setError(undefined)
   }
-  const checkText=check==="confirmed"?w.settingsCheckConfirmed:check==="unchanged"?w.settingsCheckUnchanged:check==="diverged"?w.settingsCheckDiverged:check==="failed"?w.settingsCheckFailed:""
+  const checkText=check==="confirmed"?w.settingsCheckConfirmed:check==="unchanged"?w.settingsCheckUnchanged:check==="diverged"?w.settingsCheckDiverged:check==="failed"?w.settingsCheckFailed:check==="superseded"?w.settingsCheckSuperseded:""
   const chooseAgent=(next:W.ProjectAssistantAgent)=>{
     setAgent(next);setLoginProfile("");setExtensions({skills:extensions.skills,connectors:[]})
     setRuntime({model:"",options:{}})
@@ -138,7 +139,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     {checkText&&<p className={check==="confirmed"?"pa-settings-check-result":"pa-settings-save-error"} role={check==="confirmed"?"status":"alert"}>{checkText}</p>}
     {unknown&&onCheck&&<button type="button" className="pa-settings-check-saved" disabled={check==="checking"} aria-busy={check==="checking"||undefined} onClick={()=>void checkSaved()}>{check==="checking"?w.settingsChecking:w.settingsCheckSaved}</button>}
     {embedded&&<small>{w.settingsDraftHint}</small>}
-    <button type="button" disabled={busy} onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" className="pa-settings-save" disabled={!enabled||busy||unknown||check==="diverged"||check==="checking"||awaitingModel||!name.trim()} aria-busy={busy||undefined} onClick={()=>void save()}>{busy?w.settingsSaving:w.save}</button>
+    <button type="button" disabled={busy} onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" className="pa-settings-save" disabled={!enabled||busy||unknown||check==="diverged"||check==="checking"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim()} aria-busy={busy||undefined} onClick={()=>void save()}>{busy?w.settingsSaving:w.save}</button>
   </footer>
   return <section className={`${embedded?"pa-embedded-form":"pa-form-panel"} pa-settings-editor`} role={embedded?undefined:"dialog"} aria-modal={embedded?undefined:true} aria-label={w.settings}>
     {!embedded&&savebar}

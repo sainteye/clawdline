@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13996,
-  "riskKeys": 5956,
-  "nonRiskCount": 8040,
+  "englishContentKeys": 14004,
+  "riskKeys": 5962,
+  "nonRiskCount": 8042,
   "groups": [
     {
       "name": "acp / other",
@@ -6190,7 +6190,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 540,
+      "count": 542,
       "sources": [
         null
       ],
@@ -6592,6 +6592,8 @@
         "projectAssistants.settings",
         "projectAssistants.settingsAccess",
         "projectAssistants.settingsAgentHeading",
+        "projectAssistants.settingsCheckSuperseded",
+        "projectAssistants.settingsCheckUnchanged",
         "projectAssistants.settingsDraftHint",
         "projectAssistants.settingsExtensionsSummary",
         "projectAssistants.settingsFrequent",

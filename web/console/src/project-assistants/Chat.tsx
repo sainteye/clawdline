@@ -491,7 +491,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   }
   const saveSettings=async(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>{
     try{await editBot(settings,original)}catch(e){
-      if(valid())toast(errorCode(e)==="pa_outcome_unknown"?w.settingsSaveUnconfirmed:w.settingsSaveFailed,true)
+      // The editor shows an unknown outcome inline with its own check action; a toast would contradict a later check.
+      if(valid()&&errorCode(e)!=="pa_outcome_unknown")toast(w.settingsSaveFailed,true)
       throw e
     }
     setSettingsRevision(n=>n+1)
@@ -500,7 +501,12 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   }
   // Reconciliation reads the Bot through the same authorized, epoch- and fence-checked preflight as a write.
   const checkSettings=async()=>{
-    const fresh=await mutate(async({bot})=>bot)
+    const fresh=await mutate(async({bot},_,page)=>{
+      // A snapshot answered after a newer head was observed describes an older source; it neither confirms nor reverts.
+      const seen=headRef.current
+      if(!seen||page.head.event_frontier<seen.event_frontier||page.head.bot_version<seen.bot_version||bot.version<seen.bot_version)throw failure("pa_stale_version")
+      return bot
+    })
     if(!valid())throw failure("pa_read_only")
     setData(old=>old?{...old,bot:fresh}:old)
     onBotChanged(fresh)

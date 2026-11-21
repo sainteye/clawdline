@@ -14,7 +14,7 @@ const root=fileURLToPath(new URL("..",import.meta.url)),requests=[],operations=[
 const bundle=await build({entryPoints:[path.join(root,"tools/fixtures/project-assistants-settings.tsx")],bundle:true,write:false,outfile:"alignment.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"',READ_MACHINE:JSON.stringify(machine),READ_BOT:JSON.stringify(bot)}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents]))
 const cut=(res,record,status)=>{record.status=status;res.writeHead(200,{"Content-Type":"application/json","Content-Length":"64"});res.write("{\"bot\":");setTimeout(()=>res.socket.destroy(),20)}
-let tab,saveFault="",readFault=false,touch=false
+let tab,saveFault="",readFault=false,touch=false,holdNextSnapshot=false,heldSnapshot,releaseSnapshot
 const server=createServer(async(req,res)=>{try{
   const url=new URL(req.url,"http://fixture")
   if(url.pathname.startsWith("/v1/")){
@@ -32,6 +32,12 @@ const server=createServer(async(req,res)=>{try{
     const headers={Authorization:"Bearer "+(read?readToken:token),"Content-Type":"application/json"};if(req.headers["idempotency-key"])headers["Idempotency-Key"]=req.headers["idempotency-key"]
     const answer=await fetch(upstream+url.pathname+url.search,{method:req.method,headers,...raw.length?{body:raw}:{}})
     let body=Buffer.from(await answer.arrayBuffer());record.status=answer.status
+    if(req.method==="GET"&&url.pathname.endsWith("/view")&&answer.ok)record.headVersion=JSON.parse(body).head.bot_version
+    // Hold one authorized snapshot after the source answered it, so a newer head can arrive first.
+    if(holdNextSnapshot&&req.method==="GET"&&url.pathname.endsWith("/view")&&url.searchParams.get("mode")==="snapshot"){
+      holdNextSnapshot=false
+      await new Promise(resolve=>{heldSnapshot=JSON.parse(body).head.bot_version;releaseSnapshot=resolve;setTimeout(resolve,10000).unref()})
+    }
     if(req.method!=="GET")record.response=JSON.parse(body)
     if(saveFault==="drop"&&req.method==="PATCH"){record.dropped=true;cut(res,record,answer.status);return}
     res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(body);return
@@ -170,7 +176,11 @@ try{
    await fill(field,"Synthetic protected "+fault);saveFault=fault;const before=posts().length;await save();await waitFor('!!document.querySelector(".pa-settings-editor [role=alert]")');assert.equal(posts().length,before+1)
    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
    await tabAt(1);await tabAt(4);await waitFor(editorShown);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
-   if(fault==="unknown"){await waitToast(zh?"無法確認 Bot 設定是否已儲存。":"Bot settings save could not be confirmed.",true);assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
+   if(fault==="unknown"){
+    // The inline alert and its check action carry an unknown outcome; no contradicting error toast covers the status bar.
+    assert.equal(await evaluate('document.querySelector(".pa-settings-savebar [role=alert]").textContent'),zh?"Clawdline 無法確認這次儲存是否已送達來源。草稿仍在，Clawdline 沒有發起新的儲存。請選擇「檢查已儲存的設定」，與來源目前的設定比對。":"Clawdline couldn’t confirm whether this save reached the source. Your draft is kept and Clawdline started no new save. Select Check saved settings to compare it with what the source holds.")
+    await new Promise(r=>setTimeout(r,300));assert.notEqual(await evaluate('document.querySelector("#toast:not([hidden])")?.textContent??""'),zh?"無法確認 Bot 設定是否已儲存。":"Bot settings save could not be confirmed.","no duplicate error toast for an unknown save")
+assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
    await capture(lang+"-"+fault);saveFault="";await cancel();await openDetails()
   }
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true)
@@ -185,18 +195,21 @@ try{
   await open("lang="+lang,mobile);await openDetails()
   const committed="Synthetic committed reply lost "+lang
   await fill(field,committed);saveFault="drop";let before=patches();await save()
-  for(const k of ["settingsSaveUnknownCheck","settingsCheckSaved","settingsCheckConfirmed","settingsCheckUnchanged","settingsCheckDiverged","settingsCheckFailed"])assert.ok(t(k),k)
+  for(const k of ["settingsSaveUnknownCheck","settingsCheckSaved","settingsCheckConfirmed","settingsCheckUnchanged","settingsCheckDiverged","settingsCheckFailed","settingsCheckSuperseded"])assert.ok(t(k),k)
   await waitFor(`!!document.querySelector(".pa-settings-savebar [role=alert]")`);saveFault=""
   assert.equal(await evaluate('document.querySelector(".pa-settings-savebar [role=alert]").textContent'),t("settingsSaveUnknownCheck"))
   const dropped=requests.filter(r=>r.method==="PATCH").at(-1);assert.equal(dropped.dropped,true);assert.equal(dropped.response.bot.instructions.text,committed,"the source committed before the reply was cut")
   assert.equal(patches(),before+1);assert.equal(await evaluate(locked),true,"unknown keeps Save and fields locked")
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(check)}).textContent`),t("settingsCheckSaved"))
+  await capture(lang+"-check-before")
   // A failed read leaves every protection in place.
   readFault=true;await hit(check);await waitText(t("settingsCheckFailed"));readFault=false
   assert.equal(await evaluate(locked),true,"a failed check keeps the save locked");assert.equal(patches(),before+1)
   await capture(lang+"-check-failed")
   for(let n=0;n<40&&!(await browser("read")).text.includes(t("settingsCheckConfirmed"));n++){if(await evaluate(`!!document.querySelector(${JSON.stringify(check)}+":not(:disabled)")`))await hit(check);await new Promise(r=>setTimeout(r,250))}
   await waitText(t("settingsCheckConfirmed"))
+  assert.notEqual(await evaluate('document.querySelector("#toast:not([hidden])")?.textContent??""'),t("settingsSaveUnconfirmed"),"a confirmed check is not contradicted by an old error toast")
+  assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true,"confirmed settings are not offered for sending again")
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),committed)
   assert.equal(await evaluate('document.querySelector(".pa-settings-editor fieldset").disabled'),false,"confirmed settings unlock in place")
   assert.equal(await evaluate(`!!document.querySelector(${JSON.stringify(check)})`),false)
@@ -217,7 +230,23 @@ try{
   await fill(field,draft);saveFault="drop";before=patches();await save()
   await waitFor(`!!document.querySelector(${JSON.stringify(check)})`);saveFault=""
   const cut=requests.filter(r=>r.method==="PATCH").at(-1).response.bot
-  await editFromAnotherClient("","edit",{settings:{expected_version:cut.version,name:cut.name,appearance:cut.appearance,instructions:other}},"PATCH")
+  // The check's snapshot is answered at the cut version, then another client saves and a live event delivers the newer head first.
+  holdNextSnapshot=true;heldSnapshot=undefined;await hit(check)
+  for(let n=0;!heldSnapshot&&n<100;n++)await new Promise(r=>setTimeout(r,50))
+  assert.equal(heldSnapshot,cut.version,"the pending read captured the committed draft")
+  const later=await editFromAnotherClient("","edit",{settings:{expected_version:cut.version,name:"Synthetic newer source "+lang,appearance:cut.appearance,instructions:other}},"PATCH")
+  assert.ok(later.version>heldSnapshot)
+  try{
+    for(let n=0;n<100&&!requests.some(r=>r.query.includes("mode=events")&&r.headVersion>=later.version);n++)await new Promise(r=>setTimeout(r,50))
+    assert.ok(requests.some(r=>r.query.includes("mode=events")&&r.headVersion>=later.version),"the newer source head reached the live client before the held snapshot")
+    await new Promise(r=>setTimeout(r,200))
+  }finally{releaseSnapshot()}
+  await waitText(t("settingsCheckSuperseded"))
+  results.push({lang,staleSnapshotVersion:heldSnapshot,newerObservedVersion:later.version,shown:await evaluate('document.querySelector(".pa-settings-savebar").innerText')})
+  assert.equal((await browser("read")).text.includes(t("settingsCheckConfirmed")),false,"a snapshot older than an observed source must not confirm the draft")
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),draft,"an older check keeps the draft")
+  assert.equal(await evaluate(locked),true,"an older check keeps Save locked");assert.equal(patches(),before+1,"an older check never writes")
+  await capture(lang+"-check-superseded")
   await hit(check);await waitText(t("settingsCheckDiverged"))
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),draft,"the draft is preserved")
   assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true,"a diverged source refuses an overwrite")
