@@ -3930,6 +3930,10 @@
         },
         "name": {
           "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "description": "The Agent's note for this choice, such as the model a Default entry currently resolves to."
         }
       },
       "required": [

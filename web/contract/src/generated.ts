@@ -5399,6 +5399,11 @@ export interface ProjectAssistantCommand {
 }
 
 export interface ProjectAssistantConfigChoice {
+  /**
+   * The Agent's note for this choice, such as the model a Default entry currently
+   * resolves to.
+   */
+  description?: string
   name: string
   value: string
 }

@@ -8,6 +8,7 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"sort"
 	"strconv"
+	"unicode/utf8"
 )
 
 type nativeConfigOption struct {
@@ -19,17 +20,19 @@ type nativeConfigOption struct {
 	Options  []nativeConfigChoice `json:"options"`
 }
 type nativeConfigChoice struct {
-	Value   string               `json:"value"`
-	Name    string               `json:"name"`
-	Options []nativeConfigChoice `json:"options"`
+	Value       string               `json:"value"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
+	Options     []nativeConfigChoice `json:"options"`
 }
 type nativeConfiguration struct {
 	Options []nativeConfigOption `json:"configOptions"`
 	Models  *struct {
 		Current   string `json:"currentModelId"`
 		Available []struct {
-			ID   string `json:"modelId"`
-			Name string `json:"name"`
+			ID          string `json:"modelId"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
 		} `json:"availableModels"`
 	} `json:"models"`
 }
@@ -86,7 +89,7 @@ func parseConfiguration(raw []byte, agent pa.Agent) (pa.ConfigurationCatalog, er
 						if len(c.Value) > pa.MaxConfigurationValueBytes {
 							return refusal(pa.CapacityFull, "config_value")
 						}
-						p.Choices = append(p.Choices, pa.ConfigChoice{Value: c.Value, Name: name})
+						p.Choices = append(p.Choices, pa.ConfigChoice{Value: c.Value, Name: name, Description: choiceDescription(c.Description)})
 						if len(p.Choices) > pa.MaxConfigurationChoices {
 							return refusal(pa.CapacityFull, "config_choices")
 						}
@@ -108,7 +111,7 @@ func parseConfiguration(raw []byte, agent pa.Agent) (pa.ConfigurationCatalog, er
 	if out.Model == "" && native.Models != nil {
 		p := pa.ConfigOption{ID: "", Name: "Model", Category: "model", Current: native.Models.Current, Choices: []pa.ConfigChoice{}}
 		for _, m := range native.Models.Available {
-			p.Choices = append(p.Choices, pa.ConfigChoice{Value: m.ID, Name: m.Name})
+			p.Choices = append(p.Choices, pa.ConfigChoice{Value: m.ID, Name: m.Name, Description: choiceDescription(m.Description)})
 		}
 		if len(p.Choices) > pa.MaxConfigurationChoices {
 			return out, refusal(pa.CapacityFull, "config_choices")
@@ -118,6 +121,17 @@ func parseConfiguration(raw []byte, agent pa.Agent) (pa.ConfigurationCatalog, er
 	}
 	return out, nil
 }
+
+// choiceDescription keeps the Agent's own note for a choice, such as the model its
+// "Default" entry currently resolves to. An oversized or invalid note is dropped,
+// not refused: the choice itself remains selectable without it.
+func choiceDescription(text string) string {
+	if len(text) > pa.MaxConfigurationValueBytes || !utf8.ValidString(text) {
+		return ""
+	}
+	return text
+}
+
 func offers(option pa.ConfigOption, value string) bool {
 	for _, v := range option.Choices {
 		if v.Value == value {

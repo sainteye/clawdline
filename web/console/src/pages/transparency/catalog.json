@@ -5154,7 +5154,7 @@
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
-    "internal/adapters/projectassistantacp/model_configuration.go": "c4d19a53355a3d5d21a29266e1fcc30809a91d5f1870d5ca5594861453ecd9c9",
+    "internal/adapters/projectassistantacp/model_configuration.go": "4c8888e4689e9504e441e91152edf40277e38c09740fbc6b354678c93681dd0f",
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "3b802530d9d5032276e4c561d0a3e1c9d96d5d98c0148cb169ae449ed3f9d145",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
