@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13865,
-  "riskKeys": 5914,
-  "nonRiskCount": 7951,
+  "englishContentKeys": 13867,
+  "riskKeys": 5915,
+  "nonRiskCount": 7952,
   "groups": [
     {
       "name": "acp / other",
@@ -3882,7 +3882,7 @@
     },
     {
       "name": "next / bg",
-      "count": 10,
+      "count": 11,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -3890,6 +3890,7 @@
         "next.bgAgentListedMany",
         "next.bgAgentListedOne",
         "next.bgAgentUnknown",
+        "next.bgAskSession",
         "next.bgClose",
         "next.bgOpen",
         "next.bgQueued",
