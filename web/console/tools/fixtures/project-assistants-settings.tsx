@@ -7,6 +7,7 @@ import {ProjectAssistantSourceClient} from "../../src/cloud/project-assistants"
 import {words} from "../../src/project-assistants/words"
 import {bootCatalog} from "../../src/catalog"
 import "../../src/project-assistants/styles.css"
+import "../../src/legacy/door.css"
 declare const READ_MACHINE:string,READ_BOT:string
 const q=new URL(location.href).searchParams,language=q.get("lang")||"en",readonly=q.has("read")
 localStorage.setItem("ui_language",language)

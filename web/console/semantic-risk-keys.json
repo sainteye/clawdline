@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13991,
+  "englishKeys": 13996,
   "counts": {
-    "negation": 3589,
-    "state": 2358,
+    "negation": 3590,
+    "state": 2359,
     "permission": 841,
     "deletion": 321,
     "uncertainty": 556
   },
-  "unionCount": 5954,
+  "unionCount": 5956,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3162,6 +3162,7 @@
       "projectAssistants.serverLogEmpty",
       "projectAssistants.serverNoPorts",
       "projectAssistants.settingsNoFallbacks",
+      "projectAssistants.settingsSaveUnconfirmed",
       "projectAssistants.sourceError",
       "projectAssistants.statusStale",
       "projectAssistants.statusWithoutBots",
@@ -5646,6 +5647,7 @@
       "projectAssistants.serverRunning",
       "projectAssistants.serverStopped",
       "projectAssistants.settingsRules",
+      "projectAssistants.settingsSaved",
       "projectAssistants.statusNotUsed",
       "projectAssistants.stopAcknowledged",
       "projectAssistants.succeeded",
@@ -12879,6 +12881,8 @@
     "projectAssistants.settingsNetwork",
     "projectAssistants.settingsNoFallbacks",
     "projectAssistants.settingsRules",
+    "projectAssistants.settingsSaveUnconfirmed",
+    "projectAssistants.settingsSaved",
     "projectAssistants.setup_cli_not_installed",
     "projectAssistants.sourceError",
     "projectAssistants.sourceOffline",

@@ -149,7 +149,7 @@ export function Overlays() {
         </div>
       </div>
 
-      <div className="toast" id="toast" hidden></div>
+      <div className="toast" id="toast" role="status" hidden></div>
     </>
   )
 }

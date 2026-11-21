@@ -20,6 +20,7 @@ export function toast(text: string, bad = false): void {
   el.textContent = text
   el.className = "toast" + (bad ? " err" : "")
   el.onclick = null
+  el.style.pointerEvents = "none"
   el.hidden = false
   window.clearTimeout(timer)
   timer = window.setTimeout(() => {

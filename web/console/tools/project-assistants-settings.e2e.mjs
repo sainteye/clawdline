@@ -33,7 +33,7 @@ const server=createServer(async(req,res)=>{try{
   }
   if(url.pathname.startsWith("/catalog/")){res.setHeader("Content-Type","application/json");res.end(await readFile(path.join(root,"public/catalogs",path.basename(url.pathname))));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
-  res.setHeader("Content-Type","text/html");res.end('<!doctype html>'+ '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/alignment.css"><style>html,body,#app{height:100%;margin:0;background:#080808;color:#eee}#app>.project-assistants{height:100dvh;position:relative}.pa-chat{height:100%}</style><div id="app"></div><script type="module" src="/alignment.js"></script>')
+  res.setHeader("Content-Type","text/html");res.end('<!doctype html>'+ '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/alignment.css"><style>html{--status-h:0px;--ink:#eee;--line:#333;--ease:ease}html,body,#app{height:100%;margin:0;background:#080808;color:#eee}#app>.project-assistants{height:100dvh;position:relative}.pa-chat{height:100%}</style><div id="app"></div><div id="toast" class="toast" role="status" hidden></div><script type="module" src="/alignment.js"></script>')
 }catch(error){res.writeHead(500);res.end(String(error))}})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));const origin=`http://127.0.0.1:${server.address().port}`
 const executable=process.env.CHROME;assert.ok(executable,"CHROME must name an existing test browser; this harness installs nothing");await access(executable,constants.X_OK)
@@ -82,10 +82,45 @@ const posts=()=>requests.filter(r=>r.method!=="GET")
 const field=".pa-settings-instructions textarea"
 const editorShown='document.querySelector(".pa-settings-instructions textarea")?.getClientRects().length>0'
 // The identity opens Details; the settings editor lives on the Settings tab, as in Codync.
-async function openDetails(){await hit(".pa-chat-identity");await waitFor('!!document.querySelector(".pa-info-tabs")');await tabAt(4);await waitFor(editorShown)}
+async function openDetails(){
+  await hit(".pa-chat-identity")
+  await waitFor('document.querySelector(".pa-info-panel:not([hidden])")?.getAnimations().every(animation=>animation.playState!=="running")')
+  await tabAt(4);await waitFor(editorShown)
+}
 async function tabAt(n){await hit('.pa-info-tabs [role="tab"]:nth-child('+n+')')}
 async function save(){await hit('.pa-settings-savebar .pa-settings-save')}
-async function cancel(){await hit('.pa-settings-savebar button:not(.pa-settings-save)')}
+async function waitToast(message,bad=false){
+  await waitFor(`document.querySelector("#toast:not([hidden])")?.textContent===${JSON.stringify(message)}`)
+  assert.equal(await evaluate('document.querySelector("#toast").classList.contains("err")'),bad)
+  assert.equal(await evaluate(`(()=>{
+    const rect=document.querySelector("#toast").getBoundingClientRect()
+    return rect.width>0&&rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight
+  })()`),true)
+}
+async function cancel(){
+  await hit('.pa-settings-savebar button:not(.pa-settings-save)')
+  await waitFor('document.querySelector(".pa-info-panel").hidden')
+}
+async function chooseAgentSetting(label,choice){
+  const menu=`[...document.querySelectorAll(".pa-agent-picker-panel .pa-select")].find(el=>el.querySelector(".pa-field-label")?.textContent===${JSON.stringify(label)})`
+  await waitFor(`!!(${menu})?.querySelector(".pa-select-button:not([aria-busy=true])")`)
+  await evaluate(`(${menu}).querySelector("button").focus()`)
+  await key("Enter")
+  const option=`[...document.querySelectorAll(".pa-agent-picker-panel [role=option]")].find(el=>el.querySelector(".pa-select-text>span")?.textContent===${JSON.stringify(choice)})`
+  await waitFor(`!!(${option})`)
+  const id=await evaluate(`(${option}).id`)
+  await hit(`[id="${id}"]`)
+}
+async function editFromAnotherClient(suffix,operation,body,method){
+  const id=crypto.randomUUID()
+  const response=await fetch(upstream+"/v1/project-assistants/"+encodeURIComponent(bot)+suffix,{
+    method,headers:{Authorization:"Bearer "+token,"Content-Type":"application/json","Idempotency-Key":id},
+    body:JSON.stringify({command:{key:{machine_id:machine,bot_id:bot},operation,idempotency_key:id,content_hash:""},...body}),
+  })
+  const result=await response.json()
+  assert.equal(response.status,200,JSON.stringify(result))
+  return result.bot
+}
 try{
  await connect()
  for(const [lang,mobile] of [["en",false],["zh-Hant",true]]){
@@ -104,16 +139,33 @@ try{
   await tabAt(4);await waitFor(editorShown);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   await tabAt(2);await tabAt(1);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   await hit('.pa-info-close');await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
+  // Source activity can advance the Bot version without changing any setting in the draft.
+  const latest=await editFromAnotherClient("/visibility","visibility",{hidden:false},"POST")
   await save();await waitFor('document.querySelector(".pa-info-panel").hidden')
   const edit=posts().filter(r=>r.method==="PATCH").at(-1);assert.equal(edit.status,200);assert.equal(edit.body.settings.instructions,initial)
+  assert.equal(edit.body.settings.expected_version,latest.version)
+  await waitToast(zh?"已儲存 Bot 設定。":"Bot settings saved.")
   await close();await open("lang="+lang,mobile);await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
   const writesBeforeCancel=posts().length;await fill(field,"Synthetic discarded draft");await cancel();await openDetails();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial);assert.equal(posts().length,writesBeforeCancel,"cancel does not write settings")
-  // Source conflict and unknown outcomes keep the exact draft without replay.
+  // A second client edits the same settings while a draft is open.
+  const competingName="Synthetic renamed Bot "+lang
+  await fill(field,"Synthetic conflicting draft")
+  await editFromAnotherClient("","edit",{settings:{expected_version:edit.response.bot.version,name:competingName,
+    appearance:edit.response.bot.appearance,instructions:initial}},"PATCH")
+  const writesBeforeConflict=posts().length
+  await save();await waitToast(zh?"無法儲存 Bot 設定。":"Couldn’t save Bot settings.",true)
+  assert.equal(posts().length,writesBeforeConflict,"a settings conflict cannot overwrite the other client")
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic conflicting draft")
+  assert.equal(await evaluate('!!document.querySelector(".pa-settings-savebar [role=alert]")'),true)
+  await cancel();await openDetails()
+  assert.equal(await evaluate('document.querySelector(".pa-settings-field input").value'),competingName)
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),initial)
+  // Source refusals and unknown outcomes keep the exact draft without replay.
   for(const fault of ["stale","unknown"]){
    await fill(field,"Synthetic protected "+fault);saveFault=fault;const before=posts().length;await save();await waitFor('!!document.querySelector(".pa-settings-editor [role=alert]")');assert.equal(posts().length,before+1)
    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
    await tabAt(1);await tabAt(4);await waitFor(editorShown);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),"Synthetic protected "+fault)
-   if(fault==="unknown"){assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
+   if(fault==="unknown"){await waitToast(zh?"無法確認 Bot 設定是否已儲存。":"Bot settings save could not be confirmed.",true);assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await new Promise(r=>setTimeout(r,150));assert.equal(posts().length,before+1)}
    await capture(lang+"-"+fault);saveFault="";await cancel();await openDetails()
   }
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true)
@@ -121,10 +173,10 @@ try{
   await capture(lang+"-saved-reopened");await close()
  }
  await open("lang=en",false);await openDetails()
- await hit('.pa-settings-disclosure>summary');await waitFor('!!document.querySelector("select[aria-label=Model]")')
- await evaluate('(()=>{const s=document.querySelector("select[aria-label=Model]");s.value="synthetic-large";s.dispatchEvent(new Event("change",{bubbles:true}))})()')
- await waitFor('[...document.querySelectorAll("select")].some(el=>el.getAttribute("aria-label")==="Reasoning effort")')
- for(const [label,value] of [["Reasoning effort","high"],["Fast mode","true"]])await evaluate(`(()=>{const s=[...document.querySelectorAll("select")].find(el=>el.getAttribute("aria-label")===${JSON.stringify(label)});s.value=${JSON.stringify(value)};s.dispatchEvent(new Event("change",{bubbles:true}))})()`)
+ await hit(".pa-agent-picker-summary")
+ await chooseAgentSetting("Model","Synthetic large")
+ await chooseAgentSetting("Reasoning effort","High")
+ await chooseAgentSetting("Fast mode","On")
  await save();await waitFor('document.querySelector(".pa-info-panel").hidden')
  await fill('.pa-composer textarea','Synthetic settings next-turn check');await hit('.pa-send');await waitText('Synthetic runtime selected synthetic-large / high / true')
  await capture('next-turn-selected-runtime');await close()
@@ -132,10 +184,11 @@ try{
  for(const mobile of [false,true]){
   await open("lang=en",mobile);await waitFor('!!document.querySelector(".pa-message:not(.pa-mine) .pa-reaction-add")')
   const trigger='.pa-message:not(.pa-mine) .pa-reaction-add'
-  await hit(trigger);await waitFor('!!document.querySelector(".pa-reaction-palette")')
+  await evaluate(`document.querySelector(${JSON.stringify(trigger)}).focus()`)
+  await key("Enter");await waitFor('!!document.querySelector(".pa-reaction-palette")')
   await key("Escape");await waitFor('!document.querySelector(".pa-reaction-palette")')
   assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(trigger)})`),true,"Escape restores the reaction trigger")
-  await hit(trigger);await waitFor('!!document.querySelector(".pa-reaction-palette")');await openDetails()
+  await key("Enter");await waitFor('!!document.querySelector(".pa-reaction-palette")');await openDetails()
   await waitFor('!document.querySelector(".pa-reaction-palette")');await hit('.pa-info-close')
   await evaluate('document.querySelector(".pa-chat-identity").focus()');await key("Enter");await waitFor('!document.querySelector(".pa-info-panel").hidden');await key("Escape");await waitFor('document.querySelector(".pa-info-panel").hidden');assert.equal(await evaluate('document.activeElement===document.querySelector(".pa-chat-identity")'),true)
   assert.equal(await evaluate('!!document.querySelector(".pa-reaction-palette")'),false,"Details does not retain a stale palette")
@@ -147,13 +200,16 @@ try{
   await send("Input.dispatchMouseEvent",{type:"mouseMoved",...point},session)
   assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-more")})).opacity`),"1","pointer reveals reply actions")
   await evaluate(`document.querySelector(${JSON.stringify(reply+" .pa-message-more")}).focus()`);assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(reply+" .pa-message-more")})).opacity`),"1","keyboard focus reveals reply actions")
-  await hit(reply+' .pa-message-more');await hit('.pa-message-menu [role=menuitem]');await waitFor('!!document.querySelector(".pa-reply")')
+  await key("Enter")
+  const quote='[...document.querySelectorAll(".pa-message-menu [role=menuitem]")].find(el=>el.textContent==="Reply")'
+  await waitFor(`!!(${quote})`);await evaluate(`(${quote}).focus()`);await key("Enter")
+  await waitFor('!!document.querySelector(".pa-reply")')
   await capture(mobile?'mobile-actions':'desktop-actions');await close()
  }
 
  await open("lang=en&read=1",true);await openDetails();assert.equal(await evaluate('document.querySelector(".pa-settings-save").disabled'),true);await capture('readonly');await close()
  assert.equal(posts().filter(r=>r.path.endsWith("/react")).length,0,"opening and dismissing actions does not write reactions")
- results.push({settingsPersisted:true,tabDraftPreserved:true,closeDraftPreserved:true,cancelDiscards:true,staleKept:true,unknownLockedNoReplay:true,desktop:[1280,900],mobile:[390,720],externalModelRequests:0})
+ results.push({settingsPersisted:true,backgroundVersionRebased:true,conflictKept:true,saveToasts:true,tabDraftPreserved:true,closeDraftPreserved:true,cancelDiscards:true,staleKept:true,unknownLockedNoReplay:true,desktop:[1280,900],mobile:[390,720],externalModelRequests:0})
  console.log("PASS: production Chat settings crossed authenticated HTTP/Host/SQLite; unique editor, drafts, reopen, conflict/unknown fences and next scripted ACP turn; external model requests=0")
 }catch(error){if(tab)await capture("failure").catch(()=>{});throw error}
 finally{
