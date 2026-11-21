@@ -7,9 +7,9 @@ import {fixtureSource} from "./fixtures"
 import {failure,type SourceClient} from "./client"
 import "./styles.css"
 
-function controlled(machine:string,live:boolean) {
+function controlled(machine:string,live:boolean,initial:W.ProjectAssistantErrorCode="pa_offline") {
   const base=fixtureSource(machine)
-  let code:W.ProjectAssistantErrorCode|null="pa_offline",hold=false,release:(()=>void)|undefined,drop:(()=>void)|undefined
+  let code:W.ProjectAssistantErrorCode|null=initial,hold=false,release:(()=>void)|undefined,drop:(()=>void)|undefined
   let reads=0,active=0,maxActive=0,streams=0,maxStreams=0
   const cursors:string[]=[]
   const observe=async<T,>(signal:AbortSignal, read:()=>Promise<T>):Promise<T>=>{
@@ -39,7 +39,8 @@ function controlled(machine:string,live:boolean) {
   return {source,setCode(value:W.ProjectAssistantErrorCode|null){code=value;drop?.()},hold(){hold=true},release(){hold=false;release?.();release=undefined},snapshot:()=>({reads,active,maxActive,streams,maxStreams,cursors})}
 }
 const params=new URL(location.href).searchParams
-const studio=controlled("studio",!params.has("snapshots")),notebook=controlled("notebook",false)
+const initial=params.has("retry")?"pa_invalid":"pa_offline"
+const studio=controlled("studio",!params.has("snapshots"),initial),notebook=controlled("notebook",false,initial)
 const language=params.get("lang")??"en"
 const sources=[studio.source,notebook.source]
 createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}/>)

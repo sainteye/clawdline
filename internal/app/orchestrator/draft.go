@@ -300,6 +300,10 @@ func (b *Broker) admitOwned(id string, d draft, scheduled, detached, assistant b
 	}
 	switch permission {
 	case "ask", "edits", "full":
+	case "auto":
+		if !assistant || d.Assistant != projects.AssistantClaude {
+			return bad("permission_mode must be one of: ask, edits, full")
+		}
 	default:
 		return bad("permission_mode must be one of: ask, edits, full")
 	}

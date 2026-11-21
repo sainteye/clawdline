@@ -1,6 +1,6 @@
 import { ContextUsage } from "./ContextUsage"
 import { ChatModel } from "./ChatModel"
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
@@ -175,9 +175,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const [legacyRemoveFailed,setLegacyRemoveFailed]=useState(false)
   // One explicit read of the source's receipts for this tab's held send; never a poll or a retry.
-  const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<AbortController|null>(null)
+  const [inspection,setInspection]=useState<{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}|null>(null),inspecting=useRef<{id:string;control:AbortController}|null>(null)
   // Sends set aside to write a new message, each with its own explicit check; repainted from the host journal.
-  const [asideChecks,setAsideChecks]=useState<Record<string,{state:HeldInspection["state"]|"checking"|"unavailable";code?:string}>>({}),[,setJournalRevision]=useState(0)
+  const [asideChecks,setAsideChecks]=useState<Record<string,{state:HeldInspection["state"]|"checking"|"unavailable"|"remove-failed";code?:string}>>({}),[,setJournalRevision]=useState(0)
   const repaintJournal=()=>setJournalRevision(n=>n+1)
   const legacyBlocked=()=>!!view.unverifiedDrafts.active(draftKey,scope)||!!view.unverifiedDrafts.problem(draftKey)
     || (entryUnknown.current&&!view.unverifiedDrafts.continuing(draftKey,scope))
@@ -497,7 +497,40 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const next=[...files,...selected.map(file=>({file,id:crypto.randomUUID()}))];setFiles(next);setFileError("");setFilesLost(false);rememberFiles(true);return true
   }
   const canAttach=!thread&&!!source.pictures?.()
-  const addImages=(files:readonly File[])=>{void Promise.all(files.map(file=>new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error);r.readAsDataURL(file)}))).then(urls=>{if(valid())setImages(old=>[...old,...urls])}).catch(fail)}
+  const [readingImages,setReadingImages]=useState(0),imageReads=useRef(0)
+  const attachmentsEnabled=(canAttach||canInput)&&enabled&&!unknown&&!busy&&!legacyBlocked()
+  const attach=(selected:readonly File[])=>{
+    if(!attachmentsEnabled||!valid())return
+    const pictures:File[]=[],regular:File[]=[]
+    for(const file of selected){
+      const image=pictureFile(file)
+      if(image) pictures.push(image)
+      else regular.push(file)
+    }
+    if(regular.some(file=>!!file.webkitRelativePath)){setFileError(w.foldersUnsupported);return}
+    if((pictures.length&&!canAttach)||(regular.length&&!canInput)){setFileError(w.filesUnavailable);return}
+    if(regular.length&&!addFiles(regular))return
+    if(!pictures.length)return
+    setFileError("");setReadingImages(++imageReads.current)
+    void Promise.all(pictures.map(file=>new Promise<string>((resolve,reject)=>{
+      const reader=new FileReader()
+      reader.onload=()=>resolve(String(reader.result))
+      reader.onerror=()=>reject(reader.error)
+      reader.readAsDataURL(file)
+    }))).then(urls=>{if(valid())setImages(old=>[...old,...urls])})
+      .catch(fail)
+      .finally(()=>{const pending=--imageReads.current;if(valid())setReadingImages(pending)})
+  }
+  const dropFiles=(event:DragEvent<HTMLDivElement>)=>{
+    const transfer=event.dataTransfer
+    if(thread||!fileDrag(transfer))return
+    event.preventDefault()
+    if(!attachmentsEnabled)return
+    const items=Array.from(transfer.items??[])
+    if(items.some(item=>item.webkitGetAsEntry?.()?.isDirectory)){setFileError(w.foldersUnsupported);return}
+    const selected=Array.from(transfer.files)
+    attach(selected.length?selected:items.flatMap(item=>{const file=item.getAsFile();return file?[file]:[]}))
+  }
   useEffect(()=>{
     const held=view.heldOutcomes.get(draftKey)
     if(!held||held.intent.command.operation!=="send"||!admittedMessage(held.intent as W.ProjectAssistantSendRequest,held.receipt,messages))return
@@ -513,7 +546,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const plain=artifact
       ?!thread&&!sendAuthorityLost&&handoff.card?.state!=="draft"&&!!artifact.text.trim()
       :canTryText&&!!text.trim()
-    if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
+    if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||imageReads.current>0||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
       ||(!artifact&&!text.trim()&&images.length===0&&files.length===0)
       ||handoff.error||(!plain&&!currentData.current))return refused
     const earlier=view.heldOutcomes.get(draftKey)
@@ -631,7 +664,8 @@ ${currentDraft}`:submitted)
   const inspect=async()=>{
     const held=view.heldOutcomes.get(draftKey)
     if(!held||held.intent.command.operation!=="send"||inspecting.current||!valid())return
-    const control=new AbortController();inspecting.current=control;reads.current.add(control);setInspection({state:"checking"})
+    const control=new AbortController(),check={id:held.intent.command.idempotency_key,control}
+    inspecting.current=check;reads.current.add(control);setInspection({state:"checking"})
     try{
       const value=await authorized(source,current,s=>source.export(key,s),control.signal)
       if(!valid()||control.signal.aborted)return
@@ -654,14 +688,15 @@ ${currentDraft}`:submitted)
       }else if(result.state==="failed"){
         view.heldOutcomes.delete(draftKey);setReceipt(result.receipt);setUnknown(false);setInspection({state:"failed"})
       }else setInspection({state:result.state==="invalid"?"unavailable":result.state,code:result.state==="invalid"?"pa_invalid":undefined})
-    }catch(e){if(valid())setInspection({state:"unavailable",code:control.signal.aborted?"aborted":errorCode(e)})}
-    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null;repaintJournal()}
+    }catch(e){if(valid()&&!control.signal.aborted)setInspection({state:"unavailable",code:errorCode(e)})}
+    finally{reads.current.delete(control);if(inspecting.current===check)inspecting.current=null;repaintJournal()}
   }
   // The same single read for a send the person set aside; it never touches the new draft.
   const inspectAside=async(held:HeldOutcome)=>{
     const id=held.intent.command.idempotency_key
     if(held.intent.command.operation!=="send"||inspecting.current||!valid())return
-    const control=new AbortController();inspecting.current=control;reads.current.add(control);setAsideChecks(old=>({...old,[id]:{state:"checking"}}))
+    const control=new AbortController(),check={id,control}
+    inspecting.current=check;reads.current.add(control);setAsideChecks(old=>({...old,[id]:{state:"checking"}}))
     try{
       const value=await authorized(source,current,s=>source.export(key,s),control.signal)
       if(!valid()||control.signal.aborted)return
@@ -669,8 +704,23 @@ ${currentDraft}`:submitted)
       const result=inspectHeldSend(value,held,scope)
       if(result.state==="delivered"||result.state==="failed"){view.heldOutcomes.settleAside(draftKey,id);if(result.state==="delivered")void refresh(true)}
       setAsideChecks(old=>({...old,[id]:{state:result.state==="invalid"?"unavailable":result.state,code:result.state==="invalid"?"pa_invalid":undefined}}))
-    }catch(e){if(valid())setAsideChecks(old=>({...old,[id]:{state:"unavailable",code:control.signal.aborted?"aborted":errorCode(e)}}))}
-    finally{reads.current.delete(control);if(inspecting.current===control)inspecting.current=null;repaintJournal()}
+    }catch(e){if(valid()&&!control.signal.aborted)setAsideChecks(old=>({...old,[id]:{state:"unavailable",code:errorCode(e)}}))}
+    finally{reads.current.delete(control);if(inspecting.current===check)inspecting.current=null;repaintJournal()}
+  }
+  const cancelInspection=(id:string)=>{
+    const check=inspecting.current
+    if(check?.id!==id)return
+    inspecting.current=null
+    check.control.abort()
+  }
+  const dismissAside=(id:string)=>{
+    cancelInspection(id)
+    if(!view.heldOutcomes.dismissAside(draftKey,id)){
+      setAsideChecks(old=>({...old,[id]:{state:"remove-failed"}}))
+      return
+    }
+    setAsideChecks(old=>{const next={...old};delete next[id];return next})
+    repaintJournal()
   }
   // The person's explicit choice to continue: the uncertain send leaves the box
   // and stays visible with its own check; the box starts empty, and the next
@@ -678,9 +728,10 @@ ${currentDraft}`:submitted)
   // not a message and is never released here.
   const writeNew=()=>{
     const held=view.heldOutcomes.get(draftKey)
-    if(busy||!valid()||inspecting.current||legacyBlocked())return
+    if(busy||!valid()||legacyBlocked())return
     if(held&&held.intent.command.operation!=="send")return
     if(!view.heldOutcomes.setAside(draftKey)){repaintJournal();return}
+    if(held)cancelInspection(held.intent.command.idempotency_key)
     if(!held||!isBotCallSend(held.intent.command.idempotency_key)){
       view.stage(draftKey,"");view.quotes.delete(draftKey);flush()
       setText("");setQuote("");setImages([]);setFiles([]);rememberFiles(false);setFilesLost(false)
@@ -1195,7 +1246,16 @@ ${currentDraft}`:submitted)
   const threadSummary:W.ProjectAssistantBotSummary|undefined=selected?.worker?{
     ...summary,bot:{...bot,key:selected.worker,conversation_id:selected.id},latest_message:"",unread_count:0,
   }:undefined
-  return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}>
+  const heldOutcome=unknown?view.heldOutcomes.get(draftKey):null
+  const heldSend=heldOutcome?.intent.command.operation==="send"?heldOutcome:null
+  const earlierSends=view.heldOutcomes.aside(draftKey)
+  const checkedSend=inspection&&inspection.state!=="checking"
+    ? inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed
+      :inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing
+      :w.checkUnavailable.replace("{code}",inspection.code??"unavailable")
+    :null
+  return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
+    onDragOver={thread?undefined:e=>{if(fileDrag(e.dataTransfer))e.preventDefault()}} onDrop={thread?undefined:dropFiles}>
     {thread?<header className="pa-chat-header pa-thread-header">
       <button ref={identityButton} type="button" className="pa-circle" onClick={onBack} aria-label={w.backgroundBack}>‹</button>
       <div className="pa-thread-heading"><h2>{thread.title}</h2><small><span>{backgroundTaskLabel(thread,w)}</span>
@@ -1307,7 +1367,42 @@ ${currentDraft}`:submitted)
         </>}</div>
       </div>
     })}</div>}
-      {receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
+      {!heldSend&&receipt&&(receipt.state==="failed"||receipt.state==="unknown"&&!unknown)&&<p role="status">{w[receipt.state]}</p>}
+      {!heldSend&&(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}
+      {heldSend&&<div className="pa-held-send" role="group" aria-label={w.unknown}>
+        <h3>{w.unknown}</h3>
+        <p>{w.heldSend}</p>
+        <HeldAttachments held={heldSend} w={w}/>
+        {checkedSend&&<p role="status" className="pa-held-result">{checkedSend}</p>}
+        <div className="pa-held-actions">
+          <button type="button" disabled={!!inspecting.current||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button>
+          <button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button>
+        </div>
+      </div>}
+      {view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}>
+        <h3>{w.unknown}</h3>
+        <p role="alert">{w.heldUnreadable}</p>
+        <div className="pa-held-actions"><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>
+      </div>}
+      {view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||earlierSends.length>0)&&<p role="alert">{w.heldUnsaved}</p>}
+      {view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}
+      {earlierSends.length>0&&<div className="pa-held-history">{earlierSends.map(held=>{
+        const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id]
+        return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}>
+          <h3>{w.heldEarlier}</h3>
+          <p className="pa-held-text">{intent.text||w.heldNoText}{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p>
+          <HeldAttachments held={held} w={w}/>
+          {check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}
+          <div className="pa-held-actions">
+            <button type="button" disabled={!!inspecting.current||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>
+            <button type="button" onClick={()=>dismissAside(id)}>{w.unverifiedRemove}</button>
+          </div>
+        </div>
+      })}</div>}
+      {Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!earlierSends.some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}
+      {!heldSend&&checkedSend&&<p role="status" className="pa-held-result">{checkedSend}</p>}
+      {!draftDurable&&<p role="status">{w.draftUnavailable}</p>}
+      {filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
       {!thread&&data&&<div className="pa-chat-metadata">
@@ -1319,7 +1414,7 @@ ${currentDraft}`:submitted)
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={leadSetup.blocked||filesLost||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
@@ -1351,6 +1446,17 @@ ${currentDraft}`:submitted)
   </section>
 }
 
+function fileDrag(transfer:DataTransfer) {
+  return Array.from(transfer.types).includes("Files")||transfer.files.length>0
+}
+function pictureFile(file:File) {
+  if(file.type.startsWith("image/"))return file
+  if(file.type)return null
+  const ext=file.name.split(".").pop()?.toLowerCase()
+  const mime=ext==="jpg"||ext==="jpeg"?"image/jpeg":ext==="png"||ext==="gif"||ext==="webp"?`image/${ext}`:null
+  return mime?new File([file],file.name,{type:mime,lastModified:file.lastModified}):null
+}
+
 /** What the held send carried that this page may no longer have. */
 function HeldAttachments({held,w}:{held:HeldOutcome;w:Words}) {
   const pictures=held.pictures??0,files=held.files??[]
@@ -1358,5 +1464,6 @@ function HeldAttachments({held,w}:{held:HeldOutcome;w:Words}) {
   return <p className="pa-held-attachments">{files.length>0&&<>{w.heldFiles}: {files.join(" · ")}</>}{files.length>0&&pictures>0&&" · "}{pictures>0&&(held.restored?w.heldPicturesLost:w.heldPictures).replace("{count}",String(pictures))}</p>
 }
 function asideResult(check:{state:string;code?:string},w:Words) {
+  if(check.state==="remove-failed")return w.unverifiedRemoveFailed
   return check.state==="delivered"?w.checkEarlierDelivered:check.state==="failed"?w.checkEarlierFailed:check.state==="unknown"?w.checkUnknown:check.state==="missing"?w.checkEarlierMissing:w.checkUnavailable.replace("{code}",check.code??"unavailable")
 }

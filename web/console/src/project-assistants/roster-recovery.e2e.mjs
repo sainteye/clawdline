@@ -58,6 +58,30 @@ async function checkIndependentSnapshots(page, language) {
   assert.equal(proof.notebook.maxActive,1)
   return proof
 }
+async function checkMobileToolbarAndRetry(page,language,width) {
+  await page.goto(origin+"/?snapshots&retry&lang="+language)
+  const zh=language!=="en"
+  const tower=page.locator(".pa-view-toggle")
+  if(await tower.getAttribute("aria-pressed")==="true")await tower.click()
+  await page.getByText(zh?"暫時無法載入 Bot 清單。":"Could not load the Bot list right now.",{exact:true}).waitFor()
+  if(width<701){
+    const controls=await page.locator(".pa-roster .pa-toolbar .pa-circle").evaluateAll(buttons=>buttons.map(button=>{
+      const {left,right}=button.getBoundingClientRect()
+      return {left,right}
+    }))
+    assert.equal(controls.length,4)
+    assert.ok(controls[2].left-controls[1].right<=12&&controls[3].left-controls[2].right<=12,"the toolbar actions are still spread across the phone")
+    assert.ok(controls[0].right-controls[0].left>=44)
+    assert.doesNotMatch(await page.locator(".pa-roster-filter").innerText(),/Bots\s+…/)
+  }
+  await page.screenshot({path:path.join(artifacts,`${language}-${width}-toolbar-retry.png`)})
+  await page.evaluate(()=>{
+    window.rosterRecovery.studio.setCode(null)
+    window.rosterRecovery.notebook.setCode(null)
+  })
+  await page.getByRole("button",{name:zh?"重試":"Try again",exact:true}).click()
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6)
+}
 try {
   for(const engine of [chromium,webkit])for(const [language,width] of [["zh-Hant",390],["en",1280]]) {
     const browser=await engine.launch({headless:true,...(engine===chromium?{args:["--disable-features=OmniboxEverywhere"]}:{})}),page=await browser.newPage({viewport:{width,height:844}})
@@ -109,6 +133,7 @@ try {
       assert.equal(proof.studio.cursors[1],"fixture-cursor","automatic recovery preserves the applied cursor")
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
       const snapshots=await checkIndependentSnapshots(page,language)
+      await checkMobileToolbarAndRetry(page,language,width)
       assert.deepEqual(errors,[])
       results.push({name,...proof,snapshots})
     }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)});throw error}

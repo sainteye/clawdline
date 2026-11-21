@@ -1029,6 +1029,8 @@ func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 	switch r.Assistant {
 	case "claude":
 		switch r.PermissionMode {
+		case "auto":
+			return []string{"--permission-mode", "auto"}
 		case "edits":
 			return []string{"--permission-mode", "acceptEdits"}
 		case "full":

@@ -165,8 +165,8 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, Rules: projectassistantacp.ClaudeLocalRules{},
 		// The provider receives only execution-bound NativeTools from Host.
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
-		// of its own repository Project to a Claude worker that accepts
-		// edits. The Broker still owns claims, worktrees, quota and landing.
+		// of its own repository Project to a Claude worker in Auto mode.
+		// The Broker still owns claims, worktrees, quota and landing.
 		DispatchPolicy: projectAssistantDispatchPolicy,
 		// Browser tools use the same Profiles and Bridge as the CLI, under an
 		// owner Host derives from the Bot conversation; see project_assistants_browser.go.
@@ -590,7 +590,7 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 // projectAssistantDispatchPolicy is fixed source policy, never model input.
 // Broker admission rejects a non-repository Project and every unsafe path.
 func projectAssistantDispatchPolicy(context.Context, pa.BotKey) (projectassistanthost.DispatchPolicy, error) {
-	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "edits",
+	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "auto",
 		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60}, nil
 }
 

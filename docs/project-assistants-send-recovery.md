@@ -111,8 +111,11 @@ While a send is held, **Write a new message** is the person's explicit choice
 to continue. The held send moves aside, still visible with its text and its
 own **Check this earlier message** control (the same single export read); the
 box starts empty; the next send gets a new command identity. Nothing is copied
-from the old draft or submitted. A later check settles an aside send only on a
-delivered or recorded-failed receipt; *missing* and *unknown* keep it. For an unreadable record, the same control preserves its original bytes in
+from the old draft or submitted. This action cancels an in-progress check of
+that send. A later check settles an aside send only on a delivered or
+recorded-failed receipt. The person can also remove its local note, including
+after a failed check, without contacting the source or clearing the new draft.
+For an unreadable record, the same control preserves its original bytes in
 the journal before emptying the box, and leaves a dismissible note. Dismissing
 the note does not erase those bytes. If storage cannot preserve the original,
 the record and lock remain. There is no

@@ -98,7 +98,8 @@ async function connected(machine: Machine) {
     deviceID: "viewer-1", account: "account-1", allowWrites: true, nextSequence: async () => sequence++,
     WebSocket: FakeSocket, readTimeoutMs: READ_TIMEOUT_MS,
   }) as any
-  client._publishCommand = async function (this: any, target: string, type: string, body: Record<string, unknown>) {
+  client._publishCommand = async function (this: any, target: string, type: string, body: Record<string, unknown>, _class: string, pending: any) {
+    if (pending?.waiters) pending.waiters.ref = { sender: "viewer-1", seq: sequence++, request: body.request }
     this._send({ type: "publish", envelope: { ch: "ctl/" + target, body: { type, ...body } } })
   }
   client._receiveEnvelope = async function (this: any, envelope: any, realign: boolean) {
@@ -180,6 +181,24 @@ test("a machine refusal keeps its explicit key through the copied client and nes
     assert.equal(response.status, 409, JSON.stringify(machine.asked))
     const body = await response.json() as { error: { code: string; message: string; detail_key?: string } }
     assert.deepEqual([body.error.code, body.error.message, body.error.detail_key], ["decision_already_answered", message, "http.1234567890abcdef"])
+  } finally {
+    client.stop()
+  }
+})
+
+test("a Cloud action distinguishes refusal before publish from a missing machine reply", async () => {
+  const machine = new Machine()
+  const client = await connected(machine)
+  try {
+    const action = (id: string) => client._machineRequestAs(id, MACHINE, "project-assistants.send-pictures", {}, "action", READ_TIMEOUT_MS)
+    const publish = client._publishCommand
+    client._publishCommand = async () => { throw Object.assign(new Error("The socket is offline"), { code: "offline" }) }
+    await assert.rejects(action("before-publish"), { code: "offline", clawdline_delivery: "not_sent" })
+    assert.equal(machine.asked.length, 0)
+
+    client._publishCommand = publish
+    await assert.rejects(action("after-publish"), (error: any) => error.code === "cloud_read_timeout" && !error.clawdline_delivery)
+    assert.equal(machine.asked.length, 1)
   } finally {
     client.stop()
   }

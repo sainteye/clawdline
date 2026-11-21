@@ -113,7 +113,7 @@ rule is refused. There is no OS sandbox and no read-only claim. Native config,
 history and memory live in a feature-owned directory per Bot, Project,
 conversation and revision. The production DispatchPolicy is fixed source
 policy (`projectAssistantDispatchPolicy`): any exact relative file inside the
-Bot's repository Project, a Claude worker in `edits` mode, and a timeout from
+Bot's repository Project, a Claude worker in `auto` mode, and a timeout from
 `capacity.MaximumBotDispatchSeconds`. HTTP and model arguments cannot widen it,
 and the Broker still applies its path, symlink, worktree, quota and landing
 rules. Private fake-provider fixtures exercise lazy first Send, admission

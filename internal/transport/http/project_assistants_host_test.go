@@ -31,6 +31,13 @@ import (
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
+func TestProductionBotDispatchSelectsClaudeAutoMode(t *testing.T) {
+	policy, err := projectAssistantDispatchPolicy(t.Context(), pa.BotKey{})
+	if err != nil || !policy.Allowed || policy.Assistant != projects.AssistantClaude || policy.PermissionMode != "auto" {
+		t.Fatalf("unexpected Bot dispatch policy: %+v, %v", policy, err)
+	}
+}
+
 type paServerFixture struct {
 	s                             *Server
 	h                             http.Handler

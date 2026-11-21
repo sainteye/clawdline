@@ -566,6 +566,62 @@ async function workProgressChecks(page,origin,language,shot,log) {
   }
   return ["collapsed live steps and historical details","same composer height","one fenced Stop with pending, acknowledged, and unconfirmed results"]
 }
+async function attachmentRecoveryChecks(page,origin,language,shot,log) {
+  const zh=language!=="en"
+  await page.goto(origin+"/?lang="+language)
+  await page.evaluate(()=>{window.botsFixture.a.pictures=()=>true;window.botsFixture.open()})
+  await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
+  const chat=page.locator(".pa-chat"),editor=chat.locator(".pa-editor textarea")
+  await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===false)
+  const dropped=await chat.locator(process.env.BOTS_ATTACHMENT_REPRO==="recovery"?".pa-composer":".pa-chat-scroll").evaluate(async node=>{
+    const data=new DataTransfer()
+    const canvas=document.createElement("canvas")
+    canvas.width=8;canvas.height=6
+    const ctx=canvas.getContext("2d")
+    ctx.fillStyle="#2490ca";ctx.fillRect(0,0,8,6)
+    const bytes=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"))
+    data.items.add(new File([bytes],"fixture.png"))
+    node.dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:data}))
+    const drop=new DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer:data})
+    node.dispatchEvent(drop)
+    return drop.defaultPrevented
+  })
+  assert.equal(dropped,true,"the Bot chat did not accept a dropped picture")
+  await page.waitForFunction(()=>document.querySelector(".pa-pictures img")?.naturalWidth===8)
+  assert.equal((await log()).filter(r=>r.method==="send").length,0,"dropping a picture sent a message")
+  await editor.fill("unknown")
+  await editor.press("Enter")
+  const held=chat.locator(".pa-held-send").first()
+  await held.waitFor()
+  const picture=(await log()).find(row=>row.method==="send").request.images[0]
+  assert.match(picture,/^data:image\/png;base64,/)
+  const inspect=held.getByRole("button",{name:zh?"向機器核對":"Check with the machine",exact:true})
+  const newMessage=held.getByRole("button",{name:zh?"另寫新訊息":"Write a new message",exact:true})
+  if(!process.env.BOTS_ATTACHMENT_REPRO){
+    assert.equal(await held.locator("h3").count(),1,"the held-send panel needs a distinct status heading")
+    assert.equal(await held.locator(".pa-held-attachments").count(),1)
+    await shot("held-picture")
+  }
+  await page.evaluate(()=>window.botsFixture.a.holdExport())
+  await inspect.click()
+  await held.locator("button[aria-busy=true]").waitFor()
+  assert.equal(await newMessage.isEnabled(),true,"an in-progress check blocks writing a new message")
+  await newMessage.click()
+  assert.equal(await editor.inputValue(),"")
+  await editor.fill("A new draft")
+  const aside=chat.locator(".pa-held-aside")
+  await aside.waitFor()
+  await page.evaluate(()=>window.botsFixture.a.releaseExport())
+  // A failed check leaves the earlier entry removable without touching the new draft.
+  await page.evaluate(()=>window.botsFixture.a.failExport())
+  await aside.getByRole("button",{name:zh?"核對這則先前的訊息":"Check this earlier message",exact:true}).click()
+  await aside.getByRole("status").waitFor()
+  await aside.getByRole("button",{name:zh?"從這台裝置移除":"Remove from this device",exact:true}).click()
+  await aside.waitFor({state:"hidden"})
+  assert.equal(await editor.inputValue(),"A new draft")
+  assert.equal((await log()).filter(r=>r.method==="send").length,1,"recovery must not resend the earlier message")
+  return ["drop attaches a picture without sending","uncertain send gets a status card","write a new message while checking","dismiss a failed check without touching the new draft"]
+}
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
@@ -583,6 +639,11 @@ try {
     // A row reads its name, its Project, then its machine when there are several.
     const row=(bot="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${bot}, [^,]+, ${machine}(,|$)`)})
     try {
+      if(process.env.BOTS_ATTACHMENTS_ONLY){
+        const checks=await attachmentRecoveryChecks(page,origin,language,shot,log)
+        assert.deepEqual(consoleErrors,[])
+        results.push({engine:engine.name(),width,language,status:"pass",checks});continue
+      }
       if(process.env.BOTS_CATALOG_ONLY){
         const checks=await catalogChecks(page,origin,language,shot,log)
         assert.deepEqual(consoleErrors,[])

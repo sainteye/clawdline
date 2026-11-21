@@ -23,7 +23,7 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead,unreadOnly,hasUnread,onToggleUnread}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead,unreadOnly,hasUnread,onToggleUnread}: {
   leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;
   unreadOnly?:boolean;hasUnread?:boolean;onToggleUnread?:()=>void;
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
@@ -33,7 +33,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;onGroupOpenChange?:(open:boolean)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary,fromGroup?:boolean)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
-  unavailable?:boolean;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
+  unavailable?:boolean;onRetry?:()=>void;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
   const {state: rosterState, problem, update} = useRosterState(rosterScope)
   const root=useRef<HTMLElement>(null)
@@ -155,7 +155,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     })
     const handle = (source: RosterDrag, name: string, keys: string[]) => <RosterHandle label={`${w.rosterReorder}: ${name}`} hint={w.rosterReorderHint} onKey={keyboard(source, keys)}/>
     return <>
-      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<p className="pa-empty" role="status">{w.rosterUnavailable}</p>:!(unreadOnly&&onMore)&&<p className="pa-empty">{query?w.searchEmpty:unreadOnly?w.unreadBotsEmpty:w.empty}</p>)}
+      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<div className="pa-roster-unavailable"><p role="status">{w.rosterUnavailable}</p>{onRetry&&<button type="button" className="pa-pill" onClick={onRetry}>{w.retry}</button>}</div>:!(unreadOnly&&onMore)&&<p className="pa-empty">{query?w.searchEmpty:unreadOnly?w.unreadBotsEmpty:w.empty}</p>)}
       {problem&&<p role="status" className="pa-roster-save-error">{w.rosterUnsaved}</p>}
       {context&&(()=>{
         const row=allRows.find(row=>row.kind==="bot"&&row.key===context.key)
@@ -215,7 +215,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
           </header>
           {leadOptions&&onPreferLead&&<PaSelect compact label={w.defaultLead} value={preferredLead??""} options={leadOptions} onChange={onPreferLead}/>}
           {view!=="tower"&&<label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>}
-          {several&&<div className="pa-roster-filter"><span>{w.total} {(loading&&!items.length||unavailable&&!shown.length)?"…":shown.length}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
+          {several&&<div className="pa-roster-filter"><span>{(!loading&&!unavailable||shown.length>0)&&`${w.total} ${shown.length}`}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
           <div className="pa-roster-scroll">
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
             {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}

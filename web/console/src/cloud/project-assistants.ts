@@ -14,6 +14,8 @@ import { createViewState, canRead } from "../project-assistants/view-state.ts"
 import { rosterMood, type BotMood } from "../project-assistants/working.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 // @ts-expect-error -- Node executes source extensions.
+import { machineCommands } from "./machine-commands.ts"
+// @ts-expect-error -- Node executes source extensions.
 import {validRoutineTrigger, isHookTrigger} from "../project-assistants/routine-events.ts"
 // @ts-expect-error -- Node executes source extensions.
 import {validRoutineHookAnswer} from "../project-assistants/routine-hook-intent.ts"
@@ -774,7 +776,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
 }
 
 /** Uses the passed machine and authenticated connection, never install.ts's active reader. */
-export type AssistantRelayConnection = Pick<CloudClientHandle,"_machineRequest" | "_machineRequestAs" | "machineDescriptor">
+export type AssistantRelayConnection = Pick<CloudClientHandle,"_machineRequest" | "_machineRequestAs" | "machineDescriptor" | "orchestratorSnapshots">
 export function capturedAssistantRelayFetch(machineID: string, current: () => AssistantRelayConnection | null, carried: readonly string[]): AssistantFetch {
   return async (input,init) => {
     let request: ReturnType<typeof assistantRelayRequest>, client: AssistantRelayConnection | null
@@ -784,7 +786,11 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
       if (!carried.includes(request.word)) return Response.json({error:{code:"cloud_not_carried"}},{status:501})
       if (!client) throw failure("pa_offline")
       if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
-      if (!client.machineDescriptor?.(machineID)?.machine?.commands?.includes(request.word)) throw failure("pa_unsupported")
+      const advertised=machineCommands(client,machineID)
+      // The persisted descriptor is only a prefix on older clients. A roster
+      // read must remain retryable until the owning machine advertises its words.
+      if (advertised.incomplete) throw failure("pa_offline")
+      if (!advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
       if(request.word==="project-assistants.send-pictures"){
         // AES-GCM adds its 16-byte authentication tag to the complete plaintext.
         const bytes=new TextEncoder().encode(JSON.stringify({type:request.word,session:"__clawdline_machine__",request:request.id,...request.fields})).byteLength

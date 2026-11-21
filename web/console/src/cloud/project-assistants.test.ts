@@ -740,6 +740,33 @@ const rosterFrame = (): W.ProjectAssistantRosterFrame => ({type:"snapshot-comple
 const rosterWire = (f: W.ProjectAssistantRosterFrame) => `${f.cursor?`id: ${f.cursor}\n`:""}event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`
 const rosterResponse = (input: string, cancel: ()=>void = ()=>{}) => new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(input))},cancel}),{headers:{"Content-Type":"text/event-stream; charset=utf-8"}})
 
+test("Cloud Bots wait for the complete command list and use it for roster, chat and pictures", async()=>{
+  const words=Object.keys(CARRIED).sort()
+  const supported=["project-assistants.list","project-assistants.view","project-assistants.send-pictures"]
+  const remembered=words.slice(0,64)
+  assert.ok(supported.every(word=>words.includes(word)&&!remembered.includes(word)))
+  const snapshots=new Map<string,unknown>(),sent:string[]=[]
+  const connection={
+    orchestratorSnapshots:snapshots,
+    machineDescriptor:()=>({machine:{commands:remembered}}),
+    async _machineRequest(_machine:string,word:string){sent.push(word);return {contract_version:"project-assistants.v1",items:[],sources:sourceStatus().sources,next_cursor:""}},
+    async _machineRequestAs(_ref:string,_machine:string,word:string){sent.push(word);return {contract_version:"project-assistants.v1"}},
+  }
+  const relay=capturedAssistantRelayFetch("one",()=>connection,words)
+  const roster="/v1/project-assistants?machine_id=one&cursor=&query=&page_size=100"
+  await assert.rejects(relay(roster),e=>errorCode(e)==="pa_offline"&&notSentEvidence(e))
+  assert.deepEqual(sent,[])
+  snapshots.set("one",{machine:{commands:supported}})
+  assert.equal((await relay(roster)).ok,true)
+  const picture={...sendRequest("after-descriptor"),images:["data:image/png;base64,AA=="]}
+  assert.equal((await relay("/v1/project-assistants/same%2Fid/messages",{
+    method:"POST",body:JSON.stringify(picture),headers:{"Idempotency-Key":"after-descriptor"},
+  })).ok,true)
+  snapshots.set("one",{machine:{commands:[]}})
+  await assert.rejects(relay(roster),e=>errorCode(e)==="pa_unsupported")
+  assert.deepEqual(sent,["project-assistants.list","project-assistants.send-pictures"])
+})
+
 test("roster is local API71 only and cannot enter the Cloud recorder",async()=>{
   let calls=0
   for(const first of [grant(),{...grant(),apiLevel:71},{...rosterGrant(),apiLevel:70},{...rosterGrant(),apiLevel:undefined}]) {

@@ -11409,7 +11409,7 @@
   "projectAssistants.heldPictures": "{count} pictures attached",
   "projectAssistants.heldPicturesLost": "{count} pictures were attached; this page no longer has them, and they may already have been sent",
   "projectAssistants.heldQuoted": "with a quote",
-  "projectAssistants.heldSend": "This message may or may not have reached the machine. It stays locked in the box and is never sent again automatically.",
+  "projectAssistants.heldSend": "Your draft stays locked while delivery is unconfirmed.",
   "projectAssistants.heldUnreadable": "An earlier held message on this device couldn't be read back. It may have reached the machine and is never sent again. Check the conversation before repeating it.",
   "projectAssistants.heldUnsaved": "This device couldn't save the held message. Don't reload the page: its lock would be lost, and it might then look unsent.",
   "projectAssistants.hidden": "Hidden",

@@ -171,11 +171,19 @@ export class HeldOutcomes {
     if (!active || active.intent.command.operation !== "send") return false
     j.aside = [...j.aside, active]; j.active = null; this.save(key, j); return true
   }
-  /** Removes one set-aside send once its own receipt settled it. */
+  /** Removes one set-aside send after its receipt settles it. */
   settleAside(key: string, idempotencyKey: string) {
     const j = this.load(key), before = j.aside.length
     j.aside = j.aside.filter(o => o.intent.command.idempotency_key !== idempotencyKey)
     if (j.aside.length !== before) this.save(key, j)
+  }
+  /** Confirms local removal only once the updated journal can survive reload. */
+  dismissAside(key: string, idempotencyKey: string): boolean {
+    const j = this.load(key)
+    const next = { ...j, aside: j.aside.filter(o => o.intent.command.idempotency_key !== idempotencyKey) }
+    if (this.storage && !this.save(key, next)) return false
+    this.journals.set(key, next)
+    return true
   }
   dismissUnreadable(key: string) { const j = this.load(key); if (j.unreadable) { j.unreadable = false; this.save(key, j) } }
   /**

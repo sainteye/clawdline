@@ -237,6 +237,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"work_updated",fence:oldFence,work:{id:"work-1",fence:oldFence,turn_id:"turn-1",board_item_id:"PA-01",task_id:"task-1",state:"landed",landing_commit:"synthetic-landing",result_message_id:rows.at(-1)!.id}})
     },
     holdEvents(){eventGate=new Promise(resolve=>{releaseEvents=resolve})},releaseEvents(){releaseEvents?.();eventGate=null;releaseEvents=null},
+    failExport(){exportFailure="pa_offline"},
     holdExport(){exportGate=new Promise(resolve=>{releaseExport=resolve})},releaseExport(){releaseExport?.();exportGate=null;releaseExport=null},
     holdGet(){getGate=new Promise(resolve=>{releaseGet=resolve})},releaseGet(){releaseGet?.();getGate=null;releaseGet=null},
     configureViews(options:{failure?:W.ProjectAssistantErrorCode|null;invalid?:string|null;unsupported?:boolean;forbidLegacy?:boolean;oversizedDetail?:boolean;detailFailure?:W.ProjectAssistantErrorCode|null;detailFenceChange?:boolean}){if("failure" in options)viewFailure=options.failure??null;if("invalid" in options)viewInvalid=options.invalid??null;if(options.unsupported!==undefined)viewUnsupported=options.unsupported;if(options.forbidLegacy!==undefined)legacyForbidden=options.forbidLegacy;if(options.oversizedDetail!==undefined)viewOversized=options.oversizedDetail;if("detailFailure" in options)detailFailure=options.detailFailure??null;if(options.detailFenceChange!==undefined)detailFenceChange=options.detailFenceChange},

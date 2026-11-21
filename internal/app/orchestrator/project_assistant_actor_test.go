@@ -61,6 +61,24 @@ func assistantBrokerFixture(t *testing.T) (*Broker, context.Context, *AssistantC
 	return b, ctx, c, q, &calls
 }
 
+func TestBotDispatchLaunchesClaudeInAutoMode(t *testing.T) {
+	b, ctx, current, request, _ := assistantBrokerFixture(t)
+	current.Assistant = "claude"
+	current.PermissionMode = "auto"
+	b.Live = func(context.Context) []session.Session {
+		return []session.Session{{ID: "%80", Backend: session.BackendTmux, Assistant: session.AssistantClaude}}
+	}
+	b.Screen = func(context.Context, string) (string, bool) { return screen(t, "claude-composer"), true }
+	out, err := b.DispatchAssistant(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := b.Launcher.(*recordingLauncher).line()
+	if out.Record.PermissionMode != "auto" || !strings.Contains(line, "--permission-mode auto") {
+		t.Fatalf("dispatch did not launch in Auto: state=%s mode=%s command=%s", out.Record.State, out.Record.PermissionMode, line)
+	}
+}
+
 func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *testing.T) {
 	b, ctx, current, q, calls := assistantBrokerFixture(t)
 	var states []pa.WorkState

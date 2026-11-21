@@ -276,6 +276,13 @@ function cloudError(code, message) {
     return cloudFailure(code, message);
 }
 
+/** Attach proof for this attempt without marking a shared connection failure. */
+function actionNotSent(error) {
+    var failure = asCloudFailure(error);
+    var attempt = Object.create(Object.getPrototypeOf(failure), Object.getOwnPropertyDescriptors(failure));
+    return Object.defineProperty(attempt, "clawdline_delivery", { value: "not_sent", configurable: true });
+}
+
 /**
  * The shape a read's answer takes on `t/<machine>/<session>`, or null if this is not one.
  *
@@ -2504,8 +2511,8 @@ export class CloudClient {
     /** `_machineRequest` under a request id the caller keeps, so a resend is the same request. */
     _machineRequestAs(request, machine, type, extra, kind, timeoutMs, readOptions) {
         if (typeof machine !== "string" || !machine) {
-            return Promise.reject(cloudError("cloud_read_unavailable",
-                "no Mac has published an inventory to this account yet"));
+            var error = cloudError("cloud_read_unavailable", "no Mac has published an inventory to this account yet");
+            return Promise.reject(kind === "action" ? actionNotSent(error) : error);
         }
         return this._read({ machine: machine, session: MACHINE_REPLY_SESSION }, type,
             Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request,
@@ -3577,9 +3584,11 @@ export class CloudClient {
                 return next._read(value, type, extra, answer, timeoutMs, readOptions);
             });
         }
+        var action = /^action:/.test(answer);
+        var notPublished = function (error) { return action ? actionNotSent(error) : error; };
         var identity;
         try { identity = this._sessionIdentity(value); }
-        catch (error) { return Promise.reject(error); }
+        catch (error) { return Promise.reject(notPublished(error)); }
         var probe = !(readOptions && readOptions.probe === false);
         // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
         // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
@@ -3588,13 +3597,13 @@ export class CloudClient {
         // one, and it is told that in a code of its own rather than by a socket error or a
         // skeleton. Widening it is a relay decision, not one this file may take.
         if (!this.allowWrites) {
-            return Promise.reject(cloudError("cloud_read_needs_send_prompt",
-                "this device may not ask the Mac for reads"));
+            return Promise.reject(notPublished(cloudError("cloud_read_needs_send_prompt",
+                "this device may not ask the Mac for reads")));
         }
         // Before the waiter, the subscription and the sequence: a machine known not to implement
         // this word is sent nothing, and the page hears so now instead of at the read timeout.
         var unsupported = this._unsupportedRefusal(identity.machine, type);
-        if (unsupported) return Promise.reject(unsupported);
+        if (unsupported) return Promise.reject(notPublished(unsupported));
         var key = readKey(identity, answer);
         var self = this;
         return new Promise(function (resolve, reject) {
@@ -3613,11 +3622,11 @@ export class CloudClient {
             // Before a waiter, a subscription or a sequence: the relay said a moment ago that this
             // machine is not connected, and asking again now would only hear that again.
             var offline = self._offlineRefusal(identity.machine);
-            if (offline) { reject(offline); return; }
+            if (offline) { reject(notPublished(offline)); return; }
             waiters = { waiting: [waiter], timer: null, ref: null,
                 machine: identity.machine, type: type, request: extra && typeof extra.request === "string"
                     ? extra.request : null,
-                action: /^action:/.test(answer), channel: null,
+                action: action, channel: null,
                 retireUncertain: !!(readOptions && readOptions.retireUncertain),
                 // The read's connection-health trace: issued now, its response and decrypt-apply
                 // recorded under the same correlation when it settles (`_settleRead`).
@@ -3762,6 +3771,9 @@ export class CloudClient {
             }
         }
         if (error) {
+            // A settled action with no registered sequence never made it onto the socket.
+            // The publisher checks for this same waiter before registering and writing.
+            if (waiters.action && !ref) error = actionNotSent(error);
             error = this._withRef(error, ref);
             this.trail.refused(error.ref, error);
         } else if (ref) {
