@@ -11,6 +11,12 @@ func (s *Server) sessionsCapacityMeasures() map[string]func() capacity.Reading {
 		"sessions.rc_permission_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "oversized native tool inputs are not offered for approval"}
 		},
+		"sessions.launch_hold_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.launchHolds().count())}
+		},
+		"sessions.launch_hold_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-launch window; a write past it is refused as before"}
+		},
 		"sessions.rc_close_poll_ms": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "sampling interval for proving the selected worker exited; no signals or retries"}
 		},
