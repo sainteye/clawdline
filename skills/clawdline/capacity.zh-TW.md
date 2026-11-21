@@ -803,6 +803,8 @@
 | `sessions.archive_rows` | 500 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.claude_remote_request_seconds` | 10 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `sessions.claude_remote_response_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `sessions.launch_hold_rows` | 64 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `sessions.launch_hold_seconds` | 20 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `sessions.rc_close_poll_ms` | 100 | `milliseconds` | `evict_oldest` | `diagnostics` | — |
 | `sessions.rc_permission_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

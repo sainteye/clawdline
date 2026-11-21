@@ -1149,3 +1149,8 @@ input when the person presses Ask Session. The input uses the composer queue
 rules and the existing conversation receipt. The English and Taiwan Traditional
 Chinese CodeGraph, tool preparation and handoff entries still describe their
 own activation and input rules. Refresh the receipts for the shared sources.
+
+A message sent to a just-launched tmux Session waits briefly for its assistant.
+The English and Taiwan Traditional Chinese explanations still describe the
+language, role, workflow, Project memory and integration inputs at launch.
+The reviewed start-route receipt follows the record of launched panes.
