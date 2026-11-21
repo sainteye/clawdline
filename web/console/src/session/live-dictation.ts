@@ -31,6 +31,7 @@ type LiveEvent = {
   item_id?: string
   delta?: string
   transcript?: string
+  error?: { code?: string }
 }
 
 export async function connectLiveDictation(
@@ -43,6 +44,8 @@ export async function connectLiveDictation(
   signal.throwIfAborted()
   if (!connection.current()) throw new LiveDictationError("voice_realtime_failed")
   if (typeof RTCPeerConnection !== "function") throw new LiveDictationError("voice_realtime_unsupported")
+  const [track] = stream.getAudioTracks()
+  if (!track || track.readyState === "ended") throw new LiveDictationError("voice_realtime_audio_unavailable")
 
   const peer = new RTCPeerConnection()
   const channel = peer.createDataChannel("oai-events")
@@ -92,7 +95,8 @@ export async function connectLiveDictation(
         else close()
         break
       case "error":
-        close()
+        close(new LiveDictationError(event.error?.code === "input_audio_buffer_commit_empty"
+          ? "voice_realtime_audio_empty" : "voice_realtime_failed"))
         break
       case "conversation.item.input_audio_transcription.delta":
         if (typeof event.delta === "string") {
@@ -115,7 +119,9 @@ export async function connectLiveDictation(
   })
 
   try {
-    for (const track of stream.getAudioTracks()) peer.addTransceiver(track, { direction: "sendonly", streams: [stream] })
+    // Match the voice assistant and OpenAI WebRTC examples. The transcription
+    // session still produces text only, while the standard offer negotiates microphone RTP.
+    const sender = peer.addTrack(track)
     const [grant, offer] = await Promise.all([
       connection.fetch("/v1/voice/live-transcription", {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": request }, body: "{}", signal,
@@ -136,6 +142,10 @@ export async function connectLiveDictation(
     if (!answer.ok) throw new LiveDictationError("voice_realtime_failed")
     signal.throwIfAborted()
     await peer.setRemoteDescription({ type: "answer", sdp: await answer.text() })
+    const direction = peer.getTransceivers().find((entry) => entry.sender === sender)?.currentDirection
+    if (direction !== "sendrecv" && direction !== "sendonly") {
+      throw new LiveDictationError("voice_realtime_audio_unavailable")
+    }
     await ready
     if (closed) throw new LiveDictationError("voice_realtime_failed")
   } catch (error) {
