@@ -351,6 +351,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         projection.reason === "event_gap" || projection.reason === "unresponsive")
     const unconfirmed = !!machine.instaBoxWakeOrigin && machine.freshness === "unknown" && waitingForStatus
     const unavailable = offline || unconfirmed
+    const emptyPartialScan = projection?.kind === "ready" && !projection.complete && projection.rows.length === 0
     const pass = projection?.kind === "ready" ? presentationPass(projection) : ""
     const missingTitle = !unavailable && projection?.kind === "ready" && projection.rows.some((row) =>
       row.freshness === "current" && !presentations.current.has(destinationKey(row.destination)))
@@ -377,7 +378,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     if (hold && hold.waiting !== waitingKey)
       orderHolds.current.delete(machine.id)
     const rows = arrangeFleetRows(shown, titles, orderHolds.current.get(machine.id) ?? null)
-    return { machine, reading, rows, waitingKey, offline, unconfirmed, unavailable, presentationFailed, presentationLoading }
+    return { machine, reading, rows, waitingKey, offline, unavailable, emptyPartialScan, presentationFailed, presentationLoading }
   }).filter(({ machine, rows }) => (statusFilter === "all" || rows.length > 0) && (!search || rows.length > 0 ||
     `${machine.name} ${machine.id} ${machine.platform}`.toLocaleLowerCase().includes(search)))
   useEffect(() => {
@@ -446,7 +447,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           pullWord === "busy" ? L.strings.webPullBusy : L.strings.webPull}</span>
       </div>
       <div className="cloud-all-groups">
-        {groups.map(({ machine, reading, rows, offline, unconfirmed, unavailable, presentationFailed, presentationLoading }) => {
+        {groups.map(({ machine, reading, rows, offline, unavailable, emptyPartialScan, presentationFailed, presentationLoading }) => {
           const carrier = machineLight(offline ? "stale" : machine.freshness, carrierOf?.(machine.id) ?? null)
           const isCollapsed = collapsed[machine.id] ?? emptyMachine(reading)
           const boardTarget = sessionBoardTargets?.find(target => target.machine === machine.id)
@@ -470,7 +471,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
           {unavailable && <p role="status" className="cloud-all-offline">{offline
             ? [nextWord("msOffline"), machine.seenAt ? machineSeenWord(machine.seenAt) : null].filter(Boolean).join(" · ")
             : nextWord("msNotReported")}</p>}
-          {unavailable && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
+          {(unavailable || emptyPartialScan) && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
             machine={machine.id} origin={machine.instaBoxWakeOrigin} />}
           <div className="cloud-all-group-body" data-open={!isCollapsed}
             inert={isCollapsed} aria-hidden={isCollapsed}>

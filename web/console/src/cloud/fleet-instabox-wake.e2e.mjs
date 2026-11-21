@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 const web = fileURLToPath(new URL("../../../", import.meta.url))
 const consoleRoot = join(web, "console")
 
-test("owners can wake an eligible offline machine from the fleet on mobile", { timeout: 90_000 }, async () => {
+test("owners can wake an eligible offline or incompletely reported machine from the fleet on mobile", { timeout: 90_000 }, async () => {
   const { chromium, webkit } = await import(process.env.PLAYWRIGHT_MODULE || "playwright")
   const fixture = mkdtempSync(join(consoleRoot, "fleet-wake-fixture-"))
   let vite
@@ -31,16 +31,21 @@ await loadStrings(async () => ({}));
 const root = createRoot(document.getElementById("root"));
 const noop = () => {};
 const owner = id => ({ id, name: id, platform: "Linux", freshness: "stale", instaBoxWakeOrigin: location.origin });
+let reconnected = false;
 const source = {
   subscribe: () => noop,
-  readMachine: id => id === "relay-offline"
-    ? Promise.resolve({ kind: "unavailable", reason: "offline" })
-    : new Promise(() => {}),
+  readMachine: async id => {
+    if (id === "relay-offline") return { kind: "unavailable", reason: "offline" };
+    if (id === "incomplete") return { kind: "ready", complete: reconnected, observedAt: Date.now(), rows: [] };
+    return new Promise(() => {});
+  },
 };
 function render(online = false) {
+  reconnected = online;
   root.render(<FleetSessionList machines={[
     { ...owner("eligible"), freshness: online ? "current" : "unknown" },
     { ...owner("relay-offline"), freshness: "current" },
+    { ...owner("incomplete"), freshness: "current" },
     owner("unbound"), owner("no-key"), owner("denied"),
     { ...owner("online"), freshness: "current" },
     { ...owner("guest"), instaBoxWakeOrigin: undefined },
@@ -100,35 +105,40 @@ render();`)
       await Promise.all(checked)
       const eligible = page.getByRole("region", { name: /^eligible eligible/ })
       const disconnected = page.getByRole("region", { name: /^relay-offline relay-offline/ })
+      const incomplete = page.getByRole("region", { name: /^incomplete incomplete/ })
       const wake = eligible.getByRole("button", { name: wakeLabel, exact: true })
+      const wakeIncomplete = incomplete.getByRole("button", { name: wakeLabel, exact: true })
       await wake.waitFor()
       await eligible.getByRole("status").filter({ hasText: unconfirmed }).waitFor()
       await disconnected.getByRole("status").filter({ hasText: offline }).waitFor()
+      await wakeIncomplete.waitFor({ timeout: 5000 })
+      assert.equal(await incomplete.getByRole("status").filter({ hasText: offline }).count(), 0)
       for (const group of [eligible, disconnected]) {
         assert.equal(await group.locator('[data-loading-id="SK-02"]').count(), 0)
       }
       assert.equal(await disconnected.getByRole("button", { name: wakeLabel, exact: true }).isVisible(), true)
-      assert.equal(await page.getByRole("button", { name: wakeLabel, exact: true }).count(), 2)
-      assert.deepEqual(lookups.sort(), ["denied", "eligible", "no-key", "relay-offline", "unbound"])
+      assert.equal(await page.getByRole("button", { name: wakeLabel, exact: true }).count(), 3)
+      assert.deepEqual(lookups.sort(), ["denied", "eligible", "incomplete", "no-key", "relay-offline", "unbound"])
       assert.deepEqual(posts, [])
       const box = await wake.boundingBox()
       assert.ok(box.height >= 44 && box.x + box.width <= 368, JSON.stringify(box))
       await eligible.locator('button[aria-expanded="true"]').click()
       assert.equal(await wake.isVisible(), true)
-      await wake.tap()
-      const waking = eligible.getByRole("button", { name: wakingLabel, exact: true })
+      await wakeIncomplete.tap()
+      const waking = incomplete.getByRole("button", { name: wakingLabel, exact: true })
       await waking.waitFor()
       assert.equal(await waking.isDisabled(), true)
       await wakeStarted
       await waking.evaluate(button => button.click())
-      assert.deepEqual(posts, ["eligible"])
+      assert.deepEqual(posts, ["incomplete"])
       completeWake()
       await page.getByRole("alert").filter({ hasText: cooldown }).waitFor()
-      await wake.tap()
+      await wakeIncomplete.tap()
       await page.getByRole("status").filter({ hasText: accepted }).waitFor()
-      assert.deepEqual(posts, ["eligible", "eligible"])
+      assert.deepEqual(posts, ["incomplete", "incomplete"])
       await page.evaluate(() => window.reconnect())
       await wake.waitFor({ state: "detached" })
+      await wakeIncomplete.waitFor({ state: "detached" })
       await page.getByText(accepted, { exact: false }).waitFor({ state: "detached" })
       await page.close()
     }
