@@ -17,7 +17,10 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 | `unknown`, or any stale reading | Stands still and grey, and cannot be opened |
 
 A struck enemy recoils in its own hurt frame with a flash, impact lines and a brief
-hit-stop, and breaks apart over three frames when defeated. Enemies, strikes and climbing are decoration. They do not measure progress, count
+hit-stop, and breaks apart over three frames when defeated. A fight keeps two enemies in its lane, the second stepping in when the first falls.
+Wild creatures also drift through the air, hang from the ceiling and cross the floor;
+they belong to no Session. A fight draws the nearest one in as its next enemy before
+conjuring a new one, and a patroller swats a floor creature that walks past. Enemies, strikes and climbing are decoration. They do not measure progress, count
 anything or imply that work was accepted. Stale and disconnected readings never animate.
 
 Drag, scroll or use the arrow keys to wander. Selecting a wanderer shows its full

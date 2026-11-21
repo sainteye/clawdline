@@ -20,7 +20,7 @@ import "./plugins.css"
 const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavailable"
 const name = (p: ViewPackage, language: string) => p.manifest.name[language.startsWith("zh") ? "zh-Hant" : "en"]
 const curatedID = (slug: string) => "com.clawdline." + slug
-const recommendedSlugs = ["session-departures", "session-codecraft"]
+const recommendedSlugs = ["session-lantern-deep", "session-departures", "session-codecraft"]
 
 type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 

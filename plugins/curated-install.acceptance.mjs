@@ -23,7 +23,7 @@ const views = [
   ['galaxy', 'Install Galaxy', '安裝星系'], ['orrery', 'Install Orrery', '安裝星象儀'],
   ['night-city', 'Install Night City', '安裝夜城'], ['departures', 'Install Departures', '安裝航班板'],
   ['territory', 'Install Territory', '安裝工作地圖'],
-  ['codecraft', 'Install Codecraft', '安裝奇幻村莊'], ['kaiju', 'Install Kaiju City', '安裝怪獸城市'],
+  ['codecraft', 'Install Codecraft', '安裝奇幻村莊'], ['kaiju', 'Install Kaiju City', '安裝怪獸城市'], ['lantern-deep', 'Install Lantern Deep', '安裝燈淵'],
 ]
 const archives = new Map(await Promise.all(views.map(async ([slug]) => [slug, await readFile(root + 'web/console/public/view-plugins/session-' + slug + '.zip')])))
 const requests = [], redirected = []
@@ -66,12 +66,12 @@ async function installFromLauncher(page, language, screenshot) {
   await entry.click()
   await recommended.waitFor({ timeout: 5000 })
   assert.equal(await page.locator('input[type=file]').count(), 0)
-  assert.equal(await recommended.getByRole('button').count(), 2)
+  assert.equal(await recommended.getByRole('button').count(), 3)
   const previews = recommended.locator('img')
-  assert.equal(await previews.count(), 2)
+  assert.equal(await previews.count(), 3)
   await previews.evaluateAll(images => Promise.all(images.map(image => image.decode())))
   await page.screenshot({ path: screenshot })
-  const choices = views.filter(([slug]) => slug === 'departures' || slug === 'codecraft')
+  const choices = views.filter(([slug]) => slug === 'departures' || slug === 'codecraft' || slug === 'lantern-deep')
   const launchButtons = []
   for (const [slug, en, tw] of choices) {
     const button = recommended.getByRole('button', { name: zh ? tw : en, exact: true })
@@ -99,8 +99,8 @@ async function installFromLauncher(page, language, screenshot) {
   assert.equal(await recommended.count(), 0)
   await page.reload()
   await entry.click()
-  await launches.nth(1).waitFor()
-  assert.equal(await launches.count(), 2)
+  await launches.nth(choices.length - 1).waitFor()
+  assert.equal(await launches.count(), choices.length)
   for (const launch of launchButtons) {
     await launch.click()
     await page.locator('iframe').waitFor({ state: 'visible' })
@@ -126,7 +126,7 @@ try {
             if (mode.startsWith('launcher-')) {
               await installFromLauncher(page, language, `${output}/${engine}-${language}-${mode}.png`)
               const actual = requests.slice(start)
-              assert.deepEqual(actual.map(r => r.slug), ['departures', 'departures', 'codecraft'])
+              assert.deepEqual(actual.map(r => r.slug), ['departures', 'departures', 'codecraft', 'lantern-deep'])
               assert.ok(actual.every(r => r.cookie && r.status === 200))
               assert.deepEqual(errors, [])
               results.push({ engine, language, mode, installed: 2, requests: actual, passed: true })
@@ -151,7 +151,7 @@ try {
               await page.locator('.vp-installed').nth(before).waitFor()
               await page.locator('input[type=file]:not([disabled])').waitFor()
             }
-            const expected = mode === 'native' || mode === 'public' ? 7 : mode === 'denied' ? 0 : 1
+            const expected = mode === 'native' || mode === 'public' ? views.length : mode === 'denied' ? 0 : 1
             assert.equal(await page.locator('.vp-installed').count(), expected)
             await page.reload(); await page.locator('#manager').click(); await page.locator('input[type=file]:not([disabled])').waitFor()
             if (expected) await page.locator('.vp-installed').nth(expected - 1).waitFor()
