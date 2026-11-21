@@ -68,7 +68,8 @@ async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setT
 const expected=JSON.stringify({format:"clawdline.bot-template.v1",settings:{agent:"codex",appearance:{color:"#e39567",shape:"blob"},instructions:'Synthetic configured instructions.\n</textarea><script>window.templateExecuted=true</script>',name:"Synthetic template Bot",notify:"off",permission_policy:"ask",runtime_settings:{model:"synthetic-model",options:{effort:"high",fast:"false"}}}},null,2)
 async function readyTemplate(zh=false){
   if(await evaluate('document.querySelector(".pa-info-panel").hidden'))await browser("click",zh?"Synthetic template Bot · Bot 資訊":"Synthetic template Bot · Bot information")
-  await waitFor(`(()=>{const e=[...document.querySelectorAll('.pa-info-data button')].find(b=>b.textContent===${JSON.stringify(zh?"建立範本":"Create template")});return e&&!e.disabled})()`)
+  if(await evaluate('document.querySelector(".pa-info-editor").hidden'))await browser("click",zh?"Bot 設定":"Bot settings")
+  await waitFor(`(()=>{const e=[...document.querySelectorAll('.pa-settings-link')].find(b=>b.textContent===${JSON.stringify(zh?"建立範本":"Create template")});return e&&!e.disabled})()`)
 }
 async function openPreview(zh=false){await readyTemplate(zh);await browser("click",zh?"建立範本":"Create template");await waitFor('!!document.querySelector("dialog textarea")')}
 async function closePreview(){await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27},session);await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27},session);await waitFor('!document.querySelector("dialog")')}

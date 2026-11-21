@@ -67,16 +67,25 @@ async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=a
 try {
   await connect()
   for(const [language,id,readonly] of [["en","future-en",true],["en","future-en",false],["zh-Hant","future-zh",false]]) {
-    const zh=language!=="en",cancel=zh?"取消":"Cancel",close=zh?"關閉":"Close",routines=zh?"例行排程":"Routines"
+    const zh=language!=="en",cancel=zh?"取消後續提醒":"Cancel follow-up"
     tab=(await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""))).tab
     await browser("viewport",zh?"mobile":"desktop");await waitText(id)
-    if(readonly){try{await browser("click",cancel+": "+id)}catch(error){operations.push({op:"read-only-refusal",detail:String(error)})};assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
+    if(readonly){assert.equal((await browser("click",cancel+": "+id)).disabled,true);assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
     else {
       await browser("click",cancel+": "+id)
       if(!zh){
         const held="The last action may have reached the source."
         await waitText(held);assert.equal(requests.filter(r=>r.method==="DELETE").length,1)
-        await browser("click",close);await browser("click",routines);await waitText(held)
+        await evaluate("window.qaReloadMarker=true")
+        await send("Page.reload",{},session)
+        const reloaded=Date.now()+10000
+        for(;;){
+          const fresh=await evaluate('document.readyState==="complete"&&!window.qaReloadMarker').catch(()=>false)
+          if(fresh)break
+          assert.ok(Date.now()<reloaded,"The test must reload the original tab")
+          await new Promise(resolve=>setTimeout(resolve,50))
+        }
+        await waitText(held)
         assert.equal(requests.filter(r=>r.method==="DELETE").length,1,"Remount cannot automatically replay an uncertain cancellation")
         const deadline=Date.now()+10000
         while(!await evaluate('[...document.querySelectorAll("button")].some(b=>b.textContent==="Confirm or finish original action"&&!b.disabled)')){assert.ok(Date.now()<deadline,"Replay waits for current source authority");await new Promise(r=>setTimeout(r,50))}
