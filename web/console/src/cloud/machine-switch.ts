@@ -11,14 +11,19 @@
  *
  * It imports nothing, so node's test runner loads it alone.
  */
-let current: object | null = null
+let current: (object & { readonly machine?: string }) | null = null
 const listeners = new Set<() => void>()
 
 /** Record the reader now in use; a different one from before is a switch. */
-export function readingThrough(reader: object): void {
+export function readingThrough(reader: object & { readonly machine?: string }): void {
   const switched = current !== null && current !== reader
   current = reader
   if (switched) for (const listener of listeners) listener()
+}
+
+/** The machine behind the Cloud reader, or null for the local console. */
+export function currentCloudMachineID(): string | null {
+  return current?.machine ?? null
 }
 
 export function onMachineChanged(listener: () => void): () => void {

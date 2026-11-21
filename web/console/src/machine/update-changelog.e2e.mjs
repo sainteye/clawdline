@@ -24,12 +24,12 @@ const status = version => ({kind:'status', status:{install_kind:'release',state:
  running:{stamp:'old',version:'v2.1.0'},latest:{stamp:version,version},apply:{state:'idle'}}});
 const listeners = new Set();
 const f = window.fixture = { read:status('v2.3.0'), checks:0, installs:0, notes:[], fail:false, hold:false,
- next:null, release:null, switch:()=>readingThrough({}),
+ next:null, release:null, switch:machine=>readingThrough({machine}),
  publish(value){this.read=value; for(const fn of listeners)fn()},
  async check(){this.checks++; this.publish({kind:'checking'}); if(this.hold)await new Promise(r=>this.release=r);
  const next=this.next || status('v2.3.0'); this.publish(next); return next},
  subscribe(fn){listeners.add(fn);return ()=>listeners.delete(fn)}, status };
-readingThrough({});
+readingThrough({machine:'machine-a'});
 window.fetch = async url => {f.notes.push(String(url)); if(f.fail)return new Response('',{status:429});
  const version=decodeURIComponent(String(url).split('/').pop());
  return Response.json({tag_name:version,body:'## Changes for '+version+'\\n\\n- Review before installing.\\n\\n<script>window.injected=true</script>'})};
@@ -167,12 +167,26 @@ test("withdrawn releases and failed checks never install", async () => {
 })
 
 test("switching machines or cancelling during a fresh check invalidates its confirmation", async () => {
-  for (const action of ["fixture.switch()", "document.querySelector('.update-changelog-buttons button').click() "]) {
+  for (const cancel of [() => run("fixture.switch('machine-b')"), () => click("Not now")]) {
     await load(); await review(); await run("fixture.hold=true")
     await click("Confirm update"); await until("fixture.release")
-    await run(action); await until("!document.querySelector('dialog')")
+    await cancel(); await until("!document.querySelector('dialog')")
     await run("fixture.release()"); assert.equal(await run("fixture.installs"), 0)
   }
+})
+
+test("switching Cloud machines restores the update entry when only the previous machine was dismissed", async () => {
+  await load()
+  await run("fixture.switch('dismiss-a')")
+  await run("document.querySelector('#update-banner button[aria-label=Dismiss]').click()")
+  await until("!document.querySelector('#update-banner')")
+  await run("fixture.switch('dismiss-b')")
+  await until("document.querySelector('#update-banner')")
+  await review()
+  await click("Not now")
+  await run("fixture.switch('dismiss-a')")
+  await until("!document.querySelector('#update-banner')")
+  assert.equal(await run("fixture.installs"), 0)
 })
 
 test("notes failures offer an explicit fallback and retry recovers", async () => {

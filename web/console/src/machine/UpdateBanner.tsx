@@ -3,15 +3,16 @@ import type { UpdateStatus } from "@clawdline/contract"
 import { catalogWordLanguage } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import { followsRelay } from "../client.js"
+import { currentCloudMachineID, onMachineChanged } from "../cloud/machine-switch.js"
 import { applyUpdate, currentUpdateRead, publishUpdateRead, refreshUpdate, requestDevRelease, subscribeUpdate } from "./update.js"
 import { canRestartStagedApp, restartStagedApp } from "./restart-app.js"
 import { INSTALL_COMMAND, UPDATE_BANNER_DISMISSED_KEY, buildName, devReleaseSentence, devStrip, updateBannerVersion, updatePanel } from "./update-model.js"
 import { UpdateChangelog } from "./UpdateChangelog.js"
 import "./update.css"
 
-function dismissedVersion(): string | null {
+function dismissedVersion(key: string): string | null {
   try {
-    return localStorage.getItem(UPDATE_BANNER_DISMISSED_KEY)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
@@ -24,8 +25,15 @@ function dismissedVersion(): string | null {
  * update after the person reviews its changelog and stays to say how it went.
  */
 export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) {
+  const machine = useSyncExternalStore(onMachineChanged, currentCloudMachineID, currentCloudMachineID)
+  // The previous shared key cannot identify which Cloud machine was dismissed.
+  const dismissalKey = machine ? `${UPDATE_BANNER_DISMISSED_KEY}.${machine}` : UPDATE_BANNER_DISMISSED_KEY
+  return <MachineUpdateBanner key={dismissalKey} dismissalKey={dismissalKey} embedded={embedded} />
+}
+
+function MachineUpdateBanner({ dismissalKey, embedded }: { dismissalKey: string; embedded: boolean }) {
   const read = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)
-  const [dismissed, setDismissed] = useState(dismissedVersion)
+  const [dismissed, setDismissed] = useState(() => dismissedVersion(dismissalKey))
   const [review, setReview] = useState<UpdateStatus["latest"] | null>(null)
   const closeReview = useCallback(() => setReview(null), [])
   const [target, setTarget] = useState("")
@@ -114,7 +122,7 @@ export function UpdateBanner({ embedded = false }: { embedded?: boolean } = {}) 
     const dismissedRelease = offer ? version : done ? finishedVersion : ""
     if (dismissedRelease) {
       setDismissed(dismissedRelease)
-      try { localStorage.setItem(UPDATE_BANNER_DISMISSED_KEY, dismissedRelease) } catch { /* current page only */ }
+      try { localStorage.setItem(dismissalKey, dismissedRelease) } catch { /* current page only */ }
     }
     setCompleted(false)
     setDismissedResult(true)

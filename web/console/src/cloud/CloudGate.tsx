@@ -13,6 +13,7 @@ import { toast } from "../overlays/toast.js"
 import { CloudReadProblem } from "./CloudReadProblem.js"
 import { dashboardFetch } from "./dashboard-reader.js"
 import { readMachineUsage } from "../machine/read.js"
+import { SETTINGS_UPDATE_HREF } from "../machine/needs-update-model.js"
 import { Start } from "../session/Start.js"
 import { SurveyCoordinator } from "../onboarding/Survey.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -1863,8 +1864,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     })() : null)
   }, [scheduleFleetKey])
 
-  const switchMachine = (machine: CloudMachine) => {
-    if (dashboardPicker) {
+  const switchMachine = (machine: CloudMachine, destination?: typeof SETTINGS_UPDATE_HREF) => {
+    if (dashboardPicker && !destination) {
       closeSwitcher()
       setDashboardMachine(machine)
       return
@@ -1874,10 +1875,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     setFleetTarget(null)
     // The address names a fleet that is being left, or a Session on the machine
     // being left. A session id read against another machine is a session that
-    // machine has never had, so the address goes back to the list.
-    if (location.hash === "#all-machines" || destinationFromFragment(location.hash) ||
+    // machine has never had, so the address goes back to the list by default.
+    if (destination || location.hash === "#all-machines" || destinationFromFragment(location.hash) ||
       (machine.id !== reading && namesSession(location.hash))) {
-      history.replaceState(history.state, "", location.pathname + location.search + "#page=sessions")
+      history.replaceState(history.state, "", location.pathname + location.search + (destination ?? "#page=sessions"))
     }
     choose(machine)
   }
@@ -2427,7 +2428,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             onFleetCloseIntentHandled={() => setFleetCloseIntent(null)}
             fleetList={fleetScope ? (filter, onFilter) => <><div className="cloud-fleet-update-notices">
               {quickMachines.map((machine) => <FleetUpdateNotice key={machine.id} client={client.current}
-                machine={machine} onChoose={switchMachine} />)}
+                machine={machine} onChoose={(machine) => switchMachine(machine, SETTINGS_UPDATE_HREF)} />)}
             </div><FleetSessionList
             machines={quickMachines.map((machine) => ({
               id: machine.id, name: machine.name || machine.label || machine.id,

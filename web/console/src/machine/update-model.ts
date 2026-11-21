@@ -680,7 +680,7 @@ export function shouldLookForNewConsole(input: { following: boolean; overCloud: 
   return input.read.status.apply?.state === "healthy"
 }
 
-/** Where the banner remembers a dismissal: per version, in this browser. */
+/** Where the local banner remembers a version dismissal. Cloud appends the machine ID. */
 export const UPDATE_BANNER_DISMISSED_KEY = "clawdline.update-banner.dismissed"
 
 /**
