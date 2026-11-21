@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error -- Node loads the source extension.
-import {loadOutput,outputMetadata} from "./outputs.ts"
+import {INLINE_IMAGE_BYTES,inlineImageType,loadOutput,outputMetadata} from "./outputs.ts"
 // @ts-expect-error -- Node loads the source extension.
 import {errorCode} from "./client.ts"
 
@@ -44,4 +44,18 @@ test("closing or revoking a view discards ignored late bytes and stops subsequen
     await assert.rejects(pending,e=>revoke?errorCode(e)==="pa_revoked":(e as Error).name==="AbortError")
     assert.deepEqual(f.calls,[0])
   }
+})
+
+test("a shared picture up to 20 MiB shows in place; anything else stays a file card",async()=>{
+  const file=(name:string,bytes=1024,artifact_id="")=>({name,bytes,artifact_id})
+  assert.equal(inlineImageType(file("daidai_working.jpg")),"image/jpeg")
+  assert.equal(inlineImageType(file("Shot.PNG")),"image/png")
+  assert.equal(inlineImageType(file("a.webp",INLINE_IMAGE_BYTES)),"image/webp")
+  for(const f of [file("a.webp",INLINE_IMAGE_BYTES+1),file("empty.png",0),file("drawing.svg"),file("notes.txt"),file("png"),file("page.png",1024,"artifact")])
+    assert.equal(inlineImageType(f),"",f.name)
+  const bytes=new Uint8Array([0x89,0x50,0x4e,0x47]),f=await fixture(bytes)
+  f.output.name="picture.png"
+  assert.equal((await loadOutput(f.source,q,new AbortController().signal)).blob.type,"image/png")
+  f.output.name="binary"
+  assert.equal((await loadOutput(f.source,q,new AbortController().signal)).blob.type,"application/octet-stream")
 })

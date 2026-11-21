@@ -13,6 +13,18 @@ export function outputMetadata(o:W.ProjectAssistantOutput):W.ProjectAssistantOut
   return o
 }
 
+/** The largest shared picture a chat fetches whole to show in place
+ * (internal/domain/projectassistant.MaxInlineImageBytes, as Codync's INLINE_BYTES). */
+export const INLINE_IMAGE_BYTES=20*1024*1024
+const IMAGE_TYPES:Record<string,string>={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",heic:"image/heic",gif:"image/gif",webp:"image/webp",tiff:"image/tiff",bmp:"image/bmp"}
+/** A Bot's shared file that shows as a picture: Codync's showsAsImage rule.
+ * Returns its media type, or "" for a file card. SVG stays a file: it can carry script. */
+export function inlineImageType(o:Pick<W.ProjectAssistantOutput,"name"|"bytes"|"artifact_id">):string {
+  if(o.artifact_id||o.bytes<=0||o.bytes>INLINE_IMAGE_BYTES)return ""
+  const dot=o.name.lastIndexOf(".")
+  return dot<0?"":IMAGE_TYPES[o.name.slice(dot+1).toLowerCase()]??""
+}
+
 /** A new load starts at zero. No bytes escape until the whole digest agrees. */
 export async function loadOutput(source:SourceClient,q:W.ProjectAssistantOutputRequest,signal:AbortSignal,progress:(n:number,total:number)=>void=()=>{}):Promise<{output:W.ProjectAssistantOutput;blob:Blob}> {
   if(!source.output)throw failure("pa_unsupported")
@@ -35,7 +47,7 @@ export async function loadOutput(source:SourceClient,q:W.ProjectAssistantOutputR
   }while(offset<metadata!.bytes)
   const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes!));check()
   if([...hash].map(n=>n.toString(16).padStart(2,"0")).join("")!==metadata!.sha256)throw failure("pa_invalid")
-  return {output:metadata!,blob:new Blob([bytes!],{type:metadata!.artifact_id?"text/html":"application/octet-stream"})}
+  return {output:metadata!,blob:new Blob([bytes!],{type:metadata!.artifact_id?"text/html":inlineImageType(metadata!)||"application/octet-stream"})}
 }
 
 const attribute=(s:string)=>s.replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;")
