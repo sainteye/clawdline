@@ -521,7 +521,7 @@
   "webPlanMeter": "{n}，這是合理使用的計數，不是帳單",
   "webPlanNoLimit": "沒有固定上限",
   "webPlanNotConfirmed": "Lemon Squeezy 還沒有把這筆付款通知 Clawdline，所以這個帳號目前還是 {tier}。如果你已經付款完成，那筆錢沒有不見：通知會重送，一送到這個頁面就會顯示新的方案。",
-  "webPlanNotForSale": "這個帳號用的是 Free。這個主控台目前沒有東西可以買；Pro 開賣的時候，按鈕會出現在這裡。",
+  "webPlanNotForSale": "Cloud 的所有功能都免費，不需要購買任何方案。",
   "webPlanNotIncluded": "這個方案沒有",
   "webPlanOnFree": "這個帳號用的是 Free。Pro 會把上面那幾項結構性上限拉高。",
   "webPlanOpening": "正在確認這個帳號，然後打開 Lemon Squeezy 的結帳頁⋯",

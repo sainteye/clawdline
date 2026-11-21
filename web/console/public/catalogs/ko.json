@@ -3384,7 +3384,7 @@
   "legacy.webPlanMeter": "{n} — 공정 사용량 지표이며 청구 금액은 아닙니다",
   "legacy.webPlanNoLimit": "정해진 제한이 없습니다",
   "legacy.webPlanNotConfirmed": "Lemon Squeezy에서 이 결제를 아직 Clawdline에 확인해 주지 않아 계정은 여전히 {tier} 요금제입니다. 결제를 마쳤다면 금액이 사라진 것은 아닙니다. 확인을 다시 시도하며, 도착하는 즉시 이 페이지에 새 요금제가 표시됩니다.",
-  "legacy.webPlanNotForSale": "이 계정은 무료 요금제를 사용 중입니다. 아직 이 콘솔에서 구매할 수 있는 요금제가 없습니다. Pro가 출시되면 여기 버튼이 나타납니다.",
+  "legacy.webPlanNotForSale": "Cloud의 모든 기능을 무료로 사용할 수 있습니다. 구매할 요금제는 없습니다.",
   "legacy.webPlanNotIncluded": "이 요금제에 포함되지 않습니다",
   "legacy.webPlanOnFree": "이 계정은 무료 요금제를 사용 중입니다. Pro 요금제에서는 위의 구조적 한도가 높아집니다.",
   "legacy.webPlanOpening": "이 계정을 확인한 뒤 Lemon Squeezy 결제 페이지를 여는 중…",

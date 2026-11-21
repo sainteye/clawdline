@@ -6546,7 +6546,7 @@
   "legacy.webPlanMeter": "{n} — a fair-use meter, never a bill",
   "legacy.webPlanNoLimit": "no fixed limit",
   "legacy.webPlanNotConfirmed": "Lemon Squeezy has not confirmed this payment to Clawdline yet, so this account is still on {tier}. If you completed the payment it is not lost: the confirmation is retried, and this page shows the new plan as soon as it arrives.",
-  "legacy.webPlanNotForSale": "This account is on Free. Nothing is on sale from this console yet — when Pro opens, the button appears here.",
+  "legacy.webPlanNotForSale": "Every Cloud feature is free on this account. There is nothing to buy.",
   "legacy.webPlanNotIncluded": "not on this plan",
   "legacy.webPlanOnFree": "This account is on Free. Upgrade to Pro for more machines and schedule webhooks.",
   "legacy.webPlanOpening": "Checking this account, then opening the Lemon Squeezy checkout…",

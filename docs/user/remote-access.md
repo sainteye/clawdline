@@ -219,8 +219,8 @@ when pairing again preserves its existing grant; a never-pinned browser keeps th
 
 ### Plans
 
-Clawdline Cloud has a Free plan and a Pro plan ($10 a month); the **Plan** page of the
-hosted console shows your plan and its limits. Everything on this machine without Cloud stays free
+Clawdline Cloud is free, with no paid plan; the **Plan** page of the hosted console shows its
+limits. Everything on this machine without Cloud stays free
 and needs no account.
 
 ## Troubleshooting

@@ -3384,7 +3384,7 @@
   "legacy.webPlanMeter": "{n} — 公平な利用のための計数であり、請求額ではありません",
   "legacy.webPlanNoLimit": "固定の上限なし",
   "legacy.webPlanNotConfirmed": "Lemon Squeezy から Clawdline に支払いの確認がまだ届いていないため、このアカウントは引き続き {tier} です。支払いが完了していれば失われません。確認を再試行し、届き次第このページに新しいプランを表示します。",
-  "legacy.webPlanNotForSale": "このアカウントは Free プランです。このコンソールでは現在、購入できるものはありません。Pro の提供が始まると、ここにボタンが表示されます。",
+  "legacy.webPlanNotForSale": "Cloud のすべての機能を無料でご利用いただけます。購入が必要なプランはありません。",
   "legacy.webPlanNotIncluded": "このプランには含まれません",
   "legacy.webPlanOnFree": "このアカウントは Free プランです。Pro では上記の構造上の上限が引き上げられます。",
   "legacy.webPlanOpening": "このアカウントをチェックして、Lemon Squeezyのチェックアウトを開きます。",

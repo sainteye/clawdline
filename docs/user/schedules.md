@@ -2,14 +2,16 @@
 
 After this page you can save a task that Claude Code or Codex runs on its own — once, on chosen
 days at a chosen time, or with no time at all, only when you or a webhook start it — see each
-run's result, and, on Clawdline Cloud Pro, start the same task from a webhook and wait for its
+run's result, and, through Clawdline Cloud, start the same task from a webhook and wait for its
 result. You can tell it worked from the schedule's history.
 
 ## Availability
 
 Labels below follow the English interface; the console also supports other languages.
 
-| | Free (no account) | Clawdline Cloud Pro |
+Everything below is free. Cloud features need sign-in and a paired machine.
+
+| | Local (no account) | Clawdline Cloud |
 | --- | --- | --- |
 | Schedules on this machine's local clock | Yes | Yes |
 | Choose which machine a schedule runs on | — | Yes, once the account has more than one machine |
@@ -76,7 +78,7 @@ can create a one-time schedule on its own. A repeating schedule needs your expli
 sent to that session through Clawdline: a message typed straight into the terminal is not proof
 that you asked, and the repeating schedule is refused.
 
-## Schedule webhooks (Cloud Pro)
+## Schedule webhooks (Cloud)
 
 A webhook starts a saved schedule's task from outside — a CI job, a form, another service — so an
 event can open a full agent session on your machine instead of running a fixed shell command.
@@ -132,7 +134,7 @@ returns at once. [schedules.md](../schedules.md) lists every final line.
 
 - **Nothing ran.** The daemon must be running at the time, or come back within the catch-up
   window. Check that the schedule is **Enabled**.
-- **The generate button is unavailable.** Webhooks need the Pro plan.
+- **The generate button is unavailable.** Webhooks need Clawdline Cloud: sign in and pair the machine.
 - The public guide for webhooks is at https://clawdline.com/docs/schedule-webhooks.
 
 ## Deeper
