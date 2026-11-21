@@ -627,8 +627,15 @@ func (s Snapshot) orchestratorTitle(terminalID string, live []Live) string {
 			continue
 		}
 		title := t.Title
-		if t.ScheduleID != nil && !strings.HasPrefix(title, "[Task]") {
-			title = "[Task] " + title
+		prefix := ""
+		switch {
+		case t.BotDispatched:
+			prefix = "[Bot Task]"
+		case t.ScheduleID != nil:
+			prefix = "[Task]"
+		}
+		if prefix != "" && !strings.HasPrefix(title, prefix) {
+			title = prefix + " " + title
 		}
 		found = title
 	}

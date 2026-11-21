@@ -46,6 +46,7 @@ type Task struct {
 	WorkPhase        *string  `json:"work_phase"`
 	ReasoningEffort  *string  `json:"reasoning_effort"`
 	ScheduleID       *string  `json:"schedule_id"`
+	BotDispatched    bool     `json:"-"`
 	SessionRoot      bool     `json:"session_root"`
 	Permission       string   `json:"permission"`
 	SpawnedAt        *Seconds `json:"spawned_at"`
