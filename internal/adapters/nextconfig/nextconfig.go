@@ -87,6 +87,20 @@ func (v Values) GeminiStepExplanations() bool {
 	return !set || on
 }
 
+// CodexSessionPermission is the machine's default for new interactive Sessions.
+func (v Values) CodexSessionPermission() string {
+	if _, exists := v.Raw["codex_permission_mode"]; !exists {
+		return projects.CodexSessionPermissionFull
+	}
+	mode, _ := v.String("codex_permission_mode")
+	switch mode {
+	case projects.CodexSessionPermissionFull, projects.CodexSessionPermissionAutoReview:
+		return mode
+	default:
+		return projects.CodexSessionPermissionNative
+	}
+}
+
 // GrokFullPermission starts every new Grok Session on this machine with
 // Grok's always-approve mode instead of asking for each tool call. Off unless
 // set: Grok Sessions asked before the setting existed.
@@ -555,6 +569,9 @@ var Settables = []Settable{
 	{Name: "gemini_step_explanations", Kind: "bool"},
 	{Name: "session_todo_auto_take", Kind: "bool"},
 	{Name: "grok_full_permission", Kind: "bool"},
+	{Name: "codex_permission_mode", Kind: "string",
+		Choices: []string{projects.CodexSessionPermissionFull, projects.CodexSessionPermissionAutoReview, projects.CodexSessionPermissionNative},
+		Refusal: "invalid_codex_permission_mode", Because: "full, auto_review or native"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"session", "claude", "codex", "antigravity", "auto"},
 		Refusal: "invalid_assistant", Because: "session, claude, codex, antigravity or auto"},

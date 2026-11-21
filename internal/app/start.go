@@ -62,6 +62,9 @@ type Starter struct {
 	// DefaultReasoningEffort selects the provider's own validated setting.
 	// Resumes retain their original context rather than reading a new default.
 	DefaultReasoningEffort func(assistant string) string
+	// CodexSessionPermission is the machine's permission choice for new
+	// interactive Codex Sessions. Nil leaves Codex to its own configuration.
+	CodexSessionPermission func() string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
@@ -204,6 +207,10 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	reach := projects.TmuxReach(s.Launcher.TmuxReach(ctx))
 	choice := s.Terminal()
 	plan := projects.ChoosePlan(choice, itermOpen, reach)
+	launchArgs := projects.UpdateCheckArgs(assistant)
+	if assistant == projects.AssistantCodex && resume == "" && s.CodexSessionPermission != nil {
+		launchArgs = append(launchArgs, projects.CodexSessionPermissionArgs(s.CodexSessionPermission())...)
+	}
 	if plan == projects.PlanITerm || plan == projects.PlanITermTmux || plan == projects.PlanTmux ||
 		plan == projects.PlanTmuxDetached {
 		prepared, err := s.prepareSquadLaunch(ctx, place.Path, persona, resume)
@@ -218,12 +225,12 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 				_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
 				return Started{}, err
 			}
-			launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
+			launch.Arguments = append(launch.Arguments, launchArgs...)
 			return s.openSquadTerminal(ctx, place, model, plan, prepared,
 				preparedWorkflow.Wrap(launch.ShellCommandWithEnv([]string{prepared.files.PrivateEnv()})))
 		}
 	}
-	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
+	launch.Arguments = append(launch.Arguments, launchArgs...)
 
 	switch plan {
 	case projects.PlanITerm:

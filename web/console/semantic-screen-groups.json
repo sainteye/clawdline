@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13855,
-  "riskKeys": 5910,
-  "nonRiskCount": 7945,
+  "englishContentKeys": 13865,
+  "riskKeys": 5914,
+  "nonRiskCount": 7951,
   "groups": [
     {
       "name": "acp / other",
@@ -8956,11 +8956,17 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 22,
+      "count": 28,
       "sources": [
         null
       ],
       "keys": [
+        "workflowSettings.codexPermissionHelp_auto_review",
+        "workflowSettings.codexPermissionPendingApproval",
+        "workflowSettings.codexPermissionTitle",
+        "workflowSettings.codexPermissionUpdateRequired",
+        "workflowSettings.codexPermission_auto_review",
+        "workflowSettings.codexPermission_native",
         "workflowSettings.explain",
         "workflowSettings.gemini_step_explanationsOff",
         "workflowSettings.gemini_step_explanationsScope",

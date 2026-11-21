@@ -1,5 +1,11 @@
 import { assistantMenuAdmits, type AssistantFacts } from "./antigravity-ui.js"
-import { useEffect, useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { captureMachineFetch } from "../cloud/install.js"
+import { onMachineChanged } from "../cloud/machine-switch.js"
+import { catalogWord } from "../catalog.js"
+import { showModalWithoutChoice } from "../modal-focus.js"
+import { WorkflowSettingsBlock } from "../pages/settings/WorkflowSettingsBlock.js"
+import "./iterm-consent.css"
 import type { SessionMenu, SessionMenuOption, SessionMenuStep, SessionMenuSubmit, SessionRow } from "@clawdline/contract"
 import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
@@ -77,6 +83,15 @@ const PRESS_SHOWN_MS = 150
  */
 export function Waiting({ row, write, onScreen, assistantFacts }: { row: SessionRow | null; write: boolean; assistantFacts?: AssistantFacts; onScreen?: () => void }) {
   const box = useRef<HTMLDivElement>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [permissionTarget, setPermissionTarget] = useState<ReturnType<typeof captureMachineFetch> | null>(null)
+  useEffect(() => onMachineChanged(() => setPermissionTarget(null)), [])
+  useEffect(() => setPermissionTarget(null), [row?.id, row?.execution_generation])
+  useEffect(() => {
+    const opened = dialog.current
+    if (permissionTarget) showModalWithoutChoice(opened)
+    return () => opened?.close()
+  }, [permissionTarget])
   const follow = useRef(new MenuFollow())
   const state = useRef<CardState>({ drawn: null, answered: null, folded: null, reread: null })
   const current = useRef<{ row: SessionRow | null; write: boolean; onScreen?: () => void; assistantFacts?: AssistantFacts }>({ row, write, onScreen, assistantFacts })
@@ -156,6 +171,9 @@ export function Waiting({ row, write, onScreen, assistantFacts }: { row: Session
             arriving: following && !follow.current.expired(Date.now()) || open.closeability?.source?.provenance === "pinned_list" ||
               (open as { menu_arriving?: unknown }).menu_arriving === true,
             inferred: !sent && menu?.source === "transcript",
+            commandApprovalLabel: !sent && rows && open.assistant === "codex" && menu?.command_approval && current.current.write
+              ? catalogWord("workflowSettings", "codexPermissionShortcut")
+              : undefined,
           })
     if (want === st.drawn) return
     st.drawn = want
@@ -329,6 +347,13 @@ export function Waiting({ row, write, onScreen, assistantFacts }: { row: Session
         return
       }
 
+      if (target.closest("[data-codex-permissions]")) {
+        if (open?.state === "waiting" && open.assistant === "codex" && open.menu?.command_approval && current.current.write) {
+          setPermissionTarget(captureMachineFetch())
+        }
+        return
+      }
+
       if (target.closest("[data-screen]")) {
         current.current.onScreen?.()
         return
@@ -370,7 +395,19 @@ export function Waiting({ row, write, onScreen, assistantFacts }: { row: Session
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return <div ref={box} className="waiting" id="waiting" role="status" hidden></div>
+  return <>
+    <div ref={box} className="waiting" id="waiting" role="status" hidden></div>
+    {permissionTarget?.current() && <dialog ref={dialog} data-modal-dismiss="true" className="iterm-consent-dialog"
+      aria-labelledby="approval-codex-permission-title" aria-describedby="approval-codex-permission-scope"
+      onCancel={event => { event.preventDefault(); setPermissionTarget(null) }}>
+      <h2 id="approval-codex-permission-title">{catalogWord("workflowSettings", "codexPermissionShortcut")}</h2>
+      <p id="approval-codex-permission-scope">{catalogWord("workflowSettings", "codexPermissionPendingApproval")}</p>
+      <WorkflowSettingsBlock shown codexOnly machine={permissionTarget} />
+      <div className="buttons">
+        <button type="button" className="chip" onClick={() => setPermissionTarget(null)}>{L.strings.webClose}</button>
+      </div>
+    </dialog>}
+  </>
 }
 
 interface CardState {

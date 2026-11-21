@@ -277,6 +277,7 @@
       "additionalProperties": false,
       "required": ["options"],
       "properties": {
+        "command_approval": { "description": "True when the native Codex screen identifies a command approval.", "type": "boolean" },
         "options": { "type": "array", "items": { "$ref": "#/$defs/SessionMenuOption" } },
         "question": { "description": "The prose above the rows, or the question as the call asked it. Absent when it could not be read.", "type": "string" },
         "revision": { "description": "Opaque identity of one live native offer. Included in the menu fingerprint when present; repeated identical questions have distinct revisions.", "type": "string" },

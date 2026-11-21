@@ -301,6 +301,13 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return values.GeminiStepExplanations()
 		},
+		CodexSessionPermission: func() string {
+			values, err := s.settingsFile().Read()
+			if err != nil {
+				return projects.CodexSessionPermissionNative
+			}
+			return values.CodexSessionPermission()
+		},
 		DefaultReasoningEffort: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {
