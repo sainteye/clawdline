@@ -153,6 +153,27 @@ func TestAModelSwitchAfterTheLastTurnIsTheModel(t *testing.T) {
 	}
 }
 
+func TestAModelSwitchKeepsTheVersionClaudeCodePrinted(t *testing.T) {
+	for _, tc := range []struct{ word, printed, want string }{
+		{"fable", "Fable 5.2", "claude-fable-5-2"},
+		{"opus", "Opus 5.5 (1M context)", "claude-opus-5-5"},
+		{"opus5", "Opus 5", "claude-opus-5"},
+	} {
+		path := writeRecord(t,
+			assistantTurn("claude-opus-5-5", 1, 1, 0, 0),
+			claudeRow("user", "<command-name>/model</command-name>\n<command-args>"+tc.word+"</command-args>"),
+			claudeRow("user", "<local-command-stdout>Set model to \x1b[1m"+tc.printed+"\x1b[22m and saved as your default for new sessions</local-command-stdout>"),
+		)
+		facts, err := NewRecordFacts().Read(path, "claude")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if facts.Model != tc.want {
+			t.Fatalf("/model %s printing %q: model = %q, want %q", tc.word, tc.printed, facts.Model, tc.want)
+		}
+	}
+}
+
 func TestCodexFactsReadTheRunningTotalAndHaveNoPrice(t *testing.T) {
 	path := writeRecord(t,
 		m{"type": "turn_context", "payload": m{"type": "turn_context", "model": "gpt-5.6-sol"}},

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -423,10 +424,24 @@ func modelPrinted(text string) (string, bool) {
 	return name, name != ""
 }
 
+// claudePrintedVersion reads a versioned name such as "Fable 5.2" or
+// "Opus 5.5 (1M context)" the way `/model` prints it.
+var claudePrintedVersion = regexp.MustCompile(`^(Fable|Opus|Sonnet|Haiku) ([0-9]+)(?:\.([0-9]+))?\b`)
+
 // claudeModelID is the id an assistant row would have carried for a model
-// named the way `/model` names it, so the two sources say the same thing. A
-// name this build does not know passes through as written.
+// named the way `/model` names it, so the two sources say the same thing.
+// The version Claude Code printed wins over this build's alias table: an
+// alias such as `fable` moves to a new version without this build changing.
+// A name this build does not know passes through as written.
 func claudeModelID(word, printed string) (string, bool) {
+	if m := claudePrintedVersion.FindStringSubmatch(printed); m != nil {
+		major, _ := strconv.Atoi(m[2])
+		minor := 0
+		if m[3] != "" {
+			minor, _ = strconv.Atoi(m[3])
+		}
+		return claudeVersion{family: strings.ToLower(m[1]), major: major, minor: minor}.id(), true
+	}
 	if word != "" {
 		for _, m := range ClaudeModels {
 			if m.Command == word {
