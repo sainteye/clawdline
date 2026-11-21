@@ -21,6 +21,7 @@
 // The one thing that had to be arranged differently is the toast and
 // `renderComposer`: nothing under `legacy/` imports the app, so the host hands
 // this module those two calls once (`attachVoice`).
+import { borrowAudioSession } from "../realtime/chime.js"
 import { nextWord } from "../next-strings.js"
 import { captureMachineFetch } from "../cloud/install.js"
 import { connectLiveDictation, LiveDictationError, readDictationSettings, writeDictationSetting, type DictationChange, type DictationConnection, type DictationEngine } from "../session/live-dictation.js"
@@ -184,6 +185,7 @@ interface Recording {
   reading?: { revision: number; promise: Promise<VoiceAnswer> }
 }
 let recording: Recording | null = null
+let releaseAudioSession: (() => void) | undefined
 let stageTimer: ReturnType<typeof setTimeout> | null = null
 let attempt = 0
 let recoveryCode: VoiceDiagnostic["code"] = "paused"
@@ -407,6 +409,7 @@ function open(job: VoiceJob): void {
   opening = controller
   state = "opening"
   show()
+  if (job.pickEngine) releaseAudioSession = borrowAudioSession("play-and-record")
   const microphone = navigator.mediaDevices.getUserMedia({ audio: true })
   const connection = job.pickEngine ? captureMachineFetch() : null
   let expiry: ReturnType<typeof setTimeout> | undefined
@@ -439,6 +442,7 @@ function open(job: VoiceJob): void {
     expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
     const settings = await dictationSettings
     const selected = settings?.engine
+    const whisper = connection && selected !== "openai_realtime"
     const enginePicker = connection && settings ? { connection, selected: settings.engine, polish: settings.polish } : undefined
     if (selected !== "openai_realtime" || !connection) {
       if (mine !== token) return
@@ -453,7 +457,7 @@ function open(job: VoiceJob): void {
       }
       begin(got, mine, undefined, enginePicker)
       const take = recording
-      if (take && previewContext && connection && selected === "whisper") {
+      if (take && previewContext && whisper) {
         let words = ""
         const current = () => mine === token && recording === take && state === "recording"
         take.whisperPreview = startWhisperPreview(previewContext, got, connection, freshKey, base64, (segment) => {
@@ -464,12 +468,13 @@ function open(job: VoiceJob): void {
           if (!current() || words) return
           take.whisperPreviewUnavailable = true
           setLivePreview(job, nextWord("voiceWhisperPreviewUnavailable"))
-        })
+        }, recordVoiceDiagnostic)
         previewContext = undefined
-      } else if (take && selected === "whisper") {
+      } else if (take && whisper) {
         take.whisperPreviewUnavailable = true
+        recordVoiceDiagnostic({ stage: "preview", code: "preview_no_pcm", bytes: 0, complete: false, elapsedMs: 0 })
       }
-      if (take && selected === "whisper") {
+      if (take && whisper) {
         drawn = ""
         show()
       }
@@ -668,6 +673,8 @@ function stopCapture(): void {
   silence(stream)
   stream = null
   deaf()
+  releaseAudioSession?.()
+  releaseAudioSession = undefined
 }
 
 function clearDeadline(): void {

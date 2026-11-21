@@ -28,8 +28,8 @@ LLM cleanup and the local vocabulary run on the Whisper path.
 ## Live Whisper preview
 
 With Local Whisper selected, the browser starts recording as before. It also
-sends three-second mono audio windows to the paired Whisper host while you
-speak. The host only accepts an optional preview when its dictation queue is
+sends a two-second first mono audio window and then three-second windows
+to the paired Whisper host while you speak. The host only accepts an optional preview when its dictation queue is
 idle and runs Whisper locally without LLM cleanup. The preview stays in the
 recording panel. Older or busy hosts, and browsers without AudioWorklet, can
 still transcribe the complete recording after Stop. The normal final pass

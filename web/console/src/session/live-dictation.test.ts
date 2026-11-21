@@ -193,7 +193,7 @@ test("an OpenAI empty audio commit returns a typed failure and closes WebRTC", a
   assert.equal(realtime.peerClosed, true)
 })
 
-test("the Whisper worklet turns 48 kHz input into a bounded 16 kHz window and skips digital silence", () => {
+test("the Whisper worklet sends two seconds first and skips silent three-second windows", () => {
   const audio: ArrayBuffer[] = []
   let create: () => { process(input: Float32Array[][]): boolean } = () => { throw new Error("missing processor") }
   runInNewContext(readFileSync(new URL("./whisper-preview.worklet.js", import.meta.url), "utf8"), {
@@ -204,10 +204,16 @@ test("the Whisper worklet turns 48 kHz input into a bounded 16 kHz window and sk
     },
   })
   const processor = create()
-  processor.process([[new Float32Array(3 * 48000)]])
+  processor.process([[new Float32Array(48000).fill(0.25)]])
   assert.equal(audio.length, 0)
-  processor.process([[new Float32Array(3 * 48000).fill(0.25)]])
+  processor.process([[new Float32Array(48000).fill(0.25)]])
   assert.equal(audio.length, 1)
-  assert.equal(audio[0].byteLength, 96000)
+  assert.equal(audio[0].byteLength, 64000)
   assert.equal(new DataView(audio[0]).getInt16(0, true), 8191)
+  processor.process([[new Float32Array(3 * 48000)]])
+  assert.equal(audio.length, 1)
+  processor.process([[new Float32Array(3 * 48000).fill(0.5)]])
+  assert.equal(audio.length, 2)
+  assert.equal(audio[1].byteLength, 96000)
+  assert.equal(new DataView(audio[1]).getInt16(0, true), 16383)
 })

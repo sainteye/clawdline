@@ -1,8 +1,10 @@
 export interface VoiceDiagnostic {
-  stage: "stopping" | "preparing" | "reading" | "recoverable"
+  stage: "stopping" | "preparing" | "reading" | "recoverable" | "preview"
   code: "stop_timeout" | "prepare_timeout" | "read_timeout" | "recording_limit" | "processing_failed" | "realtime_audio_empty" | "paused" | "recorder_error"
+    | "preview_text" | "preview_empty" | "preview_no_reply" | "preview_no_pcm"
   bytes: number
   complete: boolean
+  elapsedMs?: number
 }
 
 let report: ((row: VoiceDiagnostic) => void) | null = null

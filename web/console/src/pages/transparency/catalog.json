@@ -5391,7 +5391,7 @@
     "web/console/src/cloud/project-assistants.ts": "9d4662665f23591917b690e1f6c72dcc189e89bc30ceb45ef7c8d7a3a1b6e0a1",
     "web/console/src/cloud/relay-writer.ts": "e9f17702f95c172a006019e9de0aa4b7c1b7a4300e94d5e710da6df16ef391f7",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/legacy/voice-bridge.ts": "53e8c072c070f045431a61f75952c573ca9a5283212aaa86bcfe98913f3d41ac",
+    "web/console/src/legacy/voice-bridge.ts": "d44c97eef6cce6c3055d03b5ab5aa0088f3baaf608654ab02fdb6cf0d098ae1e",
     "web/console/src/next-strings.ts": "4315bf717f067b1279a5f7fe313afd9c05297c6bd9440223a41b899b43e3ee59",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",

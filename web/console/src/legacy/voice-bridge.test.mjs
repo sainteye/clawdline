@@ -93,6 +93,7 @@ function harness(options = {}) {
       if (path.endsWith("next-strings.js")) return { nextWord: key => english[`next.${key}`] }
       if (path.endsWith("cloud/install.js")) return { captureMachineFetch: () => ({ current: () => true }) }
       if (path.endsWith("traditional-dictation.generated.js")) return script.exports
+      if (path.endsWith("chime.js")) return { borrowAudioSession: options.borrowAudioSession ?? (() => () => {}) }
       if (path.endsWith("whisper-preview.js")) return { startWhisperPreview: options.preview }
       if (path.endsWith("live-dictation.js")) return {
         readDictationSettings: async () => engine ? { engine, polish } : null,
@@ -125,7 +126,7 @@ function harness(options = {}) {
   runInNewContext(code, sandbox)
   const voice = sandbox.exports, box = new Element()
   const sent = [], toasts = [], states = []
-  const job = { pickEngine: Boolean(options.live ?? options.engine), host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
+  const job = { pickEngine: options.pickEngine ?? Boolean(options.live ?? options.engine), host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
     send: text => sent.push(text), say: (text, bad) => toasts.push({ text, bad: !!bad }), changed: state => states.push(state),
     transcribe: async (audio, rate) => { posts++; return options.transcribe ? options.transcribe(audio, rate) : { text: "Recovered speech" } } }
   const flush = () => new Promise(resolve => setImmediate(resolve))
@@ -425,6 +426,33 @@ test("live dictation follows newly spoken lines and preserves a reader's scroll 
   preview.scrollTop = preview.scrollHeight - preview.clientHeight
   update(extended + "\n第七句")
   assert.equal(preview.scrollTop, preview.scrollHeight - preview.clientHeight)
+})
+
+test("dictation keeps the microphone in duplex and starts a Whisper preview even when settings are unavailable", async () => {
+  let category = "auto", previews = 0
+  const h = harness({
+    pickEngine: true,
+    borrowAudioSession: (type) => {
+      category = type
+      return () => { category = "auto" }
+    },
+    permission: async (stream) => {
+      assert.equal(category, "play-and-record")
+      return stream
+    },
+    preview: () => {
+      previews++
+      return { close() {} }
+    },
+  })
+  await h.start()
+  assert.equal(h.voice.voiceState(), "recording")
+  assert.equal(previews, 1)
+  assert.equal(category, "play-and-record")
+  h.click("go")
+  await h.flush()
+  assert.equal(category, "auto")
+  assert.deepEqual(h.words, ["Recovered speech"])
 })
 
 test("Whisper previews words without changing the draft, and ignores late preview after stopping", async () => {

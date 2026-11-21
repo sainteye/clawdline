@@ -1,6 +1,8 @@
+import type { VoiceDiagnostic } from "../legacy/voice-events.js"
 import type { DictationConnection } from "./live-dictation.js"
 
 const RATE = 16000
+const FIRST_WINDOW_BYTES = 2 * RATE * 2
 const WINDOW_BYTES = 3 * RATE * 2
 const READ_MS = 5000
 
@@ -17,15 +19,25 @@ export function startWhisperPreview(
   encode: (audio: Uint8Array) => string,
   preview: (segment: string) => void,
   unavailable: () => void,
+  diagnose?: (row: VoiceDiagnostic) => void,
 ): WhisperPreview {
   let node: AudioWorkletNode | undefined
   let request: AbortController | undefined
   let pending: ArrayBuffer | undefined
   let closed = false
+  let bytes = 0
+  let received = false
+  let gotText = false
+  const started = performance.now()
 
   function close(): void {
     if (closed) return
     closed = true
+    diagnose?.({
+      stage: "preview",
+      code: gotText ? "preview_text" : received ? "preview_empty" : bytes ? "preview_no_reply" : "preview_no_pcm",
+      bytes, complete: gotText, elapsedMs: Math.round(performance.now() - started),
+    })
     pending = undefined
     request?.abort()
     if (node) {
@@ -61,7 +73,10 @@ export function startWhisperPreview(
         return
       }
       const result = await response.json() as { text?: unknown }
-      if (!closed && !abort.signal.aborted && connection.current() && typeof result.text === "string" && result.text.trim()) {
+      if (closed || abort.signal.aborted || !connection.current() || typeof result.text !== "string") return
+      received = true
+      if (result.text.trim()) {
+        gotText = true
         preview(result.text.trim())
       }
     } catch {
@@ -89,7 +104,9 @@ export function startWhisperPreview(
       }
       node.port.onmessage = (event: MessageEvent<unknown>) => {
         const audio = event.data
-        if (closed || !(audio instanceof ArrayBuffer) || audio.byteLength !== WINDOW_BYTES) return
+        if (closed || !(audio instanceof ArrayBuffer)) return
+        if (audio.byteLength !== FIRST_WINDOW_BYTES && audio.byteLength !== WINDOW_BYTES) return
+        bytes = audio.byteLength
         if (request) pending = audio
         else void read(audio)
       }

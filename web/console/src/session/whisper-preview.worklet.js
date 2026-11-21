@@ -1,5 +1,5 @@
-// 16 kHz mono PCM, in non-overlapping three-second windows. Accumulating
-// samples avoids relying on independently decodable MediaRecorder fragments.
+// 16 kHz mono PCM. The first window is shorter so a short dictation can
+// show text before Stop. Later windows still give Whisper three seconds.
 const rate = 16000
 const windowSamples = 3 * rate
 
@@ -11,6 +11,7 @@ class WhisperPreviewCapture extends AudioWorkletProcessor {
     this.count = 0
     this.window = new Int16Array(windowSamples)
     this.offset = 0
+    this.first = true
     this.hasSignal = false
   }
 
@@ -28,14 +29,15 @@ class WhisperPreviewCapture extends AudioWorkletProcessor {
       this.hasSignal ||= this.window[this.offset - 1] !== 0
       this.sum = 0
       this.count = 0
-      if (this.offset === windowSamples) {
-        if (this.hasSignal) {
-          this.port.postMessage(this.window.buffer, [this.window.buffer])
-          this.window = new Int16Array(windowSamples)
-        }
-        this.hasSignal = false
-        this.offset = 0
+      if (this.offset !== (this.first ? 2 * rate : windowSamples)) continue
+      if (this.hasSignal) {
+        const audio = this.first ? this.window.slice(0, this.offset).buffer : this.window.buffer
+        this.port.postMessage(audio, [audio])
+        if (!this.first) this.window = new Int16Array(windowSamples)
       }
+      this.first = false
+      this.hasSignal = false
+      this.offset = 0
     }
     return true
   }

@@ -781,11 +781,12 @@ export class RelayReader {
   }
 
   /** Deliver typed voice-stage metadata through the existing paired viewer log. */
-  reportVoiceDiagnostic(row: { stage: string; code: string; bytes: number; complete: boolean }): void {
+  reportVoiceDiagnostic(row: { stage: string; code: string; bytes: number; complete: boolean; elapsedMs?: number }): void {
     try {
       const log = (this.client as { viewerEvents?: { record?(event: string, data: Record<string, unknown>, key?: string): unknown } } | null)?.viewerEvents
       log?.record?.("voice.recording.recovery", {
         machine: this.machine, stage: row.stage, code: row.code, bytes: row.bytes, complete: row.complete,
+        ...(row.elapsedMs === undefined ? {} : { elapsed_ms: row.elapsedMs }),
       }, ["voice.recording.recovery", this.machine, row.stage, row.code].join("|"))
     } catch { /* recording recovery cannot depend on diagnostics */ }
   }
