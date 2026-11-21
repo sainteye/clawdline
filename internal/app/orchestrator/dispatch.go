@@ -784,21 +784,31 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.State, r.SpawnError, r.FinishedAt = StateSpawnFailed, err.Error(), b.now()
 		return r
 	}
-	launch, err := projects.Admit(projects.LaunchRequest{
+	taskRoot := b.Tasks.Dir
+	var claudeTaskDir string
+	if r.Assistant == projects.AssistantClaude && r.Gate == nil && r.Kind != TaskKindSupportAnswer {
+		claudeTaskDir = b.claudeTaskDirectory()
+		if claudeTaskDir != "" {
+			taskRoot = "" // The directory is carried in Claude Code's --settings.
+		}
+	}
+	request := projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
 		Model:       r.Model,
 		// Revalidate the selected provider's vocabulary at the command-line
 		// boundary, including defaults read after brief admission.
-		ReasoningEffort: r.ReasoningEffort,
-		Language:        b.SessionLanguage(r.Assistant),
+		ReasoningEffort:           r.ReasoningEffort,
+		Language:                  b.SessionLanguage(r.Assistant),
+		ClaudeAdditionalDirectory: claudeTaskDir,
 		// Admitted by name with the brief, and admitted again here for the
 		// reason the effort is.
 		Persona:                 preflightPersona,
 		PersonaDir:              b.PersonaDir(),
 		Memory:                  memory,
 		IntegrationInstructions: integrations,
-	})
+	}
+	launch, err := projects.Admit(request)
 	if err != nil {
 		r.State = StateSpawnFailed
 		r.SpawnError = err.Error()
@@ -813,9 +823,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		return r
 	}
 	if prepared.files.PromptPath != "" {
-		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: r.Assistant,
-			Model: r.Model, ReasoningEffort: r.ReasoningEffort, Language: b.SessionLanguage(r.Assistant),
-			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath, Memory: memory, IntegrationInstructions: integrations})
+		request.Persona = r.Persona
+		request.PersonaDir = ""
+		request.SquadPromptPath = prepared.files.PromptPath
+		launch, err = projects.Admit(request)
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			r.State = StateSpawnFailed
@@ -846,7 +857,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launchEnv = append(launchEnv, prepared.files.PrivateEnv())
 	}
-	command := preparedWorkflow.Wrap(shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...))
+	command := preparedWorkflow.Wrap(shellCommandWithExecutable(launch, r, taskRoot, cwd, b.taskExecutable(), launchEnv...))
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + command
 
 	// The same decision the dispatch was admitted on (capability.go), read
@@ -976,7 +987,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 
 func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string, launchEnv ...string) string {
 	args := append([]string{}, l.Arguments...)
-	if r.Gate == nil && r.Kind != TaskKindSupportAnswer && l.Assistant != projects.AssistantAntigravity {
+	if taskRoot != "" && r.Gate == nil && r.Kind != TaskKindSupportAnswer && l.Assistant != projects.AssistantAntigravity {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
 	args = append(args, permissionArgs(r, taskRoot, cwd, taskExecutable)...)
@@ -1012,6 +1023,25 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 		return l.ShellCommandWithEnv(set)
 	}
 	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
+}
+
+// Claude Code 2.1.326 and later ask for workspace trust on --add-dir, which
+// can also load configuration from that directory. The tasks directory only
+// supplies files, so pass it as a per-launch additionalDirectories setting.
+// Leave other or redirected directories to Claude Code's trust dialog.
+func (b *Broker) claudeTaskDirectory() string {
+	if !filepath.IsAbs(b.Dir) || b.Tasks.Dir != taskdir.New(b.Dir).Dir {
+		return ""
+	}
+	state, err := filepath.EvalSymlinks(b.Dir)
+	if err != nil {
+		return ""
+	}
+	dir := taskdir.New(state).Dir
+	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+		return ""
+	}
+	return dir
 }
 
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each

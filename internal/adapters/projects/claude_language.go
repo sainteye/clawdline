@@ -135,9 +135,16 @@ func ClaudeSetsLanguage(path string) bool {
 	return ok && strings.TrimSpace(language) != ""
 }
 
-// claudeLanguageArgs is the `--settings` a Claude launch line carries for
-// name. The JSON is quoted for the shell the line is typed into.
-func claudeLanguageArgs(name string) []string {
-	raw, _ := json.Marshal(map[string]string{"language": name})
+// Claude Code accepts one --settings value. Combine launch-specific settings
+// before quoting the JSON for the shell.
+func claudeSettingsArgs(language, additionalDirectory string) []string {
+	settings := map[string]any{}
+	if language != "" {
+		settings["language"] = language
+	}
+	if additionalDirectory != "" {
+		settings["permissions"] = map[string][]string{"additionalDirectories": {additionalDirectory}}
+	}
+	raw, _ := json.Marshal(settings)
 	return []string{"--settings", ShellQuoted(string(raw))}
 }

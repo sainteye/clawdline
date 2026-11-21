@@ -150,6 +150,9 @@ type LaunchRequest struct {
 	// Each is admitted from its own closed language mapper in
 	// claude_language.go.
 	Language string
+	// ClaudeAdditionalDirectory is a daemon-owned directory for file access
+	// in this launch. It is never populated from a client request.
+	ClaudeAdditionalDirectory string
 	// Persona is a built-in persona id (internal/domain/persona), empty for
 	// none. It is a closed list like the model and the language, and a name
 	// that is not on it is refused, never passed through.
@@ -341,6 +344,10 @@ func Admit(req LaunchRequest) (Launch, error) {
 				errors.New("the response language is not one this machine starts"))
 		}
 	}
+	if dir := req.ClaudeAdditionalDirectory; dir != "" &&
+		(req.Assistant != AssistantClaude || !filepath.IsAbs(dir) || !usable(dir)) {
+		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the Claude file access directory is not a safe absolute path"))
+	}
 	if len(req.Memory) > MemoryLaunchLimit {
 		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the Project memory is longer than a launch carries"))
 	}
@@ -428,8 +435,8 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if req.Assistant == AssistantAntigravity {
 		args = append(args, "--mode", req.PermissionMode)
 	}
-	if req.Language != "" && req.Assistant == AssistantClaude {
-		args = append(args, claudeLanguageArgs(req.Language)...)
+	if req.Assistant == AssistantClaude && (req.Language != "" || req.ClaudeAdditionalDirectory != "") {
+		args = append(args, claudeSettingsArgs(req.Language, req.ClaudeAdditionalDirectory)...)
 	}
 	args = append(args, personaArgs...)
 	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Executable: req.Executable, Arguments: args}, nil

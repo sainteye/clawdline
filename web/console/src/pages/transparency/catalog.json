@@ -19,7 +19,7 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 271
+          "line": 274
         }
       ],
       "original": [
@@ -74,11 +74,11 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 234
+          "line": 237
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 378
+          "line": 385
         }
       ],
       "original": [
@@ -2416,7 +2416,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 387
+          "line": 394
         },
         {
           "path": "internal/app/start.go",
@@ -2482,7 +2482,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 234
+          "line": 237
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -2690,7 +2690,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 375
+          "line": 382
         },
         {
           "path": "skills/workflow.go",
@@ -2847,7 +2847,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 375
+          "line": 382
         },
         {
           "path": "internal/adapters/codegraph/codegraph.go",
@@ -5247,8 +5247,8 @@
     "internal/adapters/projectassistantstore/team.go": "2195c20a17e3114e5d434fa3f4a372b160bcb51aab70f6a86aaf242965ae9e2b",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
-    "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
-    "internal/adapters/projects/launch.go": "b34673a343c131515575d2a9583cabecdd7aff99f0e3e6e6247c6ae467af0911",
+    "internal/adapters/projects/claude_language.go": "7dde4197d65e2d6844acafbbf2397406b1868c6b9375b7bd69965e635a377b7d",
+    "internal/adapters/projects/launch.go": "b486912ad4660db0ef960fd2f46737146fc8d474115d87852131810cdc8aa7b1",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/bot_skills.go": "35fe20acdcc0b38e4c6aaed8dc02c52211fc4a05c349481218c65977cc5a6076",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
@@ -5270,7 +5270,7 @@
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "bdeba87827609a7ef6606b45e6d3e172e9a61bd140ad3601a5feb7e5941e5a3b",
+    "internal/app/orchestrator/dispatch.go": "a3a2705557112d9833fb6d91b4b48a97d99e6e700092ea198ca491b5bdce44b3",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "e3d2c18486a12abfb7139edb28549c3387b750eab46bd3fd92098aaa6247a8a6",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
