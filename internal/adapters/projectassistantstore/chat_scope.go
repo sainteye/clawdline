@@ -60,3 +60,6 @@ func ownChatEventSQL(event string) string {
 	// decision or cancellation even while the person is in its own chat.
 	return ownChatTurnSQL(`coalesce(json_extract(` + event + `,'$.message.turn_id'),json_extract(` + event + `,'$.turn.id'),json_extract(` + event + `,'$.trace.turn_id'),json_extract(` + event + `,'$.work.turn_id'),'')`)
 }
+
+// unreadKindsSQL is pa.CountsAsUnread for the roster projection.
+var unreadKindsSQL = "('" + string(pa.AssistantMessage) + "','" + string(pa.WorkMessage) + "')"

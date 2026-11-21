@@ -277,7 +277,7 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  coalesce((SELECT value FROM json_each(j,'$.ReadCursors') WHERE key=?),'') read_cursor,
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
  coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.created_at')) activity_at,
- (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)
+ (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.kind') IN ` + unreadKindsSQL + ` AND json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)
    AND NOT (json_extract(value,'$.exchange') IS NOT NULL
      AND json_extract(value,'$.exchange.target.key.machine_id')=json_extract(j,'$.Bot.key.machine_id')
      AND json_extract(value,'$.exchange.target.key.bot_id')=json_extract(j,'$.Bot.key.bot_id'))) unread,
