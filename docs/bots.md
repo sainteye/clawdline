@@ -423,6 +423,11 @@ every Bot drawn in the scene, including in the building overview. Busy Bots on a
 floor also show an activity line. With the switch off, hovering or focusing a
 Bot still reveals its name.
 
+**Unread replies.** A Bot with unread replies carries a New reply badge on its
+floor and in the building overview. The badge stays visible with name tags
+off. A crowded zone's “N more” button and list also show when a Bot inside has
+an unread reply. Reading the chat clears the badge when the roster refreshes.
+
 **Floors.** Four floors (4F, 3F, 2F, B1) each have a picture and coordinates in
 `tower-scene.ts`. The building layout is offered from seven Bots across two
 Projects. Each machine keeps a versioned document of floor placements in its

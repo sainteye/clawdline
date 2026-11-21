@@ -319,7 +319,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
         return { b, at, moving: true }
       }).sort((a, z) => a.at[1] - z.at[1])
       for (const { b, at, moving } of placed) {
-        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread, lead: b.lead, style: look }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
+        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, lead: b.lead, style: look }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
         const button = buttons.current.get(b.key)
         if (button) {
           button.style.left = `${(at[0] - size / 2) / scene.width * 100}%`
@@ -536,6 +536,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
               style={{ width: `${size / scene.width * 100}%`, height: `${(size + 6) / scene.height * 100}%` }}
               aria-expanded={picked === b.key} data-picked={picked === b.key || undefined}
               onClick={() => { if (picked === b.key) { setPicked(null); onSelect(b.item) } else setPicked(b.key) }}>
+              {b.unread && <span className="pa-tower-unread" aria-hidden="true">{w.towerMoodUnread}</span>}
               <span className="pa-tower-tip" aria-hidden="true">
                 <strong>{b.item.bot.name}</strong>
                 <span>{[project, mood].filter(Boolean).join(" · ")}</span>
@@ -548,11 +549,19 @@ export default function BotTower({ items, w, language, paused = false, highlight
             onClick={() => { setPicked(null); setWaitOpen(false); setFloorsOpen(false); setHelpersOpen(o => !o) }}/>}
           {[...extra].map(([g, more]) => {
             const [x, y] = moreAt(g), names = list.format(more.map(b => b.item.bot.name))
+            const unread = more.some(b => b.unread)
+            const label = w.towerMoreLabel.replace("{count}", String(more.length)).replace("{names}", names)
             return <div key={g} className="pa-tower-more" style={{ left: `${x / scene.width * 100}%`, top: `${y / scene.height * 100}%` }}>
-              <button type="button" aria-expanded={moreOpen === g} aria-label={w.towerMoreLabel.replace("{count}", String(more.length)).replace("{names}", names)}
-                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>{w.towerMore.replace("{count}", String(more.length))}</button>
+              <button type="button" aria-expanded={moreOpen === g} aria-label={unread ? `${label}, ${w.towerMoodUnread}` : label}
+                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>
+                {w.towerMore.replace("{count}", String(more.length))}
+                {unread && <span className="pa-tower-unread">{w.towerMoodUnread}</span>}
+              </button>
               {moreOpen === g && <ul role="list" onKeyDown={e => { if (e.key === "Escape") setMoreOpen(null) }}>{more.map(b => <li key={b.key}>
-                <button type="button" onClick={() => { setMoreOpen(null); onSelect(b.item) }}><strong>{b.item.bot.name}</strong><span>{w[moodWord[b.mood]]}</span></button>
+                <button type="button" onClick={() => { setMoreOpen(null); onSelect(b.item) }}>
+                  <strong>{b.item.bot.name}</strong>
+                  <span>{w[moodWord[b.mood]]}{b.unread && <> · <small className="pa-tower-unread">{w.towerMoodUnread}</small></>}</span>
+                </button>
               </li>)}</ul>}
             </div>
           })}

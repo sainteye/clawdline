@@ -25,7 +25,6 @@ export interface DrawBot {
   color: string
   mood: TowerMood
   seed: number
-  unread?: boolean
   /** The lead Bot wears a short cape and a star badge. */
   lead?: boolean
   /** Neon outline (the default) or a body filled with its colour's gradient. */
@@ -138,11 +137,6 @@ export function drawBot(g: CanvasRenderingContext2D, b: DrawBot, x: number, y: n
     g.save(); g.globalAlpha = alpha; g.fillStyle = "#e39567"; g.fillRect(x + size * .25, y - lift - size - s * .9, s, s)
     g.fillStyle = "#120a26"; g.font = `700 ${Math.round(s * .8)}px -apple-system, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"
     g.fillText("!", x + size * .25 + s / 2, y - lift - size - s * .4); g.restore()
-  }
-  if (b.unread && b.mood !== "wait") {
-    const r = Math.max(3, size * .07)
-    g.save(); g.globalAlpha = alpha; g.fillStyle = "#fafafa"; g.strokeStyle = "#080808"; g.lineWidth = Math.max(1, r * .45)
-    g.beginPath(); g.arc(x + size * .36, y - lift - size * .92, r, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore()
   }
   if (sleeping) {
     const z = still ? 1 : Math.floor((now + b.seed) / 550) % 3
