@@ -12,7 +12,7 @@ await mkdir(output,{recursive:true})
 const {build}=require('esbuild')
 const bundle=await build({stdin:{contents:`
 import React from 'react';import{createRoot}from'react-dom/client';import{useViewPlugins}from'./view-plugins/Host';
-import{setDockAvailable}from'./project-assistants/BotOrb';setDockAvailable(true);
+
 const states=['ready','working','holding','waiting_you','waiting_session','unknown','milestone_complete','work_complete'];
 let listeners=new Set();window.fixture={rows:Array.from({length:Number(new URLSearchParams(location.search).get('count'))||8},(_,i)=>({key:'s'+i,title:i===1?'Working alpha':i===3?'中文甲':('Synthetic '+i),project:{key:i%2?'p1':'p0',label:i%2?'Orion':'Harbor'},workState:states[i%8],freshness:new URLSearchParams(location.search).get('freshness')||'fresh'})),connected:true,navigations:[],change(){for(const f of listeners)f()},state(key,value){this.rows.find(r=>r.key===key).workState=value;this.change()},title(key,value){this.rows.find(r=>r.key===key).title=value;this.change()},hidden(value){Object.defineProperty(document,'visibilityState',{configurable:true,value:value?'hidden':'visible'});document.dispatchEvent(new Event('visibilitychange'))}};
 function Host(){const api=useViewPlugins([{key:'synthetic',label:'Synthetic source',async read(){return{sessions:fixture.rows,connected:fixture.connected}},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},async prepareOpen(key){return()=>fixture.navigations.push(key)}}],document.documentElement.lang);return <><p>LOCAL SYNTHETIC DATA</p><button id="manager" onClick={e=>api.openManager(e.currentTarget)}>Manager</button>{api.dock}{api.content}</>};createRoot(document.getElementById('root')).render(<Host/>);
