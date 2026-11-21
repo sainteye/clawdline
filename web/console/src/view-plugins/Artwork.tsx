@@ -21,6 +21,7 @@ const covers = [
 ]
 export const curatedPackageIDs: readonly string[] = covers.map(row => row.manifest.id)
 export const examplePreview = (id: string, language: string) => previews.find(row => row.id === id && row.language === (language.startsWith("zh") ? "zh-Hant" : "en"))?.src
+export const curatedVersion = (id: string) => covers.find(row => row.manifest.id === id)?.manifest.version
 export const exampleCover = (id: string) => covers.find(row => row.manifest.id === id)?.manifest.cover
 export function hasCuratedUpdate(pkg: ViewPackage): boolean {
   const offered = covers.find(row => row.manifest.id === pkg.manifest.id)?.manifest.version

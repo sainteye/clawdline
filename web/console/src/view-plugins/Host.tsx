@@ -8,11 +8,11 @@ import { downloadOfficialRelease, holdViewRuntime, isOfficialRevision } from "./
 import { newerStableVersion } from "./package.js"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginFrame, readPluginSource, type ViewGrant } from "./Frame.js"
-import { pluginWords } from "./words.js"
-import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate } from "./Artwork.js"
+import { pluginWords, viewHint } from "./words.js"
+import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate, curatedPackageIDs, curatedVersion } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
-import { EmbeddedView, pinView, useDesk, usePinnedView } from "./Embedded.js"
+import { DockIcon, EmbeddedView, GearIcon, pinView, useDesk, usePinnedView } from "./Embedded.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useDockMotion } from "../ui/dock-motion.js"
 import "./plugins.css"
@@ -33,7 +33,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
   const [opened, setOpened] = useState(false), openedRef = useRef(false)
   const [mode, setMode] = useState<"manage" | "launch">("launch")
   const [rows, setRows] = useState<Installed[]>([]), [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false), [loadError, setLoadError] = useState(""), [fetching, setFetching] = useState("")
   const [busy, setBusy] = useState(false), [review, setReview] = useState<PackageReview | null>(null)
   // Keep the reviewed card visible while the registry hint revokes stale grants.
   const [installing, setInstalling] = useState<PackageReview | null>(null), [completed, setCompleted] = useState<ViewPackage | null>(null)
@@ -134,20 +134,28 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       document.body.style.overflow = overflow
     }
   }, [opened])
-  const openRoot = (button: HTMLElement, nextMode: "manage" | "launch", target?: string) => {
+  const openRoot = (button: HTMLElement, nextMode: "manage" | "launch", target?: string, browse = false) => {
     if (openedRef.current) return
     motion.capture(button)
     opener.current = button; owned.current = crypto.randomUUID(); openedRef.current = true
     history.pushState({ ...history.state, viewPlugin: owned.current }, "", location.href)
-    setError(""); setRows([]); setMode(nextMode); setOpened(true); setBusy(true); setLoading(true)
+    setError(""); setLoadError(""); setRows([]); setMode(nextMode); setOpened(true); setBusy(true); setLoading(true)
     const generation = ++operations.current
     void installedPackages().then(installed => {
       if (!openedRef.current || generation !== operations.current) return
       setRows(installed); setBusy(false); setLoading(false)
       const enabled = installed.filter(r => r.enabled), wanted = target && enabled.find(r => r.id === target)
       if (wanted) choose(wanted.active)
-      else if (nextMode === "launch" && enabled.length === 1) choose(enabled[0].active)
-    }, e => { if (openedRef.current && generation === operations.current) { setError(code(e)); setBusy(false); setLoading(false) } })
+      else if (nextMode === "launch" && !browse && enabled.length === 1) choose(enabled[0].active)
+    }, e => { if (openedRef.current && generation === operations.current) { setLoadError(code(e)); setBusy(false); setLoading(false) } })
+  }
+  const reload = () => {
+    if (!openedRef.current) return
+    const generation = ++operations.current
+    setLoadError(""); setError(""); setBusy(true); setLoading(true)
+    void installedPackages().then(installed => { if (generation === operations.current) setRows(installed) },
+      e => { if (generation === operations.current) setLoadError(code(e)) })
+      .finally(() => { if (generation === operations.current) { setBusy(false); setLoading(false) } })
   }
   const act = async (operation: () => Promise<void>) => {
     if (isBusy || installingRef.current) return
@@ -190,6 +198,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
     if (isBusy || installingRef.current) return
     reviewOpener.current = button
     const generation = operations.current
+    setFetching(id)
     return act(async () => {
       let answer: Response
       try { answer = await fetch(`/view-plugins/${id}.zip`, { credentials: "same-origin", cache: "no-store" }) }
@@ -204,7 +213,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       if (!openedRef.current || generation !== operations.current) return
       const release = catalog?.packages.find(item => item.id === pkg.manifest.id)
       await inspect(bytes.buffer, !!release && release.sha256 === pkg.digest && release.version === pkg.manifest.version)
-    })
+    }).finally(() => setFetching(""))
   }
   const choose = (pkg: ViewPackage) => {
     if (isBusy || installingRef.current) return
@@ -261,22 +270,53 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
         const installed = rows.find(row => row.id === curatedID(example.id)), update = installed && hasCuratedUpdate(installed.active)
         return <article className="vp-example" key={example.id}>
           <ViewArtwork cover={examplePreview(curatedID(example.id), language)} missing={w.coverRequired} preview />
-          <div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{installed ? update ? w.update : w.added : example.action}</button></div>
+          <div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} data-fetching={fetching === example.id || undefined} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{fetching === example.id ? <><span className="vp-spin" aria-hidden="true" />{w.installingShort}</> : installed ? update ? w.update : w.added : example.action}</button></div>
         </article>
       })}</div>
     </section>
+  const importZip = (className: string) => <label className={className}>+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={isBusy} onChange={e => {
+            const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""
+            if (file) { reviewOpener.current = e.currentTarget.closest<HTMLElement>(".vp-import"); void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) }) }
+          }} /></label>
+  const disabledCount = rows.length - enabled.length
+  const heroArt = ["session-galaxy", "session-departures", "session-codecraft"].map(id => examplePreview(curatedID(id), language)).filter(Boolean) as string[]
+  const showRecommendations = () => {
+    const target = modal.current?.querySelector<HTMLElement>(".vp-examples button:not([disabled])")
+    if (target) reveal(target, modal.current?.querySelector<HTMLElement>(".vp-examples") ?? undefined)
+  }
+  const viewCard = (row: Installed) => {
+    const preview = examplePreview(row.id, language), art = packageCover(row.active), curated = curatedPackageIDs.includes(row.id), here = desk && pinned === row.id
+    const release = updates.catalog?.packages.find(item => item.id === row.id)
+    const next = release && newerStableVersion(release.version, row.active.manifest.version) ? release.version : hasCuratedUpdate(row.active) ? curatedVersion(row.id) : undefined
+    return <article key={row.id} className="vp-view-card" data-package-id={row.id} data-pinned={here}>
+      <button type="button" className="vp-view-open" disabled={isBusy} onClick={() => choose(row.active)}>
+        <span className={`vp-view-thumb${preview ? "" : " vp-view-thumb-cover"}`} aria-hidden="true">
+          {preview ? <img src={preview} alt="" decoding="async" /> : art ? <><span className="vp-view-blur" style={{ backgroundImage: `url("${art}")` }} /><img src={art} alt="" /></> : <ViewPluginIcon />}
+        </span>
+        <span className="vp-view-meta">
+          {art ? <img className="vp-view-icon" src={art} alt="" /> : <span className="vp-view-icon" aria-hidden="true" />}
+          <span className="vp-view-text"><b>{name(row.active, language)}</b><small>{viewHint(row.id, w)}</small></span>
+          <span className="vp-view-arrow" aria-hidden="true">↗</span>
+        </span>
+      </button>
+      <span className="vp-view-badges">
+        {here && <span className="vp-badge vp-badge-pinned"><DockIcon on />{w.pinned}</span>}
+        {next && <span className="vp-badge vp-badge-update">{w.updateBadge.replace("{version}", next)}</span>}
+        {!curated && <span className="vp-badge">{w.sideloaded}</span>}
+      </span>
+      {desk && <button type="button" className="vp-launch-pin" disabled={isBusy} aria-pressed={here} aria-label={here ? w.unpin : w.pin} title={here ? w.unpin : w.pin}
+        onClick={() => here ? pinView(null) : pinHere(row.id)}><DockIcon on={here} /></button>}
+    </article>
+  }
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onPin={desk && pinned !== grant.pkg.manifest.id ? () => pinHere(grant.pkg.manifest.id) : undefined}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
-      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
+      <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}{mode === "launch" && <button type="button" className="vp-bar-manage" onClick={() => { setError(""); setMode("manage") }}><GearIcon />{w.manageInstall}</button>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
       <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
-        {error && !review && !installing && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
+        {error && !review && !installing && !loadError && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
         {loading ? <LoadingSkeleton label={w.loading} id="view-plugins" kind="cards" /> : <>
-          {mode === "manage" && <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div><label className="vp-import">+ {w.install}<input className="vp-file" type="file" accept=".zip,application/zip" aria-label={w.install} disabled={isBusy} onChange={e => {
-            const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""
-            if (file) { reviewOpener.current = e.currentTarget.closest<HTMLElement>(".vp-import"); void act(async () => { if (file.size > B.archiveBytes) throw new PluginError("package_too_large"); await inspect(await file.arrayBuffer()) }) }
-          }} /></label></div>}
+          {mode === "manage" && <div className="vp-intro"><div><p className="vp-eyebrow">{w.personalize}</p><h2>{w.manageHeading}</h2><p>{w.manageHint}</p></div>{importZip("vp-import")}</div>}
           {panel && <section className="vp-review vp-card" data-package-id={panel.manifest.id} data-phase={installing ? "installing" : review ? "review" : "installed"} tabIndex={-1} aria-label={completed && !review && !installing ? w.added : w.review}>
             <ViewArtwork cover={panel.manifest.cover} missing={w.coverRequired} small /><p className="vp-eyebrow" data-install-result={completed && !review && !installing ? true : undefined}>{completed && !review && !installing ? w.added : w.review}</p><h2>{name(panel, language)}</h2><p className="vp-package-id">{panel.manifest.id} · {panel.manifest.version}</p>
             <p>{w.permissions}: {w.read}{panel.manifest.capabilities.includes("sessions.open") ? ` · ${w.navigate}` : ""}</p><p className="vp-muted">{w.trust}</p>
@@ -291,12 +331,26 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
               <button className="vp-primary" disabled={isBusy} onClick={() => void confirmInstall()}>{review?.expected || installing?.expected ? w.replace : w.confirmInstall}</button>
               <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
             </>}</div></section>}
-          {mode === "launch" ? <>
-            {!enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2>{!recommendations.length && <p>{w.launchEmptyHint}</p>}</div> : <div className="vp-launch-list">{enabled.map(row => <div key={row.id} className="vp-launch-row"><button type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
-              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{pinned === row.id ? w.pinned : w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
-            </button>{desk && <button type="button" className="vp-launch-pin" disabled={isBusy} aria-pressed={pinned === row.id}
-              onClick={() => pinned === row.id ? pinView(null) : pinHere(row.id)}>{pinned === row.id ? w.unpin : w.pin}</button>}</div>)}</div>}
-            {recommendations.length > 0 && gallery(recommendations, w.recommended)}
+          {mode === "launch" ? loadError ? <div className="vp-state" role="alert">
+            <span className="vp-state-glyph" aria-hidden="true">!</span><h2>{w.loadFailed}</h2>
+            <p>{w.errors[loadError] || w.unavailable}<br />{w.sessionsSafe}</p>
+            <div className="vp-state-actions"><button className="vp-primary" onClick={reload}>{w.retry}</button><button onClick={() => { setLoadError(""); setMode("manage") }}>{w.openManage}</button></div>
+            <code>{loadError}</code>
+          </div> : <>
+            {!enabled.length ? <section className="vp-hero" aria-label={rows.length ? w.allDisabledTitle : w.heroTitle}>
+              {heroArt.length > 0 && <div className="vp-hero-art" aria-hidden="true">{heroArt.map(src => <img key={src} src={src} alt="" decoding="async" />)}</div>}
+              <div className="vp-hero-copy"><h2>{rows.length ? w.allDisabledTitle : w.heroTitle}</h2><p>{rows.length ? w.allDisabledText : w.heroText}</p>
+                <div className="vp-hero-actions">{rows.length ? <button className="vp-primary" onClick={() => setMode("manage")}>{w.openManage}</button> : <>
+                  {recommendations.length > 0 && <button className="vp-primary" disabled={isBusy} onClick={showRecommendations}>{w.heroInstall}</button>}
+                  {importZip("vp-import vp-hero-zip")}
+                </>}</div></div>
+            </section> : <section className="vp-views" aria-label={w.installedShort}>
+              <div className="vp-section-head"><h2>{w.installedShort}</h2><span className="vp-count">{enabled.length}</span><p>{desk ? w.launchHint : w.launchHintPhone}</p></div>
+              <div className="vp-view-grid">{enabled.map(viewCard)}</div>
+              {disabledCount > 0 && <div className="vp-disabled-note"><span>{w.disabledHidden.replace("{count}", String(disabledCount))}</span>
+                <button type="button" onClick={() => setMode("manage")}>{w.enableInManage} <span aria-hidden="true">→</span></button></div>}
+            </section>}
+            {recommendations.length > 0 && gallery(recommendations, w.recommended, w.recommendedHint)}
           </> : <>
           <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span><button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button></div>
             {updates.failure && <p className="vp-update-error" role="status">{w.errors[updates.failure] || w.errors.update_check_failed}</p>}
@@ -330,7 +384,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
   </div>, document.body) : null
   /** The pinned view for the Session pane, or null when the pane keeps its home screen. */
   const viewPane = (hidden: boolean) => desk && pinned && !opened ? <EmbeddedView source={source} language={language} pinned={pinned} hidden={hidden}
-    onFullscreen={(button, pkg) => openRoot(button, "launch", pkg.manifest.id)} /> : null
+    onFullscreen={(button, pkg) => openRoot(button, "launch", pkg.manifest.id)}
+    onBrowse={button => openRoot(button, "launch", undefined, true)} onManage={button => openRoot(button, "manage")} /> : null
   const pinnedPane = desk && !!pinned
   return { opened, openedRef, dock: entry, content, viewPane, pinnedPane, viewReturn: w.backToView,
     openManager: (button: HTMLElement) => openRoot(button, "manage"), managerLabel: w.title }

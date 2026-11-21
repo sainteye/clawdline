@@ -17,7 +17,7 @@ const en = {
   noSource: "No authorized machine is available.", loading: "Reading…", retry: "Try again", unavailable: "The view is unavailable.",
   back: "Back to plugin list", viewClose: "Close view and return", permissions: "Requested access", read: "Read Session summaries", navigate: "Open a Session",
   offline: "Some Session data is stale or unavailable.", selected: "Selected package", author: "Package identity", previous: "Previous version",
-  launcher: "Your views", launchEmpty: "No views enabled yet", launchEmptyHint: "Add a view from Sidebar → View plugins.", recommended: "Recommended views", openView: "Open this view",
+  launcher: "Views", launchEmpty: "No views enabled yet", launchEmptyHint: "Add a view from Sidebar → View plugins.", recommended: "Recommended views", openView: "Open this view",
   personalize: "A different perspective", manageHeading: "Make room for your views", manageHint: "Add a view here. Open it anytime from the status bar.",
   removeQuestion: "Remove {name}?", removePrevious: " Its previous version is removed too.",
   manage: "Manage", enabled: "Enabled", disabled: "Disabled", emptyHint: "Start with a view below, or import a community package.",
@@ -25,6 +25,14 @@ const en = {
   checkUpdates: "Check for updates", checkingUpdates: "Checking updates…", updateTo: "Update to {version}", autoUpdate: "Update automatically", updateCheckUnavailable: "Latest version not confirmed",
   current: "Up to date", available: "Update available", updating: "Downloading update…", waitingClose: "Updates when open views close",
   pin: "Pin to the right", pinned: "Pinned to the right", unpin: "Remove from the right", fullscreen: "Full screen", switchView: "Switch view", backToView: "Back to view",
+  launchHint: "Click a card to open it full screen. Use its corner button to pin it beside the Session list.", launchHintPhone: "Tap a card to open it full screen.",
+  manageInstall: "Manage and install", disabledHidden: "Disabled views are not shown here: {count}.", enableInManage: "Enable in Manage",
+  updateBadge: "Update v{version}", sideloaded: "Installed by you", installingShort: "Installing…", installedShort: "Installed",
+  heroTitle: "See your Sessions another way", heroText: "Views draw the same Sessions as a village, a departures board or a galaxy. Open one full screen, or pin it beside the Session list on a desktop.",
+  heroInstall: "Install a recommended view", allDisabledTitle: "Your installed views are all turned off", allDisabledText: "Turn one on in Manage to open it here.",
+  recommendedHint: "Maintained by Clawdline. Saved in this browser once installed.", loadFailed: "Installed views could not be read", sessionsSafe: "Your Sessions are not affected.", openManage: "Open Manage",
+  allViews: "All views…", opening: "Opening {name}", openingHint: "Reading Sessions and loading the view.", paneFailed: "{name} cannot be shown right now",
+  othersSafe: "Other views and your Sessions are not affected.", reload: "Reload", otherView: "Choose another view",
   reviewRequired: "Review the update before applying", updateFailed: "Update failed · current version kept", updateSourceUnknown: "Import a newer ZIP for community packages",
   errors: {
     update_catalog_invalid: "The official update list is invalid. Installed views are still available.",
@@ -67,7 +75,7 @@ const zh: typeof en = {
   noSource: "目前沒有已獲授權的機器。", loading: "讀取中…", retry: "再試一次", unavailable: "目前無法開啟此視圖。",
   back: "返回擴充清單", viewClose: "關閉視圖並返回", permissions: "要求的權限", read: "讀取 Session 摘要", navigate: "開啟 Session",
   offline: "部分機器的 Session 資料可能過時或無法讀取。", selected: "選取的套件", author: "套件識別", previous: "前一版本",
-  launcher: "已安裝視圖", launchEmpty: "還沒有啟用的視圖", launchEmptyHint: "從側邊欄的「視圖擴充」新增視圖。", recommended: "推薦視圖", openView: "開啟這個視圖",
+  launcher: "視圖", launchEmpty: "還沒有啟用的視圖", launchEmptyHint: "從側邊欄的「視圖擴充」新增視圖。", recommended: "推薦視圖", openView: "開啟這個視圖",
   personalize: "換個角度看工作", manageHeading: "你的工作，不同視角", manageHint: "在這裡新增視圖，隨時從狀態列打開。",
   removeQuestion: "要移除「{name}」嗎？", removePrevious: "前一版本也會一併刪除。",
   manage: "管理", enabled: "已啟用", disabled: "已停用", emptyHint: "從下方挑一個視圖，或匯入社群套件。",
@@ -75,6 +83,14 @@ const zh: typeof en = {
   checkUpdates: "檢查更新", checkingUpdates: "正在檢查更新…", updateTo: "更新至 {version}", autoUpdate: "自動更新", updateCheckUnavailable: "尚未確認最新版本",
   current: "已是最新版本", available: "有新版本", updating: "正在下載更新…", waitingClose: "關閉已開啟的視圖後更新",
   pin: "固定在右側", pinned: "已固定在右側", unpin: "從右側移除", fullscreen: "全螢幕", switchView: "切換視圖", backToView: "回到視圖",
+  launchHint: "點卡片以全螢幕開啟；按右上角按鈕固定在 Session 列表右側", launchHintPhone: "點卡片以全螢幕開啟",
+  manageInstall: "管理與安裝", disabledHidden: "另有 {count} 個已停用的視圖不會出現在這裡。", enableInManage: "到管理頁啟用",
+  updateBadge: "有更新 v{version}", sideloaded: "自行安裝", installingShort: "安裝中…", installedShort: "已安裝",
+  heroTitle: "用另一種方式看你的 Session", heroText: "視圖把同一批 Session 畫成村莊、航班板或星系。安裝後可全螢幕開啟，也能固定在桌機的 Session 列表右側。",
+  heroInstall: "安裝推薦的視圖", allDisabledTitle: "已安裝的視圖都停用了", allDisabledText: "到管理頁啟用一個，就能在這裡開啟。",
+  recommendedHint: "官方維護，安裝後保存在這個瀏覽器", loadFailed: "讀不到已安裝的視圖", sessionsSafe: "你的 Session 不受影響。", openManage: "到管理頁",
+  allViews: "所有視圖…", opening: "正在開啟{name}", openingHint: "讀取 Session 並載入視圖", paneFailed: "{name}暫時無法顯示",
+  othersSafe: "其他視圖與你的 Session 不受影響。", reload: "重新載入", otherView: "換一個視圖",
   reviewRequired: "檢查更新內容後套用", updateFailed: "更新失敗，已保留目前版本", updateSourceUnknown: "社群套件請匯入新版 ZIP 更新",
   errors: {
     update_catalog_invalid: "官方更新清單格式有誤，已安裝的視圖仍可使用。",
@@ -99,3 +115,12 @@ const zh: typeof en = {
   },
 }
 export function pluginWords(language: string) { return language.toLowerCase().startsWith("zh") ? zh : en }
+type Words = ReturnType<typeof pluginWords>
+const hints: Record<string, (w: Words) => string> = {
+  "com.clawdline.session-codecraft": w => w.codecraftHint, "com.clawdline.session-kaiju": w => w.kaijuHint,
+  "com.clawdline.session-lantern-deep": w => w.lanternDeepHint, "com.clawdline.session-galaxy": w => w.galaxyHint,
+  "com.clawdline.session-orrery": w => w.orreryHint, "com.clawdline.session-night-city": w => w.nightCityHint,
+  "com.clawdline.session-departures": w => w.departuresHint, "com.clawdline.session-territory": w => w.territoryHint,
+}
+/** A curated view's one-line description; a community package has none, so it shows its id. */
+export const viewHint = (id: string, w: Words) => hints[id]?.(w) ?? id

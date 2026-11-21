@@ -1,10 +1,12 @@
 # View Plugin v1
 
-Revision 11 describes the **experimental browser-local runtime** implemented in
+Revision 12 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
 Session Departures, Session Territory, World of Codecraft, Kaiju City and Lantern Deep. Public Release acceptance is separate from source and Cloud delivery.
 Revision 11 adds the embedded presentation: a desktop can pin a view beside its Session
-list ([Full screen and embedded](#full-screen-and-embedded)). The wire protocol is unchanged.
+list ([Full screen and embedded](#full-screen-and-embedded)). Revision 12 changes only the
+host's presentation of packages: launcher cards and the pinned pane's picker
+([How the host shows your package](#how-the-host-shows-your-package)). The wire protocol is unchanged.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -15,9 +17,10 @@ directly and shows the launcher when there are zero or multiple enabled views.
 The launcher recommends Lantern Deep, Session Departures and World of Codecraft until each
 package is installed. Selecting a recommendation opens package review in place.
 The orbit entry follows the provider quota bar’s visibility.
-An opened view fills the app. On a desktop (900 CSS pixels and wider) the launcher and a
-full-screen view also offer **Pin to the right**: the pinned view then fills the Session
-pane whenever no Session is open there, in place of the home screen.
+An opened view fills the app. On a desktop (900 CSS pixels and wider) each launcher card
+and a full-screen view also offer **Pin to the right**: the pinned view then fills the Session
+pane whenever no Session is open there, in place of the home screen. The pane's header
+picker switches between enabled views and leads to every view and to Manage.
 The host owns installation, consent, current machine identity, history, focus,
 close and Session navigation. The plugin owns its own HTML, CSS, canvas and motion.
 The Session page, classifier and dispatch broker are not plugin extension points.
@@ -147,6 +150,34 @@ parse every supplied ZIP and verify its authored cover and curated listing; a
 missing cover cannot pass the publication gate. An actual cover must identify
 the view and be reviewed as artwork: a technically valid blank or borrowed image
 is not publication acceptance.
+
+### How the host shows your package
+
+The host draws every installed package from its manifest alone; nothing in your HTML
+runs until the view is opened. Plan the cover and name for these places:
+
+| Place | What is shown |
+|---|---|
+| Launcher card | A 16:9 picture, then a 34-pixel cover, the name and one line below it |
+| Pinned pane picker | A 26-pixel cover and the name; the open menu shows a 38-pixel cover, the name and one line |
+| Pane loading and failure screens | An 84-pixel cover (greyed out on failure) and the name |
+
+Curated packages show a reviewed preview screenshot as the card picture and a short
+description as the line. A community package has neither: the card shows its cover
+centered at 92 pixels over a blurred copy of the same cover, the line shows the package
+`id`, and the card is marked **Installed by you**. The manifest has no description or
+preview field in v1, so do not rely on one. Therefore:
+
+- make the cover read at 26 pixels and still look deliberate at 92 pixels; 128 × 128 or
+  larger is recommended;
+- keep the main shape near the center, with an opaque or dark-friendly background,
+  because the blurred copy fills the rest of the card;
+- choose a short name: the card, picker and pane header truncate long names to one line;
+- choose an `id` that a person can recognise, since it is the card's only description.
+
+A card opens the view full screen. Its corner button pins it; that button and the
+**Pinned to the right** badge appear only where a pane exists. Disabled packages are
+not cards; the launcher counts them and links to Manage.
 
 Each supplied cover has editable `cover.svg` source beside its manifest. They
 can be rendered using an already installed local Playwright module, without a

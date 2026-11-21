@@ -28,6 +28,9 @@ createRoot(document.getElementById('root')).render(<Host/>);
 const files = new Map(bundle.outputFiles.map(f => ['/' + f.path.split('/').at(-1), { bytes: f.contents, type: f.path.endsWith('.js') ? 'text/javascript' : 'text/css' }]))
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://fixture')
+  if (url.pathname.startsWith('/view-plugins/previews/') && /^[a-zA-Z0-9-]+\.webp$/.test(url.pathname.slice(23))) {
+    readFile(root + 'web/console/public' + url.pathname).then(bytes => { res.setHeader('Content-Type', 'image/webp'); res.end(bytes) }, () => { res.writeHead(404); res.end() }); return
+  }
   const item = url.pathname === '/' ? { type: 'text/html', bytes: '<!doctype html><html lang="zh-Hant" data-theme="dark"><meta charset="utf-8"><link rel="stylesheet" href="/host.css"><body style="margin:0;background:#101014;color:#eee"><div id="root"></div><script type="module" src="/host.js"></script>' } : files.get(url.pathname)
   if (!item) { res.writeHead(404); res.end(); return }
   res.setHeader('Content-Type', item.type); res.end(item.bytes)
@@ -45,17 +48,33 @@ const install = async slug => {
   await page.locator('.vp-review[data-phase=installed]').waitFor()
 }
 const frame = () => page.frameLocator('.vp-pane iframe')
+// Previews decode asynchronously; a screenshot waits for every picture the host shows.
+const settled = () => page.waitForFunction(() => [...document.querySelectorAll('.vp-host img')].every(img => img.complete && img.naturalWidth > 0))
 try {
   await page.goto(origin)
   assert.equal(await page.locator('.vp-pane').count(), 0, 'nothing is pinned yet: the pane keeps its home screen')
+  // With nothing installed, the launcher introduces views and offers recommendations.
+  await page.locator('.vp-dock').click()
+  await page.locator('.vp-hero').waitFor()
+  assert.ok(await page.locator('.vp-launcher .vp-example').count() > 0, 'the empty launcher offers recommended views')
+  await settled()
+  await page.screenshot({ path: output + '/launcher-empty.png' })
+  await page.getByRole('button', { name: '關閉', exact: true }).click()
+  await page.locator('.vp-host').waitFor({ state: 'detached' })
   await page.locator('#manager').click()
   for (const slug of ['departures', 'codecraft']) await install(slug)
   await page.getByRole('button', { name: '關閉', exact: true }).click()
   await page.locator('.vp-host').waitFor({ state: 'detached' })
 
-  // Pin from the status-bar launcher; the host closes and the pane shows the view.
+  // Pin from the status-bar launcher's card; the host closes and the pane shows the view.
   await page.locator('.vp-dock').click()
-  await page.locator('.vp-launch-row', { hasText: '航班板' }).getByRole('button', { name: '固定在右側' }).click()
+  await page.locator('.vp-view-card').nth(1).waitFor()
+  assert.equal(await page.locator('.vp-view-card').count(), 2, 'both enabled views are cards')
+  assert.equal(await page.locator('.vp-view-card .vp-view-thumb img').count(), 2, 'curated views show their previews')
+  await page.locator('.vp-view-card[data-package-id="com.clawdline.session-codecraft"] .vp-view-open').hover()
+  await settled()
+  await page.screenshot({ path: output + '/launcher-cards.png' })
+  await page.locator('.vp-view-card[data-package-id="com.clawdline.session-departures"]').getByRole('button', { name: '固定在右側' }).click()
   await page.locator('.vp-host').waitFor({ state: 'detached' })
   await frame().locator('body.embedded').waitFor()
   assert.equal(await frame().locator('#close').isVisible(), false, 'the package close is hidden when embedded')
@@ -88,7 +107,29 @@ try {
   assert.equal(await page.locator('.vp-pane').count(), 1)
 
   // Switch to the village: the roster column and header are gone; the scene fills the pane.
-  await page.locator('.vp-pane-switch select').selectOption({ label: '奇幻村莊' })
+  // The picker is a menu with covers: keyboard moves from the checked view, Escape keeps the pin.
+  await page.locator('.vp-switch-trigger').click()
+  await page.locator('.vp-switch-menu').waitFor()
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-checked')), 'true', 'focus starts on the current view')
+  assert.equal(await page.locator('.vp-switch-menu [role=menuitemradio] img').count(), 2, 'every view shows its cover')
+  await page.keyboard.press('ArrowUp')
+  await page.screenshot({ path: output + '/embedded-switch.png' })
+  await page.keyboard.press('Escape')
+  await page.locator('.vp-switch-menu').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.vp-pane').count(), 1, 'closing the picker keeps the view pinned')
+  // All views opens the launcher in browse mode, with the pinned card marked.
+  await page.locator('.vp-switch-trigger').click()
+  await page.getByRole('menuitem', { name: '所有視圖…' }).click()
+  await page.locator('.vp-view-card[data-pinned=true] .vp-badge-pinned').waitFor()
+  await settled()
+  await page.screenshot({ path: output + '/launcher-pinned.png' })
+  await page.getByRole('button', { name: '關閉', exact: true }).click()
+  await page.locator('.vp-host').waitFor({ state: 'detached' })
+  await page.locator('.vp-switch-trigger').click()
+  // The village is listed before the board, so it is one step up from the current view.
+  await page.keyboard.press('ArrowUp')
+  assert.match(await page.evaluate(() => document.activeElement?.textContent ?? ''), /奇幻村莊/)
+  await page.keyboard.press('Enter')
   await frame().locator('body.embedded[data-art-ready=true]').waitFor({ timeout: 60000 })
   assert.equal(await frame().locator('aside').isVisible(), false)
   assert.equal(await frame().locator('header').isVisible(), false)
@@ -105,9 +146,22 @@ try {
   await page.locator('.vp-host').getByRole('button', { name: '關閉視圖並返回' }).click()
   await page.locator('.vp-host').waitFor({ state: 'detached' })
 
+  // A phone has no pane: cards in two columns and no pin control.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.locator('.vp-dock').click()
+  await page.locator('.vp-view-card').nth(1).waitFor()
+  assert.equal(await page.locator('.vp-launch-pin').count(), 0, 'a phone offers no pinning')
+  assert.equal(await page.locator('.vp-badge-pinned').count(), 0, 'a phone has no pane, so nothing is shown as pinned')
+  assert.ok(await page.evaluate(() => document.querySelector('.vp-manager').scrollWidth <= innerWidth), 'the phone launcher has no sideways scroll')
+  await settled()
+  await page.screenshot({ path: output + '/launcher-phone.png' })
+  await page.getByRole('button', { name: '關閉', exact: true }).click()
+  await page.locator('.vp-host').waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 1440, height: 900 })
+
   // The header's remove control gives the pane back.
   await page.locator('.vp-pane-unpin').click()
   await page.locator('.vp-pane').waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
-  console.log('Embedded pane: pin, embedded layouts, open-and-return, Escape, switch, full screen and remove passed')
+  console.log('Embedded pane: empty launcher, cards, pin, embedded layouts, open-and-return, Escape, picker menu, browse, full screen, phone and remove passed')
 } finally { await browser.close(); await new Promise(r => server.close(r)) }
