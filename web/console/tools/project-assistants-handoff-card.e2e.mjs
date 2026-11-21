@@ -16,10 +16,15 @@ const bundle = await build({entryPoints: [path.join(root, "tools/fixtures/projec
 const files = new Map(bundle.outputFiles.map(f => ["/" + path.basename(f.path), f.contents]))
 const botPath = "/v1/project-assistants/" + bot, cardPath = botPath + "/handoff-card", messagesPath = botPath + "/messages"
 const traffic = [], evidence = []
-let loseNext = false
+let loseNext = false, failHandoffRead = false
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://fixture")
+    if (failHandoffRead && req.method === "GET" && url.pathname === cardPath) {
+      res.writeHead(409, {"Content-Type": "application/json"})
+      res.end(JSON.stringify({contract_version: "project-assistants.v1", error: {code: "pa_stale_version", field: "handoff_publication", retry_after_seconds: 0}}))
+      return
+    }
     if (url.pathname.startsWith("/v1/")) {
       const chunks = []
       for await (const chunk of req) chunks.push(chunk)
@@ -91,11 +96,40 @@ try {
         })
       }
       const sendText = text => page.locator(".pa-message.pa-mine:not(.pa-sending)").getByText(text, {exact: true})
+      const refreshHandoff = async status => {
+        const response = page.waitForResponse(r => new URL(r.url()).pathname === cardPath && r.request().method() === "GET" && r.status() === status)
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+        await (await response).finished()
+      }
       try {
         await page.goto(origin + "/?lang=" + language)
         await editor.waitFor()
         conversation = new URL(page.url()).hash && new URLSearchParams(new URL(page.url()).hash.slice(1)).get("conversation")
         assert.ok(conversation)
+        const replies = page.locator(".pa-message:not(.pa-mine)").getByText("Scripted final answer", {exact: true})
+        const reply = replies.last()
+        await reply.waitFor()
+        const actions = reply.locator("xpath=ancestor::article").locator(".pa-message-more")
+        if (zh) await actions.tap()
+        else await actions.press("Enter")
+        await click(page.getByRole("menuitem", {name: zh ? "引用回覆" : "Reply", exact: true}))
+        await page.locator(".pa-reply").waitFor()
+        const quoted = "Ordinary quoted input " + language
+        await editor.fill(quoted)
+        failHandoffRead = true
+        await refreshHandoff(409)
+        await page.waitForFunction(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+        assert.equal(await card.getByRole("alert").count(), 0, "a background handoff read must not show an alert over a regular message")
+        assert.equal(await send.isEnabled(), true, "a background handoff read must not block the quoted message")
+        const beforeQuote = await replies.count()
+        await click(send)
+        await sendText(quoted).waitFor()
+        await replies.nth(beforeQuote).waitFor()
+        assert.equal(await card.getByRole("alert").count(), 0)
+        assert.ok(sends()[0].body.quote_message_id)
+        assert.equal(sends()[0].body.handoff, undefined)
+        failHandoffRead = false
+        await refreshHandoff(200)
         await editor.fill(writeDraft)
         await prepare()
         await click(button("View summary", "查看摘要"))
@@ -107,15 +141,21 @@ try {
         await click(button("Cancel", "取消"))
         assert.equal(await card.locator(".pa-handoff-text").textContent(), preview)
         assert.equal(await editor.inputValue(), writeDraft)
-        assert.equal(sends().length, 0)
+        assert.equal(sends().length, 1)
         await page.screenshot({path: path.join(artifacts, language + "-preview.png")})
         await click(button("Keep current conversation", "保留目前對話"))
         await state("Kept the current conversation.", "已保留目前的對話。").waitFor()
-        assert.equal(sends().length, 0)
+        assert.equal(sends().length, 1)
+        failHandoffRead = true
+        await refreshHandoff(409)
+        const beforeKeep = await replies.count()
         await click(send)
         await sendText(writeDraft).waitFor()
-        await page.locator(".pa-message:not(.pa-mine)").getByText("Scripted final answer", {exact: true}).nth(zh ? 3 : 1).waitFor()
-        assert.equal(sends()[0].body.handoff, undefined)
+        await replies.nth(beforeKeep).waitFor()
+        assert.equal(await card.getByRole("alert").count(), 0)
+        assert.equal(sends()[1].body.handoff, undefined)
+        failHandoffRead = false
+        await refreshHandoff(200)
         await prepare()
         await click(button("Edit summary", "編輯摘要"))
         await card.locator("textarea").fill(saved)
@@ -142,6 +182,7 @@ try {
         await click(send)
         await state("This handoff changed. Check the current summary before sending.", "交接稿已變更，請先查看目前的摘要再送出。").waitFor()
         assert.equal(await editor.inputValue(), intended)
+        assert.equal(await send.isDisabled(), true)
         assert.equal(sends().at(-1).status, 409)
         assert.deepEqual(sends().at(-1).body.handoff, snapshot.card.ref)
         await click(button("Check handoff", "查詢交接狀態"))
@@ -156,13 +197,13 @@ try {
         await page.getByText(zh ? "機器已收到這則訊息，沒有重送。" : "The machine has this message. It was not sent again.", {exact: true}).waitFor()
         await sendText(intended).waitFor()
         await state("The source accepted this handoff with your message.", "來源已將交接稿與你的訊息一起受理。").waitFor()
-        assert.equal(sends().length, 3)
-        assert.deepEqual(sends()[2].body.handoff, newer)
-        assert.equal(sends()[2].lost, true)
+        assert.equal(sends().length, 4)
+        assert.deepEqual(sends()[3].body.handoff, newer)
+        assert.equal(sends()[3].lost, true)
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         assert.deepEqual(errors, [])
         await page.screenshot({path: path.join(artifacts, language + "-receipt.png")})
-        evidence.push({language, width, height, keptOld: true, cancelledEdit: true, reload: true, originalHistory: true, staleSend: 409, lostAcknowledgement: true, messagePosts: 3, acceptedInputs: 2})
+        evidence.push({language, width, height, passiveReadFault: 409, ordinaryAndQuotedSend: true, keptOld: true, cancelledEdit: true, reload: true, originalHistory: true, staleSend: 409, lostAcknowledgement: true, messagePosts: 4, acceptedInputs: 3})
       } catch (error) {
         await page.screenshot({path: path.join(artifacts, language + "-failure.png")})
         await writeFile(path.join(artifacts, language + "-failure.txt"), [String(error), ...errors, await page.locator("body").innerText()].join("\n"))

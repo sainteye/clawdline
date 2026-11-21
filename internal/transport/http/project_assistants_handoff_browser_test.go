@@ -32,12 +32,12 @@ func TestHandoffCardBrowser(t *testing.T) {
 		t.Fatalf("browser handoff: %v\n%s", err, out)
 	}
 	x := waitInputTurn(t, f)
-	if len(x.Turns) != 5 || len(x.Messages) != 10 || len(probe.prompts) != 5 || len(probe.opens) != 5 {
-		t.Fatalf("browser did not use exactly four explicit new inputs: turns=%d messages=%d prompts=%d opens=%v", len(x.Turns), len(x.Messages), len(probe.prompts), probe.opens)
+	if len(x.Turns) != 7 || len(x.Messages) != 14 || len(probe.prompts) != 7 || len(probe.opens) != 7 {
+		t.Fatalf("browser did not use exactly six explicit new inputs: turns=%d messages=%d prompts=%d opens=%v", len(x.Turns), len(x.Messages), len(probe.prompts), probe.opens)
 	}
 	for i, language := range []string{"en", "zh-Hant"} {
-		kept, adopted := i*2+1, i*2+2
-		if !probe.opens[kept] || probe.opens[adopted] || probe.opening[kept] != "" ||
+		quoted, kept, adopted := i*3+1, i*3+2, i*3+3
+		if !probe.opens[quoted] || !probe.opens[kept] || probe.opens[adopted] || probe.opening[quoted] != "" || probe.opening[kept] != "" ||
 			!strings.Contains(probe.opening[adopted], "Concurrent source edit "+language) {
 			t.Fatalf("%s did not keep then adopt the exact source revision: opens=%v", language, probe.opens)
 		}

@@ -8,6 +8,7 @@ export function useHandoffCard(source: SourceClient, current: () => readonly Sou
   const available = !!(enabled && fence?.generation && source.canHandoff?.() && source.handoff && source.writeHandoff)
   const [view, setView] = useState<W.ProjectAssistantHandoffResponse | null>(null)
   const [error, setError] = useState("")
+  const [readError, setReadError] = useState("")
   const [busy, setBusy] = useState(false)
   const read = useRef<AbortController | null>(null)
   const write = useRef<AbortController | null>(null)
@@ -32,10 +33,10 @@ export function useHandoffCard(source: SourceClient, current: () => readonly Sou
       if (!matches(fence, answer)) throw failure("pa_stale_generation")
       setView(answer)
       setError("")
+      setReadError("")
     } catch (cause) {
       if (stillCurrent(expected) && !control.signal.aborted) {
-        setView(null)
-        setError(errorCode(cause))
+        setReadError(errorCode(cause))
       }
     } finally {
       if (read.current === control) read.current = null
@@ -48,6 +49,7 @@ export function useHandoffCard(source: SourceClient, current: () => readonly Sou
       setBusy(false)
       setView(null)
       setError("")
+      setReadError("")
       return
     }
     void refresh()
@@ -77,6 +79,7 @@ export function useHandoffCard(source: SourceClient, current: () => readonly Sou
       if (!stillCurrent(expected) || control.signal.aborted) return false
       if (!matches(fence, answer)) throw failure("pa_stale_generation")
       setView(answer)
+      setReadError("")
       return true
     } catch (cause) {
       if (stillCurrent(expected) && !control.signal.aborted) setError(errorCode(cause))
@@ -89,11 +92,15 @@ export function useHandoffCard(source: SourceClient, current: () => readonly Sou
     }
   }
 
-  const supported = available && error !== "pa_unsupported"
+  const supported = available && error !== "pa_unsupported" && readError !== "pa_unsupported"
   const shown = supported && view && fence && matches(fence, view) ? view : null
+  const card = shown?.card ?? null
+  // Ordinary chat can continue when a background read fails. An observed
+  // draft still needs verification before its summary can be sent.
+  const visibleError = supported ? error || (card?.state === "draft" ? readError : "") : ""
   return {
-    available: supported, ready: !supported || !!shown, card: shown?.card ?? null, canPrepare: !!shown?.can_prepare,
-    busy, mutating: () => !!write.current, error: supported ? error : "",
+    available: supported, ready: !supported || !!shown && !readError, card, canPrepare: !!shown?.can_prepare && !readError && !error,
+    busy, mutating: () => !!write.current, error: visibleError,
     refresh, update, conflict: (code: string) => {setView(null);setError(code)},
   }
 }

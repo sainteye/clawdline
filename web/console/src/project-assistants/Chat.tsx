@@ -515,7 +515,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       :canTryText&&!!text.trim()
     if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
       ||(!artifact&&!text.trim()&&images.length===0&&files.length===0)
-      ||(!plain&&(!handoff.ready||handoff.error||!currentData.current)))return refused
+      ||handoff.error||(!plain&&!currentData.current))return refused
     const earlier=view.heldOutcomes.get(draftKey)
     if(earlier){
       if(!plain||!admittedReceipt(earlier.receipt))return refused
@@ -1052,7 +1052,7 @@ ${currentDraft}`:submitted)
   const {call,state:callState}=useBotCall({current:callObservation,submit:submitCall})
   const artifactDraftKey=(id:string)=>JSON.stringify(["artifact",draftKey,id])
   const artifactComposer:ArtifactComposerAccess|undefined=thread?undefined:{
-    blocked:sendAuthorityLost||busy||unknown||call.active||legacyBlocked()||handoff.card?.state==="draft"||editingHandoff||handoff.busy,
+    blocked:sendAuthorityLost||busy||unknown||call.active||legacyBlocked()||handoff.card?.state==="draft"||editingHandoff||handoff.busy||!!handoff.error,
     read:id=>view.draft(artifactDraftKey(id)),
     write:(id,value)=>{const key=artifactDraftKey(id);view.stage(key,value);view.flush(key)},
     send:(message,text)=>send({message,text}),
@@ -1319,7 +1319,7 @@ ${currentDraft}`:submitted)
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={leadSetup.blocked||filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={leadSetup.blocked||filesLost||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
