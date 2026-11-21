@@ -23,9 +23,6 @@ const WORDS = {
   },
 };
 const ART = { ruins: "%%ART:bg-ruins%%", grotto: "%%ART:bg-grotto%%", crystal: "%%ART:bg-crystal%%", "platform-ruins": "%%ART:platform-ruins%%", "platform-grotto": "%%ART:platform-grotto%%", "platform-crystal": "%%ART:platform-crystal%%", pillar: "%%ART:pillar%%", dummy: "%%ART:dummy%%", gate: "%%ART:gate%%", shell: "%%ART:shell%%", mushrooms: "%%ART:mushrooms%%" };
-const CAST = [], FOES = [];
-for (let i = 1; i <= 12; i++) CAST.push("char-" + String(i).padStart(2, "0"));
-for (let i = 1; i <= 6; i++) FOES.push("enemy-" + i);
 /*CAST_ART*/
 const BIOMES = [
   { key: "ruins", sky: ["#0a1422", "#12283a", "#060a12"], fog: [120, 170, 200], far: "#16303f", mid: "#0d1d2b", near: "#070d16", rim: "#7fb4cc", mote: [190, 230, 255], lamp: [200, 235, 255] },
@@ -47,9 +44,9 @@ let context = { language: "en", visible: true, reducedMotion: false, connection:
 let W = 0, H = 0, DPR = 1, scale = 1, groundY = 0, cam = 0, camTarget = 0, camMin = 0, camMax = 0, now = 0, raf = 0, lastFrame = 0, userPanAt = -1e9;
 let wild = new Map(), wildList = [];
 let chambers = [], stations = new Map(), chars = new Map(), enemies = [], fx = [], motes = [], props = new Map(), lastFocus = null, titleChamber = null, titleAt = 0, placed = false;
-// Artwork is decoded only when the scene first asks for it: a phone cannot hold every frame of
-// every wanderer at once, and most frames of most actions are never needed in one opening.
-const loaded = {}, images = new Proxy(loaded, { get(target, key) { if (!(key in target) && typeof key === "string" && typeof ART[key] === "string" && ART[key].startsWith("data:")) { target[key] = null; const img = new Image(); img.onload = () => { target[key] = img; if (!raf) draw(); }; img.onerror = () => { target[key] = null; }; img.src = ART[key]; } return target[key] || undefined; } });
+// Every piece of artwork starts loading as soon as the view opens.
+const images = {};
+for (const key of Object.keys(ART)) if (ART[key].startsWith("data:")) { const img = new Image(); img.onload = () => { images[key] = img; if (!raf) draw(); }; img.src = ART[key]; }
 const w = () => WORDS[context.language && context.language.startsWith("zh") ? "zh" : "en"];
 const status = r => STATES.includes(r.workState) ? r.workState : "unknown";
 const freshness = r => context.connection !== "connected" || awaiting ? "stale" : r.freshness;
@@ -576,11 +573,10 @@ function drawCampProp(kind, wx, wy, ht, flip) {
 }
 function clip(text, n) { const a = Array.from(text); return a.length > n ? a.slice(0, n - 1).join("") + "…" : text; }
 
-function drawBlade(len) { ctx.strokeStyle = "#dfe9f2"; ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(len, 0); ctx.stroke(); ctx.strokeStyle = "#0a0e18"; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(3.5, -3.5); ctx.lineTo(3.5, 3.5); ctx.stroke(); }
 const WEAPON = ["bow", "dagger", "longsword", "dagger", "spear", "hammer", "daggers", "axe", "dagger", "greatsword", "scythe", "dagger"];
 const REACH = { bow: 130, spear: 52, greatsword: 50, scythe: 50, longsword: 46, hammer: 40, axe: 38 };
 const reach = c => REACH[WEAPON[c.cast]] || 34, archer = c => WEAPON[c.cast] === "bow";
-const CAST_SIZE = [44, 42, 44, 44, 46, 44, 44, 44, 42, 48, 42, 44], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
+const CAST_SIZE = [44, 42, 44, 44, 46, 44, 44, 44, 42, 48, 42, 44];
 const FRAME_NAMES = ["run-1", "run-2", "run-3", "run-4", "slash-1", "slash-2", "slash-3", "slash-4", "jump", "fall", "cling", "land", "idle-1", "idle-2", "puzzled", "sit"], frameBox = new Map();
 function frameKey(cast, name) { return "f" + String(cast + 1).padStart(2, "0") + "-" + name; }
 // Every frame of one character shares a canvas; the standing frame gives its ground line and size.
@@ -658,69 +654,11 @@ function drawFrames(c, ghost) {
   if (!ghost && ok && name.startsWith("sleep")) for (let i = 0; i < 3; i++) { const p = (now * .35 + i / 3 + c.x * .01) % 1, zx = X(x + face * 6 + p * 14 + Math.sin(p * 6 + i) * 3), zy = Y(y - 22 - p * 34); ctx.globalAlpha = Math.sin(p * Math.PI) * .85; ctx.font = "700 " + (7 + p * 7) * scale + "px Georgia,serif"; ctx.textAlign = "center"; ctx.fillStyle = "#dfeaf4"; ctx.fillText("z", zx, zy); }
   ctx.globalAlpha = 1; return true;
 }
-function drawPuppet(c, ghost) {
-  if (drawFrames(c, ghost)) return true;
-  const key = CAST[c.cast], img = images[key]; if (!img) return false;
-  const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
-  const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
-  const breathe = Math.sin(now * 2.1 + c.x * .02) * .014, sy = (1 + c.sq + breathe + (air ? clamp(Math.abs(c.vy) / 5200, 0, .1) : 0)) * (1 - c.sit * .16), sx = 1 - c.sq * .7 - breathe + c.sit * .06;
-  const bob = moving ? Math.abs(Math.sin(c.run)) * -3 : 0, waddle = moving ? Math.sin(c.run) * .09 : 0, kS = c.slash > 0 ? 1 - easeOut(clamp(c.slash * 1.7, 0, 1)) : 0;
-  const lean = clamp(c.vx * .0011, -.24, .24) * face + (cling ? -.2 : 0) + (air ? clamp(c.vy * .0002, -.12, .12) : 0) + kS * (c.slashKind === "down" ? .5 : c.slashKind === "up" ? -.3 : .28) + c.tilt * .6 + waddle;
-  const ht = CAST_SIZE[c.cast] * 1.22, wd = ht * img.width / img.height, hand = [CAST_HAND[c.cast][0] * 1.22, CAST_HAND[c.cast][1] * 1.22];
-  ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
-  ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
-  if (!ghost && state !== "unknown") { // a small state-coloured wisp trails each wanderer
-    const col = EYE[state], s = c.scarf, tail = s[s.length - 1], wx = tail.x - x, wy = tail.y - y - 16 + Math.sin(now * 3 + c.x * .1) * 2.5;
-    ctx.globalCompositeOperation = "lighter"; for (let i = 2; i < s.length; i++) { ctx.globalAlpha = c.alpha * .1 * i; ctx.drawImage(glow(col), s[i].x - x - 5, s[i].y - y - 21, 10, 10); } ctx.globalAlpha = c.alpha; ctx.drawImage(glow(col), wx - 13, wy - 13, 26, 26); ctx.drawImage(glow([255, 255, 255]), wx - 4, wy - 4, 8, 8); ctx.globalCompositeOperation = "source-over";
-  }
-  ctx.scale(face * sx, sy); ctx.translate(kS * 5, bob); ctx.rotate(lean);
-  const slashing = c.slash > 0 && !ghost, carry = c.sword;
-  if (!slashing && carry < .5 && !ghost) { ctx.save(); ctx.translate(-wd * .12, -ht * .5); ctx.rotate(-2.15); drawBlade(27); ctx.restore(); }
-  ctx.drawImage(ok ? img : grey(key) || img, -wd / 2, -ht + 2, wd, ht);
-  if (slashing) { const k = easeOut(clamp(c.slash * 1.7, 0, 1)), kind = c.slashKind, a = kind === "up" ? lerp(.5, -2.7, k) : kind === "down" ? lerp(-1.2, 1.9, k) : lerp(-2.4, .85, k); ctx.save(); ctx.translate(hand[0], hand[1]); ctx.rotate(a); drawBlade(30); ctx.restore(); }
-  else if (carry >= .5 && !ghost) { const planted = clamp(carry - 2, 0, 1), rest = clamp(carry - 1, 0, 1) - planted, spin = c.mode === "fight" && c.sub === "flourish" && c.t > .5 ? (c.t - .5) * 14 : 0; ctx.save(); if (planted > .5) { ctx.translate(wd * .5 + 4, -30); ctx.rotate(Math.PI / 2); } else { ctx.translate(hand[0], hand[1]); ctx.rotate(lerp(.45, 1.2, rest) + Math.sin(now * 2 + c.x) * .04 + spin); } drawBlade(planted > .5 ? 30 : 28); ctx.restore(); }
-  ctx.restore(); ctx.globalAlpha = 1; return true;
-}
+// While a wanderer's frames are still arriving, only a small light in its state colour marks the place.
 function drawChar(c, ghost) {
-  if (drawPuppet(c, ghost)) return;
-  const r = c.row, ok = live(r), state = ok ? status(r) : "unknown", hue = c.st.ch.hue, x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
-  const sit = c.sit, cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
-  const breathe = Math.sin(now * 2.1 + c.x * .02) * .012, sy = 1 + c.sq + breathe + (air ? clamp(Math.abs(c.vy) / 5200, 0, .1) : 0), sx = 1 - c.sq * .7 - breathe;
-  const bob = moving ? Math.abs(Math.sin(c.run)) * -2.2 : 0, lean = clamp(c.vx * .0011, -.22, .22) + (cling ? -.16 * face : 0);
-  ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
-  if (ghost) ctx.globalAlpha = ghost.a * .5; else ctx.globalAlpha = c.alpha * (ok ? 1 : .6);
-  // scarf ribbon, drawn in world space behind the cloak
-  if (!ghost) { ctx.strokeStyle = ok ? "hsl(" + hue + ",72%,62%)" : "#56617a"; ctx.lineCap = "round"; ctx.lineJoin = "round"; for (let i = 1; i < c.scarf.length; i++) { ctx.lineWidth = 4.4 - i * .6; ctx.beginPath(); ctx.moveTo(c.scarf[i - 1].x - x, c.scarf[i - 1].y - y); ctx.lineTo(c.scarf[i].x - x, c.scarf[i].y - y); ctx.stroke(); } }
-  ctx.scale(face * sx, sy); ctx.rotate(lean * face * face);
-  const down = sit * 10, ink = ok ? "#0b0f1c" : "#1b2130", rim = ok ? "#3a466b" : "#3a4254";
-  // legs
-  if (sit < .5) { ctx.strokeStyle = ink; ctx.lineWidth = 3.6; ctx.lineCap = "round"; const a = Math.sin(c.run) * 7, lift = Math.max(0, Math.cos(c.run)) * 4, lift2 = Math.max(0, -Math.cos(c.run)) * 4, tuck = air ? 4 : 0; ctx.beginPath(); ctx.moveTo(-3, -12); ctx.lineTo(-3 + a - tuck, -lift - tuck); ctx.moveTo(3, -12); ctx.lineTo(3 - a + tuck * .5, -lift2 - tuck * 1.6); ctx.stroke(); }
-  // sword carried on the back sits behind the cloak
-  const slashing = c.slash > 0, carry = c.sword;
-  if (!slashing && carry < .5 && !ghost) { ctx.save(); ctx.translate(-5, -27 + bob + down); ctx.rotate(-2.2); drawBlade(27); ctx.restore(); }
-  // cloak
-  const hem = c.hem, flare = air ? clamp(c.vy * .012, -3, 7) : 0, wave = Math.sin(now * 3 + c.x * .05) * 1.2, hy = -7 + down * .2 - flare;
-  ctx.fillStyle = ink; ctx.strokeStyle = rim; ctx.lineWidth = 1.3; ctx.lineJoin = "round";
-  ctx.beginPath(); ctx.moveTo(-6, -33 + bob + down); ctx.quadraticCurveTo(-12, -22 + down, -14 + hem + wave - sit * 5, hy); ctx.quadraticCurveTo(-6 + hem * .7, hy + 4.5, hem * .6, hy + 1.5 + wave * .5); ctx.quadraticCurveTo(7 + hem * .7, hy + 5, 13 + hem * .5 - wave + sit * 5, hy); ctx.quadraticCurveTo(11, -22 + down, 6, -33 + bob + down); ctx.closePath(); ctx.fill(); ctx.stroke();
-  // collar in the Project colour
-  ctx.strokeStyle = ok ? "hsl(" + hue + ",70%,58%)" : "#56617a"; ctx.lineWidth = 3.4; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(-6, -32 + bob + down); ctx.quadraticCurveTo(0, -28.5 + bob + down, 6, -32 + bob + down); ctx.stroke();
-  // hood: a pale leaf-shaped cowl with one back-swept tip
-  ctx.save(); ctx.translate(0, -40 + bob + down); ctx.rotate(c.tilt * face + (moving ? .06 : 0));
-  const tip = -hem * .5 - (air ? c.vy * .004 : 0);
-  ctx.fillStyle = ok ? "#e6edf2" : "#8792a3"; ctx.strokeStyle = ok ? "#9fb2c2" : "#5d6777"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(10.5, 1); ctx.bezierCurveTo(11, -8, 3, -12.5, -3, -10.5); ctx.bezierCurveTo(-8, -14, -13 + tip * .6, -18, -18 + tip, -17 - Math.abs(tip) * .2); ctx.bezierCurveTo(-13 + tip * .5, -11, -11.5, -5, -10.5, 1); ctx.bezierCurveTo(-10, 9, 10, 9, 10.5, 1); ctx.closePath(); ctx.fill(); ctx.stroke();
-  // shadowed face and two ember eyes that carry the state colour
-  ctx.fillStyle = "#0a0d18"; ctx.beginPath(); ctx.ellipse(2.6, 1.2, 6.6, 5.6, 0, 0, TAU); ctx.fill();
-  if (state !== "unknown" && !ghost) { const eye = EYE[state], blink = c.blink < 0 || sit > .8 ? .15 : 1; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha *= .7; ctx.drawImage(glow(eye), -4, -6, 15, 14); ctx.globalAlpha /= .7; ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = rgba(eye, 1); ctx.beginPath(); ctx.ellipse(1.2, 1, 1.5, 2.5 * blink, 0, 0, TAU); ctx.ellipse(5.8, 1, 1.5, 2.5 * blink, 0, 0, TAU); ctx.fill(); }
-  ctx.restore();
-  // arm and blade
-  if (!ghost) {
-    if (slashing) { const k = easeOut(clamp(c.slash * 1.7, 0, 1)), kind = c.slashKind, a = kind === "up" ? lerp(.5, -2.7, k) : kind === "down" ? lerp(-1.2, 1.9, k) : lerp(-2.4, .85, k); ctx.save(); ctx.translate(4, -27 + bob); ctx.rotate(a); ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(2, 0); ctx.stroke(); drawBlade(30); ctx.restore(); }
-    else if (carry >= .5) { const planted = clamp(carry - 2, 0, 1), rest = clamp(carry - 1, 0, 1) - planted, spin = c.mode === "fight" && c.sub === "flourish" && c.t > .5 ? (c.t - .5) * 14 : 0; ctx.save(); if (planted > .5) { ctx.translate(15, -30 + down * .4); ctx.rotate(Math.PI / 2); } else { ctx.translate(6, -24 + bob + down * .7); ctx.rotate(lerp(.5, 1.25, rest) + Math.sin(now * 2 + c.x) * .04 + spin); } drawBlade(planted > .5 ? 30 : 28); ctx.restore(); }
-    if (c.arm === 1) { ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.lineCap = "round"; const wig = Math.sin(now * 16) * 1.6; ctx.beginPath(); ctx.moveTo(5, -30); ctx.quadraticCurveTo(13, -36, 8 + wig, -47); ctx.stroke(); }
-    else if (c.arm === 2) { ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(6, -30); ctx.lineTo(15, -33); ctx.moveTo(-6, -30); ctx.lineTo(-15, -33); ctx.stroke(); }
-  }
-  ctx.restore(); ctx.globalAlpha = 1;
+  if (drawFrames(c, ghost) || ghost) return;
+  const ok = live(c.row), col = EYE[ok ? status(c.row) : "unknown"], x = X(c.x), y = Y(c.y - 24) + Math.sin(now * 3 + c.x * .1) * 3 * scale;
+  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 20 * scale, col, .55 * c.alpha); drawGlow(x, y, 6 * scale, [255, 255, 255], .7 * c.alpha); ctx.globalCompositeOperation = "source-over";
 }
 function drawQuestion(c) {
   const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.42 - 28) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
@@ -729,7 +667,7 @@ function drawQuestion(c) {
   // an attention ring on the ground
   const p = (now * .7 + c.x * .01) % 1; ctx.strokeStyle = rgba([255, 160, 130], (1 - p) * .5); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.ellipse(X(c.x), Y(c.st.y) + 1, (10 + p * 22) * scale, (2 + p * 4) * scale, 0, 0, TAU); ctx.stroke();
 }
-const FOE_SIZE = [40, 46, 44, 48, 40, 70], FOE_FLIP = [1, 1, 1, 1, 1, 1];
+const FOE_SIZE = [40, 46, 44, 48, 40, 70];
 const FOE_FRAMES = ["move-1", "move-2", "windup", "attack", "hurt", "death-1", "death-2", "death-3"], foeBox = new Map();
 function foeKey(skin, name) { return "g" + (skin + 1) + "-" + name; }
 function foeFrameBox(skin) {
@@ -765,46 +703,7 @@ function drawWild(e) {
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - FOE_SIZE[e.skin] * .4 * scale, FOE_SIZE[e.skin] * .8 * scale, [255, 110, 40], .16); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (e.face || 1), scale); ctx.globalAlpha = .88 * e.fade; ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1, box.size * k, box.size * k); if (e.flash > 0) { ctx.globalCompositeOperation = "lighter"; ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1, box.size * k, box.size * k); ctx.globalCompositeOperation = "source-over"; } ctx.restore(); ctx.globalAlpha = 1;
 }
-function drawFoe(e) {
-  if (drawFoeFrames(e)) return true;
-  if (e.state === "dying") return true;
-  const img = images[FOES[e.skin]]; if (!img) return false;
-  const grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : 0, ht = FOE_SIZE[e.skin], wd = ht * img.width / img.height;
-  let hop = 0, rot = 0, sqx = 1, sqy = 1;
-  if (e.skin === 2) { const ph = (now * 1.6 + e.phase) % 1; hop = e.state === "roam" ? -Math.sin(ph * Math.PI) * 14 : e.state === "lunge" ? -Math.sin(clamp(e.t / .42, 0, 1) * Math.PI) * 30 : 0; sqy = 1 + (hop < -2 ? .1 : -.06); sqx = 2 - sqy; }
-  else if (e.skin === 4) rot = e.x * .09;
-  else if (e.skin === 1) { sqx = 1 + Math.sin(now * 22 + e.phase) * .07; sqy = 1 - Math.sin(now * 22 + e.phase) * .05; }
-  else if (e.skin === 3) rot = Math.sin(now * 1.8 + e.phase) * .12;
-  else { sqy = 1 + Math.sin(now * 7 + e.phase) * .035; sqx = 2 - sqy; rot = e.skin === 5 ? Math.sin(now * 3 + e.phase) * .05 : 0; }
-  if (e.state === "tele") { sqy *= .84; sqx *= 1.1; } else if (e.state === "lunge" && e.skin !== 2) { sqx *= 1.14; sqy *= .92; }
-  const x = X(e.x) + shake * scale, y = Y(e.y + hop);
-  if (e.skin === 3) { ctx.strokeStyle = "rgba(200,210,220,.4)"; ctx.lineWidth = 1 * scale; ctx.beginPath(); ctx.moveTo(x, y - ht * scale * .9); ctx.lineTo(x + Math.sin(now * 1.8 + e.phase) * 6 * scale, y - 260 * scale); ctx.stroke(); }
-  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - ht * .5 * scale, ht * 1.1 * scale * grow, [255, 110, 40], .26 + .08 * Math.sin(now * 5 + e.phase)); ctx.globalCompositeOperation = "source-over";
-  ctx.save(); ctx.translate(x, y); ctx.scale(scale * e.face * FOE_FLIP[e.skin] * grow * sqx, scale * grow * sqy);
-  if (e.skin === 4) { ctx.translate(0, -ht / 2); ctx.rotate(rot); ctx.translate(0, ht / 2); } else ctx.rotate(rot);
-  ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht);
-  if (e.flash > 0) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .9; ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht); ctx.drawImage(img, -wd / 2, -ht + 1, wd, ht); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; }
-  ctx.restore(); return true;
-}
-function drawEnemy(e) {
-  if (drawFoe(e)) return;
-  const x = X(e.x), y = Y(e.y), grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : 0;
-  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 14 * scale, 40 * scale * grow, [255, 110, 40], .3 + .08 * Math.sin(now * 5 + e.phase)); ctx.globalCompositeOperation = "source-over";
-  ctx.save(); ctx.translate(x + shake * scale, y); ctx.scale(scale * e.face * grow * 1.4, scale * grow * 1.4);
-  const body = e.flash > 0 ? "#fff3e0" : "#1c1018", rim = e.flash > 0 ? "#ffffff" : "#d2643a";
-  if (e.type === "crawler") {
-    const sq = e.state === "tele" ? .82 : e.state === "lunge" ? 1.12 : 1 + Math.sin(now * 6 + e.phase) * .03; ctx.scale(2 - sq, sq);
-    ctx.strokeStyle = "#17101c"; ctx.lineWidth = 2.4; ctx.lineCap = "round"; for (let i = -1; i <= 1; i++) { const sw = Math.sin(now * 13 + i * 2 + e.phase) * 2.5; ctx.beginPath(); ctx.moveTo(i * 7, -4); ctx.lineTo(i * 8 + sw, 0); ctx.stroke(); }
-    ctx.fillStyle = body; ctx.strokeStyle = rim; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(-15, -3); ctx.quadraticCurveTo(-15, -17, -7, -18); ctx.lineTo(-6, -25); ctx.lineTo(-2, -19); ctx.lineTo(1, -27); ctx.lineTo(4, -19); ctx.lineTo(8, -23); ctx.lineTo(9, -16); ctx.quadraticCurveTo(16, -13, 15, -3); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.globalCompositeOperation = "lighter"; ctx.drawImage(glow([255, 140, 60]), 2, -17, 16, 16); ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#ffb060"; ctx.beginPath(); ctx.ellipse(10, -9, 2.2, e.state === "tele" ? 3.2 : 2.2, 0, 0, TAU); ctx.fill();
-  } else {
-    const flap = Math.sin(now * 26 + e.phase); ctx.fillStyle = e.flash > 0 ? "#fff3e0" : "rgba(60,42,70,.85)"; ctx.strokeStyle = rim; ctx.lineWidth = 1;
-    for (const s of [-1, 1]) { ctx.save(); ctx.translate(-2, -8); ctx.rotate(s * (.5 + flap * .55)); ctx.beginPath(); ctx.ellipse(-9, 0, 12, 4.5, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore(); }
-    ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, -6, 9, 7.5, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-8, -4); ctx.lineTo(-16, -1); ctx.lineTo(-7, -8); ctx.fill();
-    ctx.globalCompositeOperation = "lighter"; ctx.drawImage(glow([255, 140, 60]), -3, -14, 16, 16); ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#ffb060"; ctx.beginPath(); ctx.arc(5, -6, 2.2, 0, TAU); ctx.fill();
-  }
-  ctx.restore();
-}
+function drawEnemy(e) { drawFoeFrames(e); }
 function drawFx() {
   for (const f of fx) {
     const k = clamp(f.age / f.life, 0, 1);

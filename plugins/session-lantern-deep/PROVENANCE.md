@@ -15,8 +15,9 @@ Lantern Deep is original to this repository. It ports no upstream project.
 - **Scenery sprites** (three slabs, a pillar, a training dummy, an archway, a fossil
   shell, mushrooms, a four-frame campfire, a bedroll, a tent, a cooking pot, firewood) were generated and keyed the same way.
 - **Effects and motion** (physics, strike arcs, sparks, glows, fog, lamps, ground,
-  dividing rock) are drawn procedurally by `scene.js`, written for this view. A
-  procedural hooded wanderer remains as the fallback when frames are absent.
+  dividing rock) are drawn procedurally by `scene.js`, written for this view. The first
+  procedural hooded wanderer was withdrawn and its code removed; a wanderer whose frames
+  have not arrived yet is shown only as a small light.
 - No sprite, frame or character from any existing game is included or traced.
 - **Backdrops** (`art/bg-ruins.webp`, `art/bg-grotto.webp`, `art/bg-crystal.webp`)
   were generated on 2026-11-21 with the Codex CLI's built-in image generation from
