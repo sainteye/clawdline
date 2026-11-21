@@ -902,10 +902,11 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// A row with no `sessionId` is three different situations, and only
 		// one of them — a session that has not written anything yet — is
 		// worth waiting out rather than acting on.
-		Identity:      contract.IdentityBinding(item.Binding),
-		Shells:        wireShells(item.Shells),
-		Agents:        wireAgents(item.Agents),
-		AgentsReading: wireAgentReading(item.AgentReading),
+		Identity:       contract.IdentityBinding(item.Binding),
+		Shells:         wireShells(item.Shells),
+		Agents:         wireAgents(item.Agents),
+		AgentsReading:  wireAgentReading(item.AgentReading),
+		ContextPercent: s.contextPercent(item),
 		// When this row last moved, from this daemon: the list's order no
 		// longer depends on what any one browser happened to have watched.
 		Activity:      wireActivity(item.Activity),
@@ -1350,4 +1351,13 @@ func ageSeconds(observedAt int64, now time.Time) *int64 {
 		age = 0
 	}
 	return &age
+}
+
+// contextPercent is the used share of the Session's context window for its
+// list row; zero, and so absent on the wire, when it cannot be stated.
+func (s *Server) contextPercent(item session.Session) int64 {
+	if v, ok := s.liveContext.percent(s, item); ok {
+		return v
+	}
+	return 0
 }

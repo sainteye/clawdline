@@ -4,6 +4,34 @@ package capacity
 func sessionsBounds() []Entry {
 	return []Entry{
 		{
+			// How often one Session's context-window reading is renewed for its
+			// list row. Inside it the held reading is answered even if the record
+			// grew; the window fills over minutes.
+			Name: "sessions.live_context_refresh_seconds", Class: Observation, Unit: Seconds,
+			Limit: 15, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.LiveContextRefreshSecondsLimit"},
+		},
+		{
+			// Sessions whose context-window reading is held. Past it the reading
+			// renewed longest ago is forgotten and read again when next listed.
+			Name: "sessions.live_context_rows", Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.MaxLiveContextRows"},
+		},
+		{
+			// The end of one record read for that reading. Only the newest turn
+			// is needed; a turn larger than this reads as unknown.
+			Name: "sessions.live_context_read_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 512 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/transcript.LiveContextReadLimit"},
+		},
+		{
 			// How long after the start route launches a tmux pane a write to it
 			// waits for the assistant instead of being refused as an ordinary
 			// shell. Past it the write is answered as before: refused.

@@ -55,6 +55,12 @@ type SessionStatus struct {
 	FailedAgentCount     *int64 `json:"failed_agent_count,omitempty"`
 	RunningAgentCount    *int64 `json:"running_agent_count,omitempty"`
 	AgentCountUnknown    bool   `json:"agent_count_unknown,omitempty"`
+	// ContextPercent is how full the conversation's context window is, 0…100,
+	// absent when the local row could not state it.
+	ContextPercent *int64 `json:"context_percent,omitempty"`
+	// ShellCount is how many shells and daemon callbacks the local row lists,
+	// absent when that list could not be read.
+	ShellCount *int64 `json:"shell_count,omitempty"`
 }
 
 // ProjectSessionStatus copies scalar facts from a full local row, never the
@@ -170,6 +176,16 @@ func ProjectSessionStatus(machine, id string, row map[string]any, complete bool,
 	}
 	if reading["state"] == "complete" && truncated == 0 {
 		out.FailedAgentCount = &failed
+	}
+	if v, ok := row["context_percent"].(float64); ok && v >= 0 && v <= 100 && v == float64(int64(v)) {
+		percent := int64(v)
+		out.ContextPercent = &percent
+	}
+	if background, _ := row["background_reading"].(string); background != "unavailable" {
+		shells, _ := row["shells"].([]any)
+		omitted, _ := row["background_omitted"].(float64)
+		count := int64(len(shells)) + int64(max(0, omitted))
+		out.ShellCount = &count
 	}
 	if known {
 		out.RunningAgentCount = &running
@@ -356,6 +372,8 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 		// Counts share the existing provider-work coalescing window.
 		steady.RunningAgentCount = nil
 		steady.AgentCountUnknown = false
+		steady.ContextPercent = nil
+		steady.ShellCount = nil
 		if !p.changedCoalesced(statusRowKey(id), mustJSON(identity), mustJSON(steady)) {
 			continue
 		}

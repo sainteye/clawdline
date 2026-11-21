@@ -1903,6 +1903,7 @@ export class RelayReader {
         ...(presentation?.status?.sessionId ? { sessionId: presentation.status.sessionId } : {}),
         machine: this.machine, identity: { machine: this.machine, session: row.destination.sessionID }, execution_generation: row.destination.executionGeneration,
         running_agent_count: row.runningAgentCount, agent_count_unknown: row.agentCountUnknown,
+        context_percent: row.contextPercent ?? displayStatus.context_percent,
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,

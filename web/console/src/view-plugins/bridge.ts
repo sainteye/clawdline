@@ -8,6 +8,8 @@ export interface StateTime { at: number; basis: "declaration" | "turn" }
 export interface SourceSession {
   key: string; title: string; project: { key: string; label: string } | null
   workState: WorkState; freshness: Freshness; connected?: boolean; stateTime?: StateTime; focused?: boolean; waitKind?: "callback"
+  /** How full the context window is (0…100), running provider subagents, and shells with daemon callbacks. */
+  contextUsed?: number; agents?: number; shells?: number
 }
 export interface ViewReading { sessions: SourceSession[]; connected: boolean; partial?: boolean }
 export interface ViewSource {
@@ -42,6 +44,8 @@ export function pluginBridge(options: {
   let notification: ReturnType<typeof setTimeout> | undefined
   const reply = (id: string, payload: object) => { if (alive) port.postMessage({ v: 1, instanceId, id, ...payload }) }
   const event = (name: string, data: unknown) => { if (alive) port.postMessage({ v: 1, instanceId, event: name, data }) }
+  const count = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0 ? v as number : undefined
+  const percent = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 100 ? v as number : undefined
   const stateTime = (time: StateTime | undefined) => time && Number.isFinite(time.at) && time.at > 0 &&
     Number.isFinite(new Date(time.at).getTime()) && ["declaration", "turn"].includes(time.basis) ? { at: time.at, basis: time.basis } : undefined
   function snapshot() {
@@ -60,12 +64,15 @@ export function pluginBridge(options: {
         if (!projects.has(s.project.key)) projects.set(s.project.key, crypto.randomUUID())
         project = { ref: projects.get(s.project.key)!, label: clipped(s.project.label) }
       }
-      const time = stateTime(s.stateTime)
+      const time = stateTime(s.stateTime), used = percent(s.contextUsed), agents = count(s.agents), shells = count(s.shells)
       return { ref, title: clipped(s.title), project,
         workState: WORK_STATES.includes(s.workState) ? s.workState : "unknown",
         ...(typeof s.focused === "boolean" ? { focused: s.focused } : {}),
         ...(s.waitKind === "callback" ? { waitKind: "callback" } : {}),
         ...(time ? { stateTime: time } : {}),
+        ...(used !== undefined ? { contextUsed: used } : {}),
+        ...(agents !== undefined ? { agents } : {}),
+        ...(shells !== undefined ? { shells } : {}),
         freshness: (s.connected ?? reading.connected) ? s.freshness : "stale" }
     })
     const result = { streamId, revision, sessions }

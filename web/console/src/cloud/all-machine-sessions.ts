@@ -171,6 +171,10 @@ export interface ProjectedSession {
   failedAgentCount?: number
   runningAgentCount?: number
   agentCountUnknown?: boolean
+  /** How full the conversation's context window is, 0…100. */
+  contextPercent?: number
+  /** Shells and daemon callbacks the machine's complete row listed. */
+  shellCount?: number
 }
 
 /** A signed fleet identity applies only to the opened execution on its reader machine. */

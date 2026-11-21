@@ -9050,14 +9050,21 @@ type SessionRow struct {
 	BackgroundOmitted int64 `json:"background_omitted,omitempty"`
 
 	// Whether daemon-owned callback rows could be read.
-	BackgroundReading string               `json:"background_reading,omitempty"`
-	Closeability      Closeability         `json:"closeability"`
-	Coordination      *SessionCoordination `json:"coordination,omitempty"`
-	Coordinator       *SessionCoordinator  `json:"coordinator,omitempty"`
-	CWD               string               `json:"cwd,omitempty"`
-	Disposition       *WorkDisposition     `json:"disposition,omitempty"`
-	EpicParent        *EpicSessionParent   `json:"epic_parent,omitempty"`
-	Evidence          Evidence             `json:"evidence"`
+	BackgroundReading string       `json:"background_reading,omitempty"`
+	Closeability      Closeability `json:"closeability"`
+
+	// How full the conversation's context window is, 0 to 100, read from a short tail
+	// of its record at most every sessions.live_context_refresh_seconds. Rounded up,
+	// so any usage reads at least 1. Absent when the record, its usage or the window
+	// cannot be stated, and for a conversation with no tokens yet: an unreadable
+	// conversation is not shown as empty.
+	ContextPercent int64                `json:"context_percent,omitempty"`
+	Coordination   *SessionCoordination `json:"coordination,omitempty"`
+	Coordinator    *SessionCoordinator  `json:"coordinator,omitempty"`
+	CWD            string               `json:"cwd,omitempty"`
+	Disposition    *WorkDisposition     `json:"disposition,omitempty"`
+	EpicParent     *EpicSessionParent   `json:"epic_parent,omitempty"`
+	Evidence       Evidence             `json:"evidence"`
 
 	// Machine-issued durable identity of this terminal execution. Absent when the
 	// source or process start cannot be verified, the machine has no Cloud identity,

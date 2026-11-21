@@ -10533,6 +10533,15 @@ export interface SessionRow {
    */
   background_reading?: string
   closeability: Closeability
+
+  /**
+   * How full the conversation's context window is, 0 to 100, read from a short tail
+   * of its record at most every sessions.live_context_refresh_seconds. Rounded up,
+   * so any usage reads at least 1. Absent when the record, its usage or the window
+   * cannot be stated, and for a conversation with no tokens yet: an unreadable
+   * conversation is not shown as empty.
+   */
+  context_percent?: number
   coordination?: SessionCoordination
   coordinator?: SessionCoordinator
   cwd?: string

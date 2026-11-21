@@ -1,12 +1,13 @@
 # View Plugin v1
 
-Revision 12 describes the **experimental browser-local runtime** implemented in
+Revision 13 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
 Session Departures, Session Territory, World of Codecraft, Kaiju City and Lantern Deep. Public Release acceptance is separate from source and Cloud delivery.
 Revision 11 adds the embedded presentation: a desktop can pin a view beside its Session
 list ([Full screen and embedded](#full-screen-and-embedded)). Revision 12 changes only the
 host's presentation of packages: launcher cards and the pinned pane's picker
-([How the host shows your package](#how-the-host-shows-your-package)). The wire protocol is unchanged.
+([How the host shows your package](#how-the-host-shows-your-package)). Revision 13 adds optional
+Session vitals to `sessions.read` ([Session vitals](#session-vitals)); the wire protocol version is unchanged.
 The earlier revision proposed machine-owned installation; that transport is deferred.
 
 ## What the host owns
@@ -302,6 +303,23 @@ It does not replace `workState`: a working root with background work remains
 working. Orrery uses a distinct waiting orbit only when the Session is not working,
 awaiting the person or reporting completion. Stale readings retain their freshness
 restrictions and cannot animate or navigate.
+
+### Session vitals
+
+Three optional additive integers describe a Session's load, never its content:
+
+- `contextUsed` — how full the conversation's context window is, 0 to 100, rounded up.
+  The machine reads it from a short tail of the record at most every 15 seconds, so it can
+  lag a working turn. Absent when the record, its usage or the window cannot be stated, and
+  for a conversation with no tokens yet.
+- `agents` — provider subagents currently running, stated only from a complete reading.
+- `shells` — active shells plus daemon-owned callbacks, stated only when that list could be read.
+
+All three come from fields the host already held; no transcript text, command line, agent
+name or shell id crosses the bridge. Absent means unknown, not zero. Out-of-range values are
+dropped by the host. Machines older than revision 13 omit them, and Cloud shows them only
+once the machine runs a daemon that publishes them. A view must not present them as
+progress or as accepted work.
 
 `focused` is an optional boolean identifying the host's currently open Session.
 Local and Cloud hosts compare their own execution-scoped identities before projecting

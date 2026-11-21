@@ -399,6 +399,28 @@ test("Focused Sessions keep exact execution identity across local, Cloud and opa
  }finally{f.dispose()}
 })
 
+test("Context use, subagents and shells are counted only from complete readings and reach the view as plain numbers",async()=>{
+ const base={id:'private-id',work_state:'working',evidence:'read'}
+ const rows=localPluginRows([
+  {...base,context_percent:63,agents_reading:{state:'complete'},agents:[{state:'running',what:'private-agent'},{state:'done'},{state:'running'}],shells:[{id:'private-shell',command:'private-command'}],background_reading:'complete',background_omitted:2},
+  {...base,agents_reading:{state:'complete',truncated:1},agents:[{state:'running'}],shells:[{id:'s'}],background_reading:'unavailable'},
+  {...base}],true)
+ assert.deepEqual(rows.map(r=>[r.contextUsed,r.agents,r.shells]),[[63,2,3],[undefined,undefined,undefined],[undefined,undefined,undefined]])
+ const cloud=cloudPluginRows([{destination:{machineID:'machine',sessionID:'private-id'},title:'Example',status:base,observedAt:1,projection:{freshness:'current',contextPercent:12,runningAgentCount:1,shellCount:0}}])
+ assert.deepEqual([cloud[0].contextUsed,cloud[0].agents,cloud[0].shells],[12,1,0])
+ const f=fixture();try{
+  await f.answer(f.send('sessions.subscribe'))
+  const first=f.answer(message=>message.event==='sessions.snapshot'&&message.data.revision===2)
+  f.bridge.update({sessions:[{...row,...rows[0]}],connected:true},context)
+  const value=(await first).data.sessions[0]
+  assert.deepEqual([value.contextUsed,value.agents,value.shells],[63,2,3]);assert.ok(!JSON.stringify(value).includes('private'))
+  const second=f.answer(message=>message.event==='sessions.snapshot'&&message.data.revision===3)
+  f.bridge.update({sessions:[{...row,contextUsed:140,agents:-1,shells:1.5}],connected:true},context)
+  const bad=(await second).data.sessions[0]
+  assert.deepEqual([bad.contextUsed,bad.agents,bad.shells],[undefined,undefined,undefined])
+ }finally{f.dispose()}
+})
+
 test("Callback waits come from live broker targets without exposing task names or replacing working state",async()=>{
  const waiting={id:'private-id',work_state:'unknown',evidence:'read',waiting_for:[{kind:'callback',task_id:'private-task',label:'private-title'}]}
  const rows=localPluginRows([waiting,{...waiting,work_state:'working'},{...waiting,waiting_for:[{kind:'heavy'}]},{...waiting,waiting_for:[{kind:'session'}]},{...waiting,waiting_for:[],work_note:'callback'}],true)

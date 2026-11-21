@@ -15630,6 +15630,63 @@
   },
   {
     "Register": "daemon",
+    "Name": "sessions.live_context_read_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 524288,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/transcript.LiveContextReadLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "sessions.live_context_refresh_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 15,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.LiveContextRefreshSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "sessions.live_context_rows",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.MaxLiveContextRows"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "sessions.rc_close_poll_ms",
     "Class": "observation",
     "Unit": "milliseconds",
