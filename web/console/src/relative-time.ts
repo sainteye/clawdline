@@ -1,6 +1,6 @@
 /** Show past activity in the same minute, hour, or day units across lists. */
 export function lastActivityRelative(at: number, now: number, locale?: string): string {
-  if (!Number.isFinite(at) || at <= 0) return ""
+  if (!Number.isFinite(at) || at <= 0 || !Number.isFinite(now)) return ""
   // A producer clock ahead of this browser still means now.
   const seconds = Math.min(0, at - now / 1000)
   const elapsed = Math.abs(seconds)

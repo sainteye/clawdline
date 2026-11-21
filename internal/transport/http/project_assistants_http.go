@@ -124,7 +124,7 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			err = view.result.Revalidate(r.Context())
 		}
 		if err != nil {
-			paWriteHTTPFailure(w, err)
+			paWriteHTTPFailure(w, paReadViewFailure(err, "view_publication"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -379,6 +379,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 	}
 	source, err := h.status(r.Context(), true)
 	if err != nil {
+		if r.Method == http.MethodGet && route.action == "view" {
+			err = paReadViewFailure(err, "view_source")
+		}
 		return nil, err
 	}
 	if r.Method != http.MethodGet {

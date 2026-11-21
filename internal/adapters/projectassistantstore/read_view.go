@@ -610,16 +610,23 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
  FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND p.key=? AND ` + viewFenceSQL("p.value", true)
 		args = append(args, q.ByteLimit, p.ID)
 	} else {
-		// A signed detail cursor pins one step revision. Later chunks cannot
-		// expire a click already in flight; only this requested step is joined.
-		statement = viewTraceCTE() + `, detail AS MATERIALIZED (
+		// Seek the signed event sequence. Only accumulated text needs earlier
+		// chunks of that step, stopping at the revision the cursor pins.
+		statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, target AS MATERIALIZED (
+ SELECT e.seq,json_extract(CAST(e.data AS TEXT),'$.trace') j
+ ` + viewTraceSourceSQL() + ` AND e.seq=?
+), detail AS MATERIALIZED (
  SELECT CASE WHEN coalesce(json_extract(t.j,'$.id'),'')!=''
  AND json_extract(t.j,'$.category') IN ('agent_message_chunk','agent_thought_chunk')
- THEN json_set(t.j,'$.text',(SELECT group_concat(json_extract(x.j,'$.text'),'' ORDER BY x.seq) FROM traces x
- WHERE json_extract(x.j,'$.turn_id')=json_extract(t.j,'$.turn_id') AND json_extract(x.j,'$.id')=json_extract(t.j,'$.id') AND x.seq<=t.seq))
- ELSE t.j END j FROM traces t WHERE t.seq=?
+ THEN json_set(t.j,'$.text',(SELECT group_concat(json_extract(CAST(e.data AS TEXT),'$.trace.text'),'' ORDER BY e.seq)
+ ` + viewTraceSourceSQL() + `
+ AND json_extract(CAST(e.data AS TEXT),'$.trace.turn_id')=json_extract(t.j,'$.turn_id')
+ AND json_extract(CAST(e.data AS TEXT),'$.trace.id')=json_extract(t.j,'$.id') AND e.seq<=t.seq))
+ ELSE t.j END j FROM target t
 ) SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM detail`
-		args = append(args, out.Head.Key.MachineID, out.Head.Key.BotID, p.Anchor, q.ByteLimit)
+		args = append(args,
+			out.Head.Key.MachineID, out.Head.Key.BotID, p.Anchor,
+			out.Head.Key.MachineID, out.Head.Key.BotID, q.ByteLimit)
 	}
 	var raw sql.NullString
 	err := tx.QueryRowContext(ctx, statement, args...).Scan(&raw)
