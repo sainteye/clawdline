@@ -183,6 +183,7 @@ export interface CloudWriteClient extends CloudReadClient {
     body: Record<string, unknown>,
     kind: "read" | "action",
     timeoutMs?: number,
+    readOptions?: { signal?: AbortSignal },
   ): Promise<unknown>
   /**
    * The four snippet writes. Each names the machine whose settings change
@@ -240,7 +241,7 @@ export interface WriteHost {
    */
   connectedFor(signal: AbortSignal | null | undefined, word: string): Promise<CloudWriteClient | null>
   /** Wait for the full live descriptor when the saved 64-word prefix cannot decide a write. */
-  settledWords?(word: string, machine: string): Promise<void>
+  settledWords?(word: string, machine: string, signal?: AbortSignal | null): Promise<void>
   /** Something was just done to this session: its transcript is about to change. */
   wrote(session: string, outcome: "done" | "unknown" | "refused"): void
   /** The machine's terminal backend confirmed that this session was closed. */
@@ -1252,9 +1253,9 @@ export class RelayWriter {
       })
     }
     let client: CloudWriteClient
-    if (method === "GET" && CARRIED_READS.has(route.op) || route.op === "send") {
-      // A read, and a receipt-keyed message send, wait out a renewal of this
-      // page's own connection. Measured in a production browser: `GET
+    if (method === "GET" && CARRIED_READS.has(route.op) || route.op === "send" || route.op === "voice-preview") {
+      // Reads, receipt-keyed sends and short voice previews wait out a renewal
+      // of this page's own connection. Measured in a production browser: `GET
       // /v1/places` answered `offline` for minutes while the relay socket
       // renewed, with the machine online. An abandoned wait is thrown, not
       // refused: a fetch whose signal fired rejects.
@@ -1623,9 +1624,20 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const host = client.voiceHostFor ? await client.voiceHostFor(this.host.machine) : await client.voiceHost?.()
         const target = host?.machine ?? this.host.machine
+        const signal = init?.signal
+        if (machineCommands(client, target).incomplete) {
+          await this.host.settledWords?.(route.word, target, signal)
+          const current = await this.host.connectedFor(signal, route.word)
+          if (!current || machineCommands(current, target).incomplete) {
+            throw failure("cloud_reconnecting", "Waiting for the voice host's command list.", 503)
+          }
+          client = current
+        }
+        signal?.throwIfAborted()
         const commands = declaredCommands(client, target)
         if (commands && !commands.includes(route.word)) throw failure("cloud_not_carried", route.word, 501)
-        return this.machineWorkV2(client, route.word, { audio: body.audio, rate: body.rate }, headerOf(init, "idempotency-key"), target)
+        return this.machineWorkV2(client, route.word, { audio: body.audio, rate: body.rate },
+          headerOf(init, "idempotency-key"), target, signal ?? undefined)
       }
       case "voice": {
         const body = await bodyOf(init)
@@ -2551,14 +2563,14 @@ export class RelayWriter {
     throw refused ?? failure("cloud_machine_unsupported", "No machine here offers the voice copilot.", 501)
   }
 
-  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>, request: string, machine = this.host.machine): Promise<unknown> {
+  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>, request: string, machine = this.host.machine, signal?: AbortSignal): Promise<unknown> {
     if (request && typeof client._machineRequestAs === "function") {
-      return client._machineRequestAs(request, machine, word, body, "action")
+      return client._machineRequestAs(request, machine, word, body, "action", undefined, signal && { signal })
     }
     if (typeof client._machineRequest !== "function") {
       return Promise.reject(failure("cloud_not_carried", word, 501))
     }
-    return client._machineRequest(machine, word, body, "action")
+    return client._machineRequest(machine, word, body, "action", undefined, signal && { signal })
   }
 
   /**

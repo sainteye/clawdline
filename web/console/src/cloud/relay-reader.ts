@@ -824,7 +824,7 @@ export class RelayReader {
         if (!client && signal?.aborted) throw new AbandonedRead(word)
         return client as CloudWriteClient | null
       },
-      settledWords: (word, machine) => this.settledWords(word, undefined, machine),
+      settledWords: (word, machine, signal) => this.settledWords(word, signal, machine),
       wrote: (session, outcome) => this.wrote(session, outcome),
       closed: (session, generation) => this.closed(session, generation),
       note: (row) => this.note(row.method, row.path, row.answer, row.code, row),

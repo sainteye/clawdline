@@ -176,6 +176,7 @@ interface Recording {
   polishUpdate?: Promise<void>
   traditional?: boolean
   whisperPreview?: WhisperPreview
+  whisperPreviewUnavailable?: boolean
   liveAnswer?: Promise<string>
   retryWithWhisper?: boolean
   // A cancelled wait may still be executing on the host. Reuse that request
@@ -454,12 +455,21 @@ function open(job: VoiceJob): void {
       const take = recording
       if (take && previewContext && connection && selected === "whisper") {
         let words = ""
+        const current = () => mine === token && recording === take && state === "recording"
         take.whisperPreview = startWhisperPreview(previewContext, got, connection, freshKey, base64, (segment) => {
-          if (mine !== token || recording !== take || state !== "recording") return
+          if (!current()) return
           words = appendedText(words, segment)
           setLivePreview(job, words)
+        }, () => {
+          if (!current() || words) return
+          take.whisperPreviewUnavailable = true
+          setLivePreview(job, nextWord("voiceWhisperPreviewUnavailable"))
         })
         previewContext = undefined
+      } else if (take && selected === "whisper") {
+        take.whisperPreviewUnavailable = true
+      }
+      if (take && selected === "whisper") {
         drawn = ""
         show()
       }
@@ -1407,12 +1417,13 @@ function show(): void {
     if (state === "recording" && recording?.enginePicker && !recording.live) {
       box.appendChild(polishCheckbox(recording, recording.enginePicker))
     }
-    if (state === "recording" && (recording?.live || recording?.whisperPreview)) {
+    if (state === "recording" && (recording?.live || recording?.whisperPreview || recording?.whisperPreviewUnavailable)) {
       const preview = document.createElement("div")
       preview.className = "voice-live-preview"
       preview.tabIndex = 0
       preview.setAttribute("role", "region")
       preview.setAttribute("aria-label", nextWord(recording.live ? "voiceEngineRealtime" : "voiceEngineWhisper"))
+      if (recording.whisperPreviewUnavailable) preview.textContent = nextWord("voiceWhisperPreviewUnavailable")
       box.appendChild(preview)
     }
 

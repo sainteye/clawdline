@@ -982,6 +982,35 @@ test("a Whisper preview goes only to the selected voice host with the preview co
   assert.deepEqual(client.calls, [["_machineRequest", "mac-b", "voice-preview", { audio: "AAAA", rate: 16000 }, "action"]])
 })
 
+test("Whisper previews wait for the live command list rather than a cached prefix", async () => {
+  const client = new FakeClient()
+  const cut = { machine: { commands: Array.from({ length: 64 }, (_, n) => `saved-${n}`) } }
+  client.descriptors.set("mac-a", cut)
+  client.machineDescriptors.set("mac-a", cut)
+  const answered = { text: "第一段預覽" }
+  const abort = new AbortController()
+  let observedSignal: AbortSignal | undefined
+  Object.assign(client, {
+    _machineRequestAs: async (_request: string, _machine: string, word: string, _fields: unknown,
+      _kind: string, _timeout: number | undefined, options?: { signal?: AbortSignal }) => {
+      const live = client.orchestratorSnapshots.get("mac-a") as typeof cut | undefined
+      if (!live?.machine.commands.includes(word)) throw refusal("cloud_feature_unavailable", { status: 501 })
+      observedSignal = options?.signal
+      return answered
+    },
+  })
+  const { reader } = seam(client, { t: 1_000 }, false, 30)
+  const answer = reader.fetch("/v1/voice/preview", {
+    ...post({ audio: "AAAA", rate: 16000 }, { "Idempotency-Key": "preview-window-1" }),
+    signal: abort.signal,
+  })
+  setTimeout(() => client.orchestratorSnapshots.set("mac-a", { machine: { commands: ["voice-preview"] } }), 5)
+  const response = await answer
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), answered)
+  assert.equal(observedSignal, abort.signal)
+})
+
 test("the voice source names the actual selected Whisper machine without sending audio", async () => {
   const client = new FakeClient()
   client.descriptors.set("mac-a", { machine: { commands: ["voice"], name: "Build host", platform: "linux" } })
