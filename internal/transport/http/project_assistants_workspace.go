@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -36,7 +37,7 @@ func (p projectAssistantProjects) personalWorkspace(target pa.ProjectSelection, 
 		return pa.ProjectResolution{}, errors.Join(paHTTPFailure(pa.NotFound, "personal_workspace"), err)
 	}
 	defer root.Close()
-	const parent = "bot-workspaces"
+	const parent = app.PersonalWorkspaceDirectory
 	relative := filepath.Join(parent, target.ProjectID)
 	for _, path := range []string{parent, relative} {
 		if create {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,56 @@ import (
 )
 
 const geminiTestSession = "00000000-0000-4000-8000-000000000042"
+
+func TestGeminiBotWorkspaceAdmission(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	selection := pa.WorkspaceForCreate(pa.Command{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}})
+	scope := pa.PersonalScope(selection)
+	workspace := filepath.Join(state, "bot-workspaces", scope.ProjectID)
+	other := filepath.Join(state, "bot-workspaces", pa.WorkspaceForCreate(pa.Command{Key: pa.BotKey{MachineID: "machine", BotID: "other"}}).ProjectID)
+	private := filepath.Join(state, "project-assistants", "native")
+	external := filepath.Join(root, "external-project")
+	for _, dir := range []string{workspace, other, private, external} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registered := pa.ProjectScope{MachineID: "machine", ProjectID: "repo", CanonicalID: "repo", Kind: pa.RepositoryProject}
+	for _, tc := range []struct {
+		name, dir string
+		scope     pa.ProjectScope
+		allowed   bool
+	}{
+		{"own personal workspace", workspace, scope, true},
+		{"external project", external, registered, true},
+		{"personal scope outside its workspace", external, scope, false},
+		{"another personal workspace", other, scope, false},
+		{"registered project in state", workspace, registered, false},
+		{"native profiles", private, scope, false},
+		{"all personal workspaces", filepath.Dir(workspace), scope, false},
+		{"state directory", state, scope, false},
+		{"parent of state directory", root, registered, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := geminiProject(state, tc.dir, tc.scope)
+			if tc.allowed && err != nil || !tc.allowed && pa.Code(err) != pa.ScopeDenied {
+				t.Fatalf("workspace admission allowed=%t: %v", tc.allowed, err)
+			}
+		})
+	}
+	t.Run("personal workspace symlink to native profiles", func(t *testing.T) {
+		if err := os.Remove(workspace); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(private, workspace); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+		if _, err := geminiProject(state, workspace, scope); pa.Code(err) != pa.ScopeDenied {
+			t.Fatalf("workspace symlink reached native profiles: %v", err)
+		}
+	})
+}
 
 func geminiTestPeer(mode string, f frame, line []byte, send func(frame)) bool {
 	result := json.RawMessage(`{}`)

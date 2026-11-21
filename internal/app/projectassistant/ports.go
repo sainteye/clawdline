@@ -271,6 +271,10 @@ type SourceRuleStore interface {
 	Remove(context.Context, pa.BotKey, pa.ProjectScope, pa.PermissionRule) error
 }
 
+// PersonalWorkspaceDirectory is the source-owned workspace namespace, separate
+// from native profiles and other daemon data.
+const PersonalWorkspaceDirectory = "bot-workspaces"
+
 // PersonalWorkspaceProvisioner is a source-owned capability. Only a human
 // create or host bootstrap can allocate a new directory.
 type PersonalWorkspaceProvisioner interface {

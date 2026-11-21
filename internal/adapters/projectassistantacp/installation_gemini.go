@@ -71,7 +71,7 @@ func (p *installedGemini) prepare(ctx context.Context, bot pa.Bot) (Configuratio
 	return config, caps, nil
 }
 
-func geminiProject(state, dir string) (string, error) {
+func geminiProject(state, dir string, project pa.ProjectScope) (string, error) {
 	state, err := filepath.EvalSymlinks(state)
 	if err != nil {
 		return "", refusal(pa.Invalid, "native_state")
@@ -79,6 +79,14 @@ func geminiProject(state, dir string) (string, error) {
 	dir, err = filepath.EvalSymlinks(dir)
 	if err != nil || !filepath.IsAbs(dir) {
 		return "", refusal(pa.ScopeDenied, "native_project")
+	}
+	// Personal workspaces are leaves under the state root, alongside the
+	// private profile tree. Admit only the resolved leaf owned by this scope.
+	if project.Kind == pa.PersonalWorkspace {
+		if pa.ValidateScope(project) != nil || dir != filepath.Join(state, app.PersonalWorkspaceDirectory, project.ProjectID) {
+			return "", refusal(pa.ScopeDenied, "native_project")
+		}
+		return state, nil
 	}
 	// A Project cannot make this state accessible through its workspace tools.
 	for _, paths := range [][2]string{{dir, state}, {state, dir}} {
@@ -142,7 +150,7 @@ func (p *installedGemini) Configuration(ctx context.Context, bot pa.Bot, dir, mo
 	if err != nil {
 		return pa.ConfigurationCatalog{}, err
 	}
-	state, err := geminiProject(p.state, dir)
+	state, err := geminiProject(p.state, dir, bot.Project)
 	if err != nil {
 		return pa.ConfigurationCatalog{}, err
 	}
@@ -175,7 +183,7 @@ func (p *installedGemini) Open(ctx context.Context, q app.OpenRequest, sink func
 	if err := pa.ValidateMode(q.Bot.Agent, q.Bot.Mode); err != nil {
 		return nil, err
 	}
-	state, err := geminiProject(p.state, q.Directory)
+	state, err := geminiProject(p.state, q.Directory, q.Bot.Project)
 	if err != nil {
 		return nil, err
 	}
