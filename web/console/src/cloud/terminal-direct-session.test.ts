@@ -8,7 +8,7 @@ import { CloudTerminalSession } from "./terminal-session.ts"
 import { TerminalObservation } from "./terminal-observation.ts"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { settled, until } from "./until.ts"
-import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
+import { bytesBase64, base64Bytes, envelopeSigningBytes, sealEnvelope } from "../legacy/js/net/cloud-crypto.js"
 import type { DirectChannelLike, DirectPeerLike } from "./terminal-direct.js"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { DirectLink } from "./terminal-direct.ts"
@@ -388,6 +388,44 @@ async function fixtureCarrierAnswer(offer: Pick<CarrierOffer, "connection" | "ke
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: aad }, key, data)
   return { sdpSealed: bytesBase64(Uint8Array.of(...nonce, ...new Uint8Array(ct))), directReceipts: true, directLocalNetwork: undefined }
 }
+
+test("an authenticated corrupt gzip reply records the cause on its own direct close", async () => {
+  const peer = new FakePeer()
+  const client = new StatusCloudClient({ relayURL: "https://relay.test", account: "account", deviceID: viewer, deviceToken: "fixture" })
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  const signer = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
+  const closes: Record<string, unknown>[] = []
+  let attempt = ""
+  Object.assign(client, { ready: true, carrierSupported: () => true })
+  client._machinePairing = async () => ({ keyID: "ms-1", senderID: machine, senderKey: signer.publicKey, masterKey })
+  client.publishCarrierOffer = async (_machine, offer) => {
+    attempt = offer.connection
+    return fixtureCarrierAnswer(offer)
+  }
+  client.viewerEvents.record = (name: string, data: Record<string, unknown>) => {
+    if (name === "cloud.direct.closed") closes.push(data)
+  }
+  client.useDirectCarriers(directCarriers(client as unknown as CarrierClient, () => peer))
+  try {
+    assert.equal((await client.tryDirect(machine)).kind, "open")
+    const reply = await sealEnvelope({
+      ch: `t/${machine}/session`, seq: 1, ts: 1, class: "stream", key_id: "ms-1", sender: machine,
+    }, new Uint8Array([103, 122, 49, 0, 1, 2, 3]), masterKey, signer.privateKey)
+    peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: reply }) })
+    await until(() => closes.length > 0)
+    assert.equal(peer.channel.readyState, "closed")
+    assert.equal(closes.length, 1)
+    assert.equal(closes[0].attempt, attempt)
+    assert.equal(closes[0].ice, "connected")
+    assert.equal(closes[0].pc, "connected")
+    assert.equal(closes[0].source, "receive")
+    assert.equal(closes[0].code, "carrier_unusable")
+    assert.equal(closes[0].receive_stage, "decompress")
+    assert.equal(closes[0].receive_code, "read_payload_corrupt")
+    const serialized = JSON.stringify(closes[0])
+    for (const raw of [reply.ch, reply.ct, reply.sig, reply.nonce]) assert.ok(!serialized.includes(raw))
+  } finally { client.stop() }
+})
 
 test("a proven viewer-token renewal keeps the same direct peer and sends later reads to the replacement client", async () => {
   const peer = new FakePeer()

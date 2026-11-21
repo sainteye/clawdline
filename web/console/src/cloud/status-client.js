@@ -701,7 +701,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       bytes > CARRIER_RECEIVE_BYTES - this.carrierReceiveBytes) {
       const error = refused("carrier_receive_full", "the viewer's authenticated receive queue is full")
       this._recordReceiveFailure(error, envelope, false, { stage: "receive_queue" })
-      this._carrierFor(machine)?.failed(channelGeneration, "carrier_receive_full")
+      this._carrierFor(machine)?.failed(channelGeneration, "carrier_receive_full", { stage: "receive_queue", error })
       return Promise.resolve()
     }
     const key = JSON.stringify([machine, channelGeneration])
@@ -789,8 +789,10 @@ export class StatusCloudClient extends CatalogCloudClient {
       // page still has its own way of asking for one. If the channel is broken rather than the
       // row, the next answer fails here too and closes it then.
       if (!row) {
-        try { this._carrierFor(machine)?.failed(channelGeneration, "carrier_unusable") }
-        catch { /* a carrier this page no longer has is already gone */ }
+        try {
+          this._carrierFor(machine)?.failed(channelGeneration, "carrier_unusable",
+            { stage: probe.stage, error, cause: probe.cause })
+        } catch { /* a carrier this page no longer has is already gone */ }
       }
     }
   }

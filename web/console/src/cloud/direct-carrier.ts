@@ -17,7 +17,7 @@
 // that travels on it is authorized by the machine one read at a time, exactly
 // as a read off the relay is.
 // @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in its suite.
-import { DirectLink, DIRECT_BUSY_RETRY_MS, DIRECT_RETRY_MS, browserDirectPeers, directAttemptRecorder, type DirectPeerFactory } from "./terminal-direct.ts"
+import { DirectLink, DIRECT_BUSY_RETRY_MS, DIRECT_RETRY_MS, browserDirectPeers, directAttemptRecorder, type DirectPeerFactory, type DirectReceiveFailure } from "./terminal-direct.ts"
 import type { SharedCarrier, TerminalEnvelope } from "./terminal-transport.js"
 import { base64Bytes, bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in its suite.
@@ -374,9 +374,9 @@ export class DirectCarrier implements SharedCarrier {
    * reads it is holding back to the relay. A number from a channel this carrier has already
    * replaced says nothing about the one in use, and closes nothing.
    */
-  failed(channelGeneration: number, code: string): void {
+  failed(channelGeneration: number, code: string, failure?: DirectReceiveFailure): void {
     if (channelGeneration !== this.gen) return
-    this.close(code)
+    this.link?.close(code, failure ? "receive" : "application", failure)
   }
 
   /** One envelope an adopted link delivered, routed as this carrier's own would be. */
