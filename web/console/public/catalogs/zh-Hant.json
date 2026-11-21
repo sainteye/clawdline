@@ -11936,7 +11936,7 @@
   "projectAssistants.towerMoreLabel": "這裡還有 {count} 個 Bot：{names}",
   "projectAssistants.towerStyle": "Bot 樣式",
   "projectAssistants.towerTags": "名牌",
-  "projectAssistants.towerTagsHint": "顯示工作中、等你與出錯的 Bot 的名牌。關掉時，指到 Bot 才會顯示。",
+  "projectAssistants.towerTagsHint": "在場景中持續顯示 Bot 的名牌。關掉後，指向 Bot 仍可查看名牌。",
   "projectAssistants.towerStyleNeon": "霓虹",
   "projectAssistants.towerStyleGradient": "漸層",
   "projectAssistants.towerHelpersTitle": "分身",

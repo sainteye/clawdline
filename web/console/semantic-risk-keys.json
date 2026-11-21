@@ -3,12 +3,12 @@
   "englishKeys": 13991,
   "counts": {
     "negation": 3590,
-    "state": 2360,
+    "state": 2359,
     "permission": 841,
     "deletion": 321,
     "uncertainty": 555
   },
-  "unionCount": 5955,
+  "unionCount": 5954,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5673,7 +5673,6 @@
       "projectAssistants.towerMoodRecent",
       "projectAssistants.towerMoodWait",
       "projectAssistants.towerOpenChat",
-      "projectAssistants.towerTagsHint",
       "projectAssistants.towerWaitList",
       "projectAssistants.towerWaitListClose",
       "projectAssistants.towerWaiting",
@@ -12920,7 +12919,6 @@
     "projectAssistants.towerMoodWait",
     "projectAssistants.towerOpenChat",
     "projectAssistants.towerPictureMissing",
-    "projectAssistants.towerTagsHint",
     "projectAssistants.towerWaitList",
     "projectAssistants.towerWaitListClose",
     "projectAssistants.towerWaiting",

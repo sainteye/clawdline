@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
 import { assignFloors, crowd, floorOfBot, leadPlace, portalHelpers, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, TowerZoneShown, type TowerBot, type TowerMood, type TowerZone } from "./tower-state"
@@ -99,8 +99,9 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const [visible, setVisible] = useState(true)
   const [pageShown, setPageShown] = useState(() => typeof document === "undefined" || !document.hidden)
   const sceneRef = useRef<HTMLDivElement>(null), canvasRef = useRef<HTMLCanvasElement>(null), viewRef = useRef<HTMLDivElement>(null)
-  // On a phone the layout switch and floor map fold behind one floor button.
   const [panelOpen, setPanelOpen] = useState(false)
+  const menuRef = useRef<HTMLButtonElement>(null)
+  const controlsId = useId()
   // The waiting list opens from the HUD's waiting chip and closes once nobody waits.
   const [waitOpen, setWaitOpen] = useState(false)
   // A tapped Bot shows its card first; tapping it again opens the chat.
@@ -128,7 +129,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const [look, setLook] = useState<TowerStyle>(() => readPref(styleKey) === "gradient" ? "gradient" : "neon")
   const chooseLook = (next: TowerStyle) => { setLook(next); writePref(styleKey, next) }
   // Pinned name tags can crowd a busy floor; turned off, a tag shows only on
-  // hover or keyboard focus, and the canvas still marks who waits.
+  // hover, keyboard focus or roster highlight.
   const [tags, setTags] = useState(() => readPref(tagsKey) !== "off")
   const toggleTags = () => setTags(on => { writePref(tagsKey, on ? "off" : "on"); return !on })
   const [layout, setLayoutState] = useState<TowerLayout>(() => readPref(layoutKey) === "building" ? "building" : "floor")
@@ -318,7 +319,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
         return { b, at, moving: true }
       }).sort((a, z) => a.at[1] - z.at[1])
       for (const { b, at, moving } of placed) {
-        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, unread: b.unread, lead: b.lead, style: look }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
+        drawBot(g, { shape: b.item.bot.appearance?.shape ?? "blob", color: (b.item.bot.appearance?.color ?? "").toLowerCase(), mood: b.mood, seed: b.seed, lead: b.lead, style: look }, at[0] * k, at[1] * k, size * k, moving, t, still, dpr, b.live ? 1 : .55)
         const button = buttons.current.get(b.key)
         if (button) {
           button.style.left = `${(at[0] - size / 2) / scene.width * 100}%`
@@ -485,14 +486,27 @@ export default function BotTower({ items, w, language, paused = false, highlight
     <div className="pa-tower-stage">
       <div className="pa-tower-pan">
         {hud}
-        {<button type="button" className="pa-tower-floorbtn" aria-expanded={panelOpen} aria-label={w.towerFloorsMenu} onClick={() => { setWaitOpen(false); setPanelOpen(o => !o) }}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5 8 2.5l6 3-6 3zM2 8.5l6 3 6-3M2 11.5l6 3 6-3"/></svg>
-          <b>{!canBuild ? w.towerStyle : !building ? w.towerLayoutFloor : section ? w.towerSection : floors[floor].label}</b>
-        </button>}
-        <div className="pa-tower-controls" data-open={panelOpen || undefined}>{canBuild && layoutSwitch}{lookSwitch}{elevator}</div>
+        <div className="pa-tower-menu" onKeyDown={e => {
+          if (e.key !== "Escape" || !panelOpen) return
+          e.stopPropagation()
+          setPanelOpen(false)
+          menuRef.current?.focus()
+        }}>
+          <button ref={menuRef} type="button" className="pa-tower-floorbtn" aria-expanded={panelOpen}
+            aria-label={w.towerFloorsMenu} aria-controls={controlsId} onClick={() => {
+              setWaitOpen(false); setHelpersOpen(false); setFloorsOpen(false); setPanelOpen(o => !o)
+            }}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5 8 2.5l6 3-6 3zM2 8.5l6 3 6-3M2 11.5l6 3 6-3"/></svg>
+            <b>{!canBuild ? w.towerStyle : !building ? w.towerLayoutFloor : section ? w.towerSection : floors[floor].label}</b>
+          </button>
+          <div id={controlsId} className="pa-tower-controls" hidden={!panelOpen}>{canBuild && layoutSwitch}{lookSwitch}{elevator}</div>
+        </div>
         <div className="pa-tower-view" ref={viewRef}>
         <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}
-          onClick={e => { if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null) }}>
+          onClick={e => {
+            setPanelOpen(false)
+            if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null)
+          }}>
           {!broken.includes(scene.picture) && <img key={`${scene.picture}:${retried[scene.picture] ?? ""}`} src={pictureSrc(scene.picture)} alt="" draggable={false} decoding="async"
             onError={() => pictureFailed(scene.picture, !!retried[scene.picture])}/>}
           {broken.includes(scene.picture) && <div className="pa-tower-fallback pa-tower-picture-missing" role="alert">
@@ -515,16 +529,18 @@ export default function BotTower({ items, w, language, paused = false, highlight
           })}
           {bots.map(b => {
             const mood = b.unread ? `${w[moodWord[b.mood]]}, ${w.towerMoodUnread}` : w[moodWord[b.mood]], project = projectName(b.item), when = ago(b.item.activity_at, now, language)
+            const busy = b.mood === "work" || b.mood === "wait" || b.mood === "error"
             const label = w.towerBotLabel.replace("{name}", b.item.bot.name).replace("{state}", mood)
-            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={tags && !section && (b.mood === "wait" || b.mood === "error" || b.mood === "work") || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
+            return <button key={b.key} type="button" className="pa-tower-bot" data-bot-key={b.key} data-mood={b.mood} data-pinned={tags || undefined} data-compact={tags && (section || !busy) || undefined} data-highlight={highlight === b.key || undefined} aria-label={label}
               ref={el => { if (el) buttons.current.set(b.key, el); else buttons.current.delete(b.key) }}
               style={{ width: `${size / scene.width * 100}%`, height: `${(size + 6) / scene.height * 100}%` }}
               aria-expanded={picked === b.key} data-picked={picked === b.key || undefined}
               onClick={() => { if (picked === b.key) { setPicked(null); onSelect(b.item) } else setPicked(b.key) }}>
+              {b.unread && <span className="pa-tower-unread" aria-hidden="true">{w.towerMoodUnread}</span>}
               <span className="pa-tower-tip" aria-hidden="true">
                 <strong>{b.item.bot.name}</strong>
                 <span>{[project, mood].filter(Boolean).join(" · ")}</span>
-                {b.mood === "work" || b.mood === "wait" || b.mood === "error" ? b.caption && <small>{b.caption}</small> : when && <small>{when}</small>}
+                {busy ? b.caption && <small>{b.caption}</small> : when && <small>{when}</small>}
               </span>
             </button>
           })}
@@ -533,11 +549,19 @@ export default function BotTower({ items, w, language, paused = false, highlight
             onClick={() => { setPicked(null); setWaitOpen(false); setFloorsOpen(false); setHelpersOpen(o => !o) }}/>}
           {[...extra].map(([g, more]) => {
             const [x, y] = moreAt(g), names = list.format(more.map(b => b.item.bot.name))
+            const unread = more.some(b => b.unread)
+            const label = w.towerMoreLabel.replace("{count}", String(more.length)).replace("{names}", names)
             return <div key={g} className="pa-tower-more" style={{ left: `${x / scene.width * 100}%`, top: `${y / scene.height * 100}%` }}>
-              <button type="button" aria-expanded={moreOpen === g} aria-label={w.towerMoreLabel.replace("{count}", String(more.length)).replace("{names}", names)}
-                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>{w.towerMore.replace("{count}", String(more.length))}</button>
+              <button type="button" aria-expanded={moreOpen === g} aria-label={unread ? `${label}, ${w.towerMoodUnread}` : label}
+                onClick={() => { setPicked(null); setMoreOpen(o => o === g ? null : g) }}>
+                {w.towerMore.replace("{count}", String(more.length))}
+                {unread && <span className="pa-tower-unread">{w.towerMoodUnread}</span>}
+              </button>
               {moreOpen === g && <ul role="list" onKeyDown={e => { if (e.key === "Escape") setMoreOpen(null) }}>{more.map(b => <li key={b.key}>
-                <button type="button" onClick={() => { setMoreOpen(null); onSelect(b.item) }}><strong>{b.item.bot.name}</strong><span>{w[moodWord[b.mood]]}</span></button>
+                <button type="button" onClick={() => { setMoreOpen(null); onSelect(b.item) }}>
+                  <strong>{b.item.bot.name}</strong>
+                  <span>{w[moodWord[b.mood]]}{b.unread && <> · <small className="pa-tower-unread">{w.towerMoodUnread}</small></>}</span>
+                </button>
               </li>)}</ul>}
             </div>
           })}

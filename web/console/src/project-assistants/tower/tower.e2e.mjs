@@ -7,8 +7,8 @@
  *   BOTS_ARTIFACTS=<task-evidence-directory> \
  *   node web/console/src/project-assistants/tower/tower.e2e.mjs
  *
- * It checks what has broken before: the phone's floor button showing over the
- * desktop HUD, a floor picture that never arrives, "+N" sliding the floor
+ * It checks what has broken before: name tags and the collapsed controls on both
+ * screen sizes, a floor picture that never arrives, "+N" sliding the floor
  * sideways, and on a phone the chat rising as a sheet with the tower above. */
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
@@ -56,7 +56,19 @@ const overlap = (a, b) => !!a && !!b && a.x < b.x + b.width && b.x < a.x + a.wid
 async function towerChecks(page, width, language, shot) {
   const w = words(language), phone = width < 701, checks = []
   await page.goto(`${origin}/?lang=${language}`)
-  await page.evaluate(() => { try { localStorage.clear() } catch {} ; window.botsFixture.open() })
+  await page.evaluate(async () => {
+    localStorage.clear()
+    const { a, b, open } = window.botsFixture
+    for (const source of [a, b]) {
+      const bot = source.bots[5]
+      await source.markRead({
+        command: { key: bot.key, action: "read", idempotency_key: "fixture-read" },
+        cursor: { key: bot.key, conversation_id: bot.conversation_id, message_seq: 2, reader_id: "fixture-reader" },
+      }, new AbortController().signal)
+      source.scriptMessage(bot, "extra-reply", "assistant", "A reply from a crowded zone.", "extra-turn")
+    }
+    open()
+  })
   // Every fixture Bot, so the building is offered (it needs seven across two Projects).
   const more = page.getByRole("button", { name: w.more, exact: true })
   await more.waitFor({ timeout: 10_000 }).catch(() => {})
@@ -66,24 +78,58 @@ async function towerChecks(page, width, language, shot) {
   if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click()
   const scene = page.locator(".pa-tower-scene")
   await scene.waitFor()
-  // Twelve Bots on two machines' Projects: the building is offered.
-  if (phone) await page.getByRole("button", { name: w.towerFloorsMenu, exact: true }).click()
-  await page.getByRole("button", { name: w.towerLayoutBuilding, exact: true }).click()
-  // A phone folds the elevator back behind its floor button once a layout is chosen.
-  await page.locator(".pa-tower-elevator").waitFor({ state: "attached" })
-  checks.push("building offered and chosen")
-
-  // The phone's floor button never shows on a wide screen, and nothing sits on the HUD.
-  const floorButton = page.locator(".pa-tower-floorbtn")
+  const restingBot = scene.locator('.pa-tower-bot:is([data-mood="idle"], [data-mood="recent"], [data-mood="sleep"])').first()
+  const restingTag = restingBot.locator(".pa-tower-tip")
+  await restingBot.waitFor()
+  const menu = page.getByRole("button", { name: w.towerFloorsMenu, exact: true })
+  const controls = page.locator(".pa-tower-controls")
+  const toggleTags = page.getByRole("button", { name: w.towerTags, exact: true })
+  assert.equal(await menu.isVisible(), true, "the floor menu button is missing")
+  assert.equal(await controls.isVisible(), false, "the controls start expanded")
+  assert.equal(await restingTag.isVisible(), true, "resting Bot has no name tag with tags on")
+  await menu.click()
+  await toggleTags.click()
+  assert.equal(await toggleTags.getAttribute("aria-pressed"), "false")
+  assert.equal(await restingTag.isVisible(), false, "a name tag is still pinned with tags off")
+  const unreadBadge = scene.locator(".pa-tower-bot").getByText(w.towerMoodUnread, { exact: true }).first()
+  assert.equal(await unreadBadge.isVisible(), true, "a Bot with a new reply has no visible badge with name tags off")
   if (!phone) {
-    assert.equal(await floorButton.isVisible(), false, "the phone's floor button shows on a wide screen")
-    const hud = await box(page.locator(".pa-hud-facts"))
-    assert.equal(overlap(hud, await box(page.locator(".pa-tower-controls"))), false, "the controls cover the HUD")
-    checks.push("no phone button or controls over the HUD")
-  } else {
-    assert.equal(await floorButton.isVisible(), true)
-    checks.push("phone floor button shown")
+    await restingBot.hover()
+    assert.equal(await restingTag.isVisible(), true, "a resting Bot has no tooltip on hover with tags off")
   }
+  await toggleTags.click()
+  assert.equal(await restingTag.isVisible(), true, "turning name tags back on did not restore the resting Bot's name")
+  await toggleTags.press("Escape")
+  assert.equal(await controls.isVisible(), false, "Escape did not close the controls")
+  assert.equal(await menu.evaluate(el => document.activeElement === el), true, "Escape did not return focus to the menu button")
+  checks.push("name tags toggle on resting Bots and menu closes with Escape")
+
+  // Twelve Bots on two machines' Projects: the building is offered.
+  await menu.click()
+  if (!phone) {
+    const hud = await box(page.locator(".pa-hud-facts"))
+    assert.equal(overlap(hud, await box(menu)), false, "the menu button covers the HUD")
+    assert.equal(overlap(hud, await box(controls)), false, "the open controls cover the HUD")
+  }
+  const chooseBuilding = page.getByRole("button", { name: w.towerLayoutBuilding, exact: true })
+  await chooseBuilding.click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing a layout")
+  await menu.click()
+  await shot("tower-controls")
+  const elevator = page.getByRole("navigation", { name: w.towerElevator })
+  await elevator.getByRole("button", { name: w.towerSection, exact: true }).click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing the building overview")
+  const sectionTag = scene.locator(".pa-tower-bot .pa-tower-tip").first()
+  assert.equal(await sectionTag.isVisible(), true, "the building overview has no pinned name tags")
+  await menu.click()
+  await toggleTags.click()
+  assert.equal(await sectionTag.isVisible(), false, "a name tag is still pinned in the building overview with tags off")
+  assert.equal(await unreadBadge.isVisible(), true, "a Bot with a new reply has no visible badge in the building overview")
+  checks.push("new reply badges stay visible on a floor and in the building overview with name tags off")
+  await toggleTags.click()
+  await elevator.locator("button[aria-pressed]:enabled").nth(1).click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing a floor")
+  checks.push("building and floor selection close the menu and name tags toggle in the building overview")
 
   // The floor's picture arrives as an image, not an HTML stand-in.
   await page.waitForFunction(() => { const img = document.querySelector(".pa-tower-scene img"); return !!img && img.complete && img.naturalWidth > 0 })
@@ -96,20 +142,22 @@ async function towerChecks(page, width, language, shot) {
   await shot("tower-building")
 
   // A crowded lounge counts the rest; opening the list does not move the floor.
-  const crowd = page.locator(".pa-tower-more > button").first()
-  if (await crowd.count()) {
-    const before = await scene.evaluate(el => [el.scrollLeft, el.scrollTop])
-    await crowd.click()
-    await page.locator(".pa-tower-more ul").waitFor()
-    assert.deepEqual(await scene.evaluate(el => [el.scrollLeft, el.scrollTop]), before, "opening +N moved the floor")
-    await shot("tower-more")
-    await crowd.click()
-    checks.push("+N list opens in place")
-  }
+  const crowd = page.locator(".pa-tower-more > button").filter({ hasText: w.towerMoodUnread }).first()
+  await crowd.waitFor({ timeout: 5000 })
+  const before = await scene.evaluate(el => [el.scrollLeft, el.scrollTop])
+  await crowd.click()
+  const hiddenBot = page.locator(".pa-tower-more ul").getByRole("button", { name: new RegExp(w.towerMoodUnread) })
+  await hiddenBot.first().waitFor({ timeout: 5000 })
+  assert.deepEqual(await scene.evaluate(el => [el.scrollLeft, el.scrollTop]), before, "opening +N moved the floor")
+  await shot("tower-more")
+  await crowd.click()
+  checks.push("+N shows hidden unread Bots and opens in place")
 
   // A Bot's card, then its chat: a phone keeps the tower above a bottom sheet.
-  const bot = page.locator(".pa-tower-bot").first()
-  await bot.click()
+  const bot = scene.locator(".pa-tower-bot").filter({ has: page.getByText(w.towerMoodUnread, { exact: true }) }).first()
+  const key = await bot.getAttribute("data-bot-key")
+  const readBot = scene.locator(`[data-bot-key=${JSON.stringify(key)}]`)
+  await bot.getByText(w.towerMoodUnread, { exact: true }).click()
   await page.locator(".pa-tower-card").waitFor()
   await page.getByRole("button", { name: w.towerOpenChat, exact: true }).click()
   const main = page.locator(".pa-main")
@@ -139,7 +187,9 @@ async function towerChecks(page, width, language, shot) {
     await page.mouse.move(hx, hy); await page.mouse.down(); await page.mouse.move(hx, hy + 160, { steps: 12 }); await page.mouse.up()
     await page.getByRole("button", { name: w.towerBack }).waitFor({ state: "hidden" })
     await scene.waitFor()
-    checks.push("swiping the sheet down closes it")
+    await readBot.waitFor()
+    await readBot.getByText(w.towerMoodUnread, { exact: true }).waitFor({ state: "hidden" })
+    checks.push("reading a reply clears its scene badge", "swiping the sheet down closes it")
     await shot("tower-swiped")
     return checks
   } else {
@@ -149,7 +199,9 @@ async function towerChecks(page, width, language, shot) {
   await shot("tower-chat")
   await page.getByRole("button", { name: w.towerBack }).click()
   await scene.waitFor()
-  checks.push("back to the tower")
+  await readBot.waitFor()
+  await readBot.getByText(w.towerMoodUnread, { exact: true }).waitFor({ state: "hidden" })
+  checks.push("reading a reply clears its scene badge", "back to the tower")
   return checks
 }
 

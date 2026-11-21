@@ -418,9 +418,15 @@ lounge, and those quiet for a day sleep. Placement follows the roster status
 (`working.ts`), never the raw activity text. Each zone draws at most three Bots
 (`bots.tower_zone_shown`); the rest are counted as "N more", which opens a list
 whose names open that Bot's chat. Waiting and failing Bots keep a drawn place
-first, then the most recently active. Name tags stay pinned for working,
-waiting and failing Bots; the Name tags switch turns them off, after which a tag
-shows on hover or keyboard focus while the canvas still marks who waits.
+first, then the most recently active. The Name tags switch pins a name for
+every Bot drawn in the scene, including in the building overview. Busy Bots on a
+floor also show an activity line. With the switch off, hovering or focusing a
+Bot still reveals its name.
+
+**Unread replies.** A Bot with unread replies carries a New reply badge on its
+floor and in the building overview. The badge stays visible with name tags
+off. A crowded zone's “N more” button and list also show when a Bot inside has
+an unread reply. Reading the chat clears the badge when the roster refreshes.
 
 **Floors.** Four floors (4F, 3F, 2F, B1) each have a picture and coordinates in
 `tower-scene.ts`. The building layout is offered from seven Bots across two
@@ -462,18 +468,22 @@ once more with a fresh query, and only then shows a Reload note. The elevator
 doors rest open, because under reduced motion every animation is removed and
 doors that only opened by animating stayed shut over the floor.
 
-**Phone.** The picture pans inside its own frame and centres on a busy Bot; the
-HUD keeps one row and the layout, look and floor controls fold behind one floor
-button; panels open below the picture. A chat opened from the tower rises as a
+**Scene controls.** The layout, look, name tags and elevator start collapsed
+behind the floor button on desktop and phone. Choosing a layout or floor closes
+the menu.
+
+**Phone.** The picture pans inside its own frame and centres on a busy Bot. The
+HUD keeps one row and panels open below the picture. A chat opened from the tower rises as a
 bottom sheet with the floor still visible above, and another Bot can be tapped
 from there.
 
 **Browser check.** `tower/tower.e2e.mjs` serves the synthetic Bots fixture and
 the floor pictures, refuses any `/v1` request, and checks Chromium and WebKit at
 390 and 1440 wide in Taiwan Traditional Chinese and English: the building is
-offered, no phone control covers the wide HUD, the floor picture loads, the
-doors end open, opening "N more" does not move the floor, and a phone chat is a
-bottom sheet over the tower. It installs nothing and calls no model:
+offered, the controls start collapsed and clear the wide HUD, name tags toggle
+on resting Bots and in the building overview, the floor picture loads, the doors
+end open, opening "N more" does not move the floor, and a phone chat is a bottom
+sheet over the tower. It installs nothing and calls no model:
 
 ```sh
 PLAYWRIGHT_MODULE=<existing-playwright-index.mjs> \

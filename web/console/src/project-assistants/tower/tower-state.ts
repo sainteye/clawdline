@@ -8,7 +8,7 @@ import { botIdentity } from "../view-state.ts"
  * busy states (via rosterActivity, which also covers older daemons); `activity`
  * is a running caption such as a tool title and never decides placement. */
 /** Unread replies do not move a Bot: they accumulate for days, and would park
- * nearly every Bot in one spot. They show as a dot instead (`unread`). */
+ * nearly every Bot in one spot. They appear on a badge (`unread`). */
 export type TowerMood = "wait" | "work" | "error" | "recent" | "idle" | "sleep"
 export type TowerZone = "queue" | "desk" | "repair" | "lounge" | "bed"
 

@@ -11936,7 +11936,7 @@
   "projectAssistants.towerMoreLabel": "{count} more Bots here: {names}",
   "projectAssistants.towerStyle": "Bot style",
   "projectAssistants.towerTags": "Name tags",
-  "projectAssistants.towerTagsHint": "Show the name tags of working, waiting and failing Bots. Off, a tag shows when you point at its Bot.",
+  "projectAssistants.towerTagsHint": "Keep name tags visible for Bots in the scene. When off, point at a Bot to see its name.",
   "projectAssistants.towerStyleNeon": "Neon",
   "projectAssistants.towerStyleGradient": "Gradient",
   "projectAssistants.towerHelpersTitle": "Helpers",
