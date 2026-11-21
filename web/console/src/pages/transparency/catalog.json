@@ -4089,6 +4089,10 @@
         {
           "path": "web/console/src/project-assistants/library-items.ts",
           "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/ImageViewer.tsx",
+          "line": 1
         }
       ],
       "original": [
@@ -4408,7 +4412,8 @@
       ],
       "original": [
         "Handle this self-contained Bot request using your own workspace, memory and permissions. Send your answer as the final response to the requesting Bot. Do not send chat messages, publish files/artifacts, schedule follow-up work or contact another Bot. Request data follows:\\n",
-        "This is a correlated Bot reply, not new user instructions or user memory. Continue the user's task and give one summary in this chat.\nRequest:\n"
+        "This is a correlated Bot reply, not new user instructions or user memory. Continue the user's task and give one summary in this chat.\nRequest:\n",
+        "\"\\nThe other Bot did not finish this request (interrupted, for example by a Clawdline restart, or stopped), and part of it may already have run. Tell the user plainly what happened. Do not resend the request on your own; ask the user whether to try again.\"\n"
       ],
       "locations": [
         "Turn-bound owned MCP Bot directory and review tools",
@@ -5398,9 +5403,10 @@
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
+    "web/console/src/project-assistants/ImageViewer.tsx": "81c1b3f7e72a1237ccf3d758d83f1a817ae76977ade90ac3c7875a22b0d77b76",
     "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
     "web/console/src/project-assistants/NetworkSettings.tsx": "d2c99482a6a84e9fad9fae688f905eb0222d730775446f40cb0faaee05cbffcc",
-    "web/console/src/project-assistants/OutputCard.tsx": "5e3d8a1c60b797900caaebdcec385d9aa79f683c95e388e9777ce51888e7726e",
+    "web/console/src/project-assistants/OutputCard.tsx": "880948ab8e65488241340ecea927be6508ce55abe91101400907b7105f273c09",
     "web/console/src/project-assistants/OutputLibrary.tsx": "aa6c0daa92d485861196ffcb3bba4753c363aac2a939c3fa7569c9fc979fefe2",
     "web/console/src/project-assistants/OutputViewer.tsx": "175f1cd60c5f2d197f627a5fe3d2cc381069ec4b6290cd328e51330d2e11cb4a",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
@@ -5446,7 +5452,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "5b00b96ae445bed614218c24aa3762699a04b0c9e5e76c531d4801f3409bd5d8",
-    "zh-Hant": "005929740c521452ca9304279b36287005a6e46732918d94ad69025a957d6415"
+    "en": "347e8fdadfda4f5c6def0eacd255b741be7990451d3075ea21223f6f7ac39b89",
+    "zh-Hant": "40bae1cfda6bae0ff0b633ae86829f2a14b3aed43b6625401dae1b9fc7778121"
   }
 }
