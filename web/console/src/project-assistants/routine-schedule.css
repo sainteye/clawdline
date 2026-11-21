@@ -82,6 +82,8 @@
 
 .pa-routine-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .pa-routine-footer button { min-height: 44px; }
+.project-assistants .pa-routine-footer .pa-routine-save { display: inline-flex; align-items: center; gap: 8px; }
+.project-assistants .pa-routine-save .pa-send-spinner { flex: none; }
 .project-assistants .pa-routine-footer button[type="submit"]:not(:disabled) {
   background: #e39567;
   border-color: #e39567;
