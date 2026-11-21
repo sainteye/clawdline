@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13834,
+  "englishKeys": 13849,
   "counts": {
     "negation": 3567,
-    "state": 2343,
+    "state": 2344,
     "permission": 833,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5908,
+  "unionCount": 5909,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2972,6 +2972,7 @@
       "next.voiceInstallPromptNoModel",
       "next.voiceNoAudioFinished",
       "next.voiceNoAudioYet",
+      "next.voiceRealtimeFailed",
       "next.voiceRecoveryEmpty",
       "next.voiceRecoveryKept",
       "next.voiceRecoveryNoBytes",
@@ -3459,7 +3460,6 @@
       "transparency.card.voice-live-pacing.summary",
       "transparency.card.voice-polish.effect",
       "transparency.card.voice-polish.how",
-      "transparency.card.voice-polish.summary",
       "transparency.card.voice-question-menu.effect",
       "transparency.card.voice-session-boards.effect",
       "transparency.card.voice-work.condition",
@@ -5489,6 +5489,7 @@
       "next.voiceInstallPromptRemoteHelp",
       "next.voiceNoAudioFinished",
       "next.voiceNoAudioYet",
+      "next.voiceRealtimeKeyRejected",
       "next.voiceRecoveredLate",
       "next.voiceSendFailed",
       "next.voiceSendKept",
@@ -12430,6 +12431,8 @@
     "next.voiceNoAudioFinished",
     "next.voiceNoAudioYet",
     "next.voicePartialWarning",
+    "next.voiceRealtimeFailed",
+    "next.voiceRealtimeKeyRejected",
     "next.voiceRecordingLimit",
     "next.voiceRecoveredLate",
     "next.voiceRecoveryEmpty",
@@ -13323,7 +13326,6 @@
     "transparency.card.voice-live-pacing.summary",
     "transparency.card.voice-polish.effect",
     "transparency.card.voice-polish.how",
-    "transparency.card.voice-polish.summary",
     "transparency.card.voice-question-menu.effect",
     "transparency.card.voice-session-boards.effect",
     "transparency.card.voice-session-boards.how",

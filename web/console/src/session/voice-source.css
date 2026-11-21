@@ -67,3 +67,16 @@
     padding: 18px;
   }
 }
+
+.voice .voice-live-preview {
+    flex: 0 0 100%;
+    min-width: 0;
+    color: var(--dim);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.voice .voice-live-preview:empty { display: none; }

@@ -27,7 +27,7 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
     if(!host)return
     if(V.busy()&&!mine.current){toast(L.strings.webVoiceInUse,true);return}
     mine.current=true
-    V.press({host,composer:null,source:voiceSource,say:toast,
+    V.press({host,composer:null,source:voiceSource,pickEngine:true,say:toast,
       guard:()=>gone.current||!host.isConnected,
       changed:next=>{mine.current=next!=="off";if(!gone.current)setVoice(next)},
       sink:said=>{

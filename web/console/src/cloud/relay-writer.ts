@@ -334,6 +334,7 @@ export type WriteRoute =
   | { op: "copilot-settings-update"; word: Carried<"copilot-settings-update"> }
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-live"; word: Carried<"copilot-live"> }
+  | { op: "voice-live-transcription"; word: Carried<"voice-live-transcription"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
   | { op: "copilot-recap"; word: Carried<"copilot-recap"> }
@@ -824,6 +825,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-session" && segments.length === 2) {
     return { op: "copilot-session", word: "copilot-session" }
   }
+  if (head === "voice" && a === "live-transcription" && segments.length === 2) {
+    return { op: "voice-live-transcription", word: "voice-live-transcription" }
+  }
   if (head === "voice" && a === "copilot-live" && segments.length === 2) {
     return { op: "copilot-live", word: "copilot-live" }
   }
@@ -1126,6 +1130,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-settings-update":
     case "copilot-session":
     case "copilot-live":
+    case "voice-live-transcription":
     case "copilot-briefing":
     case "copilot-decide":
     case "copilot-question":
@@ -2147,6 +2152,12 @@ export class RelayWriter {
       case "notification-rules-update": {
         for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "voice-live-transcription": {
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        }
+        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "copilot-session":
       case "copilot-briefing": {

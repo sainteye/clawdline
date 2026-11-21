@@ -178,7 +178,10 @@ export function writeDefaultModels(change: Partial<DefaultModelValues>): Promise
 }
 
 /** `/v1/settings/voice`: the voice cards' keys and what the machine offers for them. */
+export type VoiceTranscriptionEngine = "whisper" | "openai_realtime"
+
 export interface VoiceSettingsValues {
+  voice_transcription?: VoiceTranscriptionEngine
   voice_polish?: boolean | null
   voice_polish_assistant?: string | null
   voice_polish_level?: string | null
@@ -187,6 +190,7 @@ export interface VoiceSettingsValues {
 }
 
 export type VoiceSettingsSnapshot = VoiceSettingsValues & {
+  openai_key_set?: boolean
   polish_assistants: string[]
   vocabulary_builtin: string[]
   vocabulary_projects: string[]

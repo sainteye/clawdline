@@ -835,6 +835,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/voice/copilot-journal"}, s.copilotJournalRoute},
 		{Route{"*", "/v1/voice/copilot-work"}, s.copilotWorkRoute},
 		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},
+		{Route{"*", "/v1/voice/live-transcription"}, s.voiceLiveTranscriptionRoute},
 		{Route{"*", "/v1/voice/source"}, s.voiceSourceRoute},
 		{Route{"*", "/v1/voice/setup"}, s.voiceSetupRoute},
 		// One transcribed sentence becomes an editable draft. This spends one

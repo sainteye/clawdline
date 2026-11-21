@@ -22,6 +22,8 @@
 // `renderComposer`: nothing under `legacy/` imports the app, so the host hands
 // this module those two calls once (`attachVoice`).
 import { nextWord } from "../next-strings.js"
+import { captureMachineFetch } from "../cloud/install.js"
+import { connectLiveDictation, LiveDictationError, usesLiveDictation } from "../session/live-dictation.js"
 import { recordVoiceDiagnostic, type VoiceDiagnostic } from "./voice-events.js"
 import { T, fill } from "./js/core/i18n.js"
 import { reduced } from "./js/core/env.js"
@@ -93,7 +95,7 @@ export const VOICE_STOP_MS = 5000
 export const VOICE_PREPARE_MS = 15000
 export const VOICE_READ_MS = 120000
 
-export type VoiceState = "off" | "opening" | "recording" | "stopping" | "preparing" | "reading" | "recoverable"
+export type VoiceState = "off" | "opening" | "connecting" | "recording" | "stopping" | "preparing" | "reading" | "recoverable"
 
 /** Where a recording goes, and who is holding the button that started it. */
 export interface VoiceJob {
@@ -122,6 +124,8 @@ export interface VoiceJob {
   beforeSend?: () => void
   /** A Cloud composer can use the account's existing voice host. Dictation never sends to a Session. */
   transcribe?: (audio: string, rate: number) => Promise<VoiceAnswer>
+  /** Message composers can use the machine's selected transcription engine. */
+  pickEngine?: boolean
   /** The machine whose Whisper will receive this recording. Display-only. */
   source?: () => Promise<{ label: string; description: string }>
   /** This job's own reason to give up early — the composer gone, a sheet shut. */
@@ -151,6 +155,7 @@ export function attachVoice(next: VoiceHost): void {
 let state: VoiceState = "off"
 let stream: MediaStream | null = null
 let recorder: MediaRecorder | null = null
+let opening: AbortController | null = null
 interface Recording {
   chunks: Blob[]
   bytes: number
@@ -164,6 +169,9 @@ interface Recording {
   send?: boolean
   prepared?: { revision: number; promise: Promise<string> }
   closeDecoder?: () => void
+  live?: Awaited<ReturnType<typeof connectLiveDictation>>
+  liveAnswer?: Promise<string>
+  retryWithWhisper?: boolean
   // A cancelled wait may still be executing on the host. Reuse that request
   // until it settles; manual Retry must not amplify a stalled transcription.
   reading?: { revision: number; promise: Promise<VoiceAnswer> }
@@ -331,7 +339,7 @@ export function press(job?: VoiceJob): void {
     source = answer
     showSource()
   }).catch(() => { /* A missing label must never prevent dictation. */ })
-  if (whisperless) {
+  if (whisperless && !want.pickEngine) {
     const failure = whisperless
     whisperless = null
     if (want.missingWhisper) want.missingWhisper(failure)
@@ -343,7 +351,7 @@ export function press(job?: VoiceJob): void {
     speak(no, true)
     return
   }
-  open()
+  open(want)
 }
 
 /**
@@ -386,33 +394,87 @@ function changed(): void {
  * permission prompt that never appears is indistinguishable from a button that
  * does nothing.
  */
-function open(): void {
+function open(job: VoiceJob): void {
   const mine = ++token
+  const controller = new AbortController()
+  opening = controller
   state = "opening"
   show()
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(
-    (got) => {
-      // Cancelled, or a second press, while the prompt was on screen. The
-      // stream still arrives and it still has to be handed back, or the
-      // recording light stays on.
-      if (mine !== token) {
-        silence(got)
+  const microphone = navigator.mediaDevices.getUserMedia({ audio: true })
+  const connection = job.pickEngine ? captureMachineFetch() : null
+  let expiry: ReturnType<typeof setTimeout> | undefined
+  const useLive = connection ? usesLiveDictation(connection, controller.signal) : false
+
+  void microphone.then(async (got) => {
+    if (mine !== token || job.guard()) {
+      silence(got)
+      if (mine === token) cancel()
+      return
+    }
+    stream = got
+    expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
+    if (!(await useLive) || !connection) {
+      if (mine !== token) return
+      if (job.guard() || (connection && !connection.current())) { cancel(); return }
+      if (whisperless) {
+        const failure = whisperless
+        whisperless = null
+        cancel()
+        if (job.missingWhisper) job.missingWhisper(failure)
+        else speak(complain(failure), true)
         return
       }
       begin(got, mine)
-    },
-    (e) => {
+      return
+    }
+    if (mine !== token || job.guard()) { if (mine === token) cancel(); return }
+    sourceToken += 1
+    source = { label: nextWord("voiceEngineRealtime"), description: nextWord("voiceEngineRealtime") }
+    state = "connecting"
+    show()
+    document.addEventListener("visibilitychange", backgrounded)
+    window.addEventListener("pagehide", cancelWhileConnecting)
+    for (const track of got.getAudioTracks()) track.enabled = false
+    const live = await connectLiveDictation(connection, got, freshKey(), controller.signal, (text) => {
       if (mine !== token) return
-      state = "off"
-      show()
-      speak(refused(e), true)
-    },
-  )
+      const preview = job.host.querySelector(".voice-live-preview")
+      if (preview) preview.textContent = text
+    })
+    if (mine !== token || job.guard() || !connection.current()) {
+      live.close()
+      if (mine === token) cancel()
+      return
+    }
+    window.removeEventListener("pagehide", cancelWhileConnecting)
+    for (const track of got.getAudioTracks()) track.enabled = true
+    begin(got, mine, live)
+  }, (error) => {
+    if (mine !== token) return
+    cancel()
+    speak(refused(error), true)
+  }).catch((error: unknown) => {
+    if (mine !== token) return
+    cancel()
+    speak(liveFailure(error), true)
+  }).finally(() => {
+    clearTimeout(expiry)
+    if (opening === controller) opening = null
+  })
 }
 
-function begin(got: MediaStream, mine: number): void {
+function liveFailure(error: unknown): string {
+  if (error instanceof LiveDictationError) {
+    if (error.code === "copilot_key_missing") return nextWord("voiceEngineKeyMissing")
+    if (error.code === "copilot_key_rejected") return nextWord("voiceRealtimeKeyRejected")
+    if (error.code === "voice_realtime_disabled") return nextWord("voiceRealtimeSettingChanged")
+    if (error.code === "voice_realtime_unsupported") return nextWord("voiceRealtimeUnsupported")
+  }
+  return nextWord("voiceRealtimeFailed")
+}
+
+function begin(got: MediaStream, mine: number, live?: Recording["live"]): void {
   stream = got
-  const take: Recording = { chunks: [], bytes: 0, complete: false, finished: false, limited: false, mime: "", revision: 0 }
+  const take: Recording = { chunks: [], bytes: 0, complete: false, finished: false, limited: false, mime: "", revision: 0, live, retryWithWhisper: !!live }
   recording = take
   try {
     const current = new MediaRecorder(got)
@@ -448,6 +510,7 @@ function begin(got: MediaStream, mine: number): void {
     // stream. Rare, and reported rather than swallowed: the microphone was
     // granted, so nothing else on screen would explain why the count never
     // started.
+    live?.close()
     release()
     recording = null
     state = "off"
@@ -475,8 +538,14 @@ function begin(got: MediaStream, mine: number): void {
   window.addEventListener("pagehide", stop)
 }
 
+function cancelWhileConnecting(): void {
+  if (state === "connecting") cancel()
+}
+
 function backgrounded(): void {
-  if (document.visibilityState === "hidden" && state === "recording") stop()
+  if (document.visibilityState !== "hidden") return
+  cancelWhileConnecting()
+  stop()
 }
 
 function beat(mine: number): void {
@@ -523,6 +592,11 @@ function stop(): void {
     // handlers attached: release() would throw away the final encoded bytes.
     stopCapture()
   }
+  const take = recording
+  if (take?.live) {
+    take.liveAnswer = take.live.finish()
+    void take.liveAnswer.catch(() => undefined)
+  }
   show()
 }
 
@@ -552,6 +626,7 @@ function recover(code: VoiceDiagnostic["code"]): void {
   clearDeadline()
   attempt += 1
   stopCapture()
+  recording.live?.close()
   recoveryCode = code
   state = "recoverable"
   drawn = ""
@@ -580,7 +655,8 @@ function landed(mine: number): void {
   }
   clearDeadline()
   if (state === "recoverable" || recording.limited) { drawn = ""; show(); return }
-  processRecording()
+  if (recording.liveAnswer) finishLive(recording, recording.liveAnswer)
+  else processRecording()
 }
 
 function retry(): void {
@@ -601,7 +677,40 @@ function retry(): void {
     show()
     return
   }
+  if (take.retryWithWhisper) {
+    take.retryWithWhisper = false
+    source = null
+    const job = activeJob
+    const mine = token
+    void job?.source?.().then((answer) => {
+      if (mine !== token) return
+      source = answer
+      showSource()
+    }).catch(() => undefined)
+  }
   processRecording()
+}
+
+function finishLive(take: Recording, answer: Promise<string>): void {
+  const mine = token, operation = ++attempt, job = activeJob
+  const current = () => mine === token && operation === attempt && recording === take
+  state = "reading"
+  since = Date.now()
+  deadline(VOICE_PREPARE_MS, "read_timeout")
+  show()
+  void answer.then((text) => {
+    if (!current()) return
+    const said = text.trim()
+    if (!said) { recover("processing_failed"); speak(S.webVoiceEmpty); return }
+    cancel()
+    knockTwice()
+    if (take.send && job?.send) job.send(said)
+    else job?.sink(said)
+  }, (error: unknown) => {
+    if (!current()) return
+    recover("processing_failed")
+    speak(liveFailure(error), true)
+  })
 }
 
 function processRecording(): void {
@@ -690,7 +799,10 @@ export function cancel(): void {
   token += 1
   attempt += 1
   clearDeadline()
+  opening?.abort()
+  opening = null
   if (recording) recording.discarded = true
+  recording?.live?.close()
   recording?.closeDecoder?.()
   recording = null
   if (recorder && recorder.state !== "inactive") {
@@ -707,6 +819,7 @@ export function cancel(): void {
 function release(): void {
   document.removeEventListener("visibilitychange", backgrounded)
   window.removeEventListener("pagehide", stop)
+  window.removeEventListener("pagehide", cancelWhileConnecting)
   if (recorder) {
     recorder.ondataavailable = null
     recorder.onstop = null
@@ -1217,14 +1330,25 @@ function show(): void {
       const job = activeJob
       if (job?.send) acts.appendChild(sendWay(() => pressSend(job)))
       else acts.appendChild(way(S.webVoiceDone, "go", stop))
+    } else if (state === "connecting") {
+      acts.appendChild(way(S.webCancel, "drop", cancel))
     } else if (state === "recoverable") {
       acts.appendChild(way(nextWord("voiceDiscard"), "drop", cancel))
-      if (recording?.bytes || !recording?.finished) acts.appendChild(way(recording?.complete ? nextWord("voiceRetry")
-        : recording?.bytes ? nextWord("voiceTryPartial") : nextWord("voiceWaitForAudio"), "go", retry))
+      if (recording?.bytes || !recording?.finished) {
+        const label = !recording?.bytes ? "voiceWaitForAudio" : recording.retryWithWhisper ? "voiceRetryWithWhisper"
+          : recording.complete ? "voiceRetry" : "voiceTryPartial"
+        acts.appendChild(way(nextWord(label), "go", retry))
+      }
     } else {
       acts.appendChild(way(nextWord("voicePause"), "drop", () => recover("paused")))
     }
     box.appendChild(acts)
+    if (state === "recording" && recording?.live) {
+      const preview = document.createElement("span")
+      preview.className = "voice-live-preview"
+      box.appendChild(preview)
+    }
+
     box.hidden = false
   }
   say()
@@ -1288,6 +1412,10 @@ function say(): void {
   const said = box?.querySelector(".said")
   if (!box || !said) return
   const n = Math.floor(elapsed())
+  if (state === "connecting") {
+    said.textContent = nextWord("voiceRealtimeConnecting")
+    return
+  }
   if (state === "recoverable") {
     const key = recoveryCode === "recording_limit" ? "voiceRecordingLimit"
       : recording?.finished && !recording.bytes ? "voiceNoAudioFinished"
@@ -1307,7 +1435,7 @@ function say(): void {
     said.textContent = fillWords(S.webVoiceReading, { n })
     const note = box.querySelector(".note")
     if (note) note.textContent = recording && !recording.complete ? nextWord("voicePartialWarning")
-      : recording?.send ? nextWord("voiceWillSend") : S.webVoiceSlow
+      : recording?.send ? nextWord("voiceWillSend") : recording?.live && recording.retryWithWhisper ? "" : S.webVoiceSlow
     if (recording && !recording.complete) box.setAttribute("data-slow", "1")
     // Twelve seconds of nothing has an explanation and it is worth giving.
     // Anything shorter does not, and a permanent line of it would be an

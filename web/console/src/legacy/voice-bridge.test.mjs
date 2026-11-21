@@ -62,19 +62,26 @@ function harness(options = {}) {
   }
   const document = { visibilityState: "visible", createElement: () => new Element(), createElementNS: () => new Element(),
     addEventListener: (key, callback) => listeners.set(key, callback), removeEventListener: key => listeners.delete(key) }
-  const sandbox = { exports: {}, Blob, Uint8Array, Float32Array, DataView, ArrayBuffer, Date: { now: () => now },
+  const sandbox = { exports: {}, AbortController, Blob, Uint8Array, Float32Array, DataView, ArrayBuffer, Date: { now: () => now },
     window: { isSecureContext: true, MediaRecorder: Recorder, AudioContext: Context, OfflineAudioContext: Offline,
       addEventListener: (key, callback) => listeners.set(key, callback), removeEventListener: key => listeners.delete(key) },
     MediaRecorder: Recorder, navigator: { mediaDevices: { getUserMedia: () => {
       opens++
-      const track = { readyState: "live", stop() { this.readyState = "ended" } }; tracks.push(track)
-      return options.permission ? options.permission({ getTracks: () => [track] }) : Promise.resolve({ getTracks: () => [track] })
+      const track = { readyState: "live", enabled: true, stop() { this.readyState = "ended" } }; tracks.push(track)
+      const stream = { getTracks: () => [track], getAudioTracks: () => [track] }
+      return options.permission ? options.permission(stream) : Promise.resolve(stream)
     } } }, document,
     setTimeout: (callback, delay) => { const id = ++timerID; timers.set(id, { at: now + delay, callback }); return id },
     clearTimeout: id => timers.delete(id), setInterval: callback => { const id = ++timerID; intervals.set(id, callback); return id },
     clearInterval: id => intervals.delete(id), btoa: text => Buffer.from(text, "binary").toString("base64"),
     require(path) {
       if (path.endsWith("next-strings.js")) return { nextWord: key => english[`next.${key}`] }
+      if (path.endsWith("cloud/install.js")) return { captureMachineFetch: () => ({ current: () => true }) }
+      if (path.endsWith("live-dictation.js")) return {
+        usesLiveDictation: async () => Boolean(options.live),
+        connectLiveDictation: options.live,
+        LiveDictationError: class extends Error {},
+      }
       if (path.endsWith("voice-events.js")) return { recordVoiceDiagnostic: row => diagnostics.push(row) }
       if (path.endsWith("i18n.js")) return { T: new Proxy({}, { get: (_, key) => english[`legacy.${String(key)}`] ?? key }), fill: (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key])) }
       if (path.endsWith("env.js")) return { reduced: true }
@@ -89,7 +96,7 @@ function harness(options = {}) {
   runInNewContext(code, sandbox)
   const voice = sandbox.exports, box = new Element()
   const sent = [], toasts = [], states = []
-  const job = { host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
+  const job = { pickEngine: Boolean(options.live), host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
     send: text => sent.push(text), say: (text, bad) => toasts.push({ text, bad: !!bad }), changed: state => states.push(state),
     transcribe: async (audio, rate) => { posts++; return options.transcribe ? options.transcribe(audio, rate) : { text: "Recovered speech" } } }
   const flush = () => new Promise(resolve => setImmediate(resolve))
@@ -327,4 +334,66 @@ test("a sent recording that fails while its composer is open stays retryable and
   assert.equal(h.voice.voiceState(), "recoverable")
   fail = false; h.click("go"); await h.flush()
   assert.deepEqual(h.sent, ["Second try"]); assert.deepEqual(h.words, [])
+})
+
+
+test("Realtime keeps preview separate and puts the final words into the draft once", async () => {
+  let preview, finish, closes = 0
+  const h = harness({ live: async (_connection, stream, _request, _signal, onText) => {
+    assert.equal(stream.getAudioTracks()[0].enabled, false)
+    preview = onText
+    return { finish: () => new Promise(resolve => { finish = resolve }), close: () => { closes++ } }
+  } })
+  await h.start()
+  assert.equal(h.tracks[0].enabled, true)
+  preview("Early words")
+  assert.equal(h.box.querySelector(".voice-live-preview").textContent, "Early words")
+  assert.deepEqual(h.words, [])
+  h.click("go")
+  assert.equal(h.tracks[0].readyState, "ended")
+  await h.flush()
+  finish("Final words")
+  await h.flush()
+  assert.deepEqual(h.words, ["Final words"])
+  assert.deepEqual(h.sent, [])
+  assert.equal(h.posts, 0)
+  assert.equal(closes, 1)
+})
+
+test("Realtime failure retains audio for one explicit Whisper retry", async () => {
+  const decoded = []
+  const h = harness({ decoded, live: async () => ({
+    finish: async () => { throw new Error("disconnected") },
+    close() {},
+  }) })
+  await h.start()
+  h.click("go")
+  await h.flush()
+  assert.equal(h.voice.voiceState(), "recoverable")
+  assert.equal(h.box.querySelector(".go").textContent, "Retry with local Whisper")
+  assert.equal(h.posts, 0)
+  h.click("go")
+  await h.flush()
+  assert.deepEqual(decoded, ["encoded ending"])
+  assert.deepEqual(h.words, ["Recovered speech"])
+  assert.equal(h.opens, 1)
+  assert.equal(h.posts, 1)
+})
+
+test("canceling Realtime setup closes the microphone and fences a late peer", async () => {
+  let ready, signal, closes = 0
+  const h = harness({ live: (_connection, _stream, _request, abort) => {
+    signal = abort
+    return new Promise(resolve => { ready = resolve })
+  } })
+  await h.start()
+  assert.equal(h.voice.voiceState(), "connecting")
+  h.click("drop")
+  assert.equal(signal.aborted, true)
+  assert.equal(h.tracks[0].readyState, "ended")
+  ready({ finish: async () => "Late words", close: () => { closes++ } })
+  await h.flush()
+  assert.equal(closes, 1)
+  assert.equal(h.recorders.length, 0)
+  assert.deepEqual(h.words, [])
 })

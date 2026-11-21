@@ -581,6 +581,7 @@ var Settables = []Settable{
 	// Dictation cleanup by a small model after Whisper (docs/voice.md). Off
 	// unless set: it sends the transcript and vocabulary to the chosen
 	// assistant's provider, which local Whisper never does.
+	{Name: "voice_transcription", Kind: "string", Choices: []string{"whisper", "openai_realtime"}},
 	{Name: "voice_polish", Kind: "bool"},
 	{Name: "voice_polish_assistant", Kind: "string", Choices: []string{"claude", "codex"},
 		Refusal: "invalid_voice_polish_assistant", Because: "claude or codex"},

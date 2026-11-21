@@ -50,7 +50,8 @@ import (
 // The lead Bot manages its team by role from API 103.
 // Editing queued Bot messages arrives at API 104.
 // Personal Bot workspaces can share a source-owned group from API 105.
-const APILevel = 105
+// OpenAI Realtime dictation arrives at API 106.
+const APILevel = 106
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

@@ -175,6 +175,11 @@
           "nullable": true,
           "type": "string"
         },
+        "voice_transcription": {
+          "description": "Message dictation uses local `whisper` by default or `openai_realtime` when explicitly selected.",
+          "nullable": true,
+          "type": "string"
+        },
         "voice_polish": {
           "description": "Whether a small model punctuates and corrects each transcript after Whisper. Absent is off: it sends the transcript and vocabulary to the chosen assistant's provider.",
           "nullable": true,
@@ -465,6 +470,11 @@
         },
         "voice_engine": {
           "description": "`auto`, `apple` or `whisper`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_transcription": {
+          "description": "Message dictation uses local `whisper` by default or `openai_realtime` when explicitly selected.",
           "nullable": true,
           "type": "string"
         },

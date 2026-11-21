@@ -1815,6 +1815,11 @@
     "Note": true
   },
   {
+    "Name": "cloud.terminal_direct_ice_recovery_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cloud.terminal_direct_message_bytes",
     "Known": true,
     "Note": true
