@@ -348,6 +348,7 @@ compilation if the selected identity is not Developer ID Application.
 
 ## Recent acceptance records
 
+- [v3.1.0 publication and the return to stable](records/release-v3.1.0-acceptance.md).
 - [v3.0.0 publication, signed updater recovery and the return to stable](records/release-v3.0.0-acceptance.md).
 - [v2.19.0 publication, the voice copilot and Chrome through Clawdline](records/release-v2.19.0-acceptance.md).
 - [v2.18.0 publication, Grok full permission and Gemini self-started turns](records/release-v2.18.0-acceptance.md).
