@@ -12,6 +12,10 @@ const (
 	MaxArtifactBytes      = 5 << 20
 	MaxOutputChunkBytes   = 384 << 10
 	MaxArtifactTitleBytes = 200
+	// MaxInlineImageBytes is the largest shared picture a chat fetches whole
+	// to show in place (web/console project-assistants/outputs.ts
+	// INLINE_IMAGE_BYTES, as Codync's INLINE_BYTES); a larger one is a file card.
+	MaxInlineImageBytes = 20 << 20
 )
 
 // Output describes an explicit, immutable Bot publication, separate from input pictures.

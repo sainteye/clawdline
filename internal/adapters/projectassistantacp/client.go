@@ -93,17 +93,21 @@ type Client struct {
 	adapterVersion      string
 	geminiSettings      string
 	openingInstructions string
-	promptImages        bool
-	sessionFailures     bool
-	ownedMCP            *OwnedMCP
-	mcpMu               sync.Mutex
-	mcpRevoked          bool
-	permissionsSealed   bool
-	cancelled           bool
-	promptID            string
-	promptDeadline      time.Time
-	answerMu            sync.Mutex
-	rpcSlots            chan struct{}
+	// remindFiles: a resumed native session may hold a system prompt frozen
+	// before send_file was described, so each person's turn names it (Codync
+	// host/src/agent/bot/turn.rs). Gemini hears the whole frame every open.
+	remindFiles       bool
+	promptImages      bool
+	sessionFailures   bool
+	ownedMCP          *OwnedMCP
+	mcpMu             sync.Mutex
+	mcpRevoked        bool
+	permissionsSealed bool
+	cancelled         bool
+	promptID          string
+	promptDeadline    time.Time
+	answerMu          sync.Mutex
+	rpcSlots          chan struct{}
 }
 
 func NewClient(p *Process, l Limits, fence pa.Fence, sink func(context.Context, app.ProtocolEvent) error, readOnly func([]byte) bool) (*Client, error) {
@@ -215,6 +219,7 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 			c.openingInstructions = systemPrompt(q)
 		}
 	}
+	c.remindFiles = q.Resume && q.Bot.Agent != pa.Gemini
 	if q.Resume && q.PersistNativeSession && !nativeSessionUUID.MatchString(q.Binding.NativeSessionID) {
 		return refusal(pa.ScopeDenied, "native_session_id")
 	}
@@ -584,6 +589,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 			text += "\n- " + string(quoted)
 		}
 	}
+	text = withSendFileReminder(text, c.remindFiles, q.Turn.Origin)
 	if q.Handoff != nil {
 		opening, err := q.Handoff.Opening(q.Turn, q.Context)
 		if err != nil {
@@ -1144,4 +1150,18 @@ func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, erro
 		return app.SteerOutcome(answer.Outcome), nil
 	}
 	return "", refusal(pa.OutcomeUnknown, "steering_answer")
+}
+
+// SendFileReminder follows a person's message in a resumed session, whose
+// frozen instructions may not yet say how to hand over a file.
+const SendFileReminder = "[Clawdline: send_file(path, name?) shares a file in your working directory, such as an image you made, as a card in this chat; pictures show in place. Use it instead of a local path or file:// link, which the user cannot open.]"
+
+// withSendFileReminder appends SendFileReminder to a person's own message when
+// the session's instructions may predate it. Bot requests, replies and host
+// notices cannot use send_file, so they are left alone.
+func withSendFileReminder(text string, remind bool, origin pa.TurnOrigin) string {
+	if !remind || origin != pa.UserOrigin && origin != "" {
+		return text
+	}
+	return text + "\n\n" + SendFileReminder
 }

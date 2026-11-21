@@ -117,6 +117,7 @@
 | `bots.hook_response_bytes` | 131072 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.hook_revision` | 9007199254740991 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.human_reactions` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.inline_image_bytes` | 20971520 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |

@@ -6,7 +6,7 @@ import {useEffect,useRef,useState} from "react"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
 import {catalogWord} from "../catalog"
-import {artifactFrame,loadOutput} from "./outputs"
+import {artifactFrame,inlineImageType,loadOutput} from "./outputs"
 import {loadInput} from "./inputs"
 import type {LibraryItem} from "./library-items"
 import type {Words} from "./words"
@@ -52,9 +52,10 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
       const inert=document.createElement("template")
       inert.innerHTML=html
       const links=[...new Set([...inert.content.querySelectorAll("a[href]")].map(a=>a.getAttribute("href")!).filter(h=>/^(https?:\/\/|mailto:)/i.test(h)))]
-      if(attachment)previewURL=URL.createObjectURL(blob)
+      const picture=!!attachment||!!output&&!!inlineImageType(output)
+      if(picture)previewURL=URL.createObjectURL(blob)
       else if(isPDF)previewURL=URL.createObjectURL(blob.slice(0,blob.size,"application/pdf"))
-      setValue({blob,name:loadedName,html,links,pictureURL:attachment?previewURL:"",pdfURL:isPDF?previewURL:"",output})
+      setValue({blob,name:loadedName,html,links,pictureURL:picture?previewURL:"",pdfURL:isPDF?previewURL:"",output})
     })().catch(e=>{if(!control.signal.aborted)setError(errorCode(e))})
     const timer=setInterval(()=>{if(source.current?.()===false){control.abort();if(previewURL)URL.revokeObjectURL(previewURL);tabURLs.current.forEach(url=>URL.revokeObjectURL(url));setValue(null);setError("pa_revoked")}},3000)
     return()=>{control.abort();clearInterval(timer);if(previewURL)URL.revokeObjectURL(previewURL)}
