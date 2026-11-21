@@ -1,4 +1,4 @@
-import {useState,type ReactNode} from "react"
+import {useRef,useState,type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {AppearancePicker} from "./BotAvatar"
 import type {Words} from "./words"
@@ -36,9 +36,38 @@ export function sameEditableSettings(a:W.ProjectAssistantBot,b:W.ProjectAssistan
   return JSON.stringify(fields(a))===JSON.stringify(fields(b))
 }
 
+function canonical(value:unknown):string {
+  if(Array.isArray(value))return "["+value.map(canonical).join(",")+"]"
+  if(value&&typeof value==="object")return "{"+Object.keys(value).sort().filter(k=>(value as Record<string,unknown>)[k]!==undefined).map(k=>JSON.stringify(k)+":"+canonical((value as Record<string,unknown>)[k])).join(",")+"}"
+  return JSON.stringify(value??null)
+}
+
+/** Whether every editable field a save attempted is what the source now holds. */
+export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSettings,bot:W.ProjectAssistantBot):boolean {
+  const same=(a:unknown,b:unknown)=>canonical(a)===canonical(b)
+  if(attempted.name!==bot.name||attempted.instructions!==bot.instructions.text||!same(attempted.appearance,bot.appearance))return false
+  if(attempted.permission_policy!==undefined&&attempted.permission_policy!==bot.permission_policy)return false
+  if((attempted.mode||"")!==(bot.mode||""))return false
+  if(attempted.agent!==undefined&&attempted.agent!==bot.agent)return false
+  if(attempted.runtime_settings!==undefined&&!same(attempted.runtime_settings,bot.runtime_settings??{model:"",options:{}}))return false
+  if(attempted.notify!==undefined&&(attempted.notify==="off")!==(bot.notify==="off"))return false
+  if(attempted.login_profile!==undefined&&(attempted.login_profile.id||"")!==(bot.login_profile??""))return false
+  if(attempted.extensions!==undefined&&!same(attempted.extensions,bot.extensions??{skills:[],connectors:[]}))return false
+  if(attempted.background_threads!==undefined&&attempted.background_threads!==(bot.background_threads??3))return false
+  if(attempted.manage_team!==undefined&&attempted.manage_team!==(bot.manage_team??false))return false
+  if(attempted.fallback_agents!==undefined&&!same(attempted.fallback_agents,bot.fallback_agents??[]))return false
+  if(attempted.fallback_steps!==undefined&&!same(attempted.fallback_steps,bot.fallback_steps??(bot.fallback_agents??[]).map(agent=>({agent}))))return false
+  return true
+}
+
+/** The outcome of reading the source after an unconfirmed save. */
+export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"failed"|"superseded"
+
 /** One mounted editor owns the draft across the Details and Settings tabs. */
-export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false}:{bot:W.ProjectAssistantBot;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
-  const [original]=useState(bot)
+export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
+  const [original,setOriginal]=useState(bot)
+  // The exact values of the save whose outcome is unknown; reconciliation compares against these.
+  const attempted=useRef<W.ProjectAssistantEditSettings|undefined>(undefined),[check,setCheck]=useState<SettingsCheck>("")
   const [name,setName]=useState(bot.name),[appearance,setAppearance]=useState(bot.appearance),[instructions,setInstructions]=useState(bot.instructions.text)
   const [busy,setBusy]=useState(false),[error,setError]=useState<{code:string;field?:string}>(),[unknown,setUnknown]=useState(false)
   const [approval,setApproval]=useState<{permission_policy:W.ProjectAssistantPermissionPolicy;mode?:string}>(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})
@@ -65,21 +94,33 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     return {fallback_steps:validSteps,...(validSteps.length===0?{fallback_agents:[]}: {})}
   }
   const save=async()=>{
-    if(!enabled||busy||unknown||awaitingModel||!name.trim())return
-    setBusy(true);setError(undefined)
-    try{
-      await onSave({name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
+    if(!enabled||busy||unknown||check==="diverged"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim())return
+    setBusy(true);setError(undefined);setCheck("")
+    const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
         ...(backgroundThreads!==(original.background_threads??3)?{background_threads:backgroundThreads}:{}),
-        ...(teamChanged?{manage_team:manageTeam}:{})},original)
-    }catch(e){
+        ...(teamChanged?{manage_team:manageTeam}:{})}
+    try{await onSave(settings,original)}catch(e){
       const code=errorCode(e),field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
       setError({code,field})
-      if(code==="pa_outcome_unknown")setUnknown(true)
+      if(code==="pa_outcome_unknown"){attempted.current=settings;setUnknown(true)}
     }
     finally{setBusy(false)}
   }
+  // A read of the same source and fence decides; it never writes or replays the save.
+  const checkSaved=async()=>{
+    const intended=attempted.current
+    if(!onCheck||!intended||!unknown||check==="checking")return
+    setCheck("checking")
+    let fresh:W.ProjectAssistantBot
+    // An older answer than the source already observed keeps the draft locked until a fresh read decides.
+    try{fresh=await onCheck()}catch(e){setCheck(errorCode(e)==="pa_stale_version"?"superseded":"failed");return}
+    if(attemptedSettingsPersisted(intended,fresh)){setOriginal(fresh);setCheck("confirmed")}
+    else setCheck(sameEditableSettings(original,fresh)?"unchanged":"diverged")
+    attempted.current=undefined;setUnknown(false);setError(undefined)
+  }
+  const checkText=check==="confirmed"?w.settingsCheckConfirmed:check==="unchanged"?w.settingsCheckUnchanged:check==="diverged"?w.settingsCheckDiverged:check==="failed"?w.settingsCheckFailed:check==="superseded"?w.settingsCheckSuperseded:""
   const chooseAgent=(next:W.ProjectAssistantAgent)=>{
     setAgent(next);setLoginProfile("");setExtensions({skills:extensions.skills,connectors:[]})
     setRuntime({model:"",options:{}})
@@ -93,10 +134,12 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     <div><strong>{title}</strong><small>{hint}</small></div>
     <button type="button" role="switch" className="pa-switch" aria-checked={on} aria-label={title} disabled={disabled} onClick={()=>change(!on)}><span/></button>
   </div>
-  const savebar=<footer className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown}>
-    {error&&<p className="pa-settings-save-error" role="alert">{settingsSaveFailure(error,w,embedded?w.settingsSaveConflict:undefined)}</p>}
+  const savebar=<footer className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown&&!check}>
+    {error&&<p className="pa-settings-save-error" role="alert">{unknown&&onCheck?w.settingsSaveUnknownCheck:settingsSaveFailure(error,w,embedded?w.settingsSaveConflict:undefined)}</p>}
+    {checkText&&<p className={check==="confirmed"?"pa-settings-check-result":"pa-settings-save-error"} role={check==="confirmed"?"status":"alert"}>{checkText}</p>}
+    {unknown&&onCheck&&<button type="button" className="pa-settings-check-saved" disabled={check==="checking"} aria-busy={check==="checking"||undefined} onClick={()=>void checkSaved()}>{check==="checking"?w.settingsChecking:w.settingsCheckSaved}</button>}
     {embedded&&<small>{w.settingsDraftHint}</small>}
-    <button type="button" disabled={busy} onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" className="pa-settings-save" disabled={!enabled||busy||unknown||awaitingModel||!name.trim()} aria-busy={busy||undefined} onClick={()=>void save()}>{busy?w.settingsSaving:w.save}</button>
+    <button type="button" disabled={busy} onClick={onClose}>{w.cancel}</button>{!embedded&&<h2>{w.settings}</h2>}<button type="button" className="pa-settings-save" disabled={!enabled||busy||unknown||check==="diverged"||check==="checking"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim()} aria-busy={busy||undefined} onClick={()=>void save()}>{busy?w.settingsSaving:w.save}</button>
   </footer>
   return <section className={`${embedded?"pa-embedded-form":"pa-form-panel"} pa-settings-editor`} role={embedded?undefined:"dialog"} aria-modal={embedded?undefined:true} aria-label={w.settings}>
     {!embedded&&savebar}

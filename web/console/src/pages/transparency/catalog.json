@@ -5400,7 +5400,7 @@
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
-    "web/console/src/project-assistants/Chat.tsx": "c35be8bae73435e5a72b76097cd927ffbb09f370b461d99c888bc6fbfe295390",
+    "web/console/src/project-assistants/Chat.tsx": "582c155b667d42b24c8d2329153563fcd57319c9b5e2c34baf4374eef0b5d804",
     "web/console/src/project-assistants/ChatRows.tsx": "6ce53159350ee0a00906719edb7b4266ef0502d1766fe3ac70e5659798815662",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
