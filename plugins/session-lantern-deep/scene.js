@@ -664,8 +664,8 @@ function drawQuestion(c) {
   const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.42 - 28) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 26 * s, [255, 150, 120], .55); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(now * 1.7 + c.x) * .12); ctx.font = "700 " + 22 * s + "px Georgia,serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3 * s; ctx.strokeStyle = "#1a0b10"; ctx.strokeText("?", 0, 0); ctx.fillStyle = "#ffd9c4"; ctx.fillText("?", 0, 0); ctx.restore();
-  // an attention ring on the ground
-  const p = (now * .7 + c.x * .01) % 1; ctx.strokeStyle = rgba([255, 160, 130], (1 - p) * .5); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.ellipse(X(c.x), Y(c.st.y) + 1, (10 + p * 22) * scale, (2 + p * 4) * scale, 0, 0, TAU); ctx.stroke();
+  // a warm pool of light on the ground draws the eye without a drawn ring
+  const p = .5 + .5 * Math.sin(now * 2.6 + c.x * .01); ctx.globalCompositeOperation = "lighter"; ctx.save(); ctx.translate(X(c.x), Y(c.st.y) - 2 * scale); ctx.scale(1, .28); drawGlow(0, 0, (44 + p * 14) * scale, [255, 160, 120], .3 + p * .22); ctx.restore(); ctx.globalCompositeOperation = "source-over";
 }
 const FOE_SIZE = [40, 46, 44, 48, 40, 70];
 const FOE_FRAMES = ["move-1", "move-2", "windup", "attack", "hurt", "death-1", "death-2", "death-3"], foeBox = new Map();
@@ -776,11 +776,11 @@ function draw() {
   for (const c of chars.values()) { c.sx = X(c.x); c.sy = Y(c.y); if (c.x > left && c.x < right) seen.push(c); }
   seen.sort((a, b) => (a.ref === selected) - (b.ref === selected));
   ctx.globalAlpha = 1; for (const e of wildList) if (e.x > left && e.x < right) drawWild(e);
+  if (selected) { const c = chars.get(selected); if (c && seen.includes(c)) { const p = .5 + .5 * Math.sin(now * 2.2); ctx.globalCompositeOperation = "lighter"; ctx.save(); ctx.translate(c.sx, c.sy - 2 * scale); ctx.scale(1, .28); drawGlow(0, 0, (46 + p * 6) * scale, [215, 235, 255], .34 + p * .1); ctx.restore(); ctx.globalCompositeOperation = "source-over"; } }
   for (const c of seen) for (const g of c.ghosts) drawChar(c, g);
   for (const e of enemies) if (e.x > left && e.x < right) drawEnemy(e);
   for (const c of seen) { drawChar(c, null); if (c.mode === "ponder" && live(c.row)) drawQuestion(c); }
   drawFx(); drawFog(1.1, 6, .16); drawFireflies(); drawMotes(); drawForeground(); drawTags(seen);
-  if (selected) { const c = chars.get(selected); if (c && seen.includes(c)) { const p = .5 + .5 * Math.sin(now * 4); ctx.strokeStyle = "rgba(240,248,255," + (.5 + p * .4) + ")"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(c.sx, c.sy + 2, (17 + p * 2) * scale, 4.5 * scale, 0, 0, TAU); ctx.stroke(); } }
 }
 
 /* ---------- loop, sizing, camera ---------- */
