@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { readFileSync } from "node:fs"
 import { runInNewContext } from "node:vm"
 // @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
-import { connectLiveDictation, readDictationSettings, writeDictationSetting } from "./live-dictation.ts"
+import { connectLiveDictation, readDictationEngine, writeDictationEngine } from "./live-dictation.ts"
 
 // @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
 import { startWhisperPreview } from "./whisper-preview.ts"
@@ -11,11 +11,11 @@ import { startWhisperPreview } from "./whisper-preview.ts"
 test("read the selected engine from the active machine and recognize older daemons", async () => {
   const signal = new AbortController().signal
   const connection = { current: () => true, fetch: async () => Response.json({}) }
-  assert.equal(await readDictationSettings(connection, signal), null)
+  assert.equal(await readDictationEngine(connection, signal), null)
   connection.fetch = async () => Response.json({ voice_transcription: "whisper" })
-  assert.deepEqual(await readDictationSettings(connection, signal), { engine: "whisper", polish: false })
+  assert.deepEqual(await readDictationEngine(connection, signal), "whisper")
   connection.fetch = async () => Response.json({ voice_transcription: "openai_realtime", voice_polish: true })
-  assert.deepEqual(await readDictationSettings(connection, signal), { engine: "openai_realtime", polish: true })
+  assert.deepEqual(await readDictationEngine(connection, signal), "openai_realtime")
 })
 
 test("the recording panel saves the same machine preference with a verified response", async () => {
@@ -32,9 +32,9 @@ test("the recording panel saves the same machine preference with a verified resp
       return Response.json({ voice_transcription: "whisper" })
     },
   }
-  assert.equal(await writeDictationSetting(connection, { voice_transcription: "whisper" }, "recording-choice", signal), true)
+  assert.equal(await writeDictationEngine(connection, "whisper", "recording-choice", signal), true)
   current = false
-  assert.equal(await writeDictationSetting(connection, { voice_transcription: "whisper" }, "recording-choice", signal), false)
+  assert.equal(await writeDictationEngine(connection, "whisper", "recording-choice", signal), false)
   assert.equal(calls, 1)
 })
 
@@ -80,20 +80,6 @@ test("a transient Whisper preview failure leaves the next window usable", async 
   assert.equal(requests, 2)
   assert.deepEqual(words, ["下一段"])
   assert.deepEqual(unavailable, [])
-})
-
-test("automatic correction saves only the existing correction preference", async () => {
-  const calls: unknown[] = []
-  const connection = {
-    current: () => true,
-    fetch: async (_: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(JSON.parse(String(init?.body)))
-      return Response.json({ voice_polish: true })
-    },
-  }
-  const signal = new AbortController().signal
-  assert.equal(await writeDictationSetting(connection, { voice_polish: true }, "correction", signal), true)
-  assert.deepEqual(calls, [{ voice_polish: true }])
 })
 
 function fakeRealtime(t: import("node:test").TestContext, direction: RTCRtpTransceiverDirection = "sendrecv") {

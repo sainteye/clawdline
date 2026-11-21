@@ -24,7 +24,7 @@
 import { borrowAudioSession } from "../realtime/chime.js"
 import { nextWord } from "../next-strings.js"
 import { captureMachineFetch } from "../cloud/install.js"
-import { connectLiveDictation, LiveDictationError, readDictationSettings, writeDictationSetting, type DictationChange, type DictationConnection, type DictationEngine } from "../session/live-dictation.js"
+import { connectLiveDictation, LiveDictationError, readDictationEngine, writeDictationEngine, type DictationConnection, type DictationEngine } from "../session/live-dictation.js"
 import { traditionalDictation } from "../session/traditional-dictation.generated.js"
 import { startWhisperPreview, type WhisperPreview } from "../session/whisper-preview.js"
 import { recordVoiceDiagnostic, type VoiceDiagnostic } from "./voice-events.js"
@@ -173,8 +173,7 @@ interface Recording {
   prepared?: { revision: number; promise: Promise<string> }
   closeDecoder?: () => void
   live?: Awaited<ReturnType<typeof connectLiveDictation>>
-  enginePicker?: { connection: DictationConnection; selected: DictationEngine; polish: boolean }
-  polishUpdate?: Promise<void>
+  enginePicker?: { connection: DictationConnection; selected: DictationEngine }
   traditional?: boolean
   whisperPreview?: WhisperPreview
   whisperPreviewUnavailable?: boolean
@@ -413,7 +412,7 @@ function open(job: VoiceJob): void {
   const microphone = navigator.mediaDevices.getUserMedia({ audio: true })
   const connection = job.pickEngine ? captureMachineFetch() : null
   let expiry: ReturnType<typeof setTimeout> | undefined
-  const dictationSettings = connection ? readDictationSettings(connection, controller.signal) : null
+  const dictationEngine = connection ? readDictationEngine(connection, controller.signal) : null
   let previewContext: AudioContext | undefined
   if (connection && typeof AudioWorkletNode === "function") {
     try {
@@ -440,10 +439,9 @@ function open(job: VoiceJob): void {
     }
     stream = got
     expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
-    const settings = await dictationSettings
-    const selected = settings?.engine
+    const selected = await dictationEngine
     const whisper = connection && selected !== "openai_realtime"
-    const enginePicker = connection && settings ? { connection, selected: settings.engine, polish: settings.polish } : undefined
+    const enginePicker = connection && selected ? { connection, selected } : undefined
     if (selected !== "openai_realtime" || !connection) {
       if (mine !== token) return
       if (job.guard() || (connection && !connection.current())) { cancel(); return }
@@ -816,7 +814,7 @@ function processRecording(): void {
       const prior = take.reading?.promise
       // If final bytes arrived during a partial attempt, wait for that host
       // request to settle before starting the manually requested full one.
-      const request: Promise<VoiceAnswer> = Promise.all([Promise.resolve(prior).catch(() => null), take.polishUpdate]).then(() => {
+      const request: Promise<VoiceAnswer> = Promise.resolve(prior).catch(() => null).then(() => {
         if (!current()) return {}
         return job?.transcribe ? job.transcribe(audio, RATE) : postVoice(audio, RATE)
       })
@@ -1421,9 +1419,6 @@ function show(): void {
       acts.appendChild(way(nextWord("voicePause"), "drop", () => recover("paused")))
     }
     box.appendChild(acts)
-    if (state === "recording" && recording?.enginePicker && !recording.live) {
-      box.appendChild(polishCheckbox(recording, recording.enginePicker))
-    }
     if (state === "recording" && (recording?.live || recording?.whisperPreview || recording?.whisperPreviewUnavailable)) {
       const preview = document.createElement("div")
       preview.className = "voice-live-preview"
@@ -1466,7 +1461,7 @@ function engineSelect(picker: NonNullable<Recording["enginePicker"]>): HTMLLabel
     if (selected !== "whisper" && selected !== "openai_realtime") return
     select.disabled = true
     const say = activeJob?.say ?? host.say
-    void saveVoicePreference(picker.connection, { voice_transcription: selected }).then((saved) => {
+    void saveVoiceEngine(picker.connection, selected).then((saved) => {
       if (saved) picker.selected = selected
       select.value = picker.selected
       select.disabled = false
@@ -1478,32 +1473,11 @@ function engineSelect(picker: NonNullable<Recording["enginePicker"]>): HTMLLabel
   return control
 }
 
-function polishCheckbox(take: Recording, picker: NonNullable<Recording["enginePicker"]>): HTMLLabelElement {
-  const label = document.createElement("label")
-  label.className = "voice-polish-toggle"
-  const checkbox = document.createElement("input")
-  checkbox.type = "checkbox"
-  checkbox.checked = picker.polish
-  checkbox.addEventListener("change", () => {
-    const enabled = checkbox.checked
-    const say = activeJob?.say ?? host.say
-    checkbox.disabled = true
-    take.polishUpdate = saveVoicePreference(picker.connection, { voice_polish: enabled }).then((saved) => {
-      if (saved) picker.polish = enabled
-      checkbox.checked = picker.polish
-      checkbox.disabled = false
-      if (!saved && picker.connection.current()) say(nextWord("voicePolishChangeFailed"), true)
-    })
-  })
-  label.append(checkbox, nextWord("voiceAutoPolish"))
-  return label
-}
-
-async function saveVoicePreference(connection: DictationConnection, change: DictationChange): Promise<boolean> {
+async function saveVoiceEngine(connection: DictationConnection, selected: DictationEngine): Promise<boolean> {
   const controller = new AbortController()
   const expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
   try {
-    return await writeDictationSetting(connection, change, freshKey(), controller.signal)
+    return await writeDictationEngine(connection, selected, freshKey(), controller.signal)
   } finally {
     clearTimeout(expiry)
   }

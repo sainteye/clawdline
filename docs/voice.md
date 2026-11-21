@@ -35,10 +35,8 @@ recording panel. Older or busy hosts, and browsers without AudioWorklet, can
 still transcribe the complete recording after Stop. The normal final pass
 uses the complete recording and preserves the existing retry action.
 
-During a Whisper take, the recording panel's **Auto-correct** checkbox writes
-the same **LLM cleanup** setting available in Settings. If you stop while the
-change is saving, the final pass waits for the result. Preview requests never
-run cleanup.
+Optional LLM cleanup is configured in **Settings → Voice Input** and applies
+only to the final Whisper transcript. It is off by default.
 
 ## LLM cleanup
 

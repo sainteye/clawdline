@@ -10810,8 +10810,6 @@
   "next.voiceEngineNextSaved": "已切換，下次錄音會使用此辨識引擎。",
   "next.voiceEngineChangeFailed": "無法切換辨識引擎。",
   "next.voiceEngineNextCaption": "下次",
-  "next.voiceAutoPolish": "自動修正",
-  "next.voicePolishChangeFailed": "無法變更自動修正。",
   "next.voiceWhisperPreviewUnavailable": "暫時無法即時顯示。停止錄音後仍可轉寫整段。",
   "notifications.botSound": "Bots 完成提示音",
   "notifications.botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",

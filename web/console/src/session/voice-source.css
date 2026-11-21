@@ -38,16 +38,6 @@
   cursor: pointer;
 }
 
-.voice .voice-polish-toggle {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  color: var(--dim);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 /* Send while recording: the word with the paper plane Send means elsewhere,
    so the button that delivers the message unread says so before it is
    pressed. Lives here because `legacy/composer.css` is a pinned copy. */

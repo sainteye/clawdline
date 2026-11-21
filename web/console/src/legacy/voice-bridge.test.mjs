@@ -43,8 +43,7 @@ class Element {
 function harness(options = {}) {
   let now = 1000, timerID = 0, opens = 0, posts = 0, contextCloses = 0
   const timers = new Map(), intervals = new Map(), recorders = [], tracks = [], words = [], diagnostics = [], listeners = new Map()
-  const engineWrites = [], polishWrites = []
-  let polish = options.polish ?? false
+  const engineWrites = []
   let engine = options.engine ?? (options.live ? "openai_realtime" : null)
   class Recorder {
     state = "inactive"; mimeType = "audio/mp4"; stopCalls = 0
@@ -96,17 +95,11 @@ function harness(options = {}) {
       if (path.endsWith("chime.js")) return { borrowAudioSession: options.borrowAudioSession ?? (() => () => {}) }
       if (path.endsWith("whisper-preview.js")) return { startWhisperPreview: options.preview }
       if (path.endsWith("live-dictation.js")) return {
-        readDictationSettings: async () => engine ? { engine, polish } : null,
-        writeDictationSetting: async (_, change) => {
-          if ("voice_polish" in change) {
-            polishWrites.push(change.voice_polish)
-            if (options.writePolish && !await options.writePolish(change.voice_polish)) return false
-            polish = change.voice_polish
-            return true
-          }
-          engineWrites.push(change.voice_transcription)
+        readDictationEngine: async () => engine,
+        writeDictationEngine: async (_, selected) => {
+          engineWrites.push(selected)
           if (options.engineWriteFails) return false
-          engine = change.voice_transcription
+          engine = selected
           return true
         },
         connectLiveDictation: options.live,
@@ -130,7 +123,7 @@ function harness(options = {}) {
     send: text => sent.push(text), say: (text, bad) => toasts.push({ text, bad: !!bad }), changed: state => states.push(state),
     transcribe: async (audio, rate) => { posts++; return options.transcribe ? options.transcribe(audio, rate) : { text: "Recovered speech" } } }
   const flush = () => new Promise(resolve => setImmediate(resolve))
-  return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options, engineWrites, polishWrites,
+  return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options, engineWrites,
     get posts() { return posts }, get opens() { return opens }, get contextCloses() { return contextCloses },
     async start() { voice.press(job); await flush() },
     // While recording, the control that keeps the words for the box is the
@@ -476,22 +469,12 @@ test("Whisper previews words without changing the draft, and ignores late previe
   assert.equal(h.posts, 1)
 })
 
-test("the Whisper panel's small correction checkbox is saved before the stopped take is read", async () => {
-  let acknowledge
-  const h = harness({ engine: "whisper", writePolish: () => new Promise(resolve => { acknowledge = resolve }) })
-  assert.equal(h.box.querySelector(".voice-polish-toggle"), null)
+test("the Whisper panel offers the engine but no correction setting", async () => {
+  const h = harness({ engine: "whisper" })
   await h.start()
-  const checkbox = h.box.querySelector(".voice-polish-toggle").children[0]
-  assert.equal(checkbox.type, "checkbox")
-  assert.equal(checkbox.checked, false)
-  checkbox.checked = true
-  checkbox.listeners.change()
-  assert.equal(h.voice.voiceState(), "recording")
-  assert.deepEqual(h.polishWrites, [true])
+  assert.equal(h.box.querySelector(".voice-engine-picker").value, "whisper")
+  assert.equal(h.box.querySelector(".voice-polish-toggle"), null)
   h.click("go")
-  await h.flush()
-  assert.equal(h.posts, 0)
-  acknowledge(true)
   await h.flush()
   assert.equal(h.posts, 1)
   assert.deepEqual(h.words, ["Recovered speech"])
