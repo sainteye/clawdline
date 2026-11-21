@@ -284,16 +284,22 @@ SELECT anchor,kind,CASE WHEN n<=? AND spent<=? THEN id ELSE '' END,
 ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC`
 }
 
+const viewTraceStepSQL = `coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category'))`
+
+func viewTraceSourceSQL() string {
+	return ` FROM a,project_assistant_events e
+ WHERE e.machine=? AND e.bot=? AND json_extract(CAST(e.data AS TEXT),'$.kind')='trace_updated'
+ AND ` + ownChatEventSQL("CAST(e.data AS TEXT)") + `
+ AND ` + viewFenceSQL("CAST(e.data AS TEXT)", false)
+}
+
 func viewTraceCTE() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + `, traces AS MATERIALIZED (
  SELECT e.seq,json_extract(CAST(e.data AS TEXT),'$.trace') j,
  json_extract(CAST(e.data AS TEXT),'$.fence.binding_id') binding_id,json_extract(CAST(e.data AS TEXT),'$.fence.generation') generation,
- row_number() OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category')) ORDER BY e.seq DESC) rn,
- min(e.seq) OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),coalesce(nullif(json_extract(CAST(e.data AS TEXT),'$.trace.id'),''),json_extract(CAST(e.data AS TEXT),'$.trace.category'))) first_seq
- FROM a,project_assistant_events e
- WHERE e.machine=? AND e.bot=? AND json_extract(CAST(e.data AS TEXT),'$.kind')='trace_updated'
- AND ` + ownChatEventSQL("CAST(e.data AS TEXT)") + `
- AND ` + viewFenceSQL("CAST(e.data AS TEXT)", false) + `
+ row_number() OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),` + viewTraceStepSQL + ` ORDER BY e.seq DESC) rn,
+ min(e.seq) OVER(PARTITION BY json_extract(CAST(e.data AS TEXT),'$.trace.turn_id'),` + viewTraceStepSQL + `) first_seq
+ ` + viewTraceSourceSQL() + `
 ), latest AS MATERIALIZED (
  SELECT seq,CASE WHEN coalesce(json_extract(j,'$.id'),'')!='' THEN first_seq ELSE seq END anchor,j FROM traces WHERE rn=1
 ) `
@@ -309,22 +315,32 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 		return err
 	}
 	var bad int64
-	// Validate each referenced turn's persisted binding once. Tuple membership
-	// avoids walking the turn map and rechecking its binding for every chunk.
-	statement = viewTraceCTE() + `, trace_refs AS MATERIALIZED (
- SELECT json_extract(j,'$.turn_id') turn_id,binding_id,generation FROM traces
+	// The head counts distinct steps. Only the traces page needs the newest
+	// content or chronological anchors. Validate every chunk so
+	// a later update cannot hide a malformed chunk or a mismatched binding.
+	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, traces AS MATERIALIZED (
+ SELECT json_extract(CAST(e.data AS TEXT),'$.trace.turn_id') turn_id,` + viewTraceStepSQL + ` step,
+ json_extract(CAST(e.data AS TEXT),'$.fence.binding_id') binding_id,
+ json_extract(CAST(e.data AS TEXT),'$.fence.generation') generation,
+ json_type(CAST(e.data AS TEXT),'$.trace')='object'
+ AND json_type(CAST(e.data AS TEXT),'$.trace.turn_id')='text' AND json_extract(CAST(e.data AS TEXT),'$.trace.turn_id')!=''
+ AND json_type(CAST(e.data AS TEXT),'$.trace.category')='text' AND json_extract(CAST(e.data AS TEXT),'$.trace.category')!=''
+ AND json_type(CAST(e.data AS TEXT),'$.trace.text')='text'
+ AND json_type(CAST(e.data AS TEXT),'$.trace.complete') IN ('true','false') valid
+ ` + viewTraceSourceSQL() + `
+), trace_refs AS MATERIALIZED (
+ SELECT DISTINCT turn_id,binding_id,generation FROM traces
 ), trace_turns AS MATERIALIZED (
  SELECT t.key id,json_extract(t.value,'$.fence.binding_id') binding_id,json_extract(t.value,'$.fence.generation') generation
  FROM a,json_each(a.j,'$.Turns') t
  WHERE CASE WHEN t.type!='object' THEN 0
  WHEN (t.key,json_extract(t.value,'$.fence.binding_id'),json_extract(t.value,'$.fence.generation')) IN (SELECT turn_id,binding_id,generation FROM trace_refs)
  THEN ` + viewBoundFenceSQL("t.value") + ` ELSE 0 END
-) SELECT (SELECT count(*) FROM latest),coalesce(sum(CASE WHEN
- json_type(l.j)='object' AND json_type(l.j,'$.turn_id')='text' AND json_extract(l.j,'$.turn_id')!=''
- AND json_type(l.j,'$.category')='text' AND json_extract(l.j,'$.category')!='' AND json_type(l.j,'$.text')='text'
- AND json_type(l.j,'$.complete') IN ('true','false')
- AND (json_extract(l.j,'$.turn_id'),l.binding_id,l.generation) IN (SELECT id,binding_id,generation FROM trace_turns)
- THEN 0 ELSE 1 END),0) FROM traces l`
+), steps AS (
+ SELECT 1 FROM traces GROUP BY turn_id,step
+) SELECT (SELECT count(*) FROM steps),coalesce(sum(CASE WHEN valid
+ AND (turn_id,binding_id,generation) IN (SELECT id,binding_id,generation FROM trace_turns)
+ THEN 0 ELSE 1 END),0) FROM traces`
 	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, h.Key.MachineID, h.Key.BotID).Scan(&h.TraceCategoryCount, &bad); err != nil {
 		return err
 	}

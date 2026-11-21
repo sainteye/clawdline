@@ -130,8 +130,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	// protocol does not go and read it: it was 2.4 reads a session, for bytes
 	// this file already carries (measured on 2026-09-26).
 	w("%s/task.json holds the same; you need not read it.", dir)
-	w("The rules every child follows, and why each command below is shaped as it is, are printed by")
-	w("`%s`. Read them once before you start; this file holds only this task.", b.childGuideCommand())
+	w("Read `%s` once before starting for the shared child rules.", b.childGuideCommand())
 	w("")
 	w("## The first thing you say")
 	w("")
@@ -230,7 +229,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "task_id": %q,`, r.ID)
 	w(` "task_secret": "<the TASK_SECRET value from your first message>",`)
 	w(` "status": "success",`)
-	w(` "summary": "Outcome: <what changed or what prevented completion>\n\nVerification: <what you checked and the result>\n\nRemaining: <what still needs attention, if any>",`)
+	w(` "summary": "<outcome>\n\n<verification>\n\n<remaining work, if any>",`)
 	w(` "symbols": ["<every name your change introduced>", "..."],`)
 	w(` "artifacts": ["artifacts/<file>", "..."],`)
 	w(` "verification": {"runs": 0, "seconds": 0, "last": "skipped", "scope": "No verification run"},`)
@@ -246,8 +245,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("```")
 	w("")
 	w(`- "status" is "failure" when you could not do it. `+"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.", taskdir.VerificationScopeLimit)
-	w("- Write `summary` in the person's language. In the JSON string, use `\\n\\n` between short sections and `\\n` between bullet lines.")
-	w("  Lead with the outcome, say what was verified, and include remaining work when there is any.")
+	w("- Escape bullet line breaks with `\\n`.")
 	w("- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.")
 	w("- If a shared dependency directory is not writable, keep changes here; commit if possible. Report `status: failure`, `verification.last: fail`; put the command to rerun and error in `verification.scope`, changed source paths in `artifacts`, and unverified work and commit state in `summary`.")
 	if reviewTask {

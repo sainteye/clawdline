@@ -128,7 +128,7 @@ func TestImageReviewDoesNotChangeTheExistingChildBrief(t *testing.T) {
 	b := launchBytesBroker(t, "en")
 	r := launchBytesRecord()
 	sum := sha256.Sum256([]byte(b.ChildBrief(r, "/Users/someone/.config/clawdline-next/worktrees/clawdline-0000000a/"+r.ID)))
-	if got := hex.EncodeToString(sum[:]); got != "79cf88ae64dd98f945445312af5441d82801a2cb12281ff70578497313a2b7c3" {
+	if got := hex.EncodeToString(sum[:]); got != "a356c67131488d323ec066605e8f4e81ec903f6246fd8ed4d0877faeee39cf37" {
 		t.Fatalf("reviewed ordinary CHILD.md changed: %s", got)
 	}
 }

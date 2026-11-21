@@ -2,8 +2,11 @@ package http
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -322,6 +325,68 @@ func TestProjectAssistantViewCloudBridgeRouterServerRealStore(t *testing.T) {
 	}
 	if f.providerCalls.Load() != 0 || f.s.projectAssistants.host.Usage().Processes != 0 {
 		t.Fatal("read allocated provider/runtime")
+	}
+}
+
+func TestProjectAssistantViewServerRecoversFromInterruptedReads(t *testing.T) {
+	for _, stage := range []string{"query deadline", "publication cancelled"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newPAServerFixture(t, true)
+			f.enable(t)
+			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+			g := f.get(t, f.local)
+			path := paViewURL(f.key, g.Conversation.ID, pa.ReadViewSnapshot, "", "", 0, 100)
+			pool := f.s.store.ProjectAssistantReader()
+			var ctx context.Context
+			var cancel context.CancelFunc
+			var loans []*sql.Conn
+			wasWaiting := pool.Stats().WaitCount
+			t.Cleanup(func() {
+				for _, c := range loans {
+					_ = c.Close()
+				}
+			})
+			var field string
+			if stage == "query deadline" {
+				for range pool.Stats().MaxOpenConnections {
+					c, err := pool.Conn(t.Context())
+					if err != nil {
+						t.Fatal(err)
+					}
+					loans = append(loans, c)
+				}
+				ctx, cancel = context.WithTimeout(t.Context(), 500*time.Millisecond)
+				field = "view_query_deadline"
+			} else {
+				ctx, cancel = context.WithCancel(t.Context())
+				f.s.projectAssistants.beforeViewPublish = cancel
+				field = "view_publication_cancelled"
+			}
+			defer cancel()
+
+			r := httptest.NewRequestWithContext(ctx, "GET", path, nil)
+			r.Host = "127.0.0.1"
+			r.Header.Set("Authorization", "Bearer "+f.readonly)
+			w := httptest.NewRecorder()
+			f.h.ServeHTTP(w, r)
+			if stage == "query deadline" && pool.Stats().WaitCount <= wasWaiting {
+				t.Fatal("the read did not reach the occupied query pool")
+			}
+			if got := paAssertHTTPFailure(t, w, http.StatusServiceUnavailable, pa.Offline).Field; got != field {
+				t.Fatalf("read failure field = %q, want %q", got, field)
+			}
+			for _, c := range loans {
+				if err := c.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			loans = nil
+			f.s.projectAssistants.beforeViewPublish = nil
+			paServerOK(t, f.request(t, "GET", path, f.readonly, nil))
+			if f.providerCalls.Load() != 0 {
+				t.Fatal("read recovery initialized provider")
+			}
+		})
 	}
 }
 
