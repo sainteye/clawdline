@@ -390,6 +390,8 @@ export const en = {
   "outputFailed": "Couldn't open the file",
   "saveHTML": "Save as HTML",
   "downloadFile": "Download file",
+  "markdownPreviewUnavailable": "Preview unavailable. You can still download the file.",
+  "markdownEmpty": "This file is empty.",
   "artifactLinks": "Open a link",
   "emptyLibrary": "No shared files or artifacts yet",
 
@@ -1163,6 +1165,8 @@ export const zhHant: Record<WordKey, string> = {
   "outputFailed": "無法開啟檔案",
   "saveHTML": "另存 HTML",
   "downloadFile": "下載檔案",
+  "markdownPreviewUnavailable": "無法預覽，可以下載原始檔案。",
+  "markdownEmpty": "這個檔案沒有文字。",
   "artifactLinks": "開啟連結",
   "emptyLibrary": "尚無分享的檔案或互動文件",
 

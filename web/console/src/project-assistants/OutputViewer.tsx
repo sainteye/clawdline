@@ -2,10 +2,12 @@ import { useModalBackdrop } from "../modal-backdrop.js"
 import type * as W from "@clawdline/contract"
 import {ArtifactIcon,ArtifactWorkspace,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {ArtifactRename} from "./ArtifactRename"
+import {BotMessageMarkdown} from "./BotMessageMarkdown"
 import {useEffect,useRef,useState} from "react"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
 import {catalogWord} from "../catalog"
+import {DOCUMENT_MAX_BYTES} from "../legacy/js/net/document-links.js"
 import {artifactFrame,inlineImageType,loadOutput} from "./outputs"
 import {loadInput} from "./inputs"
 import type {LibraryItem} from "./library-items"
@@ -16,9 +18,21 @@ export function libraryItemName(item:LibraryItem):string {
   return item.kind==="output"?item.message.output!.name:item.kind==="input"?item.file.name:tr("libraryPicture")+" "+item.attachment.id.slice(0,8)
 }
 
+async function markdownText(blob:Blob):Promise<string|null> {
+  // Match the existing document reader's text budget. The original stays downloadable.
+  if(blob.size>DOCUMENT_MAX_BYTES)return null
+  const bytes=await blob.arrayBuffer()
+  try {
+    const text=new TextDecoder("utf-8",{fatal:true}).decode(bytes)
+    return text.includes("\0")?null:text
+  } catch {
+    return null
+  }
+}
+
 /** Shared transfer/view UI for chat outputs and every library item. */
 export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifactComposer}:{artifactComposer?:ArtifactComposerAccess;item:LibraryItem;source:SourceClient;w:Words;onClose:()=>void;onRenamed?:()=>void;onResolved?:(output:W.ProjectAssistantOutput)=>void}) {
-  const [value,setValue]=useState<{blob:Blob;name:string;html:string;links:string[];pictureURL:string;pdfURL:string;output?:W.ProjectAssistantOutput}|null>(null),[error,setError]=useState(""),[progress,setProgress]=useState(0),[attempt,setAttempt]=useState(0),[cancelled,setCancelled]=useState(false)
+  const [value,setValue]=useState<{blob:Blob;name:string;html:string;links:string[];pictureURL:string;pdfURL:string;markdown:string|null;output?:W.ProjectAssistantOutput}|null>(null),[error,setError]=useState(""),[progress,setProgress]=useState(0),[attempt,setAttempt]=useState(0),[cancelled,setCancelled]=useState(false)
   const panel = useRef<HTMLDivElement>(null)
   const backdrop = useModalBackdrop(() => {
     if (!panel.current?.querySelector(".pa-artifact-rename form")) onClose()
@@ -26,6 +40,7 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
   const close=useRef<HTMLButtonElement>(null),active=useRef<AbortController|null>(null),tabURLs=useRef<string[]>([])
   const name=libraryItemName(item),artifact=item.kind==="output"&&!!item.message.output!.artifact_id
   const pdf=!artifact&&/\.pdf$/i.test(name)
+  const markdownFile=!artifact&&item.kind!=="picture"&&/\.(?:md|markdown)$/i.test(name)
   const kind=item.kind,message=item.message,file=item.kind==="input"?item.file:null,attachment=item.kind==="picture"?item.attachment:null
   useEffect(()=>{if(artifact)return;close.current?.focus();const escape=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!e.defaultPrevented&&!(e.target instanceof HTMLElement&&e.target.closest("form"))){e.stopImmediatePropagation();onClose()}};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[onClose,artifact])
   useEffect(()=>()=>{tabURLs.current.forEach(url=>URL.revokeObjectURL(url))},[])
@@ -47,6 +62,7 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
       }
       // Only render verified files with a PDF header in the native PDF viewer.
       const isPDF=pdf&&(await blob.slice(0,5).text())==="%PDF-"
+      const markdown=markdownFile?await markdownText(blob):null
       if(control.signal.aborted||source.current?.()===false)return
       if(output)onResolved?.(output)
       const inert=document.createElement("template")
@@ -55,11 +71,11 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
       const picture=!!attachment||!!output&&!!inlineImageType(output)
       if(picture)previewURL=URL.createObjectURL(blob)
       else if(isPDF)previewURL=URL.createObjectURL(blob.slice(0,blob.size,"application/pdf"))
-      setValue({blob,name:loadedName,html,links,pictureURL:picture?previewURL:"",pdfURL:isPDF?previewURL:"",output})
+      setValue({blob,name:loadedName,html,links,pictureURL:picture?previewURL:"",pdfURL:isPDF?previewURL:"",markdown,output})
     })().catch(e=>{if(!control.signal.aborted)setError(errorCode(e))})
     const timer=setInterval(()=>{if(source.current?.()===false){control.abort();if(previewURL)URL.revokeObjectURL(previewURL);tabURLs.current.forEach(url=>URL.revokeObjectURL(url));setValue(null);setError("pa_revoked")}},3000)
     return()=>{control.abort();clearInterval(timer);if(previewURL)URL.revokeObjectURL(previewURL)}
-  },[source,kind,message,file,attachment,pdf,attempt,onResolved])
+  },[source,kind,message,file,attachment,pdf,markdownFile,attempt,onResolved])
   const save=()=>{if(!value||source.current?.()===false)return;const url=URL.createObjectURL(value.blob),a=document.createElement("a");a.href=url;a.download=value.name.replace(/[\/\\]/g,"_")+(artifact?".html":"");a.click();setTimeout(()=>URL.revokeObjectURL(url),0)}
   const openBrowser=()=>{
     if(!value||!artifact||source.current?.()===false)return
@@ -78,9 +94,19 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
     w={w} access={artifactComposer} onClose={onClose} save={save} openBrowser={openBrowser} refresh={()=>setAttempt(n=>n+1)}
     rename={value?.output&&source.renameArtifact&&source.canRenameArtifact?.()===true?<ArtifactRename titleIcon={<ArtifactIcon size={17}/>} source={source} message={message} output={value.output} w={w} onRenamed={()=>{setAttempt(n=>n+1);onRenamed?.()}}/>:undefined}
     state={loading||unavailable}/>
-  return <div className="pa-output-scrim" {...backdrop}><div ref={panel} className="pa-output-overlay" role="dialog" aria-modal="true" aria-label={value?.name??name}><header><h3>{value?.name??name}</h3><button type="button" ref={close} onClick={onClose}>{w.close}</button></header>{loading}{unavailable}{value&&<><div className="pa-library-actions">
+  return <div className="pa-output-scrim" {...backdrop}><div ref={panel} className="pa-output-overlay" data-markdown={markdownFile||undefined} role="dialog" aria-modal="true" aria-label={value?.name??name}>
+    <header><h3 title={value?.name??name}>{value?.name??name}</h3>
+      {markdownFile&&<button type="button" disabled={!value} onClick={save}>{w.downloadFile}</button>}
+      <button type="button" ref={close} onClick={onClose}>{w.close}</button>
+    </header>
+    {loading}{unavailable}
+    {value&&(markdownFile?<div className="pa-markdown-preview">
+      {value.markdown===null?<p>{w.markdownPreviewUnavailable}</p>:
+        value.markdown.trim()?<BotMessageMarkdown text={value.markdown} w={w}/>:<p>{w.markdownEmpty}</p>}
+    </div>:<><div className="pa-library-actions">
       {value.pdfURL&&<a href={value.pdfURL} target="_blank" rel="noopener noreferrer" onClick={event=>{if(source.current?.()===false)event.preventDefault()}}>{w.openPDF}</a>}
       <button type="button" onClick={save}>{w.downloadFile}</button></div>
       {value.pdfURL&&navigator.pdfViewerEnabled&&<iframe className="pa-pdf-frame" title={value.name} src={value.pdfURL} referrerPolicy="no-referrer"/>}
-      {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>}</div></div>
+      {value.pictureURL&&<img className="pa-library-picture" alt={name} src={value.pictureURL}/>} {!!value.links.length&&<details><summary>{w.artifactLinks}</summary>{value.links.map(h=><p key={h}><a href={h} target="_blank" rel="noopener noreferrer">{h}</a></p>)}</details>}</>)}
+  </div></div>
 }

@@ -65,10 +65,11 @@ try{
     const page=await browser.newPage({viewport:{width,height},acceptDownloads:true}),errors=[]
     page.on("pageerror",e=>errors.push(String(e)))
     await page.goto(origin+"/?lang="+language)
-    const zh=language!=="en",filename=`notes-${language}.txt`
+    const zh=language!=="en",filename=`notes-${language}.${zh?"markdown":"txt"}`
+    const contents=zh?Buffer.from("# 附件筆記\n\n- 第一項\n"):input
     await page.locator(".pa-composer input[type=file]").waitFor({state:"attached"})
     await page.waitForFunction(()=>document.querySelector(".pa-attach")?.disabled===false)
-    await page.locator(".pa-composer input[type=file]").setInputFiles({name:filename,mimeType:"text/plain",buffer:input})
+    await page.locator(".pa-composer input[type=file]").setInputFiles({name:filename,mimeType:zh?"text/markdown":"text/plain",buffer:contents})
     await page.locator(".pa-input-chips").filter({hasText:filename}).waitFor()
     assert.equal(await page.locator("textarea").inputValue(),"","files-only draft")
     await page.screenshot({path:path.join(artifacts,language+"-selection.png"),fullPage:true})
@@ -80,14 +81,15 @@ try{
     await page.locator(".pa-input-card").filter({hasText:filename}).getByRole("button").click()
     const dialog=page.getByRole("dialog",{name:filename,exact:true})
     await dialog.getByRole("button",{name:zh?"下載檔案":"Download file",exact:true}).waitFor()
+    if(zh)await dialog.getByRole("heading",{name:"附件筆記",exact:true}).waitFor({timeout:3000})
     await page.screenshot({path:path.join(artifacts,language+"-readback.png"),fullPage:true})
     const download=page.waitForEvent("download");await dialog.getByRole("button",{name:zh?"下載檔案":"Download file",exact:true}).click()
     const saved=path.join(artifacts,filename);await(await download).saveAs(saved)
-    assert.deepEqual(await readFile(saved),input)
+    assert.deepEqual(await readFile(saved),contents)
     await dialog.getByRole("button",{name:zh?"關閉":"Close",exact:true}).click()
     await waitNativeTurns(evidence.length+1)
     assert.deepEqual(errors,[])
-    evidence.push({language,width,height,filename,fileOnly:true,reopened:true,nativeSucceeded:true,downloadBytes:input.length,sha256:createHash("sha256").update(input).digest("hex"),pageErrors:errors})
+    evidence.push({language,width,height,filename,fileOnly:true,reopened:true,nativeSucceeded:true,markdownPreview:zh,downloadBytes:contents.length,sha256:createHash("sha256").update(contents).digest("hex"),pageErrors:errors})
     await page.close()
   }
   await writeFile(path.join(artifacts,"minimal-browser-evidence.json"),JSON.stringify({surface:"local Chromium with actual HTTP/SQLite/owned synthetic ACP; not production Cloud or a real phone",modelRequests:0,evidence},null,2)+"\n")

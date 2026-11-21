@@ -123,6 +123,7 @@ func TestBotOutputMCPPeer(t *testing.T) {
 			call("send_file", file, false)
 			file["name"] = "changed.bin"
 			call("send_file", file, true)
+			call("send_file", map[string]any{"idempotency_key": "markdown-one", "path": filepath.Join(root, "guide.MD"), "name": "guide.MD"}, false)
 			artifact := map[string]any{"idempotency_key": "artifact-one", "path": filepath.Join(root, "report.html"), "title": "Interactive report"}
 			var first pa.Output
 			if json.Unmarshal(call("publish_artifact", artifact, false), &first) != nil || first.ArtifactID == "" {
@@ -162,6 +163,10 @@ func outputMCPFixture(t *testing.T) (*paServerFixture, app.Export) {
 	if err := os.WriteFile(filepath.Join(f.project, "result.bin"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
+	markdown := "# 閱讀手冊\n\n- First item\n\n| Step | Status |\n| --- | --- |\n| Review | Ready |\n\n```sh\nexample command\n```\n\n<script>document.body.dataset.markdownExecuted = 'yes'</script>\n\n[Unsafe](javascript:alert(1))\n"
+	if err := os.WriteFile(filepath.Join(f.project, "guide.MD"), []byte(markdown), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(f.project, "report.html"), []byte("<h1>First version</h1>"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +191,7 @@ func outputMCPFixture(t *testing.T) (*paServerFixture, app.Export) {
 			t.Fatal(e)
 		}
 		if len(x.Turns) > 0 && x.Conversation.ActiveTurnID == "" && (x.Turns[0].State == pa.TurnSucceeded || x.Turns[0].State == pa.TurnFailed || x.Turns[0].State == pa.TurnUnknown) {
-			if len(app.PublishedOutputs(x.Messages)) != 2 {
+			if len(app.PublishedOutputs(x.Messages)) != 3 {
 				t.Fatalf("publication failed: turns=%+v messages=%+v", x.Turns, x.Messages)
 			}
 			return f, x
@@ -215,7 +220,7 @@ func TestProjectAssistantOutputOwnedMCPHTTP(t *testing.T) {
 			cards = append(cards, m)
 		}
 	}
-	if len(cards) != 3 {
+	if len(cards) != 4 {
 		t.Fatal("retry created duplicate cards", len(cards))
 	}
 	var assembled []byte
@@ -236,12 +241,12 @@ func TestProjectAssistantOutputOwnedMCPHTTP(t *testing.T) {
 	if !bytes.Equal(assembled, bytes.Repeat([]byte{0, 255, 3, 10}, pa.MaxOutputChunkBytes/4+1)) {
 		t.Fatal("file snapshot changed")
 	}
-	w := f.request(t, "GET", paOutputFixturePath(f, cards[1], 0, true), f.local, nil)
+	w := f.request(t, "GET", paOutputFixturePath(f, cards[2], 0, true), f.local, nil)
 	paServerOK(t, w)
 	var latest contract.ProjectAssistantOutputResponse
 	_ = json.Unmarshal(w.Body.Bytes(), &latest)
 	html, _ := base64.StdEncoding.DecodeString(latest.Data)
-	if string(html) != outputFixtureHTML || latest.Output.ID != cards[2].Output.ID {
+	if string(html) != outputFixtureHTML || latest.Output.ID != cards[3].Output.ID {
 		t.Fatal("old card did not resolve latest whole snapshot")
 	}
 	foreign := strings.Replace(paOutputFixturePath(f, cards[0], 0, false), "conversation_id="+x.Conversation.ID, "conversation_id=foreign", 1)

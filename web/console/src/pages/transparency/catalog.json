@@ -5410,7 +5410,7 @@
     "web/console/src/project-assistants/NetworkSettings.tsx": "d2c99482a6a84e9fad9fae688f905eb0222d730775446f40cb0faaee05cbffcc",
     "web/console/src/project-assistants/OutputCard.tsx": "880948ab8e65488241340ecea927be6508ce55abe91101400907b7105f273c09",
     "web/console/src/project-assistants/OutputLibrary.tsx": "aa6c0daa92d485861196ffcb3bba4753c363aac2a939c3fa7569c9fc979fefe2",
-    "web/console/src/project-assistants/OutputViewer.tsx": "175f1cd60c5f2d197f627a5fe3d2cc381069ec4b6290cd328e51330d2e11cb4a",
+    "web/console/src/project-assistants/OutputViewer.tsx": "cfb1085465bf6dd81890c64f23764196db32f59d96aeef27343658000d14e89a",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
     "web/console/src/project-assistants/Routines.tsx": "da68e4533aa6125e34b1a950d7d569a4e24e9bbff7859502a92a90ab72dd4e92",
     "web/console/src/project-assistants/dev-server-observation.ts": "994d3629c3040b9f3cf64acf3b553935530c431fafb87f8f45c3cd8d1b8e6f25",
@@ -5454,7 +5454,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "a0773cd6e1691dd8e7661449a56ec87fa63a0bf035039454b404da64e50376c1",
-    "zh-Hant": "8d864833bb607ffc152219b4419ee93514062a3b0d1baf84250d24ba390e821f"
+    "en": "7dc2ff0610ad516d22590667cf9c70c190d405a4f2b1e19e9ac2d64c1216449c",
+    "zh-Hant": "671305accc844bea7209ffd247dbe0f6db8bf14ed248545e9df2780a8421d515"
   }
 }

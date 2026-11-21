@@ -503,6 +503,15 @@
 .project-assistants .pa-artifact-rename label { flex:1;min-width:120px; }
 .project-assistants .pa-artifact-rename input { width:100%; }
 .project-assistants .pa-output-overlay header { flex-wrap:wrap; }
+.project-assistants .pa-output-overlay[data-markdown] { white-space:normal; }
+.project-assistants .pa-output-overlay[data-markdown] > header { flex-wrap:nowrap; }
+.project-assistants .pa-output-overlay[data-markdown] > header h3 { flex:1; min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.project-assistants .pa-output-overlay[data-markdown] > header button { flex:none; white-space:nowrap; }
+.project-assistants .pa-markdown-preview { width:min(100%, 72ch); margin:0 auto; padding:8px 0 24px; font-size:16px; user-select:text; }
+.project-assistants .pa-markdown-preview .pa-markdown h3 { font-size:1.5em; }
+.project-assistants .pa-markdown-preview .pa-markdown h4 { font-size:1.25em; }
+.project-assistants .pa-markdown-preview .pa-markdown h5,
+.project-assistants .pa-markdown-preview .pa-markdown h6 { font-size:1em; margin:.8em 0 .4em; }
 
 
 .pa-browser .pa-browser-exit-error { position:absolute;z-index:1001;top:64px;left:12px;right:12px;padding:10px 12px;background:#242426;color:#fafafa;border-radius:10px;font-size:13px;overflow-wrap:anywhere; }
