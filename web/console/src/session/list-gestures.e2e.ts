@@ -73,6 +73,8 @@ let callbackDone = false
 let boardFixture = false
 let boardInboxFixture = false
 const boardInboxReads: { member: string | null; before: string | null }[] = []
+let boardRepliesFixture = false
+const boardThreadReads: string[] = []
 let boardPresenceFixture = false
 let boardPresenceUnverified = false
 const shortBoardPurpose = "Review the Session console"
@@ -447,7 +449,7 @@ function daemon(): Server {
       if (url.searchParams.has("look")) openedLooks.push(url.searchParams.get("look") ?? "")
       return json(res, 200, snapshot())
     }
-    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: boardInboxFixture ? 91 : 87 } : {}) })
+    if (path === "/v1/health") return json(res, 200, { ok: true, ...(boardFixture ? { api_level: boardRepliesFixture ? 107 : boardInboxFixture ? 91 : 87 } : {}) })
     if (path === "/v1/orchestrator/session-boards/inbox" && boardInboxFixture) {
       const member = url.searchParams.get("member"), before = url.searchParams.get("before")
       boardInboxReads.push({ member, before })
@@ -470,6 +472,20 @@ function daemon(): Server {
           ...(boardPresenceFixture ? [{ id: "claude:earlier-member", label: "Earlier member",
             presence: boardPresenceUnverified ? undefined : "not_listed" }] : []),
         ],
+      }
+      if (boardRepliesFixture && url.searchParams.get("view") === "threads") {
+        boardThreadReads.push(url.search)
+        const post = (seq: number, text: string, reply_to?: number) =>
+          ({ seq, text, reply_to, author: board.members[0], at: seq })
+        if (url.searchParams.get("thread") === "3") {
+          const posts = url.searchParams.get("from") === "6"
+            ? [post(6, "First unread", 5), post(7, "Second unread", 3)]
+            : [post(5, "Earlier direct reply", 3), post(6, "First unread", 5), post(7, "Second unread", 3)]
+          return json(res, 200, { posts, earlier: posts[0].seq === 6, more: false })
+        }
+        return json(res, 200, { board: { ...board, latest: 7 }, posts: [post(3, "Original discussion")],
+          threads: [{ root: 3, latest: 7, replies: 3, unread: 2, first_unread: 6 }, { root: 1, latest: 4, replies: 1, unread: 0 }],
+          more: false })
       }
       if (firstBoardFixture && req.method === "POST") {
         let body = ""
@@ -1567,6 +1583,41 @@ test("Session navigation keeps focus on grouped rows in their visible order", as
     })
   } finally {
     boardFixture = false
+  }
+})
+
+test("a phone reads one board page and jumps directly between threaded replies", async () => {
+  boardFixture = boardRepliesFixture = true
+  boardThreadReads.length = 0
+  try {
+    await inTab(async tab => {
+      await tab.go("/")
+      const group = "#rows .session-board-group > button"
+      const dialog = ".session-board-dialog[open]"
+      const toggle = `${dialog} .session-board-thread-toggle`
+      await shortcutUntil(tab, `!!document.querySelector('${group}')`)
+      await tab.run(`localStorage.setItem("clawdline.session-board.read:local:review", "5")`)
+      await tab.press(group)
+      await shortcutUntil(tab, `!!document.querySelector('${toggle}')`)
+      assert.deepEqual(boardThreadReads.map(query => Object.fromEntries(new URLSearchParams(query))), [
+        { board: "review", seen: "5", view: "threads" },
+      ])
+      assert.match(String(await tab.run(`document.querySelector('${toggle}').textContent`)), /3 則回覆.*2 則未讀/)
+      assert.match(String(await tab.run(`document.querySelector('${dialog} .session-board-thread-list').textContent`)), /原留言 #1 已不在保留範圍/)
+      assert.equal(await tab.run(`document.querySelector('${dialog} [data-board-post="6"]') === null`), true)
+      await tab.press(toggle)
+      await shortcutUntil(tab, `document.activeElement?.getAttribute("data-board-post") === "6"`)
+      assert.equal(await tab.run(`document.querySelector('${dialog} [data-board-post="6"]').parentElement.tagName`), "OL")
+      await tab.press(`${dialog} .session-board-reply-reference`)
+      await shortcutUntil(tab, `document.activeElement?.getAttribute("data-board-post") === "5"`)
+      assert.deepEqual(boardThreadReads.map(query => new URLSearchParams(query).get("from")), [null, "6", "5"])
+      await tab.press(toggle)
+      await shortcutUntil(tab, `document.querySelector('${toggle}').getAttribute("aria-expanded") === "false"`)
+      assert.equal(boardThreadReads.length, 3)
+    })
+  } finally {
+    boardFixture = boardRepliesFixture = false
+    boardThreadReads.length = 0
   }
 })
 

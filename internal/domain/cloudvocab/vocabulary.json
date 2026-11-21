@@ -10974,6 +10974,22 @@
       "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"after":{"type":"integer","min":1},"before":{"type":"integer","min":1}},"route":{"path":"/v1/orchestrator/session-boards","query":{"board":{"from":"board","omit_empty":true},"after":{"from":"after","omit_empty":true},"before":{"from":"before","omit_empty":true}}}}
     },
     {
+      "op": "session-boards.threads", "kind": "read", "write_gate": false, "console": "carried",
+      "console_route": "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads", "console_seam": "client",
+      "local": {"method":"GET","device":true},
+      "example": {"board":"board-one","thread":3,"from":5,"before":12,"seen":4,"request":"req-session-board-threads","session":"__clawdline_machine__"},
+      "shapes": [
+        {"body":["board","request","session"],"path":"/v1/orchestrator/session-boards","query":["board","view"]},
+        {"body":["board","request","seen","session"],"path":"/v1/orchestrator/session-boards","query":["board","seen","view"]},
+        {"body":["before","board","request","session"],"path":"/v1/orchestrator/session-boards","query":["before","board","view"]},
+        {"body":["before","board","request","seen","session"],"path":"/v1/orchestrator/session-boards","query":["before","board","seen","view"]},
+        {"body":["board","request","session","thread"],"path":"/v1/orchestrator/session-boards","query":["board","thread","view"]},
+        {"body":["board","from","request","session","thread"],"path":"/v1/orchestrator/session-boards","query":["board","from","thread","view"]},
+        {"body":["before","board","request","session","thread"],"path":"/v1/orchestrator/session-boards","query":["before","board","thread","view"]}
+      ],
+      "decode": {"reply":"machine","fields":{"board":{"type":"string","non_empty":true,"max_bytes":64},"before":{"type":"integer","min":1},"from":{"type":"integer","min":1},"seen":{"type":"integer","min":1},"thread":{"type":"integer","min":1}},"route":{"path":"/v1/orchestrator/session-boards","query":{"board":{"from":"board"},"before":{"from":"before","omit_empty":true},"from":{"from":"from","omit_empty":true},"seen":{"from":"seen","omit_empty":true},"thread":{"from":"thread","omit_empty":true},"view":{"const":"threads"}}}}
+    },
+    {
       "op": "session-codegraph",
       "kind": "read",
       "write_gate": false,

@@ -221,6 +221,7 @@ var generatedDecoders = map[string]genDecoder{
 	"session-boards.change":                    genDecodeSessionBoardsChange,
 	"session-boards.inbox":                     genDecodeSessionBoardsInbox,
 	"session-boards.read":                      genDecodeSessionBoardsRead,
+	"session-boards.threads":                   genDecodeSessionBoardsThreads,
 	"session-codegraph":                        genDecodeSessionCodegraph,
 	"session-codegraph-build":                  genDecodeSessionCodegraphBuild,
 	"session-receipt":                          genDecodeSessionReceipt,
@@ -5947,6 +5948,45 @@ func genDecodeSessionBoardsRead(b body) (plan, LocalRequest, bool) {
 	path := "/v1/orchestrator/session-boards"
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"after": genValue{from: "after", omitEmpty: true}, "before": genValue{from: "before", omitEmpty: true}, "board": genValue{from: "board", omitEmpty: true}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeSessionBoardsThreads is the `session-boards.threads` row's decode.
+func genDecodeSessionBoardsThreads(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "board", "request", "session"},
+		[]string{"type", "board", "request", "seen", "session"},
+		[]string{"type", "before", "board", "request", "session"},
+		[]string{"type", "before", "board", "request", "seen", "session"},
+		[]string{"type", "board", "request", "session", "thread"},
+		[]string{"type", "board", "from", "request", "session", "thread"},
+		[]string{"type", "before", "board", "request", "session", "thread"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("before", genRule{kind: "integer", min: genInt(1)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("board", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("from", genRule{kind: "integer", min: genInt(1)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("seen", genRule{kind: "integer", min: genInt(1)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("thread", genRule{kind: "integer", min: genInt(1)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/orchestrator/session-boards"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"before": genValue{from: "before", omitEmpty: true}, "board": genValue{from: "board"}, "from": genValue{from: "from", omitEmpty: true}, "seen": genValue{from: "seen", omitEmpty: true}, "thread": genValue{from: "thread", omitEmpty: true}, "view": genValue{constant: "threads"}})
 	req.Header = asDevice()
 	return p, req, true
 }

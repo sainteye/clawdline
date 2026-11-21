@@ -23,7 +23,10 @@ type Actor = SessionBoardMember
 export type SessionMessageBoard = { id: string; project: string; name: string; purpose: string; lead: string; summary: string; latest: number; archived_at?: number; members?: Actor[] }
 type Board = SessionMessageBoard
 type Post = { seq: number; author: Actor; text: string; reply_to?: number; at: number }
-type Page = { board: Board; posts: Post[]; more: boolean }
+type Thread = { root: number; latest: number; replies: number; unread: number; first_unread?: number }
+type Page = { board: Board; posts: Post[]; more: boolean; threads?: Thread[]; nextBefore?: number }
+type ThreadPosts = { posts: Post[]; more: boolean; earlier?: boolean }
+type ThreadsQuery = { board: string; before?: number; thread?: number; from?: number; seen?: number }
 type Inbox = { posts: (Post & { reply_to: number })[]; more: boolean }
 type InboxQuery = { board: string; member: string; before?: number }
 type Cursor = { board?: string; before?: number; after?: number }
@@ -37,6 +40,7 @@ export type SessionBoardSource = {
   machine?: string
   writable: boolean
   read<T>(fields: Cursor, signal?: AbortSignal): Promise<T>
+  readThreads?<T>(fields: ThreadsQuery, signal: AbortSignal): Promise<T>
   readInbox?(fields: InboxQuery, signal: AbortSignal): Promise<Inbox>
   change(command: Command, key: string): Promise<Receipt>
 }
@@ -47,6 +51,13 @@ const local: SessionBoardSource = {
   async read(fields, signal) {
     const query = new URLSearchParams(Object.entries(fields).map(([k, v]) => [k, String(v)]))
     const response = await fetch(path + (query.size ? `?${query}` : ""), { signal, cache: "no-store" })
+    if (!response.ok) throw await refusal(response)
+    return response.json()
+  },
+  async readThreads<T>(fields: ThreadsQuery, signal: AbortSignal): Promise<T> {
+    const query = new URLSearchParams({ view: "threads" })
+    for (const [key, value] of Object.entries(fields)) query.set(key, String(value))
+    const response = await fetch(path + "?" + query, { signal, cache: "no-store" })
     if (!response.ok) throw await refusal(response)
     return response.json()
   },
@@ -109,6 +120,15 @@ export function cloudSessionBoardSource(machine: string, account: string, writab
       connection(word)
       return result as T
     },
+    ...(current()?.machineDescriptor?.(machine)?.machine?.commands?.includes("session-boards.threads")
+      ? { async readThreads<T>(fields: ThreadsQuery, signal: AbortSignal): Promise<T> {
+        const word = "session-boards.threads"
+        const c = connection(word)
+        if (!c._machineRequest) throw new Error("offline")
+        const result = await c._machineRequest(machine, word, fields, "read", undefined, { signal })
+        connection(word)
+        return result as T
+      } } : {}),
     ...(current()?.machineDescriptor?.(machine)?.machine?.commands?.includes("session-boards.inbox")
       ? { async readInbox(fields: InboxQuery, signal: AbortSignal): Promise<Inbox> {
         const word = "session-boards.inbox"
@@ -142,8 +162,9 @@ export function useLocalSessionBoards(enabled: boolean): SessionBoardSource | un
     void client.health().then(health => { if (current) setLevel(health.api_level ?? 0) }).catch(() => {})
     return () => { current = false }
   }, [enabled])
-  const older = useMemo(() => ({ ...local, get writable() { return local.writable }, readInbox: undefined }), [])
-  return enabled && level >= 87 && !followsRelay() ? (level >= 91 ? local : older) : undefined
+  const older = useMemo(() => ({ ...local, get writable() { return local.writable },
+    readInbox: level >= 91 ? local.readInbox : undefined, readThreads: undefined }), [level])
+  return enabled && level >= 87 && !followsRelay() ? (level >= 107 ? local : older) : undefined
 }
 
 function cursorKey(source: SessionBoardSource, id: string) { return `clawdline.session-board.read:${source.key}:${id}` }
@@ -624,8 +645,9 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const [page, setPage] = useState<Page>()
   const [error, setError] = useState("")
   const [reading, setReading] = useState(false)
-  const [unreadSince, setUnreadSince] = useState(() => currentCursor(source, id))
+  const [unreadSince] = useState(() => currentCursor(source, id))
   const [draft, setDraft] = useState("")
+  const [activeThread, setActiveThread] = useState<{ root: number; from?: number }>()
   const [reply, setReply] = useState<number>()
   const [manage, setManage] = useState(false)
   const [archive, confirmArchive] = useState(false)
@@ -633,32 +655,37 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const change = useBoardChange(source)
   const sourceRef = useRef(source)
   sourceRef.current = source
-  const load = useCallback(async (before?: number) => {
+  const load = useCallback(async (before?: number, posted?: { root: number; from?: number }) => {
     controller.current?.abort()
     const request = new AbortController()
     controller.current = request
     setReading(true)
     setError("")
     try {
-      const next = await sourceRef.current.read<Page>(before ? { board: id, before } : { board: id }, request.signal)
+      const current = sourceRef.current
+      const fields = { board: id, ...(before ? { before } : {}) }
+      const next = current.readThreads
+        ? await current.readThreads<Page>({ ...fields, ...(unreadSince > 0 ? { seen: unreadSince } : {}) }, request.signal)
+        : await current.read<Page>(fields, request.signal)
       if (request.signal.aborted) return
-      setPage(previous => before && previous ? { ...next, posts: [...next.posts, ...previous.posts] } : next)
+      next.nextBefore = next.threads?.at(-1)?.latest ?? next.posts[0]?.seq
+      setPage(previous => {
+        if (!before || !previous) return next
+        const loaded = new Set(previous.threads?.map(thread => thread.root))
+        const threads = next.threads && [...(previous.threads ?? []), ...next.threads.filter(thread => !loaded.has(thread.root))]
+        return { ...next, posts: [...next.posts, ...previous.posts], threads }
+      })
+      if (posted) setActiveThread(posted)
       onRead(next.board)
-      if (!before && next.posts.length > 0) {
-        const current = sourceRef.current
-        const cursor = currentCursor(current, id)
-        const latest = next.posts.at(-1)?.seq ?? 0
-        if (latest > cursor) {
-          setUnreadSince(cursor)
-          try { localStorage.setItem(cursorKey(current, id), String(latest)) } catch {}
-          invalidateSessionBoards(current.key)
-        }
+      if (!before && next.board.latest > currentCursor(current, id)) {
+        try { localStorage.setItem(cursorKey(current, id), String(next.board.latest)) } catch {}
+        invalidateSessionBoards(current.key)
       }
     } catch (e) {
       if (!request.signal.aborted) setError(boardErrorCode(e, "session_board_read_unavailable"))
     }
     finally { if (!request.signal.aborted) setReading(false) }
-  }, [id, onRead])
+  }, [id, onRead, unreadSince])
   useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
   const b = page?.board
   const personas = usePersonas(source.machine)
@@ -676,9 +703,21 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
       done?.(); void load()
     })
   }
+  const [replyRoot, setReplyRoot] = useState<number>()
+  const selectReply = (seq: number, root?: number) => {
+    setReply(seq)
+    setReplyRoot(root)
+    messageField.current?.focus()
+  }
   const post = (e: FormEvent) => {
     e.preventDefault()
-    if (draft.trim()) action({ action: "post", text: draft, reply_to: reply }, () => { setDraft(""); setReply(undefined) })
+    if (!draft.trim()) return
+    void change.send({ action: "post", board: id, text: draft, reply_to: reply }, result => {
+      setDraft("")
+      setReply(undefined)
+      setReplyRoot(undefined)
+      void load(undefined, replyRoot ? { root: replyRoot, from: result.seq } : undefined)
+    })
   }
   // The index refreshes even while the reader stays open on an older message page.
   const roster = indexedBoard ?? b
@@ -697,6 +736,25 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
     return <SessionBoardMark lead={isLead}
       icon={sessionBoardAvatar(actor.id, persona, isLead, personas)} />
   }
+  const renderPost = (p: Post, root?: number, jump?: (seq: number) => void) => {
+    const parent = p.reply_to
+    return <>
+      <div className="session-board-post-meta">
+        {p.author.id !== "person" && avatar(p.author)}
+        <strong>{p.author.id === "person" ? t("sessionBoardPerson") : labelFor(p.author)}</strong>
+        {p.author.id === roster?.lead && <SessionBoardLead />}
+        <BoardPostTime at={p.at} />
+        <span>#{p.seq}</span>
+      </div>
+      {parent && parent !== root && (jump
+        ? <button type="button" className="session-board-reply-reference" onClick={() => jump(parent)}>{t("sessionBoardReplyTo", { seq: parent })}</button>
+        : <small>{t("sessionBoardReplyTo", { seq: parent })}</small>)}
+      <BoardPostText text={p.text} reply={allowed ? () => selectReply(p.seq, root) : undefined} />
+    </>
+  }
+  const threads = page?.threads
+  const postsBySeq = new Map(page?.posts.map(post => [post.seq, post]))
+  const threadRegion = useId()
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
     {!page && !error && <LoadingSkeleton id="SK-37" kind="cards" label={t("sessionBoardMessagesLoading")} />}
@@ -743,25 +801,96 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
         </div> : <button type="button" onClick={() => confirmArchive(true)}>{t("sessionBoardArchive")}</button>}
       </div>}
       {unread > 0 && <p className="session-board-new" role="status">{t("sessionBoardUnread", { count: unread })}</p>}
-      {!page.posts.length && <p>{t("sessionBoardNoPosts")}</p>}
-      <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p => <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>
-        <div className="session-board-post-meta">
-          {p.author.id !== "person" && avatar(p.author)}
-          <strong>{p.author.id === "person" ? t("sessionBoardPerson") : labelFor(p.author)}</strong>
-          {p.author.id === roster?.lead && <SessionBoardLead />}
-          <BoardPostTime at={p.at} />
-          <span>#{p.seq}</span>
-        </div>
-        {p.reply_to && <small>{t("sessionBoardReplyTo", { seq: p.reply_to })}</small>}
-        <BoardPostText text={p.text} reply={allowed ? () => setReply(p.seq) : undefined} />
-      </li>)}</ol>
-      {page.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardEarlier")}</button>}
+      {!(threads?.length ?? page.posts.length) && <p>{t("sessionBoardNoPosts")}</p>}
+      {threads ? <ul className="session-board-posts session-board-thread-list" role="list">
+        {threads.map(thread => {
+          const root = postsBySeq.get(thread.root)
+          const open = activeThread?.root === thread.root
+          const region = `${threadRegion}-${thread.root}`
+          return <li key={thread.root} data-unread={thread.latest > unreadSince || undefined}>
+            <div tabIndex={-1} data-board-post={thread.root}>
+              {root ? renderPost(root, root.seq) : <small>{t("sessionBoardThreadOriginalExpired", { seq: thread.root })}</small>}
+            </div>
+            {thread.replies > 0 && <button type="button" className="session-board-thread-toggle"
+              aria-expanded={open} aria-controls={region} onClick={() => setActiveThread(open ? undefined : { root: thread.root, from: thread.first_unread })}>
+              <ChevronIcon direction={open ? "down" : "right"} />
+              {t("sessionBoardThreadReplies", { count: thread.replies })}
+              {thread.unread > 0 && <span>· {t("sessionBoardUnread", { count: thread.unread })}</span>}
+            </button>}
+            <div id={region} hidden={!open}>
+              {open && <BoardThreadReplies source={source} board={id} thread={thread} from={activeThread.from}
+                unreadSince={unreadSince} renderPost={renderPost} />}
+            </div>
+          </li>
+        })}
+      </ul> : <ol className="session-board-posts" reversed>{[...page.posts].reverse().map(p =>
+        <li key={p.seq} data-unread={p.seq > unreadSince || undefined}>{renderPost(p)}</li>)}</ol>}
+      {page.more && <button type="button" disabled={reading} onClick={() => void load(page.nextBefore)}>{t("sessionBoardEarlier")}</button>}
       {allowed && <form onSubmit={post}>
-        {reply && <div>{t("sessionBoardReplyTo", { seq: reply })} <button type="button" onClick={() => setReply(undefined)}>{t("sessionBoardCancel")}</button></div>}
+        {reply && <div>{t("sessionBoardReplyTo", { seq: reply })} <button type="button" onClick={() => { setReply(undefined); setReplyRoot(undefined) }}>{t("sessionBoardCancel")}</button></div>}
         <label>{t("sessionBoardMessage")}<textarea ref={messageField} value={draft} onChange={e => setDraft(e.currentTarget.value)} rows={3} required /></label>
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
     </>}
+  </div>
+}
+
+function BoardThreadReplies({ source, board, thread, from, unreadSince, renderPost }: {
+  source: SessionBoardSource; board: string; thread: Thread; from?: number; unreadSince: number;
+  renderPost: (post: Post, root: number, jump: (seq: number) => void) => ReactNode
+}) {
+  const [result, setResult] = useState<ThreadPosts>()
+  const [reading, setReading] = useState(false)
+  const [problem, setProblem] = useState(false)
+  const request = useRef<AbortController | null>(null)
+  const reader = useRef(source)
+  reader.current = source
+  const feed = useRef<HTMLDivElement>(null)
+  const target = useRef<number | undefined>(undefined)
+  const load = useCallback(async (cursor: Pick<ThreadsQuery, "before" | "from">, focus?: number) => {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    setReading(true)
+    setProblem(false)
+    try {
+      const read = reader.current.readThreads
+      if (!read) throw new Error("offline")
+      const next = await read<ThreadPosts>({ board, thread: thread.root, ...cursor }, controller.signal)
+      if (controller.signal.aborted) return
+      target.current = focus ?? next.posts[0]?.seq
+      setResult(next)
+    } catch {
+      if (!controller.signal.aborted) setProblem(true)
+    } finally {
+      if (!controller.signal.aborted) setReading(false)
+    }
+  }, [board, thread.root])
+  useEffect(() => {
+    void load(from ? { from } : {}, from)
+    return () => request.current?.abort()
+  }, [from, load, thread.latest])
+  useEffect(() => {
+    const seq = target.current
+    if (!reading && seq && result) feed.current?.querySelector<HTMLElement>(`[data-board-post="${seq}"]`)?.focus()
+  }, [reading, result])
+  const jump = (seq: number) => {
+    const post = feed.current?.querySelector<HTMLElement>(`[data-board-post="${seq}"]`)
+    if (post) post.focus()
+    else void load({ from: seq }, seq)
+  }
+  return <div ref={feed} className="session-board-thread" aria-busy={reading}>
+    {reading && !result && <p role="status">{t("sessionBoardMessagesLoading")}</p>}
+    {problem && <div role="alert">{t("sessionBoardReadError")} <BoardRefresh refresh={() => void load(from ? { from } : {}, from)} disabled={reading} /></div>}
+    {result?.earlier && <button type="button" disabled={reading} onClick={() => void load({ before: result.posts[0]?.seq })}>{t("sessionBoardThreadEarlier")}</button>}
+    {!!result?.posts.length && <ol className="session-board-posts" role="list">
+      {result.posts.map(post => <li key={post.seq} data-board-post={post.seq} tabIndex={-1}
+        data-unread={post.seq > unreadSince || undefined}>{renderPost(post, thread.root, jump)}</li>)}
+    </ol>}
+    {result?.more && <button type="button" disabled={reading} onClick={() => {
+      const last = result.posts.at(-1)
+      if (last) void load({ from: last.seq + 1 })
+    }}>{t("sessionBoardThreadMore")}</button>}
   </div>
 }
 
