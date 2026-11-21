@@ -114,7 +114,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
       const item=items.find(item=>identity(item.bot.key)===identity(key)&&canRead(item.source))
       if(item)onSelectMember(item)
     }:undefined} onClose={close} onChanged={group=>{if(group.deleted)close();else setSelected({...selected,group});refresh(n=>n+1)}}/>}
-    <TeamApprovals sources={sources} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
+    <TeamApprovals sources={sources.filter(source=>!source.canTeamCards?.())} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
   </>
   return children({rows,open,selected:selectedLive&&!selectedBot?identity(selected.group.key):null,dismiss,create:canCreate?()=>setCreating(true):undefined,content})
 }

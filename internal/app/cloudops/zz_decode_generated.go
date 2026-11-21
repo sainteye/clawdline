@@ -4743,6 +4743,7 @@ func genDecodeProjectAssistantsUpload(b body) (plan, LocalRequest, bool) {
 func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "after_seq", "conversation_id", "cursor", "key", "mode", "page_size", "request", "session", "source_epoch"},
+		[]string{"type", "after_seq", "conversation_id", "cursor", "key", "mode", "page_size", "request", "session", "source_epoch", "team_cards"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -4767,13 +4768,16 @@ func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("source_epoch", genRule{kind: "string"}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("team_cards", genRule{kind: "bool", equals: genBool(true)}) {
+		return plan{}, LocalRequest{}, false
+	}
 	p, ok := machinePlan(b)
 	if !ok {
 		return plan{}, LocalRequest{}, false
 	}
 	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/view"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"after_seq": genValue{from: "after_seq"}, "conversation_id": genValue{from: "conversation_id"}, "cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "key.machine_id"}, "mode": genValue{from: "mode"}, "page_size": genValue{from: "page_size"}, "source_epoch": genValue{from: "source_epoch"}})
+	req.Query = b.genQuery(map[string]genValue{"after_seq": genValue{from: "after_seq"}, "conversation_id": genValue{from: "conversation_id"}, "cursor": genValue{from: "cursor"}, "machine_id": genValue{from: "key.machine_id"}, "mode": genValue{from: "mode"}, "page_size": genValue{from: "page_size"}, "source_epoch": genValue{from: "source_epoch"}, "team_cards": genValue{from: "team_cards", ifTrue: "true"}})
 	req.Header = asDevice()
 	return p, req, true
 }

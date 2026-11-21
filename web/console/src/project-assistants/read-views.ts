@@ -78,8 +78,13 @@ function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.Pr
 function trace(t:W.ProjectAssistantTrace) {if(t?.id!==undefined&&typeof t.id!=="string")throw failure("pa_invalid");if(!t||!text(t.turn_id)||!text(t.category)||typeof t.text!=="string"||typeof t.complete!=="boolean")throw failure("pa_invalid")}
 
 /** The existing wire limits are shared with the source: 100/256 rows and 4096 cursor bytes. */
+export function teamPermission(p:W.ProjectAssistantPermissionOffer) {
+  return p.id.startsWith("clawdline-source-")&&(p.action?.tool_kind==="team_create"||p.action?.tool_kind==="team_update")
+}
+
 export function readViewRequest(q:W.ProjectAssistantReadViewRequest):W.ProjectAssistantReadViewRequest {
   if(!q||!key(q.key)||!text(q.conversation_id)||!oneOf(q.mode,ProjectAssistantReadViewModeValues)||typeof q.source_epoch!=="string"||!cursor(q.cursor)||!integer(q.after_seq)||!integer(q.page_size,1)||q.page_size>(q.mode==="events"?256:100))throw failure("pa_invalid")
+  if(q.team_cards!==undefined&&q.team_cards!==true)throw failure("pa_invalid")
   if(q.mode==="snapshot") {if(q.source_epoch||q.cursor||q.after_seq)throw failure("pa_invalid")}
   else if(!q.source_epoch||q.mode!=="events"&&q.after_seq||q.mode==="events"&&q.cursor||(q.mode==="history"||q.mode==="detail")&&!q.cursor||q.mode==="detail"&&q.page_size!==1)throw failure("pa_invalid")
   return q
@@ -125,7 +130,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     if(queued.size)throw failure("pa_invalid")
     if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
   }else if(answer.snapshot!==undefined)throw failure("pa_invalid")
-  const allowed=q.mode==="snapshot"||q.mode==="history"?["message","work"]:q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:["permission","trace"]
+  const allowed=q.mode==="snapshot"||q.mode==="history"?(q.team_cards?["message","work","permission"]:["message","work"]):q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:["permission","trace"]
   const ids=new Set<string>(),identities=new Set<string>();let seq=q.after_seq
   for(const row of answer.items) {
     if(!row||!text(row.id)||!allowed.includes(row.kind)||!integer(row.anchor_message_seq)||!integer(row.observed_event_seq)||row.observed_event_seq>h.event_frontier)throw failure("pa_invalid")
@@ -140,7 +145,13 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     if(row.work)work(row.work,scope)
     if(row.permission_summary){const p=row.permission_summary;if(!text(p.id)||!text(p.turn_id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid");own(p.fence,scope,h.current_fence)}
     if(row.trace_summary){const t=row.trace_summary;if(!text(t.id)||!text(t.turn_id)||!text(t.category)||typeof t.complete!=="boolean"||!cursor(t.detail_cursor)||!t.detail_cursor)throw failure("pa_invalid")}
-    if(row.permission)offer(row.permission,scope,h.current_fence)
+    if(row.permission){
+      if(q.mode==="detail")offer(row.permission,scope,h.current_fence)
+      else{
+        offer(row.permission,scope)
+        if(!teamPermission(row.permission)||row.anchor_message_seq<1||row.anchor_message_seq>h.conversation.last_message_seq)throw failure("pa_invalid")
+      }
+    }
     if(row.trace)trace(row.trace)
     if(row.event){
       const e=row.event
@@ -152,7 +163,10 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       if(e.message)message(e.message,scope)
       if(e.work)work(e.work,scope)
       if(e.turn){const t=e.turn;if(!object(t)||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states))throw failure("pa_invalid");own(t.fence,scope);if(t.failure!==undefined)sourceFailure(t.failure);if(t.attempts!==undefined)validateAttempts(t.attempts,scope)}
-      if(e.permission)offer(e.permission,scope)
+      if(e.permission){
+        offer(e.permission,scope)
+        if(row.anchor_message_seq&&(!q.team_cards||!teamPermission(e.permission)||row.anchor_message_seq>h.conversation.last_message_seq))throw failure("pa_invalid")
+      }
       if(e.trace)trace(e.trace)
       if(e.source)readSource(e.source,q.key.machine_id)
       if(e.bot){const b=e.bot;metadata(b.bot,scope);readSource(b.source,q.key.machine_id);if(!integer(b.unread_count)||!integer(b.pending_permissions)||!integer(b.version,1)||typeof b.activity!=="string"||typeof b.activity_at!=="string"||typeof b.latest_message!=="string"||!b.read_cursor)throw failure("pa_invalid");const r=b.read_cursor;if(!key(r.key)||!text(r.conversation_id)||!integer(r.message_seq)||typeof r.reader_id!=="string")throw failure("pa_invalid");if(r.key.machine_id!==scope.key.machine_id||r.key.bot_id!==scope.key.bot_id||r.conversation_id!==scope.conversation_id)throw failure("pa_scope_denied")}
@@ -170,12 +184,13 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
 export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadViewItem[])[]):W.ProjectAssistantReadViewItem[] {
   const rows=new Map<string,W.ProjectAssistantReadViewItem>()
   for(const row of pages.flat()) {
-    if(row.kind!=="message"&&row.kind!=="work")continue
+    if(row.kind!=="message"&&row.kind!=="work"&&row.kind!=="permission")continue
     const id=JSON.stringify([row.kind,row.work?.id??row.message?.id??row.id]),old=rows.get(id)
     if(!old||row.observed_event_seq>=old.observed_event_seq)rows.set(id,row)
     else if(row.work&&old.anchor_message_seq===0&&row.anchor_message_seq>0)rows.set(id,{...old,id:row.id,anchor_message_seq:row.anchor_message_seq})
   }
-  return [...rows.values()].sort((a,b)=>a.anchor_message_seq-b.anchor_message_seq||(a.kind<b.kind?-1:a.kind>b.kind?1:0)||(a.id<b.id?-1:a.id>b.id?1:0))
+  const rank={message:0,work:1,permission:2,event:3,permission_summary:4,trace_summary:5,trace:6}
+  return [...rows.values()].sort((a,b)=>a.anchor_message_seq-b.anchor_message_seq||rank[a.kind]-rank[b.kind]||(a.id<b.id?-1:a.id>b.id?1:0))
 }
 
 /** Event work has no invented admission anchor: retain a source anchor when already known. */
@@ -197,6 +212,7 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
       continue
     }
     if(e.message)next=mergeTimeline([next,[{id:e.message.id,kind:"message",anchor_message_seq:e.message.seq,observed_event_seq:e.seq,message:e.message}]])
+    if(e.permission&&row.anchor_message_seq>0&&teamPermission(e.permission))next=mergeTimeline([next,[{id:e.permission.id,kind:"permission",anchor_message_seq:row.anchor_message_seq,observed_event_seq:e.seq,permission:e.permission}]])
     if(e.work){const previous=next.find(r=>r.work?.id===e.work!.id);next=mergeTimeline([next,[{id:previous?.id??e.work.id,kind:"work",anchor_message_seq:previous?.anchor_message_seq??0,observed_event_seq:e.seq,work:e.work}]])}
   }
   return next

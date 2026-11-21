@@ -398,6 +398,13 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 				}
 			}
 		}
+		b.SettingsVersion = a.Bot.SettingsVersion
+		previous, proposed := a.Bot, b
+		previous.Version, proposed.Version = 0, 0
+		previous.UpdatedAt, proposed.UpdatedAt = time.Time{}, time.Time{}
+		if m.ExpectedVersion > 0 && !reflect.DeepEqual(previous, proposed) {
+			b.SettingsVersion = max(1, a.Bot.SettingsVersion) + 1
+		}
 		a.Bot = b
 	}
 	a.Bot.Version = m.ExpectedVersion + 1

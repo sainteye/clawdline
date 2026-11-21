@@ -3,7 +3,7 @@
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import {mergeTimeline} from "./read-views.ts"
-export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink }
+export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink } | {id:string;kind:"permission";offer:W.ProjectAssistantPermissionOffer}
 export const ChatSeparatorGapMs = 3_600_000
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
@@ -19,6 +19,7 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
   let lastDate: number | null = null, lastAuthor: string | null = null
   for (const row of mergeTimeline([timeline])) {
     if(row.work){out.push({id:row.work.id,kind:"work",work:row.work});lastAuthor=null;continue}
+    if(row.permission){out.push({id:row.permission.id,kind:"permission",offer:row.permission});lastAuthor=null;continue}
     const message=row.message
     if(!message||message.kind==="notice"&&message.id.startsWith("lead-call-"))continue
     const date = Date.parse(message.at)

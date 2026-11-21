@@ -29,7 +29,8 @@ func viewCursorBinding(q app.ReadViewQuery, h app.ReadViewHead, collection strin
 		Project   pa.ProjectScope
 		Chat      string
 		Fence     *pa.Fence
-	}{Authority: authority, Key: h.Key, Project: h.Project, Chat: h.Conversation.ID}
+		TeamCards bool `json:",omitempty"`
+	}{Authority: authority, Key: h.Key, Project: h.Project, Chat: h.Conversation.ID, TeamCards: q.Request.TeamCards}
 	if collection != "history" {
 		binding.Fence = &h.CurrentFence
 	}
@@ -86,7 +87,7 @@ func (s *ViewStore) position(q app.ReadViewQuery, h app.ReadViewHead) (viewPosit
 	} else if p.Collection != want {
 		return bad()
 	}
-	if p.ID == "" || p.Anchor < 0 || p.Kind < 0 || p.Kind > 1 || p.Collection == "history" && p.Anchor == 0 {
+	if p.ID == "" || p.Anchor < 0 || p.Kind < 0 || p.Kind > 2 || p.Kind == 2 && (!q.Request.TeamCards || p.Collection != "history") || p.Collection == "history" && p.Anchor == 0 {
 		return bad()
 	}
 	return p, nil

@@ -66,6 +66,12 @@
 .project-assistants .pa-chat-back[data-show-back] { display:grid; }
 .project-assistants .pa-chat-scroll { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px 24px 30px; }
 .project-assistants .pa-chat-content { max-width:800px;margin:auto; }
+.project-assistants .pa-team-jump { align-self:center;margin:4px 12px; }
+.project-assistants .pa-team-details { margin:0; }
+.project-assistants .pa-team-details>div { display:grid;gap:4px;padding:6px 0; }
+.project-assistants .pa-team-details dt { font-weight:600; }
+.project-assistants .pa-team-details dd { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
+
 .project-assistants .pa-separator { text-align:center;font-size:11px;color:var(--pa-dim);margin:15px 0 26px; }
 .project-assistants .pa-message { width:fit-content;max-width:90%;margin:4px 0 6px;position:relative;white-space:pre-wrap;overflow-wrap:anywhere; }
 .project-assistants .pa-message.pa-group-start { margin-top:32px; }

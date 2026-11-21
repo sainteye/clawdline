@@ -140,8 +140,10 @@ type Bot struct {
 	Lead           bool   `json:"lead,omitempty"`
 	// ManageTeam records the explicit team management grant independently of
 	// the lead role. Managed creation can inherit this explicit grant.
-	ManageTeam        bool `json:"manage_team,omitempty"`
-	BackgroundThreads int  `json:"background_threads,omitempty"`
+	ManageTeam bool `json:"manage_team,omitempty"`
+	// SettingsVersion changes on configuration writes independently of chat activity.
+	SettingsVersion   int64 `json:"settings_version,omitempty"`
+	BackgroundThreads int   `json:"background_threads,omitempty"`
 	// CreatedBy names the manager Bot that created this one. Only the host
 	// sets it, in its manager operation; no person or model request does.
 	CreatedBy    *BotKey             `json:"created_by,omitempty"`
@@ -375,13 +377,19 @@ type PermissionDiff struct {
 	NewText string `json:"new_text"`
 }
 
+// TeamPermissionKind identifies host-owned team mutations on the chat timeline.
+func TeamPermissionKind(kind string) bool {
+	return kind == "team_create" || kind == "team_update"
+}
+
 type PermissionOffer struct {
-	Action          *PermissionAction  `json:"action,omitempty"`
-	ID              string             `json:"id"`
-	Fence           Fence              `json:"fence"`
-	TurnID          string             `json:"turn_id"`
-	NativeRequestID string             `json:"native_request_id"`
-	Options         []PermissionOption `json:"options"`
+	AnchorMessageSeq int64              `json:"anchor_message_seq,omitempty"`
+	Action           *PermissionAction  `json:"action,omitempty"`
+	ID               string             `json:"id"`
+	Fence            Fence              `json:"fence"`
+	TurnID           string             `json:"turn_id"`
+	NativeRequestID  string             `json:"native_request_id"`
+	Options          []PermissionOption `json:"options"`
 	// Zero means a native offer follows the life of its open turn.
 	ExpiresAt        time.Time       `json:"expires_at"`
 	State            PermissionState `json:"state"`

@@ -31,7 +31,10 @@ func validateStoredEvent(a aggregate, e pa.Event) error {
 	match := false
 	switch e.Kind {
 	case pa.BotCreated, pa.BotUpdated:
-		match = reflect.DeepEqual(e.Bot.Bot, a.Bot)
+		// SettingsVersion is assigned by the store, after the caller built the event.
+		projected := a.Bot
+		projected.SettingsVersion = e.Bot.Bot.SettingsVersion
+		match = reflect.DeepEqual(e.Bot.Bot, projected)
 		if e.Bot.ReadCursor.Key != (pa.BotKey{}) && e.Bot.ReadCursor.Key != a.Bot.Key || e.Bot.ReadCursor.ConversationID != "" && e.Bot.ReadCursor.ConversationID != a.Conversation.ID || e.Bot.Source.MachineID != "" && e.Bot.Source.MachineID != a.Bot.Key.MachineID {
 			match = false
 		}

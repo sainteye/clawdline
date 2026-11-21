@@ -24,6 +24,7 @@ type ReadViewRequest struct {
 	Cursor         string
 	AfterSeq       int64
 	PageSize       int
+	TeamCards      bool
 }
 
 func CheckReadViewRequest(q ReadViewRequest) error {

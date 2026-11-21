@@ -22,6 +22,10 @@ func managedStoreFixture(t *testing.T) (*Store, pa.Bot, app.ManagerExecution) {
 	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "grant"), ExpectedVersion: b.Version, Bot: &next, Receipt: pa.Receipt{ID: "grant", State: pa.EffectDelivered}}); err != nil {
 		t.Fatal(err)
 	}
+	next, err = s.Bot(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return s, next, app.ManagerExecution{Fence: f, TurnID: "turn", Under: app.GrantFor(next)}
 }
 func managedStoreCreate(manager pa.Bot, id string) app.Mutation {
@@ -54,6 +58,14 @@ func TestManagedStoreTransactionRechecksRevokedGrantAndBinding(t *testing.T) {
 				next := manager
 				next.ManageTeam = false
 				change.Bot = &next
+			case "grant-replaced":
+				disabled := manager
+				disabled.ManageTeam = false
+				if _, err := s.Commit(testContext, app.Mutation{Command: command(manager.Key, pa.EditOperation, "grant-off-before-reenable"), ExpectedVersion: manager.Version, Bot: &disabled, Receipt: pa.Receipt{ID: "grant-off-before-reenable", State: pa.EffectDelivered}}); err != nil {
+					t.Fatal(err)
+				}
+				change.ExpectedVersion++
+				change.Bot = &manager
 			case "binding-revoked":
 				b, err := s.Binding(testContext, manager.Key, execution.Fence.BindingID)
 				if err != nil {

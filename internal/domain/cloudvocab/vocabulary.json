@@ -9735,11 +9735,49 @@
             "page_size",
             "source_epoch"
           ]
+        },
+        {
+          "body": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "key",
+            "mode",
+            "page_size",
+            "request",
+            "session",
+            "source_epoch",
+            "team_cards"
+          ],
+          "path": "/v1/project-assistants/{key.bot_id}/view",
+          "query": [
+            "after_seq",
+            "conversation_id",
+            "cursor",
+            "machine_id",
+            "mode",
+            "page_size",
+            "source_epoch",
+            "team_cards"
+          ],
+          "example": {
+            "key": {"machine_id": "source-one", "bot_id": "機器人 α"},
+            "after_seq": 0,
+            "page_size": 100,
+            "session": "__clawdline_machine__",
+            "request": "stable-view",
+            "conversation_id": "chat",
+            "mode": "snapshot",
+            "source_epoch": "",
+            "cursor": "",
+            "team_cards": true
+          }
         }
       ],
       "decode": {
         "reply": "machine",
         "fields": {
+          "team_cards": {"type": "bool", "equals": true},
           "key": {
             "type": "object",
             "properties": {
@@ -9805,6 +9843,7 @@
         "route": {
           "path": "/v1/project-assistants/{key.bot_id}/view",
           "query": {
+            "team_cards": {"from": "team_cards", "if_true": "true"},
             "machine_id": {
               "from": "key.machine_id"
             },

@@ -11,6 +11,8 @@ import (
 )
 
 const sourcePermissionPrefix = "clawdline-source-"
+const teamReviewAllow = "approve-team-change"
+const teamReviewDeny = "decline-team-change"
 
 // SourcePermissionRequest comes only from a source-authenticated Host callback.
 // The command handler defines the scope and may offer only choices it can honor.
@@ -25,14 +27,15 @@ type SourcePermissionRequest struct {
 }
 
 type sourcePermission struct {
-	request     SourcePermissionRequest
-	offer       pa.PermissionOffer
-	ready       chan struct{}
-	requestDone <-chan struct{}
-	option      pa.PermissionOption
-	completed   bool
-	abandoned   bool
-	counted     bool
+	request      SourcePermissionRequest
+	offer        pa.PermissionOffer
+	ready        chan struct{}
+	requestDone  <-chan struct{}
+	option       pa.PermissionOption
+	completed    bool
+	abandoned    bool
+	counted      bool
+	teamDecision func(context.Context, bool, pa.SourceStatus) error
 }
 
 // sourcePermissionCurrent holds actor.mu. A memory save alone is harmless;
@@ -92,6 +95,30 @@ func (r *Engine) sourcePermissionCurrent(ctx context.Context, a *runtimeActor, q
 // holds no actor, memory or SQLite lock. No provider Answer RPC is issued for
 // this namespace, and no choice is released before its answer commit succeeds.
 func (r *Engine) RequestSourcePermission(ctx context.Context, q SourcePermissionRequest) (pa.PermissionOption, error) {
+	return r.requestSourcePermission(ctx, q, "", nil)
+}
+
+// ReviewTeamPlan presents a host-owned, explicitly human team decision on the
+// same durable channel as the other permission cards.
+func (r *Engine) ReviewTeamPlan(ctx context.Context, plan TeamPlan, execution ManagerExecution, decide func(context.Context, bool, pa.SourceStatus) error) error {
+	turn, err := r.o.Repository.Turn(ctx, execution.Fence.Key, execution.TurnID)
+	if err != nil {
+		return err
+	}
+	kind := "team_create"
+	if plan.Operation == pa.EditOperation {
+		kind = "team_update"
+	}
+	q := SourcePermissionRequest{
+		Fence: execution.Fence, TurnID: execution.TurnID, MemoryRevision: turn.MemoryRevision,
+		Action:  pa.PermissionAction{Title: plan.TargetName, ToolKind: kind, Detail: plan.Detail},
+		Options: []pa.PermissionOption{{ID: teamReviewAllow, Kind: pa.AllowOnce, Allow: true}, {ID: teamReviewDeny, Kind: pa.RejectOnce}},
+	}
+	_, err = r.requestSourcePermission(ctx, q, plan.ID, decide)
+	return err
+}
+
+func (r *Engine) requestSourcePermission(ctx context.Context, q SourcePermissionRequest, id string, teamDecision func(context.Context, bool, pa.SourceStatus) error) (pa.PermissionOption, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || !r.o.Clock().Before(deadline) || q.Action.Shortened || strings.TrimSpace(q.Action.Title) == "" || strings.TrimSpace(q.Action.ToolKind) == "" || len(q.Options) == 0 {
 		return pa.PermissionOption{}, runtimeFailure(pa.Invalid, "source_permission")
@@ -142,12 +169,23 @@ func (r *Engine) RequestSourcePermission(ctx context.Context, q SourcePermission
 		a.mu.Unlock()
 		return pa.PermissionOption{}, runtimeFailure(pa.CapacityFull, "source_permissions")
 	}
-	id := sourcePermissionPrefix + r.o.ID()
+	var anchor int64
+	if teamDecision != nil {
+		conversation, err := r.o.Repository.Conversation(ctx, a.key, q.Fence.ConversationID)
+		if err != nil {
+			a.mu.Unlock()
+			return pa.PermissionOption{}, err
+		}
+		anchor = conversation.LastMessageSeq
+	}
+	if id == "" {
+		id = sourcePermissionPrefix + r.o.ID()
+	}
 	if a.sourcePermissions[id] != nil {
 		a.mu.Unlock()
 		return pa.PermissionOption{}, runtimeFailure(pa.IdempotencyConflict, "source_permission")
 	}
-	entry := &sourcePermission{request: q, ready: make(chan struct{}), requestDone: ctx.Done(), offer: pa.PermissionOffer{ID: id, NativeRequestID: id, Fence: q.Fence, TurnID: q.TurnID, Action: &q.Action, Options: q.Options, ExpiresAt: deadline, State: pa.PermissionPending}}
+	entry := &sourcePermission{request: q, ready: make(chan struct{}), requestDone: ctx.Done(), teamDecision: teamDecision, offer: pa.PermissionOffer{AnchorMessageSeq: anchor, ID: id, NativeRequestID: id, Fence: q.Fence, TurnID: q.TurnID, Action: &q.Action, Options: q.Options, ExpiresAt: deadline, State: pa.PermissionPending}}
 	a.sourcePermissions[id] = entry
 	turn.State = pa.TurnWaitingPermission
 	command := r.command(a.key, pa.SendOperation, id, entry.offer)
@@ -169,7 +207,7 @@ func (r *Engine) RequestSourcePermission(ctx context.Context, q SourcePermission
 	}
 	// Match the existing native card policy, never infer it from an Agent name
 	// or sandbox label. Automatic approval uses only an eligible once option.
-	if bot.PermissionPolicy == pa.Approve || bot.PermissionPolicy == pa.AutoRead {
+	if teamDecision == nil && (bot.PermissionPolicy == pa.Approve || bot.PermissionPolicy == pa.AutoRead) {
 		for _, option := range q.Options {
 			if option.Allow && option.Kind == pa.AllowOnce && (option.ReadOnly || bot.PermissionPolicy == pa.Approve) {
 				answer := pa.PermissionAnswer{Fence: q.Fence, OfferID: id, TurnID: q.TurnID, OptionID: option.ID}
@@ -221,6 +259,22 @@ func (r *Engine) answerSourcePermission(ctx context.Context, a *runtimeActor, bo
 		}
 	}
 	offer.State, offer.SelectedOptionID = pa.PermissionResolved, selected.ID
+	var decisionErr error
+	if entry.teamDecision != nil {
+		decisionErr = entry.teamDecision(ctx, selected.Allow, q.Source)
+		if decisionErr != nil {
+			offer.State, offer.SelectedOptionID = pa.PermissionCancelled, ""
+			if pa.Code(decisionErr) == pa.OutcomeUnknown {
+				offer.State = pa.PermissionUnknown
+			}
+		}
+		// A team mutation can edit the manager itself. Persist the answer
+		// against the new settings, not the aggregate read before the decision.
+		bot, err = r.o.Repository.Bot(ctx, a.key)
+		if err != nil {
+			return pa.Receipt{}, err
+		}
+	}
 	if a.pendingPermissions <= 1 {
 		turn.State = pa.TurnRunning
 	}
@@ -233,7 +287,7 @@ func (r *Engine) answerSourcePermission(ctx context.Context, a *runtimeActor, bo
 	}
 	entry.option, entry.completed = selected, true
 	close(entry.ready)
-	return receipt, nil
+	return receipt, decisionErr
 }
 
 func (r *Engine) abandonSourcePermission(a *runtimeActor, entry *sourcePermission) {

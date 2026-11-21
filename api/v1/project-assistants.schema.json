@@ -2484,6 +2484,10 @@
           "maximum": 9007199254740991,
           "description": ""
         },
+        "team_cards": {
+          "type": "boolean",
+          "description": "Include team approval cards in the chat timeline."
+        },
         "page_size": {
           "type": "integer",
           "minimum": 1,

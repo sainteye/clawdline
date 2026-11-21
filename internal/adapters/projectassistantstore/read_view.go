@@ -280,7 +280,7 @@ func viewRowFailure() app.ReadViewItem {
 
 func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
 	rows, err := tx.QueryContext(ctx, viewTimelineSQL(), out.Head.Key.MachineID, out.Head.Key.BotID,
-		p.ID != "", p.Anchor, p.Kind, p.ID, q.Request.PageSize+1,
+		q.Request.TeamCards, p.ID != "", p.Anchor, p.Kind, p.ID, q.Request.PageSize+1,
 		out.Head.Key.MachineID, out.Head.Key.BotID, out.Head.Key.BotID, q.ByteLimit, q.ByteLimit, q.ByteLimit, q.ByteLimit)
 	if err != nil {
 		return err
@@ -304,7 +304,8 @@ func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 			break
 		}
 		item := app.ReadViewItem{ID: id, AnchorMessageSeq: anchor, ObservedEventSeq: out.Head.EventFrontier}
-		if kind == 0 {
+		switch kind {
+		case 0:
 			item.Kind, item.Message = app.ReadItemMessage, &pa.Message{}
 			if json.Unmarshal([]byte(raw.String), item.Message) != nil || item.Message.ID != id || item.Message.Seq != anchor {
 				return failure(pa.Invalid, "read_view_message")
@@ -312,7 +313,7 @@ func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 			if err = viewCheckFence(item.Message.Fence, out.Head, false); err != nil {
 				return err
 			}
-		} else {
+		case 1:
 			item.Kind, item.Work = app.ReadItemWork, &pa.WorkLink{}
 			if json.Unmarshal([]byte(raw.String), item.Work) != nil || item.Work.ID != id || item.Work.TaskID == "" {
 				return failure(pa.Invalid, "read_view_work")
@@ -320,6 +321,16 @@ func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 			if err = viewCheckFence(item.Work.Fence, out.Head, false); err != nil {
 				return err
 			}
+		case 2:
+			item.Kind, item.Permission = app.ReadItemPermission, &pa.PermissionOffer{}
+			if json.Unmarshal([]byte(raw.String), item.Permission) != nil || item.Permission.ID != id || anchor < 1 || anchor > out.Head.Conversation.LastMessageSeq || item.Permission.Action == nil || !pa.TeamPermissionKind(item.Permission.Action.ToolKind) {
+				return failure(pa.Invalid, "read_view_team_card")
+			}
+			if err = viewCheckFence(item.Permission.Fence, out.Head, false); err != nil {
+				return err
+			}
+		default:
+			return failure(pa.Invalid, "read_view_item")
 		}
 		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "history", Anchor: anchor, Kind: kind, ID: id})
 		out.Items = append(out.Items, item)
@@ -379,7 +390,11 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		}
 		// Replay the stored metadata patch. Current own-chat activity belongs
 		// to the roster; substituting it here leaks future facts into history.
-		out.Items = append(out.Items, app.ReadViewItem{ID: id, Kind: app.ReadItemEvent, ObservedEventSeq: seq, Event: &e})
+		var anchor int64
+		if q.Request.TeamCards && e.Permission != nil && e.Permission.Action != nil && pa.TeamPermissionKind(e.Permission.Action.ToolKind) {
+			anchor = e.Permission.AnchorMessageSeq
+		}
+		out.Items = append(out.Items, app.ReadViewItem{ID: id, Kind: app.ReadItemEvent, AnchorMessageSeq: anchor, ObservedEventSeq: seq, Event: &e})
 		out.NextSeq = seq
 	}
 	return rows.Err()

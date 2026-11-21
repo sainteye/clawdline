@@ -27,7 +27,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
-// ownedMCPServer implements the JSON response profile of MCP Streamable HTTP
+// ownedMCPServer implements MCP Streamable HTTP
 // (2025-06-18). It exposes only host-bound functions, never a daemon credential,
 // arbitrary actor or human approval operation. Source server commands use
 // the Host's separate exact review and process owner, not an Agent terminal.
@@ -354,6 +354,7 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	timeout := s.limits.RPCTimeout
+	stream := false
 	if f.Method == "tools/call" {
 		var tool struct {
 			Name string `json:"name"`
@@ -366,11 +367,23 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				_ = http.NewResponseController(w).SetWriteDeadline(deadline.Add(s.limits.WriteTimeout))
 			}
 		}
-		if json.Unmarshal(f.Params, &tool) == nil && (tool.Name == "create_bot" || tool.Name == "update_bot") {
+		if tool.Name == "create_bot" || tool.Name == "update_bot" {
+			stream = true
 			// These calls wait for an explicit human decision for up to the
 			// upstream 270 seconds; the ordinary RPC deadline is shorter.
 			timeout = time.Duration(capacity.MaximumBotManagerApprovalSeconds)*time.Second + s.limits.WriteTimeout
 			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout))
+		}
+	}
+	if stream {
+		// A JSON response would send its first byte after the human answers.
+		// Claude's HTTP MCP client has a shorter first-byte budget than that.
+		w.Header().Set("Content-Type", "text/event-stream")
+		if _, err := io.WriteString(w, ": waiting for the tool result\n\n"); err != nil {
+			return
+		}
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			return
 		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -392,6 +405,10 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply.Result = nil
 		reply.Error = &rpcError{Code: -32603, Message: string(pa.OutcomeUnknown)}
 		encoded, _ = json.Marshal(reply)
+	}
+	if stream {
+		_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", encoded)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if hasFence {

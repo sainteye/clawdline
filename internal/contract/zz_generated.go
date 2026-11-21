@@ -6190,6 +6190,9 @@ type ProjectAssistantReadViewRequest struct {
 	// Empty only for a new snapshot; otherwise the read-adapter incarnation from that
 	// source.
 	SourceEpoch string `json:"source_epoch"`
+
+	// Include team approval cards in the chat timeline.
+	TeamCards bool `json:"team_cards,omitempty"`
 }
 
 // Snapshot mode alone includes snapshot; collections are always non-null

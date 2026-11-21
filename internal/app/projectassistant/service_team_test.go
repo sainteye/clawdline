@@ -188,7 +188,7 @@ func TestTeamDeclineRevocationAndExpiredCardsChangeNothing(t *testing.T) {
 			case "off":
 				f.mutateManager(func(b *pa.Bot) { b.ManageTeam = false; b.Version++ })
 			case "grant-replaced":
-				f.mutateManager(func(b *pa.Bot) { b.Version++ })
+				f.mutateManager(func(b *pa.Bot) { b.SettingsVersion = 2 })
 			case "project-changed":
 				f.mutateManager(func(b *pa.Bot) { b.Project.ProjectID = "other"; b.Version++ })
 			case "expired":

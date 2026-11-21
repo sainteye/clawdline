@@ -204,6 +204,12 @@ func (h *Host) makeService() error {
 			return app.ManagerContext{}, failure(pa.Revoked, "manager_execution")
 		}
 		return r.ManagerContext(ctx, fence, turn)
+	}, Review: func(ctx context.Context, plan app.TeamPlan, execution app.ManagerExecution, decide func(context.Context, bool, pa.SourceStatus) error) error {
+		r, err := h.runtime()
+		if err != nil {
+			return err
+		}
+		return r.ReviewTeamPlan(ctx, plan, execution, decide)
 	}})
 	if err != nil {
 		return err

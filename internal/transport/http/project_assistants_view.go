@@ -50,7 +50,11 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 			return nil, paHTTPFailure(pa.Invalid, "body")
 		}
 	}
-	q, err := paHTTPQuery(r, "machine_id", "conversation_id", "mode", "source_epoch", "cursor", "after_seq", "page_size")
+	fields := []string{"machine_id", "conversation_id", "mode", "source_epoch", "cursor", "after_seq", "page_size"}
+	if r.URL.Query().Has("team_cards") {
+		fields = append(fields, "team_cards")
+	}
+	q, err := paHTTPQuery(r, fields...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +70,11 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	if err != nil || size < 1 || size > pa.MaxEventPageRows {
 		return nil, paHTTPFailure(pa.Invalid, "page_size")
 	}
+	if q.Has("team_cards") && q.Get("team_cards") != "true" {
+		return nil, paHTTPFailure(pa.Invalid, "team_cards")
+	}
 	request := pa.ReadViewRequest{Key: key, ConversationID: q.Get("conversation_id"), Mode: pa.ReadViewMode(q.Get("mode")),
-		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size)}
+		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size), TeamCards: q.Has("team_cards")}
 	if err = pa.CheckReadViewRequest(request); err != nil {
 		return nil, err
 	}

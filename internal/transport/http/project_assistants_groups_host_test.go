@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -20,22 +21,30 @@ type groupsManagerProvider struct {
 	action  string
 	args    json.RawMessage
 	outcome chan error
+	trace   chan func() error
 }
 
 func (p *groupsManagerProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
 	return paServerCaps(b), nil
 }
-func (p *groupsManagerProvider) Open(_ context.Context, q app.OpenRequest, _ func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
-	return &groupsManagerSession{p: p, q: q}, nil
+func (p *groupsManagerProvider) Open(_ context.Context, q app.OpenRequest, emit func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
+	return &groupsManagerSession{p: p, q: q, emit: emit}, nil
 }
 
 type groupsManagerSession struct {
-	p *groupsManagerProvider
-	q app.OpenRequest
+	p    *groupsManagerProvider
+	q    app.OpenRequest
+	emit func(context.Context, app.ProtocolEvent) error
 }
 
 func (s *groupsManagerSession) SessionID() string { return "scripted-manager" }
-func (s *groupsManagerSession) Send(context.Context, app.PromptRequest) (app.PendingPrompt, error) {
+func (s *groupsManagerSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if s.p.trace != nil {
+		s.p.trace <- func() error {
+			trace := pa.Trace{ID: "manager-progress", TurnID: q.Turn.ID, Category: "tool_call", Text: "Waiting for the synthetic decision"}
+			return s.emit(ctx, app.ProtocolEvent{ID: trace.ID, Fence: q.Turn.Fence, TurnID: q.Turn.ID, Trace: &trace})
+		}
+	}
 	return s, nil
 }
 func (s *groupsManagerSession) Wait(ctx context.Context) (app.PromptResult, error) {
@@ -322,5 +331,97 @@ func TestGroupsRootWiringStopsRoomsAndKeepsMembers(t *testing.T) {
 	}
 	if err := f.s.StopProjectAssistants(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGroupsRootWiringTeamChatCardSurvivesProgressAndReload(t *testing.T) {
+	for _, action := range []string{"create_bot", "update_bot"} {
+		t.Run(action, func(t *testing.T) {
+			f, p := groupsManagerFixture(t, true)
+			f.pin(t, "reader", adaptercloud.ScopeReadOnly, false)
+			p.trace = make(chan func() error, 1)
+			if action == "update_bot" {
+				p.action = action
+				p.args, _ = json.Marshal(map[string]any{"idempotency_key": "rename", "botId": f.key.BotID, "name": "Renamed manager"})
+			}
+			paServerOK(t, f.send(t, f.local, "Manage the team"))
+			plan := groupsManagerPlan(t, f)
+			get := f.get(t, f.local)
+			query := contract.ProjectAssistantReadViewRequest{Key: paWireBotKey(f.key), ConversationID: get.Conversation.ID, Mode: contract.ProjectAssistantReadViewModeSnapshot, PageSize: 100}
+			read := func() contract.ProjectAssistantReadViewResponse {
+				t.Helper()
+				response := paViewServerBridge(t, f, "reader", query)
+				if response.Status != 200 {
+					t.Fatalf("Cloud snapshot returned %d: %s", response.Status, response.Payload)
+				}
+				var page struct {
+					Body contract.ProjectAssistantReadViewResponse `json:"body"`
+				}
+				if err := json.Unmarshal(response.Payload, &page); err != nil {
+					t.Fatal(err)
+				}
+				return page.Body
+			}
+			old := read()
+			for _, row := range old.Items {
+				if row.Permission != nil {
+					t.Fatal("old clients received an unrequested timeline card")
+				}
+			}
+			query.TeamCards = true
+			before := read()
+			find := func(page contract.ProjectAssistantReadViewResponse) contract.ProjectAssistantPermissionOffer {
+				t.Helper()
+				for i, row := range page.Items {
+					if row.Permission != nil && row.Permission.ID == plan.ID {
+						if row.AnchorMessageSeq < 1 || i+1 >= len(page.Items) || page.Items[i+1].Message == nil || page.Items[i+1].Message.Seq != row.AnchorMessageSeq {
+							t.Fatalf("card isn't ordered immediately after its anchor: %+v", row)
+						}
+						return *row.Permission
+					}
+				}
+				t.Fatal("missing team card in the conversation")
+				return contract.ProjectAssistantPermissionOffer{}
+			}
+			card := find(before)
+			if card.State != "pending" || before.Head.PendingPermissionCount != 1 || card.Action == nil || len(card.Options) != 2 {
+				t.Fatalf("wrong pending card: %+v", card)
+			}
+			select {
+			case emit := <-p.trace:
+				if err := emit(); err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("missing the running manager's progress callback")
+			}
+			roster := f.request(t, "GET", "/v1/project-assistants?machine_id="+f.key.MachineID+"&cursor=&query=&page_size=100", f.local, nil)
+			paServerOK(t, roster)
+			var rows contract.ProjectAssistantListResponse
+			if err := json.Unmarshal(roster.Body.Bytes(), &rows); err != nil || len(rows.Items) != 1 || rows.Items[0].PendingPermissions != 1 || rows.Items[0].Status != "needsInput" {
+				t.Fatalf("pending approval wasn't visible in the roster: %s", roster.Body)
+			}
+			answer := contract.ProjectAssistantPermissionAnswerRequest{Command: f.command(pa.AnswerOperation, "answer-team-in-chat"), Fence: card.Fence, OfferID: card.ID, TurnID: card.TurnID, OptionID: card.Options[0].ID}
+			path := "/v1/project-assistants/" + f.key.BotID + "/permissions/" + card.ID + "/answer"
+			paServerOK(t, f.request(t, "POST", path, f.local, answer))
+			select {
+			case err := <-p.outcome:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("the manager didn't learn the outcome")
+			}
+			routineHumanIdle(t, f)
+			after := find(read())
+			if after.State != "answered" || after.SelectedOptionID != answer.OptionID {
+				t.Fatalf("card didn't retain the approved outcome: %+v", after)
+			}
+			paServerOK(t, f.request(t, "POST", path, f.local, answer))
+			bots := groupsManagerBots(t, f)
+			if action == "create_bot" && len(bots) != 2 || action == "update_bot" && (len(bots) != 1 || bots[0].Name != "Renamed manager") {
+				t.Fatalf("unexpected mutation or duplicate: %+v", bots)
+			}
+		})
 	}
 }

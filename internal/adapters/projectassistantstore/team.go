@@ -28,6 +28,23 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 	if m.ExpectedVersion == 0 && err != nil && pa.Code(err) != pa.NotFound {
 		return pa.Receipt{}, err
 	}
+	if m.ExpectedVersion > 0 && execution.TargetSettingsVersion > 0 {
+		if max(1, before.Bot.SettingsVersion) != execution.TargetSettingsVersion {
+			return pa.Receipt{}, failure(pa.StaleVersion, "manager_target")
+		}
+		m.ExpectedVersion = before.Bot.Version
+		updated := *m.Bot
+		updated.Version = before.Bot.Version + 1
+		m.Bot = &updated
+		m.Events = append([]pa.Event(nil), m.Events...)
+		for i, event := range m.Events {
+			if event.Bot != nil {
+				summary := *event.Bot
+				summary.Bot.Version, summary.Version = updated.Version, updated.Version
+				m.Events[i].Bot = &summary
+			}
+		}
+	}
 	return s.commitWith(ctx, m, func(ctx context.Context, tx *sql.Tx, target aggregate) error {
 		manager, err := load(ctx, tx, execution.Fence.Key)
 		if err != nil {
@@ -36,7 +53,7 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 		// A self-edit has just persisted its own next version. The target
 		// CAS proves the pre-edit version is still the approved one.
 		if m.Command.Key == execution.Fence.Key {
-			if m.ExpectedVersion != execution.Under.Revision {
+			if max(1, before.Bot.SettingsVersion) != execution.Under.Revision {
 				return failure(pa.Revoked, "manage_team")
 			}
 			manager.Bot = before.Bot
@@ -115,7 +132,7 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 			if err != nil {
 				return err
 			}
-			allowed.Hidden, allowed.UpdatedAt = target.Bot.Hidden, target.Bot.UpdatedAt
+			allowed.Hidden, allowed.UpdatedAt, allowed.SettingsVersion = target.Bot.Hidden, target.Bot.UpdatedAt, target.Bot.SettingsVersion
 			if !reflect.DeepEqual(allowed, target.Bot) {
 				return failure(pa.ScopeDenied, "manager_fields")
 			}

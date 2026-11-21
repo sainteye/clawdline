@@ -14,18 +14,19 @@ import (
 // anything a model asked for. Revision moves on every change, so a decision
 // made under one grant cannot be applied under another.
 type TeamManagerGrant struct {
-	Bot      pa.BotKey `json:"bot"`
-	Enabled  bool      `json:"enabled"`
-	Revision int64     `json:"revision"`
+	Bot      pa.BotKey       `json:"bot"`
+	Enabled  bool            `json:"enabled"`
+	Project  pa.ProjectScope `json:"project"`
+	Revision int64           `json:"revision"`
 	// CreatedBy is set by the host when a manager created this Bot.
 	CreatedBy *pa.BotKey `json:"created_by,omitempty"`
 }
 
 // GrantFor is the Bot's effective grant under its
-// aggregate version, which moves on every settings change, so a decision made
+// settings version, which moves on every settings change, so a decision made
 // under one version cannot be applied under another.
 func GrantFor(b pa.Bot) TeamManagerGrant {
-	return TeamManagerGrant{Bot: b.Key, Enabled: b.CanManageTeam(), Revision: b.Version, CreatedBy: b.CreatedBy}
+	return TeamManagerGrant{Bot: b.Key, Enabled: b.CanManageTeam(), Project: b.Project, Revision: max(1, b.SettingsVersion), CreatedBy: b.CreatedBy}
 }
 
 // ManagerContext is what the host derives for a manage tool call: the calling
@@ -192,7 +193,7 @@ func ConfirmManagerPlan(under TeamManagerGrant, now ManagerContext) error {
 	if err := now.check(); err != nil {
 		return err
 	}
-	if now.Grant.Bot != under.Bot || now.Grant.Revision != under.Revision || now.Grant.Enabled != under.Enabled {
+	if now.Grant.Bot != under.Bot || now.Project != under.Project || now.Grant.Revision != under.Revision || now.Grant.Enabled != under.Enabled {
 		return serviceFailure(pa.Revoked, "manage_team")
 	}
 	return nil

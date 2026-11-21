@@ -7110,6 +7110,11 @@ export interface ProjectAssistantReadViewRequest {
    * source.
    */
   source_epoch: string
+
+  /**
+   * Include team approval cards in the chat timeline.
+   */
+  team_cards?: boolean
 }
 
 /**

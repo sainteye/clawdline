@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13998,
+  "englishKeys": 14015,
   "counts": {
-    "negation": 3590,
-    "state": 2359,
+    "negation": 3591,
+    "state": 2360,
     "permission": 841,
     "deletion": 321,
     "uncertainty": 557
   },
-  "unionCount": 5957,
+  "unionCount": 5959,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3168,6 +3168,7 @@
       "projectAssistants.statusWithoutBots",
       "projectAssistants.stopUnconfirmed",
       "projectAssistants.teamApprovalHint",
+      "projectAssistants.teamNo",
       "projectAssistants.templateCoverage",
       "projectAssistants.templateUnavailable",
       "projectAssistants.towerAllowAnswered",
@@ -5652,6 +5653,7 @@
       "projectAssistants.stopAcknowledged",
       "projectAssistants.succeeded",
       "projectAssistants.teamApprovalHint",
+      "projectAssistants.teamReviewJump",
       "projectAssistants.templateClipboardError",
       "projectAssistants.templateUnavailable",
       "projectAssistants.towerAllowAnswered",
@@ -12896,6 +12898,8 @@
     "projectAssistants.stopUnconfirmed",
     "projectAssistants.succeeded",
     "projectAssistants.teamApprovalHint",
+    "projectAssistants.teamNo",
+    "projectAssistants.teamReviewJump",
     "projectAssistants.templateClipboardError",
     "projectAssistants.templateCoverage",
     "projectAssistants.templateUnavailable",

@@ -251,7 +251,8 @@ mirroring Codync's `manage_team`:
 
 - the designated lead can manage its team from API 103. Other Bots use
   the person's explicit switch (`Bot.ManageTeam`), which defaults to off.
-  `GrantFor` checks both under the Bot's version. The console hides the
+  `GrantFor` checks both under the Bot's settings version, independently of
+  trace, chat and permission changes. The console hides the
   switch for a lead on a source that grants access by role and shows pending
   approval cards using the effective grant in the Bot response. Every call
   checks the grant and the current full Project. Only the host sets
@@ -271,7 +272,18 @@ mirroring Codync's `manage_team`:
 The plan is data. The host creates the Bot through a separate manager
 operation, never through the person's `Service.Create` or `Service.Edit`.
 
-`TeamCoordinator` owns the bounded pending cards. Its identity comes from the
+From API 110, the active turn records a team approval on the same permission
+channel as other Bot actions. It is anchored after the message sequence observed
+when offered. A requesting console includes it in chat history and updates the
+same card from permission events. The roster uses the existing needs-input
+state. The host still requires an explicit human choice under every native
+permission policy. The live call owns the decision and cannot be restored from
+a historical card. Managers using a client that waits for the first HTTP byte
+receive an MCP event stream immediately, with the JSON-RPC result after the
+decision. The `team-plans` and `team-answer` compatibility routes read and
+answer the same live review.
+
+`TeamCoordinator` owns the bounded pending decisions. Its identity comes from the
 actual running turn's Host-bound native tools, never from arguments. The
 owned MCP server advertises `list_team`, `create_bot` and `update_bot` only
 while `TeamAvailable` validates the current grant, and checks again on every

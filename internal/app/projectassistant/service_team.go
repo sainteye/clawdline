@@ -27,9 +27,10 @@ type TeamTools interface {
 
 // ManagerExecution is host-derived, never decoded from tool arguments.
 type ManagerExecution struct {
-	Fence  pa.Fence
-	TurnID string
-	Under  TeamManagerGrant
+	Fence                 pa.Fence
+	TurnID                string
+	Under                 TeamManagerGrant
+	TargetSettingsVersion int64
 }
 
 // ManagedRepository validates the manager's current grant, live execution,
@@ -48,12 +49,14 @@ type TeamCoordinatorOptions struct {
 	Check      func(context.Context, pa.Fence, string) (ManagerContext, error)
 	Clock      func() time.Time
 	ID         func() string
+	Review     func(context.Context, TeamPlan, ManagerExecution, func(context.Context, bool, pa.SourceStatus) error) error
 }
 
 type TeamPlan struct {
 	ID          string
 	Manager     pa.BotKey
 	ManagerName string
+	TargetName  string
 	Target      pa.BotKey
 	Operation   pa.Operation
 	Detail      string
@@ -296,7 +299,8 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	now := t.o.Clock().UTC()
 	var next pa.Bot
 	var conversation *pa.Conversation
-	var expected int64
+	var expected, targetSettingsVersion int64
+	var targetName string
 	if action == "create_bot" {
 		if name == nil {
 			return nil, serviceFailure(pa.Invalid, "name")
@@ -327,6 +331,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 			return nil, err
 		}
 		next = pa.Bot{Key: key, Project: plan.Project, ConversationID: t.o.ID(), Name: plan.Name, Appearance: plan.Appearance, Agent: plan.Agent, PermissionPolicy: plan.PermissionPolicy, Mode: plan.Mode, ManageTeam: plan.ManageTeam, CreatedBy: &plan.CreatedBy, Instructions: pa.InstructionSnapshot{Revision: 1, Text: plan.Instructions}, Version: 1, CreatedAt: now, UpdatedAt: now}
+		targetName = next.Name
 		if hidden != nil {
 			next.Hidden = *hidden
 		}
@@ -373,7 +378,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 			next.Hidden = *hidden
 		}
 		next.UpdatedAt = now
-		expected = target.Version
+		expected, targetSettingsVersion, targetName = target.Version, max(1, target.SettingsVersion), target.Name
 	}
 	// Display the entire resulting effect, including all inherited authority.
 	// UTF-16 units match CodyNC and JavaScript length, including astral text.
@@ -401,9 +406,16 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	// a new capability ID. An old expired/revoked card cannot approve a retry
 	// made under a new grant, even with the same native idempotency key.
 	planID := t.o.ID()
-	planContext, cancelPlan := context.WithCancel(ctx)
+	if planID == "" {
+		return nil, serviceFailure(pa.Invalid, "manager_plan_id")
+	}
+	if t.o.Review != nil {
+		planID = sourcePermissionPrefix + planID
+	}
+	limit := time.Duration(capacity.MaximumBotManagerApprovalSeconds) * time.Second
+	planContext, cancelPlan := context.WithTimeout(ctx, limit)
 	defer cancelPlan()
-	pending := &teamPending{plan: TeamPlan{ID: planID, Manager: fence.Key, ManagerName: m.Caller.Name, Target: key, Operation: operation, Detail: string(detail), ExpiresAt: now.Add(time.Duration(capacity.MaximumBotManagerApprovalSeconds) * time.Second)}, execution: ManagerExecution{Fence: fence, TurnID: turn, Under: m.Grant}, mutation: mutation, context: planContext, done: make(chan teamOutcome, 1)}
+	pending := &teamPending{plan: TeamPlan{ID: planID, Manager: fence.Key, ManagerName: m.Caller.Name, TargetName: targetName, Target: key, Operation: operation, Detail: string(detail), ExpiresAt: now.Add(limit)}, execution: ManagerExecution{Fence: fence, TurnID: turn, Under: m.Grant, TargetSettingsVersion: targetSettingsVersion}, mutation: mutation, context: planContext, done: make(chan teamOutcome, 1)}
 	t.mu.Lock()
 	if planID == "" || t.pending[planID] != nil {
 		t.mu.Unlock()
@@ -429,8 +441,6 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	t.pending[planID] = pending
 	t.mu.Unlock()
 	defer func() { t.mu.Lock(); delete(t.pending, planID); t.mu.Unlock() }()
-	timer := time.NewTimer(time.Duration(capacity.MaximumBotManagerApprovalSeconds) * time.Second)
-	defer timer.Stop()
 	abandon := func(code pa.ErrorCode) error {
 		t.mu.Lock()
 		cancelPlan()
@@ -441,13 +451,28 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		}
 		return serviceFailure(code, "manager_approval")
 	}
+	if t.o.Review != nil {
+		err := t.o.Review(planContext, pending.plan, pending.execution, func(answerCtx context.Context, allow bool, source pa.SourceStatus) error {
+			_, err := t.Decide(answerCtx, fence.Key, planID, allow, source, func(context.Context) error { return nil })
+			return err
+		})
+		select {
+		case outcome := <-pending.done:
+			return outcome.bot, outcome.err
+		default:
+		}
+		if err != nil && planContext.Err() == nil {
+			return nil, err
+		}
+	}
 	select {
 	case outcome := <-pending.done:
 		return outcome.bot, outcome.err
-	case <-ctx.Done():
+	case <-planContext.Done():
+		if errors.Is(planContext.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, abandon(pa.Expired)
+		}
 		return nil, abandon(pa.Revoked)
-	case <-timer.C:
-		return nil, abandon(pa.Expired)
 	}
 }
 
@@ -466,6 +491,12 @@ func (t *TeamCoordinator) Plans(ctx context.Context, key pa.BotKey) ([]TeamPlan,
 		m, err := t.o.Check(ctx, p.execution.Fence, p.execution.TurnID)
 		if err != nil || ConfirmManagerPlan(p.execution.Under, m) != nil {
 			continue
+		}
+		if t.o.Review != nil {
+			card, err := t.o.Repository.Permission(ctx, key, p.plan.ID)
+			if err != nil || card.State != pa.PermissionPending {
+				continue
+			}
 		}
 		out = append(out, p.plan)
 	}
@@ -563,6 +594,19 @@ func (s *Service) AnswerTeamPlan(ctx context.Context, cmd pa.Command, id string,
 	t, err := s.team()
 	if err != nil {
 		return "", err
+	}
+	if t.o.Review != nil {
+		card, err := t.o.Repository.Permission(ctx, cmd.Key, id)
+		if err != nil || !strings.HasPrefix(id, sourcePermissionPrefix) || card.Action == nil || !pa.TeamPermissionKind(card.Action.ToolKind) {
+			return "", serviceFailure(pa.NotFound, "manager_plan")
+		}
+		option := teamReviewDeny
+		state := "declined"
+		if allow {
+			option, state = teamReviewAllow, "applied"
+		}
+		_, err = s.Answer(ctx, cmd, pa.PermissionAnswer{Fence: card.Fence, TurnID: card.TurnID, OfferID: id, OptionID: option})
+		return state, err
 	}
 	return t.Decide(ctx, cmd.Key, id, allow, a.Source, func(ctx context.Context) error { _, err := s.authorizeEffect(ctx, cmd.Key, true, a); return err })
 }

@@ -241,6 +241,7 @@ func replaceRosterLead(ctx context.Context, tx *sql.Tx, next aggregate) error {
 		}
 		expected := previous.Bot.Version
 		previous.Bot.Lead = false
+		previous.Bot.SettingsVersion = max(1, previous.Bot.SettingsVersion) + 1
 		previous.Bot.Version++
 		previous.Bot.UpdatedAt = next.Bot.UpdatedAt
 		if err := persist(ctx, tx, previous, expected); err != nil {
