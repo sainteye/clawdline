@@ -1554,7 +1554,7 @@
         "\tw(` \"task_id\": %q,`, r.ID)\n",
         "\tw(` \"task_secret\": \"<the TASK_SECRET value from your first message>\",`)\n",
         "\tw(` \"status\": \"success\",`)\n",
-        "\tw(` \"summary\": \"<one paragraph: what you did, or why it failed>\",`)\n",
+        "\tw(` \"summary\": \"Outcome: <what changed or what prevented completion>\\n\\nVerification: <what you checked and the result>\\n\\nRemaining: <what still needs attention, if any>\",`)\n",
         "\tw(` \"symbols\": [\"<every name your change introduced>\", \"...\"],`)\n",
         "\tw(` \"artifacts\": [\"artifacts/<file>\", \"...\"],`)\n",
         "\tw(` \"verification\": {\"runs\": 0, \"seconds\": 0, \"last\": \"skipped\", \"scope\": \"No verification run\"},`)\n",
@@ -1570,6 +1570,8 @@
         "\tw(\"```\")\n",
         "\tw(\"\")\n",
         "\tw(`- \"status\" is \"failure\" when you could not do it. `+\"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.\", taskdir.VerificationScopeLimit)\n",
+        "\tw(\"- Write `summary` in the person's language. In the JSON string, use `\\\\n\\\\n` between short sections and `\\\\n` between bullet lines.\")\n",
+        "\tw(\"  Lead with the outcome, say what was verified, and include remaining work when there is any.\")\n",
         "\tw(\"- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.\")\n",
         "\tw(\"- If a shared dependency directory is not writable, keep changes here; commit if possible. Report `status: failure`, `verification.last: fail`; put the command to rerun and error in `verification.scope`, changed source paths in `artifacts`, and unverified work and commit state in `summary`.\")\n",
         "\tif reviewTask {\n",
@@ -3304,7 +3306,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/brief.go",
-          "line": 321
+          "line": 323
         },
         {
           "path": "internal/domain/snippet/default_playbook.go",
@@ -5265,7 +5267,7 @@
     "internal/app/botnetwork/routes.go": "2ce97e7608f8668d38cd4050786a1cc9265cc5b6b44942373e37710f0b4ed2d9",
     "internal/app/botnetwork/service.go": "41e78b7e53c91425b9431bc179e5997d554f49036fd303b13cb190792b2aa13f",
     "internal/app/browserbridge/profiles.go": "f41aacbc491f0cb2bbb95008d09bf358b0664ffb01b0b515364f348b550f3834",
-    "internal/app/orchestrator/brief.go": "c972bc12d78e728177d0ea800eca27c4907579be3f0bb16f6b6de41648bc4891",
+    "internal/app/orchestrator/brief.go": "311e647c6526071071046def8cb826960a616922878c37436d1014f43eb719ea",
     "internal/app/orchestrator/child_guide.go": "ab62bb9a4b097be509aa7cccf4f61a7fd2c2972c923a8bf048f50c13db287062",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
@@ -5452,7 +5454,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "fcb1c89821b8f32b667a4026d729a753f60ae0ea3482cbeeda242a9d3d7c95c9",
-    "zh-Hant": "17e79fcbaa328dc7b61ea5e4cd987eafea034b34241d4a2bbbec7071a4adde58"
+    "en": "a0773cd6e1691dd8e7661449a56ec87fa63a0bf035039454b404da64e50376c1",
+    "zh-Hant": "8d864833bb607ffc152219b4419ee93514062a3b0d1baf84250d24ba390e821f"
   }
 }

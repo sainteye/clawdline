@@ -434,9 +434,8 @@ func TestTheBriefingSaysNothingAboutTheTab(t *testing.T) {
 	}
 }
 
-// briefResultSample is the result.json sample a CHILD.md shows, with only what
-// a child must fill in by itself filled in: the secret, the summary and the
-// time. Everything else is the template's own words.
+// briefResultSample is the result.json sample a CHILD.md shows, with the
+// task secret and finish time filled in.
 func briefResultSample(t *testing.T, brief string) string {
 	t.Helper()
 	_, rest, ok := strings.Cut(brief, "## Reporting")
@@ -453,7 +452,6 @@ func briefResultSample(t *testing.T, brief string) string {
 	}
 	return strings.NewReplacer(
 		"<the TASK_SECRET value from your first message>", strings.Repeat("5e", 32),
-		"<one paragraph: what you did, or why it failed>", "done",
 		"<ISO8601 UTC>", "2026-10-02T00:00:00Z",
 	).Replace(sample)
 }
@@ -486,6 +484,13 @@ func TestTheBriefingsResultSampleFinishesFirstTime(t *testing.T) {
 	for _, c := range []struct{ name, kind string }{{"review", "plan_review"}, {"ordinary", "custom"}} {
 		r := Record{ID: "7ab00041-0000-4000-8000-000000000041", Title: "t", Kind: c.kind, TimeoutMinutes: 30}
 		sample := briefResultSample(t, b.ChildBrief(r, "/tmp"))
+		var result taskdir.Result
+		if err := json.Unmarshal([]byte(sample), &result); err != nil {
+			t.Fatalf("%s: invalid result sample: %v", c.name, err)
+		}
+		if !strings.Contains(result.Summary, "\n\n") {
+			t.Errorf("%s: summary sample has no paragraph break: %q", c.name, result.Summary)
+		}
 		if !strings.Contains(sample, `"last": "skipped"`) {
 			t.Errorf("%s: the sample claims a verification run:\n%s", c.name, sample)
 		}

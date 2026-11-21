@@ -212,7 +212,8 @@ func TestWorkBridgeKeepsRuntimeReceiptAndPersistsOneResultThroughLanding(t *test
 	bridgeGit(t, r.Worktree.Path, "add", "a.go")
 	bridgeGit(t, r.Worktree.Path, "commit", "-q", "-m", "Scoped fixture delivery")
 	commit := bridgeGit(t, r.Worktree.Path, "rev-parse", "HEAD")
-	if _, err = broker.Settle(ctx, r.ID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "The scoped change is ready."}); err != nil {
+	const summary = "Outcome: Updated the scoped file.\n\nVerification:\n- Focused check passed.\n\nRemaining: Browser review."
+	if _, err = broker.Settle(ctx, r.ID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: summary}); err != nil {
 		t.Fatal(err)
 	}
 	link, err = bridge.Status(ctx, q.Actor, r.ID)
@@ -220,7 +221,7 @@ func TestWorkBridgeKeepsRuntimeReceiptAndPersistsOneResultThroughLanding(t *test
 		t.Fatalf("completion %+v %v", link, err)
 	}
 	x, _ = repo.Export(ctx, q.Command.Key)
-	if len(x.Messages) != 1 || x.Messages[0].Kind != pa.WorkMessage || x.Messages[0].Text != "The scoped change is ready." {
+	if len(x.Messages) != 1 || x.Messages[0].Kind != pa.WorkMessage || x.Messages[0].Text != summary {
 		t.Fatalf("visible result %+v", x.Messages)
 	}
 	bridgeGit(t, r.Repository, "merge", "--ff-only", r.Worktree.Branch)
