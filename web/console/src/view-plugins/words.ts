@@ -23,6 +23,7 @@ const en = {
   examplesHint: "Different ways to see the same Sessions.", galaxyHint: "Sessions become stars, with work states mapped to orbits.", added: "Installed", update: "Review update",
   checkUpdates: "Check for updates", checkingUpdates: "Checking updates…", updateTo: "Update to {version}", autoUpdate: "Update automatically", updateCheckUnavailable: "Latest version not confirmed",
   current: "Up to date", available: "Update available", updating: "Downloading update…", waitingClose: "Updates when open views close",
+  pin: "Pin to the right", pinned: "Pinned to the right", unpin: "Remove from the right", fullscreen: "Full screen", switchView: "Switch view", backToView: "Back to view",
   reviewRequired: "Review the update before applying", updateFailed: "Update failed · current version kept", updateSourceUnknown: "Import a newer ZIP for community packages",
   errors: {
     update_catalog_invalid: "The official update list is invalid. Installed views are still available.",
@@ -71,6 +72,7 @@ const zh: typeof en = {
   examplesHint: "同一組 Session，不同的呈現方式。", galaxyHint: "以星體與軌道呈現 Session 和工作狀態。", added: "已安裝", update: "檢查更新",
   checkUpdates: "檢查更新", checkingUpdates: "正在檢查更新…", updateTo: "更新至 {version}", autoUpdate: "自動更新", updateCheckUnavailable: "尚未確認最新版本",
   current: "已是最新版本", available: "有新版本", updating: "正在下載更新…", waitingClose: "關閉已開啟的視圖後更新",
+  pin: "固定在右側", pinned: "已固定在右側", unpin: "從右側移除", fullscreen: "全螢幕", switchView: "切換視圖", backToView: "回到視圖",
   reviewRequired: "檢查更新內容後套用", updateFailed: "更新失敗，已保留目前版本", updateSourceUnknown: "社群套件請匯入新版 ZIP 更新",
   errors: {
     update_catalog_invalid: "官方更新清單格式有誤，已安裝的視圖仍可使用。",

@@ -135,3 +135,33 @@
   .vp-installed .vp-card-footer button { padding:10px 12px;gap:6px }
   .vp-installed .vp-menu-wrap { margin-left:auto }
 }
+
+/* A pinned view in the Session pane: the home screen's place on a desk, never an open Session's. */
+.vp-pane { --vp-text:var(--ink,#eee);--vp-muted:color-mix(in srgb,var(--vp-text) 68%,var(--bg,#101014));--vp-line:color-mix(in srgb,var(--vp-text) 14%,var(--bg,#101014));--vp-surface:var(--card,#19191f);--vp-accent:#cbbaf7;
+  grid-column:2;grid-row:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg,#101014);color:var(--vp-text) }
+.vp-pane[hidden] { display:none }
+.app[data-view-pane="on"] > #pane-detail { display:none }
+.vp-pane-bar { display:flex;align-items:center;gap:10px;flex:none;min-height:50px;padding:6px 10px 6px 16px;border-bottom:1px solid var(--line,var(--vp-line)) }
+.vp-pane-cover { width:22px;height:22px;flex:none;border-radius:6px;object-fit:cover;background:var(--vp-surface) }
+.vp-pane-title { margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600 }
+.vp-pane-switch { min-width:0 }
+.vp-pane-switch select { max-width:280px;font:inherit;font-weight:600;color:inherit;background:transparent;border:1px solid transparent;border-radius:8px;padding:6px 8px;cursor:pointer }
+.vp-pane-switch select:hover,.vp-pane-switch select:focus-visible { border-color:var(--vp-line) }
+.vp-pane-actions { margin-left:auto;display:flex;gap:6px;flex:none }
+.vp-pane-actions button { display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 12px;font:inherit;font-size:13px;color:var(--vp-muted);background:transparent;border:1px solid var(--vp-line);border-radius:9px;cursor:pointer }
+.vp-pane-actions button:hover:not(:disabled) { color:var(--vp-text);background:color-mix(in srgb,var(--vp-text) 5%,transparent) }
+.vp-pane-actions button:disabled { opacity:.45;cursor:default }
+.vp-pane-actions .vp-pane-unpin { width:34px;padding:0;justify-content:center;border-color:transparent }
+.vp-pane :focus-visible { outline:2px solid #a58bf1;outline-offset:2px }
+.vp-pane-body { position:relative;flex:1;min-height:0;display:flex;flex-direction:column }
+.vp-pane-loading,.vp-pane-error { padding:24px }
+.vp-pane-error p { margin:0 0 12px;color:var(--vp-text) }
+.vp-pane-error button,.vp-pane .vp-frame-bar button { font:inherit;min-height:36px;padding:6px 14px;color:inherit;background:transparent;border:1px solid var(--vp-line);border-radius:9px;cursor:pointer }
+.vp-sr { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap }
+/* The open Session's way back to the pinned view; the ordinary back stays a phone's. */
+@media (min-width: 900px) { .detail-head .back[data-view-return] { display:block } }
+.vp-launch-row { display:flex;gap:8px;align-items:stretch }
+.vp-launch-row>.vp-launch-item { flex:1;min-width:0 }
+.vp-host .vp-launch-pin { flex:none;border-radius:16px;font-size:13px;color:var(--vp-muted) }
+.vp-host .vp-launch-pin[aria-pressed=true] { color:var(--vp-accent);border-color:color-mix(in srgb,var(--vp-accent) 45%,var(--vp-line)) }
+.vp-frame-bar>.vp-pin { margin-left:auto }

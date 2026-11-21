@@ -101,3 +101,7 @@ work states remain intact; working roots and person/completion states take prior
 over their background callback metadata. Child Session waits keep their own text.
 This orbit is a Clawdline adaptation; the original Herdr renderer has no callback
 state. It does not imply a task result, elapsed time, progress or acceptance.
+
+## Version 0.6.0: embedded beside the Session list
+
+When the host reports `presentation: "embedded"` (a desktop has pinned this view beside the Session list), the package's close control is hidden; the host's header owns removal. Full screen is unchanged. Older hosts never send the field, so the package keeps its full-screen layout there.

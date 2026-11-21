@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { PLUGIN_LIMITS as B } from "./limits.js"
 import { PluginError, plain, exact, type ViewPackage } from "./package.js"
-import { pluginBridge, pluginDocument, type ViewContext, type ViewReading, type ViewSource } from "./bridge.js"
+import { pluginBridge, pluginDocument, type Presentation, type ViewContext, type ViewReading, type ViewSource } from "./bridge.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { pluginWords } from "./words.js"
 
@@ -23,14 +23,20 @@ export interface ViewGrant {
   pkg: ViewPackage; sourceKey: string
   initial: ViewReading; instanceId: string
 }
-export function PluginFrame({ grant, source, language, onClose, onNavigate, onFault }: {
+export function PluginFrame({ grant, source, language, onClose, onNavigate, onFault, presentation = "fullscreen", onPin, hidden = false }: {
   grant: ViewGrant; source: ViewSource; language: string
   onClose: () => void; onNavigate: (fn: () => void) => void; onFault: (code: string) => void
+  /** Embedded frames have their own header; the footer keeps only connection state. */
+  presentation?: Presentation
+  /** Offered on a desktop's full-screen view: show this view beside the Session list instead. */
+  onPin?: () => void
+  /** An embedded view behind an open Session is mounted but not visible. */
+  hidden?: boolean
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [ready, setReady] = useState(false)
-  const live = useRef({ source, language, onClose, onNavigate, onFault })
-  live.current = { source, language, onClose, onNavigate, onFault }
+  const live = useRef({ source, language, onClose, onNavigate, onFault, hidden })
+  live.current = { source, language, onClose, onNavigate, onFault, hidden }
   const [disconnected, setDisconnected] = useState(!grant.initial.connected || !!grant.initial.partial)
   const refreshRef = useRef<() => void>(() => {})
   const contextRef = useRef<() => void>(() => {})
@@ -44,8 +50,8 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
     const context = (): ViewContext => ({
       language: document.documentElement.lang || live.current.language, theme: document.documentElement.dataset.theme === "light" ? "light" :
         document.documentElement.dataset.theme === "dark" ? "dark" : theme.matches ? "dark" : "light",
-      reducedMotion: motion.matches, visible: document.visibilityState === "visible",
-      scopeLabel: live.current.source.label, connection: reading.connected ? "connected" : "disconnected",
+      reducedMotion: motion.matches, visible: document.visibilityState === "visible" && !live.current.hidden,
+      scopeLabel: live.current.source.label, connection: reading.connected ? "connected" : "disconnected", presentation,
     })
     const send = () => { if (alive) bridge?.update(reading, context()) }
     contextRef.current = send
@@ -109,17 +115,19 @@ export function PluginFrame({ grant, source, language, onClose, onNavigate, onFa
       node.removeAttribute("srcdoc")
     }
   }, [grant.instanceId])
-  useEffect(() => { contextRef.current() }, [language])
-  return <section className="vp-view" aria-label={label}>
+  useEffect(() => { contextRef.current() }, [language, hidden])
+  const embedded = presentation === "embedded"
+  return <section className="vp-view" data-presentation={presentation} aria-label={label}>
     <div className="vp-frame-content" aria-busy={!ready}>
     {!ready && <div className="vp-frame-loading"><LoadingSkeleton label={w.loading} id="view-plugin-frame" kind="detail" /></div>}
     <iframe ref={frame} title={label} sandbox="allow-scripts" referrerPolicy="no-referrer"
       allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" />
     </div>
-    <footer className="vp-frame-bar">
-      <button type="button" onClick={onClose} aria-label={w.viewClose}><span aria-hidden="true">←</span>{w.returnToApp}</button>
+    {(!embedded || disconnected) && <footer className="vp-frame-bar">
+      {!embedded && <button type="button" onClick={onClose} aria-label={w.viewClose}><span aria-hidden="true">←</span>{w.returnToApp}</button>}
       {disconnected && <span role="status">{w.offline}</span>}
       {disconnected && <button type="button" onClick={() => refreshRef.current()}>{w.retry}</button>}
-    </footer>
+      {!embedded && onPin && <button type="button" className="vp-pin" onClick={onPin}>{w.pin}</button>}
+    </footer>}
   </section>
 }

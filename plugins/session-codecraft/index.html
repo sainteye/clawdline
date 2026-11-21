@@ -11,7 +11,7 @@
 #project-strip{display:none}body.kaiju #project-strip{display:flex;gap:8px;padding:8px 12px;overflow-x:auto;background:var(--surface);border-top:1px solid var(--edge)}#project-strip .project-marker{position:static;flex:none;min-width:110px;max-width:180px;box-shadow:none}
 @media(max-width:700px){.codecraft aside{border-right:0}.codecraft #minimap-home{margin:-14px -14px 14px}aside{overflow:visible}#selection{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:none;max-height:70dvh;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}#scene-label{font-size:11px}.project-marker{max-width:140px}}
 
-</style></head><body>
+</style><style>/* Embedded beside the Session list: the host's list is the roster, so the scene fills the pane. */body.embedded header,body.embedded aside,body.embedded footer,body.embedded #minimap{display:none}body.embedded .layout{display:block;height:100dvh;min-height:0}body.embedded .world{height:100dvh}body.embedded .viewport{flex:1;height:auto;aspect-ratio:auto}</style></head><body>
 <header><div class="brand"><h1 id="title"></h1><p id="scope"></p></div><nav><button id="still" aria-pressed="false"></button><button id="list" aria-pressed="false"></button><button id="lighting"></button><button id="close"></button></nav></header>
 <main class="layout"><section class="world"><div id="districts"><button id="prev">←</button><span id="district-label"></span><button id="next">→</button></div><div class="viewport"><canvas id="scene" tabindex="0"></canvas><div id="annotations"></div><section id="scene-label" hidden></section><span id="city-arrow" hidden></span><div class="hud"><span id="counts"></span><span id="warning" role="status" hidden></span></div><p id="empty" hidden></p></div><div id="project-strip"></div><canvas id="minimap" tabindex="0"></canvas><div id="sceneTools"><button id="zoomOut" class="world-only">−</button><button id="zoomIn" class="world-only">+</button><span id="hint"></span></div></section><aside><div id="minimap-home"></div><p class="heading" id="detail-title"></p><div id="detail-home"><section id="detail"></section></div><div id="rosterHead"><h2 class="heading" id="roster-title"></h2><span id="roster-count"></span><button id="kaiju-mode" hidden></button></div><input id="search" type="search"><div class="register" id="register"></div></aside></main>
 <section id="kaiju-news" class="kaiju-news" aria-live="polite" hidden></section>
@@ -582,7 +582,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   }
   function renderUI(){
     const w=t();document.documentElement.lang=context.language.startsWith('zh')?'zh-Hant-TW':'en';document.title=world?w.world:w.kaiju;
-    document.body.className=(world?'codecraft':'kaiju')+(night()?' night':'')+(list?' list-mode':'');
+    document.body.className=(world?'codecraft':'kaiju')+(night()?' night':'')+(list?' list-mode':'')+(context.presentation==='embedded'?' embedded':'');
     document.body.dataset.hasSelection=String(!!selected||selectedProject!==undefined);document.body.dataset.motion=active()?'on':'off';
     $('title').textContent=world?w.world:w.kaiju;$('scope').textContent=context.scopeLabel||w.scope;
     for(const id of ['still','list','close'])$(id).textContent=w[id];$('lighting').textContent=w.light;
@@ -673,7 +673,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   $('selection').addEventListener('close',()=>{$('detail-home').append($('detail'));});
   $('search').oninput=renderUI;
   $('prev').onclick=()=>{page--;renderUI();requestDraw();};$('next').onclick=()=>{page++;renderUI();requestDraw();};
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('selection').open)return;e.preventDefault();if(selected){selected=null;renderUI();requestDraw();}else view?.close().catch(()=>{});}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('selection').open)return;e.preventDefault();if(selected){selected=null;renderUI();requestDraw();}else if(context.presentation!=='embedded')view?.close().catch(()=>{});}});
   const observer=new ResizeObserver(resize);observer.observe(canvas.parentElement);observer.observe(document.querySelector('header'));
   renderUI();resize();
   Promise.all(Object.entries(ART).map(([key,src])=>new Promise((resolve,reject)=>{const img=new Image();images.set(key,img);img.onload=resolve;img.onerror=()=>reject(Error('original_art_unavailable'));img.src=src;}))).then(()=>{loaded=true;document.body.dataset.artReady='true';renderUI();requestDraw();}).catch(e=>{error=e.message;renderUI();});

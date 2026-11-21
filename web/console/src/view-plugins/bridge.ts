@@ -19,7 +19,10 @@ export interface ViewSource {
 export interface ViewContext {
   language: string; theme: "dark" | "light"; reducedMotion: boolean; visible: boolean
   scopeLabel: string; connection: "connected" | "disconnected"
+  /** Full screen, or embedded beside the Session list on a desktop. */
+  presentation: Presentation
 }
+export type Presentation = "fullscreen" | "embedded"
 const clipped = (s: string) => { if ([...s].length > B.textCharacters) throw new PluginError("message_too_large"); return s }
 const size = (v: unknown) => new TextEncoder().encode(JSON.stringify(v)).length
 const errorCode = (e: unknown) => e instanceof PluginError ? e.code : "host_unavailable"

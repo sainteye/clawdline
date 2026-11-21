@@ -12,6 +12,7 @@ import { pluginWords } from "./words.js"
 import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
+import { EmbeddedView, pinView, useDesk, usePinnedView } from "./Embedded.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useDockMotion } from "../ui/dock-motion.js"
 import "./plugins.css"
@@ -23,7 +24,12 @@ const recommendedSlugs = ["session-departures", "session-codecraft"]
 
 type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 
-export function useViewPlugins(sources: readonly ViewSource[], language: string) {
+export function useViewPlugins(sources: readonly ViewSource[], language: string, onPinned?: () => void) {
+  const pinned = usePinnedView(), desk = useDesk()
+  const pinnedRef = useRef(onPinned); pinnedRef.current = onPinned
+  // Pinning closes the full-screen host and shows the pane, even from an open Session.
+  // The pane is shown after the host's own history entry is gone, as a plugin navigation is.
+  const pinHere = (id: string) => { pinView(id); navigate.current = () => pinnedRef.current?.(); closeRef.current() }
   const [opened, setOpened] = useState(false), openedRef = useRef(false)
   const [mode, setMode] = useState<"manage" | "launch">("launch")
   const [rows, setRows] = useState<Installed[]>([]), [error, setError] = useState("")
@@ -128,7 +134,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
       document.body.style.overflow = overflow
     }
   }, [opened])
-  const openRoot = (button: HTMLElement, nextMode: "manage" | "launch") => {
+  const openRoot = (button: HTMLElement, nextMode: "manage" | "launch", target?: string) => {
     if (openedRef.current) return
     motion.capture(button)
     opener.current = button; owned.current = crypto.randomUUID(); openedRef.current = true
@@ -138,8 +144,9 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     void installedPackages().then(installed => {
       if (!openedRef.current || generation !== operations.current) return
       setRows(installed); setBusy(false); setLoading(false)
-      const enabled = installed.filter(r => r.enabled)
-      if (nextMode === "launch" && enabled.length === 1) choose(enabled[0].active)
+      const enabled = installed.filter(r => r.enabled), wanted = target && enabled.find(r => r.id === target)
+      if (wanted) choose(wanted.active)
+      else if (nextMode === "launch" && enabled.length === 1) choose(enabled[0].active)
     }, e => { if (openedRef.current && generation === operations.current) { setError(code(e)); setBusy(false); setLoading(false) } })
   }
   const act = async (operation: () => Promise<void>) => {
@@ -259,6 +266,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
     </section>
   const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
+      onPin={desk && pinned !== grant.pkg.manifest.id ? () => pinHere(grant.pkg.manifest.id) : undefined}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
       <header className="vp-bar"><div className="vp-bar-title"><ViewPluginIcon /><h1>{mode === "manage" ? w.title : w.launcher}</h1></div>{isBusy && !loading && <span className="vp-progress page-skeleton" role="status" aria-label={w.loading}><i className="page-skeleton-line" aria-hidden="true" /></span>}<button type="button" className="vp-close" aria-label={w.close} onClick={close}>✕</button></header>
       <main className={`vp-manager${mode === "launch" ? " vp-launcher" : ""}`} aria-busy={isBusy}>
@@ -283,9 +291,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
               <button disabled={isBusy} onClick={cancelReview}>{w.cancel}</button>
             </>}</div></section>}
           {mode === "launch" ? <>
-            {!enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2>{!recommendations.length && <p>{w.launchEmptyHint}</p>}</div> : <div className="vp-launch-list">{enabled.map(row => <button key={row.id} type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
-              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
-            </button>)}</div>}
+            {!enabled.length ? <div className="vp-empty"><ViewPluginIcon /><h2>{w.launchEmpty}</h2>{!recommendations.length && <p>{w.launchEmptyHint}</p>}</div> : <div className="vp-launch-list">{enabled.map(row => <div key={row.id} className="vp-launch-row"><button type="button" className="vp-launch-item" disabled={isBusy} onClick={() => choose(row.active)}>
+              <ViewArtwork cover={packageCover(row.active)} missing={w.coverRequired} small /><span><b>{name(row.active, language)}</b><small>{pinned === row.id ? w.pinned : w.openView}</small></span><span className="vp-launch-arrow" aria-hidden="true">↗</span>
+            </button>{desk && <button type="button" className="vp-launch-pin" disabled={isBusy} aria-pressed={pinned === row.id}
+              onClick={() => pinned === row.id ? pinView(null) : pinHere(row.id)}>{pinned === row.id ? w.unpin : w.pin}</button>}</div>)}</div>}
             {recommendations.length > 0 && gallery(recommendations, w.recommended)}
           </> : <>
           <section className="vp-library"><div className="vp-section-head"><h2>{w.installed}</h2><span className="vp-count">{rows.length}</span><button className="vp-check-all" disabled={isBusy || updates.checking} onClick={() => void updates.check()}>{updates.checking ? w.checkingUpdates : w.checkUpdates}</button></div>
@@ -318,6 +327,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string)
         </>}
       </main></>}
   </div>, document.body) : null
-  return { opened, openedRef, dock: entry, content,
+  /** The pinned view for the Session pane, or null when the pane keeps its home screen. */
+  const viewPane = (hidden: boolean) => desk && pinned && !opened ? <EmbeddedView source={source} language={language} pinned={pinned} hidden={hidden}
+    onFullscreen={(button, pkg) => openRoot(button, "launch", pkg.manifest.id)} /> : null
+  const pinnedPane = desk && !!pinned
+  return { opened, openedRef, dock: entry, content, viewPane, pinnedPane, viewReturn: w.backToView,
     openManager: (button: HTMLElement) => openRoot(button, "manage"), managerLabel: w.title }
 }

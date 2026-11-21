@@ -255,8 +255,20 @@ the newest list. Reopening creates a new stream and grants no history/replay.
 
 `onContext(fn)` synchronously calls `fn` with the latest context and returns an
 unsubscribe function. Context is `{language, theme, reducedMotion, visible,
-scopeLabel, connection}`, with theme `dark|light` and connection
-`connected|disconnected`. Stop motion when invisible or reduced motion is on.
+scopeLabel, connection, presentation}`, with theme `dark|light`, connection
+`connected|disconnected` and presentation `fullscreen|embedded`. Stop motion when
+invisible or reduced motion is on.
+
+`presentation` is `embedded` when a desktop has pinned the view beside its
+Session list, in the pane that otherwise shows the home screen. The host draws the
+view's name, a switcher, full screen and removal above the frame, and its Session
+list is already a complete readable roster, so an embedded layout can drop its own
+roster, explanatory notes and close control and give the scene the whole pane. The
+pane stays mounted while a Session is open in it, with `visible` false; returning
+shows the same instance. Embedded, `view.close` leaves the view in place: only the
+host's remove control unpins it. `sessions.open` opens the Session in that pane
+without closing the view. Hosts before this field omit it; treat a missing value as
+`fullscreen`. The wire protocol version is unchanged.
 Retained disconnected data is stale immediately; reconnect needs a new snapshot.
 For a fleet, `connection` is connected when at least one machine is connected;
 per-row freshness still reflects its own source. The host separately warns when

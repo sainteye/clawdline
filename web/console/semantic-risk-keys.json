@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13832,
+  "englishKeys": 13838,
   "counts": {
     "negation": 3567,
     "state": 2343,
     "permission": 833,
-    "deletion": 319,
+    "deletion": 320,
     "uncertainty": 552
   },
-  "unionCount": 5908,
+  "unionCount": 5909,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7077,6 +7077,7 @@
       "viewPlugins.remove",
       "viewPlugins.removePrevious",
       "viewPlugins.removeQuestion",
+      "viewPlugins.unpin",
       "work.opDiscard",
       "workflowSettings.session_auto_discoveryScope"
     ],
@@ -13404,6 +13405,7 @@
     "viewPlugins.territoryHint",
     "viewPlugins.trust",
     "viewPlugins.unavailable",
+    "viewPlugins.unpin",
     "viewPlugins.updateCheckUnavailable",
     "viewPlugins.updateFailed",
     "viewPlugins.waitingClose",

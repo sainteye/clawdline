@@ -47,3 +47,7 @@ The persistent touch label and explicit navigation are browser adaptations: the
 original uses a native tooltip and keeps a live terminal beside the village.
 Opening a Session still closes the Clawdline view. Installation is explicit and
 browser-local; an older installed package must be reviewed and updated.
+
+## Version 0.4.0: embedded beside the Session list
+
+When the host reports `presentation: "embedded"` (a desktop has pinned this view beside the Session list), the header, roster, selected-Session panel, minimap and footer are hidden and the scene fills the pane: the host's Session list is already the roster. A hero's scene label still opens its Session, and Escape only clears a selection. Full screen is unchanged. Older hosts never send the field, so the package keeps its full-screen layout there.
