@@ -208,7 +208,6 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
         return <>
           <header className="pa-toolbar">
             <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
-            <h1>{w.allBots}</h1>
             {onView&&!sorting&&<button type="button" className="pa-circle pa-view-toggle" aria-pressed={view==="tower"} aria-label={w.towerView} title={w.towerView} onClick={()=>onView(view==="tower"?"list":"tower")}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 14.5V3.5l5-2 5 2v11M1.5 14.5h13M6 5.5h1M9 5.5h1M6 8.5h1M9 8.5h1M7 14.5v-3h2v3"/></svg></button>}
             {onToggleUnread&&!sorting&&<button type="button" className="pa-circle pa-roster-unread" aria-pressed={!!unreadOnly} aria-label={w.unreadMessages} aria-description={hasUnread?w.unreadBotsPresent:undefined} title={w.unreadMessages} onClick={onToggleUnread}>{rosterIcon("unread")}{hasUnread&&<span className="pa-roster-unread-dot" aria-hidden="true"/>}</button>}
             {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
