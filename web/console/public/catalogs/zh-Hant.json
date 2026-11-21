@@ -13877,5 +13877,9 @@
   "capacityRow.bots.user_message_bytes.full": "可分段傳送或附上文字檔。這則訊息尚未送出。",
   "capacityRow.bots.user_message_bytes.what": "在讀取傳輸容量內，使用者單則訊息可容納的文字大小。",
   "projectAssistants.backgroundConcurrency": "背景工作並行數",
-  "projectAssistants.queueLimited": "還有訊息正在排隊。佇列前進時，這裡會顯示後續訊息。"
+  "projectAssistants.queueLimited": "還有訊息正在排隊。佇列前進時，這裡會顯示後續訊息。",
+  "capacityRow.sessions.launch_hold_rows.full": "最早記下的啟動會被忘掉；如果那個 pane 還是一般 shell，送過去的訊息會被拒絕。",
+  "capacityRow.sessions.launch_hold_rows.what": "限制同時記住幾個剛開啟的 Session，讓太早送出的訊息可以等助理啟動。",
+  "capacityRow.sessions.launch_hold_seconds.full": "超過這個時間，送給仍是一般 shell 的 pane 的訊息會被拒絕，不會打進 shell。",
+  "capacityRow.sessions.launch_hold_seconds.what": "限制送給剛開啟 Session 的訊息最多等多久，讓 Claude 或 Codex 先啟動。"
 }

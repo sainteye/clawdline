@@ -3,6 +3,26 @@ package capacity
 // sessionsBounds is every registered row named sessions.*.
 func sessionsBounds() []Entry {
 	return []Entry{
+		{
+			// How long after the start route launches a tmux pane a write to it
+			// waits for the assistant instead of being refused as an ordinary
+			// shell. Past it the write is answered as before: refused.
+			Name: "sessions.launch_hold_seconds", Class: Observation, Unit: Seconds,
+			Limit: 20, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.LaunchHoldSecondsLimit"},
+		},
+		{
+			// Launched panes remembered for that wait. Past it the launch
+			// remembered longest ago is forgotten and its pane is answered as
+			// any other: refused while it is still a shell.
+			Name: "sessions.launch_hold_rows", Class: Observation, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.MaxLaunchHoldRows"},
+		},
 		{Name: "sessions.rc_permission_bytes", Class: Buffer, Unit: Bytes, Limit: 16 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.PermissionBytesLimit"}},
 		{Name: "sessions.rc_close_poll_ms", Class: Observation, Unit: Milliseconds, Limit: 100, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.ClosePollMillisLimit"}},
 		{Name: "sessions.claude_remote_request_seconds", Class: Observation, Unit: Seconds, Limit: 10, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/adapters/clauderemote.RequestSecondsLimit"}},

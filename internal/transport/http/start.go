@@ -491,6 +491,7 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	isTmux := made.Backend == string(session.BackendTmux)
 	if isTmux {
 		s.inventory.Held.OpenedTmux(made.ID)
+		s.launchHolds().opened(made.ID)
 	}
 	writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.Backend(made.Backend),
 		Assistant: assistant, Model: made.Model, Persona: persona, Place: place.ID, CWD: place.Path, Attach: made.Attach,

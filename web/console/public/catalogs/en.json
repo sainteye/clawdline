@@ -13877,5 +13877,9 @@
   "capacityRow.bots.user_message_bytes.full": "Send the text in parts or attach it as a file. The message has not been sent.",
   "capacityRow.bots.user_message_bytes.what": "Maximum text in one user message within the read transport budget.",
   "projectAssistants.backgroundConcurrency": "Background threads at once",
-  "projectAssistants.queueLimited": "More messages are queued. They will appear here as the queue advances."
+  "projectAssistants.queueLimited": "More messages are queued. They will appear here as the queue advances.",
+  "capacityRow.sessions.launch_hold_rows.full": "The launch remembered longest ago is forgotten; a message to that pane is refused while it is still a shell.",
+  "capacityRow.sessions.launch_hold_rows.what": "Limits how many just-started Sessions are remembered so an early message can wait for the assistant.",
+  "capacityRow.sessions.launch_hold_seconds.full": "After this, a message to a pane that is still a shell is refused, and nothing is typed into the shell.",
+  "capacityRow.sessions.launch_hold_seconds.what": "Limits how long a message sent to a just-started Session waits for Claude or Codex to start."
 }

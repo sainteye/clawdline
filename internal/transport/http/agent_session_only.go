@@ -53,6 +53,9 @@ func (s *Server) refuseOrdinaryShell(w http.ResponseWriter, r *http.Request) boo
 		assistant, err = item.IsAssistant(), readErr
 	} else {
 		item, findErr := actions.Find(ctx, id)
+		// A pane this daemon launched moments ago is still its login shell;
+		// the write waits for the assistant instead (launch_hold.go).
+		item, findErr = s.awaitLaunchedAssistant(ctx, actions, id, item, findErr)
 		assistant, err = item.IsAssistant(), findErr
 	}
 	if err != nil || assistant {

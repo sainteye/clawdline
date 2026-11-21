@@ -15531,6 +15531,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "sessions.launch_hold_rows",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.MaxLaunchHoldRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "sessions.launch_hold_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.LaunchHoldSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "sessions.rc_close_poll_ms",
     "Class": "observation",
     "Unit": "milliseconds",
