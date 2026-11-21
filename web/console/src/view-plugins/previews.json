@@ -142,21 +142,21 @@
   {
     "id": "com.clawdline.session-lantern-deep",
     "language": "en",
-    "src": "/view-plugins/previews/session-lantern-deep-en-5a1a86226033.webp",
+    "src": "/view-plugins/previews/session-lantern-deep-en-83d0316d404a.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "7e908dce593fa18e98b82cc1c52cd64ebf4a7cf92c6480920ee1498ff1b112cf",
-    "sha256": "5a1a86226033c960c7ed64479c65df3467bf109b74621af9c47e6f686416e627"
+    "packageVersion": "0.2.0",
+    "packageDigest": "fc398d3453daa9c3e646c0700bbe475c62e8ccfd9d439ea81af48a15266e4467",
+    "sha256": "83d0316d404a2a7373545b91f9d77b55aa6ad936b6f7e493cfed13ff4b6ff0a5"
   },
   {
     "id": "com.clawdline.session-lantern-deep",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-lantern-deep-zh-Hant-a0475881535e.webp",
+    "src": "/view-plugins/previews/session-lantern-deep-zh-Hant-0891c6b7ac6f.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.0",
-    "packageDigest": "7e908dce593fa18e98b82cc1c52cd64ebf4a7cf92c6480920ee1498ff1b112cf",
-    "sha256": "a0475881535ef4f4828cbaf6b94485265ca3aafaa0b9aff74f916895118a542a"
+    "packageVersion": "0.2.0",
+    "packageDigest": "fc398d3453daa9c3e646c0700bbe475c62e8ccfd9d439ea81af48a15266e4467",
+    "sha256": "0891c6b7ac6f1e24e4f460e69915c8c9bda02855527ea36b7084302918a2a176"
   }
 ]

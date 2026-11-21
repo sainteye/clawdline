@@ -1,12 +1,14 @@
 # Lantern Deep for Clawdline
 
 An original hand-drawn underground scene. Every Project is a chamber with its own
-painted backdrop, and every Session is a small hooded wanderer whose ember eyes and
-behaviour show its reported state:
+painted backdrop, floating slabs on three levels and ground set pieces. Every Session
+is one of twelve small wanderers, each with sixteen frames of frame-by-frame animation
+(run, slash, jump, fall, wall cling, landing, idle, puzzled, sitting). A small wisp
+trailing each wanderer carries the state colour, and its behaviour shows the state:
 
 | State | What the wanderer does |
 |---|---|
-| `working` | Fights crawlers and drifters in its own lane: slashes, back-dashes, leaps over a lunge and strikes downward |
+| `working` | Fights one of six enemies in its own lane, on the floor or a slab: slashes, back-dashes, leaps over a lunge and strikes downward |
 | `holding` | Drills against a training post: combinations, dashes and a leaping strike |
 | `ready` | Patrols the floor or a floating slab, with an occasional practice swing |
 | `waiting_session` | Climbs a shaft by kicking between two walls, rests on the ledge, then drops |
@@ -14,7 +16,8 @@ behaviour show its reported state:
 | `milestone_complete`, `work_complete` | Sits by a small fire with the blade planted |
 | `unknown`, or any stale reading | Stands still and grey, and cannot be opened |
 
-Enemies, strikes and climbing are decoration. They do not measure progress, count
+A struck enemy recoils in its own hurt frame with a flash, impact lines and a brief
+hit-stop, and breaks apart over three frames when defeated. Enemies, strikes and climbing are decoration. They do not measure progress, count
 anything or imply that work was accepted. Stale and disconnected readings never animate.
 
 Drag, scroll or use the arrow keys to wander. Selecting a wanderer shows its full
@@ -26,7 +29,8 @@ needs-you button and the selection card. Reduced motion draws one still frame.
 
 ## Build
 
-`scene.js` and `src.html` are the sources; `art/` holds the three backdrops.
+`scene.js` and `src.html` are the sources; `art/` holds the backdrops, scenery sprites
+and the character (`fNN-*`) and enemy (`gN-*`) frames.
 
 ```sh
 python3 plugins/session-lantern-deep/build.py

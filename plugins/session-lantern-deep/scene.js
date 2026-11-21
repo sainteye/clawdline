@@ -139,7 +139,7 @@ function layout() {
 
 /* ---------- characters ---------- */
 function makeChar(r, st) {
-  const c = { ref: r.ref, row: r, x: st.x, y: st.y, vx: 0, vy: 0, face: 1, ground: true, st: null, mode: "", sub: "", t: 0, cd: 0, step: 0, sq: 0, sqv: 0, hem: 0, hemv: 0, tilt: 0, tiltTo: 0, run: 0, sword: 1, swordTo: 1, slash: 0, slashKind: "", sit: 0, arm: 0, hit: 0, dash: 0, ghosts: [], scarf: [], alpha: 0, seed: rng(hash(r.ref)), enemy: null, plat: null, q: 0, blink: 2, look: 0, sx: 0, sy: 0, cast: 0 };
+  const c = { ref: r.ref, row: r, x: st.x, y: st.y, vx: 0, vy: 0, face: 1, ground: true, st: null, mode: "", sub: "", t: 0, cd: 0, step: 0, sq: 0, sqv: 0, hem: 0, hemv: 0, tilt: 0, tiltTo: 0, run: 0, sword: 1, swordTo: 1, slash: 0, slashKind: "", sit: 0, arm: 0, hit: 0, dash: 0, ghosts: [], scarf: [], alpha: 0, seed: rng(hash(r.ref)), enemy: null, plat: null, q: 0, blink: 2, look: 0, sx: 0, sy: 0, cast: 0, land: 0 };
   for (let i = 0; i < 6; i++) c.scarf.push({ x: st.x - i * 4, y: st.y - 31, px: st.x - i * 4, py: st.y - 31 });
   return c;
 }
@@ -184,8 +184,9 @@ function spawnEnemy(c) {
 function strike(c, e, kx, ky) {
   e.hp--; e.flash = .12; e.vx = kx; if (e.type === "flyer") e.vy = ky; e.state = "roam"; e.next = 1.4 + Math.random() * 2;
   c.hit = .055; burst(e.x, e.y - 10, [255, 220, 170], 6);
-  fx.push({ kind: "flash", x: e.x, y: e.y - 10, age: 0, life: .12, r: 34 });
-  if (e.hp <= 0) { e.dead = true; burst(e.x, e.y - 10, [255, 150, 70], 16); dust(e.x, e.y, 6, [60, 40, 50]); for (let i = 0; i < 3; i++) fx.push({ kind: "wisp", x: e.x, y: e.y - 12, c, age: -i * .08, life: .7, vx: (Math.random() - .5) * 200, vy: -160 - Math.random() * 80 }); c.enemy = null; c.sub = "flourish"; c.t = .8 + c.seed() * .7; c.q = 1; }
+  fx.push({ kind: "flash", x: e.x, y: e.y - 14, age: 0, life: .12, r: 38 }); fx.push({ kind: "ring", x: e.x, y: e.y - 14, age: 0, life: .22, a: Math.random() * TAU });
+  e.hurt = .24;
+  if (e.hp <= 0) { e.state = "dying"; e.t = 0; e.vx *= .5; burst(e.x, e.y - 10, [255, 150, 70], 16); dust(e.x, e.y, 6, [60, 40, 50]); for (let i = 0; i < 3; i++) fx.push({ kind: "wisp", x: e.x, y: e.y - 12, c, age: -i * .08, life: .7, vx: (Math.random() - .5) * 200, vy: -160 - Math.random() * 80 }); c.enemy = null; c.sub = "flourish"; c.t = .8 + c.seed() * .7; c.q = 1; }
 }
 function behave(c, dt) {
   const st = c.st; c.t -= dt; c.cd -= dt;
@@ -306,7 +307,7 @@ function physics(c, dt) {
   if (c.plat && c.st.plat === c.plat && c.mode !== "travel" && c.mode !== "hop" && c.mode !== "climb") c.x = clamp(c.x, c.plat.x0 + 8, c.plat.x1 - 8);
   let floor = 0; const p = c.plat;
   if (p && c.x >= p.x0 && c.x <= p.x1 && prevY <= p.y + .5) floor = p.y;
-  if (c.vy >= 0 && c.y >= floor) { if (!c.ground) { squash(c, -Math.min(5, c.vy / 150)); if (c.vy > 240) dust(c.x, floor, 4); } c.y = floor; c.vy = 0; c.ground = true; }
+  if (c.vy >= 0 && c.y >= floor) { if (!c.ground) { squash(c, -Math.min(5, c.vy / 150)); if (c.vy > 240) { dust(c.x, floor, 4); c.land = .13; } } c.y = floor; c.vy = 0; c.ground = true; }
   else if (c.y < floor - .5) c.ground = false;
   // springs
   c.sqv += (-170 * c.sq - 15 * c.sqv) * dt; c.sq += c.sqv * dt; c.sq = clamp(c.sq, -.32, .32);
@@ -315,7 +316,7 @@ function physics(c, dt) {
   c.sword = lerp(c.sword, c.swordTo, Math.min(1, dt * 10));
   if (c.slash > 0) { c.slash += dt / .2; if (c.slash >= 1) c.slash = 0; }
   if (c.ground && Math.abs(c.vx) > 12) c.run += Math.abs(c.vx) * dt * .085; else c.run = lerp(c.run, Math.round(c.run / Math.PI) * Math.PI, Math.min(1, dt * 10));
-  c.blink -= dt; if (c.blink < -.12) c.blink = 1.5 + Math.random() * 4;
+  c.land -= dt; c.blink -= dt; if (c.blink < -.12) c.blink = 1.5 + Math.random() * 4;
   c.alpha = Math.min(1, c.alpha + dt * 4);
   for (const g of c.ghosts) g.a -= dt * 2.6; c.ghosts = c.ghosts.filter(g => g.a > 0);
   // scarf: a short verlet ribbon pinned at the neck
@@ -325,8 +326,9 @@ function physics(c, dt) {
   for (let k = 0; k < 2; k++) for (let i = 1; i < s.length; i++) { const a = s[i - 1], b = s[i], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - 5.2) / d; b.x -= dx * f; b.y -= dy * f; if (b.y > c.y - 1 && c.ground) b.y = c.y - 1; }
 }
 function updateEnemy(e, dt) {
-  e.t += dt; e.flash -= dt; e.next -= dt;
+  e.t += dt; e.flash -= dt; e.next -= dt; e.hurt = (e.hurt || 0) - dt;
   const lane = e.lane;
+  if (e.state === "dying") { e.vx *= 1 - dt * 5; e.x += e.vx * dt; if (e.t > .5) e.dead = true; return; }
   if (e.state === "emerge") { if (e.t > .55) { e.state = "roam"; e.t = 0; } return; }
   if (e.type === "crawler") {
     if (e.state === "roam") { e.vx = lerp(e.vx, e.face * 26, dt * 3); if (e.next <= 0) { e.state = "tele"; e.t = 0; } }
@@ -340,7 +342,7 @@ function updateEnemy(e, dt) {
   if (e.x < lane.cx - lane.hw) { e.x = lane.cx - lane.hw; e.face = 1; if (e.state === "lunge") e.state = "roam"; }
   if (e.x > lane.cx + lane.hw) { e.x = lane.cx + lane.hw; e.face = -1; if (e.state === "lunge") e.state = "roam"; }
 }
-function faceEnemy(c) { const e = c.enemy; if (e && !e.dead && e.state !== "lunge" && e.state !== "tele") e.face = sign(c.x - e.x); }
+function faceEnemy(c) { const e = c.enemy; if (e && !e.dead && e.state !== "dying" && e.state !== "lunge" && e.state !== "tele") e.face = sign(c.x - e.x); }
 
 function update(dt) {
   for (const c of chars.values()) {
@@ -524,14 +526,48 @@ function clip(text, n) { const a = Array.from(text); return a.length > n ? a.sli
 
 function drawBlade(len) { ctx.strokeStyle = "#dfe9f2"; ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(len, 0); ctx.stroke(); ctx.strokeStyle = "#0a0e18"; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(3.5, -3.5); ctx.lineTo(3.5, 3.5); ctx.stroke(); }
 const CAST_SIZE = [60, 66, 58, 60, 68, 58, 60, 62, 54, 66, 54, 58], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
+const FRAME_NAMES = ["run-1", "run-2", "run-3", "run-4", "slash-1", "slash-2", "slash-3", "slash-4", "jump", "fall", "cling", "land", "idle-1", "idle-2", "puzzled", "sit"], frameBox = new Map();
+function frameKey(cast, name) { return "f" + String(cast + 1).padStart(2, "0") + "-" + name; }
+// Every frame of one character shares a canvas; the standing frame gives its ground line and size.
+function castBox(cast) {
+  if (frameBox.has(cast)) return frameBox.get(cast);
+  for (const name of FRAME_NAMES) if (!images[frameKey(cast, name)]) return null;
+  const img = images[frameKey(cast, "idle-1")], g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
+  const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data; let top = g.height, bottom = 0, sum = 0, n = 0;
+  for (let y = 0; y < g.height; y++) for (let x = 0; x < g.width; x++) if (a[(y * g.width + x) * 4 + 3] > 40) { if (y < top) top = y; if (y > bottom) bottom = y; if (y > g.height * .55) { sum += x; n++; } }
+  const box = { top, bottom, cx: n ? sum / n : g.width / 2, size: g.width }; frameBox.set(cast, box); return box;
+}
+function drawFrames(c, ghost) {
+  const box = castBox(c.cast); if (!box) return false;
+  const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
+  const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
+  let name, rot = 0;
+  if (c.slash > 0) { const p = c.slash; name = p < .14 ? "slash-1" : p < .38 ? "slash-2" : p < .78 ? "slash-3" : "slash-4"; rot = c.slashKind === "down" ? .75 : c.slashKind === "up" ? -.7 : 0; }
+  else if (cling) name = "cling";
+  else if (air) name = c.vy < 60 ? "jump" : "fall";
+  else if (c.sit > .5) name = "sit";
+  else if (c.land > 0) name = "land";
+  else if (moving) name = "run-" + (1 + (Math.floor(c.run / (Math.PI / 2)) % 4 + 4) % 4);
+  else if (c.mode === "ponder" && (c.arm > 0 || Math.abs(c.tiltTo) > .1)) name = "puzzled";
+  else name = Math.floor(now * 1.6 + c.x * .013) % 2 ? "idle-2" : "idle-1";
+  const key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], k = CAST_SIZE[c.cast] * 1.3 / (box.bottom - box.top), sq = c.sq * .45;
+  ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
+  ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
+  if (!ghost && state !== "unknown") { const col = EYE[state], s = c.scarf, tail = s[s.length - 1], wx = tail.x - x, wy = tail.y - y - 16 + Math.sin(now * 3 + c.x * .1) * 2.5; ctx.globalCompositeOperation = "lighter"; for (let i = 2; i < s.length; i++) { ctx.globalAlpha = c.alpha * .1 * i; ctx.drawImage(glow(col), s[i].x - x - 5, s[i].y - y - 21, 10, 10); } ctx.globalAlpha = c.alpha; ctx.drawImage(glow(col), wx - 13, wy - 13, 26, 26); ctx.drawImage(glow([255, 255, 255]), wx - 4, wy - 4, 8, 8); ctx.globalCompositeOperation = "source-over"; }
+  ctx.scale(face * (1 - sq * .7), 1 + sq);
+  if (rot) { ctx.translate(0, -30); ctx.rotate(rot); ctx.translate(0, 30); }
+  ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1.5, box.size * k, box.size * k);
+  ctx.restore(); ctx.globalAlpha = 1; return true;
+}
 function drawPuppet(c, ghost) {
+  if (drawFrames(c, ghost)) return true;
   const key = CAST[c.cast], img = images[key]; if (!img) return false;
   const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
   const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
   const breathe = Math.sin(now * 2.1 + c.x * .02) * .014, sy = (1 + c.sq + breathe + (air ? clamp(Math.abs(c.vy) / 5200, 0, .1) : 0)) * (1 - c.sit * .16), sx = 1 - c.sq * .7 - breathe + c.sit * .06;
   const bob = moving ? Math.abs(Math.sin(c.run)) * -3 : 0, waddle = moving ? Math.sin(c.run) * .09 : 0, kS = c.slash > 0 ? 1 - easeOut(clamp(c.slash * 1.7, 0, 1)) : 0;
   const lean = clamp(c.vx * .0011, -.24, .24) * face + (cling ? -.2 : 0) + (air ? clamp(c.vy * .0002, -.12, .12) : 0) + kS * (c.slashKind === "down" ? .5 : c.slashKind === "up" ? -.3 : .28) + c.tilt * .6 + waddle;
-  const ht = CAST_SIZE[c.cast], wd = ht * img.width / img.height, hand = CAST_HAND[c.cast];
+  const ht = CAST_SIZE[c.cast] * 1.22, wd = ht * img.width / img.height, hand = [CAST_HAND[c.cast][0] * 1.22, CAST_HAND[c.cast][1] * 1.22];
   ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
   ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
   if (!ghost && state !== "unknown") { // a small state-coloured wisp trails each wanderer
@@ -588,14 +624,44 @@ function drawChar(c, ghost) {
   ctx.restore(); ctx.globalAlpha = 1;
 }
 function drawQuestion(c) {
-  const x = X(c.x), y = Y(c.y - 66) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
+  const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.3 - 16) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 26 * s, [255, 150, 120], .55); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(now * 1.7 + c.x) * .12); ctx.font = "700 " + 22 * s + "px Georgia,serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3 * s; ctx.strokeStyle = "#1a0b10"; ctx.strokeText("?", 0, 0); ctx.fillStyle = "#ffd9c4"; ctx.fillText("?", 0, 0); ctx.restore();
   // an attention ring on the ground
   const p = (now * .7 + c.x * .01) % 1; ctx.strokeStyle = rgba([255, 160, 130], (1 - p) * .5); ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.ellipse(X(c.x), Y(c.st.y) + 1, (10 + p * 22) * scale, (2 + p * 4) * scale, 0, 0, TAU); ctx.stroke();
 }
-const FOE_SIZE = [30, 36, 34, 40, 30, 56], FOE_FLIP = [1, 1, 1, 1, 1, 1];
+const FOE_SIZE = [40, 46, 44, 48, 40, 70], FOE_FLIP = [1, 1, 1, 1, 1, 1];
+const FOE_FRAMES = ["move-1", "move-2", "windup", "attack", "hurt", "death-1", "death-2", "death-3"], foeBox = new Map();
+function foeKey(skin, name) { return "g" + (skin + 1) + "-" + name; }
+function foeFrameBox(skin) {
+  if (foeBox.has(skin)) return foeBox.get(skin);
+  for (const name of FOE_FRAMES) if (!images[foeKey(skin, name)]) return null;
+  const img = images[foeKey(skin, "move-1")], g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
+  const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data; let top = g.height, bottom = 0, left = g.width, right = 0;
+  for (let y = 0; y < g.height; y++) for (let x = 0; x < g.width; x++) if (a[(y * g.width + x) * 4 + 3] > 40) { if (y < top) top = y; if (y > bottom) bottom = y; if (x < left) left = x; if (x > right) right = x; }
+  const box = { top, bottom, cx: (left + right) / 2, size: g.width }; foeBox.set(skin, box); return box;
+}
+function drawFoeFrames(e) {
+  const box = foeFrameBox(e.skin); if (!box) return false;
+  const grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : e.hurt > .12 ? Math.sin(now * 90) * 2 : 0;
+  let name, hop = 0;
+  if (e.state === "dying") name = e.t < .13 ? "death-1" : e.t < .3 ? "death-2" : "death-3";
+  else if (e.hurt > 0) name = "hurt";
+  else if (e.state === "tele") name = "windup";
+  else if (e.state === "lunge") name = "attack";
+  else name = Math.floor(now * (e.skin === 1 ? 11 : e.skin === 3 ? 2.5 : 5) + e.phase) % 2 ? "move-2" : "move-1";
+  if (e.skin === 2 && e.state === "roam" && e.hurt <= 0) hop = -Math.abs(Math.sin(now * 5 + e.phase)) * 10; else if (e.skin === 2 && e.state === "lunge") hop = -Math.sin(clamp(e.t / .42, 0, 1) * Math.PI) * 30;
+  const img = images[foeKey(e.skin, name)], k = FOE_SIZE[e.skin] / (box.bottom - box.top), x = X(e.x) + shake * scale, y = Y(e.y + hop), fade = e.state === "dying" ? clamp(1.6 - e.t * 3, 0, 1) : 1;
+  if (e.skin === 3 && e.state !== "dying") { ctx.strokeStyle = "rgba(200,210,220,.4)"; ctx.lineWidth = scale; ctx.beginPath(); ctx.moveTo(x, y - FOE_SIZE[3] * scale * .9); ctx.lineTo(x + Math.sin(now * 1.8 + e.phase) * 6 * scale, y - 260 * scale); ctx.stroke(); }
+  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - FOE_SIZE[e.skin] * .5 * scale, FOE_SIZE[e.skin] * (e.state === "dying" ? 1.5 + e.t * 2 : 1.1) * scale * grow, [255, 110, 40], (.26 + .08 * Math.sin(now * 5 + e.phase) + (e.state === "tele" ? .2 : 0)) * fade); ctx.globalCompositeOperation = "source-over";
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale * e.face * grow, scale * grow); if (e.hurt > 0 && e.state !== "dying") ctx.rotate(-.18 * clamp(e.hurt / .24, 0, 1)); ctx.globalAlpha = fade;
+  ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1, box.size * k, box.size * k);
+  if (e.flash > 0) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .85; ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1, box.size * k, box.size * k); ctx.globalCompositeOperation = "source-over"; }
+  ctx.restore(); ctx.globalAlpha = 1; return true;
+}
 function drawFoe(e) {
+  if (drawFoeFrames(e)) return true;
+  if (e.state === "dying") return true;
   const img = images[FOES[e.skin]]; if (!img) return false;
   const grow = e.state === "emerge" ? easeOut(clamp(e.t / .55, 0, 1)) : 1, shake = e.state === "tele" ? Math.sin(now * 70) * 1.5 : 0, ht = FOE_SIZE[e.skin], wd = ht * img.width / img.height;
   let hop = 0, rot = 0, sqx = 1, sqy = 1;
@@ -638,6 +704,7 @@ function drawFx() {
     const k = clamp(f.age / f.life, 0, 1);
     if (f.kind === "dust") { ctx.fillStyle = rgba(f.color, (1 - k) * .28); ctx.beginPath(); ctx.arc(X(f.x), Y(f.y), f.r * (1 + k * 1.6) * scale, 0, TAU); ctx.fill(); }
     else if (f.kind === "spark") { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), f.r * (1 - k * .6) * scale, f.color, 1 - k); ctx.globalCompositeOperation = "source-over"; }
+    else if (f.kind === "ring") { const r = (8 + easeOut(k) * 30) * scale, px = X(f.x), py = Y(f.y); ctx.strokeStyle = "rgba(255,240,215," + (1 - k) + ")"; ctx.lineWidth = (3.2 * (1 - k) + .4) * scale; ctx.lineCap = "round"; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = f.a + i * TAU / 6; ctx.moveTo(px + Math.cos(a) * r * .55, py + Math.sin(a) * r * .55); ctx.lineTo(px + Math.cos(a) * r, py + Math.sin(a) * r); } ctx.stroke(); }
     else if (f.kind === "flash") { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), f.r * (1 + k) * scale, [255, 245, 225], (1 - k) * .9); ctx.globalCompositeOperation = "source-over"; }
     else if (f.kind === "wisp" && f.age > 0) { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), 12 * scale, [255, 200, 140], 1 - k * .6); drawGlow(X(f.x), Y(f.y), 4 * scale, [255, 255, 255], 1); ctx.globalCompositeOperation = "source-over"; }
     else if (f.kind === "arc") {
@@ -674,7 +741,7 @@ function drawTags(list) {
     const state = live(c.row) ? status(c.row) : "unknown", need = state === "waiting_you", sel = selected === c.ref;
     if (crowded && !need && !sel) continue;
     const text = clip(c.row.title, sel ? 30 : 16), size = sel ? 12.5 : 11; ctx.font = (sel || need ? "600 " : "500 ") + size + "px ui-sans-serif,system-ui,-apple-system,'PingFang TC',sans-serif";
-    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (need ? 92 : 64) * scale - (sel ? 4 : 0), h = size + 9;
+    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (CAST_SIZE[c.cast] * 1.3 + (need ? 36 : 12)) * scale - (sel ? 4 : 0), h = size + 9;
     ctx.fillStyle = sel ? "rgba(236,244,250,.94)" : "rgba(5,8,14,.62)"; ctx.strokeStyle = need ? "rgba(255,160,130,.8)" : sel ? "rgba(255,255,255,.9)" : "rgba(170,200,220,.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(x - tw / 2, y - h / 2, tw, h, h / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = sel ? "#0a0f18" : need ? "#ffe2d6" : "rgba(226,236,244,.9)"; ctx.fillText(text, x, y + .5);

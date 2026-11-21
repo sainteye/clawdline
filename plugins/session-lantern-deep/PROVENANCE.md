@@ -2,10 +2,20 @@
 
 Lantern Deep is original to this repository. It ports no upstream project.
 
-- **Characters, enemies, props, effects and motion** are drawn procedurally on a
-  canvas by `scene.js`, written for this view. The hooded wanderer, the crawler and
-  the drifter are original designs; no sprite, frame or character from any existing
-  game is included or traced.
+- **Characters and enemies** are generated artwork. Twelve wanderer designs came from
+  concept sheets generated on 2026-11-21 (eight with the Codex CLI's image generation,
+  four with the Grok CLI) from prompts asking for original designs with no named
+  reference. Six enemy designs came from a Codex concept sheet. Each design was then
+  redrawn by Codex, with the concept as reference, into a sprite sheet on a flat key
+  colour (16 frames per wanderer, 8 per enemy), keyed to transparency, cut into equal
+  cells and encoded with libwebp at 200 x 200. They are not hand-drawn and were not
+  retouched; each sheet was reviewed for consistent design before import.
+- **Scenery sprites** (three slabs, a pillar, a training dummy, an archway, a fossil
+  shell, mushrooms) were generated and keyed the same way.
+- **Effects and motion** (physics, strike arcs, sparks, glows, fog, lamps, ground,
+  dividing rock) are drawn procedurally by `scene.js`, written for this view. A
+  procedural hooded wanderer remains as the fallback when frames are absent.
+- No sprite, frame or character from any existing game is included or traced.
 - **Backdrops** (`art/bg-ruins.webp`, `art/bg-grotto.webp`, `art/bg-crystal.webp`)
   were generated on 2026-11-21 with the Codex CLI's built-in image generation from
   prompts describing original scenes (ruined arches with fossil shells, an overgrown
