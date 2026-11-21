@@ -5,7 +5,7 @@ import { useLocalPluginSource } from "./view-plugins/local.js"
 import type { ViewSource } from "./view-plugins/bridge.js"
 import { supportWord } from "./support/words.js"
 import { useProjectAssistantsHost } from "./pages/project-assistants.js"
-import type { ProjectAssistantRegistry, AssistantWorkIntent } from "./cloud/project-assistants.js"
+import { PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL, type ProjectAssistantRegistry, type AssistantWorkIntent } from "./cloud/project-assistants.js"
 import type { ProjectAssistantWorkLink } from "@clawdline/contract"
 import { macKeyboard, matchShortcut, shortcutAria, shortcutLabel } from "./shortcuts.js"
 import { openNewWorkItem, openWorkItem } from "./pages/work/new-item.js"
@@ -1236,7 +1236,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
         {typeof aside === "function" ? aside(light) : (
           <>
             {aside}
-            <SetupGuide />
+            <SetupGuide autoOpen={machineVersion.apiLevel === undefined ? undefined : machineVersion.apiLevel < PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL} />
             <Conn light={light} />
           </>
         )}

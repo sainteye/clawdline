@@ -766,6 +766,7 @@ func (s *Server) routeTable() []route {
 		{Route{"POST", "/hooks/routines/"}, s.routineHooksRoute},
 		{Route{"*", "/v1/project-assistants/status"}, s.projectAssistantsRoute},
 		{Route{"GET", "/v1/project-assistants/roster-events"}, s.projectAssistantsRoute},
+		{Route{"GET", "/v1/project-assistants/first-run"}, s.projectAssistantFirstRun},
 		{Route{"*", "/v1/project-assistant-targets"}, s.projectAssistantTargetsRoute},
 		{Route{"*", "/v1/project-assistant-floors"}, s.projectAssistantFloorsRoute},
 		{Route{"*", "/v1/settings/dispatch-policy"}, s.dispatchPolicySettings},

@@ -56,8 +56,6 @@ import { askShell } from "../shell.js"
 import { RemotePairingBlock } from "../RemotePairingBlock.js"
 import { WorkflowSettingsBlock } from "../WorkflowSettingsBlock.js"
 import { DispatchPolicyPane } from "./DispatchPolicyPane.js"
-import { botsSwitchShown } from "../../../project-assistants/visibility.js"
-import { settingsMacVersion } from "../../../legacy/settings-bridge.js"
 
 /**
  * Retained machine panes for the local browser console. The standalone macOS
@@ -1175,9 +1173,9 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
               onChange={flip("orchestrator_enabled")}
             />
           </Row>
-          {botsSwitchShown(settingsMacVersion(), !!now("project_assistants_enabled")) && <Row label={W.settingsBots} hint={W.settingsBotsHint}>
+          <Row label={W.settingsBots} hint={W.settingsBotsHint}>
             <Switch label={W.settingsBots} on={!!now("project_assistants_enabled")} onChange={flip("project_assistants_enabled")} />
-          </Row>}
+          </Row>
           {!embedded && <><Row label={catalogWord("literal", "bc9e50e8ee8c")} hint={catalogWord("literal", "7daab4ee36ab")}>
             <Switch label={catalogWord("literal", "bc9e50e8ee8c")} on={planning} onChange={flip("planning_gate")} />
           </Row>

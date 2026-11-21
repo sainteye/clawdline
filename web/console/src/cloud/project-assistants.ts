@@ -68,6 +68,7 @@ export const PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL = 96
 export const PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL = 97
 export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
 const base = "/v1/project-assistants"
+export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
@@ -247,6 +248,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
   private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown, plainSend = false) {
     try { this.check(signal,write,content,minimum,plainSend) }
     catch (error) { if (!write) throw error; throw new AssistantTransportFailure("pa_outcome_unknown",{evidence,authority:error}) }
+  }
+  canFirstRun() {
+    return this.grant.accountKey === "local" && (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL
+  }
+  firstRun(signal: AbortSignal) {
+    if (!this.canFirstRun()) throw failure("pa_unsupported")
+    return this.request<W.ProjectAssistantFirstRun>(base + "/first-run", signal, undefined, "GET", true, PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL)
   }
   async status(s: AbortSignal): Promise<W.ProjectAssistantSourcesResponse> {
     // An unavailable source is a typed status, never an authoritative empty roster.

@@ -23,6 +23,9 @@ import (
 
 func TestReadOnlyMaintenanceHistoryIsComposedByServer(t *testing.T) {
 	f := newPAServerFixture(t, true)
+	if _, err := f.s.settingsFile().Set(map[string]any{"project_assistants_enabled": false}); err != nil {
+		t.Fatal(err)
+	}
 	marker := filepath.Join(f.s.cfg.Dir, "project-assistant-native-maintenance.initialized")
 	if err := f.s.StartProjectAssistants(context.Background()); err != nil {
 		t.Fatal(err)

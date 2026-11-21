@@ -5,6 +5,26 @@
   "description": "Version 1 additive contract. No router or server is installed by this schema. All timestamps are RFC3339 UTC strings. Arrays are always arrays, never null.",
   "$comment": "Source machine authority and feature opt-in are mandatory.",
   "$defs": {
+    "ProjectAssistantFirstRunState": {
+      "type": "string",
+      "enum": ["ready", "needs_agent", "needs_node", "needs_sign_in", "unsupported", "unknown"]
+    },
+    "ProjectAssistantFirstRunAgent": {
+      "type": "object",
+      "required": ["agent", "state"],
+      "properties": {
+        "agent": { "$ref": "#/$defs/ProjectAssistantAgent" },
+        "state": { "$ref": "#/$defs/ProjectAssistantFirstRunState" }
+      }
+    },
+    "ProjectAssistantFirstRun": {
+      "description": "Local-owner readiness for the lead Bot's default provider accounts, without starting a model turn.",
+      "type": "object",
+      "required": ["agents"],
+      "properties": {
+        "agents": { "type": "array", "items": { "$ref": "#/$defs/ProjectAssistantFirstRunAgent" } }
+      }
+    },
     "ProjectAssistantRosterRequest": {
       "description": "Local-only authorized machine roster SSE at GET /v1/project-assistants/roster-events, API 70. Cursor or Last-Event-ID resumes an applied frame; project_id optionally limits the Project. Cloud subscription and console consumption are pending.",
       "type": "object",

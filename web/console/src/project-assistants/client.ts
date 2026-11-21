@@ -15,6 +15,8 @@ export type ProjectMemoryPage={page:number;page_size:number}
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  canFirstRun?(): boolean
+  firstRun?(signal: AbortSignal): Promise<W.ProjectAssistantFirstRun>
  canReactions?():boolean
  react?(request:W.ProjectAssistantReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
  /** The machine's Bots tower floor placements (API 97). */

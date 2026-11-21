@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13902,
-  "riskKeys": 5926,
-  "nonRiskCount": 7976,
+  "englishContentKeys": 13914,
+  "riskKeys": 5930,
+  "nonRiskCount": 7984,
   "groups": [
     {
       "name": "acp / other",
@@ -6172,7 +6172,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 529,
+      "count": 536,
       "sources": [
         null
       ],
@@ -6354,7 +6354,14 @@
         "projectAssistants.interactive",
         "projectAssistants.jump",
         "projectAssistants.landed",
+        "projectAssistants.leadCheckAgain",
+        "projectAssistants.leadChecking",
+        "projectAssistants.leadInstallAgent",
+        "projectAssistants.leadInstallNode",
+        "projectAssistants.leadSetupTitle",
         "projectAssistants.leadStarterMessage",
+        "projectAssistants.leadUnsupported",
+        "projectAssistants.leadUseAgent",
         "projectAssistants.library",
         "projectAssistants.libraryCancel",
         "projectAssistants.libraryPicture",
@@ -7351,7 +7358,7 @@
     },
     {
       "name": "settings / other",
-      "count": 150,
+      "count": 151,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -7381,6 +7388,7 @@
         "settings.settingsBar",
         "settings.settingsBlur",
         "settings.settingsBots",
+        "settings.settingsBotsHint",
         "settings.settingsClaudeDefaultModel",
         "settings.settingsCloudflareRetiredDone",
         "settings.settingsCodexAutoName",

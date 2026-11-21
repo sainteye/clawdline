@@ -5976,6 +5976,29 @@ export interface ProjectAssistantFence {
   project: ProjectAssistantProjectScope
 }
 
+/**
+ * Local-owner readiness for the lead Bot's default provider accounts, without
+ * starting a model turn.
+ */
+export interface ProjectAssistantFirstRun {
+  agents: ProjectAssistantFirstRunAgent[]
+}
+
+export interface ProjectAssistantFirstRunAgent {
+  agent: ProjectAssistantAgent
+  state: ProjectAssistantFirstRunState
+}
+
+export type ProjectAssistantFirstRunState =
+    "ready"
+  | "needs_agent"
+  | "needs_node"
+  | "needs_sign_in"
+  | "unsupported"
+  | "unknown"
+
+export const ProjectAssistantFirstRunStateValues: readonly ProjectAssistantFirstRunState[] = ["ready", "needs_agent", "needs_node", "needs_sign_in", "unsupported", "unknown"] as const
+
 export interface ProjectAssistantForgetRequest {
   command: ProjectAssistantCommand
   expected_revision: number
@@ -7481,7 +7504,7 @@ export interface ProjectAssistantSendRequest {
 
 /**
  * GET/POST /v1/settings/project-assistants. The response reports actual admitted
- * Host state; POST accepts exactly one local-owner boolean opt-in.
+ * Host state; POST accepts exactly one local-owner boolean preference.
  */
 export interface ProjectAssistantSettings {
   enabled: boolean
@@ -11147,8 +11170,8 @@ export interface SettingsRequest {
   product_language: string | null
 
   /**
-   * Explicit local-owner opt-in coordinated with Bot enable and durable disable.
-   * Null is refused.
+   * Local-owner preference coordinated with Bot enable and durable disable. Null is
+   * refused.
    */
   project_assistants_enabled?: boolean
 
@@ -11579,7 +11602,7 @@ export interface SettingsSnapshot {
   product_language: string | null
 
   /**
-   * Explicit local-owner Bot opt-in; absent or malformed means false. Actual
+   * Local-owner Bots preference; absent means on and malformed means off. Actual
    * runtime state and retained history are reported by Bot status.
    */
   project_assistants_enabled: boolean | null

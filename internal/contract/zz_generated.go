@@ -5154,6 +5154,31 @@ type ProjectAssistantFence struct {
 	Project        ProjectAssistantProjectScope `json:"project"`
 }
 
+// Local-owner readiness for the lead Bot's default provider accounts, without
+// starting a model turn.
+type ProjectAssistantFirstRun struct {
+	Agents []ProjectAssistantFirstRunAgent `json:"agents"`
+}
+
+type ProjectAssistantFirstRunAgent struct {
+	Agent ProjectAssistantAgent         `json:"agent"`
+	State ProjectAssistantFirstRunState `json:"state"`
+}
+
+type ProjectAssistantFirstRunState string
+
+const (
+	ProjectAssistantFirstRunStateReady       ProjectAssistantFirstRunState = "ready"
+	ProjectAssistantFirstRunStateNeedsAgent  ProjectAssistantFirstRunState = "needs_agent"
+	ProjectAssistantFirstRunStateNeedsNode   ProjectAssistantFirstRunState = "needs_node"
+	ProjectAssistantFirstRunStateNeedsSignIn ProjectAssistantFirstRunState = "needs_sign_in"
+	ProjectAssistantFirstRunStateUnsupported ProjectAssistantFirstRunState = "unsupported"
+	ProjectAssistantFirstRunStateUnknown     ProjectAssistantFirstRunState = "unknown"
+)
+
+// ProjectAssistantFirstRunStateValues is every value the contract allows, in contract order.
+var ProjectAssistantFirstRunStateValues = []ProjectAssistantFirstRunState{ProjectAssistantFirstRunStateReady, ProjectAssistantFirstRunStateNeedsAgent, ProjectAssistantFirstRunStateNeedsNode, ProjectAssistantFirstRunStateNeedsSignIn, ProjectAssistantFirstRunStateUnsupported, ProjectAssistantFirstRunStateUnknown}
+
 type ProjectAssistantForgetRequest struct {
 	Command          ProjectAssistantCommand      `json:"command"`
 	ExpectedRevision int64                        `json:"expected_revision"`
@@ -6519,7 +6544,7 @@ type ProjectAssistantSendRequest struct {
 }
 
 // GET/POST /v1/settings/project-assistants. The response reports actual
-// admitted Host state; POST accepts exactly one local-owner boolean opt-in.
+// admitted Host state; POST accepts exactly one local-owner boolean preference.
 type ProjectAssistantSettings struct {
 	Enabled bool `json:"enabled"`
 }
@@ -9491,8 +9516,8 @@ type SettingsRequest struct {
 	// human-readable CLI copy only.
 	ProductLanguage *string `json:"product_language"`
 
-	// Explicit local-owner opt-in coordinated with Bot enable and durable disable.
-	// Null is refused.
+	// Local-owner preference coordinated with Bot enable and durable disable. Null is
+	// refused.
 	ProjectAssistantsEnabled bool `json:"project_assistants_enabled,omitempty"`
 
 	// Notify after the app release is verified.
@@ -9772,8 +9797,8 @@ type SettingsSnapshot struct {
 	// unsupported saved values render as English.
 	ProductLanguage *string `json:"product_language"`
 
-	// Explicit local-owner Bot opt-in; absent or malformed means false. Actual runtime
-	// state and retained history are reported by Bot status.
+	// Local-owner Bots preference; absent means on and malformed means off. Actual
+	// runtime state and retained history are reported by Bot status.
 	ProjectAssistantsEnabled *bool `json:"project_assistants_enabled"`
 
 	// Notify after the app release is verified.

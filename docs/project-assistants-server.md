@@ -6,19 +6,21 @@ product, native-provider, MCP, Cloud deployment, create-form or mobile acceptanc
 The [Host module](project-assistants-runtime-host.md) retains runtime ownership;
 the [contract](project-assistants.md) defines Bot operations and wire values.
 
-## One owner and an explicit opt-in
+## One owner and a default-on setting
 
-`Server.StartProjectAssistants(ctx)` reads `project_assistants_enabled` (a real
-boolean, default false) and the existing Cloud IdentityStore under this Server's
-state directory. It never enrolls a machine or uses an active Cloud connection,
-hostname or client path as machine identity. No verified stored identity means
-typed `pa_unpaired` and no Host. The existing private execution-machine seam is
-available only to isolated fixtures and supplies no account-owner identity.
+`Server.StartProjectAssistants(ctx)` reads the machine's Bots preference.
+An absent setting enables Bots and an explicit off setting is preserved.
+A source already registered with Cloud keeps its existing identity. A
+first-run source without Cloud keeps a durable local ID for its Bot store and
+workspaces. Registering later with Cloud leaves that ID and history in place.
+The Cloud line requires a verified Cloud Bot source identity and cannot
+read or write the local-first source. The execution-machine seam is for
+isolated fixtures.
 
 The Server retains one `projectassistanthost.Host` over
 `store.ProjectAssistantDatabase()` and the existing Broker. New, hidden-feature
 status, settings, creation and history construct no Engine or provider. A fresh
-default-off database receives no feature tables. Startup calls durable Disable
+explicitly disabled database receives no feature tables. Startup calls durable Disable
 before a later Enable, including for saved queues without any live actor.
 Cleanup failures retain the original Host and its unknown/pending owners.
 
@@ -31,8 +33,8 @@ the same owner; a timeout never proves a native process disappeared.
 ## Settings and observable state
 
 - Full GET/POST `/v1/settings` carries `project_assistants_enabled` alongside the
-  existing settings. Its response reflects the persisted preference; absent or
-  malformed stored values are false.
+  existing settings. Its response reflects the effective preference; absent
+  values mean on and malformed values mean off.
 - Narrow GET/POST `/v1/settings/project-assistants` carries exactly
   `{ "enabled": boolean }`. GET reports actual admitted Host Enabled, rather
   than equating a saved true with successful runtime startup.
@@ -48,7 +50,7 @@ the same owner; a timeout never proves a native process disappeared.
   Save failure disables the Host and attempts a durable false compensation;
   ambiguous persistence returns `pa_outcome_unknown`, never a success receipt.
 
-Bot `/status` distinguishes hidden default-off sources from history-only retained
+Bot `/status` distinguishes hidden disabled sources from history-only retained
 data, and never invents native capabilities. Host Usage and the capacity endpoint
 report unknown cleanup as `Known=false`; zero live actors alone is insufficient
 evidence of durable cleanup. The narrow settings response intentionally contains
@@ -130,7 +132,7 @@ constants, with no additional operational bound or timer loop.
 
 Isolated tests start real Server.New/Handler instances with temporary state,
 real SQLite, gate device files, synthetic Cloud identity/pins and no production
-port. They verify default-off table absence, full/narrow settings, local-owner
+port. They verify disabled table absence, full/narrow settings, local-owner
 restrictions, metadata and history-only reads/export, durable opt-out without an
 Engine, cleanup failure/retry, provider absence/laziness, source identity changes,
 fresh grants and registered Project scope. Task artifacts retain actual command

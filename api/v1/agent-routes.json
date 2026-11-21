@@ -38,6 +38,11 @@
     },
     {
       "method": "GET",
+      "pattern": "/v1/project-assistants/first-run",
+      "guide": "project"
+    },
+    {
+      "method": "GET",
       "pattern": "/v1/project-assistants/roster-events",
       "guide": "project"
     },

@@ -153,8 +153,11 @@ func (f *paServerFixture) get(t *testing.T, token string) contract.ProjectAssist
 	return got
 }
 
-func TestProjectAssistantServerDefaultOffAndTrueGateLifecycle(t *testing.T) {
+func TestProjectAssistantServerExplicitOffAndTrueGateLifecycle(t *testing.T) {
 	f := newPAServerFixture(t, true)
+	if _, err := f.s.settingsFile().Set(map[string]any{"project_assistants_enabled": false}); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.s.StartProjectAssistants(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +166,7 @@ func TestProjectAssistantServerDefaultOffAndTrueGateLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tables != 0 || f.s.broker.AssistantAuthority != nil || f.providerCalls.Load() != 0 {
-		t.Fatal("default off installed runtime")
+		t.Fatal("explicit off installed runtime")
 	}
 	status := f.request(t, "GET", "/v1/project-assistants/status", f.local, nil)
 	paServerOK(t, status)
@@ -271,18 +274,72 @@ func TestProjectAssistantServerSettingsRejectBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestProjectAssistantServerUnpairedAndIdentityReplacement(t *testing.T) {
+func TestProjectAssistantServerFreshLocalLeadSurvivesCloudSignInAndRestart(t *testing.T) {
 	f := newPAServerFixture(t, false)
-	if err := f.s.StartProjectAssistants(context.Background()); err != nil {
+	// A selected provider does not have to be installed or started at setup.
+	f.s.projectAssistants.defaultLeadAgent = func(time.Time) pa.Agent { return pa.Codex }
+	if err := f.s.StartProjectAssistants(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	paAssertHTTPFailure(t, f.request(t, "POST", "/v1/settings/project-assistants", f.local, `{"enabled":true}`), 403, pa.Unpaired)
-	if f.s.projectAssistants.host != nil {
-		t.Fatal("unpaired source allocated host")
+	status := f.request(t, "GET", "/v1/project-assistants/status", f.local, nil)
+	paServerOK(t, status)
+	var sources contract.ProjectAssistantSourcesResponse
+	if err := json.Unmarshal(status.Body.Bytes(), &sources); err != nil || len(sources.Sources) != 1 || !sources.Sources[0].Writable {
+		t.Fatalf("fresh local status: %s", status.Body)
 	}
+	machine := sources.Sources[0].MachineID
+	if machine == "" || machine == f.identity.MachineID {
+		t.Fatalf("invalid local source identity: %q", machine)
+	}
+	path := "/v1/project-assistants/default-lead?machine_id=" + machine
+	readLead := func(h http.Handler) contract.ProjectAssistantGetResponse {
+		t.Helper()
+		req := httptest.NewRequest("GET", path, nil)
+		req.Host = "127.0.0.1"
+		req.Header.Set("Authorization", "Bearer "+f.local)
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, req)
+		paServerOK(t, response)
+		var lead contract.ProjectAssistantGetResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &lead); err != nil || !lead.Bot.Lead || lead.Bot.ConversationID == "" {
+			t.Fatalf("fresh lead: %s", response.Body)
+		}
+		return lead
+	}
+	before := readLead(f.h)
 	if err := adaptercloud.NewIdentityStore(filepath.Join(f.s.cfg.Dir, cloudkeys.DirName)).Save(f.identity); err != nil {
 		t.Fatal(err)
 	}
+	if after := readLead(f.h); before.Bot.Key != after.Bot.Key || before.Bot.ConversationID != after.Bot.ConversationID {
+		t.Fatalf("Cloud sign-in replaced the local lead: %+v", after.Bot)
+	}
+	f.pin(t, "cloud-owner", adaptercloud.ScopeOperate, false)
+	if answer := f.cloud(t, "cloud-owner", "GET", "/v1/project-assistants/status", nil); answer.Status != http.StatusForbidden {
+		t.Fatalf("Cloud can see local-first Bots: %d %s", answer.Status, answer.Body)
+	}
+	if f.providerCalls.Load() != 0 {
+		t.Fatal("first launch called a provider")
+	}
+	if err := f.s.StopProjectAssistants(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(f.s.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = restarted.StopProjectAssistants(context.Background()); _ = restarted.store.Close() })
+	restarted.projectAssistants.defaultLeadAgent = func(time.Time) pa.Agent { return pa.ClaudeCode }
+	restarted.projectAssistants.provider = f.s.projectAssistants.provider
+	if err := restarted.StartProjectAssistants(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if after := readLead(restarted.Handler()); before.Bot.Key != after.Bot.Key || before.Bot.ConversationID != after.Bot.ConversationID || before.Bot.Agent != after.Bot.Agent {
+		t.Fatalf("restart replaced the local lead: %+v", after.Bot)
+	}
+}
+
+func TestProjectAssistantServerFencesCloudIdentityReplacement(t *testing.T) {
+	f := newPAServerFixture(t, true)
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
 	old := f.s.projectAssistants.host

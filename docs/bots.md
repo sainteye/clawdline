@@ -5,7 +5,11 @@ it in the console; it remembers what you tell it, works in the Project with
 its agent’s own tools, and can hand larger changes to an isolated worker
 through Clawdline's Broker. The worker's result comes back to the same chat.
 
-Bots are off by default.
+Bots are on by default. Open **Bots** in the Session list and choose the
+starred lead assistant. The local lead and its personal workspace are created
+without a Cloud account or a model request. The first chat checks the default
+Claude Code and Codex accounts on this computer and shows the installation or
+sign-in step beside the composer. Drafts stay in the conversation.
 
 ## What you need
 
@@ -26,17 +30,13 @@ message, Clawdline installs the ACP adapter it supplies
 against a fixed digest. This takes a few seconds, and later messages reuse
 it.
 
-## Turn Bots on
+## Change the Bots setting
 
-In the Clawdline app on this machine, open **Settings** and turn on
-**Persistent Bots** (on the tab with the dispatch settings). The Bots
-shortcut in the bottom status bar becomes available. A paired browser or
-phone can read the setting but cannot change it, like this machine's other
-settings.
-
-Bots is not in public releases yet: the switch is shown only on a dev build
-(`v<x.y.z>-dev.<commit>`), or where Bots is already on so it can be turned
-off. The terminal command below still works on any build.
+**Settings** → **Persistent Bots** controls Bots on this computer. A saved
+off setting stays off after an update. Local-first Bots keep their source
+identity and history when the computer later registers with Cloud. Cloud
+viewers cannot access those local-first Bots yet. Machines with an existing
+Cloud identity keep their current Bot source and pairing rules.
 
 From a terminal, the same switch is:
 
