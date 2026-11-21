@@ -37,11 +37,14 @@ if(new URL(location.href).searchParams.get("journal")==="broken") {
 createRoot(document.getElementById("app")).render(<main className="project-assistants" style={{height:"100vh"}}><Chat summary={summary} source={source} current={()=>[source]} accountKey={grant.accountKey} readerID={grant.readerID} view={view} w={language==="en"?en:zhHant} language={language} onBack={()=>{}} onBotChanged={()=>{}}/></main>);
 `,resolveDir:consoleRoot,loader:"tsx"},bundle:true,write:false,outfile:"routine.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents])),requests=[]
-let lostSave=false,pageLoads=0
+let lostSave=false,pageLoads=0,holdEnable=0,enableArrived=0
 const server=createServer(async(req,res)=>{
   try {
     if(req.url.startsWith("/v1/")) {
       const chunks=[];for await(const chunk of req)chunks.push(chunk)
+      // A deterministic slow toggle: the commit itself is held, so a person
+      // can try to open the editor while the owned enable is still pending.
+      if(req.method==="POST"&&req.url.endsWith("/enabled")){enableArrived++;if(holdEnable){const ms=holdEnable;holdEnable=0;await new Promise(r=>setTimeout(r,ms))}}
       const headers={Authorization:`Bearer ${token}`};for(const k of ["content-type","idempotency-key"])if(req.headers[k])headers[k]=req.headers[k]
       const answer=await fetch(upstream+req.url,{method:req.method,headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})})
       const body=Buffer.from(await answer.arrayBuffer());requests.push({method:req.method,path:req.url,status:answer.status,...(chunks.length?{body:JSON.parse(Buffer.concat(chunks))}:{})})
@@ -64,7 +67,7 @@ const origin=`http://127.0.0.1:${server.address().port}`,operations=[]
 const chromePath=process.env.CHROME??"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 await access(chromePath,constants.X_OK)
 const profile=await mkdtemp(path.join(process.env.BOTS_WORK??os.tmpdir(),"routine-profile-"))
-const chrome=spawn(chromePath,["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","--disable-extensions","--disable-sync","about:blank"],{stdio:["ignore","ignore","pipe"]})
+const chrome=spawn(chromePath,["--headless=new","--remote-debugging-port=0","--user-data-dir="+profile,"--no-first-run","--use-mock-keychain","--no-default-browser-check","--disable-features=OmniboxEverywhere","--disable-extensions","--disable-sync","about:blank"],{stdio:["ignore","ignore","pipe"]})
 const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup timeout: "+output)),20000);chrome.on("error",reject);chrome.stderr.on("data",chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
 const ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
 let serial=0;const pending=new Map(),loadWaiters=[]
@@ -147,15 +150,26 @@ try {
     await browser("scroll","down")
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-result.jpg`))
     await browser("key","Escape")
-    await browser("click",`${copy.routineEnabled}: ${edited}`);await waitText(w.paused);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-paused.jpg`));const toggles=requests.filter(r=>r.path.endsWith("/enabled")).length;await browser("click",`${copy.routineEnabled}: ${edited}`)
-    // Opening the editor while the re-enable is still in flight leaves the
-    // editor on the previous revision; Delete then sends a stale
-    // expected_revision (409 pa_stale_version). Recorded as a product finding;
-    // this CRUD path waits for the toggle's answer like a deliberate person.
-    for(let i=0;i<40&&requests.filter(r=>r.path.endsWith("/enabled")).length===toggles;i++)await pause(50)
-    await pause(300)
-    await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions)
+    await browser("click",`${copy.routineEnabled}: ${edited}`);await waitText(w.paused);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-paused.jpg`));const toggles=requests.filter(r=>r.path.endsWith("/enabled")).length
+    // The re-enable's commit is held for 1.5 s. The person clicks the row as
+    // soon as the toggle has been sent: the editor must not open on the
+    // revision that the pending enable is about to replace.
+    const arrived=enableArrived;holdEnable=1500
+    await browser("click",`${copy.routineEnabled}: ${edited}`)
+    for(let i=0;i<40&&enableArrived===arrived;i++)await pause(25)
+    assert.equal(enableArrived,arrived+1,"Re-enable reached the fixture")
+    await browser("screenshot","--out",path.join(artifacts,`${language}-routine-enable-pending.jpg`))
+    const clickedAt=Date.now(),row=await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions)
+    const answeredBeforeEditor=requests.filter(r=>r.path.endsWith("/enabled")).length===toggles+1
+    operations.push({op:"edit-during-pending-enable",waited_ms:Date.now()-clickedAt,row,answeredBeforeEditor})
+    // A second, stale client still loses compare-and-swap against the newer revision.
+    const latest=[...requests].reverse().find(r=>r.path.endsWith("/enabled")&&r.body),staleKey=crypto.randomUUID()
+    const stale={...latest.body,command:{...latest.body.command,idempotency_key:staleKey},enabled:false}
+    const foreign=await fetch(upstream+latest.path,{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json","Idempotency-Key":staleKey},body:JSON.stringify(stale)})
+    const refusal=await foreign.text();operations.push({op:"stale-second-client",status:foreign.status,expected_revision:stale.expected_revision,refusal})
+    assert.equal(foreign.status,409,"Stale second client must be refused: "+refusal);assert.match(refusal,/pa_stale_version/)
     await browser("click",w.remove);await waitText(w.confirm);await browser("click",w.confirm);await waitText(w.empty)
+    assert.ok(answeredBeforeEditor,"Editor opened only after the owned enable answered")
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-deleted-history.jpg`))
     await browser("close");tab=undefined
   }
