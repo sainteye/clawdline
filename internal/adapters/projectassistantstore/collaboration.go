@@ -462,7 +462,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 		}
 		x.Delivery = "dropped"
 		var reply *pa.Turn
-		if e == nil && (x.Outcome == pa.ExchangeCompleted || x.Outcome == pa.ExchangeFailed) {
+		if e == nil && repliesToSource(x.Outcome) {
 			x.Delivery = "queued"
 			x.ReplyTurnID = x.ID + "-reply-turn"
 			if collaborationQueueFull(b) {
@@ -637,7 +637,7 @@ func (s *Store) PromoteExchangeReply(ctx context.Context, key pa.BotKey, at time
 	if err = json.Unmarshal(raw, &x); err != nil {
 		return false, err
 	}
-	if x.Source.Key != key || x.Source.ConversationID != a.Conversation.ID || x.Project != a.Bot.Project || (x.Outcome != pa.ExchangeCompleted && x.Outcome != pa.ExchangeFailed) || x.ReplyTurnID == "" {
+	if x.Source.Key != key || x.Source.ConversationID != a.Conversation.ID || x.Project != a.Bot.Project || !repliesToSource(x.Outcome) || x.ReplyTurnID == "" {
 		return false, failure(pa.ScopeDenied, "reply_promotion")
 	}
 	prior := x.Revision
@@ -714,4 +714,18 @@ func (s *Store) DropExchangeReplies(ctx context.Context, key pa.BotKey, at time.
 		return nil
 	}
 	return s.commitRoster(ctx, tx, key.MachineID)
+}
+
+// repliesToSource reports whether a finished request comes back to the
+// requesting Bot as a turn of its own. As in Codync (message_bot: "its final
+// reply (or why it couldn't finish) comes back to you"), that includes a
+// request a restart cut off (unknown) or the recipient's Stop cancelled: the
+// requester then knows it is over and can tell the person, instead of waiting
+// for a reply that will never arrive. The request itself is never replayed.
+func repliesToSource(outcome pa.ExchangeOutcome) bool {
+	switch outcome {
+	case pa.ExchangeCompleted, pa.ExchangeFailed, pa.ExchangeUnknown, pa.ExchangeCancelled:
+		return true
+	}
+	return false
 }
