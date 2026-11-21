@@ -64,6 +64,13 @@ try {
   assert.ok(paneBox.x >= 360 && paneBox.width > 1000, 'the pane is the second column')
   assert.ok(await frame().locator('.row:not(.blank)').count() >= 6, 'every synthetic Session is on the board')
   await page.screenshot({ path: output + '/embedded-departures.png' })
+  // The pane's narrowest width (900-pixel desktop minus the 360-pixel list) still fits the whole board.
+  await page.setViewportSize({ width: 900, height: 800 })
+  await page.waitForTimeout(300)
+  const fits = await frame().locator('.board-scroll').evaluate(el => el.scrollWidth <= el.clientWidth + 1)
+  assert.ok(fits, 'the board fits a 540-pixel embedded pane without horizontal scrolling')
+  await page.screenshot({ path: output + '/embedded-departures-narrow.png' })
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   // Opening a Session navigates without closing the view; the pane hides behind it.
   await frame().locator('.row:not(.blank)').first().click()

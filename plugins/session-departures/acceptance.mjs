@@ -42,7 +42,7 @@ try{for(const engine of ['chromium','webkit'])for(const width of [390,1440]){
  const zh=width===390;await page.goto(origin+'/?lang='+(zh?'zh-Hant':'en'));await page.locator('#manager').click()
  await page.locator('input[type=file]:not([disabled])').waitFor({state:'attached'})
  await page.locator('input[type=file]').setInputFiles({name:'session-departures.zip',mimeType:'application/zip',buffer:archive})
- await page.locator('.vp-review').waitFor();assert.match(await page.locator('.vp-review').textContent(),/com.clawdline.session-departures · 0.5.0/)
+ await page.locator('.vp-review').waitFor();assert.match(await page.locator('.vp-review').textContent(),/com.clawdline.session-departures · 0.5.1/)
  await page.getByRole('button',{name:zh?'安裝套件':'Install package',exact:true}).click()
  await page.locator('.vp-installed').getByRole('button',{name:zh?'開啟':'Open',exact:true}).click()
  const frame=page.frameLocator('iframe');async function boardRow(title){for(let i=0;i<10;i++){const row=frame.locator('.row[aria-label^='+JSON.stringify(title)+']');if(await row.count())return row;if(!await frame.locator('#nextPage').isVisible())break;await frame.locator('#nextPage').click()}throw Error('Session missing from every board page: '+title)};await frame.locator('.row[data-ref]').first().waitFor();await frame.locator('body').evaluate(()=>document.fonts.ready)

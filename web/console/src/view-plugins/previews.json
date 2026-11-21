@@ -62,22 +62,22 @@
   {
     "id": "com.clawdline.session-departures",
     "language": "en",
-    "src": "/view-plugins/previews/session-departures-en-b2a70100dd02.webp",
+    "src": "/view-plugins/previews/session-departures-en-0c0e71d5e16b.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.5.0",
-    "packageDigest": "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
-    "sha256": "b2a70100dd027edcc3a1d0a930e20cafdc44a336daf2ba0ee4025888bc4e4abb"
+    "packageVersion": "0.5.1",
+    "packageDigest": "2c357068f685a3ba3dafd322e768a194013ef7963a91ca0911aa1fc8298a2c17",
+    "sha256": "0c0e71d5e16b3f7a4538d576217b2fdbb1162fe193d83eae9ded6e597eea5caa"
   },
   {
     "id": "com.clawdline.session-departures",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-departures-zh-Hant-4a587c6ac020.webp",
+    "src": "/view-plugins/previews/session-departures-zh-Hant-99a33f6c0219.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.5.0",
-    "packageDigest": "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
-    "sha256": "4a587c6ac020d0292b1d50fe8e73ecc2212ff59e650f09e0f49489dc31f6ca6f"
+    "packageVersion": "0.5.1",
+    "packageDigest": "2c357068f685a3ba3dafd322e768a194013ef7963a91ca0911aa1fc8298a2c17",
+    "sha256": "99a33f6c0219f2676bbe9444fb96530abf1c7301244c842219de385fba44ea8a"
   },
   {
     "id": "com.clawdline.session-territory",

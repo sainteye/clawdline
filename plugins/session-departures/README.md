@@ -115,3 +115,5 @@ new opaque refs and therefore new codes; no Session history is persisted.
 ## Version 0.5.0: embedded beside the Session list
 
 When the host reports `presentation: "embedded"` (a desktop has pinned this view beside the Session list), the close control, footnotes, credits and priority note are hidden, the board grows to the pane's height, and the selected Session becomes one compact bar with its Open button. Escape only clears a selection. Full screen is unchanged. Older hosts never send the field, so the package keeps its full-screen layout there.
+
+In 0.5.1 the embedded board drops the phone layout's 700-pixel minimum width, so the whole board fits the narrowest embedded pane (540 CSS pixels) without horizontal scrolling.

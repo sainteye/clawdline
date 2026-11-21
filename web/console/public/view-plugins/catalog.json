@@ -22,16 +22,17 @@
     },
     {
       "id": "com.clawdline.session-departures",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "url": "/view-plugins/session-departures.zip",
-      "sha256": "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
-      "bytes": 180199,
+      "sha256": "2c357068f685a3ba3dafd322e768a194013ef7963a91ca0911aa1fc8298a2c17",
+      "bytes": 180278,
       "hostApi": 1,
       "capabilities": [
         "sessions.read",
         "sessions.open"
       ],
       "knownDigests": [
+        "2c357068f685a3ba3dafd322e768a194013ef7963a91ca0911aa1fc8298a2c17",
         "9d7fdb076b7f6ec6a2b135030ff69a00f6f40e1770a8224542de974d18ce99cd",
         "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
         "b690bb6e261d8438f2c36b641dec771d93c1f962caee2f7c19142aa2746dfda6",
