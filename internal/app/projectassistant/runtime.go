@@ -622,6 +622,15 @@ func (r *Engine) resumeInterrupted(ctx context.Context, key pa.BotKey, t pa.Turn
 
 func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) {
 	var resumable []pa.Turn
+	// A request this restart ended now has a reply queued for its sender;
+	// wake that Bot once this one's lock and actor are released, so the two
+	// never wait on each other or on one actor slot.
+	var ended []pa.Turn
+	defer func() {
+		for _, t := range ended {
+			r.wakeExchangeReply(t)
+		}
+	}()
 	a, err := r.acquire(key)
 	if err != nil {
 		return nil, err
@@ -632,11 +641,9 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 	if a.working {
 		return nil, nil
 	}
-	if p, ok := r.o.Repository.(CollaborationRepository); ok {
-		if err = p.DropExchangeReplies(ctx, key, r.o.Clock()); err != nil {
-			return nil, err
-		}
-	}
+	// A reply that came back before the restart, waiting for queue space or
+	// queued, is delivered as usual: running it repeats no other Bot's work
+	// (Codync resumes reply turns too). An explicit Stop still drops it.
 	pending, err := r.o.Repository.PendingTurns(ctx, key)
 	if err != nil {
 		return nil, err
@@ -662,7 +669,10 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				}
 			}
 		}
-		if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+		if t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+			continue
+		}
+		if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) {
 			state := pa.TurnCancelled
 			if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
 				state = pa.TurnUnknown
@@ -671,6 +681,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				if err = r.finishLocked(ctx, a, t, state, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
 					return nil, err
 				}
+				ended = append(ended, t)
 			}
 			continue
 		}

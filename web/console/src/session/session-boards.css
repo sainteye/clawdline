@@ -259,3 +259,14 @@
   .session-board-reader[data-expanded="true"] { height: 97dvh; }
   .session-board-reader[data-setup] { height: fit-content; max-height: 90dvh; }
 }
+
+.session-board-dialog .session-board-thread-toggle,
+.session-board-dialog .session-board-reply-reference {
+  display: inline-flex; gap: 5px; align-items: center; min-height: 36px;
+  border: 0; padding: 0 4px; background: transparent;
+  color: var(--session-board-accent); font-size: .84em;
+}
+.session-board-thread-toggle svg { width: 14px; height: 14px; }
+.session-board-thread { margin-inline-start: 12px; margin-block-start: 4px; }
+.session-board-thread > button { margin-block: 4px; }
+.session-board-thread-list [data-board-post]:focus { outline: 2px solid var(--session-board-accent); outline-offset: 2px; }

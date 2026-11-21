@@ -86,6 +86,29 @@ func TestNativeContextSeparatesUnknownFromZeroAndUnsupported(t *testing.T) {
 	}
 }
 
+func TestNativeContextReadsTheObservedModelWithoutUsage(t *testing.T) {
+	c := &Client{sessionID: "own-session", fence: testFence(), agent: pa.Gemini}
+	update := `{"sessionUpdate":"config_option_update","configOptions":[{"id":"model","category":"model","type":"select","currentValue":"fixture-pro","options":[{"value":"fixture-pro","name":"Fixture Pro"},{"value":"fixture-flash","name":"Fixture Flash"}]}]}`
+	if err := contextUpdate(t, c, "own-session", update); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.NativeContext(); got.Model != "Fixture Pro" || got.UsageKnown {
+		t.Fatal("known model depends on token metadata", got)
+	}
+	if err := contextUpdate(t, c, "foreign-session", `{"sessionUpdate":"config_option_update","configOptions":[]}`); pa.Code(err) != pa.StaleGeneration {
+		t.Fatal("foreign model update was not refused", err)
+	}
+	if got := c.NativeContext().Model; got != "Fixture Pro" {
+		t.Fatal("foreign model report changed the selected model", got)
+	}
+	if err := contextUpdate(t, c, "own-session", `{"sessionUpdate":"config_option_update","configOptions":[]}`); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.NativeContext().Model; got != "" {
+		t.Fatal("model was not cleared when the Agent stopped reporting it", got)
+	}
+}
+
 func TestNativeContextRejectsForeignAndRetiredSessions(t *testing.T) {
 	c := &Client{sessionID: "own-session", fence: testFence()}
 	r := nativeContextReader(t, c)
@@ -175,7 +198,7 @@ func TestNativeContextTraversesTheACPWireWithoutARealModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := nativeContextReader(t, c)
-	if got := r.NativeContext(); got.Fence != testFence() || got.NativeSessionID != "scripted-session" || !got.CommandsKnown || !got.CompactAdvertised || !got.UsageKnown || got.UsedTokens != 0 || got.WindowTokens != 100000 {
+	if got := r.NativeContext(); got.Fence != testFence() || got.NativeSessionID != "scripted-session" || got.Model != "Fixture Pro" || !got.CommandsKnown || !got.CompactAdvertised || !got.UsageKnown || got.UsedTokens != 0 || got.WindowTokens != 100000 {
 		t.Fatal("idle pipe metadata did not survive initialization", got)
 	}
 	c.mu.Lock()
@@ -194,7 +217,7 @@ func TestNativeContextTraversesTheACPWireWithoutARealModel(t *testing.T) {
 	if err := c.Cancel(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.NativeContext(); got.UsageKnown || got.CommandsKnown || got.CompactAdvertised {
+	if got := r.NativeContext(); got.Model != "" || got.UsageKnown || got.CommandsKnown || got.CompactAdvertised {
 		t.Fatal("actual cancellation left usable context", got)
 	}
 }

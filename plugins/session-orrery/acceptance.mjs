@@ -17,7 +17,7 @@ await mkdir(artifacts,{recursive:true})
 const result=await build({stdin:{contents:`
 import React from "react";import{createRoot}from"react-dom/client";
 import{useViewPlugins}from"./view-plugins/Host";
-import{setDockAvailable}from"./project-assistants/BotOrb";setDockAvailable(true);
+
 const states=["waiting_you","waiting_session","holding","working","milestone_complete","work_complete","ready","unknown"];
 const titles=["Approve the release notes","Review another Session","Hold for the next reading","Shape the new workspace","Navigation milestone","Package ready for review","A quiet workspace · 星圖 🪐 Ω café","Unclassified reading"];
 const projects=[{key:"observatory",label:"Observatory · synthetic"},{key:"workshop",label:"Workshop · synthetic"},{key:"archive",label:"Archive · synthetic"}];

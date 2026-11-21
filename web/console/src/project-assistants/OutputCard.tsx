@@ -2,20 +2,23 @@ import {useCallback,useEffect,useMemo,useRef,useState} from "react"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 import {OutputViewer} from "./OutputViewer"
+import {ImageViewer} from "./ImageViewer"
 import {ArtifactIcon,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {artifactFrame,inlineImageType,loadOutput} from "./outputs"
 import type {Words} from "./words"
 
 export function OutputCard({message,source,w,artifactComposer}:{message:W.ProjectAssistantMessage;source:SourceClient;w:Words;artifactComposer?:ArtifactComposerAccess}) {
-  const output=message.output!,[open,setOpen]=useState(false)
+  const output=message.output!,[open,setOpen]=useState(false),[picture,setPicture]=useState<Blob|null>(null)
   const close=useCallback(()=>setOpen(false),[])
+  const image=!!inlineImageType(output)
   const enabled=!!source.output&&source.canOutputs?.()!==false
   return <div className={`pa-output-card${output.artifact_id?" pa-artifact-card":""}`}>
     {output.artifact_id?<><ArtifactPreview message={message} source={source} enabled={enabled}/>
       <button type="button" disabled={!enabled} onClick={()=>setOpen(true)}><span className="pa-artifact-card-footer"><ArtifactIcon size={29}/>
         <span><strong>{output.name}</strong><small>{w.artifact}</small></span></span></button></>:
-      <button type="button" disabled={!enabled} onClick={()=>setOpen(true)}>{inlineImageType(output)&&<ImagePreview message={message} source={source} enabled={enabled}/>}<strong>{output.name}</strong><small>{w.sharedFile} · {output.bytes.toLocaleString()} B</small></button>}
-    {open&&<OutputViewer artifactComposer={artifactComposer} item={{kind:"output",key:output.artifact_id||output.id,message}} source={source} w={w} onClose={close}/>}
+      <button type="button" disabled={!enabled} onClick={()=>setOpen(true)}>{image&&<ImagePreview message={message} source={source} enabled={enabled} onPicture={setPicture}/>}<strong>{output.name}</strong><small>{w.sharedFile} · {output.bytes.toLocaleString()} B</small></button>}
+    {open&&image&&<ImageViewer message={message} source={source} w={w} picture={picture} onClose={close}/>}
+    {open&&!image&&<OutputViewer artifactComposer={artifactComposer} item={{kind:"output",key:output.artifact_id||output.id,message}} source={source} w={w} onClose={close}/>}
   </div>
 }
 
@@ -56,7 +59,7 @@ function ArtifactPreview({message,source,enabled}:{message:W.ProjectAssistantMes
 
 /** A shared picture shows in the chat once it scrolls into view, as Codync's
  * file card does; one that will not decode leaves the plain file card. */
-function ImagePreview({message,source,enabled}:{message:W.ProjectAssistantMessage;source:SourceClient;enabled:boolean}){
+function ImagePreview({message,source,enabled,onPicture}:{message:W.ProjectAssistantMessage;source:SourceClient;enabled:boolean;onPicture:(blob:Blob|null)=>void}){
   const box=useRef<HTMLSpanElement>(null)
   const [visible,setVisible]=useState(false),[url,setURL]=useState(""),[broken,setBroken]=useState(false)
   const output=message.output!,token=JSON.stringify([message.fence.key,message.fence.conversation_id,message.id,output.id,output.sha256])
@@ -77,12 +80,12 @@ function ImagePreview({message,source,enabled}:{message:W.ProjectAssistantMessag
     const request={key:message.fence.key,conversation_id:message.fence.conversation_id,message_id:message.id,id:output.id,artifact_id:"",offset:0}
     void loadOutput(source,request,control.signal).then(({blob})=>{
       if(control.signal.aborted||source.current?.()===false)return
-      made=URL.createObjectURL(blob);setURL(made)
+      made=URL.createObjectURL(blob);setURL(made);onPicture(blob)
     },()=>{
       // refusal-ok: The thumbnail is decorative. Opening the card shows any source refusal in the full viewer.
       if(!control.signal.aborted)setURL("")
     })
-    return()=>{control.abort();if(made)URL.revokeObjectURL(made);setURL("")}
+    return()=>{control.abort();if(made)URL.revokeObjectURL(made);setURL("");onPicture(null)}
   },[source,token,visible,enabled])
   if(broken)return null
   return <span className="pa-image-preview" ref={box} aria-hidden="true">

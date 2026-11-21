@@ -69,8 +69,8 @@ func (s *Server) sessionBoardsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	q := r.URL.Query()
-	for k, vv := range q {
-		if len(vv) != 1 || (k != "conversation_id" && (r.Method != http.MethodGet || (k != "board" && k != "after" && k != "before"))) {
+	for key, values := range q {
+		if len(values) != 1 || !sessionBoardQueryField(r.Method, key) {
 			writeSessionBoardError(w, sb.ErrInvalid)
 			return
 		}
@@ -202,6 +202,17 @@ func validSessionBoardCommand(c sb.Command) bool {
 	}
 }
 
+func sessionBoardQueryField(method, key string) bool {
+	switch key {
+	case "conversation_id":
+		return true
+	case "board", "after", "before", "view", "thread", "from", "seen":
+		return method == http.MethodGet
+	default:
+		return false
+	}
+}
+
 func sessionBoardCursor(q url.Values, field string) (int64, bool) {
 	if !q.Has(field) {
 		return 0, true
@@ -267,6 +278,30 @@ func (s *Server) readSessionBoards(w http.ResponseWriter, r *http.Request, proje
 	id := q.Get("board")
 	if !afterOK || !beforeOK || (after > 0 && before > 0) || (id == "" && (after > 0 || before > 0)) {
 		writeSessionBoardError(w, sb.ErrInvalid)
+		return
+	}
+	if q.Has("view") || q.Has("thread") || q.Has("from") || q.Has("seen") {
+		root, rootOK := sessionBoardCursor(q, "thread")
+		from, fromOK := sessionBoardCursor(q, "from")
+		seen, seenOK := sessionBoardCursor(q, "seen")
+		if q.Get("view") != "threads" || id == "" || after != 0 || !rootOK || !fromOK || !seenOK ||
+			(from > 0 && (root == 0 || before > 0)) || (root > 0 && seen > 0) {
+			writeSessionBoardError(w, sb.ErrInvalid)
+			return
+		}
+		page, err := s.store.SessionBoardThreads(ctx, project, actor, id, sb.ThreadCursor{Root: root, Before: before, From: from, Seen: seen})
+		if err != nil {
+			writeSessionBoardError(w, err)
+			return
+		}
+		if page.Board != nil {
+			board := []sb.Board{*page.Board}
+			s.projectSessionBoardNames(actor == "", board, page.Posts)
+			page.Board = &board[0]
+		} else {
+			s.projectSessionBoardNames(false, nil, page.Posts)
+		}
+		writeJSON(w, page)
 		return
 	}
 	if id != "" {

@@ -3,6 +3,9 @@ package projectassistantacp
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -16,7 +19,11 @@ func (c *Client) NativeContext() app.NativeContextState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	state := app.NativeContextState{Fence: c.fence, NativeSessionID: c.sessionID}
-	if c.sessionID == "" || c.nativeContext.NativeSessionID != c.sessionID || c.failure != nil || c.cancelled {
+	if c.sessionID == "" || c.failure != nil || c.cancelled {
+		return state
+	}
+	state.Model = c.observedModel
+	if c.nativeContext.NativeSessionID != c.sessionID {
 		return state
 	}
 	state.CommandsKnown = c.nativeContext.CommandsKnown
@@ -25,6 +32,51 @@ func (c *Client) NativeContext() app.NativeContextState {
 	state.UsedTokens = c.nativeContext.UsedTokens
 	state.WindowTokens = c.nativeContext.WindowTokens
 	return state
+}
+
+func modelLabel(catalog pa.ConfigurationCatalog) string {
+	if catalog.Model == "" {
+		return ""
+	}
+	visible := func(label string) bool {
+		return strings.TrimSpace(label) != "" && utf8.RuneCountInString(label) <= pa.MaxNameRunes &&
+			!strings.ContainsFunc(label, unicode.IsControl)
+	}
+	for _, option := range catalog.Options {
+		if option.Category != "model" {
+			continue
+		}
+		for _, choice := range option.Choices {
+			if choice.Value == catalog.Model && visible(choice.Name) {
+				return strings.TrimSpace(choice.Name)
+			}
+		}
+	}
+	if visible(catalog.Model) {
+		return strings.TrimSpace(catalog.Model)
+	}
+	return ""
+}
+
+func (c *Client) updateObservedModel(sessionID string, params json.RawMessage) error {
+	var update struct {
+		Configuration json.RawMessage `json:"update"`
+	}
+	var model string
+	if json.Unmarshal(params, &update) == nil {
+		if catalog, err := parseConfiguration(update.Configuration, c.agent); err == nil {
+			model = modelLabel(catalog)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if sessionID == "" || (c.sessionID != "" && sessionID != c.sessionID) {
+		return refusal(pa.StaleGeneration, "native_session")
+	}
+	if c.sessionID == sessionID && c.failure == nil && !c.cancelled {
+		c.observedModel = model
+	}
+	return nil
 }
 
 func (c *Client) updateNativeContext(sessionID, kind string, commands, used, size json.RawMessage) error {

@@ -203,8 +203,8 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     holdProjects(){projectGate=new Promise(resolve=>{releaseProjects=resolve})},releaseProjects(){releaseProjects?.();projectGate=null;releaseProjects=null},unknownCreate(value:boolean){unknownCreate=value},
     loseCreateReply(){lostCreateReply=true},
-    async shareFixtureFile(name:string,text:string){
-      const bot=bots[0],rows=messages.get(bot.key.bot_id)??[],bytes=new TextEncoder().encode(text)
+    async shareFixtureFile(name:string,content:string|Uint8Array){
+      const bot=bots[0],rows=messages.get(bot.key.bot_id)??[],bytes=typeof content==="string"?new TextEncoder().encode(content):new Uint8Array(content)
       const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))
       const output={id:"synthetic-file",name,artifact_id:"",bytes:bytes.length,sha256:[...hash].map(n=>n.toString(16).padStart(2,"0")).join("")}
       const message:W.ProjectAssistantMessage={id:"shared-file",seq:rows.length+1,at,fence:fence(bot),kind:"assistant",text:"",turn_id:"file-turn",quote_message_id:"",output}

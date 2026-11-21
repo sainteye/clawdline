@@ -2522,10 +2522,21 @@
         "live"
       ]
     },
+    "ProjectAssistantActiveModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Model selection reported by the source's live native session.",
+      "properties": {
+        "turn_id": {"type": "string"},
+        "name": {"type": "string"}
+      },
+      "required": ["turn_id", "name"]
+    },
     "ProjectAssistantReadViewHead": {
       "type": "object",
       "description": "One SQL snapshot. Only a successful snapshot-mode response may replace the replay cursor; other page heads never advance it.",
       "properties": {
+        "active_model": {"$ref": "#/$defs/ProjectAssistantActiveModel"},
         "context_usage": {
           "$ref": "#/$defs/ProjectAssistantContextUsage"
         },

@@ -1,6 +1,6 @@
 export interface VoiceDiagnostic {
   stage: "stopping" | "preparing" | "reading" | "recoverable"
-  code: "stop_timeout" | "prepare_timeout" | "read_timeout" | "recording_limit" | "processing_failed" | "paused" | "recorder_error"
+  code: "stop_timeout" | "prepare_timeout" | "read_timeout" | "recording_limit" | "processing_failed" | "realtime_audio_empty" | "paused" | "recorder_error"
   bytes: number
   complete: boolean
 }

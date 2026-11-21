@@ -5,7 +5,7 @@ import {errorCode} from "./client"
 import type {Words} from "./words"
 import {botFailureText,providerSetupFailure} from "./source-errors"
 
-export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string,loginState:string,active:boolean){
+export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string|undefined,loginState:string,active:boolean){
   const {machine_id,bot_id}=bot.key,conversation=bot.conversation_id
   const [revision,setRevision]=useState(0)
   const request=useMemo(()=>({source,machine_id,bot_id,conversation,agent,model,loginProfile,loginState,active,revision}),

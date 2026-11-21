@@ -77,6 +77,30 @@ type Page struct {
 	More  bool   `json:"more"`
 }
 
+// Thread summarizes one group of posts. Root may have aged out of retention.
+type Thread struct {
+	Root        int64 `json:"root"`
+	Latest      int64 `json:"latest"`
+	Replies     int   `json:"replies"`
+	Unread      int   `json:"unread"`
+	FirstUnread int64 `json:"first_unread,omitempty"`
+}
+
+type ThreadCursor struct {
+	Root   int64
+	Before int64
+	From   int64
+	Seen   int64
+}
+
+type ThreadPage struct {
+	Board   *Board   `json:"board,omitempty"`
+	Threads []Thread `json:"threads"`
+	Posts   []Post   `json:"posts"`
+	More    bool     `json:"more"`
+	Earlier bool     `json:"earlier,omitempty"`
+}
+
 type Inbox struct {
 	Posts []Post `json:"posts"`
 	More  bool   `json:"more"`

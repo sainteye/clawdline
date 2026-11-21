@@ -614,3 +614,81 @@ func TestSessionBoardFullDestinationRollsBackRosterMove(t *testing.T) {
 		t.Fatalf("destination changed after refusal: %+v, %v", dest.Board, err)
 	}
 }
+
+func TestSessionBoardThreadsReadAcrossPagesAndRetention(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lead := sb.Actor{ID: "codex:lead", Label: "Lead"}
+	const project = "project"
+	now := time.Now()
+	board, err := st.ChangeSessionBoard(ctx, project, lead, sb.Actor{},
+		sb.Command{Action: "create", Name: "Review", Text: "Share decisions"}, "create", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(parent int64) int64 {
+		t.Helper()
+		key := fmt.Sprintf("post-%d", now.UnixNano())
+		now = now.Add(time.Nanosecond)
+		p, err := st.ChangeSessionBoard(ctx, project, lead, sb.Actor{},
+			sb.Command{Action: "post", Board: board.ID, Text: key, ReplyTo: parent}, key, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Seq
+	}
+	read := func(cursor sb.ThreadCursor) sb.ThreadPage {
+		t.Helper()
+		page, err := st.SessionBoardThreads(ctx, project, lead.ID, board.ID, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	root := post(0)
+	for range sb.MaxPageRows + 1 {
+		post(0)
+	}
+	first := post(root)
+	for range sb.MaxPageRows {
+		post(first)
+	}
+	last := post(root)
+	top := read(sb.ThreadCursor{Seen: first})
+	if top.Board.Latest != last || !top.More || len(top.Threads) != sb.MaxPageRows ||
+		top.Threads[0] != (sb.Thread{Root: root, Latest: last, Replies: sb.MaxPageRows + 2, Unread: sb.MaxPageRows + 1, FirstUnread: first + 1}) ||
+		!slices.ContainsFunc(top.Posts, func(p sb.Post) bool { return p.Seq == root }) {
+		t.Fatalf("unexpected overview: %+v", top)
+	}
+	older := read(sb.ThreadCursor{Before: top.Threads[len(top.Threads)-1].Latest, Seen: first})
+	if older.More || len(older.Threads) != 2 || older.Threads[0].Root != 3 || older.Threads[1].Root != 2 {
+		t.Fatalf("wrong roots on older page: %+v", older)
+	}
+	focus := read(sb.ThreadCursor{Root: root, From: last})
+	if !focus.Earlier || focus.More || len(focus.Posts) != 1 || focus.Posts[0].Seq != last {
+		t.Fatalf("did not jump directly to the requested reply: %+v", focus)
+	}
+	prior := read(sb.ThreadCursor{Root: root, Before: last})
+	if !prior.Earlier || !prior.More || len(prior.Posts) != sb.MaxPageRows || prior.Posts[0].ReplyTo != first {
+		t.Fatalf("wrong prior reply page: %+v", prior)
+	}
+	fromParent := read(sb.ThreadCursor{Root: root, From: first})
+	if fromParent.Earlier || !fromParent.More || fromParent.Posts[0].Seq != first {
+		t.Fatalf("did not jump back to the parent: %+v", fromParent)
+	}
+	if _, err := st.SessionBoardThreads(ctx, project, "codex:unjoined", board.ID, sb.ThreadCursor{}); !errors.Is(err, sb.ErrDenied) {
+		t.Fatalf("nonmember read: %v", err)
+	}
+	for seq := last + 1; seq <= sb.MaxPosts+1; seq++ {
+		post(0)
+	}
+	expired := read(sb.ThreadCursor{Before: last + 1, Seen: first})
+	if expired.Threads[0].Root != root || expired.Threads[0].Replies != sb.MaxPageRows+2 ||
+		slices.ContainsFunc(expired.Posts, func(p sb.Post) bool { return p.Seq == root }) {
+		t.Fatalf("retained replies lost their expired root grouping: %+v", expired)
+	}
+}

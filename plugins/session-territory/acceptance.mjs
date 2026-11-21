@@ -9,8 +9,10 @@ import {spawnSync} from 'node:child_process';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(resolve(root,'web/package.json'));
 const {build} = require('esbuild');
-const artifacts = resolve(process.argv[2] || '');
-if (!process.argv[2] || !process.env.PLAYWRIGHT_MODULE) throw Error('Pass an artifacts directory and set PLAYWRIGHT_MODULE');
+// The artifacts directory comes from the argument or, like the other view acceptances, PLUGIN_ARTIFACTS.
+const output = process.argv[2] || process.env.PLUGIN_ARTIFACTS;
+if (!output || !process.env.PLAYWRIGHT_MODULE) throw Error('Pass an artifacts directory (argument or PLUGIN_ARTIFACTS) and set PLAYWRIGHT_MODULE');
+const artifacts = resolve(output);
 await mkdir(artifacts,{recursive:true});
 const began = Date.now();
 const states = ['ready','working','holding','waiting_you','waiting_session','unknown','milestone_complete','work_complete'];
@@ -18,7 +20,7 @@ const hostile = '<img src=x onerror=alert(1)> & synthetic';
 const host = await build({stdin:{contents:`
 import React from 'react';import{createRoot}from'react-dom/client';
 import{useViewPlugins}from'./view-plugins/Host';
-import{setDockAvailable}from'./project-assistants/BotOrb';setDockAvailable(true);
+
 const states=${JSON.stringify(states)};
 const initial=states.map((workState,i)=>({key:'session-'+i,title:i===0?${JSON.stringify(hostile)}:['', 'Map the estuary','Review the bridge','Choose a direction','Wait for the survey','Unknown signal','Survey checkpoint','Map delivered'][i],project:i===7?null:{key:i<4?'north':'south',label:i<4?'North / 北岸':'<svg onload=alert(1)> South / 南岸'},workState,freshness:i===5?'unknown':'fresh'}));
 let rows=structuredClone(initial),connected=true;const listeners=new Set(),navigations=[];
@@ -28,8 +30,13 @@ function Host(){const api=useViewPlugins([source],document.documentElement.lang)
 `,resolveDir:resolve(root,'web/console/src'),loader:'tsx'},bundle:true,write:false,outfile:'host.js',format:'esm',platform:'browser',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"'}});
 const activity = await build({stdin:{contents:`import{renderActivity}from'./activity.js';const snapshot={synthetic:true,freshness:'fresh',connection:'connected',files:[{ref:'f1',relativePath:'src/harbour.ts'},{ref:'f2',relativePath:'docs/<img src=x>.md'},{ref:'f3',relativePath:'src/not-observed.ts'}],events:[{fileRef:'f1',operation:'write',outcome:'succeeded',provenance:'native_success_receipt',observedAt:'2026-01-01T00:00:10Z'},{fileRef:'f2',operation:'read',outcome:'succeeded',provenance:'synthetic_read_receipt',observedAt:'2026-01-01T00:00:11Z'},{fileRef:'f3',operation:'write',outcome:'failed',provenance:'synthetic_failed_receipt',observedAt:'2026-01-01T00:00:12Z'}]};window.fileFixture={stale(){snapshot.freshness='stale';draw()},empty(){snapshot.files=[];draw()},unavailable(){renderActivity(document.querySelector('main'),null)}};function draw(){renderActivity(document.querySelector('main'),snapshot,{language:new URL(location.href).searchParams.get('lang')||'en'})}draw();`,resolveDir:fileURLToPath(new URL('.',import.meta.url)),loader:'js'},bundle:true,write:false,format:'esm',outfile:'activity.js'});
 const files=new Map([...host.outputFiles,...activity.outputFiles].map(f=>['/'+f.path.split('/').at(-1),f.text]));
+// The host itself reads the official update list and the gallery previews; serve the repository's copies so
+// any other request still counts as unexpected.
+const publicDir=fileURLToPath(new URL('../../web/console/public',import.meta.url));
+files.set('/view-plugins/catalog.json',await readFile(publicDir+'/view-plugins/catalog.json'));
+for(const item of JSON.parse(await readFile(fileURLToPath(new URL('../../web/console/src/view-plugins/previews.json',import.meta.url)),'utf8')))files.set(item.src,await readFile(publicDir+item.src));
 let unexpectedRequests=0;
-const server=createServer((req,res)=>{const u=new URL(req.url,'http://synthetic');let body=files.get(u.pathname);if(u.pathname==='/')body=`<!doctype html><html lang="${u.searchParams.get('lang')==='zh-Hant'?'zh-Hant':'en'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script></html>`;if(u.pathname==='/activity')body='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#101c21;color:#e4eee6;font:15px/1.5 system-ui;margin:24px}h2{font:24px Georgia}h3{font-size:15px}</style><main></main><script type="module" src="/activity.js"></script>';if(body===undefined){unexpectedRequests++;res.writeHead(404);res.end();return}res.setHeader('Content-Type',u.pathname.endsWith('.js')?'text/javascript':u.pathname.endsWith('.css')?'text/css':'text/html');res.end(body)});
+const server=createServer((req,res)=>{const u=new URL(req.url,'http://synthetic');let body=files.get(u.pathname);if(u.pathname==='/')body=`<!doctype html><html lang="${u.searchParams.get('lang')==='zh-Hant'?'zh-Hant':'en'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script></html>`;if(u.pathname==='/activity')body='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#101c21;color:#e4eee6;font:15px/1.5 system-ui;margin:24px}h2{font:24px Georgia}h3{font-size:15px}</style><main></main><script type="module" src="/activity.js"></script>';if(body===undefined){unexpectedRequests++;res.writeHead(404);res.end();return}res.setHeader('Content-Type',u.pathname.endsWith('.js')?'text/javascript':u.pathname.endsWith('.css')?'text/css':u.pathname.endsWith('.json')?'application/json':u.pathname.endsWith('.webp')?'image/webp':'text/html');res.end(body)});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const origin='http://127.0.0.1:'+server.address().port;
 const pw=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
@@ -50,7 +57,8 @@ try{
 await page.goto(origin+'/?lang='+language);await page.locator('#manager').click();
 await page.locator('input[type=file]').setInputFiles({name:'session-territory.zip',mimeType:'application/zip',buffer:archive});
 await page.getByRole('button',{name:language==='en'?'Install package':'安裝套件',exact:true}).click();
-const installed=page.locator('.vp-installed').filter({hasText:'com.clawdline.session-territory'});
+// The package ID now lives in the card's Manage menu; the card carries it as data.
+const installed=page.locator('.vp-installed[data-package-id="com.clawdline.session-territory"]');
 await installed.getByRole('button',{name:new RegExp(language==='en'?'^Open':'^開啟')}).click();
 const frame=page.frameLocator('iframe');await frame.locator('.cell').first().waitFor();
 assert.equal(await frame.locator('.cell').count(),8);assert.equal(await frame.locator('.legend .state').count(),8);

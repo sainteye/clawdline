@@ -334,8 +334,10 @@ func TestCollaborationStopRestartAndDeletedSenderKeepSurvivingFacts(t *testing.T
 				if err = app.QuiesceHistory(testContext, s, time.Now, id, b.Key); err != nil {
 					t.Fatal(err)
 				}
+				// The sender hears that the request is over (Codync: "or why
+				// it couldn't finish"), instead of waiting for nothing.
 				x, err = s.Exchange(testContext, a.Key, x.ID)
-				if err != nil || x.Outcome != pa.ExchangeCancelled || x.Delivery != "dropped" {
+				if err != nil || x.Outcome != pa.ExchangeCancelled || x.Delivery != "queued" || x.ReplyTurnID == "" {
 					t.Fatal(x, err)
 				}
 			case "restart_queued", "restart_running":
@@ -356,6 +358,11 @@ func TestCollaborationStopRestartAndDeletedSenderKeepSurvivingFacts(t *testing.T
 				}
 				if action == "restart_running" && x.Outcome != pa.ExchangeUnknown {
 					t.Fatal("unknown erased", x)
+				}
+				// The request is never replayed, but its sender is told it
+				// did not finish, so it can tell the person.
+				if action == "restart_running" && (x.Delivery != "queued" || x.ReplyTurnID == "") {
+					t.Fatal("restart left the sender waiting for a reply that cannot come", x)
 				}
 			case "delete_sender":
 				if err = s.DeleteBot(testContext, a.Key); err != nil {
@@ -517,7 +524,7 @@ func collaborationWaitingReplyFixture(t *testing.T) (*Store, pa.Bot, pa.Exchange
 	return s, a, x
 }
 
-func TestCollaborationRestartAndStopDropWaitingReplyWithoutLosingReview(t *testing.T) {
+func TestCollaborationStopDropsAndRestartKeepsWaitingReply(t *testing.T) {
 	for _, restart := range []bool{false, true} {
 		t.Run(fmt.Sprint("restart=", restart), func(t *testing.T) {
 			s, a, x := collaborationWaitingReplyFixture(t)
@@ -537,9 +544,15 @@ func TestCollaborationRestartAndStopDropWaitingReplyWithoutLosingReview(t *testi
 					t.Fatal(err)
 				}
 			}
+			// An explicit Stop drops the unstarted reply; a restart keeps it
+			// waiting for queue space, as Codync resumes reply turns.
+			want := "dropped"
+			if restart {
+				want = "waiting"
+			}
 			got, err := s.Exchange(testContext, a.Key, x.ID)
-			if err != nil || got.Outcome != pa.ExchangeCompleted || got.Delivery != "dropped" || got.Reply != "One retained review." {
-				t.Fatal("unstarted reply survived stop/restart or lost review", got, err)
+			if err != nil || got.Outcome != pa.ExchangeCompleted || got.Delivery != want || got.Reply != "One retained review." {
+				t.Fatal("stop must drop and restart must keep the unstarted reply, without losing the review", got, err)
 			}
 		})
 	}

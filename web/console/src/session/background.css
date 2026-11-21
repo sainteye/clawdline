@@ -77,6 +77,10 @@
     flex: 1 1 auto; min-width: 0;
     margin: 0; color: var(--ink); font-size: 13px; font-weight: 600;
 }
+.bg-sheet-head .chip { flex: none; white-space: nowrap; }
+.bg-sheet-ask { display: inline-flex; align-items: center; gap: 5px; }
+.bg-sheet-ask svg { width: 14px; height: 14px; flex: none; }
+.bg-sheet-ask:disabled { opacity: .5; cursor: default; }
 .bg-sheet-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px 10px; }
 
 /* One background command: the command line first, because it is what a person

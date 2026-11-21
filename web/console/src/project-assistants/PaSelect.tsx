@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } f
 
 export interface PaOption { value:string; label:string; icon?:ReactNode; hint?:string }
 
-const chevron=<svg className="pa-select-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+export function SelectChevron({size=14}:{size?:number}) {
+  return <svg className="pa-select-chevron" viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+}
 
 /**
  * The Bots drop-down: a button that shows its value with a chevron, so it reads
@@ -48,7 +50,7 @@ export function PaSelect({label,ariaLabel,value,options,onChange,placeholder="",
       onClick={()=>open?close():show()} onKeyDown={e=>{if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();show()}}}>
       {current?.icon&&<span className="pa-select-icon">{current.icon}</span>}
       <span className={`pa-select-value${current?"":" pa-select-placeholder"}`} id={`${id}-value`}>{current?.label??placeholder}</span>
-      {chevron}
+      <SelectChevron/>
     </button>
     {open&&<ul className="pa-select-list" role="listbox" ref={list} tabIndex={-1} aria-labelledby={label?`${id}-label`:undefined} aria-label={label?undefined:ariaLabel} aria-activedescendant={`${id}-${active}`}>
       {options.map((o,i)=><li key={o.value} id={`${id}-${i}`} data-index={i} role="option" aria-selected={o.value===value} data-active={i===active||undefined}

@@ -12,7 +12,7 @@ if(!process.env.PLAYWRIGHT_MODULE)throw Error('Set PLAYWRIGHT_MODULE to an exist
 await mkdir(artifacts,{recursive:true})
 const built=await build({stdin:{contents:`
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
-import{useViewPlugins}from'./view-plugins/Host';import{setDockAvailable}from'./project-assistants/BotOrb';setDockAvailable(true);
+import{useViewPlugins}from'./view-plugins/Host';
 const states=['ready','working','holding','waiting_you','waiting_session','unknown','milestone_complete','work_complete'];
 const titles=['Prepare next review','Build the console','Hold for design review','Approve the release notes','Wait for integration','Investigate unavailable status','Report a milestone','Report work complete'];
 const original=states.map((workState,i)=>({key:'s'+i,title:titles[i],project:{key:'p'+i%3,label:['Orion','Harbor','Lumen'][i%3]},workState,freshness:'fresh'}));
@@ -25,9 +25,10 @@ const archive=await readFile(root+'web/console/public/view-plugins/session-night
 // Only the inspected pure model is evaluated; upstream native renderer is never executed.
 const upstream=await import('data:text/javascript;base64,'+Buffer.from(await readFile(root+'plugins/session-night-city/upstream/model.js')).toString('base64'))
 const originalPreview=process.env.NIGHT_CITY_ORIGINAL_PREVIEW
-if(!originalPreview)throw Error('Set NIGHT_CITY_ORIGINAL_PREVIEW to the pinned original preview')
-const originalPNG=await readFile(originalPreview)
-await writeFile(artifacts+'/upstream-original.png',originalPNG)
+// The pinned upstream preview is not in the repository. It only feeds the side-by-side picture; every assertion runs without it.
+const originalPNG=originalPreview?await readFile(originalPreview):null
+if(originalPNG)await writeFile(artifacts+'/upstream-original.png',originalPNG)
+else console.log('NIGHT_CITY_ORIGINAL_PREVIEW not set: skipping original-versus-port.png; all checks still run')
 
 const server=createServer((req,res)=>{const u=new URL(req.url,'http://test');const body=u.pathname==='/'?`<!doctype html><html lang="${u.searchParams.get('lang')==='zh-Hant'?'zh-Hant':'en'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/host.css"><div id="root"></div><script type="module" src="/host.js"></script></html>`:files.get(u.pathname);if(body===undefined){res.writeHead(404);res.end();return}res.setHeader('Content-Type',u.pathname.endsWith('.js')?'text/javascript':u.pathname.endsWith('.css')?'text/css':'text/html');res.end(body)})
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port
@@ -76,9 +77,9 @@ try{for(const engine of ['chromium','webkit'])for(const width of [1440,390]){
   await page.screenshot({path:artifacts+'/'+prefix+'-city.png',fullPage:true})
   if(engine==='chromium'&&width===1440){
    const port=await page.locator('iframe').screenshot({path:artifacts+'/port-desktop.png'})
-   const compare=await browser.newPage({viewport:{width:1600,height:560}})
+   if(originalPNG){const compare=await browser.newPage({viewport:{width:1600,height:560}})
    await compare.setContent(`<html><style>*{box-sizing:border-box}body{margin:0;background:#080e20;color:#e2e8f6;font:13px system-ui}.pair{display:flex}.pair>section{width:800px}h2,p{margin:10px 16px;font-size:13px}img{width:800px;height:450px;object-fit:contain;object-position:top}</style><div class="pair"><section><h2>Original · pinned Herdr Night City (1600 × 900)</h2><img src="data:image/png;base64,${originalPNG.toString('base64')}"></section><section><h2>Port · actual production iframe / synthetic v1 data (1440 px host)</h2><img src="data:image/png;base64,${port.toString('base64')}"></section></div><p>Same source art, palette, ground and geometry. Port: one unpartitioned Session window bank per Project; no native tabs, child windows, dead history or terminals are supplied. Missing terminal area is replaced by honest Session detail and a readable state legend.</p></html>`)
-   await compare.screenshot({path:artifacts+'/original-versus-port.png',fullPage:true});await compare.close()
+   await compare.screenshot({path:artifacts+'/original-versus-port.png',fullPage:true});await compare.close()}
   }
 
   await frame.locator('#attention .session-row').filter({hasText:'Approve the release notes'}).click()

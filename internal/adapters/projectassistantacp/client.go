@@ -74,6 +74,7 @@ type Client struct {
 	stop           sync.Once
 	failure        error
 	sessionID      string
+	observedModel  string
 	nativeContext  app.NativeContextState
 	compaction     *nativeCompaction
 	turnID         string
@@ -308,6 +309,11 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	if c.discovery {
 		return nil
+	}
+	if model := modelLabel(c.configuration); model != "" {
+		c.mu.Lock()
+		c.observedModel = model
+		c.mu.Unlock()
 	}
 	// Grok's session modes are a separate control from its launch-level
 	// permission mode. The Bot's permission mode is set on the command line.
@@ -855,6 +861,9 @@ func (c *Client) handle(f frame) error {
 		}
 		if p.Update.SessionUpdate == "compaction_update" {
 			return c.updateNativeCompaction(p.SessionID, p.Update.CompactionID, p.Update.Status)
+		}
+		if p.Update.SessionUpdate == "config_option_update" {
+			return c.updateObservedModel(p.SessionID, f.Params)
 		}
 		if p.SessionID != c.SessionID() {
 			return refusal(pa.StaleGeneration, "native_session")

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	sb "github.com/sainteye/clawdline/internal/domain/sessionboard"
@@ -301,19 +303,9 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 		return sb.Page{}, err
 	}
 	defer tx.Rollback()
-	b, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", id))
+	b, err := sessionBoardForReader(ctx, tx, project, actor, id)
 	if err != nil {
 		return sb.Page{}, err
-	}
-	if actor != "" && b.Project != project {
-		return sb.Page{}, sb.ErrMissing
-	}
-	b.Members, err = sessionBoardMembers(ctx, tx, id)
-	if err != nil {
-		return sb.Page{}, err
-	}
-	if actor != "" && !boardMember(b.Members, actor) {
-		return sb.Page{}, sb.ErrDenied
 	}
 	query := "SELECT p.seq,p.actor,p.label,p.persona,p.text,p.reply_to,p.at FROM session_board_posts p WHERE p.board=?"
 	posts, more, err := querySessionBoardPosts(ctx, tx, query, []any{id}, after, before)
@@ -321,6 +313,142 @@ func (s *Store) SessionBoardPage(ctx context.Context, project, actor, id string,
 		return sb.Page{}, err
 	}
 	return sb.Page{Board: b, Posts: posts, More: more}, tx.Commit()
+}
+
+func sessionBoardForReader(ctx context.Context, tx *sql.Tx, project, actor, id string) (sb.Board, error) {
+	b, err := scanSessionBoard(tx.QueryRowContext(ctx, "SELECT "+boardColumns+" FROM session_boards WHERE id=?", id))
+	if err != nil {
+		return sb.Board{}, err
+	}
+	if actor != "" && b.Project != project {
+		return sb.Board{}, sb.ErrMissing
+	}
+	b.Members, err = sessionBoardMembers(ctx, tx, id)
+	if err != nil {
+		return sb.Board{}, err
+	}
+	if actor != "" && !boardMember(b.Members, actor) {
+		return sb.Board{}, sb.ErrDenied
+	}
+	return b, nil
+}
+
+type sessionBoardThread struct {
+	sb.Thread
+	replies []int64
+}
+
+// SessionBoardThreads reads the retained reply edges and then hydrates one
+// bounded page with a single batch query in the same SQLite snapshot.
+func (s *Store) SessionBoardThreads(ctx context.Context, project, actor, id string, cursor sb.ThreadCursor) (sb.ThreadPage, error) {
+	tx, err := s.rd.BeginTx(ctx, nil)
+	if err != nil {
+		return sb.ThreadPage{}, err
+	}
+	defer tx.Rollback()
+	b, err := sessionBoardForReader(ctx, tx, project, actor, id)
+	if err != nil {
+		return sb.ThreadPage{}, err
+	}
+	threads, roots, err := sessionBoardThreads(ctx, tx, id, cursor.Seen)
+	if err != nil {
+		return sb.ThreadPage{}, err
+	}
+
+	page := sb.ThreadPage{Posts: []sb.Post{}}
+	var selected []int64
+	if cursor.Root != 0 {
+		if thread := threads[cursor.Root]; thread != nil {
+			replies := thread.replies
+			start, end := 0, len(replies)
+			if cursor.From > 0 {
+				start, _ = slices.BinarySearch(replies, cursor.From)
+			}
+			if cursor.Before > 0 {
+				end, _ = slices.BinarySearch(replies, cursor.Before)
+				start = max(0, end-sb.MaxPageRows)
+			}
+			last := min(end, start+sb.MaxPageRows)
+			selected = replies[start:last]
+			page.Earlier, page.More = start > 0, last < len(replies)
+		}
+	} else {
+		page.Board = &b
+		page.Threads = []sb.Thread{}
+		for _, root := range roots {
+			thread := threads[root]
+			if cursor.Before > 0 && thread.Latest >= cursor.Before {
+				continue
+			}
+			if len(page.Threads) == sb.MaxPageRows {
+				page.More = true
+				break
+			}
+			page.Threads = append(page.Threads, thread.Thread)
+			selected = append(selected, root)
+		}
+	}
+	if len(selected) > 0 {
+		args := make([]any, 0, len(selected)+1)
+		args = append(args, id)
+		for _, seq := range selected {
+			args = append(args, seq)
+		}
+		query := "SELECT p.seq,p.actor,p.label,p.persona,p.text,p.reply_to,p.at FROM session_board_posts p WHERE p.board=? AND p.seq IN (" +
+			strings.Repeat("?,", len(selected)-1) + "?)"
+		page.Posts, _, err = querySessionBoardPosts(ctx, tx, query, args, 0, 0)
+		if err != nil {
+			return sb.ThreadPage{}, err
+		}
+	}
+	return page, tx.Commit()
+}
+
+func sessionBoardThreads(ctx context.Context, tx *sql.Tx, id string, seen int64) (map[int64]*sessionBoardThread, []int64, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT seq,reply_to FROM session_board_posts WHERE board=? ORDER BY seq", id)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	rootByPost := make(map[int64]int64)
+	threads := make(map[int64]*sessionBoardThread)
+	var roots []int64
+	for rows.Next() {
+		var seq, parent int64
+		if err := rows.Scan(&seq, &parent); err != nil {
+			return nil, nil, err
+		}
+		root := seq
+		if parent > 0 {
+			root = rootByPost[parent]
+			if root == 0 {
+				root = parent
+			}
+		}
+		rootByPost[seq] = root
+		thread := threads[root]
+		if thread == nil {
+			thread = &sessionBoardThread{Thread: sb.Thread{Root: root}}
+			threads[root] = thread
+			roots = append(roots, root)
+		}
+		thread.Latest = seq
+		if seq != root {
+			thread.replies = append(thread.replies, seq)
+			thread.Replies++
+			if seq > seen {
+				thread.Unread++
+				if thread.FirstUnread == 0 {
+					thread.FirstUnread = seq
+				}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	slices.SortFunc(roots, func(a, b int64) int { return cmp.Compare(threads[b].Latest, threads[a].Latest) })
+	return threads, roots, nil
 }
 
 // SessionBoardInbox reads direct replies written by others to an enrolled

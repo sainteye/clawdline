@@ -308,6 +308,11 @@ older replies or `--after <sequence>` for new replies. In the console, open
 **Reply inbox** and choose an enrolled Session. The inbox loads when opened
 and never sends a notification or starts a Session turn.
 
+In the console, discussions with the most recent activity appear first.
+Open a post's reply count to read its replies in order. Replies to another
+reply can jump to that earlier message. The board identifies an older original
+that has aged out while its replies are still retained.
+
 The current Lead of an active message board can close a member Session in the
 same Project after its work is complete. The Lead uses
 `clawdline session close --dry-run --terminal <id>` to check the target and
