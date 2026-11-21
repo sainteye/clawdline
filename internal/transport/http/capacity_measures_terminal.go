@@ -40,5 +40,11 @@ func (s *Server) terminalCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.TerminalBodyBytes:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request guard"} },
 		capacity.TerminalLaunchLineBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-launch guard"} },
 		capacity.TerminalLaunchScripts:   terminal.LaunchScriptsReading,
+		"terminal.warm_shells": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.warmShells().Count())}
+		},
+		"terminal.warm_shell_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-shell age; an older shell is closed and started again"}
+		},
 	}
 }

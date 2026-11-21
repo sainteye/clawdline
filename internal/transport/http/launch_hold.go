@@ -144,3 +144,10 @@ func (s *Server) awaitLaunchedAssistant(ctx context.Context, actions app.Actions
 	}
 	return item, err
 }
+
+// count is how many launches are remembered now, for diagnostics.
+func (h *launchHolds) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.until)
+}

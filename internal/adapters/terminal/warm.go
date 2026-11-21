@@ -341,3 +341,13 @@ const startedSessionName = projects.TmuxStartedSessionName
 // TmuxBinary is the tmux this launcher runs, for work on its server outside a
 // launch (WarmShells.Clear).
 func (l Launcher) TmuxBinary(ctx context.Context) TmuxChoice { return l.binary(ctx) }
+
+// Count is how many warm shells this record holds now, for diagnostics.
+func (w *WarmShells) Count() int {
+	if w == nil {
+		return 0
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.shells)
+}
