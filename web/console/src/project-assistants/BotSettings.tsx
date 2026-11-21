@@ -67,7 +67,7 @@ export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"fail
 export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
   const [original,setOriginal]=useState(bot)
   // The exact values of the save whose outcome is unknown; reconciliation compares against these.
-  const attempted=useRef<W.ProjectAssistantEditSettings>(),[check,setCheck]=useState<SettingsCheck>("")
+  const attempted=useRef<W.ProjectAssistantEditSettings|undefined>(undefined),[check,setCheck]=useState<SettingsCheck>("")
   const [name,setName]=useState(bot.name),[appearance,setAppearance]=useState(bot.appearance),[instructions,setInstructions]=useState(bot.instructions.text)
   const [busy,setBusy]=useState(false),[error,setError]=useState<{code:string;field?:string}>(),[unknown,setUnknown]=useState(false)
   const [approval,setApproval]=useState<{permission_policy:W.ProjectAssistantPermissionPolicy;mode?:string}>(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})
