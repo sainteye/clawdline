@@ -175,29 +175,94 @@
 }
 .session-board-index-card > svg { color: var(--dim); }
 
-.session-board-overview {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 8px;
+.session-board-header-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.session-board-header-tools:empty { display: none; }
+.session-board-archived-tag {
+  padding: 2px 8px; border-radius: 6px; color: var(--dim); font-size: .8em; background: var(--card-hi);
 }
-.session-board-lead-strip { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.session-board-lead-strip strong { overflow-wrap: anywhere; font-size: .92em; }
-.session-board-disclosures { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 7px; margin-block-end: 10px; }
-.session-board-summary, .session-board-members, .session-board-inbox {
-  max-width: 100%; min-width: 0; padding: 6px 9px; color: var(--ink);
-  border: 1px solid var(--line); border-radius: 8px; background: var(--card-hi);
+.session-board-dialog .session-board-roster-button {
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 5px; font-size: .86em; white-space: nowrap;
 }
-.session-board-disclosures details[open] { flex: 1 0 100%; }
-.session-board-disclosures summary { cursor: pointer; font-size: .86em; font-weight: 650; }
-.session-board-members summary span { color: var(--dim); margin-inline-start: 4px; font-weight: 400; }
-.session-board-members ul { list-style: none; margin: 6px 0 0; padding: 0; }
-.session-board-members li { display: flex; align-items: center; gap: 6px; padding: 7px 0; }
-.session-board-members li strong { min-width: 0; overflow-wrap: anywhere; font-size: .85em; }
-.session-board-members li[data-not-listed] > :not(.session-board-member-presence) { opacity: .58; }
-.session-board-member-presence { color: var(--dim); font-size: .76em; }
+.session-board-roster-button .session-board-avatar,
+.session-board-roster-button .session-board-avatar[data-lead] { width: 26px; height: 26px; }
+.session-board-roster-button .session-board-avatar canvas { max-width: 22px; }
+.session-board-roster-short { display: none; }
+
+.session-board-pinned {
+  display: grid; gap: 4px; margin-block-end: 10px; padding: 8px 10px 10px 12px;
+  border: 1px solid var(--session-board-edge); border-radius: 10px; background: var(--session-board-tint);
+}
+.session-board-pinned[data-editing] { border-color: var(--session-board-accent); gap: 8px; margin: 0 0 10px; }
+.session-board-pinned-head {
+  display: flex; align-items: center; gap: 6px; min-height: 32px;
+  color: var(--session-board-accent); font-size: .84em; font-weight: 650;
+}
+.session-board-pinned-head > svg { width: 15px; height: 15px; flex: none; }
+.session-board-pinned-head > span { flex: 1; min-width: 0; }
+.session-board-dialog .session-board-pinned-head button {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 8px;
+  border: 0; color: var(--session-board-accent); background: transparent; font-size: 1em; font-weight: 500;
+}
+.session-board-pinned-head button svg { width: 14px; height: 14px; }
+.session-board-pinned-text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55;
+}
+.session-board-pinned-text[data-open] { display: block; }
+.session-board-pinned-empty { margin: 0; color: var(--dim); font-size: .9em; }
+.session-board-pinned textarea { min-height: 7lh; resize: vertical; line-height: 1.55; }
+
+.session-board-layer { position: absolute; inset: 0; z-index: 5; }
+.session-board-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .28); }
+.session-board-panel {
+  position: absolute; top: 58px; right: 14px; display: grid; gap: 4px;
+  width: min(24rem, calc(100% - 28px)); max-height: calc(100% - 72px); overflow: auto; box-sizing: border-box;
+  padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  box-shadow: 0 18px 48px rgb(0 0 0 / .45);
+}
+.session-board-layer[data-panel="archive"] .session-board-panel {
+  top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); width: min(26rem, calc(100% - 32px)); gap: 12px; padding: 18px;
+}
+.session-board-panel h3 { margin: 0; font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
+.session-board-panel-head { display: flex; align-items: center; gap: 4px; padding: 0 0 4px 6px; }
+.session-board-panel-head h3 { flex: 1; min-width: 0; }
+.session-board-panel-head > .session-board-icon-button:first-child { margin-inline-start: -6px; }
+.session-board-panel-notice { margin: 0 6px 4px; color: var(--session-board-accent); font-size: .86em; }
+.session-board-panel-help { margin: 0 6px 6px; color: var(--dim); font-size: .86em; line-height: 1.5; }
+.session-board-roster { list-style: none; margin: 0; padding: 0; display: grid; }
+.session-board-roster li { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 4px 6px; border-radius: 8px; }
+.session-board-roster-name { display: grid; flex: 1; min-width: 0; }
+.session-board-roster li strong { font-size: .9em; font-weight: 600; overflow-wrap: anywhere; }
+.session-board-roster li small { color: var(--dim); font-size: .76em; }
+.session-board-roster li[data-lead] { margin-block-end: 4px; padding-block: 6px; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.session-board-roster li[data-not-listed] > .session-board-avatar, .session-board-roster li[data-not-listed] strong { opacity: .58; }
+.session-board-roster li > button { flex: none; font-size: .84em; }
+.session-board-dialog .session-board-transfer { margin: 0; gap: 10px; }
+.session-board-transfer fieldset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.session-board-dialog .session-board-transfer label {
+  display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-size: .9em;
+}
+.session-board-transfer label[data-checked] { border-color: var(--session-board-edge); background: var(--session-board-tint); }
+.session-board-dialog .session-board-transfer input[type="radio"] { margin: 0; padding: 0; accent-color: var(--session-board-accent); }
+.session-board-dialog .session-board-transfer > .session-board-create-action { justify-self: stretch; }
+.session-board-panel[role="menu"] > button {
+  display: flex; align-items: center; gap: 11px; min-height: 46px; border: 0; padding: 0 10px; text-align: start; background: transparent;
+}
+.session-board-panel[role="menu"] > button:hover { background: var(--card-hi); }
+.session-board-panel[role="menu"] > button > svg { width: 18px; height: 18px; flex: none; }
+.session-board-panel[role="menu"] > button > span { display: grid; min-width: 0; }
+.session-board-panel[role="menu"] small { color: var(--dim); font-size: .78em; }
+.session-board-panel hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+.session-board-dialog .session-board-panel [data-danger] { color: #f28b82; }
+.session-board-panel[role="menu"] [data-danger] small { color: color-mix(in srgb, #f28b82 75%, var(--dim)); }
+.session-board-archive-effects { margin: 0; padding-inline-start: 1.2em; color: var(--dim); line-height: 1.7; font-size: .92em; }
+.session-board-panel-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.session-board-dialog .session-board-panel-actions button[data-danger] {
+  border-color: transparent; color: #fff; background: #b8433b; font-weight: 650;
+}
 
 .session-board-new { color: var(--session-board-accent); font-size: .84em; margin: 0 0 6px; }
-.session-board-inbox > label { margin-block-start: 9px; }
-.session-board-inbox-replies > .session-board-posts { margin-block-start: 8px; }
-.session-board-inbox-replies { margin-block-start: 8px; }
 .session-board-posts { margin-bottom: 9px; }
 .session-board-posts li { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; }
 .session-board-posts li[data-unread] { background: var(--session-board-tint); border-color: var(--session-board-edge); }
@@ -249,10 +314,16 @@
   .session-board-dialog .session-board-icon-button { width: 44px; }
   .session-board-dialog input, .session-board-dialog textarea { font-size: 16px; }
   .session-board-dock { width: 36px; height: 42px; }
+  .session-board-refresh-slot, .session-board-roster-full { display: none; }
+  .session-board-roster-short { display: inline; }
+  .session-board-panel, .session-board-layer[data-panel="members"] .session-board-panel {
+    top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: 82%;
+    padding-bottom: max(12px, env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; border-inline: 0; border-bottom: 0;
+  }
+  .session-board-layer[data-panel="archive"] .session-board-panel { bottom: auto; border-radius: 16px; border: 1px solid var(--line); }
+  .session-board-scrim { background: rgb(0 0 0 / .5); }
 }
 
-.session-board-disclosures details > summary { display:flex;align-items:center;gap:6px;list-style:none; }
-.session-board-disclosures details > summary::-webkit-details-marker { display:none; }
 
 @media (width > 700px) {
   .session-board-reader { height: 94dvh; max-height: none; }

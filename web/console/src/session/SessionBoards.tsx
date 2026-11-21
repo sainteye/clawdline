@@ -464,6 +464,7 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, pre
     if (view.current) view.current.scrollTop = 0
   }
   const [expanded, expand] = useState(false)
+  const [tools, setTools] = useState<HTMLDivElement | null>(null)
   const [creating, create] = useState(false)
   const changeCreateView = (show: boolean) => {
     if (!show && dialog.current?.querySelector(".session-board-create[aria-busy=true]")) return
@@ -489,13 +490,17 @@ function BoardDialog({ source, initial, boards, loaded, problem, candidates, pre
         <h2 id={heading} ref={title} tabIndex={-1}>{projectIcon && <SessionBoardMark icon={projectIcon} project />}{selectedBoard?.name ?? t(creating ? "sessionBoardCreate" : "sessionBoards")}</h2>
         {selectedBoard && <BoardPurpose key={selectedBoard.id} text={selectedBoard.purpose} />}
       </div>
-      {!setup && <button type="button" className="session-board-expand" onClick={() => expand(!expanded)}>
-        {t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}
+      <div className="session-board-header-tools" ref={setTools} />
+      {!setup && <button type="button" className="session-board-icon-button session-board-expand" onClick={() => expand(!expanded)}
+        aria-label={t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")} title={t(expanded ? "sessionBoardRestore" : "sessionBoardExpand")}>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d={expanded ? "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" : "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"} /></svg>
       </button>}
-      <button type="button" onClick={dismiss}>{t("sessionBoardClose")}</button>
+      <button type="button" className="session-board-icon-button" onClick={dismiss} aria-label={t("sessionBoardClose")} title={t("sessionBoardClose")}>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
     </header>
     <div className="session-board-scroll" ref={view}>
-    {selected ? <BoardMessages key={selected} source={source} id={selected} indexedBoard={indexedBoard}
+    {selected ? <BoardMessages key={selected} source={source} id={selected} indexedBoard={indexedBoard} tools={tools}
       refreshIndex={refresh} candidates={candidateMap} onRead={setOpened} focusMessage={selected === createdBoard} />
     : creating ? <div className="session-board-body">
       <BoardCreate source={source} candidates={candidates} preferredLead={preferredLead} onCreated={id => {
@@ -581,6 +586,49 @@ function BoardPurpose({ text }: { text: string }) {
   </div>
 }
 
+// The pinned summary shows two lines, opens in place, and is edited on the card itself.
+function BoardPinned({ text, editable, editing, edit, busy, save }: {
+  text: string; editable: boolean; editing: boolean; edit: (editing: boolean) => void; busy: boolean; save: (text: string) => void
+}) {
+  const body = useRef<HTMLParagraphElement>(null)
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  useLayoutEffect(() => {
+    const node = body.current
+    if (!node || open) return
+    const check = () => setLong(node.scrollHeight > node.clientHeight + 1)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [text, open, editing])
+  const pencil = <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
+  if (editing) return <form className="session-board-pinned" data-editing="" aria-busy={busy} onSubmit={event => {
+    event.preventDefault()
+    save(String(new FormData(event.currentTarget).get("summary") ?? ""))
+  }}>
+    <div className="session-board-pinned-head">{pencil}<span>{t("sessionBoardSummaryEdit")}</span></div>
+    <textarea name="summary" defaultValue={text} rows={4} aria-label={t("sessionBoardSummary")} autoFocus disabled={busy} />
+    <div className="session-board-panel-actions">
+      <button type="button" onClick={() => edit(false)} disabled={busy}>{t("sessionBoardCancel")}</button>
+      <button type="submit" className="session-board-create-action" disabled={busy}>{t("sessionBoardSave")}</button>
+    </div>
+  </form>
+  if (!text && !editable) return null
+  return <section className="session-board-pinned" aria-label={t("sessionBoardSummary")}>
+    <div className="session-board-pinned-head">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z" /></svg>
+      <span>{t("sessionBoardSummary")}</span>
+      {editable && <button type="button" onClick={() => edit(true)}>{pencil}{t("sessionBoardEdit")}</button>}
+      {text && (long || open) && <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {t(open ? "sessionBoardSummaryCollapse" : "sessionBoardSummaryExpand")}
+      </button>}
+    </div>
+    {text ? <p ref={body} className="session-board-pinned-text" data-open={open || undefined}>{text}</p>
+      : <p className="session-board-pinned-empty">{t("sessionBoardSummaryEmpty")}</p>}
+  </section>
+}
+
 function useBoardChange(source: SessionBoardSource) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -638,8 +686,10 @@ function BoardCreate({ source, candidates, preferredLead, onCreated }: {
   </form>
 }
 
-function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onRead, focusMessage }: {
-  source: SessionBoardSource; id: string; indexedBoard?: Board; refreshIndex: () => Promise<void>
+type BoardPanel = "members" | "transfer" | "menu" | "archive"
+
+function BoardMessages({ source, id, indexedBoard, tools, refreshIndex, candidates, onRead, focusMessage }: {
+  source: SessionBoardSource; id: string; indexedBoard?: Board; tools: HTMLElement | null; refreshIndex: () => Promise<void>
   candidates: ReadonlyMap<string, Actor>; onRead: (board: Board) => void; focusMessage: boolean
 }) {
   const [page, setPage] = useState<Page>()
@@ -649,8 +699,12 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const [draft, setDraft] = useState("")
   const [activeThread, setActiveThread] = useState<{ root: number; from?: number }>()
   const [reply, setReply] = useState<number>()
-  const [manage, setManage] = useState(false)
-  const [archive, confirmArchive] = useState(false)
+  const [panel, setPanel] = useState<BoardPanel>()
+  const [editing, setEditing] = useState(false)
+  const [heir, setHeir] = useState("")
+  const [notice, setNotice] = useState("")
+  const panelRef = useRef<HTMLDivElement>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
   const controller = useRef<AbortController | null>(null)
   const change = useBoardChange(source)
   const sourceRef = useRef(source)
@@ -725,9 +779,6 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const members = roster?.members?.filter(member => member.id !== roster.lead) ?? []
   const rosterMembers = roster?.members ?? []
   const total = rosterMembers.length
-  const listed = rosterMembers.filter(member => member.presence === "listed").length
-  const count = listed < total && rosterMembers.every(member => member.presence)
-    ? t("sessionBoardMembersInList", { listed, total }) : total
   const roleByActor = new Map(roster?.members?.map(member => [member.id, member.persona]))
   const labelFor = (actor: Actor) => candidates.get(actor.id)?.label ?? actor.label
   const avatar = (actor: Actor) => {
@@ -756,50 +807,131 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
   const postsBySeq = new Map(page?.posts.map(post => [post.seq, post]))
   const threadRegion = useId()
   const unread = b ? Math.max(0, b.latest - unreadSince) : 0
+  // Only members that are live Sessions can take over; the daemon refuses anyone else.
+  const heirs = members.filter(member => candidates.has(member.id))
+  const canTransfer = allowed && heirs.length > 0
+  const chosen = heirs.find(member => member.id === heir)
+  const openPanel = (next: BoardPanel) => {
+    if (!panel) returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setNotice("")
+    setPanel(next)
+  }
+  const closePanel = () => {
+    setPanel(undefined)
+    setHeir("")
+    returnFocus.current?.focus({ preventScroll: true })
+  }
+  useEffect(() => {
+    panelRef.current?.querySelector<HTMLElement>("button, input")?.focus({ preventScroll: true })
+  }, [panel])
+  useEffect(() => { if (!allowed && panel && panel !== "members") setPanel(undefined) }, [allowed, panel])
+  const host = tools?.closest("dialog") ?? null
+  const closeButton = <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardClose")}
+    title={t("sessionBoardClose")} onClick={closePanel}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+  const panelLabel = panel === "menu" ? t("sessionBoardMore") : panel === "archive" ? t("sessionBoardArchive")
+    : panel === "transfer" ? t("sessionBoardTransferTitle") : t("sessionBoardMembers")
+  const toolsView = tools && b && createPortal(<>
+    {b.archived_at && <span className="session-board-archived-tag">{t("sessionBoardArchived")}</span>}
+    <span className="session-board-refresh-slot"><BoardRefresh refresh={() => { void refreshIndex(); void load() }} disabled={reading} /></span>
+    {roster?.members && <button type="button" className="session-board-roster-button" aria-haspopup="dialog"
+      aria-label={t("sessionBoardMemberCount", { count: total })}
+      aria-expanded={panel === "members" || panel === "transfer"} onClick={() => openPanel("members")}>
+      {lead && avatar(lead)}<span className="session-board-roster-full">{t("sessionBoardMemberCount", { count: total })}</span>
+      <span className="session-board-roster-short" aria-hidden="true">{total}</span>
+    </button>}
+    {allowed && <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardMore")} title={t("sessionBoardMore")}
+      aria-haspopup="menu" aria-expanded={panel === "menu"} onClick={() => openPanel("menu")}>
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" /></svg>
+    </button>}
+  </>, tools)
+  const panelView = b && panel && host && createPortal(<div className="session-board-layer" data-panel={panel}>
+    <div className="session-board-scrim" onClick={closePanel} />
+    <div ref={panelRef} className="session-board-panel" role={panel === "menu" ? "menu" : panel === "archive" ? "alertdialog" : "dialog"}
+      aria-label={panelLabel} onKeyDown={event => {
+        if (event.key !== "Escape") return
+        event.preventDefault()
+        event.stopPropagation()
+        closePanel()
+      }}>
+      {panel === "members" && <>
+        <header className="session-board-panel-head"><h3>{t("sessionBoardMemberCount", { count: total })}</h3>{closeButton}</header>
+        {notice && <p className="session-board-panel-notice" role="status">{notice}</p>}
+        <ul className="session-board-roster">
+          {lead && <li data-lead="">
+            {avatar(lead)}<span className="session-board-roster-name"><strong>{labelFor(lead)}</strong><small>{t("sessionBoardLead")}</small></span>
+            {canTransfer && <button type="button" onClick={() => setPanel("transfer")}>{t("sessionBoardTransfer")}</button>}
+          </li>}
+          {members.map(member => <li key={member.id} data-not-listed={member.presence === "not_listed" || undefined}>
+            {avatar(member)}<span className="session-board-roster-name"><strong>{labelFor(member)}</strong>
+              {member.presence === "not_listed" && <small>{t("sessionBoardMemberNotListed")}</small>}</span>
+          </li>)}
+        </ul>
+      </>}
+      {panel === "transfer" && <>
+        <header className="session-board-panel-head">
+          <button type="button" className="session-board-icon-button" aria-label={t("sessionBoardMembersBack")} title={t("sessionBoardMembersBack")}
+            onClick={() => { setHeir(""); setPanel("members") }}><BoardChevron direction="back" /></button>
+          <h3>{t("sessionBoardTransferTitle")}</h3>{closeButton}
+        </header>
+        <p className="session-board-panel-help">{t("sessionBoardTransferHelp")}</p>
+        <form className="session-board-transfer" onSubmit={event => {
+          event.preventDefault()
+          if (!chosen) return
+          const name = labelFor(chosen)
+          action({ action: "transfer", target: chosen.id }, () => {
+            void refreshIndex()
+            setHeir("")
+            setPanel("members")
+            setNotice(t("sessionBoardTransferDone", { name }))
+          })
+        }}>
+          <fieldset aria-label={t("sessionBoardTransferTitle")}>
+            {heirs.map(member => <label key={member.id} data-checked={heir === member.id || undefined}>
+              <input type="radio" name="heir" value={member.id} checked={heir === member.id} onChange={() => setHeir(member.id)} />
+              {avatar(member)}<span>{labelFor(member)}</span>
+            </label>)}
+          </fieldset>
+          <button type="submit" className="session-board-create-action" disabled={!chosen || change.busy}>
+            {chosen ? t("sessionBoardTransferTo", { name: labelFor(chosen) }) : t("sessionBoardTransfer")}
+          </button>
+        </form>
+      </>}
+      {panel === "menu" && <>
+        <button type="button" role="menuitem" onClick={() => { closePanel(); setEditing(true) }}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg><span>{t("sessionBoardSummaryEdit")}</span>
+        </button>
+        {canTransfer && <button type="button" role="menuitem" onClick={() => setPanel("transfer")}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3" /></svg>
+          <span>{t("sessionBoardTransfer")}{lead && <small>{t("sessionBoardLeadNow", { name: labelFor(lead) })}</small>}</span>
+        </button>}
+        <hr />
+        <button type="button" role="menuitem" data-danger="" onClick={() => setPanel("archive")}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7h18M8 7V4h8v3M6 7l1 13h10l1-13" /></svg>
+          <span>{t("sessionBoardArchive")}<small>{t("sessionBoardArchiveHint")}</small></span>
+        </button>
+      </>}
+      {panel === "archive" && <>
+        <h3>{t("sessionBoardArchiveTitle", { name: b.name })}</h3>
+        <ul className="session-board-archive-effects">
+          <li>{t("sessionBoardArchiveNoPosts")}</li>
+          <li>{t("sessionBoardArchiveKept")}</li>
+          <li>{t("sessionBoardArchiveDeleted")}</li>
+        </ul>
+        <div className="session-board-panel-actions">
+          <button type="button" onClick={closePanel}>{t("sessionBoardCancel")}</button>
+          <button type="button" data-danger="" disabled={change.busy} onClick={() => action({ action: "archive" }, closePanel)}>{t("sessionBoardArchive")}</button>
+        </div>
+      </>}
+    </div>
+  </div>, host)
   return <div className="session-board-body" aria-busy={Boolean(page) && (reading || change.busy)}>
     {!page && !error && <LoadingSkeleton id="SK-37" kind="cards" label={t("sessionBoardMessagesLoading")} />}
     {error && <p role="alert">{t("sessionBoardReadError")} <code>{error}</code></p>}
     {!page && error && <BoardRefresh refresh={() => void load()} />}
     {change.error && <p role="alert">{writeProblem(change.error)} <code>{change.error}</code></p>}
     {b && page && <>
-      <div className="session-board-overview">
-        {lead && <div className="session-board-lead-strip">{avatar(lead)}<SessionBoardLead /><strong>{labelFor(lead)}</strong></div>}
-        <div className="session-board-actions">
-          <BoardRefresh refresh={() => { void refreshIndex(); void load() }} disabled={reading} />
-          {allowed && <button type="button" aria-expanded={manage} onClick={() => setManage(!manage)}>{t("sessionBoardManage")}</button>}
-          {b.archived_at && <span>{t("sessionBoardArchived")}</span>}
-        </div>
-      </div>
-      <div className="session-board-disclosures">
-        {b.summary && <details className="session-board-summary"><summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardSummary")}</summary><p className="session-board-text">{b.summary}</p></details>}
-        {roster?.members && <details className="session-board-members">
-          <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardMembers")} <span>{count}</span></summary>
-          <ul>{(lead ? [lead, ...members] : members).map(member => <li key={member.id} data-not-listed={member.presence === "not_listed" || undefined}>
-            {avatar(member)}
-            <strong>{labelFor(member)}</strong>
-            {member.id === roster.lead && <SessionBoardLead />}
-            {member.presence === "not_listed" && <small className="session-board-member-presence">{t("sessionBoardMemberNotListed")}</small>}
-          </li>)}</ul>
-        </details>}
-        {source.readInbox && total > 0 && <BoardInbox source={source} id={id} members={rosterMembers} labelFor={labelFor} avatar={avatar} />}
-      </div>
-      {allowed && manage && <div className="session-board-management">
-        <form key={b.summary} onSubmit={e => { e.preventDefault(); action({ action: "summary", text: String(new FormData(e.currentTarget).get("summary")) }) }}>
-          <label>{t("sessionBoardSummary")}<textarea name="summary" defaultValue={b.summary} rows={3} /></label>
-          <button disabled={change.busy}>{t("sessionBoardSave")}</button>
-        </form>
-        <form onSubmit={e => { e.preventDefault(); action({ action: "transfer", target: String(new FormData(e.currentTarget).get("lead")) }) }}>
-          <label>{t("sessionBoardTransfer")}<select name="lead" aria-label={t("sessionBoardTransfer")} required><option value="">{t("sessionBoardChoose")}</option>
-            {members.filter(member => candidates.has(member.id)).map(member => <option key={member.id} value={member.id}>{labelFor(member)}</option>)}
-          </select></label>
-          <button disabled={change.busy}>{t("sessionBoardTransfer")}</button>
-        </form>
-        {archive ? <div>
-          <p>{t("sessionBoardArchiveAsk")}</p>
-          <button type="button" disabled={change.busy} onClick={() => action({ action: "archive" }, () => confirmArchive(false))}>{t("sessionBoardArchive")}</button>
-          <button type="button" onClick={() => confirmArchive(false)}>{t("sessionBoardCancel")}</button>
-        </div> : <button type="button" onClick={() => confirmArchive(true)}>{t("sessionBoardArchive")}</button>}
-      </div>}
+      <BoardPinned text={b.summary} editable={allowed} editing={allowed && editing} edit={setEditing} busy={change.busy}
+        save={text => action({ action: "summary", text }, () => setEditing(false))} />
       {unread > 0 && <p className="session-board-new" role="status">{t("sessionBoardUnread", { count: unread })}</p>}
       {!(threads?.length ?? page.posts.length) && <p>{t("sessionBoardNoPosts")}</p>}
       {threads ? <ul className="session-board-posts session-board-thread-list" role="list">
@@ -832,6 +964,8 @@ function BoardMessages({ source, id, indexedBoard, refreshIndex, candidates, onR
         <button type="submit" disabled={change.busy || !draft.trim()}>{t("sessionBoardPost")}</button>
       </form>}
     </>}
+    {toolsView}
+    {panelView}
   </div>
 }
 
@@ -899,74 +1033,6 @@ function BoardPostTime({ at }: { at: number }) {
   return <time dateTime={date.toISOString()}>
     {date.toLocaleString(document.documentElement.lang || undefined, { dateStyle: "short", timeStyle: "short" })}
   </time>
-}
-
-function BoardInbox({ source, id, members, labelFor, avatar }: {
-  source: SessionBoardSource; id: string; members: Actor[]; labelFor: (actor: Actor) => string; avatar: (actor: Actor) => ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  const [selected, select] = useState("")
-  const member = members.find(actor => actor.id === selected) ?? (members.length === 1 ? members[0] : undefined)
-  return <details className="session-board-inbox" onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary><ChevronIcon direction="right" className="disclosure-chevron" />{t("sessionBoardInbox")}</summary>
-    {open && <>
-      <label>{t("sessionBoardInboxSession")}<select value={member?.id ?? ""} onChange={e => select(e.currentTarget.value)}>
-        <option value="">{t("sessionBoardChoose")}</option>
-        {members.map(actor => <option key={actor.id} value={actor.id}>{labelFor(actor)}</option>)}
-      </select></label>
-      {member && <BoardInboxReplies key={member.id} source={source} id={id} member={member.id} labelFor={labelFor} avatar={avatar} />}
-    </>}
-  </details>
-}
-
-function BoardInboxReplies({ source, id, member, labelFor, avatar }: {
-  source: SessionBoardSource; id: string; member: string; labelFor: (actor: Actor) => string; avatar: (actor: Actor) => ReactNode
-}) {
-  const [page, setPage] = useState<Inbox>()
-  const [reading, setReading] = useState(false)
-  const [problem, setProblem] = useState(false)
-  const controller = useRef<AbortController | null>(null)
-  const current = useRef(source)
-  current.current = source
-  const load = useCallback(async (before?: number) => {
-    controller.current?.abort()
-    const request = new AbortController()
-    controller.current = request
-    setReading(true)
-    setProblem(false)
-    try {
-      const read = current.current.readInbox
-      if (!read) throw new Error("offline")
-      const next = await read({ board: id, member, ...(before ? { before } : {}) }, request.signal)
-      if (!request.signal.aborted) {
-        setPage(previous => before && previous ? { ...next, posts: [...next.posts, ...previous.posts] } : next)
-      }
-    } catch {
-      if (!request.signal.aborted) setProblem(true)
-    } finally {
-      if (!request.signal.aborted) setReading(false)
-    }
-  }, [id, member])
-  useEffect(() => { void load(); return () => controller.current?.abort() }, [load])
-  return <div className="session-board-inbox-replies" aria-busy={reading}>
-    {reading && !page && <p role="status">{t("sessionBoardInboxLoading")}</p>}
-    {problem && <p role="alert">{t("sessionBoardInboxReadError")}</p>}
-    <BoardRefresh refresh={() => void load()} disabled={reading} />
-    {page && !page.posts.length && <p>{t("sessionBoardInboxEmpty")}</p>}
-    {!!page?.posts.length && <ol className="session-board-posts" reversed>
-      {[...page.posts].reverse().map(post => <li key={post.seq}>
-        <div className="session-board-post-meta">
-          {post.author.id !== "person" && avatar(post.author)}
-          <strong>{post.author.id === "person" ? t("sessionBoardPerson") : labelFor(post.author)}</strong>
-          <BoardPostTime at={post.at} />
-          <span>#{post.seq}</span>
-        </div>
-        <small>{t("sessionBoardReplyTo", { seq: post.reply_to })}</small>
-        <BoardPostText text={post.text} />
-      </li>)}
-    </ol>}
-    {page?.more && <button type="button" disabled={reading} onClick={() => void load(page.posts[0]?.seq)}>{t("sessionBoardInboxEarlier")}</button>}
-  </div>
 }
 
 // A collapsed note shows plain text so its hidden links cannot take focus.
