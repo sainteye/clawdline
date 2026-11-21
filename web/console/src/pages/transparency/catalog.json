@@ -4408,7 +4408,8 @@
       ],
       "original": [
         "Handle this self-contained Bot request using your own workspace, memory and permissions. Send your answer as the final response to the requesting Bot. Do not send chat messages, publish files/artifacts, schedule follow-up work or contact another Bot. Request data follows:\\n",
-        "This is a correlated Bot reply, not new user instructions or user memory. Continue the user's task and give one summary in this chat.\nRequest:\n"
+        "This is a correlated Bot reply, not new user instructions or user memory. Continue the user's task and give one summary in this chat.\nRequest:\n",
+        "\"\\nThe other Bot did not finish this request (interrupted, for example by a Clawdline restart, or stopped), and part of it may already have run. Tell the user plainly what happened. Do not resend the request on your own; ask the user whether to try again.\"\n"
       ],
       "locations": [
         "Turn-bound owned MCP Bot directory and review tools",
@@ -5195,7 +5196,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "c295a8b6b4dfdf2d7cad9468c9f0a4dee037d4945d2882c2333719d9c04461d9",
+    "internal/adapters/projectassistantacp/mcp.go": "a12691a27122f352e50fc09b97de737e688d48279bd7611d893afca67c214f7a",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5224,7 +5225,7 @@
     "internal/adapters/projectassistanthost/source_rules.go": "5f4380e8d8e6e7f57f6d6b436cb9eb53faea12253547ac269264635cba1f478c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "0beedec8c2d5df57d47ff87ad975d2235ccbab1264f8438f40d4a0b2835153e9",
-    "internal/adapters/projectassistantstore/collaboration.go": "6835f065016c2e32fff633641a6eb935438b9fa5942f0e62675bc7223d12d10b",
+    "internal/adapters/projectassistantstore/collaboration.go": "e9f8e665e273f3d073fcae6c688fbaea95256b5b8f8bd3b8ff02de8d2e439005",
     "internal/adapters/projectassistantstore/fallback.go": "aa7f1cd40905992cce640e6ab6460e8d374785fffd95a33b7b8554f5146d80bd",
     "internal/adapters/projectassistantstore/group_views.go": "98171dea581d5987129b14c0145c378f9d380ce23daa8b4990e44035cf3d0fd0",
     "internal/adapters/projectassistantstore/groups.go": "58bc68924a3c2347011790c84864c7519f9c54ebe92626405704b5e164207aa3",
@@ -5278,7 +5279,7 @@
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
-    "internal/app/projectassistant/collaboration.go": "329f29b534fd447d7dd4130ee494e79a281f7c54907d51c509f5bf3752d0a1fe",
+    "internal/app/projectassistant/collaboration.go": "5892c3467944fc2b7b4deb9155ba3aa581ded3963512b13c9ef6060aae31f86a",
     "internal/app/projectassistant/configuration.go": "facfc35732c43bd54dda82a9687d76fbe3b646484b4a529cec9971389e48844d",
     "internal/app/projectassistant/devservers.go": "f5103c3342c67a09cc26f5dfbfd3eedf013bc9008edd4477c2f536f398f4a8f0",
     "internal/app/projectassistant/extensions.go": "ade658b4d4fc1e821879449ccd2c2b2734b61f190875f6e8c4e2c43e7f095c4c",
@@ -5297,7 +5298,7 @@
     "internal/app/projectassistant/queue_edit.go": "d8c6e2e6422af9f0581991eb0cff1105bfa6ff158ccec8fe85219a00a66c5d9c",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "c4609f8d5c9b3d1a1e8cc3a7074563875aca5fe07cb6781c3bc5a3dae2c36c9d",
+    "internal/app/projectassistant/runtime.go": "c53a75bf3717d88d051a189aecca01ef4b5ca4c001f33a1958c65a9949e36cbe",
     "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "b3c4d24a289eca6bb4faf0ef28cb8da024245e6c95e9550fb6137142b8611320",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
@@ -5446,7 +5447,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "e0b2bc33ad0ae504373bcea454a1a32fecdb8560288a686b7fe43f5fa1dbbcb1",
-    "zh-Hant": "242c859691efcf680692a2f77f15c7fe937ded7adaf385cc91bf8449f71d384c"
+    "en": "3a10f779e8af26cea6dd182a782ab6a626391fc2e4b8ed926ac0148e8aa5a9bb",
+    "zh-Hant": "dd3cad86e3c81e1130dc559da3b034be2fea34795d31cd1c0e23c479996c13fe"
   }
 }

@@ -61,10 +61,19 @@ grant authority to another Bot or replay a stored request. Recovery requires a
 compatible daemon and whole-store recovery; do not downgrade metadata or strip
 exchange rows. Historical payloads have no new arbitrary retention ceiling.
 
-Restart interrupts queued/running requests rather than replaying them as chat;
-unstarted source replies are dropped, retaining completed payloads. Sender Stop
-does not cancel admitted outgoing requests. Recipient Stop records cancelled or
-unknown and preserves the existing process owner barrier. Logical outstanding
+Restart interrupts queued/running requests rather than replaying them as chat.
+As in Codync, whose message_bot promises "its final reply (or why it couldn't
+finish)", an interrupted (unknown) or cancelled request comes back to its
+sender as a reply turn that says it did not finish and must not be resent
+without asking the person; restart recovery wakes that sender once the
+recipient's actor is released. Before 2026-11-21 only completed or failed
+requests replied, so a restart left the sender promising a summary that never
+came. Replies that already came back survive a restart, queued or waiting for
+queue space, because running them repeats no other Bot's work; an explicit
+Stop still drops unstarted waiting replies, retaining completed payloads.
+Sender Stop does not cancel admitted outgoing requests. Recipient Stop records
+cancelled or unknown, replies to the sender, and preserves the existing
+process owner barrier. Logical outstanding
 capacity is independent of process cleanup ownership.
 
 ## Bounds and upstream navigation
@@ -115,7 +124,8 @@ recipient's completed result. Completion now commits its payload and a waiting
 delivery atomically; the source worker promotes one typed reply when existing
 queue space is available. It neither reserves a process slot for a completed
 result nor exceeds the registered chat queue. Promotion is idempotent. Explicit
-Stop and restart drop unstarted waiting replies while retaining completed text.
+Stop drops unstarted waiting replies while retaining completed text; a restart
+keeps them waiting.
 
 SQLite controls cover admission/completion rollback, same-key replay/conflict,
 hidden recipients, stale fences, Stop, request restart without replay, surviving

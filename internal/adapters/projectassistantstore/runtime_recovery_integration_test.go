@@ -376,3 +376,56 @@ func TestRuntimeSQLiteReconnectKeepsMessagesEventsAndReadCursor(t *testing.T) {
 		t.Fatalf("reconnect lost cursor or replayed: %+v %v opens=%d sends=%d", x.ReadCursors, err, p.opens.Load(), p.sends.Load())
 	}
 }
+
+// A restart cut Lynn off mid-request; Clawdline told the person it would
+// summarize her reply and then heard nothing. Now the request is still not
+// replayed, but its sender gets a reply turn saying it did not finish.
+func TestRestartTellsTheSenderThatItsRequestDidNotFinish(t *testing.T) {
+	_, s, _ := testDB(t)
+	a := seed(t, s, "a")
+	populate(t, s, a, pa.EffectAccepted)
+	b := seedTeamRecipient(t, s, "b")
+	x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, a, b, "restart-tell"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The sender's own turn ended before the restart, as Clawdline's had.
+	export, err := s.Export(testContext, a.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var own pa.Turn
+	for _, turn := range export.Turns {
+		if turn.ID == "turn" {
+			own = turn
+		}
+	}
+	finish := reviewFinish(t, s, a.Key, own, pa.TurnSucceeded)
+	finish.Permissions, finish.WorkLinks = nil, nil
+	for _, p := range export.Permissions {
+		p.State, p.SelectedOptionID = pa.PermissionResolved, "reject"
+		finish.Permissions = append(finish.Permissions, p)
+	}
+	if _, err = s.Commit(testContext, finish); err != nil {
+		t.Fatal(err)
+	}
+	reviewStart(t, s, b.Key, x.RequestTurnID)
+	peer := &recoveryPeer{sent: make(chan app.PromptRequest, 1), result: make(chan app.PromptResult, 1)}
+	r := recoveryEngine(t, s, b, peer)
+	if err = r.Recover(testContext, b.Key); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case q := <-peer.sent:
+		if q.Turn.Fence.Key != a.Key || q.Turn.Origin != pa.BotReplyOrigin || q.Turn.ExchangeID != x.ID || !strings.Contains(q.Text, "did not finish") || !strings.Contains(q.Text, "Do not resend the request") {
+			t.Fatalf("the sender's reply turn: key=%v origin=%s text=%q", q.Turn.Fence.Key, q.Turn.Origin, q.Text)
+		}
+		peer.result <- app.PromptResult{FinalText: "The review did not finish; shall I ask again?"}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the sender was never told that its request did not finish")
+	}
+	got, err := s.Exchange(testContext, a.Key, x.ID)
+	if err != nil || got.Outcome != pa.ExchangeUnknown {
+		t.Fatal(got, err)
+	}
+}
