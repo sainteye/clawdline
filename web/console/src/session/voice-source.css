@@ -69,14 +69,15 @@
 }
 
 .voice .voice-live-preview {
-    flex: 0 0 100%;
-    min-width: 0;
-    color: var(--dim);
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+  flex: 0 0 100%;
+  min-width: 0;
+  max-block-size: min(12rem, 30vh);
+  max-block-size: min(12rem, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--dim);
 }
 
 .voice .voice-live-preview:empty { display: none; }

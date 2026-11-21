@@ -437,8 +437,11 @@ function open(job: VoiceJob): void {
     for (const track of got.getAudioTracks()) track.enabled = false
     const live = await connectLiveDictation(connection, got, freshKey(), controller.signal, (text) => {
       if (mine !== token) return
-      const preview = job.host.querySelector(".voice-live-preview")
-      if (preview) preview.textContent = text
+      const preview = job.host.querySelector<HTMLElement>(".voice-live-preview")
+      if (!preview) return
+      const atBottom = preview.scrollHeight - preview.clientHeight - preview.scrollTop <= 2
+      preview.textContent = text
+      if (atBottom) preview.scrollTop = preview.scrollHeight
     })
     if (mine !== token || job.guard() || !connection.current()) {
       live.close()
@@ -1345,8 +1348,11 @@ function show(): void {
     }
     box.appendChild(acts)
     if (state === "recording" && recording?.live) {
-      const preview = document.createElement("span")
+      const preview = document.createElement("div")
       preview.className = "voice-live-preview"
+      preview.tabIndex = 0
+      preview.setAttribute("role", "region")
+      preview.setAttribute("aria-label", nextWord("voiceEngineRealtime"))
       box.appendChild(preview)
     }
 

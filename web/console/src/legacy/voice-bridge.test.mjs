@@ -13,6 +13,10 @@ const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKi
 
 class Element {
   children = []; dataset = {}; style = {}; listeners = {}; attributes = {}; isConnected = true
+  scrollOffset = 0; clientHeight = 0
+  get scrollHeight() { return Math.max(this.clientHeight, this.textContent.split("\n").length * 20) }
+  get scrollTop() { return this.scrollOffset }
+  set scrollTop(value) { this.scrollOffset = Math.min(value, this.scrollHeight - this.clientHeight) }
   set textContent(value) { this.text = value; this.children = [] }
   get textContent() { return (this.text ?? "") + this.children.map(child => child.textContent).join("") }
   appendChild(child) { this.children.push(child); return child }
@@ -375,6 +379,28 @@ test("a sent recording that fails while its composer is open stays retryable and
   assert.deepEqual(h.sent, ["Second try"]); assert.deepEqual(h.words, [])
 })
 
+
+test("live dictation follows newly spoken lines and preserves a reader's scroll position", async () => {
+  let update
+  const h = harness({ live: async (_, __, ___, ____, onText) => {
+    update = onText
+    return { finish: async () => "Final draft", close() {} }
+  } })
+  await h.start()
+  const preview = h.box.querySelector(".voice-live-preview")
+  preview.clientHeight = 40
+  const initial = "第一句\n第二句\n第三句\n第四句"
+  update(initial)
+  assert.equal(preview.scrollTop, preview.scrollHeight - preview.clientHeight)
+  preview.scrollTop = 12
+  const extended = initial + "\n第五句\n第六句"
+  update(extended)
+  assert.equal(preview.scrollTop, 12)
+  assert.equal(preview.textContent, extended)
+  preview.scrollTop = preview.scrollHeight - preview.clientHeight
+  update(extended + "\n第七句")
+  assert.equal(preview.scrollTop, preview.scrollHeight - preview.clientHeight)
+})
 
 test("Realtime keeps preview separate and puts the final words into the draft once", async () => {
   let preview, finish, closes = 0
