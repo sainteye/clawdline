@@ -1414,24 +1414,24 @@ const count = v => Number.isSafeInteger(v) && v > 0 ? v : 0;
 function companionFrame(kind, variant, phase) { return images[kind + "-" + variant + "-" + (1 + Math.floor(phase) % 4)]; }
 function drawCompanions(c) {
   if (!live(c.row)) return;
-  const agents = count(c.row.agents), shells = count(c.row.shells), h = CAST_SIZE[c.cast] * 1.42, x0 = c.sx, y0 = c.sy, seed = hash(c.ref);
-  // Spirit beasts trail behind the wanderer, one per running subagent.
-  for (let i = 0; i < Math.min(agents, 3); i++) {
+  const beasts = count(c.row.shells), flames = count(c.row.agents), h = CAST_SIZE[c.cast] * 1.42, x0 = c.sx, y0 = c.sy, seed = hash(c.ref);
+  // Spirit beasts trail behind the wanderer, one per shell or daemon callback.
+  for (let i = 0; i < Math.min(beasts, 3); i++) {
     const img = companionFrame("spirit", 1 + (seed + i) % 4, now * 6 + i * 1.3); if (!img) continue;
     const side = -c.face, x = x0 + side * (30 + i * 24) * scale, y = y0 - (h * .62 + i * 12 + Math.sin(now * 2.4 + i * 2 + seed) * 5) * scale, sz = 40 * scale;
     ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, sz * .8, [170, 225, 255], .28); ctx.globalCompositeOperation = "source-over";
     ctx.save(); ctx.translate(x, y); ctx.scale(c.face, 1); ctx.globalAlpha = .92; ctx.drawImage(img, -sz / 2, -sz / 2, sz, sz); ctx.restore(); ctx.globalAlpha = 1;
   }
-  if (agents > 3) tagCount(x0 - c.face * 92 * scale, y0 - (h * .62 + 30) * scale, "+" + (agents - 3), [170, 225, 255]);
-  // Spirit flames circle the wanderer's head, one per shell or callback.
-  const n = Math.min(shells, 4);
+  if (beasts > 3) tagCount(x0 - c.face * 104 * scale, y0 - (h * .62 + 30) * scale, "+" + (beasts - 3), [170, 225, 255]);
+  // Spirit flames circle the wanderer, one per running subagent.
+  const n = Math.min(flames, 4);
   for (let i = 0; i < n; i++) {
-    const img = companionFrame("wisp", 1 + i % 2, now * 7 + i), a = now * 1.4 + i * TAU / n + seed, x = x0 + Math.cos(a) * 26 * scale, y = y0 - (h * .55 + Math.sin(a) * 8) * scale, sz = 21 * scale, front = Math.sin(a) > 0;
+    const img = companionFrame("wisp", 1 + i % 2, now * 7 + i), a = now * 1.4 + i * TAU / n + seed, x = x0 + Math.cos(a) * 30 * scale, y = y0 - (h * .55 + Math.sin(a) * 9) * scale, sz = 30 * scale, front = Math.sin(a) > 0;
     if (!img) continue;
-    ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, sz * 1.2, i % 2 ? [255, 180, 90] : [120, 240, 220], front ? .45 : .25); ctx.globalCompositeOperation = "source-over";
+    ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, sz * 1.5, i % 2 ? [255, 180, 90] : [120, 240, 220], front ? .7 : .4); ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = front ? 1 : .7; ctx.drawImage(img, x - sz / 2, y - sz / 2, sz, sz); ctx.globalAlpha = 1;
   }
-  if (shells > 4) tagCount(x0 + 38 * scale, y0 - (h * .55 + 16) * scale, "+" + (shells - 4), [255, 200, 120]);
+  if (flames > 4) tagCount(x0 + 42 * scale, y0 - (h * .55 + 18) * scale, "+" + (flames - 4), [255, 200, 120]);
 }
 function tagCount(x, y, text, color) {
   ctx.font = "700 " + 10 * scale + "px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";

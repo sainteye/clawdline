@@ -32,8 +32,8 @@ conjuring a new one, and a patroller swats a floor creature that walks past. Eac
 
 - a **life bar** above its head is the context window still free, draining green to amber
   to red as the conversation fills (the host's `contextUsed`, renewed at most every 15 s);
-- a **spirit beast** trails behind it for each running provider subagent (`agents`);
-- a **spirit flame** circles it for each shell or daemon callback (`shells`).
+- a **spirit beast** trails behind it for each shell or daemon callback (`shells`);
+- a **spirit flame** circles it for each running provider subagent (`agents`).
 
 Beyond three beasts or four flames a small `+N` counts the rest. Missing values draw
 nothing rather than an empty bar. The selection card and readable list state the same
