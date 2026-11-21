@@ -560,8 +560,8 @@ function drawCamp(wx, wy, b) {
 }
 let fireBox = null;
 function drawCampfire(wx, wy) {
-  if (!fireBox) { const m = measure(images["camp-fire-1"]); fireBox = m; }
-  const x = X(wx), y = Y(wy), flick = .86 + .1 * Math.sin(now * 9 + wx) + .05 * Math.sin(now * 23 + wx), frame = images["camp-fire-" + [1, 2, 1, 3, 4, 3][Math.floor(now * 8 + wx) % 6]], ht = 60 * scale, k = ht / (fireBox.bottom - fireBox.top);
+  if (!fireBox) fireBox = measure(images["camp-fire-4"], true);
+  const x = X(wx), y = Y(wy), flick = .86 + .1 * Math.sin(now * 9 + wx) + .05 * Math.sin(now * 23 + wx), frame = images["camp-fire-" + [1, 2, 1, 3, 4, 3][Math.floor(now * 8 + wx) % 6]], ht = 34 * scale, k = ht / (fireBox.bottom - fireBox.top);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 18 * scale, 150 * scale * flick, [255, 170, 90], .5); drawGlow(x, y - 16 * scale, 60 * scale * flick, [255, 220, 160], .55); ctx.globalCompositeOperation = "source-over";
   ctx.drawImage(frame, x - fireBox.cx * k, y - fireBox.bottom * k + 3 * scale, fireBox.size * k, fireBox.size * k);
   ctx.globalCompositeOperation = "lighter";
@@ -570,7 +570,7 @@ function drawCampfire(wx, wy) {
 }
 function drawCampProp(kind, wx, wy, ht, flip) {
   const img = images["camp-" + kind]; if (!img) return;
-  if (!drawCampProp.box) drawCampProp.box = {}; const box = drawCampProp.box[kind] || (drawCampProp.box[kind] = measure(img)), k = ht * scale / (box.bottom - box.top);
+  if (!drawCampProp.box) drawCampProp.box = {}; const box = drawCampProp.box[kind] || (drawCampProp.box[kind] = measure(img, true)), k = ht * scale / (box.bottom - box.top);
   ctx.save(); ctx.translate(X(wx), Y(wy)); if (flip) ctx.scale(-1, 1); ctx.drawImage(img, -box.cx * k, -box.bottom * k + 2 * scale, box.size * k, box.size * k); ctx.restore();
 }
 function clip(text, n) { const a = Array.from(text); return a.length > n ? a.slice(0, n - 1).join("") + "…" : text; }
@@ -579,19 +579,24 @@ function drawBlade(len) { ctx.strokeStyle = "#dfe9f2"; ctx.lineWidth = 2.6; ctx.
 const WEAPON = ["bow", "dagger", "longsword", "dagger", "spear", "hammer", "daggers", "axe", "dagger", "greatsword", "scythe", "dagger"];
 const REACH = { bow: 130, spear: 52, greatsword: 50, scythe: 50, longsword: 46, hammer: 40, axe: 38 };
 const reach = c => REACH[WEAPON[c.cast]] || 34, archer = c => WEAPON[c.cast] === "bow";
-const CAST_SIZE = [60, 66, 58, 60, 68, 58, 60, 62, 54, 66, 54, 58], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
+const CAST_SIZE = [44, 42, 44, 44, 46, 44, 44, 44, 42, 48, 42, 44], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
 const FRAME_NAMES = ["run-1", "run-2", "run-3", "run-4", "slash-1", "slash-2", "slash-3", "slash-4", "jump", "fall", "cling", "land", "idle-1", "idle-2", "puzzled", "sit"], frameBox = new Map();
 function frameKey(cast, name) { return "f" + String(cast + 1).padStart(2, "0") + "-" + name; }
 // Every frame of one character shares a canvas; the standing frame gives its ground line and size.
 const GROUP_REF = { m: "idle-1", a: "look", b: "think" }, GROUP_OF = {};
 for (const n of FRAME_NAMES) GROUP_OF[n] = "m";
 for (const n of ["runb-1", "runb-2", "runb-3", "runb-4", "runb-5", "runb-6", "runb-7", "runb-8", "dash", "slash-up", "slash-down", "victory", "sleep-1", "sleep-2", "yawn", "look"]) GROUP_OF[n] = "a";
-for (const n of ["cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "guard", "wave", "wall-slide", "wall-kick", "think", "shrug", "warm", "drink", "sit-2", "nod"]) GROUP_OF[n] = "b";
-function measure(img) {
+for (const n of ["cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "guard", "wave", "think", "shrug", "warm", "drink", "sit-2", "nod"]) GROUP_OF[n] = "b";
+function measure(img, whole) {
   const g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
-  const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data; let top = g.height, bottom = 0, sum = 0, n = 0;
-  for (let y = 0; y < g.height; y++) for (let x = 0; x < g.width; x++) if (a[(y * g.width + x) * 4 + 3] > 40) { if (y < top) top = y; if (y > bottom) bottom = y; if (y > g.height * .55) { sum += x; n++; } }
-  return { top, bottom, cx: n ? sum / n : g.width / 2, size: g.width };
+  const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data, w = g.width, rows = [];
+  for (let y = 0; y < g.height; y++) { let n = 0; for (let x = 0; x < w; x++) if (a[(y * w + x) * 4 + 3] > 40) n++; rows.push(n); }
+  // Thin rows (a blade tip, a spear, a flame, an antenna) do not count as the body.
+  const thick = whole ? 1 : w * .11; let top = 0, bottom = g.height - 1;
+  while (top < g.height && rows[top] < thick) top++; while (bottom > top && rows[bottom] < Math.max(1, w * .03)) bottom--;
+  const xs = []; for (let y = Math.max(top, Math.round(bottom - (bottom - top) * .22)); y <= bottom; y++) for (let x = 0; x < w; x++) if (a[(y * w + x) * 4 + 3] > 40) xs.push(x);
+  xs.sort((p, q) => p - q);
+  return { top, bottom, cx: xs.length ? xs[xs.length >> 1] : w / 2, size: w };
 }
 // The standing frame of each sheet gives that sheet's ground line, centre and scale.
 function castBox(cast, group) {
@@ -613,8 +618,8 @@ function pickFrame(c) {
     return [p < .14 ? "slash-1" : p < .38 ? "slash-2" : p < .78 ? "slash-3" : "slash-4", rot];
   }
   if (c.dash > 0) return [any("dash", "run-1"), 0];
-  if (cling) return [c.kick > 0 ? any("wall-kick", "cling") : c.vy > 26 ? any("wall-slide", "cling") : "cling", 0];
-  if (air) return [c.kick > 0 && has(c, "wall-kick") ? "wall-kick" : c.vy < 60 ? "jump" : "fall", 0];
+  if (cling) return ["cling", 0];
+  if (air) return [c.vy < 60 ? "jump" : "fall", 0];
   if (c.sit > .5) {
     if (status(c.row) === "work_complete") return [any(Math.floor(now * .7 + c.x * .01) % 2 ? "sleep-2" : "sleep-1", "sit"), 0];
     return [any(REST_POSES[Math.floor(now / 4.5 + (hash(c.ref) % 97)) % REST_POSES.length], "sit"), 0];
@@ -633,7 +638,7 @@ function drawFrames(c, ghost) {
   const picked = pickFrame(c), name = picked[0], rot = picked[1], box = castBox(c.cast, GROUP_OF[name]);
   const key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], sq = c.sq * .45;
   // Scale by the sheet's own standing height so every sheet draws the character at one size.
-  const k = CAST_SIZE[c.cast] * 1.3 / (box.bottom - box.top);
+  const k = CAST_SIZE[c.cast] * 1.42 / (box.bottom - box.top);
   ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
   ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
   if (!ghost && state !== "unknown") { const col = EYE[state], s = c.scarf, tail = s[s.length - 1], wx = tail.x - x, wy = tail.y - y - 16 + Math.sin(now * 3 + c.x * .1) * 2.5; ctx.globalCompositeOperation = "lighter"; for (let i = 2; i < s.length; i++) { ctx.globalAlpha = c.alpha * .1 * i; ctx.drawImage(glow(col), s[i].x - x - 5, s[i].y - y - 21, 10, 10); } ctx.globalAlpha = c.alpha; ctx.drawImage(glow(col), wx - 13, wy - 13, 26, 26); ctx.drawImage(glow([255, 255, 255]), wx - 4, wy - 4, 8, 8); ctx.globalCompositeOperation = "source-over"; }
@@ -709,7 +714,7 @@ function drawChar(c, ghost) {
   ctx.restore(); ctx.globalAlpha = 1;
 }
 function drawQuestion(c) {
-  const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.3 - 16) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
+  const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.42 - 28) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 26 * s, [255, 150, 120], .55); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(now * 1.7 + c.x) * .12); ctx.font = "700 " + 22 * s + "px Georgia,serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3 * s; ctx.strokeStyle = "#1a0b10"; ctx.strokeText("?", 0, 0); ctx.fillStyle = "#ffd9c4"; ctx.fillText("?", 0, 0); ctx.restore();
   // an attention ring on the ground
@@ -845,7 +850,7 @@ function drawTags(list) {
     const state = live(c.row) ? status(c.row) : "unknown", need = state === "waiting_you", sel = selected === c.ref;
     if (crowded && !need && !sel) continue;
     const text = clip(c.row.title, sel ? 30 : 16), size = sel ? 12.5 : 11; ctx.font = (sel || need ? "600 " : "500 ") + size + "px ui-sans-serif,system-ui,-apple-system,'PingFang TC',sans-serif";
-    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (CAST_SIZE[c.cast] * 1.3 + (need ? 36 : 12)) * scale - (sel ? 4 : 0), h = size + 9;
+    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (CAST_SIZE[c.cast] * 1.42 + (need ? 48 : 22)) * scale - (sel ? 4 : 0), h = size + 9;
     ctx.fillStyle = sel ? "rgba(236,244,250,.94)" : "rgba(5,8,14,.62)"; ctx.strokeStyle = need ? "rgba(255,160,130,.8)" : sel ? "rgba(255,255,255,.9)" : "rgba(170,200,220,.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(x - tw / 2, y - h / 2, tw, h, h / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = sel ? "#0a0f18" : need ? "#ffe2d6" : "rgba(226,236,244,.9)"; ctx.fillText(text, x, y + .5);

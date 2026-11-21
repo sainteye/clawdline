@@ -2,8 +2,12 @@
 
 An original hand-drawn underground scene. Every Project is a chamber with its own
 painted backdrop, floating slabs on three levels and ground set pieces. Every Session
-is one of twelve small wanderers, each with sixteen frames of frame-by-frame animation
-(run, slash, jump, fall, wall cling, landing, idle, puzzled, sitting). A small wisp
+is one of twelve small wanderers, each with forty-six frames of frame-by-frame animation:
+an eight-frame run, four- and six-frame attacks, upward and downward strikes, dash, jump,
+fall, wall cling, landing, idle, look, wave, yawn, puzzled, think, shrug, guard, victory,
+sitting, warming hands, drinking, dozing and sleeping. They carry different weapons:
+short blades, a longsword, a spear, a war hammer, twin daggers, an axe, a greatsword, a
+scythe and a bow. The archer keeps its distance and its arrow strikes when it arrives. A small wisp
 trailing each wanderer carries the state colour, and its behaviour shows the state:
 
 | State | What the wanderer does |
@@ -13,7 +17,8 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 | `ready` | Patrols the floor or a floating slab, with an occasional practice swing; it never hops in place |
 | `waiting_session` | Climbs a shaft by kicking between two walls, rests on the ledge, then drops |
 | `waiting_you` | Stands puzzled under a warm beacon with a floating question mark |
-| `milestone_complete`, `work_complete` | Sits by a small fire with the blade planted |
+| `milestone_complete` | Rests by the campfire: sits, warms its hands, drinks, dozes |
+| `work_complete` | Sleeps on a bedroll by the campfire |
 | `unknown`, or any stale reading | Stands still and grey, and cannot be opened |
 
 A struck enemy recoils in its own hurt frame with a flash, impact lines and a brief
@@ -32,6 +37,9 @@ list, the view drops its title, list and close control and keeps the scene, the
 needs-you button and the selection card. Reduced motion draws one still frame.
 
 ## Build
+
+Fireflies wander and blink through every chamber, and each camp has a framed fire with
+rising sparks; a camp on the floor also has a tent, a cooking pot and firewood.
 
 `scene.js` and `src.html` are the sources; `art/` holds the backdrops, scenery sprites
 and the character (`fNN-*`) and enemy (`gN-*`) frames.
