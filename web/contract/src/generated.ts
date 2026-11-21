@@ -5463,6 +5463,13 @@ export interface ProjectAssistantContextSnapshot {
   text: string
 }
 
+export interface ProjectAssistantContextUsage {
+  live: boolean
+  turn_id: string
+  used_tokens: number
+  window_tokens: number
+}
+
 export interface ProjectAssistantConversation {
   active_turn_id: string
   binding_id: string
@@ -5697,6 +5704,7 @@ export type ProjectAssistantEventKind =
     "bot_created"
   | "bot_updated"
   | "message_created"
+  | "queued_message_edited"
   | "turn_updated"
   | "permission_offered"
   | "permission_answered"
@@ -5709,7 +5717,7 @@ export type ProjectAssistantEventKind =
   | "artifact_renamed"
   | "reactions_changed"
 
-export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled", "artifact_renamed", "reactions_changed"] as const
+export const ProjectAssistantEventKindValues: readonly ProjectAssistantEventKind[] = ["bot_created", "bot_updated", "message_created", "queued_message_edited", "turn_updated", "permission_offered", "permission_answered", "work_updated", "memory_changed", "read_advanced", "trace_updated", "source_updated", "feature_disabled", "artifact_renamed", "reactions_changed"] as const
 
 /**
  * Durable source-local cursor, page size 1..256; expired cursor is
@@ -6572,6 +6580,7 @@ export type ProjectAssistantOperation =
   | "send"
   | "stop"
   | "send_now"
+  | "queue_edit"
   | "rule_remove"
   | "delete"
   | "visibility"
@@ -6588,7 +6597,7 @@ export type ProjectAssistantOperation =
   | "network-settings"
   | "react"
 
-export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential", "network-settings", "react"] as const
+export const ProjectAssistantOperationValues: readonly ProjectAssistantOperation[] = ["create", "edit", "send", "stop", "send_now", "queue_edit", "rule_remove", "delete", "visibility", "answer", "read", "observe", "forget", "memory_save", "dispatch", "upload", "rename-artifact", "login-profile", "connector-credential", "network-settings", "react"] as const
 
 export interface ProjectAssistantOutput {
   artifact_id: string
@@ -6808,6 +6817,15 @@ export interface ProjectAssistantProjectsResponse {
   source: ProjectAssistantSourceStatus
 }
 
+export interface ProjectAssistantQueueEditRequest {
+  action: string
+  command: ProjectAssistantCommand
+  edit_id: string
+  fence: ProjectAssistantFence
+  text: string
+  turn_id: string
+}
+
 export interface ProjectAssistantReactRequest {
   command: ProjectAssistantCommand
   emoji: string
@@ -6933,6 +6951,7 @@ export interface ProjectAssistantReadTurnSummary {
   fence: ProjectAssistantFence
   id: string
   message_id: string
+  queue_edit_id?: string
 
   /**
    * When the turn began running, RFC 3339; empty while it waits.
@@ -6948,6 +6967,7 @@ export interface ProjectAssistantReadTurnSummary {
 export interface ProjectAssistantReadViewHead {
   background_tasks?: ProjectAssistantBackgroundTaskSummary[]
   bot_version: number
+  context_usage?: ProjectAssistantContextUsage
   conversation: ProjectAssistantConversation
   current_fence: ProjectAssistantFence
 
@@ -7163,6 +7183,7 @@ export interface ProjectAssistantRoomMemberOutcome {
   reply_seq?: number
   state: ProjectAssistantTurnState
   turn_id: string
+  work?: ProjectAssistantRoomWork[]
 }
 
 export interface ProjectAssistantRoomQuote {
@@ -7188,6 +7209,11 @@ export interface ProjectAssistantRoomState {
   revision: number
   running: number
   stopped_at: number
+}
+
+export interface ProjectAssistantRoomWork {
+  state: ProjectAssistantWorkState
+  task_id: string
 }
 
 /**
@@ -7661,6 +7687,11 @@ export interface ProjectAssistantTurn {
   memory_revision: number
   message_id: string
   origin?: string
+
+  /**
+   * Current edit identity. The queued message will wait until the edit is resolved.
+   */
+  queue_edit_id?: string
 
   /**
    * When the turn began running, RFC 3339; absent while it waits.

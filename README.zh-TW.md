@@ -43,7 +43,7 @@
 - 🌐 **Agent 跨機器接力（Cloud・dev）** — 雙向配對後，Agent 可探索遠端 Project 與 Session、派出任務並互傳訊息；新增的探索與 Session 喚醒功能目前提供於 dev 版本。[跨機器協作](docs/remote-agent-work.md)
 - ⚡ **手機直連你的機器（Cloud）** — ICE 可直連時，即時終端機與 Session 讀取走 WebRTC；無法直連時，改走端對端加密 Relay。[Cloud 連線](docs/cloud.md)
 - ⏳ **耗時命令完成後再接續** — 把命令交給 Callback，結果就緒時通知 Session 回來處理。[Callback](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
-- 🗓️ **排程任務與 Webhook 觸發** — 指定時間或定期啟動工作；Cloud Pro 也能讓外部服務透過 Webhook 觸發排程。[排程](docs/user/schedules.md)
+- 🗓️ **排程任務與 Webhook 觸發** — 指定時間或定期啟動工作；透過 Cloud 也能讓外部服務用 Webhook 觸發排程。[排程](docs/user/schedules.md)
 - 💡 **問答、Issues 與 Ideas 社群（Cloud）** — 閱讀討論、詢問使用方式、回報問題與提出功能建議。任何人都能閱讀，登入後可參與；回覆與實際交付進度分開追蹤。[社群指南](docs/user/help-center.zh-TW.md)・[公開邊界](docs/cloud-support.md)
 
 Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使用的 Claude Code 和 Codex Session。Cloud 是選用功能；中繼只傳送密文。[運作方式](docs/architecture.md)
@@ -104,7 +104,7 @@ curl -fsSL https://clawdline.com/install.sh | sh
 
 ## 支援範圍
 
-- 本機功能免費，不需要 Clawdline 帳號；Cloud 有 Free 與 Pro 方案。
+- Clawdline 全部免費。本機使用不需要 Clawdline 帳號；Cloud 需要登入，同樣免費。
 - Windows 可執行常駐服務與主控台，但目前不能列出 Session 或開終端機。[平台](docs/user/platforms.md)
 - 1.0 起，macOS 與 Linux 的正式安裝版可直接更新。主控台支援九種語言；新文案尚無翻譯時會顯示英文。[更新方式](docs/updates.md)・[語系機制](docs/localization.md)
 

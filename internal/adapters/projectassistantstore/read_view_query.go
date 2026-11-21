@@ -149,6 +149,11 @@ SELECT version,valid AND json_type(j)='object'
 		return h, b, failure(pa.NotFound, "conversation")
 	}
 	c := h.Conversation
+	if sample := c.ContextUsage; c.ActiveTurnID == "" && sample.TurnID != "" &&
+		sample.BindingID == c.BindingID && sample.Generation == c.Generation && sample.MemoryRevision == m.Revision &&
+		sample.UsedTokens >= 0 && sample.WindowTokens > 0 && (q.Request.Mode == pa.ReadViewSnapshot || q.Request.Mode == pa.ReadViewEvents) {
+		h.ContextUsage = &app.ReadContextUsage{TurnID: sample.TurnID, UsedTokens: sample.UsedTokens, WindowTokens: sample.WindowTokens}
+	}
 	if version < 1 || b.Version != version || c.Version < 1 || c.Generation < 0 || (c.Generation == 0) != (c.BindingID == "") || c.LastMessageSeq < 0 || m.Revision < 1 || c.MemoryRevision < 1 || c.MemoryRevision > m.Revision {
 		return h, b, failure(pa.Invalid, "read_view_metadata")
 	}

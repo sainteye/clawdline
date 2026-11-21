@@ -741,7 +741,7 @@ func (r *Engine) work(a *runtimeActor) {
 				turn = &t
 			}
 		}
-		if blocked || turn == nil {
+		if blocked || turn == nil || turn.QueueEditID != "" {
 			a.working = false
 			a.mu.Unlock()
 			return
@@ -1171,6 +1171,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	t.MemoryRevision = current.Revision
 	t.Instructions = bot.Instructions
 	c.ActiveTurnID = t.ID
+	c.ContextUsage = pa.ContextSample{}
 	c.MemoryRevision = current.Revision
 	ordinal := 1
 	if len(t.Attempts) > 0 {
@@ -1443,6 +1444,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err = r.appendAttempt(ctx, a, &t, pa.AttemptAnswered, nil, nil); err != nil {
 		return err
 	}
+	usage := completedContextSample(session, t)
 	err = r.closeSession(a, session)
 	cleaned = true
 	cleanupConfirmed = err == nil
@@ -1460,7 +1462,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
 	}
-	err = r.finishLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil)
+	err = r.finishWithContextLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil, usage)
 	if err != nil && (t.RoutineRunID != "" || t.ExchangeID != "") {
 		a.completion = &routineCompletion{turn: t, text: result.FinalText}
 		r.retain(a, err)
@@ -1566,8 +1568,12 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 }
 
 func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
+	return r.finishWithContextLocked(ctx, a, t, state, text, cause, pa.ContextSample{})
+}
+
+func (r *Engine) finishWithContextLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error, usage pa.ContextSample) error {
 	for {
-		err := r.finishOnceLocked(ctx, a, t, state, text, cause)
+		err := r.finishOnceLocked(ctx, a, t, state, text, cause, usage)
 		if !collaborationAggregateConflict(err) {
 			return err
 		}
@@ -1579,7 +1585,7 @@ func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, s
 	}
 }
 
-func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
+func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error, usage pa.ContextSample) error {
 	bot, err := r.o.Repository.Bot(ctx, a.key)
 	if err != nil {
 		return err
@@ -1609,7 +1615,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 			return err
 		}
 	}
-	t.State = state
+	t.State, t.QueueEditID = state, ""
 	if cause != nil {
 		field := "execution"
 		if state == pa.TurnUnknown {
@@ -1624,6 +1630,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 	}
 	if c.ActiveTurnID == t.ID {
 		c.ActiveTurnID = ""
+		c.ContextUsage = usage
 	}
 	var messages []pa.Message
 	silentRoutine := false
@@ -2191,7 +2198,11 @@ func (r *Engine) unqueueLocked(ctx context.Context, a *runtimeActor, bot pa.Bot,
 		if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
 			return pa.Receipt{}, err
 		}
-		return r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: t.ID}})
+		receipt, err := r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: t.ID}})
+		if t.QueueEditID != "" {
+			r.kickLocked(a)
+		}
+		return receipt, err
 	}
 	return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "stop_turn")
 }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -226,6 +227,62 @@ func TestASessionAnswerOnTheCarrierNeverEntersTheSpool(t *testing.T) {
 	}
 	if _, ok := f.spool.Row(1); ok {
 		t.Fatal("a refused direct answer fell back onto the relay")
+	}
+}
+
+func TestConcurrentCarrierAnswersReachTheViewerInSequenceOrder(t *testing.T) {
+	f := newDirectFixture(t)
+	b, _, _ := f.carrier(t)
+	f.l.relay.Direct = f.l.sendCarrierEnvelope
+
+	// Stop the first answer at timestamping, between numbering and writing.
+	// If another answer can finish while this one is paused, it can overtake it.
+	firstAtSeal := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	f.l.opts.Now = func() time.Time {
+		if calls.Add(1) == 1 {
+			close(firstAtSeal)
+			<-releaseFirst
+		}
+		return time.Now()
+	}
+	send := func(read string, done chan<- error) {
+		done <- f.l.relay.Publish(context.Background(), Outbound{
+			Channel: "t/machine/session", Class: string(domaincloud.ClassStream), Direct: true,
+			Payload: []byte(`{"read":"` + read + `","status":200}`),
+			Reply:   Reply{Sender: "viewer", Name: read, Status: 200},
+		})
+	}
+	first := make(chan error, 1)
+	second := make(chan error, 1)
+	go send("first", first)
+	select {
+	case <-firstAtSeal:
+	case <-time.After(3 * time.Second):
+		close(releaseFirst)
+		t.Fatal("the first answer did not reach the sealing boundary")
+	}
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		send("second", second)
+	}()
+	<-secondStarted
+	// Give the competing answer a chance to reach the wire before releasing
+	// the first. A correctly serialized sender will still be waiting.
+	time.AfterFunc(250*time.Millisecond, func() { close(releaseFirst) })
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	for i, read := range []string{"first", "second"} {
+		env, body := f.openMaster(t, b.next(t))
+		if env.Seq != uint64(i+1) || body["read"] != read {
+			t.Fatalf("received sequence %d for %v, want sequence %d for %s", env.Seq, body["read"], i+1, read)
+		}
 	}
 }
 

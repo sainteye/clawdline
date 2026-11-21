@@ -167,6 +167,7 @@ type SessionUsage struct {
 // reading. Unknown is separate from an observed zero; no model/window value
 // is inferred. This is not permission to execute a maintenance command.
 type NativeContextState struct {
+	TurnID            string
 	Fence             pa.Fence
 	NativeSessionID   string
 	CommandsKnown     bool

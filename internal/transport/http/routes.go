@@ -48,7 +48,8 @@ import (
 // Group descriptions (what a group works on) arrive at API 101.
 // Gemini as a Bot agent arrives at API 102.
 // The lead Bot manages its team by role from API 103.
-const APILevel = 103
+// Editing queued Bot messages arrives at API 104.
+const APILevel = 104
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

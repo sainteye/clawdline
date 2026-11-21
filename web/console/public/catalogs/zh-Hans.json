@@ -3384,7 +3384,7 @@
   "legacy.webPlanMeter": "{n}，这是合理使用的计数，不是帐单",
   "legacy.webPlanNoLimit": "没有固定上限",
   "legacy.webPlanNotConfirmed": "Lemon Squeezy 还没有把这笔付款通知 Clawdline，所以这个帐号当前还是 {tier}。如果你已经付款完成，那笔钱没有不见：通知会重送，一送到这个页面就会显示新的方案。",
-  "legacy.webPlanNotForSale": "这个帐号使用 Free。这个主控台目前尚未销售任何方案；Pro 开售时，按钮会出现在这里。",
+  "legacy.webPlanNotForSale": "Cloud 的所有功能都免费，无需购买任何方案。",
   "legacy.webPlanNotIncluded": "这个方案没有",
   "legacy.webPlanOnFree": "这个帐号用的是 Free。Pro 会把上面那几项结构性上限拉高。",
   "legacy.webPlanOpening": "正在确认这个帐号，然后打开 Lemon Squeezy 的结帐页⋯",

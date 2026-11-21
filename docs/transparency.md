@@ -1130,3 +1130,11 @@ Project launches in tmux can use the pane's ready screen to advance discovery.
 The English and Taiwan Traditional Chinese explanations still describe the
 language, role, workflow, Project memory and integration inputs at launch.
 The reviewed start-route receipt follows the change to discovery timing.
+
+Queue edits pause a never-started message at its original position until one of
+the explicit human actions resolves the hold. The source commits the replacement
+text, turn state and receipt together. The context indicator uses only the
+provider's current token report or the last successful reading for the same
+binding and memory revision. The group history projects existing Broker states
+under the room turn's current member. The English and Taiwan Traditional Chinese
+explanations and source inventory cover these paths.

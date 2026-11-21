@@ -29,12 +29,10 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
   }
   return out
 }
-/** A queued user message stays in exactly one surface, including the transition to idle.
- *  It waits in the queue tray only behind a turn that is running, as Codync's tray does;
- *  a message about to run next is already part of the conversation. */
-export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state">[]) {
-  const busy = turns.some(t=>t.state==="running" || t.state==="waiting_permission")
-  const queuedIDs = new Set(busy ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
+/** Keep the paused message and the queue it blocks in the tray even when the Bot becomes idle. */
+export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state"|"queue_edit_id">[]) {
+  const waiting = turns.some(t=>t.state==="running" || t.state==="waiting_permission" || t.state==="queued" && t.queue_edit_id)
+  const queuedIDs = new Set(waiting ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
   return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>(!queuedIDs.has(m.id) || m.kind!=="user") && !(m.kind==="notice"&&m.id.startsWith("lead-call-"))) }
 }
 

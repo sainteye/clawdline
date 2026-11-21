@@ -22,12 +22,12 @@ function stageLabel(attempt: W.ProjectAssistantRoomAttempt, finished: boolean, w
 export function showGroupMemberOutcome(outcome: W.ProjectAssistantRoomMemberOutcome) {
   return outcome.disposition === "quiet" || outcome.state === "failed" ||
     outcome.state === "unknown" || outcome.state === "cancelled" ||
-    isWaitingForLateReply(outcome) ||
+    isRoomMemberWorking(outcome) || !!outcome.work?.length ||
     !!outcome.attempts?.some(attempt => attempt.fallback || attempt.reason)
 }
 
-function isWaitingForLateReply(outcome: W.ProjectAssistantRoomMemberOutcome) {
-  return outcome.late === true && ["accepted", "queued", "running", "waiting_permission"].includes(outcome.state)
+function isRoomMemberWorking(outcome: W.ProjectAssistantRoomMemberOutcome) {
+  return ["accepted", "queued", "running", "waiting_permission"].includes(outcome.state)
 }
 
 export function GroupMemberOutcome({outcome, w}: {outcome: W.ProjectAssistantRoomMemberOutcome; w: Words}) {
@@ -47,8 +47,12 @@ export function GroupMemberOutcome({outcome, w}: {outcome: W.ProjectAssistantRoo
   const finished = outcome.state === "succeeded"
   return <div className="pa-turn" role="status" data-room-member-outcome={outcome.turn_id} data-outcome-state={outcome.state}>
     <strong>{outcome.name}</strong> · {w[state]}
-    {isWaitingForLateReply(outcome) && <><br />{w.roomOutcomeLate}</>}
+    {outcome.late && isRoomMemberWorking(outcome) && <><br />{w.roomOutcomeLate}</>}
     {explanation && <><br />{explanation}</>}
+    {outcome.work?.map(work => <details key={work.task_id}>
+      <summary>{w.work} · {w[work.state]}</summary>
+      <code>{work.task_id}</code>
+    </details>)}
     {progress && <details>
       <summary>{w.fallbackProgress} · {latest.fallback ? `${w.roomFallbackAttempt} · ` : ""}{agentName(latest.agent)} · {stageLabel(latest, finished, w)}</summary>
       <ol>{outcome.attempts?.map(attempt => {

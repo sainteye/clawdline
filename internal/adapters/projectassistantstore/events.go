@@ -40,7 +40,7 @@ func validateStoredEvent(a aggregate, e pa.Event) error {
 				match = false
 			}
 		}
-	case pa.MessageCreated, pa.ReactionsChanged:
+	case pa.MessageCreated, pa.QueuedMessageEdited, pa.ReactionsChanged:
 		for _, m := range a.Messages {
 			if reflect.DeepEqual(m, *e.Message) && m.Fence == f {
 				match = true

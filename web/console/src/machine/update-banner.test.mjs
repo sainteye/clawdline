@@ -9,7 +9,9 @@ import { renderToStaticMarkup } from "react-dom/server"
 // Render the real banner and model, with only the machine transport and native
 // shell replaced. The fixture cannot contact a release host or install anything.
 const { outputFiles } = await build({
-  entryPoints: [fileURLToPath(new URL("./UpdateBanner.tsx", import.meta.url))],
+  stdin: { contents: `export { UpdateBanner } from "./UpdateBanner.tsx";
+    export { readingThrough } from "../cloud/machine-switch.ts";`,
+  resolveDir: fileURLToPath(new URL(".", import.meta.url)) },
   bundle: true, platform: "node", format: "cjs", packages: "external", write: false,
   jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "update-banner-machine-fixture", setup(builder) {
@@ -28,16 +30,18 @@ const { outputFiles } = await build({
 })
 const compiled = { exports: {} }
 new Function("require", "module", "exports", outputFiles[0].text)(createRequire(import.meta.url), compiled, compiled.exports)
-const { UpdateBanner } = compiled.exports
+const { UpdateBanner, readingThrough } = compiled.exports
 
-function render({ latest = "v2.2.0", dismissed = null, apply = { state: "healthy", from: "v2.1.1", to: "v2.1.2" } } = {}) {
+function render({ latest = "v2.2.0", dismissed = null, machine, stored, apply = { state: "healthy", from: "v2.1.1", to: "v2.1.2" } } = {}) {
   const prior = ["updateBannerFixture", "localStorage"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
   try {
     globalThis.updateBannerFixture = { read: { kind: "status", status: {
       install_kind: "release", state: latest === "v2.1.2" ? "current" : "update_available",
       running: { stamp: "running", version: "v2.1.2" }, latest: { stamp: "latest", version: latest }, apply,
     } } }
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => dismissed } })
+    readingThrough(machine ? { machine } : {})
+    Object.defineProperty(globalThis, "localStorage", { configurable: true,
+      value: { getItem: (key) => stored ? stored[key] ?? null : dismissed } })
     return renderToStaticMarkup(React.createElement(UpdateBanner))
   } finally {
     for (const [key, descriptor] of prior) {
@@ -70,4 +74,15 @@ test("a moving update keeps its progress and hides a second install action", () 
   const html = render({ apply: { state: "downloading", from: "v2.1.2", to: "v2.2.0" } })
   assert.match(html, /Downloading v2\.2\.0/)
   assert.doesNotMatch(html, />Review update<\/button>/, "an update already moving cannot be started again")
+})
+
+test("closing an update offer on one Cloud machine leaves the same update visible on another", () => {
+  const stored = {
+    "clawdline.update-banner.dismissed": "v2.2.0",
+    "clawdline.update-banner.dismissed.machine-a": "v2.2.0",
+  }
+  const available = { stored, apply: { state: "idle" } }
+  assert.match(render({ ...available, machine: "machine-b" }), />Review update<\/button>/)
+  assert.equal(render({ ...available, machine: "machine-a" }), "")
+  assert.equal(render(available), "", "the local console keeps its previous dismissal")
 })

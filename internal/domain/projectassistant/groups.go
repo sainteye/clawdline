@@ -606,7 +606,13 @@ type RoomActivity struct {
 	State  TurnState `json:"state"`
 }
 
+type RoomWork struct {
+	TaskID string    `json:"task_id"`
+	State  WorkState `json:"state"`
+}
+
 type RoomMemberOutcome struct {
+	Work         []RoomWork    `json:"work,omitempty"`
 	Member       BotKey        `json:"member"`
 	Name         string        `json:"name"`
 	TurnID       string        `json:"turn_id"`

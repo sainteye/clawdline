@@ -125,5 +125,53 @@ func roomTurnObservations(ctx context.Context, tx *sql.Tx, group pa.Group, room 
 			projected[key] = true
 		}
 	}
-	return activity, outcomes, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+	if err := roomWork(ctx, tx, group, outcomes); err != nil {
+		return nil, nil, err
+	}
+	return activity, outcomes, nil
+}
+
+// roomWork reads existing Broker projections only for observed current-round
+// room turns. A member's unrelated chat work is never part of the result.
+func roomWork(ctx context.Context, tx *sql.Tx, group pa.Group, outcomes []pa.RoomMemberOutcome) error {
+	if len(outcomes) == 0 {
+		return nil
+	}
+	type owner struct {
+		Bot  string `json:"bot"`
+		Turn string `json:"turn"`
+	}
+	owners := make([]owner, len(outcomes))
+	for i, outcome := range outcomes {
+		owners[i] = owner{Bot: outcome.Member.BotID, Turn: outcome.TurnID}
+	}
+	input, err := json.Marshal(owners)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT o.key,json_extract(w.value,'$.task_id'),json_extract(w.value,'$.state')
+ FROM json_each(?) o
+ JOIN project_assistant_bots b ON b.machine=? AND b.bot=json_extract(o.value,'$.bot')
+ JOIN json_each(CAST(b.data AS TEXT),'$.WorkLinks') w
+ WHERE w.type='object' AND json_extract(w.value,'$.turn_id')=json_extract(o.value,'$.turn')
+ ORDER BY o.key,w.key LIMIT ?`, string(input), group.Key.MachineID, pa.MaxPageRows)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var i int
+		var work pa.RoomWork
+		if err := rows.Scan(&i, &work.TaskID, &work.State); err != nil {
+			return err
+		}
+		outcomes[i].Work = append(outcomes[i].Work, work)
+	}
+	return rows.Err()
 }

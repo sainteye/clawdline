@@ -6453,6 +6453,254 @@
       }
     },
     {
+      "op": "project-assistants.queue-edit",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/queue-edit",
+      "console_seam": "client",
+      "local": {
+        "method": "POST",
+        "device": true,
+        "headers": [
+          "Idempotency-Key"
+        ]
+      },
+      "special": [
+        "guard",
+        "partial_answer",
+        "shaped_answer"
+      ],
+      "example": {
+        "fence": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "project": {
+            "machine_id": "source-one",
+            "project_id": "project",
+            "canonical_id": "canonical",
+            "kind": "repository"
+          },
+          "conversation_id": "chat",
+          "binding_id": "binding",
+          "generation": 1
+        },
+        "turn_id": "turn",
+        "command": {
+          "key": {
+            "machine_id": "source-one",
+            "bot_id": "機器人 α"
+          },
+          "operation": "queue_edit",
+          "idempotency_key": "stable-queue-edit",
+          "content_hash": ""
+        },
+        "session": "__clawdline_machine__",
+        "request": "stable-queue-edit",
+        "action": "save",
+        "edit_id": "edit",
+        "text": "Revised message"
+      },
+      "shapes": [
+        {
+          "body": [
+            "action",
+            "command",
+            "edit_id",
+            "fence",
+            "request",
+            "session",
+            "text",
+            "turn_id"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/queue-edit",
+          "local_body": [
+            "action",
+            "command",
+            "edit_id",
+            "fence",
+            "text",
+            "turn_id"
+          ]
+        }
+      ],
+      "decode": {
+        "reply": "action",
+        "fields": {
+          "command": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string",
+                    "non_empty": true
+                  },
+                  "bot_id": {
+                    "type": "string",
+                    "checks": [
+                      "pa_bot_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "queue_edit"
+                ]
+              },
+              "idempotency_key": {
+                "type": "string",
+                "non_empty": true,
+                "same_as": "request",
+                "checks": [
+                  "request_name"
+                ]
+              },
+              "content_hash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content_hash",
+              "idempotency_key",
+              "key",
+              "operation"
+            ],
+            "closed": true
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "bot_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "bot_id",
+                  "machine_id"
+                ],
+                "closed": true
+              },
+              "project": {
+                "type": "object",
+                "properties": {
+                  "machine_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "canonical_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "repository",
+                      "place",
+                      "personal"
+                    ]
+                  }
+                },
+                "required": [
+                  "canonical_id",
+                  "kind",
+                  "machine_id",
+                  "project_id"
+                ],
+                "closed": true
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "binding_id": {
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer",
+                "min": 0,
+                "max": 9007199254740991,
+                "copies": {
+                  "max": "cloud.MaxSafeInteger"
+                }
+              }
+            },
+            "required": [
+              "binding_id",
+              "conversation_id",
+              "generation",
+              "key",
+              "project"
+            ],
+            "closed": true
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "begin",
+              "save",
+              "cancel"
+            ]
+          },
+          "edit_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "route": {
+          "path": "/v1/project-assistants/{command.key.bot_id}/queue-edit",
+          "headers": {
+            "Idempotency-Key": {
+              "from": "command.idempotency_key"
+            }
+          },
+          "body": {
+            "fields": {
+              "command": {
+                "from": "command"
+              },
+              "fence": {
+                "from": "fence"
+              },
+              "turn_id": {
+                "from": "turn_id"
+              },
+              "action": {
+                "from": "action"
+              },
+              "edit_id": {
+                "from": "edit_id"
+              },
+              "text": {
+                "from": "text"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "op": "project-assistants.react",
       "kind": "command",
       "write_gate": true,

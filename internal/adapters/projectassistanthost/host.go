@@ -751,6 +751,14 @@ func (f runtimeFacade) Submit(ctx context.Context, q app.Submission) (pa.Receipt
 	}
 	return r.Submit(ctx, q)
 }
+func (f runtimeFacade) EditQueue(ctx context.Context, q app.QueueEditRequest, check func(context.Context) error) (pa.Receipt, error) {
+	r, err := f.h.runtime()
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	return r.EditQueue(ctx, q, check)
+}
+
 func (f runtimeFacade) SendNow(ctx context.Context, q app.SendNowRequest) (pa.Receipt, error) {
 	f.h.mu.Lock()
 	r := f.h.engine

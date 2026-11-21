@@ -71,6 +71,15 @@ test("queue to running transition keeps each message on exactly one surface",()=
   const running=partitionMessages([a,b],[{message_id:"a",state:"running"} as W.ProjectAssistantTurn])
   assert.deepEqual(running.queued,[]);assert.deepEqual(running.chat,[a,b])
 })
+test("the held message and the work behind it remain editable when the Bot becomes idle",()=>{
+  const held=message("held",1,"user"),behind=message("behind",2,"user")
+  const parts=partitionMessages([held,behind],[
+    {message_id:held.id,state:"queued",queue_edit_id:"edit"},
+    {message_id:behind.id,state:"queued"},
+  ])
+  assert.deepEqual(parts.queued,[held,behind])
+  assert.deepEqual(parts.chat,[])
+})
 test("in-flight sending bubble is suppressed once conversation admits the message",()=>{
   const prior=message("msg-1",1,"user")
   prior.text="hello"

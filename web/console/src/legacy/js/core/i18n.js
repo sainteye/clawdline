@@ -813,7 +813,7 @@ export var T = {
     webPlanLoading: "Reading this account's plan…",
     webPlanActive: "{tier} is active on this account.",
     webPlanOnFree: "This account is on Free. Pro raises the structural limits above.",
-    webPlanNotForSale: "This account is on Free. Nothing is on sale from this console yet — when Pro opens, the button appears here.",
+    webPlanNotForSale: "Every Cloud feature is free on this account. There is nothing to buy.",
     webPlanSignedOut: "Sign in with GitHub to see this account's plan and to upgrade.",
     webPlanSignedOutNote: "Signed out. The Mac app itself never needs an account.",
     webPlanOpening: "Checking this account, then opening the Lemon Squeezy checkout…",

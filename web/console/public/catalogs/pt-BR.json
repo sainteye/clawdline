@@ -3384,7 +3384,7 @@
   "legacy.webPlanMeter": "{n} — um contador de uso justo, nunca uma conta",
   "legacy.webPlanNoLimit": "sem limite fixo",
   "legacy.webPlanNotConfirmed": "O Lemon Squeezy ainda não confirmou este pagamento ao Clawdline, então esta conta continua no plano {tier}. Se você concluiu o pagamento, ele não se perdeu: a confirmação será tentada novamente, e esta página mostrará o novo plano assim que ela chegar.",
-  "legacy.webPlanNotForSale": "Esta conta está no Free. Nada está à venda neste console ainda — quando o Pro abre, o botão aparece aqui.",
+  "legacy.webPlanNotForSale": "Todos os recursos do Cloud são gratuitos. Não há nada para comprar.",
   "legacy.webPlanNotIncluded": "não neste plano",
   "legacy.webPlanOnFree": "Esta conta está no Free. Pro eleva os limites estruturais acima.",
   "legacy.webPlanOpening": "Verificando esta conta e depois abrindo o checkout do Lemon Squeezy…",

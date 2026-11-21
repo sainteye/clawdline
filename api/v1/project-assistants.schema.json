@@ -231,6 +231,7 @@
         "bot_created",
         "bot_updated",
         "message_created",
+        "queued_message_edited",
         "turn_updated",
         "permission_offered",
         "permission_answered",
@@ -778,6 +779,10 @@
       "additionalProperties": false,
       "description": "",
       "properties": {
+        "queue_edit_id": {
+          "type": "string",
+          "description": "Current edit identity. The queued message will wait until the edit is resolved."
+        },
         "id": {
           "type": "string"
         },
@@ -2265,6 +2270,7 @@
         "send",
         "stop",
         "send_now",
+        "queue_edit",
         "rule_remove",
         "delete",
         "visibility",
@@ -2492,10 +2498,37 @@
       "required": ["id", "title", "state", "origin_message_id"],
       "additionalProperties": false
     },
+    "ProjectAssistantContextUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "turn_id": {
+          "type": "string"
+        },
+        "used_tokens": {
+          "type": "integer"
+        },
+        "window_tokens": {
+          "type": "integer"
+        },
+        "live": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "turn_id",
+        "used_tokens",
+        "window_tokens",
+        "live"
+      ]
+    },
     "ProjectAssistantReadViewHead": {
       "type": "object",
       "description": "One SQL snapshot. Only a successful snapshot-mode response may replace the replay cursor; other page heads never advance it.",
       "properties": {
+        "context_usage": {
+          "$ref": "#/$defs/ProjectAssistantContextUsage"
+        },
         "background_tasks": {
           "type": "array",
           "items": {"$ref": "#/$defs/ProjectAssistantBackgroundTaskSummary"},
@@ -2572,6 +2605,9 @@
       "type": "object",
       "description": "",
       "properties": {
+        "queue_edit_id": {
+          "type": "string"
+        },
         "id": {
           "type": "string",
           "description": ""
@@ -2909,6 +2945,38 @@
         "id",
         "media_type",
         "bytes"
+      ]
+    },
+    "ProjectAssistantQueueEditRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/ProjectAssistantCommand"
+        },
+        "fence": {
+          "$ref": "#/$defs/ProjectAssistantFence"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "edit_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "fence",
+        "turn_id",
+        "action",
+        "edit_id",
+        "text"
       ]
     },
     "ProjectAssistantSendNowRequest": {

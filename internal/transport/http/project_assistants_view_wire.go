@@ -9,14 +9,18 @@ import (
 
 func paWireReadTurn(v app.ReadTurnSummary) contract.ProjectAssistantReadTurnSummary {
 	return contract.ProjectAssistantReadTurnSummary{ID: v.ID, Fence: paWireFence(v.Fence), MessageID: v.MessageID,
-		State: contract.ProjectAssistantTurnState(v.State), FailureCode: string(v.FailureCode), FailureField: v.FailureField, StartedAt: v.StartedAt, Attempts: paWireTurn(pa.Turn{Attempts: v.Attempts}).Attempts}
+		State: contract.ProjectAssistantTurnState(v.State), FailureCode: string(v.FailureCode), FailureField: v.FailureField, StartedAt: v.StartedAt, QueueEditID: v.QueueEditID, Attempts: paWireTurn(pa.Turn{Attempts: v.Attempts}).Attempts}
 }
 
 func paWireReadHead(v app.ReadViewHead) contract.ProjectAssistantReadViewHead {
-	return contract.ProjectAssistantReadViewHead{BackgroundTasks: paWireBackgroundTasks(v.BackgroundTasks), Key: paWireBotKey(v.Key), Project: paWireProjectScope(v.Project),
+	out := contract.ProjectAssistantReadViewHead{BackgroundTasks: paWireBackgroundTasks(v.BackgroundTasks), Key: paWireBotKey(v.Key), Project: paWireProjectScope(v.Project),
 		Conversation: paWireConversation(v.Conversation), CurrentFence: paWireFence(v.CurrentFence),
 		BotVersion: v.BotVersion, MemoryRevision: v.MemoryRevision, EventFrontier: v.EventFrontier,
 		UnknownTurnCount: v.UnknownTurnCount, QueuedTurnCount: v.QueuedTurnCount, PendingPermissionCount: v.PendingPermissionCount, TraceCategoryCount: v.TraceCategoryCount}
+	if v.ContextUsage != nil {
+		out.ContextUsage = &contract.ProjectAssistantContextUsage{Live: v.ContextUsage.Live, TurnID: v.ContextUsage.TurnID, UsedTokens: v.ContextUsage.UsedTokens, WindowTokens: v.ContextUsage.WindowTokens}
+	}
+	return out
 }
 
 func paWireBackgroundTasks(tasks []pa.BackgroundTaskSummary) []contract.ProjectAssistantBackgroundTaskSummary {
