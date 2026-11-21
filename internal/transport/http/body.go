@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+
 	"github.com/sainteye/clawdline/internal/domain/projectsync"
 )
 
@@ -46,11 +48,12 @@ const (
 // bodyLimits are the routes whose bound is not commandBodyLimit, by the
 // pattern they are registered under.
 var bodyLimits = map[string]int64{
-	"/v1/auth/":      authBodyLimit,
-	"/v1/push/":      authBodyLimit,
-	"/v1/sessions/":  sendBodyLimit,
-	"/v1/voice":      voiceBodyLimit,
-	"/v1/terminals/": terminalBodyLimit,
+	"/v1/auth/":         authBodyLimit,
+	"/v1/push/":         authBodyLimit,
+	"/v1/sessions/":     sendBodyLimit,
+	"/v1/voice":         voiceBodyLimit,
+	"/v1/voice/preview": capacity.MaximumWhisperPreviewBodyBytes,
+	"/v1/terminals/":    terminalBodyLimit,
 	// One project's settings with contents (project_sync.go).
 	"/v1/project-sync/": projectsync.MaxEntryBytes,
 }

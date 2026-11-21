@@ -978,6 +978,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-transcription",
 		method: "POST", path: "/v1/voice/live-transcription",
 	}, {
+		word: "voice-preview",
+		body: map[string]any{"type": "voice-preview", "session": machine, "request": "req-voice-preview",
+			"audio": "AAAA", "rate": 16000},
+		session: machine, name: "action:req-voice-preview",
+		method: "POST", path: "/v1/voice/preview",
+		body2: `{"audio":"AAAA","rate":16000}`,
+	}, {
 		word:    "voice-settings",
 		body:    map[string]any{"type": "voice-settings", "session": machine, "request": "req-voice"},
 		session: machine, name: "read:req-voice",

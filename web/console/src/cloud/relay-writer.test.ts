@@ -238,6 +238,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/places/p1/resume/abc", "resume"],
     ["POST", "/v1/places/p1/resume/claude/abc", "resume"],
     ["POST", "/v1/voice", "voice"],
+    ["POST", "/v1/voice/preview", "voice-preview"],
     ["GET", "/v1/voice/source", "voice"],
     ["GET", "/v1/places", "places"],
     ["GET", "/v1/settings/default-models", "default-models"],
@@ -966,6 +967,19 @@ test("dictation picks the machine this page reads when the voice machine is ambi
   assert.deepEqual(await json(res), { text: "hello there", ms: 900 })
   assert.deepEqual(client.calls.map((c) => c[0]), ["voice", "setVoiceHost", "voice"])
   assert.equal(client.calls[1][1], "mac-a")
+})
+
+test("a Whisper preview goes only to the selected voice host with the preview command", async () => {
+  const client = new FakeClient()
+  client.descriptors.set("mac-b", { machine: { commands: ["voice-preview"], name: "Local voice host" } })
+  client.voiceHostFor = (view: string) => {
+    assert.equal(view, "mac-a")
+    return Promise.resolve({ machine: "mac-b" })
+  }
+  const { reader } = seam(client)
+  const response = await reader.fetch("/v1/voice/preview", post({ audio: "AAAA", rate: 16000 }))
+  assert.equal(response.status, 200)
+  assert.deepEqual(client.calls, [["_machineRequest", "mac-b", "voice-preview", { audio: "AAAA", rate: 16000 }, "action"]])
 })
 
 test("the voice source names the actual selected Whisper machine without sending audio", async () => {

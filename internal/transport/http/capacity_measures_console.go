@@ -77,6 +77,15 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.support_title_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser support title input guard; Cloud independently validates titles"}
 		},
+		"console.whisper_preview_body_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request HTTP body limit; the preview does not retain audio between requests"}
+		},
+		"console.whisper_preview_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request preview deadline; the final transcription has a separate deadline"}
+		},
+		"console.whisper_preview_pcm_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request limit for one 16 kHz mono PCM preview window"}
+		},
 		"console.voice_recording_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser dictation recovery policy; this daemon cannot measure another browser's audio or processing"}
 		},

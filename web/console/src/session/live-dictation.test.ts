@@ -1,14 +1,52 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { readFileSync } from "node:fs"
+import { runInNewContext } from "node:vm"
 // @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
-import { connectLiveDictation, usesLiveDictation } from "./live-dictation.ts"
+import { connectLiveDictation, readDictationSettings, writeDictationSetting } from "./live-dictation.ts"
 
-test("only a machine that selected OpenAI starts live dictation", async () => {
+test("read the selected engine from the active machine and recognize older daemons", async () => {
   const signal = new AbortController().signal
   const connection = { current: () => true, fetch: async () => Response.json({}) }
-  assert.equal(await usesLiveDictation(connection, signal), false)
-  connection.fetch = async () => Response.json({ voice_transcription: "openai_realtime" })
-  assert.equal(await usesLiveDictation(connection, signal), true)
+  assert.equal(await readDictationSettings(connection, signal), null)
+  connection.fetch = async () => Response.json({ voice_transcription: "whisper" })
+  assert.deepEqual(await readDictationSettings(connection, signal), { engine: "whisper", polish: false })
+  connection.fetch = async () => Response.json({ voice_transcription: "openai_realtime", voice_polish: true })
+  assert.deepEqual(await readDictationSettings(connection, signal), { engine: "openai_realtime", polish: true })
+})
+
+test("the recording panel saves the same machine preference with a verified response", async () => {
+  const signal = new AbortController().signal
+  let current = true, calls = 0
+  const connection = {
+    current: () => current,
+    fetch: async (path: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1
+      assert.equal(path, "/v1/settings/voice")
+      assert.equal(init?.method, "POST")
+      assert.equal(new Headers(init?.headers).get("idempotency-key"), "recording-choice")
+      assert.deepEqual(JSON.parse(String(init?.body)), { voice_transcription: "whisper" })
+      return Response.json({ voice_transcription: "whisper" })
+    },
+  }
+  assert.equal(await writeDictationSetting(connection, { voice_transcription: "whisper" }, "recording-choice", signal), true)
+  current = false
+  assert.equal(await writeDictationSetting(connection, { voice_transcription: "whisper" }, "recording-choice", signal), false)
+  assert.equal(calls, 1)
+})
+
+test("automatic correction saves only the existing correction preference", async () => {
+  const calls: unknown[] = []
+  const connection = {
+    current: () => true,
+    fetch: async (_: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)))
+      return Response.json({ voice_polish: true })
+    },
+  }
+  const signal = new AbortController().signal
+  assert.equal(await writeDictationSetting(connection, { voice_polish: true }, "correction", signal), true)
+  assert.deepEqual(calls, [{ voice_polish: true }])
 })
 
 function fakeRealtime(t: import("node:test").TestContext, direction: RTCRtpTransceiverDirection = "sendrecv") {
@@ -106,4 +144,23 @@ test("an OpenAI empty audio commit returns a typed failure and closes WebRTC", a
   realtime.channel.receive({ type: "error", error: { code: "input_audio_buffer_commit_empty" } })
   await assert.rejects(finished, { code: "voice_realtime_audio_empty" })
   assert.equal(realtime.peerClosed, true)
+})
+
+test("the Whisper worklet turns 48 kHz input into a bounded 16 kHz window and skips digital silence", () => {
+  const audio: ArrayBuffer[] = []
+  let create: () => { process(input: Float32Array[][]): boolean } = () => { throw new Error("missing processor") }
+  runInNewContext(readFileSync(new URL("./whisper-preview.worklet.js", import.meta.url), "utf8"), {
+    sampleRate: 48000,
+    AudioWorkletProcessor: class { port = { postMessage(pcm: ArrayBuffer) { audio.push(pcm) } } },
+    registerProcessor(_: string, ctor: new () => { process(input: Float32Array[][]): boolean }) {
+      create = () => new ctor()
+    },
+  })
+  const processor = create()
+  processor.process([[new Float32Array(3 * 48000)]])
+  assert.equal(audio.length, 0)
+  processor.process([[new Float32Array(3 * 48000).fill(0.25)]])
+  assert.equal(audio.length, 1)
+  assert.equal(audio[0].byteLength, 96000)
+  assert.equal(new DataView(audio[0]).getInt16(0, true), 8191)
 })
