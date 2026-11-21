@@ -152,7 +152,14 @@ func TestProjectAssistantCloudResumeMatrixTwoViewersContinueOneConversation(t *t
 	if c := m.markRead(t, "owner-phone", "phone-read", 2); c.MessageSeq != 2 {
 		t.Fatalf("C4 phone frontier %+v", c)
 	}
-	if s := m.summary(t, "owner-laptop"); s.ReadCursor.MessageSeq != 2 || s.UnreadCount != tail-2 {
+	// Only the Bot's finished messages past the frontier are unread.
+	var unread int64
+	for _, item := range items {
+		if item.Seq > 2 && pa.CountsAsUnread(pa.MessageKind(item.Kind)) {
+			unread++
+		}
+	}
+	if s := m.summary(t, "owner-laptop"); s.ReadCursor.MessageSeq != 2 || s.UnreadCount != unread || unread == 0 {
 		t.Fatalf("C4 laptop owner frontier %+v unread=%d", s.ReadCursor, s.UnreadCount)
 	}
 	guest := m.summary(t, "guest")

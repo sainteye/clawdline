@@ -550,6 +550,13 @@ func cloudBounds() []Entry {
 			Sources: []string{"internal/transport/cloud.CloudTerminalDirectNegotiateSecondsLimit"},
 		},
 		{
+			// Once a previously working ICE path becomes disconnected, keep its candidates this long before marking it failed.
+			Name: CloudTerminalDirectICERecovery, Class: Cache, Unit: Seconds,
+			Limit: 25, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectICERecoverySecondsLimit"},
+		},
+		{
 			// How long the machine gathers its own candidates before answering with those it has.
 			Name: CloudTerminalDirectGather, Class: Cache, Unit: Seconds,
 			Limit: 3, AtLimit: Expire,

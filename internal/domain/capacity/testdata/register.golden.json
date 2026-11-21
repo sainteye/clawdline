@@ -7234,6 +7234,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.terminal_direct_ice_recovery_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 25,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.CloudTerminalDirectICERecoverySecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.terminal_direct_message_bytes",
     "Class": "buffer",
     "Unit": "bytes",

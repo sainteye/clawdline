@@ -149,13 +149,16 @@ type testBrowser struct {
 	msgs   chan []byte
 }
 
-func newTestBrowser(t *testing.T) (*testBrowser, string) {
+func newTestBrowser(t *testing.T, configure ...func(*webrtc.SettingEngine)) (*testBrowser, string) {
 	t.Helper()
 	se := webrtc.SettingEngine{}
 	se.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	se.SetIncludeLoopbackCandidate(true)
 	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	se.SetIPFilter(func(ip net.IP) bool { return ip.IsLoopback() })
+	for _, setting := range configure {
+		setting(&se)
+	}
 	pc, err := webrtc.NewAPI(webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)

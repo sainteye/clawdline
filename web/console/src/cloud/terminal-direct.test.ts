@@ -255,6 +255,24 @@ test("an open peer reports its pair and its later close without an address, port
   for (const secret of traceSecrets) assert.ok(!text.includes(secret), `the summary carries ${secret}: ${text}`)
 })
 
+test("a direct close keeps fixed receive labels without carrying unknown error details", async () => {
+  const reports: Array<Record<string, unknown>> = []
+  const link = new DirectLink((config) => new FakePeer(config), () => undefined, () => undefined,
+    { attempt: "AAAAAAAAAAAAAAAAAAAAAA", kind: "carrier", report: (data) => reports.push(data) })
+  await link.offer()
+  await link.answer(traceAnswer)
+  const detail = "fixture-private-detail"
+  link.close("carrier_unusable", "receive", {
+    stage: detail, error: { code: detail, name: detail, message: detail, cause: { name: detail, message: detail } },
+  })
+  const close = reports.find((row) => row.stage === "closed")
+  assert.equal(close?.receive_stage, "other")
+  assert.equal(close?.receive_code, "other")
+  assert.equal(close?.receive_error, "other")
+  assert.equal(close?.receive_cause, "other")
+  assert.ok(!JSON.stringify(close).includes(detail))
+})
+
 test("an attempt that never opens reports where it stopped", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] })
   let peer!: TracedPeer

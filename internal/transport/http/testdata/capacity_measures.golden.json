@@ -549,6 +549,11 @@
     "Note": true
   },
   {
+    "Name": "bots.inline_image_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.input_bytes",
     "Known": true,
     "Note": true

@@ -580,6 +580,7 @@ const (
 	CloudTerminalDirectSDP            = "cloud.terminal_direct_sdp_bytes"
 	CloudTerminalDirectCandidates     = "cloud.terminal_direct_candidates"
 	CloudTerminalDirectNegotiate      = "cloud.terminal_direct_negotiate_seconds"
+	CloudTerminalDirectICERecovery    = "cloud.terminal_direct_ice_recovery_seconds"
 	CloudTerminalDirectGather         = "cloud.terminal_direct_gather_seconds"
 	CloudTerminalDirectMessage        = "cloud.terminal_direct_message_bytes"
 	CloudTerminalDirectChunk          = "cloud.terminal_direct_chunk_seconds"

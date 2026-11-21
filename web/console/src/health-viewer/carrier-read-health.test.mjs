@@ -58,6 +58,8 @@ function openCarrier() {
   return {
     open: true, written: [], down, closed: null, generation: 1,
     whenDown(listener) { down.push(listener); return () => { } },
+    whenReadInterrupted() { return () => { } },
+    get readReady() { return this.open },
     send(envelope) { this.written.push(envelope) },
     async ensure() { return this.open },
     current() { return this.open ? {} : null },

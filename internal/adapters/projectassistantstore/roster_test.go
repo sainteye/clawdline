@@ -127,7 +127,7 @@ func TestRosterProjectionReadsOnlyCurrentSummaryFacts(t *testing.T) {
 	if _, err = s.Export(testContext, e.Bot.Key); err == nil {
 		t.Fatal("negative control did not break aggregate decoding")
 	}
-	if got = rosterRead(t, views, q); got.Frame.Changes[0].Summary.UnreadCount != 1800 {
+	if got = rosterRead(t, views, q); got.Frame.Changes[0].Summary.UnreadCount != want.Items[0].UnreadCount || want.Items[0].UnreadCount == 0 || want.Items[0].UnreadCount >= 1800 {
 		t.Fatal("reader count", got)
 	}
 	q.ByteLimit = 1

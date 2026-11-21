@@ -394,3 +394,21 @@ func TestOwnedMCPTopicIndexCarriesItsCASRevision(t *testing.T) {
 		t.Fatal("index revision absent", string(body))
 	}
 }
+
+// Antigravity sends notifications/roots/list_changed after the handshake; a
+// 400 made it drop the whole server, so its Gemini Bot had no Clawdline tools.
+func TestOwnedMCPAcceptsClientNotificationsItDoesNotActOn(t *testing.T) {
+	f := newMCPFixture(t, mcpTestTools{})
+	f.initialize(t)
+	for _, method := range []string{"notifications/roots/list_changed", "notifications/cancelled", "notifications/progress"} {
+		if code, b := f.post(t, `{"jsonrpc":"2.0","method":"`+method+`"}`, nil); code != 202 || len(b) != 0 {
+			t.Fatalf("%s: %d %s", method, code, b)
+		}
+	}
+	if code, _ := f.post(t, `{"jsonrpc":"2.0","method":"tools/list"}`, nil); code != 400 {
+		t.Fatalf("a request without an id is still refused: %d", code)
+	}
+	if code, b := f.post(t, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, nil); code != 200 || !strings.Contains(string(b), `"send_file"`) {
+		t.Fatalf("tools after the notification: %d %s", code, b)
+	}
+}

@@ -8,7 +8,7 @@ import { CloudTerminalSession } from "./terminal-session.ts"
 import { TerminalObservation } from "./terminal-observation.ts"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { settled, until } from "./until.ts"
-import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
+import { bytesBase64, base64Bytes, envelopeSigningBytes, sealEnvelope } from "../legacy/js/net/cloud-crypto.js"
 import type { DirectChannelLike, DirectPeerLike } from "./terminal-direct.js"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { DirectLink } from "./terminal-direct.ts"
@@ -36,9 +36,12 @@ class FakeChannel implements DirectChannelLike {
 class FakePeer implements DirectPeerLike {
   localDescription: { sdp: string } | null = null
   iceGatheringState = "complete"
+  iceConnectionState = "connected"
+  connectionState = "connected"
   channel = new FakeChannel()
   onicegatheringstatechange: ((event?: unknown) => void) | null = null
   onconnectionstatechange: ((event?: unknown) => void) | null = null
+  oniceconnectionstatechange: ((event?: unknown) => void) | null = null
   createDataChannel(): DirectChannelLike { return this.channel }
   async createOffer(): Promise<{ type: string; sdp?: string }> { return { type: "offer", sdp: "v=0 offer" } }
   async setLocalDescription(description: { type: string; sdp?: string }): Promise<void> { this.localDescription = { sdp: description.sdp ?? "" } }
@@ -386,6 +389,44 @@ async function fixtureCarrierAnswer(offer: Pick<CarrierOffer, "connection" | "ke
   return { sdpSealed: bytesBase64(Uint8Array.of(...nonce, ...new Uint8Array(ct))), directReceipts: true, directLocalNetwork: undefined }
 }
 
+test("an authenticated corrupt gzip reply records the cause on its own direct close", async () => {
+  const peer = new FakePeer()
+  const client = new StatusCloudClient({ relayURL: "https://relay.test", account: "account", deviceID: viewer, deviceToken: "fixture" })
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
+  const signer = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
+  const closes: Record<string, unknown>[] = []
+  let attempt = ""
+  Object.assign(client, { ready: true, carrierSupported: () => true })
+  client._machinePairing = async () => ({ keyID: "ms-1", senderID: machine, senderKey: signer.publicKey, masterKey })
+  client.publishCarrierOffer = async (_machine, offer) => {
+    attempt = offer.connection
+    return fixtureCarrierAnswer(offer)
+  }
+  client.viewerEvents.record = (name: string, data: Record<string, unknown>) => {
+    if (name === "cloud.direct.closed") closes.push(data)
+  }
+  client.useDirectCarriers(directCarriers(client as unknown as CarrierClient, () => peer))
+  try {
+    assert.equal((await client.tryDirect(machine)).kind, "open")
+    const reply = await sealEnvelope({
+      ch: `t/${machine}/session`, seq: 1, ts: 1, class: "stream", key_id: "ms-1", sender: machine,
+    }, new Uint8Array([103, 122, 49, 0, 1, 2, 3]), masterKey, signer.privateKey)
+    peer.channel.onmessage?.({ data: JSON.stringify({ t: "env", e: reply }) })
+    await until(() => closes.length > 0)
+    assert.equal(peer.channel.readyState, "closed")
+    assert.equal(closes.length, 1)
+    assert.equal(closes[0].attempt, attempt)
+    assert.equal(closes[0].ice, "connected")
+    assert.equal(closes[0].pc, "connected")
+    assert.equal(closes[0].source, "receive")
+    assert.equal(closes[0].code, "carrier_unusable")
+    assert.equal(closes[0].receive_stage, "decompress")
+    assert.equal(closes[0].receive_code, "read_payload_corrupt")
+    const serialized = JSON.stringify(closes[0])
+    for (const raw of [reply.ch, reply.ct, reply.sig, reply.nonce]) assert.ok(!serialized.includes(raw))
+  } finally { client.stop() }
+})
+
 test("a proven viewer-token renewal keeps the same direct peer and sends later reads to the replacement client", async () => {
   const peer = new FakePeer()
   const options = { relayURL: "https://relay.test", account: "account", deviceID: viewer }
@@ -453,6 +494,43 @@ for (const scenario of [
     } finally { next.stop(); old.stop() }
   })
 }
+
+test("temporary RTC state changes interrupt the read path once and keep the same channel", async () => {
+  const peer = new FakePeer()
+  let offers = 0
+  const carrier = new DirectCarrier({
+    deviceID: viewer, ready: true, retired: false,
+    publishCarrierOffer: async (_machine, offer) => { offers++; return fixtureCarrierAnswer(offer) },
+    receiveCarrierEnvelope() {}, carrierSupported: () => true,
+  }, machine, () => peer)
+  let interruptions = 0
+  let closes = 0
+  const stop = carrier.whenReadInterrupted(() => { interruptions++ })
+  carrier.whenDown(() => { closes++ })
+  try {
+    assert.equal(await carrier.ensure(), true)
+    const generation = carrier.channelGeneration
+    assert.equal(carrier.readReady, true)
+    peer.iceConnectionState = "disconnected"
+    peer.oniceconnectionstatechange?.()
+    peer.connectionState = "disconnected"
+    peer.onconnectionstatechange?.()
+    assert.equal(interruptions, 1)
+    assert.equal(carrier.readReady, false)
+    assert.equal(await carrier.ensure(), true)
+    assert.equal(closes, 0)
+    assert.equal(offers, 1)
+    assert.equal(peer.channel.readyState, "open")
+
+    peer.iceConnectionState = "connected"
+    peer.oniceconnectionstatechange?.()
+    peer.connectionState = "connected"
+    peer.onconnectionstatechange?.()
+    assert.equal(carrier.readReady, true)
+    assert.equal(carrier.channelGeneration, generation)
+    assert.equal(interruptions, 1)
+  } finally { stop(); carrier.close() }
+})
 
 test("a terminal that opens direct first uses the machine carrier that survives leaving the Session", async () => {
   const m = await machineFixture()

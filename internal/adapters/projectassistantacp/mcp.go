@@ -319,7 +319,15 @@ func (s *ownedMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(f.ID) == 0 {
 		if f.Method != "notifications/initialized" {
-			http.Error(w, string(pa.Unsupported), http.StatusBadRequest)
+			// A client notification this server does not act on, such as
+			// Antigravity's notifications/roots/list_changed, is accepted and
+			// ignored as MCP requires. Answering 400 made Antigravity close
+			// the connection, so a Gemini Bot lost every Clawdline tool.
+			if !strings.HasPrefix(f.Method, "notifications/") {
+				http.Error(w, string(pa.Unsupported), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
 			return
 		}
 		s.mu.Lock()

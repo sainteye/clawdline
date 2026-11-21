@@ -37,6 +37,7 @@ const (
 	CloudTerminalDirectSDPBytesLimit              = 16 << 10
 	CloudTerminalDirectCandidatesLimit            = 32
 	CloudTerminalDirectNegotiateSecondsLimit      = 5
+	CloudTerminalDirectICERecoverySecondsLimit    = 25
 	CloudTerminalDirectMessageBytesLimit          = 9 << 20
 	CloudTerminalDirectChunkSecondsLimit          = 2
 	CloudTerminalDirectAckSecondsLimit            = 3
@@ -144,7 +145,10 @@ func (l *Link) directAPI() (*webrtc.API, error) {
 	se := webrtc.SettingEngine{}
 	se.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
-	se.SetICETimeouts(4*time.Second, 8*time.Second, time.Second)
+	// Detect a temporarily unreachable pair quickly. Keep its candidates
+	// through Pion's normal recovery window; failed releases them permanently.
+	// The independent offer timer still bounds peers that have never opened.
+	se.SetICETimeouts(4*time.Second, CloudTerminalDirectICERecoverySecondsLimit*time.Second, time.Second)
 	if !l.directLoopback {
 		se.SetIPFilter(func(ip net.IP) bool { return directAddressAllowed(ip) })
 	} else {
@@ -684,13 +688,16 @@ func (l *Link) closeDirectPeer(peer *directPeer, why string) {
 		delete(l.directPeers, peer.viewer)
 	}
 	l.directMu.Unlock()
-	go func() { _ = peer.pc.Close() }()
 	l.logDirectTrace(peer.trace, false, why == directWhyOpenTimeout)
 	if peer.trace != nil {
-		l.logf("cloud terminal carrier=direct closed: %s attempt=%s kind=%s", why, logToken(peer.trace.attempt), peer.trace.kind)
+		timeline, pair := peer.trace.closeFacts()
+		l.logf("cloud terminal carrier=direct closed: %s attempt=%s kind=%s ice=%s pc=%s ice_timeline=%s pair=%s",
+			why, logToken(peer.trace.attempt), peer.trace.kind, peer.pc.ICEConnectionState(),
+			peer.pc.ConnectionState(), timeline, pair)
 	} else {
 		l.logf("cloud terminal carrier=direct closed: %s", why)
 	}
+	go func() { _ = peer.pc.Close() }()
 	l.terminalMu.Lock()
 	direct := []*terminalConnection{}
 	for _, c := range l.terminalConnections {

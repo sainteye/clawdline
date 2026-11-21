@@ -1599,6 +1599,8 @@
   "capacityRow.cloud.terminal_direct_chunk_seconds.what": "直連上的大訊息分段送達時，最多能停在只收到一半的狀態多久。永遠收不完的訊息不該佔著記憶體，也不該卡住後面的訊息。",
   "capacityRow.cloud.terminal_direct_gather_seconds.full": "時間到就用目前找到的位址回覆。如果不夠用，直連就打不通，終端繼續走經過 Cloud 的路徑。",
   "capacityRow.cloud.terminal_direct_gather_seconds.what": "回覆直連請求之前，這台機器花多久找自己的網路位址。避免網路查詢太慢，讓手機一直等。",
+  "capacityRow.cloud.terminal_direct_ice_recovery_seconds.full": "恢復時間用完後，這台機器會關閉直連。只要 Cloud 仍可連通，就能繼續讀取工作階段。",
+  "capacityRow.cloud.terminal_direct_ice_recovery_seconds.what": "直連暫時失聯後，這台機器會保留連線多久，讓短暫的網路中斷有時間恢復。",
   "capacityRow.cloud.terminal_direct_message_bytes.full": "這是單則訊息的上限。超過就會關掉直連，終端自己退回經過 Cloud 的路徑；你不用做任何事。",
   "capacityRow.cloud.terminal_direct_message_bytes.what": "直連上的一則訊息，把分段拼回去之後最多多大。避免單一訊息塞滿這台機器的記憶體。",
   "capacityRow.cloud.terminal_direct_negotiate_seconds.full": "時間到就關掉這次嘗試，終端繼續走經過 Cloud 的路徑；照常能用，只是沒有變快。你不用做任何事。",

@@ -373,6 +373,7 @@
 | `cloud.terminal_direct_candidates` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_chunk_seconds` | 2 | `seconds` | `disconnect` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_gather_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `cloud.terminal_direct_ice_recovery_seconds` | 25 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_message_bytes` | 9437184 | `bytes` | `disconnect` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_negotiate_seconds` | 5 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `cloud.terminal_direct_offers_per_minute` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |

@@ -119,9 +119,10 @@ func TestOwnChatPagesAcrossInterleavedRooms(t *testing.T) {
 	if err != nil || len(h.Items) != 2 || h.Items[0].Seq != 8 || h.Items[1].Seq != 5 || !h.HasMore || h.NextBeforeSeq != 5 {
 		t.Fatal(h, err)
 	}
-	// Notices without a Room ticket remain legitimate own-chat messages.
+	// Notices without a Room ticket remain legitimate own-chat messages: they
+	// are the latest activity, but narration is never unread.
 	rows, err := s.ListForReader(testContext, pa.ListBots{MachineID: e.Bot.Key.MachineID, PageSize: 1}, "reader")
-	if err != nil || rows.Items[0].UnreadCount != 3 || rows.Items[0].LatestMessage != e.Messages[7].Text || !rows.Items[0].ActivityAt.Equal(e.Messages[7].At) {
+	if err != nil || rows.Items[0].UnreadCount != 0 || rows.Items[0].LatestMessage != e.Messages[7].Text || !rows.Items[0].ActivityAt.Equal(e.Messages[7].At) {
 		t.Fatal(rows, err)
 	}
 	roster := rosterRead(t, v, rosterQuery())

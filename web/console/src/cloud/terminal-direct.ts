@@ -1,4 +1,5 @@
 import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
+import { pageContext } from "../legacy/js/net/cloud-viewer-events.js"
 import type { TerminalEnvelope } from "./terminal-transport.js"
 
 /** The browser's numbers from "Direct carrier" in docs/cloud-terminal-wire.md. */
@@ -238,7 +239,9 @@ export function directAttemptRecorder(client: unknown, machine: string): ((data:
   // made to, so the row names it.
   return (data) => {
     const event = data.stage === "closed" ? "cloud.direct.closed" : "cloud.direct.attempt"
-    log.record!(event, { ...data, machine }, [event, data.kind, data.source ?? data.stage].join("|"))
+    const key = [event, data.kind, data.source ?? data.stage]
+    if (data.stage === "closed") key.push(data.code, data.receive_code)
+    log.record!(event, { ...data, machine }, key.join("|"))
   }
 }
 
@@ -290,12 +293,47 @@ const DIRECT_CLOSE_CODES = new Set([
   "terminal_direct_violation", "terminal_direct_replaced", "terminal_direct_released",
 ])
 
+export interface DirectReceiveFailure {
+  stage: string
+  error: unknown
+  cause?: unknown
+}
+
+const DIRECT_RECEIVE_STAGES = new Set([
+  "receive_queue", "channel_parse", "machine_pairing_lookup", "pairing_key_id", "validate",
+  "signature_verify", "master_key_lookup", "decrypt", "decompress", "sequence", "payload", "apply",
+])
+const DIRECT_RECEIVE_CODES = new Set([
+  "carrier_receive_full", "bad_channel", "machine_not_paired", "machine_pairing_required",
+  "unknown_sender", "unknown_key", "extractable_key", "unreadable_envelope", "replay", "bad_payload",
+  "read_compression_unavailable", "read_encoding_unsupported", "read_payload_corrupt", "read_payload_too_large",
+])
+const DIRECT_RECEIVE_ERROR_NAMES = new Set([
+  "Error", "TypeError", "SyntaxError", "RangeError", "OperationError", "DataError", "InvalidAccessError",
+  "NotSupportedError", "AbortError", "NetworkError",
+])
+
+/** Only fixed cause labels enter the close row. Browser error messages can contain private data. */
+function directReceiveFacts(failure: DirectReceiveFailure) {
+  const fixed = (allowed: Set<string>, value: unknown) => typeof value === "string" && allowed.has(value) ? value : "other"
+  const error = failure.error as { code?: unknown; name?: unknown; cause?: { name?: unknown } } | null | undefined
+  const cause = (failure.cause ?? error?.cause) as { name?: unknown } | null | undefined
+  return {
+    receive_stage: fixed(DIRECT_RECEIVE_STAGES, failure.stage),
+    receive_code: fixed(DIRECT_RECEIVE_CODES, error?.code),
+    receive_error: fixed(DIRECT_RECEIVE_ERROR_NAMES, error?.name),
+    receive_cause: cause ? fixed(DIRECT_RECEIVE_ERROR_NAMES, cause.name) : null,
+  }
+}
+
 export class DirectLink {
   private readonly peer: DirectPeerLike
   private readonly channel: DirectChannelLike
   private readonly reassembler: DirectReassembler
   private readonly onEnvelope: (envelope: TerminalEnvelope) => void
   private readonly onDown: (code: string) => void
+  private readonly readInterruptions = new Set<() => void>()
+  private readInterrupted = false
   private nextChunk = 0
   private openedAt: number | null = null
   private closed = false
@@ -340,8 +378,12 @@ export class DirectLink {
     this.peer.onconnectionstatechange = () => {
       this.state("pc", this.peer.connectionState)
       if (this.peer.connectionState === "failed" || this.peer.connectionState === "closed") this.close("terminal_direct_ice_failed", "peer_state")
+      else this.observeReadPath()
     }
-    this.peer.oniceconnectionstatechange = () => this.state("ice", this.peer.iceConnectionState)
+    this.peer.oniceconnectionstatechange = () => {
+      this.state("ice", this.peer.iceConnectionState)
+      this.observeReadPath()
+    }
   }
 
   /** Each state once, at the first time it was reached: the list is bounded by the enum. */
@@ -382,6 +424,23 @@ export class DirectLink {
   }
 
   get open(): boolean { return this.openedAt !== null && !this.closed && this.channel.readyState === "open" }
+
+  /** An open DataChannel can survive a brief loss of ICE connectivity. */
+  get readReady(): boolean {
+    return this.open && this.peer.iceConnectionState !== "disconnected" && this.peer.connectionState !== "disconnected"
+  }
+
+  whenReadInterrupted(listener: () => void): () => void {
+    this.readInterruptions.add(listener)
+    return () => { this.readInterruptions.delete(listener) }
+  }
+
+  private observeReadPath(): void {
+    const interrupted = this.open && !this.readReady
+    if (interrupted === this.readInterrupted) return
+    this.readInterrupted = interrupted
+    if (interrupted) for (const listener of [...this.readInterruptions]) listener()
+  }
 
   /** The offer SDP once ICE gathering completes, or what was gathered after DIRECT_GATHER_MS. */
   async offer(): Promise<string> {
@@ -437,18 +496,21 @@ export class DirectLink {
     catch { this.close("terminal_direct_closed", "send") }
   }
 
-  close(code = "terminal_direct_closed", source: DirectCloseSource = "application"): void {
+  close(code = "terminal_direct_closed", source: DirectCloseSource = "application", failure?: DirectReceiveFailure): void {
     if (this.closed) return
     this.closed = true
     globalThis.removeEventListener?.("pagehide", this.pageHidden)
     if (this.trace && this.openedAt !== null) {
       const state = (value: string | undefined) => value && DIRECT_RTC_STATES.has(value) ? value : "-"
       try {
+        const now = Date.now()
         this.trace.report({
           attempt: this.trace.attempt, kind: this.trace.kind, stage: "closed", source,
           code: DIRECT_CLOSE_CODES.has(code) ? code : "other",
-          open_ms: Math.max(0, Date.now() - this.openedAt),
+          open_ms: Math.max(0, now - this.openedAt),
           ice: state(this.peer.iceConnectionState), pc: state(this.peer.connectionState),
+          ...pageContext(now),
+          ...(failure ? directReceiveFacts(failure) : {}),
         })
       } catch { /* a recorder cannot fail the link it records */ }
     } else this.report("closed", code)
