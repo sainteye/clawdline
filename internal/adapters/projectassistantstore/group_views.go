@@ -102,7 +102,7 @@ func roomTurnObservations(ctx context.Context, tx *sql.Tx, group pa.Group, room 
 		}
 		// Stale tickets or another conversation/fence cannot claim a member
 		// is working in this room. Queued tickets may precede a native rebind.
-		if project != group.Project || turn.Fence.Key != key || turn.Fence.Project != project ||
+		if !pa.GroupAllowsProject(group.Project, project) || turn.Fence.Key != key || turn.Fence.Project != project ||
 			conversation.Key != key || turn.Fence.ConversationID != conversation.ID ||
 			turn.Fence.Generation > conversation.Generation || pa.ValidateRoomTurn(turn) != nil ||
 			pa.CheckRoomTicket(group, room, *turn.Room) != nil {

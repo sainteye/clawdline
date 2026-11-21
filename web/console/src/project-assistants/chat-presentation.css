@@ -3,6 +3,8 @@
 .project-assistants .pa-chat-surface .pa-chat-heading { display:flex;justify-content:center;flex:1;min-width:0;margin:0;overflow:visible; }
 .project-assistants .pa-chat-surface .pa-chat-identity { display:flex;align-items:center;gap:10px;max-width:min(100%,580px);min-width:0;min-height:44px;padding:6px 12px;border:1px solid transparent;border-radius:26px;background:#181818;text-align:left; }
 .project-assistants .pa-chat-surface .pa-chat-identity:hover { background:#242426; }
+.project-assistants .pa-chat-identity .pa-avatar-status { flex:none; }
+.project-assistants .pa-chat-identity .pa-agent-badge { width:14px;height:14px;right:-2px;bottom:-2px; }
 .project-assistants .pa-chat-surface .pa-chat-identity-text { display:flex;flex-direction:column;gap:2px;min-width:0; }
 .project-assistants .pa-chat-surface .pa-chat-identity-text strong { font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-chat-surface .pa-chat-identity-text small { font-size:11px;font-weight:400; }

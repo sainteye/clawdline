@@ -104,6 +104,15 @@ func DeduplicateGroupMembers(members []BotKey) []BotKey {
 	return out
 }
 
+// GroupAllowsProject checks membership scope. Each member still executes under
+// its own exact workspace and conversation fence.
+func GroupAllowsProject(group, member ProjectScope) bool {
+	if group.Kind == PersonalWorkspace {
+		return member.Kind == PersonalWorkspace && group.MachineID == member.MachineID
+	}
+	return group == member
+}
+
 // ValidateGroupMembers checks a requested member list against the stored
 // Bots. In accordance with Codync (host/src/chat/group.rs), duplicate member
 // keys are deduplicated silently while preserving first appearance order.
@@ -116,6 +125,9 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 	}
 	if group.MachineID != scope.MachineID {
 		return fail(ScopeDenied, "group_machine")
+	}
+	if scope.Kind == PersonalWorkspace && scope != PersonalGroupScope(scope.MachineID) {
+		return fail(ScopeDenied, "group_project")
 	}
 	deduped := DeduplicateGroupMembers(requested)
 	if len(deduped) == 0 {
@@ -144,7 +156,7 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 		}
 		// The full scope: the same canonical repository under another
 		// registered Project is a different Project.
-		if bot.Project != scope {
+		if !GroupAllowsProject(scope, bot.Project) {
 			return fail(ScopeDenied, "group_member_project")
 		}
 		if !bot.Agent.Valid() {

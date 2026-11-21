@@ -27,3 +27,10 @@ func WorkspaceForCreate(c Command) ProjectSelection {
 func PersonalScope(target ProjectSelection) ProjectScope {
 	return ProjectScope{MachineID: target.MachineID, ProjectID: target.ProjectID, CanonicalID: target.ProjectID, Kind: PersonalWorkspace}
 }
+
+// PersonalGroupScope identifies rooms on one source without assigning them a
+// member's workspace or creating a directory for the room itself.
+func PersonalGroupScope(machine string) ProjectScope {
+	digest := sha256.Sum256([]byte("personal-group\x00" + machine))
+	return PersonalScope(ProjectSelection{MachineID: machine, ProjectID: workspacePrefix + hex.EncodeToString(digest[:])})
+}

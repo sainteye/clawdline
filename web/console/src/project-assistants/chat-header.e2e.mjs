@@ -89,8 +89,12 @@ try{
       }
       assert.equal(await menu.count(),0)
       assert.equal(await header.locator(".browser-chip").count(),0)
-      await screenshot("after-chat")
       const identity=header.locator(".pa-chat-identity"),panel=page.locator(".pa-info-panel")
+      const headerBadge=identity.locator(".pa-agent-badge"),rosterBadge=row.locator(".pa-agent-badge")
+      assert.equal(await headerBadge.getAttribute("data-agent"),await rosterBadge.getAttribute("data-agent"))
+      const [avatarBounds,badgeBounds,textBounds]=await Promise.all([identity.locator(".pa-avatar").boundingBox(),headerBadge.boundingBox(),identity.locator(".pa-chat-identity-text").boundingBox()])
+      assert.ok(avatarBounds&&badgeBounds&&textBounds&&badgeBounds.x>avatarBounds.x+avatarBounds.width/2&&badgeBounds.y>avatarBounds.y+avatarBounds.height/2&&badgeBounds.x+badgeBounds.width<=textBounds.x)
+      await screenshot("after-chat")
       const details=panel.getByRole("tab",{name:zh?"詳情":"Details",exact:true})
       const browserButton=panel.getByRole("button",{name:zh?"瀏覽器":"Browser",exact:true})
       const browserDialog=page.locator(".pa-browser")
@@ -102,6 +106,11 @@ try{
       const closeDetails=async()=>{await page.keyboard.press("Escape");await panel.waitFor({state:"hidden"});assert.equal(await focused(identity),true)}
       await openDetails()
       await screenshot("after-details-keyboard")
+      if(process.env.BOTS_HEADER_BADGE_ONLY){
+        await closeDetails()
+        evidence.push({language,width,agent:await headerBadge.getAttribute("data-agent"),badgeBounds,avatarBounds})
+        continue
+      }
       await browserButton.press("Enter")
       await browserDialog.locator(".browser-close").waitFor()
       await page.keyboard.press("Escape")

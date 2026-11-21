@@ -30,13 +30,13 @@ import {words} from "./src/project-assistants/words";import {bootCatalog} from "
 import "./src/legacy/tokens.css";import "./src/project-assistants/styles.css";
 const q=new URL(location.href).searchParams,mode=q.get("mode")??"local",language=q.get("lang")??"en";
 localStorage.setItem("ui_language",language);await bootCatalog(tag=>"/catalog/"+tag+".json");
-const grant={accountKey:mode==="cloud"?"synthetic":"local",readerID:"person",machineID:"machine",authorizationRevision:"one",apiLevel:mode==="old"?75:88,paired:true,online:true,writable:mode!=="read"};
+const grant={accountKey:mode==="cloud"?"synthetic":"local",readerID:"person",machineID:"machine",authorizationRevision:"one",apiLevel:mode==="old"?75:105,paired:true,online:true,writable:mode!=="read"};
 const carried=${JSON.stringify(words)};
 const relay={machineDescriptor:()=>({machine:{commands:carried}}),_machineRequest:async(_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields)})).json(),_machineRequestAs:async(id,_,word,fields)=>await(await fetch("/relay/"+word,{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":id}})).json()};
 const source=new ProjectAssistantSourceClient(grant,mode==="cloud"?capturedAssistantRelayFetch("machine",()=>relay,carried):(input,init)=>fetch("/proxy/"+mode+input,init),()=>grant);
 const readGroup=source.groupHistory.bind(source);window.fixtureReadAttempts=0;source.groupHistory=async(...args)=>{window.fixtureReadAttempts++;if(window.fixtureReadFailure)throw {error:{code:"pa_offline"}};return readGroup(...args)};
 await source.status(new AbortController().signal);const page=await source.list({machine_id:"machine",cursor:"",query:"",page_size:100},new AbortController().signal);
-createRoot(document.getElementById("app")).render(<div className="project-assistants pa-shell"><BotRoster sources={[source]} groupsItems={page.items} items={page.items} machines={["machine"]} selected={null} query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} loading={false} errors={[]} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"],[JSON.stringify(["machine","other"]),"Other Project"]])}/><main className="pa-main"/></div>);
+createRoot(document.getElementById("app")).render(<div className="project-assistants pa-shell"><BotRoster sources={[source]} groupsItems={page.items} items={page.items.filter(item=>!item.bot.hidden)} machines={["machine"]} selected={null} query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} loading={false} errors={[]} projectNames={new Map([[JSON.stringify(["machine","project"]),"Synthetic Project"],[JSON.stringify(["machine","other"]),"Other Project"],[JSON.stringify(["machine","empty"]),"Empty Project"],[JSON.stringify(["machine","hidden-only"]),"Hidden-only Project"]])}/><main className="pa-main"/></div>);
 `,resolveDir:root,loader:"tsx"},bundle:true,write:false,outfile:"groups.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",plugins:process.env.BOTS_ROOM_BASELINE?[{name:"recorded-room-baseline",setup(plugin){plugin.onLoad({filter:/project-assistants\/(GroupRoom\.tsx|styles\.css)$/},args=>({contents:execFileSync("git",["show",process.env.BOTS_ROOM_BASELINE+":"+path.relative(path.resolve(root,"../.."),args.path)],{cwd:path.resolve(root,"../.."),encoding:"utf8"}),loader:args.path.endsWith(".css")?"css":"tsx",resolveDir:path.dirname(args.path)}))}}]:[],define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents])),traffic=[]
 const server=createServer(async(req,res)=>{
@@ -100,6 +100,27 @@ try{
   }
   const key=async(sessionId,key,code=key)=>{operations.push({action:"key",key,at:Date.now()});await send("Input.dispatchKeyEvent",{type:"keyDown",key,code},sessionId);await send("Input.dispatchKeyEvent",{type:"keyUp",key,code},sessionId)}
   const fill=async(sessionId,selector,value)=>evaluate(sessionId,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing input');e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.setSelectionRange?.(e.value.length,e.value.length);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('select',{bubbles:true}));})()`)
+  if(!process.env.BOTS_PREVIEW){
+    const start=traffic.length,{targetId,sessionId}=await open("cloud","zh-Hant",390,844)
+    await openGroupCreator(sessionId,true)
+    await hit(sessionId,"dialog[open] .pa-select-button",true)
+    const options=await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] [role=option]')].map(e=>e.textContent.trim())")
+    assert.deepEqual(options.sort(),["Other Project","Synthetic Project","個人工作區"].sort())
+    const personal=await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] [role=option]')].find(e=>e.textContent.trim()==='個人工作區').dataset.index")
+    await hit(sessionId,`dialog[open] [role=option][data-index="${personal}"]`,true)
+    assert.deepEqual(await evaluate(sessionId,"[...document.querySelectorAll('dialog[open] .pa-group-candidate span:not([class])')].map(e=>e.textContent).sort()"),["Personal One","Personal Two"])
+    await evaluate(sessionId,"for(const b of [...document.querySelectorAll('dialog[open] .pa-group-candidate')])b.click()")
+    await fill(sessionId,"dialog[open] .pa-group-name","個人工作區驗收")
+    await click(sessionId,"建立")
+    await until(sessionId,"document.querySelector('.pa-room-identity strong')?.textContent==='個人工作區驗收'")
+    const create=traffic.slice(start).find(row=>row.word==="project-assistants.group-create")
+    assert.equal(create.body.settings.target.project_id,"")
+    assert.deepEqual(create.body.settings.members.map(k=>k.bot_id).sort(),["personal-one","personal-two"])
+    await click(sessionId,"更多動作");await click(sessionId,"刪除群組");await click(sessionId,"確認刪除群組")
+    await until(sessionId,"!document.querySelector('[role=dialog]')")
+    await send("Target.closeTarget",{targetId})
+    results.push({mode:"cloud",lang:"zh-Hant",width:390,personalWorkspace:true,members:2,modelRequests:0})
+  }
   if(process.env.BOTS_GROUP_BACKGROUND==="1"){
     for(const [mode,lang,width,height,outcome] of [["local","en",1280,800,"complete"],["cloud","zh-Hant",390,844,"complete"],["cloud","en",1280,800,"refusal"]]){
       const start=traffic.length,{targetId,sessionId}=await open(mode,lang,width,height),zh=lang==="zh-Hant"

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,7 +29,18 @@ type groupPersonContext struct{}
 type groupHTTPProjects struct{ dir string }
 
 func (p groupHTTPProjects) Resolve(_ context.Context, q pa.ProjectSelection) (pa.ProjectResolution, error) {
+	if pa.IsPersonalWorkspaceID(q.ProjectID) {
+		return pa.ProjectResolution{Scope: pa.PersonalScope(q), Directory: filepath.Join(p.dir, q.ProjectID), Available: true, Current: true}, nil
+	}
 	return pa.ProjectResolution{Scope: pa.ProjectScope{MachineID: q.MachineID, ProjectID: q.ProjectID, CanonicalID: "canonical-" + q.ProjectID, Kind: pa.RepositoryProject}, Directory: p.dir, Available: true, Current: true}, nil
+}
+
+func (p groupHTTPProjects) ProvisionPersonalWorkspace(ctx context.Context, q pa.ProjectSelection) (pa.ProjectResolution, error) {
+	resolved, err := p.Resolve(ctx, q)
+	if err != nil {
+		return pa.ProjectResolution{}, err
+	}
+	return resolved, os.MkdirAll(resolved.Directory, 0700)
 }
 
 type groupHTTPFixture struct {
@@ -198,6 +210,19 @@ func (f *groupHTTPFixture) create(t *testing.T) contract.ProjectAssistantGroup {
 	f.groupID = result.Group.Key.BotID
 	return result.Group
 }
+
+func (f *groupHTTPFixture) createBot(t *testing.T, id, name, project string) pa.Bot {
+	t.Helper()
+	key := pa.BotKey{MachineID: "machine", BotID: id}
+	bot, _, err := f.service.Create(t.Context(), pa.Command{Key: key, Operation: pa.CreateOperation, IdempotencyKey: "seed-" + id}, pa.CreateBot{
+		Target: pa.ProjectSelection{MachineID: "machine", ProjectID: project}, Name: name, Appearance: pa.Appearance{Shape: pa.Blob, Color: pa.EntryColor}, Agent: pa.Codex, PermissionPolicy: pa.Ask,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bot
+}
+
 func TestGroupHTTPUsesSQLiteAndPublishesScriptedMemberAuthors(t *testing.T) {
 	f := newGroupHTTPFixture(t)
 	g := f.create(t)
@@ -415,6 +440,63 @@ func TestGroupHTTPRefusesOtherProjectsReadOnlyAndRevokedGrants(t *testing.T) {
 		t.Fatal(status, string(body))
 	}
 }
+
+func TestPersonalGroupHTTPKeepsMembersInTheirOwnWorkspaces(t *testing.T) {
+	f := newGroupHTTPFixture(t)
+	a, b := f.createBot(t, "personal-one", "Personal One", ""), f.createBot(t, "personal-two", "Personal Two", "")
+	if a.Project == b.Project || a.Project.Kind != pa.PersonalWorkspace || b.Project.Kind != pa.PersonalWorkspace {
+		t.Fatal("fixture must keep separate personal workspaces", a.Project, b.Project)
+	}
+	path := "/v1/project-assistants/rooms/groups"
+	request := contract.ProjectAssistantGroupCreateRequest{Command: f.command(pa.CreateOperation, "create-personal-room"), Settings: contract.ProjectAssistantGroupCreateSettings{
+		Target: contract.ProjectAssistantProjectSelection{MachineID: "machine"}, Name: "Personal room", Members: []contract.ProjectAssistantBotKey{paWireBotKey(a.Key), paWireBotKey(b.Key)},
+	}}
+	status, body := f.request(t, "POST", path, "person", request)
+	var created contract.ProjectAssistantGroupResponse
+	if status != 200 || json.Unmarshal(body, &created) != nil || len(created.Group.Members) != 2 || created.Group.Project.Kind != "personal" {
+		t.Fatal(status, string(body))
+	}
+	f.groupID = created.Group.Key.BotID
+	request.Command = f.command(pa.CreateOperation, "reversed-personal-room")
+	request.Settings.Members[0], request.Settings.Members[1] = request.Settings.Members[1], request.Settings.Members[0]
+	status, body = f.request(t, "POST", path, "person", request)
+	var duplicate contract.ProjectAssistantGroupResponse
+	if status != 200 || json.Unmarshal(body, &duplicate) != nil || duplicate.Group.Key != created.Group.Key {
+		t.Fatal("reordered members should open their existing room", status, string(body))
+	}
+	edit := contract.ProjectAssistantGroupEditRequest{Command: f.command(pa.EditOperation, "foreign-personal-room"), Settings: contract.ProjectAssistantGroupEditSettings{
+		ExpectedVersion: created.Group.Version, Name: created.Group.Name, Members: []contract.ProjectAssistantBotKey{paWireBotKey(a.Key), paWireBotKey(f.bots[0].Key)},
+	}}
+	if status, body = f.request(t, "PATCH", path+"/room", "person", edit); status != 403 || !bytes.Contains(body, []byte("group_member_project")) {
+		t.Fatal(status, string(body))
+	}
+	send := contract.ProjectAssistantGroupSendRequest{Command: f.command(pa.SendOperation, "say-personal"), Text: "Please review"}
+	if status, body = f.request(t, "POST", path+"/room/messages", "person", send); status != 200 {
+		t.Fatal(status, string(body))
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	var page contract.ProjectAssistantGroupHistoryResponse
+	for {
+		status, body = f.request(t, "GET", path+"/room?machine_id=machine&before_seq=0&page_size=100", "reader", nil)
+		if status != 200 || json.Unmarshal(body, &page) != nil || time.Now().After(deadline) {
+			t.Fatal(status, string(body))
+		}
+		if len(page.Lines) == 3 && len(page.MemberOutcomes) == 2 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	for i, bot := range []pa.Bot{a, b} {
+		if line := page.Lines[i+1]; line.Author == nil || *line.Author != paWireBotKey(bot.Key) || line.Kind != "member" {
+			t.Fatal("wrong room author", line)
+		}
+		x, err := f.repo.Export(t.Context(), bot.Key)
+		if err != nil || len(x.Turns) != 1 || x.Turns[0].Fence.Project != bot.Project || x.Turns[0].State != pa.TurnSucceeded {
+			t.Fatal("member did not answer under its own workspace fence", x.Turns, err)
+		}
+	}
+}
+
 func TestGroupHTTPRechecksTheGrantBeforePublishingARead(t *testing.T) {
 	f := newGroupHTTPFixture(t)
 	f.create(t)

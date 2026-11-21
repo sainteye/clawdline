@@ -68,7 +68,7 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 			if err = pa.CheckRoomTicket(g, room, *turn.Room); err != nil {
 				return err
 			}
-			if g.Project != manager.Bot.Project {
+			if !pa.GroupAllowsProject(g.Project, manager.Bot.Project) {
 				return failure(pa.ScopeDenied, "group_member_project")
 			}
 		}

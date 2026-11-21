@@ -6021,6 +6021,11 @@ export interface ProjectAssistantGroupCreateSettings {
   description?: string
   members: ProjectAssistantBotKey[]
   name: string
+
+  /**
+   * An empty Project ID creates a group for personal workspaces on this source.
+   * Requires API 105.
+   */
   target: ProjectAssistantProjectSelection
 }
 

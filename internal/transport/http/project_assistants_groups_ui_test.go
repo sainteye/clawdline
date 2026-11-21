@@ -204,6 +204,12 @@ func TestGroupRoomsHeadlessUI(t *testing.T) {
 	}
 	provider := &groupUIHeldProvider{Provider: &routineHumanProvider{}}
 	f := newGroupHTTPFixture(t, provider)
+	f.createBot(t, "personal-one", "Personal One", "")
+	f.createBot(t, "personal-two", "Personal Two", "")
+	hidden := f.createBot(t, "hidden-bot", "Hidden Bot", "hidden-only")
+	if _, _, err := f.service.SetHidden(t.Context(), pa.Command{Key: hidden.Key, Operation: pa.VisibilityOperation, IdempotencyKey: "hide-fixture"}, true); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(provider.release)
 	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/hold" || r.URL.Path == "/release" {

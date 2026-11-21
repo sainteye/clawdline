@@ -87,14 +87,20 @@ func (s *Service) createGroup(ctx context.Context, c pa.Command, in CreateGroup,
 	if pa.IsPersonalWorkspaceID(in.Target.ProjectID) {
 		return pa.Group{}, pa.Receipt{}, serviceFailure(pa.ScopeDenied, "group_project")
 	}
-	resolved, err := s.opts.Projects.Resolve(ctx, in.Target)
-	if err != nil {
-		return pa.Group{}, pa.Receipt{}, err
+	var scope pa.ProjectScope
+	if in.Target.ProjectID == "" {
+		scope = pa.PersonalGroupScope(c.Key.MachineID)
+	} else {
+		resolved, err := s.opts.Projects.Resolve(ctx, in.Target)
+		if err != nil {
+			return pa.Group{}, pa.Receipt{}, err
+		}
+		if err = pa.ValidateTarget(in.Target, resolved); err != nil {
+			return pa.Group{}, pa.Receipt{}, err
+		}
+		scope = resolved.Scope
 	}
-	if err = pa.ValidateTarget(in.Target, resolved); err != nil {
-		return pa.Group{}, pa.Receipt{}, err
-	}
-	d := pa.GroupDraft{Key: c.Key, Project: resolved.Scope, ConversationID: s.opts.ID(), Name: in.Name, Description: in.Description, Members: in.Members}
+	d := pa.GroupDraft{Key: c.Key, Project: scope, ConversationID: s.opts.ID(), Name: in.Name, Description: in.Description, Members: in.Members}
 	if a, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
 		return pa.Group{}, pa.Receipt{}, err
 	}

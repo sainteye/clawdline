@@ -301,7 +301,8 @@
       "type": "object",
       "properties": {
         "target": {
-          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectSelection"
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantProjectSelection",
+          "description": "An empty Project ID creates a group for personal workspaces on this source. Requires API 105."
         },
         "name": {
           "type": "string"

@@ -615,7 +615,7 @@ func (s *GroupStore) CheckTicket(ctx context.Context, t pa.RoomTicket) error {
 	if err != nil {
 		return err
 	}
-	if a.Bot.Project != g.Project {
+	if !pa.GroupAllowsProject(g.Project, a.Bot.Project) {
 		return failure(pa.ScopeDenied, "group_member_project")
 	}
 	return nil
@@ -708,7 +708,7 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 		if err != nil {
 			return err
 		}
-		if g.Project != a.Bot.Project {
+		if !pa.GroupAllowsProject(g.Project, a.Bot.Project) {
 			out.Refusal = &pa.Failure{Code: pa.ScopeDenied, Field: "group_member_project"}
 			return nil
 		}

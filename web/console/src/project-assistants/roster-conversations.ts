@@ -23,7 +23,7 @@ export function groupPreviewMembers<T>(all:readonly T[]){
 }
 
 export function conversations(items:readonly W.ProjectAssistantBotSummary[],rooms:readonly GroupRosterEntry[]):RosterConversation[]{
-  const rows:RosterConversation[]=[...items.map(item=>({kind:"bot" as const,key:botIdentity(item.bot.key),machineID:item.bot.key.machine_id,projectID:item.bot.project.kind==="personal"?personalRosterProject:item.bot.project.project_id,item})),...rooms.filter(({group})=>!group.deleted).map(entry=>({kind:"group" as const,key:groupConversationKey(entry.group.key),machineID:entry.group.key.machine_id,projectID:entry.group.project.project_id,entry}))]
+  const rows:RosterConversation[]=[...items.map(item=>({kind:"bot" as const,key:botIdentity(item.bot.key),machineID:item.bot.key.machine_id,projectID:item.bot.project.kind==="personal"?personalRosterProject:item.bot.project.project_id,item})),...rooms.filter(({group})=>!group.deleted).map(entry=>({kind:"group" as const,key:groupConversationKey(entry.group.key),machineID:entry.group.key.machine_id,projectID:entry.group.project.kind==="personal"?personalRosterProject:entry.group.project.project_id,entry}))]
   const time=(row:RosterConversation)=>Date.parse(row.kind==="bot"?row.item.activity_at:row.entry.group.last_entry?.at??"")
   const dated=rows.filter(row=>Number.isFinite(time(row))).sort((a,b)=>time(b)-time(a))
   let next=0

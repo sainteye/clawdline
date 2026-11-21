@@ -5180,8 +5180,8 @@
     "internal/adapters/projectassistantstore/background_tasks.go": "0beedec8c2d5df57d47ff87ad975d2235ccbab1264f8438f40d4a0b2835153e9",
     "internal/adapters/projectassistantstore/collaboration.go": "e29afc8ffb8ed26fe07a9668a4ceb8f228f1ef8d49d6b97dc5d8b53c4c2c2ae3",
     "internal/adapters/projectassistantstore/fallback.go": "aa7f1cd40905992cce640e6ab6460e8d374785fffd95a33b7b8554f5146d80bd",
-    "internal/adapters/projectassistantstore/group_views.go": "99e2c9b0910bca97e963bb647f090dc9402ce3c020ff182f3a93b72aae9ee7b1",
-    "internal/adapters/projectassistantstore/groups.go": "5fdce9aa2f614fe9e6ed5592dc06c69a5ec365d0267addd747d6c0fae9e86a64",
+    "internal/adapters/projectassistantstore/group_views.go": "98171dea581d5987129b14c0145c378f9d380ce23daa8b4990e44035cf3d0fd0",
+    "internal/adapters/projectassistantstore/groups.go": "58bc68924a3c2347011790c84864c7519f9c54ebe92626405704b5e164207aa3",
     "internal/adapters/projectassistantstore/handoff_card.go": "a2a6255ecc2b91db47a211914322b03ea8a0e4f4e3f5aad0f5717aec05073d59",
     "internal/adapters/projectassistantstore/inputs.go": "490f982024fa679da1f8813531a64ed5715c58b2ee22b5842665056b0503c1b0",
     "internal/adapters/projectassistantstore/lead.go": "d2b71c6011c22f6437f1e6f789552d955b03da19828df631c58ec326f4b1f8f5",
@@ -5193,7 +5193,7 @@
     "internal/adapters/projectassistantstore/roster.go": "47383ecf812553f8551deb4b78b0b26a20bf1887df069f86c3bd652822f118cc",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
     "internal/adapters/projectassistantstore/schema.go": "f920454f4be989bdfdf6aaee2c0efeaee347267624dc780496d8761ca230272e",
-    "internal/adapters/projectassistantstore/team.go": "166f210908293272841ce47107089f8784ab0805de6729930ed78e5337a5d1c4",
+    "internal/adapters/projectassistantstore/team.go": "2195c20a17e3114e5d434fa3f4a372b160bcb51aab70f6a86aaf242965ae9e2b",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
     "internal/adapters/projects/claude_language.go": "17a26af28610e3319b4cd79f40433018aad07ca920db2afa7e4c89ce5ab730c7",
@@ -5336,7 +5336,7 @@
     "skills/workflow_profiles.go": "bfc37d637ad540f495a36312e01795d639486b9801f6b7761f53783aa6c55744",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "2aa0a8e91cfed4478bacc57a2aa737eccb7c40d31efdb9bd9eb7cbdc730e50ca",
+    "web/console/src/cloud/project-assistants.ts": "8fd8be7e71f132d71f1a6c20b091b57b9e43c53053e258ccd4f59f074ee7d8f7",
     "web/console/src/cloud/relay-writer.ts": "d72f7e625f9ae501a006a34b4a6993880c295fe506288ab91294d16d5af393a6",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/next-strings.ts": "75fc2c9f0fef1aeb92f26cde942e9efa369ff5095cc61b1630dc67cde52da489",
@@ -5344,7 +5344,7 @@
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
-    "web/console/src/project-assistants/Chat.tsx": "b8deaf7d42d6b0cc8e8da3455b64b3c0760b0e1918f79758845ebeb53fdd8df9",
+    "web/console/src/project-assistants/Chat.tsx": "2010ed8b6d30706f1122219459781f21ea44d7096f7e5eb4af05545b27cc0a12",
     "web/console/src/project-assistants/ChatRows.tsx": "4d6e323e6b3dbca5a1a3640494b757057d35ec0491d435d6c148664866d0cf2b",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
@@ -5396,7 +5396,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "ad6aa38250e22d8e993459043d6693e1fc218968002f85cddb6afcac9e49331b",
-    "zh-Hant": "6ba055ea9b83de278b257c79fb4b47415788c1bb19d7533b3e7059be0742fcda"
+    "en": "bbf4c7565167e46269a6705451ae8450adc83c88aa51449fcfcc114916b4203b",
+    "zh-Hant": "8139ee50333cf0b1a92d76749e7d562cc0cf5172c7e5e548b7076e47eb885f77"
   }
 }

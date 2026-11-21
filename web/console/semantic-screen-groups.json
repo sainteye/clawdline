@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13826,
+  "englishContentKeys": 13827,
   "riskKeys": 5906,
-  "nonRiskCount": 7920,
+  "nonRiskCount": 7921,
   "groups": [
     {
       "name": "acp / other",
@@ -6145,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 524,
+      "count": 525,
       "sources": [
         null
       ],
@@ -6300,6 +6300,7 @@
         "projectAssistants.groupName",
         "projectAssistants.groupOlder",
         "projectAssistants.groupPerson",
+        "projectAssistants.groupPersonalWorkspace",
         "projectAssistants.groupProject",
         "projectAssistants.groupReply",
         "projectAssistants.groupReplyTo",

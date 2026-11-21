@@ -13,6 +13,7 @@ import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
+import { AgentBadge } from "./AgentMark"
 import "./chat-presentation.css"
 import { LeadStarter } from "./LeadStarter"
 import { showLeadStarter } from "./lead-starter"
@@ -1186,7 +1187,7 @@ ${currentDraft}`:submitted)
       <button className="pa-circle pa-chat-back" data-show-back={showBack||undefined} onClick={()=>{flush();onBack()}} aria-label={backLabel??w.back} title={backLabel??w.back}>‹</button>
       <h2 className="pa-chat-heading">
         <button ref={identityButton} type="button" className="pa-info-toggle pa-chat-identity" aria-label={`${bot.name} · ${w.botInformation}${serverLabel?" · "+serverLabel:""}`} aria-expanded={infoOpen} onClick={()=>infoOpen?setInfoOpen(false):openInfo("details")}>
-          <BotAvatar appearance={bot.appearance} size={28} mood={mood}/>
+          <span className="pa-avatar-status"><BotAvatar appearance={bot.appearance} size={28} mood={mood}/><AgentBadge agent={bot.agent} size={9}/></span>
           <span className="pa-chat-identity-text"><span className="pa-chat-server-heading"><strong>{bot.name}</strong><DevServerTitle observation={servers} w={w}/></span><small className="pa-row-project"><ProjectMark icon={projectIcon} size={12}/><span>{[projectName||w.unnamedProject,agentName(bot.agent),machineName].filter(Boolean).join(" · ")}</span></small></span>
           <svg className="pa-chat-identity-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>

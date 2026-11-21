@@ -46,7 +46,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const picked=Math.min(highlight,Math.max(0,options.length-1))
   const writable=active&&!!page&&canWrite(page.source)&&source.current?.()!==false&&!group.deleted
   const readable=active&&!!page&&canRead(page.source)&&source.current?.()!==false&&!group.deleted
-  const canAdd=writable&&members.length===memberKeys.length&&bots.some(bot=>sameGroupProject(bot.project,group.project)&&!memberKeys.some(key=>identity(key)===identity(bot.key)))
+  const canAdd=writable&&members.length===memberKeys.length&&bots.some(bot=>!bot.hidden&&sameGroupProject(bot.project,group.project)&&!memberKeys.some(key=>identity(key)===identity(bot.key)))
   const canQuote=source.canGroupContext?.()===true
   const motion=useMessageArrivals({items:lines,ready:active&&!!page,following,seq:line=>line.seq,id:line=>String(line.seq),
     skip:line=>line.seq===localEntry.current||line.kind!=="person"&&line.kind!=="member"})

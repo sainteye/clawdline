@@ -5192,10 +5192,13 @@ type ProjectAssistantGroupCreateRequest struct {
 type ProjectAssistantGroupCreateSettings struct {
 	// What the group works on. Trimmed; at most MaxGroupDescriptionRunes characters.
 	// Requires API 101.
-	Description string                           `json:"description,omitempty"`
-	Members     []ProjectAssistantBotKey         `json:"members"`
-	Name        string                           `json:"name"`
-	Target      ProjectAssistantProjectSelection `json:"target"`
+	Description string                   `json:"description,omitempty"`
+	Members     []ProjectAssistantBotKey `json:"members"`
+	Name        string                   `json:"name"`
+
+	// An empty Project ID creates a group for personal workspaces on this source.
+	// Requires API 105.
+	Target ProjectAssistantProjectSelection `json:"target"`
 }
 
 type ProjectAssistantGroupDeleteRequest struct {

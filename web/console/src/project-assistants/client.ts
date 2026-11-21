@@ -49,6 +49,7 @@ export interface SourceClient {
   canLeadTeamDefault?(): boolean
   canGroupContext?(): boolean
   canGroupDescription?(): boolean
+  canPersonalGroups?(): boolean
   canGroupReactions?(): boolean
   groupReact?(request:W.ProjectAssistantGroupReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
   groups?(request:W.ProjectAssistantGroupListRequest,signal:AbortSignal):Promise<W.ProjectAssistantGroupListResponse>

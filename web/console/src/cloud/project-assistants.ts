@@ -25,6 +25,7 @@ import type { WorkV2Item } from "../pages/work/api.js"
 export const PROJECT_ASSISTANTS_GROK_API_LEVEL = 100
 export const PROJECT_ASSISTANTS_GEMINI_API_LEVEL = 102
 const PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL = 103
+const PROJECT_ASSISTANTS_PERSONAL_GROUPS_API_LEVEL = 105
 export const PROJECT_ASSISTANTS_QUEUE_EDIT_API_LEVEL = 104
 export const PROJECT_ASSISTANTS_NETWORK_API_LEVEL = 84
 export const PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL = 82
@@ -110,6 +111,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
   canGroupDescription() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL }
+  canPersonalGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_PERSONAL_GROUPS_API_LEVEL }
   canGroupReactions() { try { this.check(new AbortController().signal,true,true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL);return true } catch { return false } }
   groupReact(r:W.ProjectAssistantGroupReactRequest,s:AbortSignal) {
     return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/reactions",s,r,"POST",true,PROJECT_ASSISTANTS_GROUP_REACTIONS_API_LEVEL)
@@ -120,8 +122,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return {...answer,source:this.observeRosterSource(answer.contract_version,answer.source)}
   }
   groupHistory(r:W.ProjectAssistantGroupHistoryRequest,s:AbortSignal) { this.key(r.key);return this.request<W.ProjectAssistantGroupHistoryResponse>(base+"/rooms/groups/"+encodeURIComponent(r.key.bot_id)+query({machine_id:this.machineID,before_seq:r.before_seq,page_size:r.page_size}),s,undefined,"GET",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
-  // A description is refused before transport by a source that predates it.
-  createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,r.settings.description!==undefined?PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL:PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
+  createGroup(r:W.ProjectAssistantGroupCreateRequest,s:AbortSignal) {
+    const level=r.settings.target.project_id===""?PROJECT_ASSISTANTS_PERSONAL_GROUPS_API_LEVEL:r.settings.description!==undefined?PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL:PROJECT_ASSISTANTS_GROUPS_API_LEVEL
+    return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups",s,r,"POST",true,level)
+  }
   editGroup(r:W.ProjectAssistantGroupEditRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"PATCH",true,r.settings.description!==undefined?PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL:PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   deleteGroup(r:W.ProjectAssistantGroupDeleteRequest,s:AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id),s,r,"DELETE",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   stopGroup(r:W.ProjectAssistantGroupStopRequest,s:AbortSignal) { return this.request<W.ProjectAssistantGroupStopResponse>(base+"/rooms/groups/"+encodeURIComponent(r.command.key.bot_id)+"/stop",s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
