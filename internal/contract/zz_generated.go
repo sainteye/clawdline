@@ -4607,8 +4607,11 @@ type ProjectAssistantCommand struct {
 }
 
 type ProjectAssistantConfigChoice struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	// The Agent's note for this choice, such as the model a Default entry currently
+	// resolves to.
+	Description string `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Value       string `json:"value"`
 }
 
 type ProjectAssistantConfigOption struct {

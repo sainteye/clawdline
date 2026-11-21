@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13829,
+  "englishContentKeys": 13830,
   "riskKeys": 5907,
-  "nonRiskCount": 7922,
+  "nonRiskCount": 7923,
   "groups": [
     {
       "name": "acp / other",
@@ -6145,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 526,
+      "count": 527,
       "sources": [
         null
       ],
@@ -6394,6 +6394,7 @@
         "projectAssistants.name",
         "projectAssistants.nativeBusy",
         "projectAssistants.nativeDefault",
+        "projectAssistants.nativeDefaultCurrent",
         "projectAssistants.nativeLoading",
         "projectAssistants.nativeOff",
         "projectAssistants.nativeOn",

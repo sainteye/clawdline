@@ -44,7 +44,8 @@
 .project-assistants .pa-chat-surface .pa-settings-value span { flex:none; }
 .project-assistants .pa-chat-surface .pa-settings-value strong { min-width:0;color:var(--pa-dim);font-weight:400;text-align:end;overflow-wrap:anywhere; }
 .project-assistants .pa-chat-surface .pa-settings-field { font-size:13px;font-weight:500; }
-.project-assistants .pa-chat-surface .pa-settings-card :is(input:not([type="checkbox"]),select,textarea) { border:0;border-radius:10px;background:#141414;padding:8px 10px; }
+.project-assistants .pa-chat-surface .pa-settings-card :is(input:not([type="checkbox"]),select,textarea) { border:0;border-radius:10px;background-color:#141414;padding:8px 10px; }
+.project-assistants .pa-chat-surface .pa-settings-card select { padding-right:34px;background-position:right 12px center; }
 .project-assistants .pa-chat-surface .pa-settings-instructions { gap:6px;font-size:13px;font-weight:500; }
 .project-assistants .pa-chat-surface .pa-settings-instructions small { font-size:12px;font-weight:400;line-height:1.5; }
 .project-assistants .pa-chat-surface .pa-settings-instructions textarea { min-height:110px;margin-top:4px;font-size:13px;line-height:1.5; }
@@ -56,9 +57,6 @@
 .project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary strong { font-size:13px;font-weight:500; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure>summary span { font-size:12px;margin:0 0 0 auto; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure-body { padding:0 0 12px; }
-.project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-primary { padding:0; }
-.project-assistants .pa-chat-surface .pa-settings-primary>details>summary strong { position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
-.project-assistants .pa-chat-surface .pa-settings-card .pa-settings-primary>details>summary span { color:inherit;font-size:14px;margin:0;flex:1;text-align:left; }
 .project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-disclosure { padding:0; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact { margin:0;border:0;border-radius:0; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>label { display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-size:13px; }

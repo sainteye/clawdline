@@ -3,7 +3,7 @@ import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
 import type {Words} from "./words"
-import {botFailureText,providerSetupFailure,retryableSourceError} from "./source-errors"
+import {botFailureText,providerSetupFailure} from "./source-errors"
 
 export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string,loginState:string,active:boolean){
   const {machine_id,bot_id}=bot.key,conversation=bot.conversation_id
@@ -54,23 +54,4 @@ export function configurationError(code:string,w:Words,field?:string):string{
   if(code==="pa_auth_rejected")return w.loginUnavailable
   if(code==="pa_unsupported"||code==="pa_invalid")return w.nativeUnavailable
   return botFailureText(code,w)
-}
-
-/** Discovery owns a disposable native session, separate from the running turn. */
-export function RuntimeSettings({discovery,editable,reason,value,onChange,w}:{discovery:ReturnType<typeof useModelCatalog>;editable:boolean;reason:string;value:W.ProjectAssistantRuntimeSettings;onChange:(value:W.ProjectAssistantRuntimeSettings)=>void;w:Words}){
-  const {catalog,error,field,pending,retry}=discovery
-  const model=catalog?.options.find(o=>o.category==="model")
-  return <section className="pa-rules" aria-label={w.nativeSettings}>
-    <h3>{w.nativeSettings}</h3>
-    {!editable?<p role="status">{reason||w.cannotEdit}</p>:error?<div>
-      <p role="status">{configurationError(error,w,field)} <small>({error})</small></p>
-      {(error!=="pa_auth_rejected"||(field==="grok_login"||field==="gemini_login"))&&retryableSourceError(error)&&<button type="button" onClick={retry}>{w.nativeRetry}</button>}
-      {(value.model||Object.keys(value.options).length>0)&&<button type="button" onClick={()=>onChange({model:"",options:{}})}>{w.nativeDefault}</button>}
-    </div>:pending?<p role="status">{w.nativeLoading}</p>:catalog&&<>
-      {model?<label>{w.model}<select aria-label={w.model} value={value.model} onChange={e=>onChange({model:e.target.value,options:{}})}><option value="">{w.nativeDefault}</option>{model.choices.map(c=><option key={c.value} value={c.value}>{c.name}</option>)}</select></label>:<p>{w.nativeNoModels}</p>}
-      {catalog.options.filter(o=>o.category!=="model").map(o=><label key={o.id}>{o.name}<select aria-label={o.name} value={value.options[o.id]??""} onChange={e=>{const options={...value.options};if(e.target.value)options[o.id]=e.target.value;else delete options[o.id];onChange({...value,options})}}><option value="">{w.nativeDefault}</option>{o.choices.map(c=><option key={c.value} value={c.value}>{c.name==="true"?w.nativeOn:c.name==="false"?w.nativeOff:c.name}</option>)}</select></label>)}
-      <p className="pa-approval-detail">{w.nativeNextTurn}</p>
-    </>}
-    <p className="pa-approval-detail">{w.nativeInherited}</p>
-  </section>
 }

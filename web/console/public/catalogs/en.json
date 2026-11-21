@@ -11908,6 +11908,7 @@
   "projectAssistants.queueEditFailed": "Could not confirm the queue edit",
   "projectAssistants.contextUsage": "Context tokens",
   "projectAssistants.contextUsageLast": "Last reported context tokens",
+  "projectAssistants.nativeDefaultCurrent": "Default · {name}",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

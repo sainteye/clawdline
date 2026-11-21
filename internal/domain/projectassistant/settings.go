@@ -23,6 +23,9 @@ type RuntimeSettings struct {
 type ConfigChoice struct {
 	Value string `json:"value"`
 	Name  string `json:"name"`
+	// Description is the Agent's note for the choice, such as the model a
+	// "Default" entry currently resolves to. Empty when the Agent gives none.
+	Description string `json:"description,omitempty"`
 }
 
 type ConfigOption struct {

@@ -9,7 +9,8 @@ import {FallbackSettings,SelectedFallbackSettings,useFallbackSource,useSettingsS
 import {agentName,fallbackEdit} from "./fallback-settings"
 import {ExtensionSettings} from "./ExtensionSettings"
 import {LoginProfiles} from "./LoginProfiles"
-import {configurationError,RuntimeSettings,useModelCatalog} from "./RuntimeSettings"
+import {configurationError,useModelCatalog} from "./RuntimeSettings"
+import {AgentModelPicker} from "./AgentModelPicker"
 import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
@@ -40,8 +41,8 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [extensions,setExtensions]=useState<W.ProjectAssistantExtensionSelection>(bot.extensions??{skills:[],connectors:[]})
   const [loginProfile,setLoginProfile]=useState(bot.login_profile??""),[loginState,setLoginState]=useState("")
   const selectedFallbacks=source?.canFallbackProfiles?.()===true
-  const [modelsVisited,setModelsVisited]=useState(false)
-  const discovery=useModelCatalog(source,bot,agent,runtime.model,loginProfile,loginState,modelsVisited&&enabled)
+  // As in Codync, the model list loads with the editor so the summary names the model in use.
+  const discovery=useModelCatalog(source,bot,agent,runtime.model,loginProfile,loginState,enabled)
   const runtimeChanged=JSON.stringify(runtime)!==JSON.stringify(bot.runtime_settings??{model:"",options:{}})
   const awaitingModel=runtimeChanged&&discovery.pending
   const validFallbacks=fallbacks.filter(step=>step!==agent)
@@ -73,6 +74,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     setApproval({permission_policy:approval.permission_policy})
   }
   const dirty=backgroundThreads!==(bot.background_threads??3)||name!==bot.name||JSON.stringify(appearance)!==JSON.stringify(bot.appearance)||instructions!==bot.instructions.text||agent!==bot.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(bot.mode?{permission_policy:bot.permission_policy,mode:bot.mode}:{permission_policy:bot.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(bot.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(original.steps)||notify!==(bot.notify!=="off")||teamChanged||loginProfile!==(bot.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(bot.extensions??{skills:[],connectors:[]})
+  const agentChoices:W.ProjectAssistantAgent[]=["claude","codex",...(agent==="grok"||source?.canGrok?.()?["grok" as const]:[]),...(agent==="antigravity"||source?.canGemini?.()?["antigravity" as const]:[])]
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
   // Codync's Settings tab: titled groups, always open, one row per control.
   const switchRow=(title:string,hint:string,on:boolean,disabled:boolean,change:(on:boolean)=>void)=><div className="pa-settings-row">
@@ -91,10 +93,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
           <label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label>
         </SettingsGroup>
         <SettingsGroup title={w.settingsAgentHeading}>
-          <div className="pa-settings-primary"><SettingsDisclosure title={w.primaryAgent} summary={`${agentName(agent)} · ${runtime.model||w.nativeDefault}`} onOpen={()=>setModelsVisited(true)}>
-            <label>{w.primaryAgent}<select aria-label={w.primaryAgent} disabled={!modern} value={agent} onChange={e=>chooseAgent(e.target.value as W.ProjectAssistantAgent)}><option value="claude">Claude Code</option><option value="codex">Codex</option>{(agent==="grok"||source?.canGrok?.())&&<option value="grok">Grok Build</option>}{(agent==="antigravity"||source?.canGemini?.())&&<option value="antigravity">Gemini</option>}</select></label>
-            <RuntimeSettings discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
-          </SettingsDisclosure></div>
+          <AgentModelPicker agent={agent} agents={agentChoices} onAgent={chooseAgent} agentEditable={modern} discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
           {agent==="grok"||agent==="antigravity"?<p className="pa-approval-detail">{agent==="grok"?w.grokUsesExistingLogin:w.geminiUsesExistingLogin}</p>:<LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>}
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
             {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={validSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={validFallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}

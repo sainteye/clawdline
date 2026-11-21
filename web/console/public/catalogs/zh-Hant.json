@@ -11908,6 +11908,7 @@
   "projectAssistants.queueEditFailed": "無法確認排隊訊息的編輯結果",
   "projectAssistants.contextUsage": "上下文 token 用量",
   "projectAssistants.contextUsageLast": "上次回報的上下文 token 用量",
+  "projectAssistants.nativeDefaultCurrent": "預設 · {name}",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",
