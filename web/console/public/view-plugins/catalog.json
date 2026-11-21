@@ -78,10 +78,10 @@
     },
     {
       "id": "com.clawdline.session-lantern-deep",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "url": "/view-plugins/session-lantern-deep.zip",
-      "sha256": "e7631be38b9f7c71a948d984946627cef740abe9ce7879ee429a4b12190ba665",
-      "bytes": 5798005,
+      "sha256": "e161c0d1b203c66554f748e93a804ca5e5ca3db80aaa36280229cf3a40171ee6",
+      "bytes": 3700144,
       "hostApi": 1,
       "capabilities": [
         "sessions.read",
@@ -91,6 +91,7 @@
         "605564dc42f703eea1f40f94802fcd766404f5a486bc1a00417ab9c6732889fc",
         "7e908dce593fa18e98b82cc1c52cd64ebf4a7cf92c6480920ee1498ff1b112cf",
         "b94e1efd4465dcff3d38c659ef06c9d95876ae91af0312f6e1db40a8550a1332",
+        "e161c0d1b203c66554f748e93a804ca5e5ca3db80aaa36280229cf3a40171ee6",
         "e7631be38b9f7c71a948d984946627cef740abe9ce7879ee429a4b12190ba665",
         "fc398d3453daa9c3e646c0700bbe475c62e8ccfd9d439ea81af48a15266e4467"
       ]

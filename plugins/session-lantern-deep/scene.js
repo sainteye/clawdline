@@ -47,7 +47,9 @@ let context = { language: "en", visible: true, reducedMotion: false, connection:
 let W = 0, H = 0, DPR = 1, scale = 1, groundY = 0, cam = 0, camTarget = 0, camMin = 0, camMax = 0, now = 0, raf = 0, lastFrame = 0, userPanAt = -1e9;
 let wild = new Map(), wildList = [];
 let chambers = [], stations = new Map(), chars = new Map(), enemies = [], fx = [], motes = [], props = new Map(), lastFocus = null, titleChamber = null, titleAt = 0, placed = false;
-const images = {};
+// Artwork is decoded only when the scene first asks for it: a phone cannot hold every frame of
+// every wanderer at once, and most frames of most actions are never needed in one opening.
+const loaded = {}, images = new Proxy(loaded, { get(target, key) { if (!(key in target) && typeof key === "string" && typeof ART[key] === "string" && ART[key].startsWith("data:")) { target[key] = null; const img = new Image(); img.onload = () => { target[key] = img; if (!raf) draw(); }; img.onerror = () => { target[key] = null; }; img.src = ART[key]; } return target[key] || undefined; } });
 const w = () => WORDS[context.language && context.language.startsWith("zh") ? "zh" : "en"];
 const status = r => STATES.includes(r.workState) ? r.workState : "unknown";
 const freshness = r => context.connection !== "connected" || awaiting ? "stale" : r.freshness;
@@ -55,7 +57,6 @@ const live = r => freshness(r) === "fresh";
 const motion = () => context.visible && !context.reducedMotion;
 const projectName = r => r.project && r.project.label || w().unassigned;
 
-for (const key of Object.keys(ART)) if (ART[key].startsWith("data:")) { const img = new Image(); img.onload = () => { images[key] = img; if (!raf) draw(); }; img.src = ART[key]; }
 
 const greyCache = new Map();
 function grey(key) {
@@ -552,7 +553,7 @@ function drawDummy(d, b) {
   ctx.restore();
 }
 function drawCamp(wx, wy, b) {
-  if (images["camp-fire-1"]) return drawCampfire(wx, wy);
+  if ([1, 2, 3, 4].map(i => images["camp-fire-" + i]).every(Boolean)) return drawCampfire(wx, wy);
   const x = X(wx), y = Y(wy), flick = .85 + .15 * Math.sin(now * 6 + wx);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 16 * scale, 96 * scale * flick, [255, 190, 120], .42); drawGlow(x, y - 14 * scale, 22 * scale, [255, 240, 210], .9); ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#05080d"; ctx.beginPath(); ctx.moveTo(x - 9 * scale, y + 2); ctx.lineTo(x - 6 * scale, y - 6 * scale); ctx.lineTo(x + 6 * scale, y - 6 * scale); ctx.lineTo(x + 9 * scale, y + 2); ctx.fill();
@@ -606,6 +607,9 @@ function castBox(cast, group) {
   const box = measure(img); frameBox.set(id, box); return box;
 }
 const has = (c, name) => !!images[frameKey(c.cast, name)] && !!castBox(c.cast, GROUP_OF[name]);
+// Ask for every frame of a set (so they all start loading) and answer whether the set is ready.
+const all = (c, names) => names.map(n => has(c, n)).every(Boolean);
+const RUN8 = [1, 2, 3, 4, 5, 6, 7, 8].map(i => "runb-" + i), CUT = ["cut-2", "cut-3", "cut-4", "cut-5", "cut-6"];
 const REST_POSES = ["sit", "warm", "sit-2", "drink", "warm", "nod"];
 function pickFrame(c) {
   const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12, any = (...names) => names.find(n => has(c, n));
@@ -614,7 +618,7 @@ function pickFrame(c) {
     if (c.slashKind === "down" && has(c, "slash-down")) return ["slash-down", 0];
     if (c.slashKind === "up" && has(c, "slash-up")) return ["slash-up", 0];
     const rot = c.slashKind === "down" ? .75 : c.slashKind === "up" ? -.7 : 0;
-    if (has(c, "cut-6")) return [p < .1 ? "cut-2" : p < .24 ? "cut-3" : p < .46 ? "cut-4" : p < .76 ? "cut-5" : "cut-6", rot];
+    if (all(c, CUT)) return [p < .1 ? "cut-2" : p < .24 ? "cut-3" : p < .46 ? "cut-4" : p < .76 ? "cut-5" : "cut-6", rot];
     return [p < .14 ? "slash-1" : p < .38 ? "slash-2" : p < .78 ? "slash-3" : "slash-4", rot];
   }
   if (c.dash > 0) return [any("dash", "run-1"), 0];
@@ -625,7 +629,7 @@ function pickFrame(c) {
     return [any(REST_POSES[Math.floor(now / 4.5 + (hash(c.ref) % 97)) % REST_POSES.length], "sit"), 0];
   }
   if (c.land > 0) return ["land", 0];
-  if (moving) return has(c, "runb-8") ? ["runb-" + (1 + (Math.floor(c.run / (Math.PI / 4)) % 8 + 8) % 8), 0] : ["run-" + (1 + (Math.floor(c.run / (Math.PI / 2)) % 4 + 4) % 4), 0];
+  if (moving) return all(c, RUN8) ? ["runb-" + (1 + (Math.floor(c.run / (Math.PI / 4)) % 8 + 8) % 8), 0] : ["run-" + (1 + (Math.floor(c.run / (Math.PI / 2)) % 4 + 4) % 4), 0];
   if (c.mode === "ponder") return [c.arm === 2 ? any("shrug", "puzzled") : c.arm === 1 ? "puzzled" : Math.abs(c.tiltTo) > .1 ? any("think", "puzzled") : Math.floor(now * 1.6 + c.x * .013) % 2 ? "idle-2" : "idle-1", 0];
   if (c.mode === "fight" && c.sub === "flourish" && c.t > .25) return [any("victory", "idle-1"), 0];
   if (c.mode === "fight" && c.enemy && c.enemy.state === "tele") return [any("guard", "idle-1"), 0];
@@ -635,8 +639,9 @@ function pickFrame(c) {
 function drawFrames(c, ghost) {
   if (!castBox(c.cast)) return false;
   const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
-  const picked = pickFrame(c), name = picked[0], rot = picked[1], box = castBox(c.cast, GROUP_OF[name]);
-  const key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], sq = c.sq * .45;
+  const picked = pickFrame(c), rot = picked[1]; let name = picked[0];
+  if (!images[frameKey(c.cast, name)] || !castBox(c.cast, GROUP_OF[name])) name = "idle-1";
+  const box = castBox(c.cast, GROUP_OF[name]), key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], sq = c.sq * .45;
   // Scale by the sheet's own standing height so every sheet draws the character at one size.
   const k = CAST_SIZE[c.cast] * 1.42 / (box.bottom - box.top);
   ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
