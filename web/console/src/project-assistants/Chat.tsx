@@ -182,6 +182,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [queueAction,setQueueAction]=useState<{id:string;operation:"send_now"|"stop"}|null>(null)
   const queueInFlight=useRef(false)
   const [queueEditor,setQueueEditor]=useState<{turnID:string;editID:string;text:string}|null>(null)
+  const queueEditorInput=useRef<HTMLTextAreaElement>(null)
   const [queueEditBusy,setQueueEditBusy]=useState(false)
   const [queueEditError,setQueueEditError]=useState("")
   const [memoryNoteDraft,setMemoryNoteDraft]=useState<MemoryNoteDraft|null>(null)
@@ -1078,6 +1079,9 @@ ${currentDraft}`:submitted)
   }
   const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
   const queueEditorOpen=!!queueEditor&&turns.some(turn=>turn.id===queueEditor.turnID&&turn.queue_edit_id===queueEditor.editID)
+  useLayoutEffect(()=>{
+    if(queueEditorOpen)queueEditorInput.current?.focus({preventScroll:true})
+  },[queueEditorOpen])
   const queueLimited=(head?.queued_turn_count??0)>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
@@ -1242,29 +1246,37 @@ ${currentDraft}`:submitted)
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
       const hold=queuedTurn?.queue_edit_id
-      const editor=queueEditor&&queueEditor.turnID===queuedTurn?.id&&queueEditor.editID===hold?queueEditor:null
       const editable=!thread&&message.kind==="user"&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
+      const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
-        <span>{hold?w.queueHeld:w.queued}: {message.text||message.files?.map(file=>file.name).join(" · ")}</span>
-        {editable&&!editor&&<button className="pa-pill" type="button" disabled={!enabled||busy||queueEditBusy||queueEditorOpen}
-          onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>{w.editQueued}</button>}
-        {editor&&editable&&<div className="pa-queued-editor">
-          <textarea aria-label={w.editQueued} value={editor.text} disabled={!enabled||queueEditBusy}
-            onChange={event=>setQueueEditor({...editor,text:event.target.value})}/>
-          <div>
-            <button type="button" disabled={!enabled||busy||queueEditBusy||!editor.text.trim()&&!message.files?.length&&!message.attachments?.length}
-              onClick={()=>void editQueued("save",editor.turnID,editor.editID,editor.text)}>{w.save}</button>
-            <button type="button" disabled={!enabled||busy||queueEditBusy}
-              onClick={()=>void editQueued("cancel",editor.turnID,editor.editID,"")}>{w.queueKeepOriginal}</button>
-          </div>
-        </div>}
-        {queuedTurn&&!hold&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&
-          <button type="button" className="pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
-            disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
-            {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
+        <div className="pa-queued-content">
+          <span className="pa-queued-preview">{w.queued}: {message.text||message.files?.map(file=>file.name).join(" · ")}</span>
+          {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
+            aria-label={w.editQueued} aria-description={w.queueHeld} value={editor.text} disabled={!enabled||queueEditBusy}
+            onChange={event=>setQueueEditor({...editor,text:event.target.value})}/>}
+        </div>
+        {editor?<>
+          <button className="pa-queued-action" type="button" aria-label={w.save} title={w.save}
+            disabled={!enabled||busy||queueEditBusy||!editor.text.trim()&&!message.files?.length&&!message.attachments?.length}
+            onClick={()=>void editQueued("save",editor.turnID,editor.editID,editor.text)}><span aria-hidden="true">✓</span></button>
+          <button className="pa-queued-action" type="button" aria-label={w.queueKeepOriginal} title={w.queueKeepOriginal}
+            disabled={!enabled||busy||queueEditBusy}
+            onClick={()=>void editQueued("cancel",editor.turnID,editor.editID,"")}><span aria-hidden="true">↶</span></button>
+        </>:<>
+          {editable&&<button className="pa-queued-action pa-queued-edit" type="button" aria-label={w.editQueued}
+            aria-description={hold?w.queueHeld:undefined} title={hold?`${w.editQueued} · ${w.queueHeld}`:w.editQueued}
+            disabled={!enabled||busy||queueEditBusy||queueEditorOpen}
+            onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
+          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&
+            <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
+              disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
+              {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
+            </button>}
+        </>}
         {queuedTurn&&source.canUnqueue?.()&&
-          <button type="button" className="pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued}
+          <button type="button" className="pa-queued-action pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued}
             disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"stop")}>
             {pending==="stop"?<span className="pa-send-spinner" aria-hidden="true"/>:"×"}
           </button>}
