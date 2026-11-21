@@ -210,6 +210,9 @@ func TestRoutineFollowUpResumesMainAndBoundsItsChain(t *testing.T) {
 	if follow.open.Binding.SessionSlot != "" || !follow.open.Resume || follow.SessionID() != "main-A" || !strings.Contains(follow.prompt.Text, "scheduled follow-up") {
 		t.Fatal("follow-up left its main chat", follow.open, follow.prompt)
 	}
+	if deadline, ok := follow.promptCtx.Deadline(); ok {
+		t.Fatalf("follow-up in the main chat inherited a routine deadline: %v", deadline)
+	}
 	x := f.export(t)
 	var d pa.Routine
 	for _, v := range x.Routines {
@@ -237,6 +240,24 @@ func TestRoutineFollowUpResumesMainAndBoundsItsChain(t *testing.T) {
 		if v.ID == saved.ID && !v.Deleted {
 			t.Fatal("consumed follow-up remains pending", v)
 		}
+	}
+	if turn, err := f.s.Turn(context.Background(), f.b.Key, follow.prompt.Turn.ID); err != nil || turn.State != pa.TurnSucceeded {
+		t.Fatalf("follow-up did not finish: %v, %v", turn.State, err)
+	}
+
+	f.now = f.now.Add(2 * time.Minute)
+	f.tick(t)
+	chained := f.receive(t)
+	if _, err := f.r.Stop(context.Background(), app.StopRequest{
+		Command: routineIsolationCommand(f.b.Key, pa.StopOperation, "stop-running-follow-up"),
+		Fence:   chained.prompt.Turn.Fence,
+		TurnID:  chained.prompt.Turn.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.idle(t)
+	if err := chained.promptCtx.Err(); err != context.Canceled {
+		t.Fatalf("Stop did not cancel the running follow-up: %v", err)
 	}
 }
 
