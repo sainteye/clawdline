@@ -51,9 +51,16 @@ function carrierClient(carrier) {
 /** A carrier that is open and records what was written to it. */
 function openCarrier() {
   const down = []
+  const interrupted = []
   return {
-    open: true, written: [], down, closed: null, generation: 1,
+    open: true, interrupted: false, written: [], down, closed: null, generation: 1,
+    get readReady() { return this.open && !this.interrupted },
     whenDown(listener) { down.push(listener); return () => { } },
+    whenReadInterrupted(listener) { interrupted.push(listener); return () => { } },
+    interrupt() {
+      this.interrupted = true
+      for (const listener of [...interrupted]) listener()
+    },
     send(envelope) { this.written.push(envelope) },
     async ensure() { return this.open },
     current() { return this.open ? {} : null },
@@ -165,6 +172,87 @@ test("fault injection: a carrier that dies holding a read has it asked again on 
   assert.equal(client.pendingBySequence.size, 1, "the spent carrier sequence is still waiting for a relay ACK")
   client._settleRead(KEY, { entries: ["from the relay"] }, null)
   assert.deepEqual(await answer, { entries: ["from the relay"] })
+})
+
+test("a temporary ICE interruption sends reads over the relay and keeps the same carrier", async () => {
+  const carrier = openCarrier()
+  const client = carrierClient(carrier)
+  const waiting = read(client)
+  await flush()
+  assert.equal(client.sent[0].carrier, carrier)
+  const timer = client.readWaiters.get(KEY).timer
+
+  carrier.interrupt()
+  await flush()
+  assert.deepEqual(client.sent.map((row) => row.carrier), [carrier, null])
+  assert.equal(client.readWaiters.get(KEY).timer, timer)
+  assert.equal(carrier.closed, null)
+  client._settleRead(KEY, { entries: ["fallback"] }, null)
+  assert.deepEqual(await waiting, { entries: ["fallback"] })
+
+  const during = read(client)
+  await flush()
+  assert.equal(client.sent.at(-1).carrier, null)
+  client._settleRead(KEY, { entries: ["during loss"] }, null)
+  await during
+
+  carrier.interrupted = false
+  const after = read(client)
+  await flush()
+  assert.equal(client.sent.at(-1).carrier, carrier)
+  client._settleRead(KEY, { entries: ["same carrier"] }, null)
+  assert.deepEqual(await after, { entries: ["same carrier"] })
+})
+
+test("a read moved to the relay cannot publish on the old carrier after signing", { timeout: 10_000 }, async () => {
+  const { client, carrier, masterKey, signing } = await sealedClient()
+  let releasePairing
+  const heldPairing = new Promise((resolve) => { releasePairing = resolve })
+  let pairingCalls = 0
+  let sequence = 100
+  let finishDirect
+  const directFinished = new Promise((resolve) => { finishDirect = resolve })
+  let publishRelay
+  const relayPublished = new Promise((resolve) => { publishRelay = resolve })
+  Object.assign(client, {
+    devicePrivateKey: signing.privateKey,
+    nextSequence: async () => ++sequence,
+    _outboundMachinePairing: async () => {
+      if (++pairingCalls === 1) await heldPairing
+      return { keyID: "mk", masterKey }
+    },
+    _send: (frame) => publishRelay(frame.envelope),
+    async _publishCommand(...args) {
+      try { return await StatusCloudClient.prototype._publishCommand.call(this, ...args) }
+      finally { if (args[4]?.carrier) finishDirect() }
+    },
+  })
+  const answer = read(client)
+  await flush()
+  carrier.interrupt()
+  const relayEnvelope = await relayPublished
+  releasePairing()
+  await directFinished
+  assert.equal(carrier.written.length, 0)
+  assert.equal(client.pinnedReadProofs.get(KEY).seq, relayEnvelope.seq)
+  client._settleRead(KEY, { entries: ["relay owns the read"] }, null)
+  assert.deepEqual(await answer, { entries: ["relay owns the read"] })
+})
+
+test("a temporarily interrupted read stays pending when the relay has no subscription room", async () => {
+  const carrier = openCarrier()
+  const client = carrierClient(carrier)
+  const answer = read(client)
+  await flush()
+  client._subscriptionRoom = () => new Error("relay full")
+  carrier.interrupt()
+  await flush()
+  assert.equal(client.sent.length, 1)
+  assert.equal(client.carrierReads.has(KEY), true)
+  assert.equal(client.readWaiters.has(KEY), true)
+  carrier.interrupted = false
+  client._settleRead(KEY, { entries: ["recovered carrier"] }, null)
+  assert.deepEqual(await answer, { entries: ["recovered carrier"] })
 })
 
 test("fault injection: a carrier that refuses the write loses nothing", async () => {

@@ -169,6 +169,8 @@ export class DirectCarrier implements SharedCarrier {
   private sameNetworkSuggestion = false
   private readonly listeners = new Map<"terminal" | "session", (envelope: TerminalEnvelope) => void>()
   private readonly down = new Set<(code: string) => void>()
+  private readonly readInterruptions = new Set<() => void>()
+  private stopReadInterruptions: (() => void) | null = null
 
   constructor(client: CarrierClient, machine: string, peers: DirectPeerFactory | null = browserDirectPeers()) {
     this.client = client
@@ -217,6 +219,7 @@ export class DirectCarrier implements SharedCarrier {
   sameNetworkEnabled(): void { this.sameNetworkSuggestion = false }
 
   get open(): boolean { return !!this.link?.open }
+  get readReady(): boolean { return this.link?.readReady === true }
   /** Which channel this carrier is on. A read answer's sequence is only a number within it. */
   get channelGeneration(): number { return this.gen }
   /** True when a borrowing terminal may ask for its everyday receipts on the DC. */
@@ -233,6 +236,11 @@ export class DirectCarrier implements SharedCarrier {
   whenDown(listener: (code: string) => void): () => void {
     this.down.add(listener)
     return () => { this.down.delete(listener) }
+  }
+
+  whenReadInterrupted(listener: () => void): () => void {
+    this.readInterruptions.add(listener)
+    return () => { this.readInterruptions.delete(listener) }
   }
 
   /**
@@ -348,10 +356,14 @@ export class DirectCarrier implements SharedCarrier {
 
   /** One channel becomes this carrier's, and counts its envelopes from one. */
   private install(link: DirectLink, directReceipts: boolean, viewerOwned: boolean): void {
+    this.stopReadInterruptions?.()
     this.link = link
     this.viewerOwned = viewerOwned
     this.receipts = directReceipts
     this.gen++
+    this.stopReadInterruptions = link.whenReadInterrupted(() => {
+      for (const listener of [...this.readInterruptions]) listener()
+    })
   }
 
   /**
@@ -410,6 +422,8 @@ export class DirectCarrier implements SharedCarrier {
     if (!DELIBERATE_CLOSE.has(code)) {
       viewerHealthFailed("viewer_carrier_replace", directCarrierHealthError(code), { class: "transport" })
     }
+    this.stopReadInterruptions?.()
+    this.stopReadInterruptions = null
     this.link = null
     this.receipts = false
     // A carrier this page lets go is closed, never only forgotten. The machine

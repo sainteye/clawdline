@@ -164,15 +164,23 @@ func TestADirectAttemptThatOpensIsTracedOnce(t *testing.T) {
 	}
 	f.l.closeDirectPeerOf("viewer", "test over")
 	mu.Lock()
-	matched := false
+	var closeLine string
 	for _, line := range lines {
 		if strings.Contains(line, "cloud terminal carrier=direct closed: test over attempt="+f.c.id+" kind=terminal") {
-			matched = true
+			closeLine = line
 		}
 	}
 	mu.Unlock()
-	if !matched {
+	if closeLine == "" {
 		t.Fatal("closing an open peer did not log the same attempt id")
+	}
+	for _, want := range []string{" ice=", " pc=", " ice_timeline=", " pair=host/ipv4>"} {
+		if !strings.Contains(closeLine, want) {
+			t.Errorf("the close trace lacks %q: %s", want, closeLine)
+		}
+	}
+	if strings.Contains(closeLine, "127.0.0.1") {
+		t.Errorf("the close trace carries an address: %s", closeLine)
 	}
 	got := traced()
 	if len(got) != 1 {

@@ -296,6 +296,8 @@ export class DirectLink {
   private readonly reassembler: DirectReassembler
   private readonly onEnvelope: (envelope: TerminalEnvelope) => void
   private readonly onDown: (code: string) => void
+  private readonly readInterruptions = new Set<() => void>()
+  private readInterrupted = false
   private nextChunk = 0
   private openedAt: number | null = null
   private closed = false
@@ -340,8 +342,12 @@ export class DirectLink {
     this.peer.onconnectionstatechange = () => {
       this.state("pc", this.peer.connectionState)
       if (this.peer.connectionState === "failed" || this.peer.connectionState === "closed") this.close("terminal_direct_ice_failed", "peer_state")
+      else this.observeReadPath()
     }
-    this.peer.oniceconnectionstatechange = () => this.state("ice", this.peer.iceConnectionState)
+    this.peer.oniceconnectionstatechange = () => {
+      this.state("ice", this.peer.iceConnectionState)
+      this.observeReadPath()
+    }
   }
 
   /** Each state once, at the first time it was reached: the list is bounded by the enum. */
@@ -382,6 +388,23 @@ export class DirectLink {
   }
 
   get open(): boolean { return this.openedAt !== null && !this.closed && this.channel.readyState === "open" }
+
+  /** An open DataChannel can survive a brief loss of ICE connectivity. */
+  get readReady(): boolean {
+    return this.open && this.peer.iceConnectionState !== "disconnected" && this.peer.connectionState !== "disconnected"
+  }
+
+  whenReadInterrupted(listener: () => void): () => void {
+    this.readInterruptions.add(listener)
+    return () => { this.readInterruptions.delete(listener) }
+  }
+
+  private observeReadPath(): void {
+    const interrupted = this.open && !this.readReady
+    if (interrupted === this.readInterrupted) return
+    this.readInterrupted = interrupted
+    if (interrupted) for (const listener of [...this.readInterruptions]) listener()
+  }
 
   /** The offer SDP once ICE gathering completes, or what was gathered after DIRECT_GATHER_MS. */
   async offer(): Promise<string> {

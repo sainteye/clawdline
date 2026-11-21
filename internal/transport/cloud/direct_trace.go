@@ -192,6 +192,20 @@ func (t *directTrace) selectedPair(pair *webrtc.ICECandidatePair) {
 	t.mu.Unlock()
 }
 
+func (t *directTrace) closeFacts() (iceTimeline, pair string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return directICETimeline(t.ice), orDash(t.pair)
+}
+
+func directICETimeline(states []directStateAt) string {
+	timeline := make([]string, 0, len(states))
+	for _, state := range states {
+		timeline = append(timeline, fmt.Sprintf("%s@%dms", state.state, state.at.Milliseconds()))
+	}
+	return orDash(strings.Join(timeline, ","))
+}
+
 // directTraceStage is where an attempt stopped. Opening wins; then the
 // answer; then what ICE reached; then why ICE had nothing to reach.
 func directTraceStage(opened, answered, sent bool, remoteKept int, ice []string, timeout bool) string {
@@ -236,10 +250,8 @@ func (t *directTrace) line(opened, timeout bool) string {
 	t.opened = t.opened || opened
 	t.timeout = t.timeout || timeout
 	states := make([]string, 0, len(t.ice))
-	timeline := make([]string, 0, len(t.ice))
 	for _, s := range t.ice {
 		states = append(states, s.state)
-		timeline = append(timeline, fmt.Sprintf("%s@%dms", s.state, s.at.Milliseconds()))
 	}
 	remote := 0
 	for _, n := range t.offerKept {
@@ -261,7 +273,7 @@ func (t *directTrace) line(opened, timeout bool) string {
 	}
 	fmt.Fprintf(&b, " offer=%s offer_dropped=%s gather=%s answer_cands=%s answer_dropped=%s ice=%s pair=%s",
 		directCounts(t.offerKept), directCounts(t.offerDropped), orDash(t.gather),
-		directCounts(t.answerKept), directCounts(t.answerDropped), orDash(strings.Join(timeline, ",")), orDash(t.pair))
+		directCounts(t.answerKept), directCounts(t.answerDropped), directICETimeline(t.ice), orDash(t.pair))
 	return b.String()
 }
 

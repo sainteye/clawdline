@@ -36,9 +36,12 @@ class FakeChannel implements DirectChannelLike {
 class FakePeer implements DirectPeerLike {
   localDescription: { sdp: string } | null = null
   iceGatheringState = "complete"
+  iceConnectionState = "connected"
+  connectionState = "connected"
   channel = new FakeChannel()
   onicegatheringstatechange: ((event?: unknown) => void) | null = null
   onconnectionstatechange: ((event?: unknown) => void) | null = null
+  oniceconnectionstatechange: ((event?: unknown) => void) | null = null
   createDataChannel(): DirectChannelLike { return this.channel }
   async createOffer(): Promise<{ type: string; sdp?: string }> { return { type: "offer", sdp: "v=0 offer" } }
   async setLocalDescription(description: { type: string; sdp?: string }): Promise<void> { this.localDescription = { sdp: description.sdp ?? "" } }
@@ -453,6 +456,43 @@ for (const scenario of [
     } finally { next.stop(); old.stop() }
   })
 }
+
+test("temporary RTC state changes interrupt the read path once and keep the same channel", async () => {
+  const peer = new FakePeer()
+  let offers = 0
+  const carrier = new DirectCarrier({
+    deviceID: viewer, ready: true, retired: false,
+    publishCarrierOffer: async (_machine, offer) => { offers++; return fixtureCarrierAnswer(offer) },
+    receiveCarrierEnvelope() {}, carrierSupported: () => true,
+  }, machine, () => peer)
+  let interruptions = 0
+  let closes = 0
+  const stop = carrier.whenReadInterrupted(() => { interruptions++ })
+  carrier.whenDown(() => { closes++ })
+  try {
+    assert.equal(await carrier.ensure(), true)
+    const generation = carrier.channelGeneration
+    assert.equal(carrier.readReady, true)
+    peer.iceConnectionState = "disconnected"
+    peer.oniceconnectionstatechange?.()
+    peer.connectionState = "disconnected"
+    peer.onconnectionstatechange?.()
+    assert.equal(interruptions, 1)
+    assert.equal(carrier.readReady, false)
+    assert.equal(await carrier.ensure(), true)
+    assert.equal(closes, 0)
+    assert.equal(offers, 1)
+    assert.equal(peer.channel.readyState, "open")
+
+    peer.iceConnectionState = "connected"
+    peer.oniceconnectionstatechange?.()
+    peer.connectionState = "connected"
+    peer.onconnectionstatechange?.()
+    assert.equal(carrier.readReady, true)
+    assert.equal(carrier.channelGeneration, generation)
+    assert.equal(interruptions, 1)
+  } finally { stop(); carrier.close() }
+})
 
 test("a terminal that opens direct first uses the machine carrier that survives leaving the Session", async () => {
   const m = await machineFixture()

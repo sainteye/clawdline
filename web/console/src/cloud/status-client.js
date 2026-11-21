@@ -488,7 +488,9 @@ export class StatusCloudClient extends CatalogCloudClient {
     let carrier = null
     try { carrier = this.directCarriers.for(machine) } catch { return null }
     if (carrier && !this.carrierWatched.has(carrier)) {
-      this.carrierWatched.set(carrier, carrier.whenDown((code) => this._carrierDown(machine, code)))
+      const stopDown = carrier.whenDown((code) => this._carrierDown(machine, code))
+      const stopInterrupted = carrier.whenReadInterrupted(() => this._carrierReadInterrupted(machine))
+      this.carrierWatched.set(carrier, () => { stopDown(); stopInterrupted() })
       this.carrierMachines.add(machine)
     }
     return carrier
@@ -855,22 +857,14 @@ export class StatusCloudClient extends CatalogCloudClient {
    * holding — is published again on the relay rather than left to time out, and the page shows an
    * answer instead of "could not read". `_publishCommand` re-pins the proof to the new sequence.
    */
-  _relayAfterCarrier(key, cause) {
+  _relayAfterCarrier(key, cause, keepIfUnavailable = false) {
     const flight = this.carrierReads.get(key)
     if (!flight) return
-    this.carrierReads.delete(key)
     const waiters = flight.waiters
-    if (this.readWaiters.get(key) !== waiters) return
-    // The read's carrier gave up and the relay takes it over: recorded under the read's own
-    // correlation, before the answer the relay brings settles it.
-    if (waiters.health) {
-      waiters.health.mark("viewer_carrier_replace", "viewer_stage_failed",
-        { error: cause ? classifyViewerError(cause, "read") : "carrier_closed", outcome: "error" })
+    if (this.readWaiters.get(key) !== waiters) {
+      this.carrierReads.delete(key)
+      return
     }
-    // The sequence the carrier was given is spent. Nothing on the relay will ever
-    // acknowledge it, so stop waiting for an ACK under that number before the
-    // resend pins a new one.
-    if (waiters.ref) { this.pendingBySequence?.delete(waiters.ref.seq); waiters.ref = null }
     const settle = (error) => { if (this.readWaiters.get(key) === waiters) this._settleRead(key, null, error) }
     const channel = "t/" + channelSegment(flight.identity.machine) + "/" + channelSegment(flight.identity.session)
     let full = null
@@ -882,14 +876,32 @@ export class StatusCloudClient extends CatalogCloudClient {
         this.subscriptionHolds.set(channel, (this.subscriptionHolds.get(channel) || 0) + 1)
       }
     } catch (error) {
-      settle(cause || refused("malformed_read", error.message))
+      if (!keepIfUnavailable) settle(cause || refused("malformed_read", error.message))
       return
     }
-    if (full) { settle(cause || full); return }
+    if (full) {
+      if (!keepIfUnavailable) settle(cause || full)
+      return
+    }
+    this.carrierReads.delete(key)
+    // The relay has room and takes over the original waiter and deadline.
+    // Clear the spent direct receipt before the relay pins its new sequence.
+    if (waiters.ref) { this.pendingBySequence?.delete(waiters.ref.seq); waiters.ref = null }
+    const error = keepIfUnavailable
+      ? "network_unreachable" : cause ? classifyViewerError(cause, "read") : "carrier_closed"
+    waiters.health?.mark("viewer_carrier_replace", "viewer_stage_failed",
+      { error, outcome: "error" })
     Promise.resolve()
       .then(() => this._publishCommand(flight.identity.machine, flight.type,
         Object.assign({ session: flight.identity.session }, flight.extra), "ctl", { key, waiters }))
       .catch((error) => settle(error))
+  }
+
+  _carrierReadInterrupted(machine) {
+    if (!this.ready || this._offlineRefusal(machine)) return
+    for (const [key, flight] of [...this.carrierReads]) {
+      if (flight.identity.machine === machine) this._relayAfterCarrier(key, null, true)
+    }
   }
 
   /** The carrier went: every read it was holding is asked again on the relay. */
@@ -958,12 +970,13 @@ export class StatusCloudClient extends CatalogCloudClient {
       // failed STUN/data-channel attempt on a small executor must not contend
       // with the first conversation the person is waiting to see.
       const carrier = this._carrierFor(extra.machine_id)
-      const direct = carrier?.open ? carrier : null
+      const direct = carrier?.open &&
+        (carrier.readReady || !this.ready || this._offlineRefusal(extra.machine_id)) ? carrier : null
       const promise = direct
         ? this._readOnCarrier({ machine: extra.machine_id, session: value.session },
           direct, type, extra, answer, timeoutMs, readOptions)
         : super._read(value, type, extra, answer, timeoutMs, readOptions)
-      if (carrier && !direct) {
+      if (carrier && !carrier.open) {
         // Only a successful read warms the optional path. The timer yields to
         // the caller's promise continuation, so the transcript can be drawn
         // before WebRTC work begins. DirectCarrier.ensure coalesces any other
@@ -1020,15 +1033,6 @@ export class StatusCloudClient extends CatalogCloudClient {
     const pairing = await this._outboundMachinePairing(machine)
     const sequence = await this.nextSequence(this.deviceID)
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw refused("bad_sequence", "invalid envelope sequence")
-    if (pending?.key) {
-      const proof = this.pinnedReadProofs.get(pending.key)
-      if (!proof || proof.waiters !== pending.waiters || proof.machineID !== machine ||
-        proof.sessionID !== body.session || proof.generation !== (machineList ? null : body.expected_generation) ||
-        proof.read !== pinnedReadName(type, body)) {
-        throw refused("read_reply_mismatch", "the pinned read no longer owns its reply")
-      }
-      proof.seq = sequence
-    }
     const envelope = await sealEnvelope({
       ch: "ctl/" + channelSegment(machine), seq: sequence, ts: Date.now(), class: "ctl",
       key_id: pairing.keyID, sender: this.deviceID,
@@ -1040,6 +1044,20 @@ export class StatusCloudClient extends CatalogCloudClient {
       envelopeSigningBytes(envelope)))
     const ref = { sender: this.deviceID, seq: sequence,
       request: typeof body.request === "string" ? body.request : null }
+    // The interruption may have moved this read to the relay while WebCrypto
+    // was signing. Only the current route may publish or pin its sequence.
+    if (pending?.carrier && this.carrierReads.get(pending.key)?.waiters !== pending.waiters) {
+      throw refused("cloud_read_settled", "the carrier no longer owns this read")
+    }
+    if (pending?.key) {
+      const proof = this.pinnedReadProofs.get(pending.key)
+      if (!proof || proof.waiters !== pending.waiters || proof.machineID !== machine ||
+        proof.sessionID !== body.session || proof.generation !== (machineList ? null : body.expected_generation) ||
+        proof.read !== pinnedReadName(type, body)) {
+        throw refused("read_reply_mismatch", "the pinned read no longer owns its reply")
+      }
+      proof.seq = sequence
+    }
     if (pending) {
       if (pending.waiters) {
         if (this.readWaiters.get(pending.key) !== pending.waiters) {
