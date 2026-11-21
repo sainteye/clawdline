@@ -150,6 +150,7 @@ interface TranscriptProps extends MessageSenderView {
   row?: SessionRow
   agentId?: string
   onAgent?: (id: string) => void
+  onOpenTerminal?: () => void
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -168,7 +169,7 @@ function TranscriptFrame(props: TranscriptProps) {
   </div>
 }
 
-function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...senderView }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
+function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, onOpenTerminal, ...senderView }: TranscriptProps & { onFilling: (filling: boolean) => void }) {
   // The page last read, and whether the pane is on its fast pace: the read
   // asks only for what was appended to it unless this is the safety read of
   // the whole page (`transcript-follow.ts`).
@@ -675,7 +676,7 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, ...
   const queueHeld = session?.state === "unknown"
   const queueWho = assistantLabel(session?.assistant)
   const sessionWorking = session?.state === "working" || session?.state === "waiting"
-  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(card => pendingHTML(card, queueWho, queueHeld, sessionWorking))
+  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(card => pendingHTML(card, queueWho, queueHeld, sessionWorking, onOpenTerminal))
   const live = working ? <WorkingLine key="working" line={session?.line ?? ""} /> : null
   const heavy = heavyWork ? <HeavyWorkLine key="heavy" reason={heavyWork.reason} startedAt={heavyWork.started_at} /> : null
   // The working line is newer than any card: the turn it stands for is the
@@ -977,7 +978,9 @@ function technicalDetails(detail: string): ReactElement | null {
  * that may have gone — nothing answered, or the answer was lost — says it does
  * not know, beside "look" (F3).
  */
-function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, sessionWorking = false): ReactElement {
+function pendingHTML(
+  card: PendingSend, assistant: string, queueHeld: boolean, sessionWorking: boolean, onOpenTerminal?: () => void,
+): ReactElement {
   const T = L.strings
   const esc = L.escapeHTML
   const n = card.pictures.length
@@ -1008,6 +1011,9 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
         : '<button type="button" class="go" data-pending-steer="' + esc(card.token) + '">' +
           esc(nextWord("sendSteerNow")) + "</button>")
     : ""
+  const terminalButton = onOpenTerminal
+    ? '<button type="button" class="go" data-pending-terminal>' + esc(catalogWord("nativeTerminal", "viewCurrentScreen")) + "</button>"
+    : ""
   if (card.state === "queued" && queueHeld) {
     const now = card.partial ? "" : '<button type="button" class="go" data-pending-send-queued="' + esc(card.token) + '">' +
       esc(nextWord("sendQueuedNow")) + "</button>"
@@ -1036,6 +1042,7 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
         ? '<button type="button" class="go" data-pending-diagnose="' + esc(card.token) + '">' +
           esc(nextWord("sendDiagnose")) + "</button>"
         : "") +
+      (waitsOnQuestion(card.failure) ? terminalButton : "") +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && sitsUnsubmitted(card.failure) && card.checking) {
@@ -1045,10 +1052,8 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
       "</span></div>"
   } else if (card.state === "unknown" && sitsUnsubmitted(card.failure)) {
     // The machine typed the words and held Enter back: they are in the
-    // session's input line. Neither a look nor "send again" helps — the
-    // transcript has no turn for them, and a second send types them twice —
-    // so the card offers the Enter that was held back, which the machine
-    // presses only while the words are still there (`Sender.enter`).
+    // session's input line. Offer the guarded Enter and access to the
+    // terminal so the person can see what is holding up the send.
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(nextWord("sendUnsubmitted", { code: card.failure })) +
@@ -1061,6 +1066,7 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
       '">' +
       esc(nextWord("sendEnter")) +
       "</button>" +
+      terminalButton +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && card.checking) {
@@ -1105,6 +1111,7 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
           '">' +
           esc(nextWord("sendLook")) +
           "</button>") +
+      (card.failure === "input_moved" ? terminalButton : "") +
       dismiss +
       "</div>"
   } else {
@@ -1113,7 +1120,7 @@ function pendingHTML(card: PendingSend, assistant = "AI", queueHeld = false, ses
       esc(card.state === "accepted" ? T.webPromptAccepted : T.webSending) +
       "</span>" + (card.state === "accepted" ? steerButton : "") + "</div>"
   }
-  return <PendingTurnFrame state={card.state} sentAt={card.sentAt} bodyHTML={body} onClick={pendingAction}
+  return <PendingTurnFrame state={card.state} sentAt={card.sentAt} bodyHTML={body} onClick={event => pendingAction(event, onOpenTerminal)}
     key={"pending:" + card.token} />
 }
 
@@ -1137,9 +1144,13 @@ function enterRefusalSentence(code: string): string {
     : nextWord("sendEnterUnknown", { code })
 }
 
-/** A press inside a pending card: try again, look, press Enter, close it, or a code block's copy button. */
-function pendingAction(ev: MouseEvent<HTMLElement>) {
+/** Handle a pending card’s buttons and code-copy controls. */
+function pendingAction(ev: MouseEvent<HTMLElement>, onOpenTerminal?: () => void) {
   const target = ev.target as Element
+  if (target.closest?.("[data-pending-terminal]")) {
+    onOpenTerminal?.()
+    return
+  }
   const diagnose = target.closest?.("[data-pending-diagnose]")
   if (diagnose) {
     const card = pendingSends.card(diagnose.getAttribute("data-pending-diagnose") ?? "")

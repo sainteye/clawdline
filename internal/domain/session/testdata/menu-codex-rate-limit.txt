@@ -1,0 +1,10 @@
+  Approaching rate limits
+  Switch to fixture-mini for lower credit usage?
+
+
+› 1. Switch to fixture-mini               Use fewer credits on
+                                           simpler tasks.
+  2. Keep current model
+  3. Keep current model (never show again)  Hide future reminders
+
+  enter select · esc back

@@ -105,3 +105,31 @@ func TestCodexCommandApprovalSaysTheCommand(t *testing.T) {
 		t.Fatalf("a single-column row grew a detail: %+v", m.Options[0])
 	}
 }
+
+// The Codex 0.166.0 rate-limit prompt has two blank rows before its
+// options (chatwidget/tests/status_and_layout.rs).
+func TestCodexRateLimitModelSwitch(t *testing.T) {
+	screen := fixture(t, "menu-codex-rate-limit.txt")
+	for _, padding := range []string{"\n\n\n", "\n\n"} {
+		m, ok := ReadMenu(strings.Replace(screen, "\n\n\n", padding, 1), AssistantCodex, false)
+		if !ok {
+			t.Fatal("no menu on Codex's rate-limit prompt")
+		}
+		if m.Question != "Approaching rate limits\nSwitch to fixture-mini for lower credit usage?" {
+			t.Fatalf("question %q", m.Question)
+		}
+		if got := labels(m); got != "Switch to fixture-mini|Keep current model|Keep current model (never show again)" {
+			t.Fatalf("labels %q", got)
+		}
+		if m.Options[0].Detail != "Use fewer credits on simpler tasks." || m.Options[2].Detail != "Hide future reminders" {
+			t.Fatalf("details %+v", m.Options)
+		}
+		if m.Selected == nil || *m.Selected != 1 || !m.Numbered || m.CommandApproval {
+			t.Fatalf("menu %+v", m)
+		}
+	}
+	draft := strings.ReplaceAll(screen, "2. Keep current model", "2. Write an example")
+	if _, ok := ReadMenu(draft, AssistantCodex, false); ok {
+		t.Fatal("a numbered draft below the reminder was read as a menu")
+	}
+}

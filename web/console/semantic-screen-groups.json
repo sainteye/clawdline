@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14015,
+  "englishContentKeys": 14016,
   "riskKeys": 5959,
-  "nonRiskCount": 8056,
+  "nonRiskCount": 8057,
   "groups": [
     {
       "name": "acp / other",
@@ -3848,7 +3848,7 @@
     },
     {
       "name": "nativeTerminal / other",
-      "count": 14,
+      "count": 15,
       "sources": [
         null
       ],
@@ -3866,7 +3866,8 @@
         "nativeTerminal.sending",
         "nativeTerminal.text",
         "nativeTerminal.title",
-        "nativeTerminal.type"
+        "nativeTerminal.type",
+        "nativeTerminal.viewCurrentScreen"
       ]
     },
     {

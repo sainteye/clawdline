@@ -458,7 +458,7 @@ export function Detail({
             ending={ending}
             onDid={onDid}
             triggerRef={actionsTrigger}
-            onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}}
+            onNativeTerminal={openNativeTerminal}
             onScreen={() => {setNativeTerminalOpen(false);setBrowserOpen(false);setScreenOpen(true)}}
             onBrowser={() => {setNativeTerminalOpen(false);setScreenOpen(false);setGitOpen(false);setShellOpen(null);setBrowserOpen(true)}}
             onOpenGit={() => setGitOpen(true)}
@@ -520,6 +520,7 @@ export function Detail({
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
           {row ? <Transcript id={row.id} row={row} activityScope={activityScope} agentId={selectedAgent?.id} onAgent={chooseAgent}
+            onOpenTerminal={terminalPanelAvailable(row.assistant, row.backend) ? openNativeTerminal : undefined}
             messageSenders={messageSenders} onOpenMessageSender={onOpenMessageSender}
             messageSenderNeedsGeneration={messageSenderNeedsGeneration} /> :
             emptyProblem ? <div className="cloud-detail-problem" role="status">
@@ -551,7 +552,7 @@ export function Detail({
       /> : null}
       {/* With no Session open there is nobody to write to: the home screen's
           own button is the way on, not a field that cannot send. */}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={openNativeTerminal} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {/* The loaded page keeps a status line under the composer, and on a phone that line holds
           the home-indicator inset. Reserve the same row while loading so the composer does not
           sit on the bottom edge and then jump up when the Session arrives. */}

@@ -716,22 +716,7 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 		last := &options[len(options)-1]
 		last.Label += " " + trimSpaces(tail[i].element)
 	}
-	// Current Codex leaves two blank rows between this title and its model
-	// options. The usual askedOver rule stays strict for a typed numbered list
-	// in the composer, while this exact title can bridge that gap.
-	pickerQuestion := ""
-	for i := tail[first].offset - 1; i >= 0 && i >= tail[first].offset-6; i-- {
-		title := trimSpaces(lines[i])
-		if title == "Select Model and Effort" || strings.HasPrefix(title, "Select Reasoning Level for ") {
-			pickerQuestion = title
-			break
-		}
-		if isTurnMarker(lines[i]) || hasCaret(lines[i]) {
-			break
-		}
-	}
-	approvalFooter := codexApprovalKeyLine(tail)
-	if len(options) < 2 || (!askedOver(lines, tail[first].offset) && pickerQuestion == "" && !approvalFooter) {
+	if len(options) < 2 {
 		return Menu{}, false
 	}
 	// Codex draws a row as a table — `1. Allow   Run the tool and continue` —
@@ -739,17 +724,65 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 	for i := range options {
 		options[i].Label, options[i].Detail = secondColumn(options[i].Label, "")
 	}
+	// Codex leaves two blank rows above some pickers. Recognize their
+	// headers without relaxing askedOver for drafts that start with "1.".
+	firstRow := tail[first].offset
+	pickerQuestion := ""
+	for i := firstRow - 1; i >= 0 && i >= firstRow-6; i-- {
+		title := trimSpaces(lines[i])
+		if title == "Select Model and Effort" || strings.HasPrefix(title, "Select Reasoning Level for ") {
+			pickerQuestion = title
+			break
+		}
+		if title == "Approaching rate limits" {
+			pickerQuestion = codexRateLimitQuestion(lines[i+1:firstRow], options)
+			break
+		}
+		if isTurnMarker(lines[i]) || hasCaret(lines[i]) {
+			break
+		}
+	}
+	approvalFooter := codexApprovalKeyLine(tail)
+	if !askedOver(lines, firstRow) && pickerQuestion == "" && !approvalFooter {
+		return Menu{}, false
+	}
 	menu := Menu{Options: options, Selected: firstSelected(options), Numbered: true}
-	// The title is also the receipt for a bare /model command: Codex opens a
-	// picker without writing that command as a conversation turn.
+	// A model picker title is also the receipt for a bare /model command,
+	// which Codex does not write as a conversation turn.
 	if pickerQuestion != "" {
 		menu.Question = pickerQuestion
 	} else {
-		menu.Question = codexQuestion(lines, tail[first].offset, approvalFooter)
+		menu.Question = codexQuestion(lines, firstRow, approvalFooter)
 		menu.CommandApproval = approvalFooter && options[0].Label == "Yes, proceed (y)" &&
 			options[len(options)-1].Label == "No, and tell Codex what to do differently (esc)"
 	}
 	return menu, true
+}
+
+// codexRateLimitQuestion binds the subtitle to the matching switch option.
+func codexRateLimitQuestion(header []string, options []MenuOption) string {
+	if len(header) == 0 || options[0].Number != 1 || options[1].Number != 2 ||
+		options[1].Label != "Keep current model" {
+		return ""
+	}
+	if len(options) > 3 || (len(options) == 3 &&
+		(options[2].Number != 3 || options[2].Label != "Keep current model (never show again)")) {
+		return ""
+	}
+	model, ok := strings.CutPrefix(options[0].Label, "Switch to ")
+	if !ok || model == "" {
+		return ""
+	}
+	subtitle := "Switch to " + model + " for lower credit usage?"
+	if trimSpaces(header[0]) != subtitle {
+		return ""
+	}
+	for _, line := range header[1:] {
+		if trimSpaces(line) != "" {
+			return ""
+		}
+	}
+	return "Approaching rate limits\n" + subtitle
 }
 
 // codexQuestion is what a Codex approval asks, read up from its first row.

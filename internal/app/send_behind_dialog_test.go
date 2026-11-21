@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
@@ -96,5 +97,54 @@ func TestASendToASessionAskingAQuestionTypesNothing(t *testing.T) {
 	term.show(idleAfterShell)
 	if _, err := actions.Send(context.Background(), "%10", "1"); err != nil || term.sent != 1 {
 		t.Fatalf("send once answered: %v, typed %d, want one line", err, term.sent)
+	}
+}
+
+func TestCodexRateLimitDialogBlocksSendAndTakesTheChosenOption(t *testing.T) {
+	screen, err := os.ReadFile("../domain/session/testdata/menu-codex-rate-limit.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	row := session.Session{ID: "%10", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+		State: session.StateIdle, Evidence: session.EvidenceRegistry}
+	term := &sendCounter{menuTerminal: &menuTerminal{s: row, screen: string(screen)}}
+	actions := menuActions(term.menuTerminal)
+	actions.Terminals = []ports.TerminalHost{term}
+	actions.Inventory.Terminals = []ports.TerminalHost{term}
+
+	seen := actions.Inventory.readScreen(ctx, row)
+	if seen.State != session.StateWaiting || seen.Menu == nil || len(seen.Menu.Options) != 3 {
+		t.Fatalf("rate-limit dialog: state %q, menu %+v", seen.State, seen.Menu)
+	}
+	var refusal Refusal
+	if _, err := actions.Send(ctx, row.ID, "test"); !errors.As(err, &refusal) || refusal.Code != "session_asking" {
+		t.Fatalf("send: %v, want session_asking", err)
+	}
+	if _, err := actions.SubmitTyped(ctx, row.ID, "test"); !errors.As(err, &refusal) || refusal.Code != "input_behind_question" {
+		t.Fatalf("submit typed: %v, want input_behind_question", err)
+	}
+	if term.sent != 0 || len(term.keys()) != 0 {
+		t.Fatalf("send typed %d lines and %q at the dialog", term.sent, term.keys())
+	}
+
+	expect := session.MenuFingerprint(*seen.Menu)
+	const idle = "› Ask Codex to do anything\n\n  fixture · /tmp"
+	term.onKey = func(t *menuTerminal, b []byte) {
+		if string(b) == "2" {
+			t.show(idle)
+		}
+	}
+	if _, err := actions.Key(ctx, row.ID, "2", expect); err != nil {
+		t.Fatalf("choose Keep current model: %v", err)
+	}
+	if keys := term.keys(); len(keys) != 1 || keys[0] != "2" {
+		t.Fatalf("typed %q, want exactly the chosen digit", keys)
+	}
+	if _, err := actions.Key(ctx, row.ID, "2", expect); !errors.As(err, &refusal) || refusal.Code != "menu_moved" {
+		t.Fatalf("stale answer: %v, want menu_moved", err)
+	}
+	if len(term.keys()) != 1 {
+		t.Fatalf("stale answer typed more keys: %q", term.keys())
 	}
 }

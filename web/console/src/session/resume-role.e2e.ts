@@ -59,6 +59,18 @@ let commandLive = false
 let commandWaiting = false
 let commandAliasTurns = false
 let commandSendUncertain = false
+let commandSendUnsubmitted = false
+let keyAttempts: { key: string; expect?: string }[] = []
+let rateLimitWaiting = false
+const rateLimitMenu = {
+  question: "Approaching rate limits\nSwitch to fixture-mini for lower credit usage?",
+  options: [
+    { n: 1, label: "Switch to fixture-mini", detail: "Use fewer credits", can: true, selected: true },
+    { n: 2, label: "Keep current model", can: true, selected: false },
+    { n: 3, label: "Keep current model (never show again)", detail: "Hide future reminders", can: true, selected: false },
+  ],
+  selected: 1,
+}
 let commandSends: string[] = []
 let commandPastReads: string[] = []
 let nativeRequests: {key?:string;text?:string;request:string}[]=[]
@@ -77,7 +89,9 @@ function snapshot() {
       provenance: "fixture", source: { freshness: "current", observed_at: now(), provenance: "fixture" },
     },
     sessions: commandAssistant ? [{ id: "fixture-current", backend: "tmux", assistant: commandAssistant,
-      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: commandWaiting ? "waiting" : "idle", ...(commandWaiting ? { screen_reading: "read" } : {}), evidence: "process",
+      label: "Current fixture", sessionId: "fixture-conversation", cwd: commandCWD, state: commandWaiting || rateLimitWaiting ? "waiting" : "idle",
+      ...(commandWaiting || rateLimitWaiting ? { screen_reading: "read" } : {}),
+      ...(rateLimitWaiting ? { menu: rateLimitMenu } : {}), evidence: "process",
       isClaude: commandAssistant === "claude", work_state: "ready",
       activity: { known: true, at: now() }, closeability: safeCommandSession() },
       ...(commandLive ? ["fixture-wrong", "fixture-live"].map(id => ({ id, backend: "tmux",
@@ -158,9 +172,26 @@ function daemon(): Server {
     if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, {ok:true,done:0,active:0,waiting:0,assigned_items:[],recent_items:[],direct_todos:[],open_decisions:[],truncated:false})
     if (path.startsWith("/v1/work/v2/human-interventions/")) return json(res, 200, {ok:true,rows:[],pruned_resolved:0})
     if (path === "/v1/sessions/fixture-current/info") return json(res, 200, { info: { session: { assistant: commandAssistant }, models: [] } })
+    if (req.method === "POST" && path === "/v1/sessions/fixture-current/key") {
+      let body = ""; req.on("data", chunk => body += String(chunk))
+      req.on("end", () => {
+        keyAttempts.push(JSON.parse(body))
+        if (rateLimitWaiting) {
+          rateLimitWaiting = false
+          return json(res, 200, { ok: true })
+        }
+        json(res, 409, { error: "input_moved", detail: "input_moved", outcome: "not_done" })
+      })
+      return
+    }
     if (req.method === "POST" && path === "/v1/sessions/fixture-current/send") {
       let body = ""; req.on("data", chunk => body += String(chunk))
-      req.on("end", () => { commandSends.push(JSON.parse(body).text); commandSendUncertain ? json(res,503,{error:"send_failed",detail:"fixture uncertain",outcome:"unknown"}) : json(res, 200, { ok: true }) })
+      req.on("end", () => {
+        commandSends.push(JSON.parse(body).text)
+        if (commandSendUnsubmitted) return json(res, 502, { error: "send_unsubmitted", outcome: "unknown" })
+        if (commandSendUncertain) return json(res, 503, { error: "send_failed", detail: "fixture uncertain", outcome: "unknown" })
+        return json(res, 200, { ok: true })
+      })
       return
     }
     if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, {
@@ -823,6 +854,63 @@ test("a native frame does not discard or replay an uncertain command",async()=>{
   assert.deepEqual(commandSends,["/future-provider-command argument"])
   assert.deepEqual(nativeRequests,[])
  }finally{commandAssistant="";commandSendUncertain=false;await tab.close()}
+})
+
+test("a Codex rate-limit menu offers all three choices in the conversation", async () => {
+  commandAssistant = "codex"; rateLimitWaiting = true; keyAttempts = []
+  const tab = await Tab.open(browser, 390, 844, true)
+  try {
+    await tab.go("/#session=fixture-current")
+    const buttons = await tab.run(`(async()=>{const end=Date.now()+5000;for(;;){
+      const rows=[...document.querySelectorAll('.composer .waiting [data-key]')];
+      if(rows.length===3)return rows.map(row=>row.textContent);
+      if(Date.now()>end)throw Error('rate-limit choices did not render');
+      await new Promise(r=>setTimeout(r,20));
+    }})()`)
+    for (const [i, option] of rateLimitMenu.options.entries()) assert.ok(buttons[i].includes(option.label))
+    assert.match(await tab.run(`document.querySelector('.composer .waiting').textContent`), /Approaching rate limits/)
+    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`), true)
+    await tab.click('.composer .waiting [data-key="2"]')
+    const end = Date.now() + 5000
+    while (!keyAttempts.length && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.deepEqual(keyAttempts.map(input => input.key), ["2"])
+    assert.match(keyAttempts[0]?.expect ?? "", /^[a-f0-9]{64}$/)
+  } finally {
+    commandAssistant = ""; rateLimitWaiting = false
+    await tab.close()
+  }
+})
+
+test("a refused Enter offers the interactive Terminal without repeating the send", async () => {
+  commandAssistant = "codex"; commandSendUnsubmitted = true; commandSends = []; keyAttempts = []; nativeRequests = []
+  nativeText = "Approaching rate limits\n› 1. Switch to fixture-mini\n  2. Keep current model"
+  const tab = await Tab.open(browser, 390, 844, true)
+  const pending = `[...document.querySelectorAll('.entry.pending')].find(node => node.textContent.includes('Check the fixture'))`
+  try {
+    await tab.go("/#session=fixture-current")
+    await compose(tab, "Check the fixture")
+    await tab.click("#send")
+    await tab.click("[data-pending-enter]")
+    await tab.run(`(async()=>{const end=Date.now()+5000;while(!(${pending})?.querySelector('[data-pending-look]')){if(Date.now()>end)throw Error('Enter refusal not shown');await new Promise(r=>setTimeout(r,20))}})()`)
+    const card = await tab.run(`(${pending}).querySelector('.pending-state').textContent`)
+    assert.match(card, /input_moved/)
+    assert.match(card, /看現在畫面/)
+    assert.equal(await tab.run(`document.querySelector('#native-terminal').hidden`), true)
+    await tab.click("[data-pending-terminal]")
+    await tab.run(`(async()=>{const end=Date.now()+5000;while(document.querySelector('#native-terminal [data-native-key=down]').disabled){if(Date.now()>end)throw Error('Terminal not ready');await new Promise(r=>setTimeout(r,20))}})()`)
+    assert.match(await tab.run(`document.querySelector('#native-terminal .native-terminal-grid').textContent`), /Approaching rate limits/)
+    assert.equal(nativeRequests.length, 0, "opening Terminal only reads the screen")
+    await tab.click("#native-terminal [data-native-key=down]")
+    await tab.run(`(async()=>{const end=Date.now()+5000;while(!document.querySelector('#native-terminal .native-terminal-grid').textContent.includes('Input: down')){if(Date.now()>end)throw Error('Terminal key not received');await new Promise(r=>setTimeout(r,20))}})()`)
+    assert.deepEqual(nativeRequests.map(input => input.key), ["down"])
+    await tab.click("#native-terminal .panel-view-head button")
+    assert.equal(await tab.run(`(${pending}).querySelector('[data-pending-look]') !== null`), true)
+    assert.deepEqual(keyAttempts.map(input => input.key), ["enter"])
+    assert.deepEqual(commandSends, ["Check the fixture"])
+  } finally {
+    commandAssistant = ""; commandSendUnsubmitted = false; nativeText = ""
+    await tab.close()
+  }
 })
 
 /** The model row in the start sheet, read in one go. */

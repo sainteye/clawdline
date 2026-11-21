@@ -7564,6 +7564,7 @@
   "nativeTerminal.type": "輸入文字",
   "nativeTerminal.unavailable": "無法讀取或確認這個 Session 的 Terminal。",
   "nativeTerminal.uncertain": "操作結果尚未確認。請先重新讀取畫面再繼續；不會自動重送。",
+  "nativeTerminal.viewCurrentScreen": "看現在畫面",
   "next.accessCloudOff": "邀請瀏覽器需要這台機器連上 Clawdline Cloud。",
   "next.accessCodeLine": "或在那個瀏覽器打開 app.clawdline.com/join，輸入 {code}。",
   "next.accessConfirmTitle": "確認配對：{browser}",

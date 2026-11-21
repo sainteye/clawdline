@@ -7564,6 +7564,7 @@
   "nativeTerminal.type": "Enter text",
   "nativeTerminal.unavailable": "This Session terminal cannot be read or verified.",
   "nativeTerminal.uncertain": "The input outcome is unconfirmed. Read the screen before continuing; input is never replayed automatically.",
+  "nativeTerminal.viewCurrentScreen": "View current screen",
   "next.accessCloudOff": "Inviting a browser needs this machine connected to Clawdline Cloud.",
   "next.accessCodeLine": "Or open app.clawdline.com/join there and type {code}.",
   "next.accessConfirmTitle": "Confirm pairing: {browser}",
