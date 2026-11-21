@@ -185,7 +185,9 @@ try{
   await open("lang="+lang,mobile);await openDetails()
   const committed="Synthetic committed reply lost "+lang
   await fill(field,committed);saveFault="drop";let before=patches();await save()
-  await waitFor(`document.querySelector(".pa-settings-savebar [role=alert]")?.textContent===${JSON.stringify(t("settingsSaveUnknownCheck"))}`);saveFault=""
+  for(const k of ["settingsSaveUnknownCheck","settingsCheckSaved","settingsCheckConfirmed","settingsCheckUnchanged","settingsCheckDiverged","settingsCheckFailed"])assert.ok(t(k),k)
+  await waitFor(`!!document.querySelector(".pa-settings-savebar [role=alert]")`);saveFault=""
+  assert.equal(await evaluate('document.querySelector(".pa-settings-savebar [role=alert]").textContent'),t("settingsSaveUnknownCheck"))
   const dropped=requests.filter(r=>r.method==="PATCH").at(-1);assert.equal(dropped.dropped,true);assert.equal(dropped.response.bot.instructions.text,committed,"the source committed before the reply was cut")
   assert.equal(patches(),before+1);assert.equal(await evaluate(locked),true,"unknown keeps Save and fields locked")
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(check)}).textContent`),t("settingsCheckSaved"))
