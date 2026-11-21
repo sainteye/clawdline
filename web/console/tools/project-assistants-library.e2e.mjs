@@ -163,6 +163,12 @@ try {
 
       const renamed=zh?"手機改名作品":"Renamed library artifact"
       const proof={artifactBefore,cardBefore,renamed}
+      // The rename's one explicit refresh resolves the new title; it must settle
+      // instead of re-reading the output while the workspace stays open.
+      await until('!!document.querySelector(".pa-artifact-frame")')
+      const renameSettleFrom=requests.filter(r=>r.path.includes("/output?")).length;await new Promise(r=>setTimeout(r,1500))
+      proof.outputRequestsAfterRenameSettle=requests.filter(r=>r.path.includes("/output?")).length-renameSettleFrom
+      assert.equal(proof.outputRequestsAfterRenameSettle,0,"a renamed open artifact keeps re-reading its output")
       try{await until('[...document.querySelectorAll(".pa-output-card strong")].some(row=>row.textContent==='+JSON.stringify(renamed)+')')}
       finally{proof.cardAfter=await cards();proof.artifactAfter=requests.findLast(row=>row.output?.artifact_id)?.output;await writeFile(path.join(artifacts,`rename-card-${mode}-${lang}-${width}.json`),JSON.stringify(proof,null,2))}
       assert.equal(proof.artifactAfter.artifact_id,artifactBefore.artifact_id)
@@ -173,9 +179,16 @@ try {
       const focusOK=await until('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent==='+JSON.stringify(renamed)).then(()=>true,()=>false)
       proof.focusAfterClose=await run('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent??("not a card: "+(document.activeElement?.tagName??"none")+" "+(document.activeElement?.className??""))')
       proof.outputRequestsSoFar=requests.filter(r=>r.mode===mode&&r.path.includes("/output?")).length
-      await run('(()=>{const card=[...document.querySelectorAll(".pa-output-card button")].find(row=>row.querySelector("strong")?.textContent==='+JSON.stringify(renamed)+');card.focus();card.click()})()')
+      // Reopen with a real pointer press: a resolved title must not re-read the bytes.
+      const box=await run('(()=>{const card=[...document.querySelectorAll(".pa-output-card button")].find(row=>row.querySelector("strong")?.textContent==='+JSON.stringify(renamed)+');card.scrollIntoView({block:"center"});const r=card.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()')
+      for(const type of ["mouseMoved","mousePressed","mouseReleased"])await send("Input.dispatchMouseEvent",{type,x:box.x,y:box.y,button:"left",buttons:type==="mousePressed"?1:0,clickCount:1},sessionId)
       await until('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-heading > span:last-child")?.textContent==='+JSON.stringify(renamed))
       await until('!!document.querySelector(".pa-artifact-frame")')
+      const settleFrom=requests.filter(r=>r.path.includes("/output?")).length;await new Promise(r=>setTimeout(r,1500))
+      proof.outputRequestsAfterReopenSettle=requests.filter(r=>r.path.includes("/output?")).length-settleFrom
+      assert.equal(proof.outputRequestsAfterReopenSettle,0,"a reopened renamed artifact keeps re-reading its output")
+      proof.actionsEnabled=await run('[...document.querySelectorAll(".pa-artifact-workspace[open] button")].filter(b=>/Save as HTML|Open in browser|另存 HTML|在瀏覽器開啟/.test(b.textContent)).map(b=>[b.textContent,!b.disabled])')
+      assert.ok(proof.actionsEnabled.length>=2&&proof.actionsEnabled.every(([,on])=>on),"save and open stay enabled after a resolved title: "+JSON.stringify(proof.actionsEnabled))
       const reopened=requests.findLast(row=>row.output?.artifact_id)?.output
       assert.equal(reopened.artifact_id,artifactBefore.artifact_id)
       assert.equal(reopened.sha256,artifactBefore.sha256,"renaming changed the stored artifact bytes")
@@ -197,7 +210,7 @@ try {
     assert.equal(await evaluate('window.opener===null'),true)
     assert.equal(await evaluate('document.querySelector("iframe").getAttribute("sandbox")'),"allow-scripts")
     let tree;const frameDeadline=Date.now()+5000
-    do {tree=await send("Page.getFrameTree",{},tabSession);if(tree.frameTree.childFrames?.[0]?.childFrames?.[0])break;assert.ok(Date.now()<frameDeadline,"new tab keeps two nested frames");await new Promise(r=>setTimeout(r,50))}while(true)
+    do {tree=await send("Page.getFrameTree",{},tabSession);if(tree.frameTree.childFrames?.[0]?.childFrames?.[0])break;assert.ok(Date.now()<frameDeadline,"new tab keeps two nested frames: "+JSON.stringify(tree.frameTree));await new Promise(r=>setTimeout(r,50))}while(true)
     const innerFrame=tree.frameTree.childFrames[0].childFrames[0].frame.id
     const {executionContextId}=await send("Page.createIsolatedWorld",{frameId:innerFrame,worldName:"library-acceptance"},tabSession)
     const inner=async(expression)=>{const r=await send("Runtime.evaluate",{expression,contextId:executionContextId,awaitPromise:true,returnByValue:true},tabSession);if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value}
