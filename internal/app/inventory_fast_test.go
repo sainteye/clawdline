@@ -109,3 +109,51 @@ func TestFastInventoryNeverExtendsAStaleRowPastItsRetention(t *testing.T) {
 		t.Fatalf("expired reading: %+v", got)
 	}
 }
+
+func TestFastInventoryPreservesAVerifiedEmptyScan(t *testing.T) {
+	var now atomic.Int64
+	now.Store(3_000_000)
+	var calls atomic.Int64
+	readSource := make(chan struct{})
+	answered := make(chan struct{})
+	finish := make(chan struct{})
+	t.Cleanup(func() { close(finish) })
+	r := NewInventoryReading(func(ctx context.Context) session.Inventory {
+		source := session.Inventory{ObservedAt: time.Unix(now.Load(), 0), Provenance: "tmux", Complete: true}
+		refreshing := calls.Add(1) == 2
+		if refreshing {
+			select {
+			case <-readSource:
+			case <-finish:
+				return source
+			}
+			source.Sessions = []session.Session{{ID: "%1", Backend: session.BackendTmux}}
+		}
+		noteSourceAnswer(ctx, source)
+		if refreshing {
+			close(answered)
+			<-finish
+		}
+		source.Sources = map[string]bool{"tmux": true}
+		return source
+	}, time.Second)
+	r.now = func() time.Time { return time.Unix(now.Load(), 0) }
+	ctx := context.Background()
+	if first := r.Fast(ctx); !first.Complete || len(first.Sessions) != 0 {
+		t.Fatalf("first empty scan: %+v", first)
+	}
+
+	now.Add(2)
+	if got := r.Fast(ctx); !got.Complete || len(got.Sessions) != 0 || got.Observation.Freshness != session.FreshnessCurrent {
+		t.Fatalf("empty scan during refresh: %+v", got)
+	}
+	close(readSource)
+	select {
+	case <-answered:
+	case <-time.After(time.Second):
+		t.Fatal("the refresh did not report its new Session")
+	}
+	if got := r.Fast(ctx); got.Complete || len(got.Sessions) != 0 || got.Observation.Freshness != session.FreshnessMissing {
+		t.Fatalf("empty scan after a source reported a new Session: %+v", got)
+	}
+}

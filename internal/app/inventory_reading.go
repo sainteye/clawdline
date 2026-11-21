@@ -320,6 +320,7 @@ func (r *InventoryReading) Fast(ctx context.Context) session.Inventory {
 		r.startLocked(ctx)
 	}
 	inv := r.held
+	wasEmpty := len(inv.Sessions) == 0
 	inv.Sessions = append([]session.Session(nil), inv.Sessions...)
 	inv.Sources = cloneSources(inv.Sources)
 	inv.Notes = append([]string(nil), inv.Notes...)
@@ -353,7 +354,9 @@ func (r *InventoryReading) Fast(ctx context.Context) session.Inventory {
 		}
 	}
 	inv.Complete = inv.Complete && len(inv.Sources) > 0 && !unverified
-	if len(kept) == 0 {
+	// A completed empty scan still answers the display while its sources
+	// vouch for it. Rows that aged out cannot establish the same absence.
+	if len(kept) == 0 && (!wasEmpty || !inv.CompleteApartFromDisabled()) {
 		return unreadInventory()
 	}
 	if unverified {
