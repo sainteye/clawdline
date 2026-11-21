@@ -2,10 +2,24 @@
 
 # Voice input settings
 
-Settings › Voice input has three cards: **Recognition**, **LLM cleanup** and **Personal
-vocabulary**. Recognition is the local Whisper setup described in
-[recording recovery](voice-recording-recovery.md) and the [Whisper record](whisper.md). This page
-covers the other two.
+Settings › Voice input selects the transcription engine for Session and Bot message
+composers. **Local Whisper** is the default. The machine's Recognition settings cover
+language and the local model described in [the Whisper record](whisper.md).
+
+**OpenAI Realtime transcription** uses the API key on the same machine in Voice
+assistant settings. A paired Cloud console uses its selected Settings machine
+for the preference and for the transcription grant. The browser obtains a short-lived
+transcription grant from `POST /v1/voice/live-transcription` with Send permission and
+streams the microphone directly to OpenAI over WebRTC after the connection is ready.
+The grant is configured for `gpt-live-transcribe`. OpenAI charges
+[US$0.017 per minute](https://developers.openai.com/api/docs/models/gpt-live-transcribe).
+The picker applies to the next recording.
+
+Partial text appears on the recording row. Stopping closes the microphone and
+finalizes the turn, then puts the final text in the draft. The existing explicit
+Send action sends the final text. The browser keeps the current recording in
+memory so it can offer a manual retry with local Whisper if the stream fails.
+LLM cleanup and the local vocabulary run on the Whisper path.
 
 ## LLM cleanup
 

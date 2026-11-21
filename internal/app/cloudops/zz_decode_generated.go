@@ -280,6 +280,7 @@ var generatedDecoders = map[string]genDecoder{
 	"verification.list":                        genDecodeVerificationList,
 	"verification.note":                        genDecodeVerificationNote,
 	"voice":                                    genDecodeVoice,
+	"voice-live-transcription":                 genDecodeVoiceLiveTranscription,
 	"voice-settings":                           genDecodeVoiceSettings,
 	"voice-settings-update":                    genDecodeVoiceSettingsUpdate,
 	"work-gate-settings":                       genDecodeWorkGateSettings,
@@ -7269,6 +7270,24 @@ func genDecodeVoice(b body) (plan, LocalRequest, bool) {
 	return p, req, true
 }
 
+// genDecodeVoiceLiveTranscription is the `voice-live-transcription` row's decode.
+func genDecodeVoiceLiveTranscription(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/live-transcription"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = []byte("{}")
+	return p, req, true
+}
+
 // genDecodeVoiceSettings is the `voice-settings` row's decode.
 func genDecodeVoiceSettings(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
@@ -7292,7 +7311,7 @@ func genDecodeVoiceSettingsUpdate(b body) (plan, LocalRequest, bool) {
 	) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"voice_polish": genRule{kind: "bool", nullable: true}, "voice_polish_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "voice_polish_level": genRule{kind: "string", enum: []string{"punctuation", "tidy"}, nullable: true}, "voice_vocabulary": genRule{kind: "list", nullable: true, items: &genRule{kind: "string", maxBytes: 256}, maxItems: genCount(200)}, "voice_vocabulary_projects": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 5}) {
+	if !b.genValid("changes", genRule{kind: "object", maxBytes: 65536, properties: map[string]genRule{"voice_polish": genRule{kind: "bool", nullable: true}, "voice_polish_assistant": genRule{kind: "string", enum: []string{"claude", "codex"}, nullable: true}, "voice_polish_level": genRule{kind: "string", enum: []string{"punctuation", "tidy"}, nullable: true}, "voice_transcription": genRule{kind: "string", enum: []string{"whisper", "openai_realtime"}, nullable: true}, "voice_vocabulary": genRule{kind: "list", nullable: true, items: &genRule{kind: "string", maxBytes: 256}, maxItems: genCount(200)}, "voice_vocabulary_projects": genRule{kind: "bool", nullable: true}}, closed: true, maxKeys: 6}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

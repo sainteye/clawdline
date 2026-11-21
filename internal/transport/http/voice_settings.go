@@ -13,15 +13,18 @@ import (
 )
 
 // voiceSettingKeys are the only settings /v1/settings/voice reads or writes:
-// the LLM cleanup and the personal vocabulary (docs/voice.md).
+// the transcription engine, LLM cleanup and personal vocabulary (docs/voice.md).
 var voiceSettingKeys = map[string]bool{
-	"voice_polish": true, "voice_polish_assistant": true, "voice_polish_level": true,
+	"voice_transcription": true,
+	"voice_polish":        true, "voice_polish_assistant": true, "voice_polish_level": true,
 	"voice_vocabulary": true, "voice_vocabulary_projects": true,
 }
 
-// voiceSettingsAnswer is the voice cards' whole state: the five keys as the
-// file has them (null when absent), and what this machine offers for them.
+// voiceSettingsAnswer includes the effective engine and the saved cleanup and
+// vocabulary settings (null when absent), plus this machine's capabilities.
 type voiceSettingsAnswer struct {
+	Transcription    string   `json:"voice_transcription"`
+	OpenAIKeySet     bool     `json:"openai_key_set"`
 	Polish           *bool    `json:"voice_polish"`
 	Assistant        *string  `json:"voice_polish_assistant"`
 	Level            *string  `json:"voice_polish_level"`
@@ -95,8 +98,11 @@ func (s *Server) voiceSettingsRoute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) voiceSettingsSnapshot(f *nextconfig.File, v nextconfig.Values) voiceSettingsAnswer {
 	snapshot := settingsSnapshot(f, v)
+	openai, err := s.readCopilot()
 	out := voiceSettingsAnswer{
-		Polish: snapshot.VoicePolish, Assistant: snapshot.VoicePolishAssistant, Level: snapshot.VoicePolishLevel,
+		Transcription: voiceTranscriptionEngine(v),
+		OpenAIKeySet:  err == nil && openai.Key != "",
+		Polish:        snapshot.VoicePolish, Assistant: snapshot.VoicePolishAssistant, Level: snapshot.VoicePolishLevel,
 		Vocabulary: snapshot.VoiceVocabulary, Projects: snapshot.VoiceVocabularyProjects,
 		PolishAssistants: voicePolishAvailable(),
 		Builtin:          append([]string{}, whisper.AlwaysExpected...),

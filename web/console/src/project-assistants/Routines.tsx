@@ -468,7 +468,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
             {editorHistory?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load(editing.id,editorHistory.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
           </details>}
           {editError&&<p role="alert">{editError} ({error})</p>}
-          {held&&held.action!=="hook"&&!journalBlocked&&<div className="pa-routine-confirm" role="alert"><p>{w.routineHeld}</p><div><button type="button" disabled={busy||!authority} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div></div>}
+          {held&&held.action!=="hook"&&!busy&&!journalBlocked&&<div className="pa-routine-confirm" role="alert"><p>{w.routineHeld}</p><div><button type="button" disabled={busy||!authority} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div></div>}
           {editing&&confirm===editing.id&&<div className="pa-routine-confirm" role="alert"><p>{w.routineDeleteConfirm}</p><div><button type="button" onClick={()=>setConfirm(null)}>{w.cancel}</button><button type="button" className="pa-routine-danger" disabled={!writable||busy} onClick={()=>action(editing,"delete")}>{w.routineConfirmDelete}</button></div></div>}
           <footer className="pa-routine-footer">
             {editing&&<>
@@ -476,7 +476,10 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
               <button type="button" className="pa-routine-icon-button" aria-label={started?tr("testStarted"):w.routineTest} title={started?tr("testStarted"):w.routineTest} disabled={!writable||busy||started} onClick={()=>action(editing,"test")}>{started?<CheckIcon/>:<PlayIcon/>}</button>
             </>}
             <span className="pa-routine-spacer"/>
-            <button type="submit" disabled={!writable||busy||!editorValid}>{busy?w.routineSaving:editing?w.save:tr("createRoutine")} <kbd aria-hidden="true">{macKeyboard()?"⌘S":"Ctrl+S"}</kbd></button>
+            {/* As Codync's routine editor: a spinner while saving, and no shortcut
+                hint then. An uncertain earlier save must be confirmed first, so the
+                button is disabled rather than silently doing nothing. */}
+            <button type="submit" className="pa-routine-save" aria-busy={busy||undefined} disabled={!writable||busy||!editorValid||!!held}>{busy&&<span className="pa-send-spinner" aria-hidden="true"/>}{busy?w.routineSaving:editing?w.save:tr("createRoutine")}{!busy&&<kbd aria-hidden="true">{macKeyboard()?"⌘S":"Ctrl+S"}</kbd>}</button>
           </footer>
         </form>
       </dialog>}
@@ -491,7 +494,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
       {page?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load("",page.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
       {journalBlocked&&<p role="alert">{w.routineJournalUnreadable}</p>}
       {held?.action==="hook"&&!hookID&&<button type="button" onClick={()=>setHookID(held.request.id)}>{tr("retryHook")}</button>}
-      {editing===undefined&&held&&held.action!=="hook"&&!journalBlocked&&<div role="alert"><p>{w.routineHeld}</p><button type="button" disabled={busy||!authority||!supported} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div>}
+      {editing===undefined&&held&&held.action!=="hook"&&!busy&&!journalBlocked&&<div role="alert"><p>{w.routineHeld}</p><button type="button" disabled={busy||!authority||!supported} onClick={()=>void run(held,true)}>{w.routineReplay}</button></div>}
     </>}
     {editing===undefined&&editError&&<p role="alert">{editError} ({error}) <button type="button" disabled={busy} onClick={()=>void refresh()}>{w.retry}</button></p>}
   </section>

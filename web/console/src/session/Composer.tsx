@@ -663,6 +663,7 @@ export function Composer({
         voiceChime.current = primeChime()
       },
       transcribe: remote?.transcribe,
+      pickEngine: !remote,
       source: voiceSource,
       missingWhisper: (failure) => setVoiceInstall({ reason: failure.reason, help: false }),
       changed: setVoice,

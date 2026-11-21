@@ -973,6 +973,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/settings/default-models",
 		body2: `{"codex_default_model":"gpt-6"}`,
 	}, {
+		word:    "voice-live-transcription",
+		body:    map[string]any{"type": "voice-live-transcription", "session": machine, "request": "req-transcription"},
+		session: machine, name: "action:req-transcription",
+		method: "POST", path: "/v1/voice/live-transcription",
+	}, {
 		word:    "voice-settings",
 		body:    map[string]any{"type": "voice-settings", "session": machine, "request": "req-voice"},
 		session: machine, name: "read:req-voice",
@@ -980,10 +985,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "voice-settings-update",
 		body: map[string]any{"type": "voice-settings-update", "session": machine, "request": "req-voice-write",
-			"changes": map[string]any{"voice_polish": true, "voice_vocabulary": []any{"Tailscale"}}},
+			"changes": map[string]any{"voice_polish": true, "voice_transcription": "openai_realtime", "voice_vocabulary": []any{"Tailscale"}}},
 		session: machine, name: "action:req-voice-write",
 		method: "POST", path: "/v1/settings/voice",
-		body2: `{"voice_polish":true,"voice_vocabulary":["Tailscale"]}`,
+		body2: `{"voice_polish":true,"voice_transcription":"openai_realtime","voice_vocabulary":["Tailscale"]}`,
 	}, {
 		word:    "copilot-settings",
 		body:    map[string]any{"type": "copilot-settings", "session": machine, "request": "req-copilot"},

@@ -428,6 +428,9 @@ export const CARRIED = {
   "verification.note": "POST /v1/verifications/{id}/notes",
   video: "GET /v1/sessions/{id}/documents/{scope}/{path}.mp4?offset=&revision=",
   voice: "POST /v1/voice",
+  // Opt-in message dictation: the settings machine mints a short-lived OpenAI
+  // grant for transcription.
+  "voice-live-transcription": "POST /v1/voice/live-transcription",
   "voice-settings": "GET /v1/settings/voice",
   "voice-settings-update": "POST /v1/settings/voice",
   "work-gate-settings": "GET /v1/settings/work-gates",

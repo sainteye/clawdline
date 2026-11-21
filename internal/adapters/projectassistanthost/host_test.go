@@ -733,12 +733,14 @@ func TestHostReaderMetadataUsesCurrentPrincipalInDisabledHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixtureReceive(t, f.p.sent)
+	fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "A finished reply"}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
 	if err := f.h.Disable(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := f.h.Service()
 	ctx := context.WithValue(context.Background(), readerContextKey{}, "authenticated-reader")
-	cursor, err := s.MarkRead(ctx, pa.Command{Key: b.Key, Operation: pa.ReadOperation, IdempotencyKey: "read"}, pa.ReadCursor{Key: b.Key, ConversationID: b.ConversationID, ReaderID: "forged-reader", MessageSeq: 1})
+	cursor, err := s.MarkRead(ctx, pa.Command{Key: b.Key, Operation: pa.ReadOperation, IdempotencyKey: "read"}, pa.ReadCursor{Key: b.Key, ConversationID: b.ConversationID, ReaderID: "forged-reader", MessageSeq: 2})
 	if err != nil || cursor.ReaderID != "authenticated-reader" {
 		t.Fatal(cursor, err)
 	}

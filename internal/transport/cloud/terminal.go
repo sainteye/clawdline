@@ -121,6 +121,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		r.Used = int64(len(l.terminalLists))
 	case capacity.CloudTerminalRefusals:
 		r.Used = int64(len(l.terminalRefusals))
+	case capacity.CloudTerminalDirectICERecovery:
+		r.Note = "per-peer ICE timeout; elapsed recovery time is not reported"
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline, capacity.CloudRosterShortReadAttempts,
 		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire,
 		capacity.CloudTerminalFrameHeartbeat, capacity.CloudTerminalUnconfirmed,

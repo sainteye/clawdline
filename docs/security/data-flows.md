@@ -21,6 +21,17 @@ defaults, not DNS observations or a list of every possible configured endpoint.
 | Release check/download, including Cloud off | Selected channel/version; platform/architecture used for artifact selection | GitHub release manifest/signature GETs; beta discovery uses `https://api.github.com/repos/sainteye/clawdline/releases?per_page=30`; archives use URLs in the signed manifest | Version in URL where selected; artifact filename/URL can reveal OS/architecture. Redirect/CDN destinations and network address visible to recipients. Manifest GET does not upload a conversation or a current-version body | Local release/update state and downloaded artifacts are separate from conversation storage; GitHub/CDN retention not verified |
 | Direct connection negotiation | ICE candidates and connection descriptions | STUN defaults `stun:stun.cloudflare.com:3478`, `stun:stun.l.google.com:19302`; direct peer is paired browser/machine. Cloud still carries signalling | STUN services learn the requesting network address. Peer negotiation can disclose candidate addresses. Content encryption does not hide network topology from those participants | No STUN log retention, geographic destination or live ICE traffic measured |
 
+## OpenAI Realtime dictation
+
+When a person selects OpenAI Realtime transcription in Voice input settings,
+the browser streams microphone audio directly to OpenAI over WebRTC. The
+settings machine issues a short-lived transcription grant after checking Send
+permission and the selected engine. The long-lived OpenAI key stays on that
+machine. The browser displays partial text locally and puts the final text in
+the draft, unless the person explicitly uses Send. A failed stream keeps the
+current audio in browser memory for an explicit Whisper retry. This path has
+no provider-side retention measurement.
+
 ## Public source anchors
 
 These links pin the reviewed production source. New tests are linked in the

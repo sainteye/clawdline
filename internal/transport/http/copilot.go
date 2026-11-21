@@ -244,9 +244,13 @@ func (s *Server) copilotSessionRoute(w http.ResponseWriter, r *http.Request) {
 // mintCopilotSecret asks OpenAI for one client secret. The detail it returns
 // is OpenAI's own message, which never contains the key.
 func mintCopilotSecret(ctx context.Context, key, model string) (string, int64, int, string) {
+	return mintRealtimeSecret(ctx, key, map[string]any{"type": "realtime", "model": model})
+}
+
+func mintRealtimeSecret(ctx context.Context, key string, session map[string]any) (string, int64, int, string) {
 	body, _ := json.Marshal(map[string]any{
 		"expires_after": map[string]any{"anchor": "created_at", "seconds": copilot.ClientSecretSeconds},
-		"session":       map[string]any{"type": "realtime", "model": model},
+		"session":       session,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copilotOpenAI+"/v1/realtime/client_secrets", bytes.NewReader(body))
 	if err != nil {

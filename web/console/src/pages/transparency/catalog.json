@@ -3109,6 +3109,50 @@
       ]
     },
     {
+      "id": "voice-realtime-transcription",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex",
+        "antigravity",
+        "grok"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "internal/transport/http/voice_live.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/session/live-dictation.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/legacy/voice-bridge.ts",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/pages/settings/window/VoiceSettingsCards.tsx",
+          "line": 1
+        }
+      ],
+      "original": [
+        "session.type = \"transcription\"",
+        "session.audio.input.transcription.model = \"gpt-live-transcribe\"",
+        "session.audio.input.turn_detection = null"
+      ],
+      "locations": [
+        "Settings → Voice input",
+        "Session and Bot message composers",
+        "OpenAI Realtime API"
+      ]
+    },
+    {
       "id": "voice-polish",
       "scope": "conditional",
       "agents": [
@@ -5133,7 +5177,7 @@
     "internal/adapters/memory/memory.go": "c16a9690c9b24a51e4ff59d538f2f6f06267c880ce422934c3a8251cb347d6a0",
     "internal/adapters/nextconfig/browser_mode.go": "042c8a8abfebcfc6537d2720023443e98a2088032502bb119d4e5e5988f3e90e",
     "internal/adapters/nextconfig/browser_policy.go": "62039a6f023460a6ffa71ee7ee1d548694c8fa74e7327e4971c7ea2eab0ff77c",
-    "internal/adapters/nextconfig/nextconfig.go": "b2daccf94c2033ecf6a13a4af929cb2f75b1383476a89e617ecc7f2954a7fb82",
+    "internal/adapters/nextconfig/nextconfig.go": "215bd12c8d44ebdef64060779682d42f58b49c9741016efc92944c23792a70ea",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
@@ -5320,6 +5364,7 @@
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
     "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
     "internal/transport/http/start.go": "3b143ea3db5f10535b34667c989b64be038b3ba6453c8e385ecca927269472c2",
+    "internal/transport/http/voice_live.go": "3aa560225c74eb0ad4438ef718794d3e7e02ad4a7376ef49e8c670cd6bdb6bb9",
     "internal/transport/http/voice_polish.go": "b8c10d3898ee1d04ed815468011fb43d57efbc1f7488143982a8bc6f02f753cd",
     "internal/transport/http/work_v2.go": "6b7722188e33c06f1230150707d5d691fca7c17fc369d2f23bba3c28b0d8a623",
     "internal/transport/http/work_v2_brief.go": "44ff50bb8f55e1fba32605cb10f887be4860aebfad5856e58b4222e562e9a3e3",
@@ -5339,11 +5384,13 @@
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
     "web/console/src/cloud/project-assistants.ts": "8fd8be7e71f132d71f1a6c20b091b57b9e43c53053e258ccd4f59f074ee7d8f7",
-    "web/console/src/cloud/relay-writer.ts": "d72f7e625f9ae501a006a34b4a6993880c295fe506288ab91294d16d5af393a6",
+    "web/console/src/cloud/relay-writer.ts": "b7f8bf4a72ff6c297927ba09ca1c36113c4a6a3a279019026727bc46ce80a84e",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/next-strings.ts": "75fc2c9f0fef1aeb92f26cde942e9efa369ff5095cc61b1630dc67cde52da489",
+    "web/console/src/legacy/voice-bridge.ts": "eb4e11e00dbc38ec8a7bbf4a6c70079d575cfa1218aca23b739b75000b50b9a0",
+    "web/console/src/next-strings.ts": "48cbb86b4988241a5554bb822ea76da834d96649b0e6a2251f101d150f190c1c",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
+    "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
     "web/console/src/project-assistants/Chat.tsx": "a8e55a0a668df25e1f3c72be074d9df4bd0f13a934dd3e883588cba274b70873",
@@ -5357,7 +5404,7 @@
     "web/console/src/project-assistants/OutputLibrary.tsx": "aa6c0daa92d485861196ffcb3bba4753c363aac2a939c3fa7569c9fc979fefe2",
     "web/console/src/project-assistants/OutputViewer.tsx": "175f1cd60c5f2d197f627a5fe3d2cc381069ec4b6290cd328e51330d2e11cb4a",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
-    "web/console/src/project-assistants/Routines.tsx": "e16787fcab4e92f800b27c81a5194296ea9dcc7c44e1b2b113cfc69d201398c5",
+    "web/console/src/project-assistants/Routines.tsx": "da68e4533aa6125e34b1a950d7d569a4e24e9bbff7859502a92a90ab72dd4e92",
     "web/console/src/project-assistants/dev-server-observation.ts": "994d3629c3040b9f3cf64acf3b553935530c431fafb87f8f45c3cd8d1b8e6f25",
     "web/console/src/project-assistants/exchanges.ts": "ad012dd5931dcb75149736a2b2b4c128e56ee4cf0e4eb0ff71fde30e7fdfb47b",
     "web/console/src/project-assistants/group-editor-order.ts": "bca022ab6e2aa9bb7dbb995f9d08b987829923db9730ff0ebe19d806d58000c3",
@@ -5383,9 +5430,10 @@
     "web/console/src/realtime/copilot-speech.ts": "2558a06d674f7158bea43dfc0c051dff1c4b0d9c01fe9054da174202d042bb01",
     "web/console/src/realtime/copilot-tools.ts": "002fe5b73c7fde1fc6476cbc1e8eb4f0471125513ea57e5f7e767c93f1e6ddc5",
     "web/console/src/realtime/realtime-copilot.ts": "c0e8b9dd98d29238863dde62cfd0d3c3333ea1e0373d0f63404de16b3966d72b",
-    "web/console/src/session/Composer.tsx": "20285a8ce50481f403995d3342847ea4df771371c85cceab806403a13fa23b11",
+    "web/console/src/session/Composer.tsx": "f64367d77171c9982198d4cf31e27b6ecbf6bc4001aea63d889521e3590e5c12",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
+    "web/console/src/session/live-dictation.ts": "e6beeae0cd000363ffece62c15802dadd9c94c87d2984211bc62b29077f296e8",
     "web/console/src/session/pending.ts": "7d1b8eb14bf21dc90a6032ad134a2d7621a4338e066f7499459b17c27cb50cab",
     "web/console/src/session/persist.ts": "5f5a34d27c3c5639d30ae611200bd9dcd091d44ac341cf6dc3b6873227e0fb21",
     "web/console/src/session/rotation.ts": "c9e4972de9837446e6952b174adb4cd02388f1f0a8532330126bb50199523eec",
@@ -5398,7 +5446,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "c5f92d189d41e2a8a79e3726b65592df87bccba343fd323e58c07dbb745d7602",
-    "zh-Hant": "36b55ad905cceb13fbacca580b56ab6737ec5244f3340d488e61791dbe331eae"
+    "en": "e0b2bc33ad0ae504373bcea454a1a32fecdb8560288a686b7fe43f5fa1dbbcb1",
+    "zh-Hant": "242c859691efcf680692a2f77f15c7fe937ded7adaf385cc91bf8449f71d384c"
   }
 }
