@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
@@ -255,7 +256,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 			choice, _ := values.String("terminal")
 			return projects.ParseTerminalChoice(choice)
 		},
-		Launcher: newLauncher(),
+		Launcher: s.personLauncher(),
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
@@ -722,4 +723,31 @@ func newLauncher() terminal.Launcher {
 	l := terminal.NewLauncher()
 	l.Lang = owned.Machine{}.Lang
 	return l
+}
+
+// personLauncher is newLauncher with this daemon's warm shells: a Session a
+// person starts may take a login shell already waiting in its directory. The
+// broker's launcher stays cold — a child's worktree is never started in twice.
+func (s *Server) personLauncher() terminal.Launcher {
+	l := newLauncher()
+	l.Warm = s.warmShells()
+	return l
+}
+
+var warmShellsByServer sync.Map // *Server -> *terminal.WarmShells
+
+// warmShells is this daemon's one record of warm shells, under the
+// `warm_shells` setting.
+func (s *Server) warmShells() *terminal.WarmShells {
+	if w, ok := warmShellsByServer.Load(s); ok {
+		return w.(*terminal.WarmShells)
+	}
+	w := terminal.NewWarmShells()
+	w.Lang = owned.Machine{}.Lang
+	w.Enabled = func() bool {
+		values, err := s.settingsFile().Read()
+		return err != nil || values.WarmShells()
+	}
+	got, _ := warmShellsByServer.LoadOrStore(s, w)
+	return got.(*terminal.WarmShells)
 }

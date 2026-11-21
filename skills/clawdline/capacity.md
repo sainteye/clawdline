@@ -867,6 +867,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `terminal.paste_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `terminal.streams` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `terminal.viewers` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `terminal.warm_shell_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `terminal.warm_shells` | 3 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `tools.project_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `tools.projects` | 100 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `tools.request_bytes` | 131072 | `bytes` | `refuse` | `diagnostics, sender` | — |

@@ -4,6 +4,23 @@ package capacity
 func terminalBounds() []Entry {
 	return []Entry{
 		{
+			// Project directories that keep a login shell ready for the next
+			// Session started there (terminal/warm.go). Past it the directory
+			// started in longest ago loses its shell; a start there is cold.
+			Name: "terminal.warm_shells", Class: Observation, Unit: Rows,
+			Limit: 3, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/terminal.MaxWarmShells"},
+		},
+		{
+			// How long a ready shell is kept before it is closed and started
+			// again, so edits to rc files reach the next Session.
+			Name: "terminal.warm_shell_seconds", Class: Observation, Unit: Seconds,
+			Limit: 30 * 60, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/terminal.WarmShellSecondsLimit"},
+		},
+		{
 			// Terminals open on this machine's own tmux server (limits N59).
 			// Each is a person's running shell, so none is let go at the
 			// limit: the next open is refused with terminals_full, and only

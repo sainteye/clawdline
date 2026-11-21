@@ -16798,6 +16798,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "terminal.warm_shell_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 1800,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/terminal.WarmShellSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "terminal.warm_shells",
+    "Class": "observation",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/terminal.MaxWarmShells"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "tools.project_bytes",
     "Class": "buffer",
     "Unit": "bytes",

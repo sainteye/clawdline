@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13881,
-  "riskKeys": 5920,
-  "nonRiskCount": 7961,
+  "englishContentKeys": 13890,
+  "riskKeys": 5922,
+  "nonRiskCount": 7968,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 711,
+      "count": 714,
       "sources": [
         null
       ],
@@ -1220,6 +1220,9 @@
         "capacityRow.terminal.paste_bytes.what",
         "capacityRow.terminal.streams.what",
         "capacityRow.terminal.viewers.what",
+        "capacityRow.terminal.warm_shell_seconds.what",
+        "capacityRow.terminal.warm_shells.full",
+        "capacityRow.terminal.warm_shells.what",
         "capacityRow.tools.request_bytes.what",
         "capacityRow.tools.request_key_bytes.what",
         "capacityRow.update.fetch_timeout_seconds.full",
@@ -8966,7 +8969,7 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 28,
+      "count": 32,
       "sources": [
         null
       ],
@@ -8997,6 +9000,10 @@
         "workflowSettings.terminalOption_auto",
         "workflowSettings.terminalOption_iterm",
         "workflowSettings.terminalOption_iterm_native",
+        "workflowSettings.warm_shellsOff",
+        "workflowSettings.warm_shellsOn",
+        "workflowSettings.warm_shellsTitle",
+        "workflowSettings.warm_shellsUpdateRequired",
         "workflowSettings.whenOff",
         "workflowSettings.whenOn"
       ]

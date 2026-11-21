@@ -81,6 +81,14 @@ func (v Values) SessionAutoDiscovery() bool {
 	return !set || on
 }
 
+// WarmShells keeps a login shell ready in recently started Project
+// directories so a new tmux Session does not wait for rc files. On unless
+// explicitly turned off.
+func (v Values) WarmShells() bool {
+	on, set := v.Bool("warm_shells")
+	return !set || on
+}
+
 // GeminiStepExplanations injects step-by-step and language guidelines for Gemini unless explicitly disabled.
 func (v Values) GeminiStepExplanations() bool {
 	on, set := v.Bool("gemini_step_explanations")
@@ -650,6 +658,7 @@ var Settables = []Settable{
 	// (docs/interface.md "Turning iTerm2 scanning off").
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
+	{Name: "warm_shells", Kind: "bool"},
 	{Name: "workflow_skills_enabled", Kind: "bool"},
 	{Name: "workflow_profile", Kind: "string", Choices: []string{"clawdline", "superpowers", "poteto"}, Refusal: "invalid_workflow_profile", Because: "clawdline, superpowers or poteto"},
 	{Name: "codegraph_enabled", Kind: "bool"},

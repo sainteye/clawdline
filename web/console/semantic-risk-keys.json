@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13881,
+  "englishKeys": 13890,
   "counts": {
-    "negation": 3572,
-    "state": 2349,
+    "negation": 3573,
+    "state": 2350,
     "permission": 837,
     "deletion": 320,
     "uncertainty": 553
   },
-  "unionCount": 5920,
+  "unionCount": 5922,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3575,6 +3575,7 @@
       "workflowSettings.session_todo_auto_takeScope",
       "workflowSettings.terminalKeepIntegration",
       "workflowSettings.terminalOption_tmux",
+      "workflowSettings.warm_shellsScope",
       "worktree.inventoryNotObserved",
       "worktree.noBranch",
       "worktree.noWorktrees",
@@ -4341,6 +4342,7 @@
       "capacityRow.terminal.paste_bytes.full",
       "capacityRow.terminal.streams.full",
       "capacityRow.terminal.viewers.full",
+      "capacityRow.terminal.warm_shell_seconds.full",
       "capacityRow.tools.project_bytes.full",
       "capacityRow.tools.project_bytes.what",
       "capacityRow.tools.projects.full",
@@ -9003,6 +9005,7 @@
     "capacityRow.terminal.paste_bytes.full",
     "capacityRow.terminal.streams.full",
     "capacityRow.terminal.viewers.full",
+    "capacityRow.terminal.warm_shell_seconds.full",
     "capacityRow.tools.project_bytes.full",
     "capacityRow.tools.project_bytes.what",
     "capacityRow.tools.projects.full",
@@ -13555,6 +13558,7 @@
     "workflowSettings.terminalOption_tmux",
     "workflowSettings.terminalTitle",
     "workflowSettings.terminalUpdateRequired",
+    "workflowSettings.warm_shellsScope",
     "worktree.cleanupEligible",
     "worktree.cleanupUnavailable",
     "worktree.countUnknown",

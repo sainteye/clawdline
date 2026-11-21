@@ -1154,3 +1154,10 @@ A message sent to a just-launched tmux Session waits briefly for its assistant.
 The English and Taiwan Traditional Chinese explanations still describe the
 language, role, workflow, Project memory and integration inputs at launch.
 The reviewed start-route receipt follows the record of launched panes.
+
+A Session started in tmux may run in a login shell Clawdline started earlier
+in the same Project directory (the `warm_shells` Workflow setting, on unless
+turned off). The shell reads the same startup files, and the launch line it
+is given is unchanged, so the English and Taiwan Traditional Chinese
+launch-context explanations still describe every input at launch. The
+reviewed start-route and settings receipts follow the new switch.

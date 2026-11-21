@@ -38,6 +38,10 @@ type Launcher struct {
 	// Nil is this daemon's own LANG when it is UTF-8, and a UTF-8 locale every
 	// machine of its kind has otherwise.
 	Lang func(context.Context) string
+	// Warm, when set, lends a new window a login shell started ahead of time
+	// in the same directory, and starts the next one after (warm.go). Nil
+	// opens every pane cold, as before.
+	Warm *WarmShells
 }
 
 var _ ports.Launcher = Launcher{}
@@ -147,26 +151,58 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if err != nil {
 		return "", err
 	}
-	args := append(append([]string{}, create...), l.paneLocale(ctx)...)
-	if cwd != "" {
-		args = append(args, "-c", cwd)
-	}
 	if err := bin.PrepareSocket(); err != nil {
 		return "", Failure{Message: err.Error()}
+	}
+	// A bare new-window goes to the session tmux finds most recently active.
+	// Once the warm shells' own session exists it must never be that session,
+	// so the choice is made here without it (homeSession); with no warm
+	// session the call is exactly what it was.
+	newWindow := len(create) > 0 && create[0] == "new-window"
+	id := ""
+	if newWindow {
+		target, ok := homeSession(ctx, bin)
+		switch {
+		case !ok:
+			create = []string{"new-session", "-d", "-s", startedSessionName, "-P", "-F", "#{pane_id}"}
+		case target != "":
+			if warm, took := l.Warm.take(ctx, bin, cwd, target); took {
+				id = warm
+			}
+			create = append(append([]string{}, create...), "-t", target+":")
+		}
+		if l.Warm != nil {
+			defer func() {
+				go func() {
+					// After the assistant has had its moment: a second shell
+					// reading rc files beside it would slow the start it follows.
+					time.Sleep(warmReplenishDelay)
+					ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+					defer cancel()
+					l.Warm.Replenish(ctx, bin, cwd)
+				}()
+			}()
+		}
 	}
 	if err := clearTmuxAssistantIdentity(ctx, bin); err != nil {
 		return "", Failure{Message: err.Error()}
 	}
-	out, said, err := runTmuxSaid(ctx, bin, "", args...)
-	if err != nil {
-		if err.Error() == "" {
-			return "", Failure{Message: refused}
+	if id == "" {
+		args := append(append([]string{}, create...), l.paneLocale(ctx)...)
+		if cwd != "" {
+			args = append(args, "-c", cwd)
 		}
-		return "", Failure{Message: err.Error()}
-	}
-	id, err := newPaneID(out, said)
-	if err != nil {
-		return "", Failure{Message: err.Error()}
+		out, said, err := runTmuxSaid(ctx, bin, "", args...)
+		if err != nil {
+			if err.Error() == "" {
+				return "", Failure{Message: refused}
+			}
+			return "", Failure{Message: err.Error()}
+		}
+		id, err = newPaneID(out, said)
+		if err != nil {
+			return "", Failure{Message: err.Error()}
+		}
 	}
 	if _, err := runTmux(ctx, bin, "set-option", "-p", "-t", id, "@clawdline_managed", "1"); err != nil {
 		l.discard(ctx, bin, id)

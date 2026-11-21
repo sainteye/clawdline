@@ -13881,5 +13881,14 @@
   "capacityRow.sessions.launch_hold_rows.full": "最早記下的啟動會被忘掉；如果那個 pane 還是一般 shell，送過去的訊息會被拒絕。",
   "capacityRow.sessions.launch_hold_rows.what": "限制同時記住幾個剛開啟的 Session，讓太早送出的訊息可以等助理啟動。",
   "capacityRow.sessions.launch_hold_seconds.full": "超過這個時間，送給仍是一般 shell 的 pane 的訊息會被拒絕，不會打進 shell。",
-  "capacityRow.sessions.launch_hold_seconds.what": "限制送給剛開啟 Session 的訊息最多等多久，讓 Claude 或 Codex 先啟動。"
+  "capacityRow.sessions.launch_hold_seconds.what": "限制送給剛開啟 Session 的訊息最多等多久，讓 Claude 或 Codex 先啟動。",
+  "workflowSettings.warm_shellsOff": "每個新 Session 都開新的殼層，等你的殼層設定檔載入完才啟動助理，跟以前一樣。",
+  "workflowSettings.warm_shellsOn": "Clawdline 會在你最近開過 Session 的三個專案資料夾，各準備好一個殼層。在那裡新開 Session 時，不用再等殼層設定檔載入。殼層每 30 分鐘重開一次，所以改過的設定檔也會套用。",
+  "workflowSettings.warm_shellsScope": "適用於你在這台機器上新開的 tmux Session。沒有準備好殼層的資料夾，照原本的方式開。關閉時會關掉已經準備好的殼層。",
+  "workflowSettings.warm_shellsTitle": "為新 Session 預先開好殼層",
+  "workflowSettings.warm_shellsUpdateRequired": "請先更新這台機器上的 Clawdline 才能使用這個設定。",
+  "capacityRow.terminal.warm_shells.what": "限制最多幾個專案資料夾預先開好殼層。",
+  "capacityRow.terminal.warm_shells.full": "最久沒開過 Session 的資料夾會先失去預備殼層；在那裡新開 Session 時會開新的殼層。",
+  "capacityRow.terminal.warm_shell_seconds.what": "限制預備殼層最多保留多久就重開。",
+  "capacityRow.terminal.warm_shell_seconds.full": "殼層會關掉並重新開一個，讓殼層設定檔的修改生效。"
 }

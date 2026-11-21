@@ -11791,6 +11791,12 @@ export interface SettingsSnapshot {
   voice_vocabulary_projects: boolean | null
 
   /**
+   * Keep a login shell ready in recently started Project directories; absent means
+   * on.
+   */
+  warm_shells: boolean | null
+
+  /**
    * The bar's width in points.
    */
   width: number | null
@@ -15494,6 +15500,12 @@ export interface WorkflowSettingsRequest {
    * Terminal preference for new Sessions on the selected machine.
    */
   terminal: string | null
+
+  /**
+   * Whether a login shell is kept ready in recently started Project directories for
+   * new tmux Sessions.
+   */
+  warm_shells: boolean | null
 }
 
 export interface WorkflowSettingsSnapshot {
@@ -15535,6 +15547,13 @@ export interface WorkflowSettingsSnapshot {
    * Terminal preference for new Sessions. Older daemons omit this field.
    */
   terminal: string | null
+
+  /**
+   * Whether a login shell is kept ready in recently started Project directories so
+   * a new tmux Session does not wait for the person's shell startup files. True by
+   * default; a daemon before this setting omits the field.
+   */
+  warm_shells: boolean | null
 }
 
 export interface WorkflowStage {
