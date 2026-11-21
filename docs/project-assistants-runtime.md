@@ -142,7 +142,7 @@ measurement wiring, translated notices and its selected integration values.
 | --- | ---: | --- |
 | RuntimeLimits.MaxBots | 64 | Refuse a new active actor before durable acceptance; idle actors are reclaimed. This is not the saved Bot count. |
 | RuntimeLimits.MaxProcesses | 4 | Keep accepted turns durably queued; wait cancellably. |
-| Ordinary chat and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Scheduled routines time their execution after acquiring a process slot. |
+| Ordinary chat, follow-ups in the main conversation, and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Isolated routines use their configured timeout after acquiring a process slot. |
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
 | Limits.RPCPending | 32 | Bound concurrent owned HTTP tool requests. Native protocol RPCs do not use this pool. |
 | Native permission requests | No fixed local count ceiling | Each offer is scoped to its live turn and must be resolved under its permission policy. |

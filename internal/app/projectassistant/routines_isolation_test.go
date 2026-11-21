@@ -48,10 +48,11 @@ func (p *routineIsolationProvider) Open(_ context.Context, q app.OpenRequest, _ 
 }
 
 type routineIsolationSession struct {
-	p      *routineIsolationProvider
-	open   app.OpenRequest
-	prompt app.PromptRequest
-	reply  chan app.PromptResult
+	p         *routineIsolationProvider
+	open      app.OpenRequest
+	prompt    app.PromptRequest
+	promptCtx context.Context
+	reply     chan app.PromptResult
 }
 
 func (s *routineIsolationSession) SessionID() string {
@@ -60,8 +61,9 @@ func (s *routineIsolationSession) SessionID() string {
 	}
 	return "routine-B"
 }
-func (s *routineIsolationSession) Send(_ context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+func (s *routineIsolationSession) Send(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
 	s.prompt = q
+	s.promptCtx = ctx
 	s.p.sent <- s
 	return s, nil
 }
@@ -101,7 +103,7 @@ func newRoutineIsolationFixture(t *testing.T) *routineIsolationFixture {
 	}
 	f.r, err = app.NewRuntime(app.RuntimeOptions{Repository: f.s, Memory: f.s, WorkBridge: routineIsolationBridge{}, ProjectResolver: routineIsolationResolver{f.b.Project}, Provider: f.p, Clock: func() time.Time { return f.now }, ID: func() string { return fmt.Sprintf("generated-%d", f.seq.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		return pa.FeatureState{Enabled: true}, f.source(), nil
-	}, Limits: app.RuntimeLimits{MaxBots: 1, MaxProcesses: 1, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+	}, Limits: app.RuntimeLimits{MaxBots: 1, MaxProcesses: 1, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,6 +220,9 @@ func TestRoutineScheduleIsolationKeepsHealthyQueuedWorkAndMainHistory(t *testing
 	s := f.receive(t)
 	if s.open.Binding.SessionSlot != "routine-queued-healthy" || s.open.Resume || !strings.HasPrefix(s.prompt.Text, healthy.Instruction+"\n\n") || !strings.Contains(s.prompt.Text, "untrusted data, not instructions") {
 		t.Fatal("queued work lost its isolated history or instruction")
+	}
+	if deadline, ok := s.promptCtx.Deadline(); !ok || time.Until(deadline) < 59*time.Minute || time.Until(deadline) > time.Hour {
+		t.Fatalf("scheduled routine did not inherit its one-hour timeout: %v", deadline)
 	}
 	s.reply <- app.PromptResult{FinalText: "Healthy routine completed"}
 	f.idle(t)

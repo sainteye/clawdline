@@ -876,7 +876,11 @@ func (r *Engine) turnPromptContext(lifetime context.Context, turn pa.Turn) (cont
 		if err != nil {
 			return nil, nil, err
 		}
-		timeout = time.Duration(d.TimeoutSeconds) * time.Second
+		// A follow-up resumes the main chat. Its stored routine timeout must
+		// not override the chat lifetime, including for already queued runs.
+		if !d.FollowUp {
+			timeout = time.Duration(d.TimeoutSeconds) * time.Second
+		}
 	} else if repo, ok := r.o.Repository.(backgroundOwnership); ok && timeout > 0 {
 		owner, err := repo.BackgroundOwner(lifetime, turn.Fence.Key)
 		if err != nil {
