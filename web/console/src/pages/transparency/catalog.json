@@ -5242,7 +5242,7 @@
     "internal/adapters/projectassistantstore/memory_index.go": "ac1dbeaa7c89b494d4327d7025b04842503bbfffcf2d0a3e2d84802e39f42b41",
     "internal/adapters/projectassistantstore/memory_view.go": "4898a2eb71ac3e88ce9c63c3362cbed7be04ae132a3563cc95d4af29422a5865",
     "internal/adapters/projectassistantstore/outputs.go": "805a68092026da563c980a25d88341b65ff0b55de3a22fc9ddef4458d5f09d1a",
-    "internal/adapters/projectassistantstore/read_view_query.go": "d3c256f93ded100ae929519122dcfb0d37492e70e8db7d217dfc23b90183d109",
+    "internal/adapters/projectassistantstore/read_view_query.go": "e3eac30bfc7baf1d57dc572117de2904b69405b81a00f15815d985d59b65cc64",
     "internal/adapters/projectassistantstore/roster.go": "c0cc1a1b45caa96b900190b4ade0fbcecf1ed481fc1a8b0b6ca5fe9953c2b353",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
     "internal/adapters/projectassistantstore/schema.go": "f920454f4be989bdfdf6aaee2c0efeaee347267624dc780496d8761ca230272e",

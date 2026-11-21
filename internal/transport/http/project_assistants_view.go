@@ -2,7 +2,9 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -16,6 +18,23 @@ import (
 type paEncodedReadView struct {
 	body   []byte
 	result app.ReadViewResult
+}
+
+// A failed observation can be retried by the existing read-recovery loop.
+// Already-classified permission, cursor and other failures keep their code.
+func paReadViewFailure(err error, stage string) error {
+	var typed *pa.Failure
+	if errors.As(err, &typed) {
+		return err
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return paHTTPFailure(pa.Offline, stage+"_deadline")
+	case errors.Is(err, context.Canceled):
+		return paHTTPFailure(pa.Offline, stage+"_cancelled")
+	default:
+		return err
+	}
 }
 
 func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any, error) {
@@ -54,7 +73,7 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	}
 	result, err := h.options.Service.View(r.Context(), request)
 	if err != nil {
-		return nil, err
+		return nil, paReadViewFailure(err, "view_query")
 	}
 	head := &result.View.Head
 	if h.options.NativeContext != nil && head.Conversation.ActiveTurnID != "" &&

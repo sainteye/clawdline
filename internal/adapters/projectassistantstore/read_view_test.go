@@ -819,3 +819,79 @@ func TestReadViewKeepsDistinctTraceStepsAndLatestStepContent(t *testing.T) {
 		t.Fatalf("trace contents: %+v", texts)
 	}
 }
+
+func TestReadViewTraceCountSeparatesRoomAndChecksSupersededChunks(t *testing.T) {
+	exported, old, current := viewFixture(t, 3, 0, false)
+	roomTurn := exported.Turns[0]
+	roomTurn.ID, roomTurn.MessageID, roomTurn.IdempotencyKey = "room-turn", exported.Messages[1].ID, "room-send"
+	roomTurn.Origin = pa.HostNoticeOrigin
+	roomTurn.Room = &pa.RoomTicket{
+		Group:  pa.BotKey{MachineID: exported.Bot.Key.MachineID, BotID: "group"},
+		Member: exported.Bot.Key, Epoch: 1, JoinedRevision: 1,
+	}
+	exported.Turns = append(exported.Turns, roomTurn)
+	exported.Messages[1].TurnID, exported.Messages[1].Kind = roomTurn.ID, pa.NoticeMessage
+	exported.Events[1].Message = &exported.Messages[1]
+	secondTurn := exported.Turns[0]
+	secondTurn.ID, secondTurn.MessageID, secondTurn.IdempotencyKey = "t2", exported.Messages[2].ID, "second-send"
+	exported.Turns = append(exported.Turns, secondTurn)
+	exported.Messages[2].TurnID, exported.Messages[2].Kind = secondTurn.ID, pa.UserMessage
+	exported.Events[2].Message = &exported.Messages[2]
+	for i, turnID := range []string{"t1", "t1", roomTurn.ID, secondTurn.ID} {
+		exported.Events = append(exported.Events, pa.Event{
+			Version: pa.ContractVersion, ID: fmt.Sprintf("trace-%d", i), Seq: int64(4 + i),
+			Fence: current, Kind: pa.TraceUpdated, At: exported.Bot.CreatedAt,
+			Trace: &pa.Trace{ID: "step", TurnID: turnID, Category: "agent_message_chunk", Text: fmt.Sprint(i)},
+		})
+	}
+	db, _, views, _ := restoreViews(t, exported)
+	q := viewQuery(exported.Bot)
+	snapshot := readView(t, views, q)
+	if got := snapshot.Head.TraceCategoryCount; got != 2 {
+		t.Fatalf("own chat trace count = %d, want 2", got)
+	}
+	summary := q
+	summary.Request.Mode, summary.Request.SourceEpoch = pa.ReadViewTraces, snapshot.SourceEpoch
+	want := map[string]string{"t1": "01", secondTurn.ID: "3"}
+	for _, row := range readView(t, views, summary).Items {
+		detail := summary
+		detail.Request.Mode, detail.Request.Cursor, detail.Request.PageSize = pa.ReadViewDetail, row.TraceSummary.DetailCursor, 1
+		chunk := readView(t, views, detail).Items[0].Trace
+		if expected, present := want[chunk.TurnID]; !present || chunk.Text != expected {
+			t.Fatalf("unexpected detail for %q: %q", chunk.TurnID, chunk.Text)
+		}
+		delete(want, chunk.TurnID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing direct-conversation details: %v", want)
+	}
+	firstChunk := exported.Events[3]
+	tests := []struct {
+		name   string
+		change func(pa.Event) pa.Event
+	}{
+		{"different binding", func(event pa.Event) pa.Event {
+			event.Fence = old
+			return event
+		}},
+		{"missing category", func(event pa.Event) pa.Event {
+			trace := *event.Trace
+			trace.Category = ""
+			event.Trace = &trace
+			return event
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := json.Marshal(test.change(firstChunk))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`UPDATE project_assistant_events SET data=? WHERE seq=?`, raw, firstChunk.Seq); err != nil {
+				t.Fatal(err)
+			}
+			_, err = views.Read(testContext, q)
+			requireCode(t, err, pa.ScopeDenied)
+		})
+	}
+}
