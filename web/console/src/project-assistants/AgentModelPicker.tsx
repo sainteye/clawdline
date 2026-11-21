@@ -10,6 +10,16 @@ import {choiceName,nativeDefault,resolvedDefault,settingSummary} from "./agent-m
 
 type Discovery=ReturnType<typeof useModelCatalog>
 
+export function AgentModelSelect({model,value,defaultLabel,onChange,w,busy,disabled}:{
+  model:W.ProjectAssistantConfigOption;value:string;defaultLabel:string;onChange:(value:string)=>void;w:Words;busy?:boolean;disabled?:boolean
+}){
+  const own=nativeDefault(model)
+  const selected=value===own?.value?"":value
+  return <PaSelect label={w.model} value={selected} placeholder={selected} busy={busy} disabled={disabled} onChange={onChange}
+    options={[{value:"",label:defaultLabel},...model.choices.filter(choice=>choice.value!==own?.value)
+      .map(choice=>({value:choice.value,label:choice.name||choice.value,hint:choice.description}))]}/>
+}
+
 /**
  * Codync's agent and model entry: one summary row (logo, Agent, the model in use, its
  * settings) that opens into drop-downs. An unset model names what the Agent actually
@@ -51,8 +61,8 @@ export function AgentModelPicker({agent,agents,onAgent,agentEditable,discovery,e
         {(error!=="pa_auth_rejected"||(field==="grok_login"||field==="gemini_login"))&&retryableSourceError(error)&&<button type="button" onClick={retry}>{w.nativeRetry}</button>}
         {(value.model||Object.keys(value.options).length>0)&&<button type="button" onClick={()=>onChange({model:"",options:{}})}>{w.nativeDefault}</button>}
       </div>:pending&&!catalog?<p role="status" className="pa-approval-detail">{w.nativeLoading}</p>:catalog&&<>
-        {model?<PaSelect label={w.model} value={selectedModel} busy={pending} onChange={next=>onChange({model:next,options:{}})}
-          options={[{value:"",label:defaultLabel},...model.choices.filter(c=>c.value!==modelDefault?.value).map(c=>({value:c.value,label:c.name,hint:c.description}))]}/>:<p className="pa-approval-detail">{w.nativeNoModels}</p>}
+        {model?<AgentModelSelect model={model} value={value.model} busy={pending} onChange={next=>onChange({model:next,options:{}})}
+          defaultLabel={defaultLabel} w={w}/>:<p className="pa-approval-detail">{w.nativeNoModels}</p>}
         {settings.map(o=>{
           const own=nativeDefault(o),resolved=resolvedDefault(o),chosen=value.options[o.id]
           return <PaSelect key={o.id} label={o.name} value={chosen===own?.value?"":chosen??""} busy={pending} onChange={next=>setOption(o.id,next)}

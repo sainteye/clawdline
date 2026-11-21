@@ -5169,6 +5169,14 @@ export type ProjectAssistantAccess =
 
 export const ProjectAssistantAccessValues: readonly ProjectAssistantAccess[] = ["hidden", "history_only", "interactive"] as const
 
+/**
+ * Model selection reported by the source's live native session.
+ */
+export interface ProjectAssistantActiveModel {
+  name: string
+  turn_id: string
+}
+
 export type ProjectAssistantAgent =
     "claude"
   | "codex"
@@ -6975,6 +6983,7 @@ export interface ProjectAssistantReadTurnSummary {
  * cursor; other page heads never advance it.
  */
 export interface ProjectAssistantReadViewHead {
+  active_model?: ProjectAssistantActiveModel
   background_tasks?: ProjectAssistantBackgroundTaskSummary[]
   bot_version: number
   context_usage?: ProjectAssistantContextUsage

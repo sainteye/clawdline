@@ -1,4 +1,5 @@
 import { ContextUsage } from "./ContextUsage"
+import { ChatModel } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
@@ -246,7 +247,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const adoptHead=useCallback((page:W.ProjectAssistantReadViewResponse)=>{
     const before=headRef.current
     if(before&&(page.head.event_frontier<before.event_frontier||page.head.bot_version<before.bot_version))return
-    const nextHead=page.mode==="snapshot"||page.mode==="events"?page.head:{...page.head,background_tasks:before?.background_tasks,context_usage:before&&sameFence(page.head.current_fence,before.current_fence)&&page.head.conversation.active_turn_id===before.conversation.active_turn_id?before.context_usage:undefined}
+    const sameTurn=before&&sameFence(page.head.current_fence,before.current_fence)&&page.head.conversation.active_turn_id===before.conversation.active_turn_id
+    const nextHead=page.mode==="snapshot"||page.mode==="events"?page.head:{...page.head,background_tasks:before?.background_tasks,
+      context_usage:sameTurn?before.context_usage:undefined,active_model:sameTurn?before.active_model:undefined}
     headRef.current=nextHead;setHead(nextHead)
     const d=currentData.current
     if(d){const next={...d,bot:page.snapshot?.bot??d.bot,conversation:page.head.conversation,source:page.source};currentData.current=next;setData(next)}
@@ -468,6 +471,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     },control.signal)}finally{activeMutations.current.delete(control)}
   }
   const [images,setImages]=useState<string[]>([])
+  const editBot=async(settings:W.ProjectAssistantEditSettings)=>{
+    const result=await mutate((_,signal)=>source.edit({command:command(key,"edit"),settings},signal))
+    if(!valid())throw failure("pa_outcome_unknown")
+    setData(old=>old?{...old,bot:result.bot}:old)
+    onBotChanged(result.bot)
+  }
+  const saveModel=(original:W.ProjectAssistantBot,model:string)=>editBot({expected_version:original.version,
+    name:original.name,appearance:original.appearance,instructions:original.instructions.text,runtime_settings:{model,options:{}}})
   const marker="clawdline.bot-inputs."+draftKey
   const [files,setFiles]=useState<DraftInput[]>([]),[filesLost,setFilesLost]=useState(()=>{try{return localStorage.getItem(marker)==="selected"}catch{return true}})
   const [uploading,setUploading]=useState(""),[fileError,setFileError]=useState("")
@@ -1246,7 +1257,8 @@ ${currentDraft}`:submitted)
         </button>
       </div>
     </div>
-    <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}{parts.queued.map(message=>{
+    <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
+      {parts.queued.length>0&&<div className="pa-queue">{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
       const hold=queuedTurn?.queue_edit_id
@@ -1254,18 +1266,22 @@ ${currentDraft}`:submitted)
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
-          <span className="pa-queued-preview">{w.queued}: {message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
+          <span className="pa-queued-preview"><span className="pa-queued-label">{w.queued}: </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}
         </div>
-        {editor?<>
+        <div className="pa-queued-actions">{editor?<>
           <button className="pa-queued-action" type="button" aria-label={w.save} title={w.save}
             disabled={!enabled||busy||queueEditBusy||!editor.text.trim()&&!message.files?.length&&!message.attachments?.length}
-            onClick={()=>void editQueued("save",editor.turnID,editor.editID,editor.text)}><span aria-hidden="true">✓</span></button>
+            onClick={()=>void editQueued("save",editor.turnID,editor.editID,editor.text)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3.5 8 3 3 6-6"/></svg>
+          </button>
           <button className="pa-queued-action" type="button" aria-label={w.queueKeepOriginal} title={w.queueKeepOriginal}
             disabled={!enabled||busy||queueEditBusy}
-            onClick={()=>void editQueued("cancel",editor.turnID,editor.editID,"")}><span aria-hidden="true">↶</span></button>
+            onClick={()=>void editQueued("cancel",editor.turnID,editor.editID,"")}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>
+          </button>
         </>:<>
           {editable&&<button className="pa-queued-action pa-queued-edit" type="button" aria-label={w.editQueued}
             aria-description={hold?w.queueHeld:undefined} title={hold?`${w.editQueued} · ${w.queueHeld}`:w.editQueued}
@@ -1278,17 +1294,22 @@ ${currentDraft}`:submitted)
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
             </button>}
-        </>}
-        {queuedTurn&&source.canUnqueue?.()&&
-          <button type="button" className="pa-queued-action pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued}
-            disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"stop")}>
-            {pending==="stop"?<span className="pa-send-spinner" aria-hidden="true"/>:"×"}
-          </button>}
+          {queuedTurn&&source.canUnqueue?.()&&
+            <button type="button" className="pa-queued-action pa-queued-remove" aria-label={w.removeQueued} title={w.removeQueued}
+              disabled={!enabled||busy||queueEditBusy} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"stop")}>
+              {pending==="stop"?<span className="pa-send-spinner" aria-hidden="true"/>:"×"}
+            </button>}
+        </>}</div>
       </div>
-    })}{receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
+    })}</div>}
+      {receipt&&(receipt.state==="failed"||receipt.state==="unknown")&&<p role="status">{w[receipt.state]}</p>}{(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}{unknown&&view.heldOutcomes.get(draftKey)?.intent.command.operation==="send"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p>{w.heldSend}</p><HeldAttachments held={view.heldOutcomes.get(draftKey)!} w={w}/><button type="button" disabled={inspection?.state==="checking"||!data} aria-busy={inspection?.state==="checking"||undefined} onClick={()=>void inspect()}>{inspection?.state==="checking"?w.checkingSend:w.checkSend}</button><button type="button" disabled={busy||legacyLocked||inspection?.state==="checking"} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unreadable"&&<div className="pa-held-send" role="group" aria-label={w.unknown}><p role="alert">{w.heldUnreadable}</p><button type="button" disabled={busy||legacyLocked} onClick={writeNew}>{w.writeNewMessage}</button></div>}{view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||view.heldOutcomes.aside(draftKey).length>0)&&<p role="alert">{w.heldUnsaved}</p>}{view.heldOutcomes.unreadable(draftKey)&&<p role="status">{w.heldEarlierUnreadable} <button type="button" onClick={()=>{view.heldOutcomes.dismissUnreadable(draftKey);repaintJournal()}}>{w.dismissHeldNote}</button></p>}{view.heldOutcomes.aside(draftKey).map(held=>{const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key,check=asideChecks[id];return <div className="pa-held-send pa-held-aside" role="group" aria-label={w.heldEarlier} key={id}><p>{w.heldEarlier}: <span className="pa-held-text">{intent.text||w.heldNoText}</span>{intent.quote_message_id&&<> · {w.heldQuoted}</>}</p><HeldAttachments held={held} w={w}/><button type="button" disabled={check?.state==="checking"||!data} aria-busy={check?.state==="checking"||undefined} onClick={()=>void inspectAside(held)}>{check?.state==="checking"?w.checkingSend:w.checkEarlierSend}</button>{check&&check.state!=="checking"&&<p role="status" className="pa-held-result">{asideResult(check,w)}</p>}</div>})}{Object.entries(asideChecks).filter(([id,c])=>(c.state==="delivered"||c.state==="failed")&&!view.heldOutcomes.aside(draftKey).some(h=>h.intent.command.idempotency_key===id)).map(([id,c])=><p role="status" className="pa-held-result" key={id}>{asideResult(c,w)}</p>)}{inspection&&inspection.state!=="checking"&&<p role="status" className="pa-held-result">{inspection.state==="delivered"?w.checkDelivered:inspection.state==="failed"?w.checkFailed:inspection.state==="unknown"?w.checkUnknown:inspection.state==="missing"?w.checkMissing:w.checkUnavailable.replace("{code}",inspection.code??"unavailable")}</p>}{!draftDurable&&<p role="status">{w.draftUnavailable}</p>}{filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
-      {!thread&&live&&head?.context_usage&&<ContextUsage usage={head.context_usage} w={w} language={language}/>}
+      {!thread&&data&&<div className="pa-chat-metadata">
+        {live&&head?.context_usage&&<ContextUsage usage={head.context_usage} w={w} language={language}/>}
+        <ChatModel bot={bot} source={source} enabled={enabled} activeTurn={!!head?.conversation.active_turn_id}
+          reported={live?head?.active_model?.name:undefined} save={saveModel} w={w}/>
+      </div>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
       <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
@@ -1306,7 +1327,7 @@ ${currentDraft}`:submitted)
           <button type="button" className="pa-settings-link" disabled={!canReadActions} onClick={event=>setTemplateOpener(event.currentTarget)}>{w.templateCreate}</button>
           <button type="button" className="pa-settings-link" disabled={!canReadActions||exporting} aria-busy={exporting||undefined} onClick={()=>void exportBot()}>{w.export}</button>
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}
-        </>} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage bare w={w} enabled={enabled} hideDisabled={bot.lead} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList bare w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{const r=await mutate((_,s)=>source.edit({command:command(key,"edit"),settings:value},s));if(valid()){setData(old=>old?{...old,bot:r.bot}:old);onBotChanged(r.bot);setSettingsRevision(n=>n+1);setSettings(false)}}catch(e){fail(e);throw e}}}/>} children={{
+        </>} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage bare w={w} enabled={enabled} hideDisabled={bot.lead} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList bare w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={async value=>{try{await editBot(value);setSettingsRevision(n=>n+1);setSettings(false)}catch(e){fail(e);throw e}}}/>} children={{
       details:<><BackgroundList slots={bot.background_threads??3} section="live" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/><Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} mentions={mentions} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])}/>
         <BackgroundList slots={bot.background_threads??3} section="recent" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/>
       </>,

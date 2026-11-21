@@ -4414,6 +4414,12 @@ const (
 // ProjectAssistantAccessValues is every value the contract allows, in contract order.
 var ProjectAssistantAccessValues = []ProjectAssistantAccess{ProjectAssistantAccessHidden, ProjectAssistantAccessHistoryOnly, ProjectAssistantAccessInteractive}
 
+// Model selection reported by the source's live native session.
+type ProjectAssistantActiveModel struct {
+	Name   string `json:"name"`
+	TurnID string `json:"turn_id"`
+}
+
 type ProjectAssistantAgent string
 
 const (
@@ -6077,6 +6083,7 @@ type ProjectAssistantReadTurnSummary struct {
 // One SQL snapshot. Only a successful snapshot-mode response may replace the
 // replay cursor; other page heads never advance it.
 type ProjectAssistantReadViewHead struct {
+	ActiveModel     *ProjectAssistantActiveModel            `json:"active_model,omitempty"`
 	BackgroundTasks []ProjectAssistantBackgroundTaskSummary `json:"background_tasks,omitempty"`
 	BotVersion      int64                                   `json:"bot_version"`
 	ContextUsage    *ProjectAssistantContextUsage           `json:"context_usage,omitempty"`
