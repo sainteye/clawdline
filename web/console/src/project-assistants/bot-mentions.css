@@ -18,3 +18,5 @@
 .project-assistants .pa-routine-instruction { position:relative;display:block; }
 .project-assistants .pa-routine-instruction textarea { width:100%; }
 .project-assistants .pa-routine-mentions { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }
+/* In the routine editor the fields above the instruction stay visible: the list opens below it. */
+.project-assistants .pa-routine-instruction .pa-mention-list { top:calc(100% + 6px);bottom:auto; }
