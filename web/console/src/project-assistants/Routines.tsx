@@ -297,6 +297,9 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
     return afterSurfaceExit(dialog.current,()=>{setEditing(undefined);setClosing(false)})
   },[closing])
   const edit=(d:W.ProjectAssistantRoutineDefinition|null, opener:HTMLButtonElement)=>{
+    // An editor opened while this panel's own mutation is in flight would
+    // capture the revision that mutation is about to replace.
+    if(pending.current)return
     const original=d?.triggers.map(routineTriggerDraft)??[newRoutineTriggerDraft()]
     const first=original[0]
     const single=original.length===1
@@ -485,7 +488,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
       </dialog>}
       {page&&routines.length===0&&<p className="pa-routines-empty">{tr("emptyRoutines")}</p>}
       {routines.length>0&&<ul className="pa-routine-list">{routines.map((d,i)=>{const line=summary(d);return <li className="pa-routine-card" key={d.id}>
-        <button type="button" className="pa-routine-row" aria-label={`${w.routineEdit}: ${d.name}`} aria-describedby={`${editorID}-line-${i}`} onClick={event=>edit(d,event.currentTarget)}>
+        <button type="button" className="pa-routine-row" disabled={busy} aria-label={`${w.routineEdit}: ${d.name}`} aria-describedby={`${editorID}-line-${i}`} onClick={event=>edit(d,event.currentTarget)}>
           <strong>{d.name}</strong><small id={`${editorID}-line-${i}`} data-tone={line.tone}>{line.text}</small>
         </button>
         <button type="button" role="switch" className="pa-routine-switch" aria-checked={d.enabled} aria-label={`${w.routineEnabled}: ${d.name}`} title={d.enabled?w.routinePause:w.routineEnable} disabled={!writable||busy} onClick={()=>action(d,"enable")}><span/></button>
