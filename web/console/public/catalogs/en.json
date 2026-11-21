@@ -10784,6 +10784,8 @@
   "next.scheduleClockComplete": "The last scheduled run completed.",
   "next.scheduleClockRunning": "The last scheduled run is in progress.",
   "next.scheduleClockWaiting": "Waiting for the machine to receive the scheduled run.",
+  "next.bgAskSession": "Ask Session",
+  "next.bgQuestion": "What is the current status of the background shells in this Session? For each one, is it still needed, when will it finish, and can it be stopped safely?",
   "notifications.botSound": "Bots completion sound",
   "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "notifications.destinationList": "Opens the list.",
