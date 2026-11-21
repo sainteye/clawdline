@@ -6,7 +6,7 @@ export const SESSION_REPORT_BATCH = 2
 export const SESSION_REPORT_REFS = 24
 export const SESSION_REPORT_SESSIONS = 24
 export function sessionBatchSize(total:number){return Math.min(SESSION_REPORT_BATCH,total)}
-export interface SessionReference {id:string;label:string;machine?:string;conversation?:string;project?:string}
+export interface SessionReference {id:string;label:string;machine?:string;conversation?:string;execution?:string;project?:string}
 /** The Project a Session belongs to, as said aloud: its repository folder's name (`project_key`, else `cwd`). */
 export function projectName(path:string){const parts=path.replace(/[\\/]+$/,'').split(/[\\/]/).filter(Boolean);return parts.at(-1)??''}
 /**
@@ -49,7 +49,7 @@ export function relativeSession(text:string):number|'last'|undefined {
  if(en)return {first:1,second:2,third:3}[en[1].toLowerCase()] as number
  return undefined
 }
-export function sameReference(ref:SessionReference,row:SessionReference){return ref.id===row.id&&ref.label===row.label&&(ref.machine??'')===(row.machine??'')&&(ref.conversation??'')===(row.conversation??'')}
+export function sameReference(ref:SessionReference,row:SessionReference){return ref.id===row.id&&ref.label===row.label&&(ref.machine??'')===(row.machine??'')&&(ref.conversation??'')===(row.conversation??'')&&(!ref.execution||ref.execution===row.execution)}
 export function remainingReport(text:string){return /(?:其他|其餘|其余|剩下|還沒|还没).*(?:session|station)|(?:session|station).*(?:其他|其餘|其余|剩下|還沒|还没)/i.test(text)}
 /** Presentation controls accept ordinary paraphrases in the active report. */
 function reportRequest(text: string): string {
@@ -155,7 +155,12 @@ export class SessionReportQueue {
  private prefetch(){
   if(this.loading||this.next||!this.rest.length||!this.load)return
   const generation=this.generation,refs=this.rest.splice(0,projectBatchSize(this.rest));this.loading=true
-  void this.load(refs).then(page=>{if(generation!==this.generation)return;this.loading=false;this.next=page;this.advance()},()=>{if(generation!==this.generation)return;this.loading=false;this.next={error:'voice_session_report_read_failed'};this.advance()})
+  void this.load(refs).then(page=>{
+   if(generation!==this.generation)return
+   this.loading=false
+   if(!page.error&&!page.sessions?.length&&Array.isArray(page.changed)&&page.changed.length){this.prefetch();return}
+   this.next=page;this.advance()
+  },()=>{if(generation!==this.generation)return;this.loading=false;this.next={error:'voice_session_report_read_failed'};this.advance()})
  }
  private advance(){
   if(this.paused||this.waiting||!this.next)return
@@ -168,6 +173,6 @@ export const SESSION_REPORT_GUIDANCE = `Explain only the supplied Sessions, in t
 
 export function sessionReportGuidance(language = '') {
   return /^zh(?:-|$)/i.test(language)
-    ? '依提供的順序介紹這次的 Session，每個 Session 用清楚且一致的口語名稱帶出，再講進度、卡在哪，以及真正需要使用者決定或處理的事。沒有待決事項時，直接講進度和卡點，略過「目前沒有需要你決定或處理的事」，即使摘要寫了這句也略過。跨 Project 匯報時，先報第一個專案的名稱。每次換專案，在介紹該專案的第一個 Session 前先說專案名稱，例如「接下來是 Cedar 專案的 Session」。同一專案內可以直接接下一個 Session。以目前的問題和未處理的便條為準。只報目前給的資料，不介紹還沒讀到的項目。接續時只補還沒說完的內容；明確要求下一批或其他 Session 時跳過被打斷的項目。'
+    ? '依提供的順序介紹這次的 Session，每個 Session 用清楚且一致的口語名稱帶出，再講進度、卡在哪，以及真正需要使用者決定或處理的事。沒有待決事項時，直接講進度和卡點，略過「目前沒有需要你決定或處理的事」，即使摘要寫了這句也略過。跨 Project 匯報時，先報第一個專案的名稱。每次換專案，在介紹該專案的第一個 Session 前先說專案名稱，例如「接下來是 Cedar 專案的 Session」。同一專案內可以直接接下一個 Session。以目前的問題和未處理的便條為準。只報目前給的資料。transcript_status 為 unavailable 時，要說目前讀不到對話原文，有其他資料則說明來源；不要說沒有新進度。接續時只補還沒說完的內容；明確要求下一批或其他 Session 時跳過被打斷的項目。'
     : SESSION_REPORT_GUIDANCE
 }

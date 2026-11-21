@@ -1,8 +1,9 @@
 /** Call-owned execution observations. They never authorize or replay an operation. */
 export type OperationOutcome='running'|'done'|'queued'|'asked'|'many'|'failed'|'cancelled'|'cached'|'fallback'|'unavailable'|'unknown'
 export interface OperationSpec {name:string;source:'tool'|'background';parent?:string;target?:string}
-export interface CallOperation extends OperationSpec {id:string;call:string;started:number;offset:number;ended?:number;ms:number;outcome:OperationOutcome}
-export interface OperationSpan {id:string;end:(result:{outcome:OperationOutcome;target?:string})=>void}
+interface OperationResult {outcome:OperationOutcome;http_status?:number;failure_code?:string}
+export interface CallOperation extends OperationSpec, OperationResult {id:string;call:string;started:number;offset:number;ended?:number;ms:number}
+export interface OperationSpan {id:string;end:(result:OperationResult & {target?:string})=>void}
 export type OperationObserver=(spec:OperationSpec)=>OperationSpan
 
 export class CallHistory {

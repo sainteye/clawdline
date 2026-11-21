@@ -762,11 +762,16 @@ unresolved Notes first, then present one or two Sessions per batch. The runtime
 retains one prepared next batch and yields to speech or an explicit screen switch.
 Realtime playback evidence and GPT-Live transcript quiet-window evidence remain
 distinct; neither synthetic output proves listening comprehension. Recap mode and
-cache policy still govern any native assistant fork. No extra organizer, persistent
+cache policy still govern any native assistant fork. The owning machine receives the
+fork flag and uses the Session's native assistant account for that recap. Fleet
+reports use current execution identities and continue past Sessions that disappear.
+The English and Taiwan Traditional Chinese speech guidance distinguishes an unreadable
+transcript from a read with no new progress. No extra organizer, persistent
 input, answer or action approval is created by the implicit opening. The separate
 durable task allowance remains three. Both language explanations and the original
 reporting guidance reflect the two-Session bound. The public website snapshot must
-follow this reviewed product revision after it lands.
+follow this reviewed product revision after it lands. Voice message-board reads also
+exclude archived boards and describe an unassigned Lead without inventing an actor.
 
 ## Voice questions selected in the call window (2026-11-16)
 

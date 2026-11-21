@@ -470,7 +470,15 @@ per-Session transcript, recap, progress, current question, Notes, reference
 resolution and follow-up analysis reads. Existing summaries are marked reused;
 a local cache lookup is not described as a fresh provider generation. A read
 that falls back after an HTTP failure remains a failed observation even when
-the original function can answer from older evidence. Observation never runs a
+the original function can answer from older evidence. Failed HTTP reads keep
+their status in the private journal. An unreadable transcript carries an
+explicit status in the report so narration can distinguish it from a successful
+read with no replies. Fleet reports match cached titles to a current machine
+inventory by execution. A Session that disappears or is replaced before a
+later batch cannot stop the remaining current Sessions from being reported.
+Cloud forwards the Session fork flag to the owning machine so that its
+native assistant writes the recap without the voice service's OpenAI key.
+Observation never runs a
 tool a second time, changes its authority or starts an execution sound.
 
 The original green-outline capsules remain below speech, with one capsule per
@@ -557,8 +565,9 @@ boards are returned. Posts are not fetched for these directory questions.
 
 Membership joins use machine identity and the stable assistant/conversation actor,
 never a Session label. A transferred Lead is read again, a no-longer-listed Lead
-retains its actor identity without an invented Session ID, and partial source failure
-is reported explicitly. Exact IDs or exact normalized names identify a board;
+retains its actor identity, and a board with no assigned Lead returns a null
+Lead. Archived boards are excluded from the result even when they have no Lead.
+Partial source failure is reported explicitly. Exact IDs or exact normalized names identify a board;
 duplicate names return choices. Unavailable sources cannot establish a unique match
 or a known empty membership. Nested index reads use the existing call-history observer.
 

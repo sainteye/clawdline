@@ -2205,8 +2205,13 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
         }
         const sent = await bodyOf(init)
-        const conversation = typeof sent.conversation === "string" && sent.conversation ? { conversation: sent.conversation } : {}
-        return this.machineWorkV2(client, route.word, { recap: { session: String(sent.session ?? ""), ...conversation } }, headerOf(init, "idempotency-key"), unopenedMachine(init) ?? this.host.machine)
+        const recap = {
+          session: String(sent.session ?? ""),
+          ...(typeof sent.conversation === "string" && sent.conversation ? { conversation: sent.conversation } : {}),
+          ...(sent.fork === true ? { fork: true } : {}),
+          ...(typeof sent.language === "string" && sent.language ? { language: sent.language } : {}),
+        }
+        return this.machineWorkV2(client, route.word, { recap }, headerOf(init, "idempotency-key"), unopenedMachine(init) ?? this.host.machine)
       }
       case "copilot-work": {
         if (url.search) throw failure("invalid_query", "Voice work has no query parameters.", 400)

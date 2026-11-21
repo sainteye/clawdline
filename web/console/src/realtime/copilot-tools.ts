@@ -119,7 +119,7 @@ export interface ToolDeps {
   /** Opens a Project's Dev Stack tab on this page (`copilot-open.ts`). */
   devstack?: (place: { id: string; label: string }) => Promise<boolean>
   /** Every machine's Session rows, on a page that shows them all; null elsewhere. */
-  fleet?: () => Promise<CopilotFleetRow[] | null>
+  fleet?: () => Promise<CopilotFleetRow[] | {error:string} | null>
   /**
    * The Decision API: which Session the person's own words point at, judged
    * by a text model on the machine from the whole list. Asked only when a read
@@ -293,9 +293,9 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - 查詢類工具（get_session_summary、get_session_recap、get_session_activity、explain_session_reply、get_session_screen、open_session、get_session_notes）的 session_id，填清單裡那個 Session 的完整名稱（label），一字不差照抄；名稱比 id 不容易填錯。送出、回答、關閉則填清單裡的 id，原樣照填（包含開頭的 % 符號）。還沒查過清單就先呼叫 list_sessions。
 - 使用者問有什麼要他決定時，waiting_you、work_person_needed、未解便條都算要查看的來源，不只終端 waiting。needs_you 是待查清單，不保證其他 Session 的最後回覆沒有提問；便條先讀 get_session_notes，只有摘要卻無目前問題時讀 get_session_summary／explain_session_reply，不能把過去已交付的摘要當新問題，也不能只因狀態 idle 就說不用回答。
 - 使用者問到某個 Session 的內容、進度、結果時，一定先呼叫查詢工具再回答，即使快照裡有它的名稱也一樣；快照只用來回答整體有哪些 Session。講某個 Session 的內容時，再用工具結果裡的 label 簡稱說出是哪一個，讓使用者聽得出你查的是不是他要的。使用者用描述的方式說 Session（講它的主題或在做的事，而不是完整名稱）時，查詢類工具的 said 照填他稱呼它的原話（session_id 填你認為的那個），工具會依他的原話判斷是哪一個；遇到 error 附 candidates 時，同樣依使用者原本說的話自己挑對的 id 重試；真的分不出來才唸出兩三個候選名稱讓使用者選。
-- 留言板查詢是唯讀操作，不需要排入工作清單。「有哪些留言板」用 list_session_boards；問某個留言板目前的 Lead 用 get_session_board 重新讀取。以穩定身分與本次結果回答，不可從 Session 名稱猜歸屬；同名或讀取失敗時先說明限制。list_sessions 的 message_boards 是留言板歸屬，unavailable 不代表未加入。
+- 留言板查詢是唯讀操作，不需要排入工作清單。「有哪些留言板」用 list_session_boards；問某個留言板目前的 Lead 用 get_session_board 重新讀取。以穩定身分與本次結果回答，不可從 Session 名稱猜歸屬；同名或讀取失敗時先說明限制。list_sessions 的 message_boards 是留言板歸屬，unavailable 不代表未加入；lead 為 null 表示目前沒有 Lead。
 - 通話一開始，下面【通話開始時的 Session 快照】已經附上每個 Session 的狀態與交付摘要，第一個問題可以直接依快照回答，不必先呼叫 list_sessions；使用者要「最新」狀態、問到快照沒有的細節、或通話已經過了幾分鐘，再呼叫工具。
-- 工具回傳 error 就照實說讀不到與原因，不要編造。
+- 工具回傳 error 就照實說讀不到與原因。transcript_status 為 unavailable 時，說目前讀不到對話原文，有其他資料則說明來源；不要說沒有新進度。
 
 【回答 Session 的問題】
 - Session 在等使用者回答時（needs_you 或 summary 裡有 question 與 options），先讀清楚目前問題。使用者還沒作決定時才用口語唸出問題和選項，問要選哪一個；已明確作決定且唯一對應時就承接回答。
@@ -1047,7 +1047,7 @@ async function readRowsValue(deps: ToolDeps): Promise<{ rows: CopilotSessionRow[
   // machine: on 2026-11-12 a phone on 所有機器 heard about one Linux Session
   // only, because /v1/sessions there is the one reading machine's list.
   const fleet = deps.fleet ? await deps.fleet().catch(() => null) : null
-  if (fleet && fleet.length) return { rows: fleetRowsOf(fleet) }
+  if (fleet) return Array.isArray(fleet) ? { rows: fleetRowsOf(fleet) } : fleet
   const [res, tasks] = await Promise.all([deps.fetch('/v1/sessions'), dispatchedChildren(deps)])
   if (!res.ok) {
     const why = await refusalText(res)
@@ -1313,11 +1313,11 @@ function workingFor(since: number | undefined, now: number): string | undefined 
 
 
 /** The newest thing the assistant said, as a status line. */
-export function latestOf(entries: unknown): string {
+export function latestOf(entries: unknown, max = LIST_LATEST_CHARS): string {
   if (!Array.isArray(entries)) return ''
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i] as Record<string, unknown> | null
-    if (e && e.role === 'assistant' && str(e.text).trim()) return clip(plainScreenText(str(e.text)), LIST_LATEST_CHARS)
+    if (e && e.role === 'assistant' && str(e.text).trim()) return clip(plainScreenText(str(e.text)), max)
   }
   return ''
 }
@@ -1350,21 +1350,25 @@ export function progressOf(entries: unknown): Progress {
   return out
 }
 
-async function latestWords(deps:ToolDeps,row:CopilotSessionRow):Promise<Progress>{return observedRead(deps,'read_session_transcript',row,nested=>latestWordsValue(nested,row))}
-async function latestWordsValue(deps: ToolDeps, row: CopilotSessionRow): Promise<Progress> {
-  try {
-    const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
-    if (!res.ok) return { latest: '' }
-    return progressOf(((await res.json()) as { entries?: unknown })?.entries)
-  } catch {
-    // refusal-ok: one Session's unreadable transcript leaves its row without its progress, not the list without rows.
-    deps.readFailed?.()
-    return { latest: '' }
-  }
+type UnreadableTranscript = {transcript_status:'unavailable'}
+function readSessionTranscript(deps: ToolDeps, row: CopilotSessionRow): Promise<{entries:unknown[]} | UnreadableTranscript> {
+  return observedRead(deps, 'read_session_transcript', row, async nested => {
+    try {
+      const res = await rowFetch(nested, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
+      if (res.ok) {
+        const entries = ((await res.json()) as {entries?:unknown})?.entries
+        if (Array.isArray(entries)) return {entries}
+      }
+    } catch {
+      // refusal-ok: preserve available evidence from the other sources.
+    }
+    nested.readFailed?.()
+    return {transcript_status:'unavailable'}
+  })
 }
 
-function progressFields(p: Progress | undefined): Record<string, unknown> {
-  if (!p) return {}
+function progressFields(p: Progress | UnreadableTranscript): Record<string, unknown> {
+  if ('transcript_status' in p) return p
   return {
     ...(p.goal ? { goal: p.goal } : {}),
     ...(p.recent?.length ? { recent: p.recent } : {}),
@@ -1429,12 +1433,13 @@ async function sessionsSummary(deps: ToolDeps, logs: ToolLog[], which: 'working'
     ? [...groupByProject(group.filter(waits)), ...groupByProject(group.filter(row=>!waits(row)))]
     : groupByProject(group)
   const shown = group.slice(0, deps.summaryLimit?Math.min(deps.summaryLimit,projectBatchSize(group.slice(0,SESSION_REPORT_SESSIONS))):LIST_LATEST_READS)
-  const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation,...(r.project?{project:r.project}:{})})
+  const ref=(r:CopilotSessionRow):SessionReference=>({id:r.id,label:r.label,machine:r.machine,conversation:r.conversation,execution:r.execution,...(r.project?{project:r.project}:{})})
   const remaining=deps.summaryLimit?group.slice(shown.length,SESSION_REPORT_SESSIONS).map(ref):[]
   const recaps = new Map<string, SpokenRecap | undefined>()
   const decisions = new Map<string, unknown>()
   const progress = await Promise.all(shown.map(async (r) => {
-    const [words, recap]=await Promise.all([latestWords(deps,r), forkedRecap(deps,logs,r,fresh)])
+    const [transcript, recap]=await Promise.all([readSessionTranscript(deps,r), forkedRecap(deps,logs,r,fresh)])
+    const words = 'entries' in transcript ? progressOf(transcript.entries) : transcript
     recaps.set(r.id, recap)
     if(deps.summaryAttentionFirst && waits(r)) {
       const [notes, question] = await Promise.all([
@@ -2126,21 +2131,10 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
   const { row } = found
   deps.focus?.set(row.id)
   const now = (deps.now ?? (() => Math.floor(Date.now() / 1000)))()
-  let lastReply = ''
-  try {
-    const res = await rowFetch(deps, row)(`/v1/transcript?session=${encodeURIComponent(sid(row))}`, NAMED_READ)
-    if (res.ok) {
-      const entries = ((await res.json()) as { entries?: unknown })?.entries
-      const list = Array.isArray(entries) ? entries : []
-      for (let i = list.length - 1; i >= 0; i--) {
-        const e = list[i] as Record<string, unknown> | null
-        if (e && e.role === 'assistant' && str(e.text).trim()) { lastReply = clip(plainScreenText(str(e.text)), ACTIVITY_TEXT_CHARS); break }
-      }
-    }
-  } catch {
-    // refusal-ok: the summary still carries the Session's own delivery words and state without its transcript.
-  }
-  const [progress, recap] = await Promise.all([boardProgress(deps, row), forkedRecap(deps, logs, row, fresh)])
+  const [transcript, progress, recap] = await Promise.all([
+    readSessionTranscript(deps, row), boardProgress(deps, row), forkedRecap(deps, logs, row, fresh),
+  ])
+  const lastReply = 'entries' in transcript ? latestOf(transcript.entries, ACTIVITY_TEXT_CHARS) : ''
   const out = {
     session_id: row.id,
     label: row.label,
@@ -2153,6 +2147,7 @@ async function sessionSummary(deps: ToolDeps, logs: ToolLog[], wanted: string, f
     ...(row.delivered ? { delivered_summary: row.delivered } : {}),
     ...(whenPhrase(row.delivered_at, now) ? { delivered_when: whenPhrase(row.delivered_at, now) } : {}),
     ...(lastReply ? { last_reply: lastReply } : {}),
+    ...('transcript_status' in transcript ? transcript : {}),
     ...(workingFor(row.working_since, now) && row.state === 'working' ? { working_for: workingFor(row.working_since, now) } : {}),
     ...(row.question ? { question: row.question } : {}),
     ...(row.choices?.length ? { options: row.choices.map((c) => `${c.n}. ${c.label}`), expected_question: menuFingerprint(row.menu as unknown as Parameters<typeof menuFingerprint>[0]) } : row.options?.length ? { options: row.options } : {}),
@@ -3164,15 +3159,15 @@ async function statusBriefing(deps: ToolDeps, logs: ToolLog[]): Promise<unknown>
 async function observedRead<T>(deps:ToolDeps,name:string,row:CopilotSessionRow|undefined,run:(nested:ToolDeps)=>Promise<T>):Promise<T>{
  const span=deps.observe?.({name,source:'background',parent:deps.operationParent,...(row?{target:row.label}:{})})
  try{
-  let failed=false,cancelled=false
+  let failed=false,cancelled=false,httpStatus:number|undefined
   const result=await run({...deps,readFailed:()=>{failed=true;deps.readFailed?.()},operationParent:span?.id??deps.operationParent,fetch:async(path,init)=>{
-   try{const response=await deps.fetch(path,init);if(!response.ok)failed=true;return response}
+   try{const response=await deps.fetch(path,init);if(!response.ok){failed=true;httpStatus=response.status}return response}
    catch(error){failed=true;cancelled=init?.signal?.aborted===true;throw error}
   }})
   const value=result as {error?:unknown;analysis_error?:unknown;source_fallback?:unknown;reused?:boolean}|undefined
   const fallback = value?.analysis_error && Array.isArray(value.source_fallback) && value.source_fallback.length > 0
   const interrupted = cancelled || deps.operationSignal?.aborted || value?.error === 'copilot_question_superseded'
-  span?.end({outcome:interrupted?'cancelled':failed||value?.error?'failed':fallback?'fallback':value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done'})
+  span?.end({outcome:interrupted?'cancelled':failed||value?.error?'failed':fallback?'fallback':value?.analysis_error?'failed':value?.reused?'cached':result===undefined?'unavailable':'done', ...(httpStatus ? {http_status:httpStatus} : {})})
   return result
  }catch(error){span?.end({outcome:error instanceof Error&&error.name==='AbortError'?'cancelled':'failed'});throw error}
 }

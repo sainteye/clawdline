@@ -64,8 +64,13 @@ export interface MachineListPresentation extends SessionListPresentation {
  * Session fell into one unnamed Project (calls of 2026-11-14 01:04, `project: ""`).
  */
 export function copilotFleetRows(presentations: Iterable<MachineListPresentation>,
-  machineNames: ReadonlyMap<string, string>): { machine: string; machineName: string; row: Record<string, unknown> }[] {
-  return [...presentations].map((p) => ({
+  machineNames: ReadonlyMap<string, string>, readings: readonly MachineSessionProjection[]): { machine: string; machineName: string; row: Record<string, unknown> }[] {
+  // Presentation titles can outlive an execution. Only a current projection
+  // can admit that exact execution to a voice report or a voice tool.
+  const current = new Set(readings.flatMap(reading => reading.kind === "ready"
+    ? reading.rows.filter(row => row.freshness === "current").map(row => destinationKey(row.destination))
+    : []))
+  return [...presentations].filter(p => current.has(destinationKey(p.destination))).map((p) => ({
     machine: p.destination.machineID,
     machineName: machineNames.get(p.destination.machineID) ?? p.destination.machineID,
     row: {

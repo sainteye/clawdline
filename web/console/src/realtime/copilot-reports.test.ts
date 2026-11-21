@@ -71,6 +71,20 @@ test('a next batch can read in the background but cannot speak before current pl
  queue.played([a]);assert.equal(spoken.length,1)
  queue.played([b,c]);assert.equal(queue.hasPending(),false)
 })
+test('a batch whose Sessions are no longer current does not stop the remaining report', async () => {
+ const gone = {...b, project:'gone'}
+ const ready = {...c, project:'ready'}
+ const spoken: SessionReportPage[] = [], queue = new SessionReportQueue()
+ queue.start({sessions:[{session_id:a.id,label:a.label}],remaining:[gone,ready]}, async ([ref]) => {
+  if (ref.id === gone.id) return {sessions:[],changed:[{session_id:gone.id,label:gone.label,error:'voice_session_identity_changed'}]}
+  return {sessions:[{session_id:ready.id,label:ready.label}]}
+ }, page => spoken.push(page))
+ await tick()
+ queue.played([a])
+ assert.deepEqual(spoken.map(page => page.sessions?.[0].session_id), [ready.id])
+ queue.played([ready])
+ assert.equal(queue.hasPending(),false)
+})
 test('an interruption pauses automatic presentation and a replaced report ignores old preparation',async()=>{
  let release!:(page:SessionReportPage)=>void;const held=new Promise<SessionReportPage>(resolve=>release=resolve)
  const spoken:SessionReportPage[]=[];const queue=new SessionReportQueue()

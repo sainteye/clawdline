@@ -955,8 +955,7 @@ export class RealtimeCopilotClient {
       // several machines the call reads every machine's list instead.
       this.connectionStage('directory')
       const fleet = await fleetOnThisPage().catch(() => null)
-      const machines = new Set((fleet ?? []).map((f) => f.machine))
-      this.briefing = !managed && grant.briefing && machines.size <= 1 ? this.pollBriefing() : Promise.resolve(null)
+      this.briefing = !managed && grant.briefing && fleet === null ? this.pollBriefing() : Promise.resolve(null)
       void this.briefing.then((text) => { if (text) this.sendBriefing(text) })
 
       this.narrator.reset();this.narrator.setReady(false)
@@ -1530,8 +1529,7 @@ export class RealtimeCopilotClient {
         const result=await runCopilotTool('get_sessions_summary',JSON.stringify(args),{...deps,operationParent:undefined,operationSource:'background',operationSignal:signal,marks:undefined,summaryExclude:undefined,summaryTargets:refs,summaryLimit:SESSION_REPORT_BATCH,onRead:ref=>{if(current())this.spokenSessions.observe(ref)},fetch:(path,init)=>deps.fetch(path,{...init,signal})})
         if(!current())throw new Error('voice_session_report_replaced')
         const next=JSON.parse(result.output) as SessionReportPage
-        if(!next.sessions?.length&&Array.isArray(next.changed)&&next.changed.length)next.error='voice_session_report_identity_changed'
-        this.journal('tool','session_report_prefetch',{args:JSON.stringify({count:refs.length}),answer:JSON.stringify({sessions:next.sessions?.map(row=>({session_id:row.session_id,label:row.label})),error:next.error}).slice(0,1500)})
+        this.journal('tool','session_report_prefetch',{args:JSON.stringify({count:refs.length}),answer:JSON.stringify({sessions:next.sessions?.map(row=>({session_id:row.session_id,label:row.label})),changed:next.changed,error:next.error}).slice(0,1500)})
         return next
       }finally{this.pendingTools.delete(key);if(current())this.updateState({})}
     },next=>this.presentSessionReport(next,current))

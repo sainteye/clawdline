@@ -6,7 +6,7 @@ import type {SessionBoardTarget,SessionMessageBoard} from '../session/SessionBoa
 const rows=[{id:'%1',label:'Current lead',assistant:'codex',sessionId:'conversation-one',state:'idle'},{id:'%2',label:'Member',assistant:'codex',sessionId:'conversation-two',state:'idle'},{id:'%3',label:'Unassigned',assistant:'codex',sessionId:'conversation-three',state:'idle'}]
 const board:SessionMessageBoard={id:'board-one',project:'/fixture/project',name:'Delivery board',purpose:'Review work',lead:'codex:conversation-one',summary:'',latest:0,members:[{id:'codex:conversation-one',label:'Old lead name'},{id:'codex:conversation-two',label:'Member'}]}
 function fixture(){
- let boards=[board,{...board,id:'archived',name:'Archived board',archived_at:1}],reads=0
+ let boards=[board,{...board,id:'archived',name:'Archived board',archived_at:1,lead:''}],reads=0
  const target:SessionBoardTarget={source:{key:'local',writable:false,read:async(fields)=>{assert.deepEqual(fields,{});reads++;return {boards} as never},change:async()=>assert.fail('read tools must not change a board')},label:'Fixture machine',candidates:[]}
  const deps:ToolDeps={fetch:async(path,init)=>{assert.ok(!init?.method||init.method==='GET');assert.equal(path,'/v1/sessions');return Response.json({sessions:rows})},sleep:async()=>{},boardTargets:()=>[target]}
  return {deps,target,set:(next:SessionMessageBoard[])=>{boards=next},reads:()=>reads}
@@ -15,6 +15,21 @@ const result=async(name:string,args:unknown,deps:ToolDeps)=>JSON.parse((await ru
 test('voice can list active boards and resolve the live Lead name without write permission',async()=>{
  const f=fixture(),out=await result('list_session_boards',{},f.deps)
  assert.equal(out.boards.length,1);assert.equal(out.boards[0].name,'Delivery board');assert.equal(out.boards[0].lead.session_id,'%1');assert.equal(out.boards[0].lead.label,'Current lead');assert.equal(f.reads(),1)
+})
+test('an active board can be listed and queried while its Lead is unassigned', async () => {
+ const f = fixture()
+ f.set([board, {...board, id:'unassigned', name:'No Lead yet', lead:''}])
+ const listing = await result('list_session_boards', {}, f.deps)
+ assert.equal(listing.complete, true)
+ assert.equal(listing.boards.length, 2)
+ const named = await result('get_session_board', {board:'unassigned'}, f.deps)
+ assert.equal(named.board.lead, null)
+ const sessions = await result('list_sessions', {}, f.deps)
+ const member = sessions.idle.find((row: {id:string}) => row.id === '%2')
+ assert.deepEqual(member.message_boards, [
+  {id:'board-one', name:'Delivery board', is_lead:false},
+  {id:'unassigned', name:'No Lead yet', is_lead:false},
+ ])
 })
 test('a named-board Lead is read fresh after a transfer',async()=>{
  const f=fixture();assert.equal((await result('get_session_board',{board:'Delivery board'},f.deps)).board.lead.session_id,'%1')

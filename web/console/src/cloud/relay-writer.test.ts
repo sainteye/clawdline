@@ -3458,8 +3458,8 @@ test("a call pass is asked only of machines that offer the voice copilot, passin
   await reader.fetch("/v1/voice/copilot-recap", post({ session: "%2", conversation: "c1", extra: 1 }, { "Idempotency-Key": "recap-1" }))
   assert.deepEqual(client.calls[0].slice(1, 5), ["recap-1", "mac-a", "copilot-recap", { recap: { session: "%2", conversation: "c1" } }])
   client.calls.length = 0
-  await reader.fetch("/v1/voice/copilot-recap", post({ session: "%7" }, { "Idempotency-Key": "recap-2", "X-Clawdline-Unopened-Machine": "mac-c" }))
-  assert.deepEqual(client.calls[0].slice(1, 5), ["recap-2", "mac-c", "copilot-recap", { recap: { session: "%7" } }])
+  await reader.fetch("/v1/voice/copilot-recap", post({ session: "%7", fork: true, language: "zh-Hant", extra: "discard" }, { "Idempotency-Key": "recap-2", "X-Clawdline-Unopened-Machine": "mac-c" }))
+  assert.deepEqual(client.calls[0].slice(1, 5), ["recap-2", "mac-c", "copilot-recap", { recap: { session: "%7", fork: true, language: "zh-Hant" } }])
 
   // Detailed question analysis follows the selected Session machine and preserves its context.
   client.calls.length = 0

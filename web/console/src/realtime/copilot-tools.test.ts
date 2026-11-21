@@ -2369,6 +2369,51 @@ test('a prepared direct message is displayed as waiting for review rather than a
  assert.equal(trace.target,'Session A')
 })
 
+test('a refused transcript is distinguished from an empty transcript', async () => {
+ const observations: {name:string; outcome:string; http_status?:number}[] = []
+ const deps: ToolDeps = {
+  sleep: async () => {},
+  observe: spec => ({id: spec.name, end: outcome => observations.push({name: spec.name, ...outcome})}),
+  fetch: async path => {
+   if (path === '/v1/sessions') return Response.json({sessions:[
+    {id:'removed', label:'No source', assistant:'codex', state:'idle'},
+    {id:'quiet', label:'Quiet source', assistant:'codex', state:'idle'},
+   ]})
+   if (path.includes('session=removed')) return Response.json({error:'execution_target_required'}, {status:409})
+   return Response.json({entries:[]})
+  },
+ }
+ const group = JSON.parse((await runCopilotTool('get_sessions_summary', '{}', deps)).output)
+ assert.equal(group.sessions[0].transcript_status, 'unavailable')
+ assert.equal(group.sessions[1].transcript_status, undefined)
+ assert.ok(observations.some(row => row.name === 'read_session_transcript' && row.outcome === 'failed' && row.http_status === 409))
+ const single = JSON.parse((await runCopilotTool('get_session_summary', '{"session_id":"removed"}', deps)).output)
+ assert.equal(single.transcript_status, 'unavailable')
+ assert.equal(single.last_reply, undefined)
+})
+
+test('an empty or unavailable fleet does not substitute the selected machine list', async () => {
+ const deps: ToolDeps = {sleep: async () => {}, fleet: async () => [], fetch: async () => assert.fail('fleet result already answered')}
+ const summary = async () => JSON.parse((await runCopilotTool('get_sessions_summary', '{}', deps)).output)
+ assert.deepEqual((await summary()).sessions, [])
+ deps.fleet = async () => ({error:'voice_fleet_directory_unavailable'})
+ assert.equal((await summary()).error, 'voice_fleet_directory_unavailable')
+})
+
+test('a later report batch cannot read a replacement execution with the same display name', async () => {
+ const deps: ToolDeps = {
+  sleep: async () => {},
+  summaryLimit: 1,
+  summaryTargets: [{id:'fleet:machine:one', label:'Work（Machine）', machine:'machine', conversation:'same', execution:'previous'}],
+  fleet: async () => [{machine:'machine', machineName:'Machine',
+   row:{id:'one', label:'Work', sessionId:'same', execution_generation:'replacement', assistant:'codex', state:'idle'}}],
+  fetch: async () => assert.fail('a replaced execution cannot be read'),
+ }
+ const out = JSON.parse((await runCopilotTool('get_sessions_summary', '{}', deps)).output)
+ assert.deepEqual(out.sessions, [])
+ assert.deepEqual(out.changed, [{session_id:'fleet:machine:one', label:'Work（Machine）', error:'voice_session_identity_changed'}])
+})
+
 test('a malformed transcript stays a failed history entry even when the group report falls back',async()=>{
  const observations:{name:string;outcome:string}[]=[]
  const deps:ToolDeps={sleep:async()=>{},observe:spec=>{const row={name:spec.name,outcome:'running'};observations.push(row);return {id:String(observations.length),end:result=>row.outcome=result.outcome}},fetch:async(path)=>{
@@ -2376,6 +2421,8 @@ test('a malformed transcript stays a failed history entry even when the group re
   return new Response('not-json',{status:200})
  }}
  const result=await runCopilotTool('get_sessions_summary','{"which":"all"}',deps)
- assert.ok(!JSON.parse(result.output).error,'the existing group fallback remains usable')
+ const report = JSON.parse(result.output)
+ assert.ok(!report.error,'the existing group fallback remains usable')
+ assert.equal(report.sessions[0].transcript_status, 'unavailable')
  assert.ok(observations.some(row=>row.name==='read_session_transcript'&&row.outcome==='failed'))
 })

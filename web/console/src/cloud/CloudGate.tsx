@@ -1999,8 +1999,21 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       if (!detail?.answer || !fleetScopeRef.current) return
       const answer = detail.answer
       detail.answer = undefined
-      const names = new Map(copilotMachines.current.map((m) => [m.id, m.name]))
-      answer(copilotFleetRows(fleetPresentations.current.values(), names))
+      const machines = copilotMachines.current
+      const names = new Map(machines.map(m => [m.id, m.name]))
+      const now = Date.now()
+      const readings = machines.filter(m => m.online).map(({ id }) => {
+        const live = statusProjection(client.current, id, now)
+        const held = fleetProjections.current.get(id)
+        if (held?.reading.kind === "ready" && now - held.reading.observedAt <= STATUS_FRESH_MS &&
+          held.reading.observedAt >= (live.observedAt ?? 0)) return held.reading
+        return live
+      })
+      const rows = copilotFleetRows(fleetPresentations.current.values(), names, readings)
+      const confirmedEmpty = readings.length === machines.length && readings.every(reading =>
+        reading.kind === "ready" && reading.complete && !reading.rows.length &&
+        now - reading.observedAt <= STATUS_FRESH_MS)
+      answer(rows.length || confirmedEmpty ? rows : { error: "voice_fleet_directory_unavailable" })
     }
     document.addEventListener(COPILOT_FLEET, onAsk)
     return () => document.removeEventListener(COPILOT_FLEET, onAsk)

@@ -23,14 +23,14 @@ export async function readBoardDirectory(deps:BoardDeps,wantedMachine=''):Promis
   const span=deps.observe?.({name:'read_session_boards',source:'background',parent:deps.operationParent,target:target.label})
   try{
    const result=await target.source.read<{boards:SessionMessageBoard[]}>({},deps.operationSignal)
-   if(!Array.isArray(result?.boards)||result.boards.some(board=>!board||typeof board.id!=='string'||!board.id||typeof board.name!=='string'||!board.name||typeof board.lead!=='string'||!board.lead||(board.members!==undefined&&(!Array.isArray(board.members)||board.members.some(member=>!member||typeof member.id!=='string'||!member.id||typeof member.label!=='string')))))throw Error('session_board_response_invalid')
+   if(!Array.isArray(result?.boards)||result.boards.some(board=>!board||typeof board.id!=='string'||!board.id||typeof board.name!=='string'||!board.name||typeof board.lead!=='string'||(board.members!==undefined&&(!Array.isArray(board.members)||board.members.some(member=>!member||typeof member.id!=='string'||!member.id||typeof member.label!=='string')))))throw Error('session_board_response_invalid')
    if(!(deps.boardTargets?.()??[]).some(current=>current.source.key===target.source.key&&current.machine===target.machine))throw Error('session_board_source_changed')
    directory.available.add(target.source.key)
    directory.boards.push(...result.boards.filter(board=>!board.archived_at).map(board=>({board,target})))
    span?.end({outcome:'done'})
   }catch(error){
    const code=error instanceof Error&&['session_board_response_invalid','session_board_source_changed'].includes(error.message)?error.message:'session_boards_unavailable'
-   directory.unavailable.push({machine:machine(target),machine_name:target.label,error:code});span?.end({outcome:'unavailable'})
+   directory.unavailable.push({machine:machine(target),machine_name:target.label,error:code});span?.end({outcome:'unavailable',failure_code:code})
   }
  }))
  return directory
@@ -49,7 +49,7 @@ function boardResult({board,target}:BoardEntry,rows:readonly CopilotSessionRow[]
  const lead=rows.find(row=>onMachine(row,target,singleSourceKey)&&actor(row)===board.lead)
  const saved=board.members?.find(member=>member.id===board.lead)??target.candidates.find(member=>member.id===board.lead)
  return {id:board.id,name:board.name,project:typeof board.project==='string'?board.project.split(/[\\/]/).filter(Boolean).at(-1):undefined,purpose:board.purpose,machine:machine(target),machine_name:target.label,
-  lead:{actor_id:board.lead,label:lead?.label??saved?.label??board.lead,...(lead?{session_id:lead.id,availability:'listed',label_source:'session_directory'}:{availability:rowsKnown?'not_listed':'unknown',label_source:saved?'board_metadata':'actor_id'})},
+  lead:board.lead ? {actor_id:board.lead,label:lead?.label??saved?.label??board.lead,...(lead?{session_id:lead.id,availability:'listed',label_source:'session_directory'}:{availability:rowsKnown?'not_listed':'unknown',label_source:saved?'board_metadata':'actor_id'})} : null,
   member_count:board.members?.length??null}
 }
 export async function querySessionBoards(name:string,args:Record<string,unknown>,deps:BoardDeps,readRows:()=>Promise<{rows:CopilotSessionRow[]}|{error:string}>){

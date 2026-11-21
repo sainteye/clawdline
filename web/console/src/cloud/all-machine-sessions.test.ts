@@ -418,16 +418,40 @@ test("opening a pinned Session retains its file destination without carrying it 
   assert.equal(destinationFragmentWithOutput(target, destinationFragment(target) + "&output=../../private"), destinationFragment(target))
 })
 
+function currentVoiceRows(...targets: {destination: ProjectedSession["destination"]}[]): MachineSessionProjection {
+  return {kind: "ready", complete: true, observedAt: 100,
+    rows: targets.map(({destination}) => ({destination, freshness:"current", state:"working", observedAt:100}))}
+}
+
+test("voice fleet rows only name the current execution from each machine", () => {
+  const row = (machineID: string, sessionID: string, executionGeneration: string) => ({
+    destination: {machineID, sessionID, executionGeneration}, title: sessionID,
+  })
+  const current = row("mac", "A", "new")
+  const previous = row("mac", "A", "old")
+  const closed = row("mac", "closed", "old")
+  const offline = row("linux", "offline", "old")
+  const stale = row("mac", "aged", "old")
+  const mac = currentVoiceRows(current, stale)
+  assert.ok(mac.kind === "ready")
+  mac.rows[1].freshness = "stale"
+  const linux = currentVoiceRows(offline)
+  const readings: MachineSessionProjection[] = [mac, {kind:"unavailable", reason:"offline", rows:linux.rows}]
+  const rows = copilotFleetRows([previous, current, closed, offline, stale], new Map(), readings)
+  assert.deepEqual(rows.map(({row}) => [row.id, row.execution_generation]), [["A", "new"]])
+})
+
 test("the voice copilot's fleet rows keep each Session's Project folder", async () => {
   const at = (sessionID: string, cwd: string, projectKey?: string) => ({
     destination: { machineID: "mac_a", sessionID, executionGeneration: "g1" }, title: sessionID, assistant: "claude" as const,
     cwd, ...(projectKey ? { projectKey } : {}), status: { state: "working", work_state: "none" } as unknown as Partial<SessionRow>,
   })
-  const rows = fleetRowsOf(copilotFleetRows([
+  const presentations = [
     at("%1", "/Users/me/code/clawdline/sub", "/Users/me/code/clawdline"),
     at("%2", "/Users/me/code/shop"),
     at("%3", "/Users/me/code/clawdline"),
-  ], new Map([["mac_a", "studio"]])))
+  ]
+  const rows = fleetRowsOf(copilotFleetRows(presentations, new Map([["mac_a", "studio"]]), [currentVoiceRows(...presentations)]))
   assert.deepEqual(rows.map((r) => r.project), ["clawdline", "shop", "clawdline"])
   const grouped = groupByProject(rows)
   assert.deepEqual(grouped.map((r) => r.session), ["%1", "%3", "%2"])
@@ -442,9 +466,10 @@ test("voice fleet rows preserve each execution's Project mark", () => {
     { accent: "#654321", cells: [], svg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>' },
     undefined,
   ]
-  const rows = fleetRowsOf(copilotFleetRows(marks.map((icon, index) => ({
+  const presentations = marks.map((icon, index) => ({
     title: "Same title", destination: { machineID: `machine-${index}`, sessionID: "s1", executionGeneration: "g1" }, icon,
-  })), new Map()))
+  }))
+  const rows = fleetRowsOf(copilotFleetRows(presentations, new Map(), presentations.map(row => currentVoiceRows(row))))
   assert.deepEqual(rows.map(row => row.icon), marks)
   assert.deepEqual(rows.map(row => row.machine), ["machine-0", "machine-1", "machine-2"])
 })

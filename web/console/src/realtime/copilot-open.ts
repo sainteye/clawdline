@@ -65,10 +65,12 @@ export async function openSnippetsOnThisPage(sessionID: string, request: { tab: 
  * Every machine's Session rows, when this page shows all machines (CloudGate
  * answers `COPILOT_FLEET` only there); null on a page that shows one.
  */
-export function fleetOnThisPage(): Promise<CopilotFleetRow[] | null> {
+export function fleetOnThisPage(): Promise<CopilotFleetRow[] | {error:string} | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), COPILOT_OPEN_WAIT_MS)
-    const detail: { answer?: (rows: CopilotFleetRow[]) => void } = { answer: (rows) => { clearTimeout(timer); resolve(Array.isArray(rows) ? rows : null) } }
+    const detail: { answer?: (result: CopilotFleetRow[] | {error:string}) => void } = {
+      answer: result => { clearTimeout(timer); resolve(result) },
+    }
     document.dispatchEvent(new CustomEvent(COPILOT_FLEET, { detail }))
     // A page that does not answer at once is not showing every machine.
     queueMicrotask(() => { if (detail.answer) { clearTimeout(timer); resolve(null) } })
