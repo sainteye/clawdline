@@ -99,9 +99,13 @@
 .project-assistants .pa-tower-waitlist .pa-tower-allow-actions button { min-height:28px;padding:0 10px;border:0;border-radius:0;cursor:pointer;font:inherit;color:#efe6dc;background:transparent;box-shadow:inset 0 0 0 1px rgba(156,166,179,.45); }
 .project-assistants .pa-tower-waitlist .pa-tower-allow-actions .pa-tower-allow-once { color:#120a10;background:#e39567;box-shadow:none; }
 .project-assistants .pa-tower-waitlist .pa-tower-allow-actions button:disabled { opacity:.6;cursor:default; }
-/* The phone's floor button. Its base rule precedes the wide-screen block so that block can hide it. */
+/* The scene controls fold behind the floor button on every screen size. */
+.project-assistants .pa-tower-menu { position:absolute;right:12px;top:12px;z-index:5; }
+.project-assistants .pa-tower-controls { position:absolute;right:0;top:calc(100% + 8px);width:max-content;flex-direction:column;align-items:flex-end;gap:8px; }
+.project-assistants .pa-tower-controls:not([hidden]) { display:flex; }
 .project-assistants .pa-tower-floorbtn { display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 10px;border:0;border-radius:0;cursor:pointer;color:#efe6dc;background:rgba(12,9,20,.88);box-shadow:inset 0 0 0 2px rgba(227,149,103,.55);font:700 12px/1 ui-monospace,"SF Mono",Menlo,"PingFang TC",monospace;
   clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px)); }
+.project-assistants .pa-tower-floorbtn:focus-visible { box-shadow:inset 0 0 0 2px #ffd2b5; }
 .project-assistants .pa-tower-floorbtn svg { width:14px;height:14px;fill:none;stroke:#e39567;stroke-width:1.4;stroke-linejoin:round; }
 .project-assistants .pa-tower-floorbtn[aria-expanded="true"] { color:#120a10;background:#e39567; }
 .project-assistants .pa-tower-floorbtn[aria-expanded="true"] svg { stroke:#120a10; }
@@ -110,8 +114,6 @@
   .project-assistants .pa-tower-stage { flex:1;min-height:0;display:grid;place-items:center;container-type:size; }
   .project-assistants .pa-tower-pan { position:relative;width:min(100cqw, 100cqh * 1672 / 941); }
   .project-assistants .pa-tower-hud { position:absolute;left:12px;top:12px;right:200px;z-index:4; }
-  .project-assistants .pa-tower-controls { position:absolute;right:12px;top:12px;z-index:4;display:flex;flex-direction:column;align-items:flex-end;gap:8px; }
-  .project-assistants .pa-tower-floorbtn { display:none; }
   .project-assistants .pa-tower-waitlist { position:absolute;left:12px;top:52px;width:min(340px, 60%);max-height:calc(100% - 64px); }
 }
 .project-assistants .pa-tower-scene { position:relative;width:100%;aspect-ratio:1672 / 941;border:1px solid var(--pa-line);border-radius:12px;overflow:hidden;overflow:clip;background:#0b0812; }
@@ -124,10 +126,10 @@
 .project-assistants .pa-tower-bot { position:absolute;padding:0;margin:0;border:0;border-radius:40%;background:transparent;cursor:pointer;min-width:24px;min-height:24px; }
 .project-assistants .pa-tower-bot:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
 .project-assistants .pa-tower-tip { position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);display:none;flex-direction:column;gap:1px;padding:6px 9px;border:1px solid var(--pa-line);border-radius:8px;background:rgba(20,20,20,.94);color:#fafafa;font-size:12px;line-height:1.4;text-align:left;white-space:nowrap;max-width:260px;pointer-events:none;z-index:2; }
+.project-assistants .pa-tower-tip > strong { overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-tower-tip > span,.project-assistants .pa-tower-tip > small { color:var(--pa-dim);overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-tower-bot:hover .pa-tower-tip,.project-assistants .pa-tower-bot:focus-visible .pa-tower-tip,.project-assistants .pa-tower-bot[data-highlight] .pa-tower-tip,.project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { display:flex; }
-/* The tag points at its Bot. A pinned tag (waiting, failed) is compact: name and
-   one line of what it needs, truncated; hovering any other Bot still shows its tag. */
+/* Pinned tags show names, plus one activity line for busy Bots on a floor. */
 .project-assistants .pa-tower-tip::after { content:"";position:absolute;left:50%;bottom:-5px;width:8px;height:8px;margin-left:-4px;background:inherit;border-right:1px solid var(--pa-line);border-bottom:1px solid var(--pa-line);transform:rotate(45deg); }
 .project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip { max-width:220px;padding:5px 8px;gap:0; }
 .project-assistants .pa-tower-bot[data-pinned] .pa-tower-tip > span { display:none; }
@@ -136,13 +138,15 @@
 .project-assistants .pa-tower-bot[data-mood="wait"][data-pinned] .pa-tower-tip::after { border-color:rgba(227,149,103,.7); }
 .project-assistants .pa-tower-bot[data-mood="error"][data-pinned] .pa-tower-tip { border-color:rgba(214,92,92,.7); }
 .project-assistants .pa-tower-bot[data-mood="error"][data-pinned] .pa-tower-tip::after { border-color:rgba(214,92,92,.7); }
-.project-assistants .pa-tower-bot[data-pinned]:hover .pa-tower-tip > span { display:block; }
+.project-assistants .pa-tower-bot[data-compact] .pa-tower-tip > small { display:none; }
+.project-assistants .pa-tower-bot[data-pinned]:is(:hover,:focus-visible) .pa-tower-tip > span,
+.project-assistants .pa-tower-bot[data-compact]:is(:hover,:focus-visible) .pa-tower-tip > small { display:block; }
+.project-assistants .pa-tower-bot:is(:hover,:focus-visible) { z-index:3; }
 .project-assistants .pa-tower-bot[data-highlight] { outline:1px dashed rgba(250,250,250,.7);outline-offset:3px;z-index:3; }
 .project-assistants .pa-tower-fallback { display:grid;place-items:center;gap:12px;height:100%;color:var(--pa-dim);text-align:center;padding:20px; }
 
 /* On a phone the floor comes first: a tall picture that pans, one row of the
-   counts that matter over it, and the layout switch and floor map folded
-   behind one floor button. */
+   counts that matter over it. */
 @media(max-width:700px) {
   .project-assistants .pa-tower { height:auto;padding:2px 0 12px; }
   .project-assistants .pa-tower-pan { position:relative; }
@@ -153,9 +157,7 @@
   .project-assistants .pa-hud-facts { flex-wrap:nowrap;overflow:hidden; }
   .project-assistants .pa-hud-chip { padding:6px 8px; }
   .project-assistants .pa-hud-chip[data-tone="latest"],.project-assistants .pa-hud-chip[data-tone="idle"],.project-assistants .pa-hud-chip[data-tone="unread"] { display:none; }
-  .project-assistants .pa-tower-floorbtn { position:absolute;right:8px;top:8px;z-index:5; }
-  .project-assistants .pa-tower-controls { display:none;position:absolute;right:8px;top:52px;z-index:5;flex-direction:column;align-items:flex-end;gap:8px; }
-  .project-assistants .pa-tower-controls[data-open] { display:flex; }
+  .project-assistants .pa-tower-menu { right:8px;top:8px; }
   .project-assistants .pa-tower-elevator button { height:40px; }
   .project-assistants .pa-elevator-shaft { display:none; }
   .project-assistants .pa-hud-switch button { min-height:36px; }

@@ -7,8 +7,8 @@
  *   BOTS_ARTIFACTS=<task-evidence-directory> \
  *   node web/console/src/project-assistants/tower/tower.e2e.mjs
  *
- * It checks what has broken before: the phone's floor button showing over the
- * desktop HUD, a floor picture that never arrives, "+N" sliding the floor
+ * It checks what has broken before: name tags and the collapsed controls on both
+ * screen sizes, a floor picture that never arrives, "+N" sliding the floor
  * sideways, and on a phone the chat rising as a sheet with the tower above. */
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
@@ -66,24 +66,54 @@ async function towerChecks(page, width, language, shot) {
   if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click()
   const scene = page.locator(".pa-tower-scene")
   await scene.waitFor()
-  // Twelve Bots on two machines' Projects: the building is offered.
-  if (phone) await page.getByRole("button", { name: w.towerFloorsMenu, exact: true }).click()
-  await page.getByRole("button", { name: w.towerLayoutBuilding, exact: true }).click()
-  // A phone folds the elevator back behind its floor button once a layout is chosen.
-  await page.locator(".pa-tower-elevator").waitFor({ state: "attached" })
-  checks.push("building offered and chosen")
-
-  // The phone's floor button never shows on a wide screen, and nothing sits on the HUD.
-  const floorButton = page.locator(".pa-tower-floorbtn")
+  const restingBot = scene.locator('.pa-tower-bot:is([data-mood="idle"], [data-mood="recent"], [data-mood="sleep"])').first()
+  const restingTag = restingBot.locator(".pa-tower-tip")
+  await restingBot.waitFor()
+  const menu = page.getByRole("button", { name: w.towerFloorsMenu, exact: true })
+  const controls = page.locator(".pa-tower-controls")
+  const toggleTags = page.getByRole("button", { name: w.towerTags, exact: true })
+  assert.equal(await menu.isVisible(), true, "the floor menu button is missing")
+  assert.equal(await controls.isVisible(), false, "the controls start expanded")
+  assert.equal(await restingTag.isVisible(), true, "resting Bot has no name tag with tags on")
+  await menu.click()
+  await toggleTags.click()
+  assert.equal(await toggleTags.getAttribute("aria-pressed"), "false")
+  assert.equal(await restingTag.isVisible(), false, "a name tag is still pinned with tags off")
   if (!phone) {
-    assert.equal(await floorButton.isVisible(), false, "the phone's floor button shows on a wide screen")
-    const hud = await box(page.locator(".pa-hud-facts"))
-    assert.equal(overlap(hud, await box(page.locator(".pa-tower-controls"))), false, "the controls cover the HUD")
-    checks.push("no phone button or controls over the HUD")
-  } else {
-    assert.equal(await floorButton.isVisible(), true)
-    checks.push("phone floor button shown")
+    await restingBot.hover()
+    assert.equal(await restingTag.isVisible(), true, "a resting Bot has no tooltip on hover with tags off")
   }
+  await toggleTags.click()
+  assert.equal(await restingTag.isVisible(), true, "turning name tags back on did not restore the resting Bot's name")
+  await toggleTags.press("Escape")
+  assert.equal(await controls.isVisible(), false, "Escape did not close the controls")
+  assert.equal(await menu.evaluate(el => document.activeElement === el), true, "Escape did not return focus to the menu button")
+  checks.push("name tags toggle on resting Bots and menu closes with Escape")
+
+  // Twelve Bots on two machines' Projects: the building is offered.
+  await menu.click()
+  if (!phone) {
+    const hud = await box(page.locator(".pa-hud-facts"))
+    assert.equal(overlap(hud, await box(menu)), false, "the menu button covers the HUD")
+    assert.equal(overlap(hud, await box(controls)), false, "the open controls cover the HUD")
+  }
+  const chooseBuilding = page.getByRole("button", { name: w.towerLayoutBuilding, exact: true })
+  await chooseBuilding.click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing a layout")
+  await menu.click()
+  await shot("tower-controls")
+  const elevator = page.getByRole("navigation", { name: w.towerElevator })
+  await elevator.getByRole("button", { name: w.towerSection, exact: true }).click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing the building overview")
+  const sectionTag = scene.locator(".pa-tower-bot .pa-tower-tip").first()
+  assert.equal(await sectionTag.isVisible(), true, "the building overview has no pinned name tags")
+  await menu.click()
+  await toggleTags.click()
+  assert.equal(await sectionTag.isVisible(), false, "a name tag is still pinned in the building overview with tags off")
+  await toggleTags.click()
+  await elevator.locator("button[aria-pressed]:enabled").nth(1).click()
+  assert.equal(await controls.isVisible(), false, "the controls stay open after choosing a floor")
+  checks.push("building and floor selection close the menu and name tags toggle in the building overview")
 
   // The floor's picture arrives as an image, not an HTML stand-in.
   await page.waitForFunction(() => { const img = document.querySelector(".pa-tower-scene img"); return !!img && img.complete && img.naturalWidth > 0 })
