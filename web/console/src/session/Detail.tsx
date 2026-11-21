@@ -4,7 +4,7 @@ import { localized, toolTarget, type ToolDraft } from "../tool-library/model.js"
 import { outputSessionKey, readOutputs } from "./output-files-api.js"
 import { OutputFiles } from "./OutputFiles.js"
 import { WorkflowProfileHeader } from "./workflow-profile-header.js"
-import { assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
+import { assistantComposeAdmits, assistantStateCurrent, assistantProtocolOwned, sessionActionVisibility } from "./antigravity-ui.js"
 import { assistantFactsMachine, useAssistantFacts, useAssistantQueues } from "./assistant-facts.js"
 import { catalogWord, currentCatalogTag } from "../catalog.js"
 import type { Icon, ScanSource, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
@@ -540,7 +540,15 @@ export function Detail({
       {/* The session's background work, where Claude Code puts it: the one
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
-      {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
+      {row ? <BackgroundStrip
+        key={JSON.stringify([activityScope, row.sessionId])}
+        row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell}
+        canAsk={!ending && (row.assistant !== "antigravity" || owned || assistantStateCurrent(row)) &&
+          assistantComposeAdmits(row.assistant, assistantFacts, row.state, !!row.menu, owned)}
+        machineQueues={assistantQueues}
+        onAsked={() => setAgentId(null)}
+        onSent={onSent}
+      /> : null}
       {/* With no Session open there is nobody to write to: the home screen's
           own button is the way on, not a field that cannot send. */}
       {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={()=>{setScreenOpen(false);setGitOpen(false);setShellOpen(null);setNativeTerminalOpen(true)}} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}

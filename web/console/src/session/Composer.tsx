@@ -33,7 +33,7 @@ import { nextWord } from "../next-strings.js"
 import { canOpenMachinePairing, openMachinePairing } from "../legacy/devices-bridge.js"
 import { watchMachinePaired } from "../cloud/pairing-completion.js"
 import { writeIsOff } from "./outcome.js"
-import { deliverUntilSeen, pendingSends, nextMessages } from "./send.js"
+import { deliverUntilSeen, pendingSends, nextMessages, queueSessionInputInBrowser } from "./send.js"
 import { MENU_FOLLOW } from "./menu-follow.js"
 import { Waiting } from "./Waiting.js"
 import { ImageMarkup } from "./ImageMarkup.js"
@@ -590,9 +590,7 @@ export function Composer({
     }
     if (!at) return keep()
     const conversation = typeof at.sessionId === "string" ? at.sessionId : undefined
-    if (protocolOwned && !assistantQueues &&
-      ((at.state !== "idle" && at.state !== "unknown") || at.menu ||
-      pendingSends.of(at.id).some(card => card.state === "queued"))) {
+    if (queueSessionInputInBrowser(at, !!assistantQueues)) {
       // Held in this browser until the turn ends: not sent yet, so no chime.
       if (!nextMessages.add(at.id, said, pictures, Date.now(), conversation)) keep()
       else { chime?.drop(); if (pictures.length) Shots.clear() }
@@ -721,9 +719,7 @@ export function Composer({
     // A machine that queues a running conversation's input itself takes the
     // message now, as Claude Code and Codex do; an older one leaves it in
     // this browser until the turn ends.
-    if (protocolOwned && row && !assistantQueues &&
-      ((row.state !== "idle" && row.state !== "unknown") || row.menu ||
-      pendingSends.of(row.id).some(card => card.state === "queued"))) {
+    if (!remote && row && queueSessionInputInBrowser(row, !!assistantQueues)) {
       if (!nextMessages.add(row.id, said, pictures, Date.now(),typeof row.sessionId==="string"?row.sessionId:undefined)) {
         setFailure(nextWord("sendQueueFull"))
         return

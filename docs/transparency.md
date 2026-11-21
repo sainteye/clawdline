@@ -1143,3 +1143,9 @@ provider's current token report or the last successful reading for the same
 binding and memory revision. The group history projects existing Broker states
 under the room turn's current member. The English and Taiwan Traditional Chinese
 explanations and source inventory cover these paths.
+
+The background-work sheet sends a localized status question as ordinary Session
+input when the person presses Ask Session. The input uses the composer queue
+rules and the existing conversation receipt. The English and Taiwan Traditional
+Chinese CodeGraph, tool preparation and handoff entries still describe their
+own activation and input rules. Refresh the receipts for the shared sources.

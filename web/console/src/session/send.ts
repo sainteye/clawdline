@@ -17,6 +17,7 @@
  * written after every change. None of it is asked of the daemon, and nothing on
  * the way back is sent.
  */
+import type { SessionRow } from "@clawdline/contract"
 import { client } from "../client.js"
 import { outcomeOf } from "./outcome.js"
 import { newRequestID, PendingSends, turnWords, type PendingSend } from "./pending.js"
@@ -29,10 +30,18 @@ import { byId } from "../legacy/bridge.js"
 import { askInterrupt } from "../legacy/screen-bridge.js"
 import { itermConsent } from "./iterm-consent.js"
 import { NextMessages } from "./next-message.js"
+import { assistantProtocolOwned } from "./antigravity-ui.js"
 
 /** The page's one set of cards: a card outlives the composer that made it and the session being switched away from. */
 export const pendingSends = new PendingSends()
 export const nextMessages = new NextMessages(pendingSends)
+
+/** Older hosts need the browser to keep input for an owned turn until it can take it. */
+export function queueSessionInputInBrowser(row: SessionRow, machineQueues: boolean): boolean {
+  return assistantProtocolOwned(row) && !machineQueues &&
+    ((row.state !== "idle" && row.state !== "unknown") || !!row.menu ||
+      pendingSends.of(row.id).some(card => card.state === "queued"))
+}
 
 /** Beside the other per-browser things this origin keeps (`bar/history.ts`, `legacy/order-bridge.ts`). */
 const CARDS_KEY = "clawdline.session.cards"

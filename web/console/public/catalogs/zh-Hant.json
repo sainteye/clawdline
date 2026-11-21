@@ -10794,6 +10794,8 @@
   "next.voiceRealtimeSettingChanged": "轉寫引擎已變更。請重新開始錄音。",
   "next.voiceRealtimeUnsupported": "OpenAI 即時轉寫需要瀏覽器支援 WebRTC。",
   "next.voiceRetryWithWhisper": "用本機 Whisper 重試",
+  "next.bgAskSession": "詢問 Session",
+  "next.bgQuestion": "請問這個 Session 的背景 shell 目前狀況如何？請逐一說明是否仍有必要、預計何時結束，以及是否可以安全停止。",
   "notifications.botSound": "Bots 完成提示音",
   "notifications.botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",
   "notifications.destinationList": "點擊後開啟清單。",
