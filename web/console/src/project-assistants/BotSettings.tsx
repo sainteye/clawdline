@@ -18,7 +18,7 @@ import {botFailureText,providerSetupFailure} from "./source-errors"
 import "./bot-settings.css"
 
 
-function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):string {
+export function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words):string {
   if(code==="pa_outcome_unknown")return w.fallbackSaveUnknown
   if(code==="pa_stale_generation"||code==="pa_stale_version")return w.fallbackSaveStale
   const detail=providerSetupFailure(field,w)??(code==="pa_capacity_full"?configurationError(code,w,field):botFailureText(code,w))

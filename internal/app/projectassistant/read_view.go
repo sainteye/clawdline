@@ -34,8 +34,14 @@ type ReadContextUsage struct {
 	UsedTokens, WindowTokens int64
 }
 
+type ReadActiveModel struct {
+	TurnID string
+	Name   string
+}
+
 type ReadViewHead struct {
 	ContextUsage           *ReadContextUsage
+	ActiveModel            *ReadActiveModel
 	BackgroundTasks        []pa.BackgroundTaskSummary
 	Key                    pa.BotKey
 	Project                pa.ProjectScope

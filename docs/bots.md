@@ -156,7 +156,13 @@ visible to paired devices and survives a daemon restart. A paired device can
 reopen the editor or withdraw the message. Once the Bot has reserved the
 message for execution, the source refuses an edit.
 
-### See context usage and group work
+### See the model, context usage and group work
+
+Above the message box, a running Bot shows the model selection reported by its
+native session. A Bot with no active turn shows its saved setting or the Agent
+default. Choose the model label to open the same model list as Bot settings.
+Saving applies the selection when the next turn starts, including when a reply
+is already in progress. Model discovery sends no prompt.
 
 A Bot chat shows context tokens when its provider reports a valid reading.
 After a successful turn, the last reported reading stays visible for its

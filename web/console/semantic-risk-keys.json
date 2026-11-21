@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13867,
+  "englishKeys": 13870,
   "counts": {
     "negation": 3570,
-    "state": 2345,
+    "state": 2346,
     "permission": 837,
     "deletion": 320,
     "uncertainty": 553
   },
-  "unionCount": 5915,
+  "unionCount": 5916,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5550,6 +5550,7 @@
       "projectAssistants.backgroundQueued",
       "projectAssistants.backgroundStopped",
       "projectAssistants.cancelled",
+      "projectAssistants.chatModelSaved",
       "projectAssistants.checkDelivered",
       "projectAssistants.checkEarlierDelivered",
       "projectAssistants.checkEarlierFailed",
@@ -12612,6 +12613,7 @@
     "projectAssistants.botNotifyHint",
     "projectAssistants.cancelled",
     "projectAssistants.cannotEdit",
+    "projectAssistants.chatModelSaved",
     "projectAssistants.checkDelivered",
     "projectAssistants.checkEarlierDelivered",
     "projectAssistants.checkEarlierFailed",

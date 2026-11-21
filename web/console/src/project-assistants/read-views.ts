@@ -101,6 +101,8 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
   const context=h.context_usage
   if(context!==undefined&&(!object(context)||!text(context.turn_id)||typeof context.live!=="boolean"||
     (context.live?context.turn_id!==c.active_turn_id:!!c.active_turn_id)||!integer(context.used_tokens)||!integer(context.window_tokens,1)))throw failure("pa_invalid")
+  const model=h.active_model
+  if(model!==undefined&&(!object(model)||!c.active_turn_id||model.turn_id!==c.active_turn_id||!text(model.name)))throw failure("pa_invalid")
   if(h.queued_turn_count!==undefined&&!integer(h.queued_turn_count))throw failure("pa_invalid")
   if(h.background_tasks!==undefined){
     if(!Array.isArray(h.background_tasks)||h.background_tasks.length>100)throw failure("pa_invalid")

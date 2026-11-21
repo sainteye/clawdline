@@ -163,13 +163,13 @@ type SessionUsage struct {
 	StderrBytes         int
 }
 
-// NativeContextState is a live session's own advertised command and token
-// reading. Unknown is separate from an observed zero; no model/window value
-// is inferred. This is not permission to execute a maintenance command.
+// NativeContextState is a live session's own reported model, available commands,
+// and token reading. Unknown is separate from an observed zero.
 type NativeContextState struct {
 	TurnID            string
 	Fence             pa.Fence
 	NativeSessionID   string
+	Model             string
 	CommandsKnown     bool
 	CompactAdvertised bool
 	UsageKnown        bool
