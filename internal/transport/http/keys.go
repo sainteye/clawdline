@@ -82,13 +82,14 @@ func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, id strin
 // than the generated bool, whose omitempty would drop it. `selected` is a
 // pointer for the same reason.
 type menuWire struct {
-	Options  []menuOptionWire            `json:"options"`
-	Question string                      `json:"question,omitempty"`
-	Revision string                      `json:"revision,omitempty"`
-	Selected *int                        `json:"selected,omitempty"`
-	Source   string                      `json:"source,omitempty"`
-	Steps    []contract.SessionMenuStep  `json:"steps,omitempty"`
-	Submit   *contract.SessionMenuSubmit `json:"submit,omitempty"`
+	CommandApproval bool                        `json:"command_approval,omitempty"`
+	Options         []menuOptionWire            `json:"options"`
+	Question        string                      `json:"question,omitempty"`
+	Revision        string                      `json:"revision,omitempty"`
+	Selected        *int                        `json:"selected,omitempty"`
+	Source          string                      `json:"source,omitempty"`
+	Steps           []contract.SessionMenuStep  `json:"steps,omitempty"`
+	Submit          *contract.SessionMenuSubmit `json:"submit,omitempty"`
 }
 
 type menuOptionWire struct {
@@ -107,7 +108,7 @@ func wireMenu(item session.Session) *menuWire {
 	}
 	m := item.Menu
 	out := &menuWire{Options: make([]menuOptionWire, 0, len(m.Options)), Question: m.Question, Selected: m.Selected,
-		Source: string(m.Source), Revision: m.Revision}
+		Source: string(m.Source), Revision: m.Revision, CommandApproval: m.CommandApproval}
 	for _, o := range m.Options {
 		out.Options = append(out.Options, menuOptionWire{
 			Can: o.Answerable(), Checked: o.Checked, Detail: o.Detail,

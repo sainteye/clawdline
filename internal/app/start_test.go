@@ -64,6 +64,51 @@ func TestACodexStartedFromTheConsoleSkipsItsUpdateCheck(t *testing.T) {
 	}
 }
 
+func TestNewCodexSessionsApplyTheSelectedPermissionMode(t *testing.T) {
+	place := projects.Place{Path: t.TempDir()}
+	term := &personaTerminal{}
+	mode := projects.CodexSessionPermissionFull
+	starter := Starter{
+		Terminal:               func() projects.TerminalChoice { return projects.TerminalTmux },
+		Launcher:               term,
+		CodexSessionPermission: func() string { return mode },
+	}
+	ctx := t.Context()
+	for _, tc := range []struct {
+		mode, want string
+	}{
+		{projects.CodexSessionPermissionFull, "--sandbox danger-full-access --ask-for-approval never"},
+		{projects.CodexSessionPermissionAutoReview, `--sandbox workspace-write --ask-for-approval on-request -c 'approvals_reviewer="auto_review"'`},
+		{projects.CodexSessionPermissionNative, ""},
+	} {
+		mode = tc.mode
+		if _, err := starter.Start(ctx, place, "codex", "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		want := " codex -c check_for_update_on_startup=false"
+		if tc.want != "" {
+			want += " " + tc.want
+		}
+		if !strings.HasSuffix(term.command, want) {
+			t.Fatalf("%s: got %q, want suffix %q", mode, term.command, want)
+		}
+	}
+	mode = projects.CodexSessionPermissionFull
+	for _, launch := range []struct {
+		assistant, resume string
+	}{
+		{"codex", "0f1e2d3c-0000-4000-8000-000000000004"},
+		{"claude", ""},
+	} {
+		if _, err := starter.Start(ctx, place, launch.assistant, "", launch.resume, ""); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(term.command, "--ask-for-approval") || strings.Contains(term.command, "--sandbox") {
+			t.Fatalf("applied Codex's new Session default to %+v: %s", launch, term.command)
+		}
+	}
+}
+
 func TestANewSessionUsesTheMachinesDefaultModel(t *testing.T) {
 	place := projects.Place{Path: t.TempDir()}
 	term := &personaTerminal{}

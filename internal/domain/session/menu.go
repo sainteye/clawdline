@@ -22,6 +22,8 @@ type Menu struct {
 	// Revision distinguishes repeated native offers with identical visible prose.
 	// Empty retains the historical screen-menu fingerprint.
 	Revision string
+	// CommandApproval identifies Codex's native command confirmation.
+	CommandApproval bool
 	// Question is the prose above the rows, or the call's own words once the
 	// transcript proves which question is up. Empty when it could not be read.
 	Question string
@@ -728,7 +730,8 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 			break
 		}
 	}
-	if len(options) < 2 || (!askedOver(lines, tail[first].offset) && pickerQuestion == "" && !codexApprovalKeyLine(tail)) {
+	approvalFooter := codexApprovalKeyLine(tail)
+	if len(options) < 2 || (!askedOver(lines, tail[first].offset) && pickerQuestion == "" && !approvalFooter) {
 		return Menu{}, false
 	}
 	// Codex draws a row as a table — `1. Allow   Run the tool and continue` —
@@ -742,7 +745,9 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 	if pickerQuestion != "" {
 		menu.Question = pickerQuestion
 	} else {
-		menu.Question = codexQuestion(lines, tail[first].offset, codexApprovalKeyLine(tail))
+		menu.Question = codexQuestion(lines, tail[first].offset, approvalFooter)
+		menu.CommandApproval = approvalFooter && options[0].Label == "Yes, proceed (y)" &&
+			options[len(options)-1].Label == "No, and tell Codex what to do differently (esc)"
 	}
 	return menu, true
 }

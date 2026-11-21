@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13849,
+  "englishKeys": 13859,
   "counts": {
-    "negation": 3567,
+    "negation": 3568,
     "state": 2344,
-    "permission": 833,
+    "permission": 837,
     "deletion": 319,
     "uncertainty": 552
   },
-  "unionCount": 5909,
+  "unionCount": 5913,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3556,6 +3556,7 @@
       "workflowProfiles.noUseReceipt",
       "workflowProfiles.unavailableDescription",
       "workflowProfiles.unknown",
+      "workflowSettings.codexPermissionHelp_full",
       "workflowSettings.dispatch_full_permissionOff",
       "workflowSettings.dispatch_full_permissionOn",
       "workflowSettings.grok_full_permissionOff",
@@ -6744,6 +6745,10 @@
       "workflowProfiles.description",
       "workflowProfiles.stage.deliver.acceptance",
       "workflowProfiles.stage.execute.acceptance",
+      "workflowSettings.codexPermissionHelp_full",
+      "workflowSettings.codexPermissionHelp_native",
+      "workflowSettings.codexPermissionShortcut",
+      "workflowSettings.codexPermission_full",
       "workflowSettings.dispatch_full_permissionOff",
       "workflowSettings.dispatch_full_permissionOn",
       "workflowSettings.dispatch_full_permissionTitle",
@@ -13503,6 +13508,10 @@
     "workflowProfiles.unavailable",
     "workflowProfiles.unavailableDescription",
     "workflowProfiles.unknown",
+    "workflowSettings.codexPermissionHelp_full",
+    "workflowSettings.codexPermissionHelp_native",
+    "workflowSettings.codexPermissionShortcut",
+    "workflowSettings.codexPermission_full",
     "workflowSettings.dispatch_full_permissionOff",
     "workflowSettings.dispatch_full_permissionOn",
     "workflowSettings.dispatch_full_permissionScope",

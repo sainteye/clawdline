@@ -44,7 +44,7 @@ var browserSettings = map[string]bool{
 	"orchestrator_agent_notify": true, "orchestrator_enabled": true,
 	"orchestrator_max_children": true, "orchestrator_permission": true,
 	"orchestrator_notify_root": true, "orchestrator_child_linger": true,
-	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true,
+	"claude_auto_compact_window": true, "iterm_scan": true, "iterm_integration": true, "session_auto_discovery": true, "gemini_step_explanations": true, "session_todo_auto_take": true, "grok_full_permission": true, "codex_permission_mode": true,
 	"setup_mode": true, "setup_completed_at": true, "setup_app_device": true, "setup_skipped": true,
 	// The browser setup guide (web/console/src/session/BrowserSetup.tsx).
 	"browser_policy": true, "browser_mode": true, "browser_enabled": true, "browser_notify_new_site": true,
@@ -292,7 +292,7 @@ func (s *Server) workGateSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// workflowSettingsRoute exposes workflow defaults, discovery and new-Session terminal settings.
+// workflowSettingsRoute exposes workflow defaults, discovery, and new-Session settings.
 func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	f := s.settingsFile()
 	read := func() (contract.WorkflowSettingsSnapshot, error) {
@@ -304,6 +304,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		integration, _ := v.Bool("iterm_integration")
 		autoTake := v.SessionTodoAutoTake()
 		grokFull := v.GrokFullPermission()
+		codexPermission := v.CodexSessionPermission()
 		choice, _ := v.String("terminal")
 		terminalChoice := string(projects.ParseTerminalChoice(choice))
 		return contract.WorkflowSettingsSnapshot{
@@ -314,6 +315,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			GeminiStepExplanations: v.GeminiStepExplanations(),
 			SessionTodoAutoTake:    &autoTake,
 			GrokFullPermission:     &grokFull,
+			CodexPermissionMode:    &codexPermission,
 		}, nil
 	}
 	switch r.Method {
@@ -337,7 +339,7 @@ func (s *Server) workflowSettingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" && name != "terminal" {
+			if name != "dispatch_full_permission" && name != "session_auto_discovery" && name != "iterm_integration" && name != "gemini_step_explanations" && name != "session_todo_auto_take" && name != "grok_full_permission" && name != "codex_permission_mode" && name != "terminal" {
 				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a workflow setting key: "+name)
 				return
 			}

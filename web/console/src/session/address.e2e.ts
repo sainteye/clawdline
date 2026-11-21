@@ -83,7 +83,7 @@ const ROWS = [
   row(ITERM, "Charlie in iTerm", "iterm", "10000000-0000-4000-8000-000000000003"),
   row(LEGACY, "Delta from an old link", "tmux", "10000000-0000-4000-8000-000000000004"),
 ]
-let modelMenuScenario: { stage: "missing" | "models" | "gap" | "effort"; looks: number; keys: number; failed: boolean; readyAt: number } | null = null
+let modelMenuScenario: { stage: "missing" | "models" | "gap" | "effort" | "approval"; looks: number; keys: number; failed: boolean; readyAt: number } | null = null
 const picker = (question: string, labels: string[]) => ({ question,
   options: labels.map((label, i) => ({ n: i + 1, label, can: true, selected: i === 0 })) })
 const ACP = "owned:acp:fixture"
@@ -147,7 +147,7 @@ let machineSettings: Record<string, unknown> = {
     ],
   },
 }
-let workflowSettings: { dispatch_full_permission: boolean; session_auto_discovery: boolean; iterm_integration?: boolean; terminal?: string } = { dispatch_full_permission: true, session_auto_discovery: true }
+let workflowSettings: { dispatch_full_permission: boolean; session_auto_discovery: boolean; iterm_integration?: boolean; terminal?: string; codex_permission_mode?: string } = { dispatch_full_permission: true, session_auto_discovery: true }
 let refuseWorkflowWrite = false
 let integrationSettings: { workflow_profile?: string; space_saving_images?: boolean; workflow_skills_enabled: boolean; codegraph_enabled: boolean } = { workflow_skills_enabled: false, codegraph_enabled: false }
 let integrationWrites: Record<string, unknown>[] = []
@@ -225,7 +225,8 @@ function snapshot() {
       ...row, assistant: "codex", isClaude: false,
       state: modelMenuScenario.stage === "gap" ? "idle" : "waiting",
       menu: modelMenuScenario.stage === "models" ? picker("Select Model and Effort", ["Model Alpha", "Model Beta"]) :
-        modelMenuScenario.stage === "effort" ? picker("Select Reasoning Level for Model Alpha", ["Low", "High"]) : null,
+        modelMenuScenario.stage === "effort" ? picker("Select Reasoning Level for Model Alpha", ["Low", "High"]) :
+        modelMenuScenario.stage === "approval" ? { ...picker("$ printf fixture", ["Yes, proceed (y)", "No, and tell Codex what to do differently (esc)"]), command_approval: true } : null,
     }),
   }
 }
@@ -3442,10 +3443,41 @@ for (const [name, size, tag, legacy] of [
   } finally { usageAgentLegacy = false }
 })
 
+test("a Codex command approval opens settings for new Sessions and leaves the current choices available", async () => {
+  const prior = workflowSettings
+  workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true, codex_permission_mode: "native" }
+  modelMenuScenario = { stage: "approval", looks: 0, keys: 0, failed: false, readyAt: 0 }
+  try {
+    await inTab(PHONE, async tab => {
+      await tab.go("/" + FRAGMENT[TMUX])
+      const waitFor = (condition: string) => tab.run(`new Promise((resolve,reject) => {
+        const deadline = Date.now() + 5000
+        const check = () => (${condition}) ? resolve(true) : Date.now() < deadline ? setTimeout(check, 30) : reject(new Error(${JSON.stringify(condition)}))
+        check()
+      })`)
+      const shortcut = '#waiting [data-codex-permissions]'
+      await waitFor(`!!document.querySelector('${shortcut}')`)
+      await tab.run(`document.querySelector('${shortcut}').click()`)
+      const picker = "document.getElementById('approval-codex-permission-select')"
+      await waitFor(`${picker}?.value === "native" && ${picker}.closest("dialog").open`)
+      assert.equal(workflowSettings.codex_permission_mode, "native")
+      await tab.run(`${picker}.value = "full"; ${picker}.dispatchEvent(new Event("change", { bubbles: true }))`)
+      await waitFor(`${picker}.value === "full" && !${picker}.disabled`)
+      assert.equal(workflowSettings.codex_permission_mode, "full")
+      await tab.run(`${picker}.closest("dialog").querySelector(".buttons button").click()`)
+      await waitFor(`!!document.querySelector('#waiting [data-key="1"]:enabled')`)
+      assert.equal(modelMenuScenario?.keys, 0)
+    })
+  } finally {
+    modelMenuScenario = null
+    workflowSettings = prior
+  }
+})
+
 test("workflow settings explain integration and save the terminal and independent switches on desktop and phone", async () => {
   for (const [sizeName, size] of [["desktop", DESK], ["phone", PHONE]] as const) {
     for (const tag of ["en", "zh-Hant"]) {
-      workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true, iterm_integration: true, terminal: "auto" }
+      workflowSettings = { dispatch_full_permission: true, session_auto_discovery: true, iterm_integration: true, terminal: "auto", codex_permission_mode: "full" }
       await inTab(size, async tab => {
         await tab.go("/")
         await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
@@ -3464,24 +3496,32 @@ test("workflow settings explain integration and save the terminal and independen
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute("aria-checked"))`), ["true", "true"])
         assert.equal(await tab.run(`document.querySelectorAll('.workflow-setting-help:not([hidden])').length`), 0)
-        await tab.run(`document.querySelector('.workflow-info').focus()`)
+        const dispatchHelp = `document.querySelector('#settings-pane-3 [aria-controls="workflow-dispatch_full_permission-help"]')`
+        await waitFor(`(${dispatchHelp}.focus(), document.activeElement === ${dispatchHelp})`)
         await tab.press("Enter")
-        await waitFor(`document.querySelector('.workflow-info').getAttribute("aria-expanded") === 'true'`)
+        await waitFor(`${dispatchHelp}.getAttribute("aria-expanded") === 'true'`)
         assert.ok(await tab.run(`document.getElementById('workflow-dispatch_full_permission-help').textContent.includes(${JSON.stringify(tag === "en" ? "Running tasks" : "執行中的任務")})`))
         await tab.run(`document.querySelector('${switches}').click()`)
         await waitFor(`document.querySelector('${switches}').getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: true, iterm_integration: true, terminal: "auto" })
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: true, iterm_integration: true, terminal: "auto", codex_permission_mode: "full" })
         await tab.run(`document.querySelectorAll('.workflow-info')[1].click()`)
         await tab.run(`document.querySelectorAll('${switches}')[1].click()`)
         await waitFor(`document.querySelectorAll('${switches}')[1].getAttribute('aria-checked') === 'false' && !document.querySelector('${switches}').disabled`)
-        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "auto" })
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "auto", codex_permission_mode: "full" })
         const picker = "document.getElementById('workflow-terminal-select')"
         assert.equal(await tab.run(`${picker}.value`), "auto")
         assert.ok(await tab.run(`document.getElementById('workflow-terminal-help').textContent.includes(${JSON.stringify(tag === "en" ? "Want to keep iTerm2 integration" : "想保留 iTerm2 整合")})`))
         assert.ok(await tab.run(`${picker}.querySelector('[value="tmux"]').textContent.includes(${JSON.stringify(tag === "en" ? "no iTerm2 tab" : "不開 iTerm2 分頁")})`))
         await tab.run(`${picker}.value = "tmux"; ${picker}.dispatchEvent(new Event("change", { bubbles: true }))`)
         await waitFor(`${picker}.value === "tmux" && !${picker}.disabled`)
-        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "tmux" })
+        assert.deepEqual(workflowSettings, { dispatch_full_permission: false, session_auto_discovery: false, iterm_integration: true, terminal: "tmux", codex_permission_mode: "full" })
+        const codexPicker = "document.getElementById('workflow-codex-permission-select')"
+        assert.equal(await tab.run(`${codexPicker}.value`), "full")
+        for (const mode of ["native", "auto_review"]) {
+          await tab.run(`${codexPicker}.value = "${mode}"; ${codexPicker}.dispatchEvent(new Event("change", { bubbles: true }))`)
+          await waitFor(`${codexPicker}.value === "${mode}" && !${codexPicker}.disabled`)
+          assert.equal(workflowSettings.codex_permission_mode, mode)
+        }
         const bounds = await tab.run(`({ width: innerWidth, page: document.documentElement.scrollWidth })`)
         assert.ok(bounds.page <= bounds.width + 1, `${tag} ${sizeName} workflow overflow: ${JSON.stringify(bounds)}`)
         if (shots) { mkdirSync(shots, { recursive: true }); await tab.shot(`${tag}-${sizeName}-workflow-settings`) }
@@ -3491,6 +3531,7 @@ test("workflow settings explain integration and save the terminal and independen
         await waitFor(`document.querySelectorAll('${switches}').length === 2 && !document.querySelector('${switches}').disabled`)
         assert.deepEqual(await tab.run(`[...document.querySelectorAll('${switches}')].map(x => x.getAttribute('aria-checked'))`), ["false", "false"])
         assert.equal(await tab.run(`${picker}.value`), "tmux")
+        assert.equal(await tab.run(`${codexPicker}.value`), "auto_review")
         refuseWorkflowWrite = true
         await tab.run(`${picker}.value = "auto"; ${picker}.dispatchEvent(new Event("change", { bubbles: true }))`)
         await waitFor(`${picker}.value === "tmux" && !${picker}.disabled && !!document.querySelector('.settings-workflow .said').textContent`)
@@ -3502,7 +3543,8 @@ test("workflow settings explain integration and save the terminal and independen
           await waitFor(`!!document.getElementById("settings-tab-3")`)
           await tab.run(`document.getElementById("settings-tab-3").click()`)
           await waitFor(`document.querySelector('.workflow-terminal-row [role="status"]')?.textContent.includes("請更新")`)
-          assert.equal(await tab.run(`!!${picker}`), false)
+          await waitFor(`document.querySelector('.workflow-codex-permission-row [role="status"]')?.textContent.includes("請先更新")`)
+          assert.equal(await tab.run(`!!${picker} || !!${codexPicker}`), false)
         }
       })
     }
