@@ -498,7 +498,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         NotchIsland.shared.attach(
             to: content,
             open: { [weak self] in self?.showSessions() },
-            selectSession: { [weak self] id in self?.goToSession(id) }
+            selectSession: { [weak self] id in self?.goToSession(id) },
+            settings: { [weak self] in self?.showHome() },
+            hide: { [weak self] in self?.hideNotch() }
         )
         config.userContentController = content
         web = FileDropWebView(frame: .zero, configuration: config, trustedOrigin: home)
@@ -1077,8 +1079,38 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
     }
 
+    /// Save through the daemon so the notch menu and Settings share one write path.
+    private func hideNotch() {
+        Task { @MainActor in
+            if let token = LocalToken.read() {
+                var request = URLRequest(url: home.appendingPathComponent("v1/settings"))
+                request.httpMethod = "POST"
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = Data(#"{"notch":false}"#.utf8)
+                request.timeoutInterval = 10
+                do {
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    if (response as? HTTPURLResponse)?.statusCode == 200 {
+                        NextConfig.shared.load()
+                        NotchIsland.shared.install()
+                        notifySettingsReloaded()
+                        return
+                    }
+                    shellLog("island: settings write returned \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                } catch {
+                    shellLog("island: settings write failed: \(error.localizedDescription)")
+                }
+            }
+            let alert = NSAlert()
+            alert.messageText = L.t.islandHideFailed
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L.t.dialogOK)
+            alert.runModal()
+        }
+    }
+
     /// The notch's character and "All Sessions" return to the Session list.
-    /// The menu's Home action opens Settings and is not this destination.
     private func showSessions() {
         showConsole()
         if showingCloud { showTab(cloud: false) }
@@ -1141,6 +1173,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         refreshStatusItem()
         NotchIsland.shared.install()
         sendSettingsState()
+        notifySettingsReloaded()
+    }
+
+    private func notifySettingsReloaded() {
         web.evaluateJavaScript("window.dispatchEvent(new Event('clawdline:config-reloaded'))")
     }
 

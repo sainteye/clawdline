@@ -178,6 +178,8 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
     private var openConsole: (() -> Void)?
     /// Opening a specific session in the console.
     private var openSession: ((String) -> Void)?
+    private var openSettings: (() -> Void)?
+    private var hideIsland: (() -> Void)?
 
     /// The pointer can walk to another display without a single session
     /// changing, and the island would stay on the screen you walked away from.
@@ -197,9 +199,13 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
     /// page already knows would double that work. The script wraps whatever
     /// `window.EventSource` is by then — the shell's fleet bridge wraps it
     /// first — and both wrappers watch the one object the page asked for.
-    func attach(to content: WKUserContentController, open: @escaping () -> Void, selectSession: ((String) -> Void)? = nil) {
+    func attach(to content: WKUserContentController, open: @escaping () -> Void,
+                selectSession: @escaping (String) -> Void, settings: @escaping () -> Void,
+                hide: @escaping () -> Void) {
         openConsole = open
         openSession = selectSession
+        openSettings = settings
+        hideIsland = hide
         content.addUserScript(WKUserScript(source: Self.bridgeScript,
                                            injectionTime: .atDocumentStart,
                                            forMainFrameOnly: true))
@@ -751,6 +757,8 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
         all.keyEquivalentModifierMask = .command
         all.target = self
         menu.addItem(all)
+        menu.addItem(withTitle: L.t.islandSettings, action: #selector(showSettings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L.t.islandHide, action: #selector(hide), keyEquivalent: "").target = self
 
         // Under the ear that was pressed, in the view's own coordinates.
         let ear = view.rightEarRect
@@ -759,6 +767,14 @@ final class NotchIsland: NSObject, WKScriptMessageHandler {
 
     @objc private func showAll() {
         openConsole?()
+    }
+
+    @objc private func showSettings() {
+        openSettings?()
+    }
+
+    @objc private func hide() {
+        hideIsland?()
     }
 
     @objc private func jump(_ sender: NSMenuItem) {
