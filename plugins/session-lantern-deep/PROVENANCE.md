@@ -7,7 +7,7 @@ Lantern Deep is original to this repository. It ports no upstream project.
   four with the Grok CLI) from prompts asking for original designs with no named
   reference. Six enemy designs came from a Codex concept sheet. Each design was then
   redrawn by Codex, with the concept as reference, into a sprite sheet on a flat key
-  colour (three sheets and 46 kept frames per wanderer, 8 per enemy; the eight wanderers
+  colour (four sheets and 50 kept frames per wanderer, 8 per enemy; the eight wanderers
   with new weapons had all three sheets redrawn with that weapon, the first sheet serving
   as the reference for the other two), keyed to transparency, cut into equal
   cells and encoded with libwebp at 200 x 200. They are not hand-drawn and were not

@@ -584,10 +584,11 @@ const CAST_SIZE = [44, 42, 44, 44, 46, 44, 44, 44, 42, 48, 42, 44], CAST_HAND = 
 const FRAME_NAMES = ["run-1", "run-2", "run-3", "run-4", "slash-1", "slash-2", "slash-3", "slash-4", "jump", "fall", "cling", "land", "idle-1", "idle-2", "puzzled", "sit"], frameBox = new Map();
 function frameKey(cast, name) { return "f" + String(cast + 1).padStart(2, "0") + "-" + name; }
 // Every frame of one character shares a canvas; the standing frame gives its ground line and size.
-const GROUP_REF = { m: "idle-1", a: "look", b: "think" }, GROUP_OF = {};
+const GROUP_REF = { m: "idle-1", a: "look", b: "think", c: "warm" }, GROUP_OF = {};
 for (const n of FRAME_NAMES) GROUP_OF[n] = "m";
 for (const n of ["runb-1", "runb-2", "runb-3", "runb-4", "runb-5", "runb-6", "runb-7", "runb-8", "dash", "slash-up", "slash-down", "victory", "sleep-1", "sleep-2", "yawn", "look"]) GROUP_OF[n] = "a";
-for (const n of ["cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "guard", "wave", "think", "shrug", "warm", "drink", "sit-2", "nod"]) GROUP_OF[n] = "b";
+for (const n of ["cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "guard", "wave", "think", "shrug"]) GROUP_OF[n] = "b";
+for (const n of ["warm", "drink", "sit-2", "nod", "eat", "polish", "gaze", "stretch"]) GROUP_OF[n] = "c";
 function measure(img, whole) {
   const g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
   const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data, w = g.width, rows = [];
@@ -604,13 +605,16 @@ function castBox(cast, group) {
   const id = cast + (group || "m"); if (frameBox.has(id)) return frameBox.get(id);
   if (!group || group === "m") for (const name of FRAME_NAMES) if (!images[frameKey(cast, name)]) return null;
   const img = images[frameKey(cast, GROUP_REF[group || "m"])]; if (!img) return null;
-  const box = measure(img); frameBox.set(id, box); return box;
+  const box = measure(img);
+  // The resting sheet has no standing frame: its seated figure is matched to the seated frame of the first sheet.
+  if (group === "c") { const stand = castBox(cast), seat = measure(images[frameKey(cast, "sit")]); box.top = box.bottom - (box.bottom - box.top) * (stand.bottom - stand.top) / Math.max(1, seat.bottom - seat.top); }
+  frameBox.set(id, box); return box;
 }
 const has = (c, name) => !!images[frameKey(c.cast, name)] && !!castBox(c.cast, GROUP_OF[name]);
 // Ask for every frame of a set (so they all start loading) and answer whether the set is ready.
 const all = (c, names) => names.map(n => has(c, n)).every(Boolean);
 const RUN8 = [1, 2, 3, 4, 5, 6, 7, 8].map(i => "runb-" + i), CUT = ["cut-2", "cut-3", "cut-4", "cut-5", "cut-6"];
-const REST_POSES = ["sit", "warm", "sit-2", "drink", "warm", "nod"];
+const REST_POSES = ["sit", "warm", "eat", "sit-2", "polish", "drink", "gaze", "stretch", "nod"];
 function pickFrame(c) {
   const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12, any = (...names) => names.find(n => has(c, n));
   if (c.slash > 0) {

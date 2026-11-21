@@ -2,10 +2,11 @@
 
 An original hand-drawn underground scene. Every Project is a chamber with its own
 painted backdrop, floating slabs on three levels and ground set pieces. Every Session
-is one of twelve small wanderers, each with forty-six frames of frame-by-frame animation:
+is one of twelve small wanderers, each with fifty frames of frame-by-frame animation:
 an eight-frame run, four- and six-frame attacks, upward and downward strikes, dash, jump,
 fall, wall cling, landing, idle, look, wave, yawn, puzzled, think, shrug, guard, victory,
-sitting, warming hands, drinking, dozing and sleeping. They carry different weapons:
+sitting, warming hands, drinking, eating, polishing the weapon, gazing up, stretching,
+dozing and sleeping. A resting wanderer's weapon stands planted behind it. They carry different weapons:
 short blades, a longsword, a spear, a war hammer, twin daggers, an axe, a greatsword, a
 scythe and a bow. The archer keeps its distance and its arrow strikes when it arrives. A small wisp
 trailing each wanderer carries the state colour, and its behaviour shows the state:
@@ -17,7 +18,7 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 | `ready` | Patrols the floor or a floating slab, with an occasional practice swing; it never hops in place |
 | `waiting_session` | Climbs a shaft by kicking between two walls, rests on the ledge, then drops |
 | `waiting_you` | Stands puzzled under a warm beacon with a floating question mark |
-| `milestone_complete` | Rests by the campfire: sits, warms its hands, drinks, dozes |
+| `milestone_complete` | Rests by the campfire: sits, warms its hands, eats, drinks, polishes its weapon, gazes up, stretches, dozes |
 | `work_complete` | Sleeps on a bedroll by the campfire |
 | `unknown`, or any stale reading | Stands still and grey, and cannot be opened |
 
