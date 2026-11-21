@@ -12,7 +12,7 @@ The earlier revision proposed machine-owned installation; that transport is defe
 The sidebar’s **View plugins** entry offers the full gallery, ZIP import, and
 package management. The status-bar orbit button opens a single enabled view
 directly and shows the launcher when there are zero or multiple enabled views.
-The launcher recommends Session Departures and World of Codecraft until each
+The launcher recommends Lantern Deep, Session Departures and World of Codecraft until each
 package is installed. Selecting a recommendation opens package review in place.
 The orbit entry follows the provider quota bar’s visibility.
 An opened view fills the app. On a desktop (900 CSS pixels and wider) the launcher and a
@@ -461,7 +461,7 @@ Chromium and WebKit, in English and Taiwan Traditional Chinese. It installs the
 supplied archives behind a cookie gate and from a public origin, verifies
 reload persistence, refuses a download without modifying the registry, and
 checks a cross-origin redirect does not carry the native cookie. It also installs
-both recommendations from the launcher at desktop and mobile widths, checks
+the recommendations from the launcher at desktop and mobile widths, checks
 focus on review and cancellation, and opens the installed views after a reload. Run with
 `PLUGIN_ARTIFACTS` and an existing `PLAYWRIGHT_MODULE`. The former credential-omitting
 host fails the native installation case before reaching package review.
