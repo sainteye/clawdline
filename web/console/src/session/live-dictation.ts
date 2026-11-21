@@ -2,10 +2,31 @@ import type { captureMachineFetch } from "../cloud/install.js"
 
 export type DictationConnection = ReturnType<typeof captureMachineFetch>
 
-export async function usesLiveDictation(connection: DictationConnection, signal: AbortSignal): Promise<boolean> {
+export type DictationEngine = "whisper" | "openai_realtime"
+
+function engineFrom(value: unknown): DictationEngine | null {
+  return value === "whisper" || value === "openai_realtime" ? value : null
+}
+
+export async function readDictationEngine(connection: DictationConnection, signal: AbortSignal): Promise<DictationEngine | null> {
   try {
     const response = await connection.fetch("/v1/settings/voice", { cache: "no-store", signal })
-    return response.ok && (await response.json()).voice_transcription === "openai_realtime"
+    return response.ok ? engineFrom((await response.json()).voice_transcription) : null
+  } catch {
+    return null
+  }
+}
+
+export async function writeDictationEngine(
+  connection: DictationConnection, engine: DictationEngine, request: string, signal: AbortSignal,
+): Promise<boolean> {
+  if (!connection.current()) return false
+  try {
+    const response = await connection.fetch("/v1/settings/voice", {
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": request },
+      body: JSON.stringify({ voice_transcription: engine }), signal,
+    })
+    return response.ok && engineFrom((await response.json()).voice_transcription) === engine
   } catch {
     return false
   }

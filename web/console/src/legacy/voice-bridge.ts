@@ -23,7 +23,8 @@
 // this module those two calls once (`attachVoice`).
 import { nextWord } from "../next-strings.js"
 import { captureMachineFetch } from "../cloud/install.js"
-import { connectLiveDictation, LiveDictationError, usesLiveDictation } from "../session/live-dictation.js"
+import { connectLiveDictation, LiveDictationError, readDictationEngine, writeDictationEngine, type DictationConnection, type DictationEngine } from "../session/live-dictation.js"
+import { traditionalDictation } from "../session/traditional-dictation.generated.js"
 import { recordVoiceDiagnostic, type VoiceDiagnostic } from "./voice-events.js"
 import { T, fill } from "./js/core/i18n.js"
 import { reduced } from "./js/core/env.js"
@@ -170,6 +171,8 @@ interface Recording {
   prepared?: { revision: number; promise: Promise<string> }
   closeDecoder?: () => void
   live?: Awaited<ReturnType<typeof connectLiveDictation>>
+  enginePicker?: { connection: DictationConnection; selected: DictationEngine }
+  traditional?: boolean
   liveAnswer?: Promise<string>
   retryWithWhisper?: boolean
   // A cancelled wait may still be executing on the host. Reuse that request
@@ -403,7 +406,7 @@ function open(job: VoiceJob): void {
   const microphone = navigator.mediaDevices.getUserMedia({ audio: true })
   const connection = job.pickEngine ? captureMachineFetch() : null
   let expiry: ReturnType<typeof setTimeout> | undefined
-  const useLive = connection ? usesLiveDictation(connection, controller.signal) : false
+  const selectedEngine = connection ? readDictationEngine(connection, controller.signal) : null
 
   void microphone.then(async (got) => {
     if (mine !== token || job.guard()) {
@@ -413,7 +416,9 @@ function open(job: VoiceJob): void {
     }
     stream = got
     expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
-    if (!(await useLive) || !connection) {
+    const selected = await selectedEngine
+    const enginePicker = connection && selected ? { connection, selected } : undefined
+    if (selected !== "openai_realtime" || !connection) {
       if (mine !== token) return
       if (job.guard() || (connection && !connection.current())) { cancel(); return }
       if (whisperless) {
@@ -424,7 +429,7 @@ function open(job: VoiceJob): void {
         else speak(complain(failure), true)
         return
       }
-      begin(got, mine)
+      begin(got, mine, undefined, enginePicker)
       return
     }
     if (mine !== token || job.guard()) { if (mine === token) cancel(); return }
@@ -434,13 +439,14 @@ function open(job: VoiceJob): void {
     show()
     document.addEventListener("visibilitychange", backgrounded)
     window.addEventListener("pagehide", cancelWhileConnecting)
+    const traditional = document.documentElement.lang === "zh-Hant"
     for (const track of got.getAudioTracks()) track.enabled = false
     const live = await connectLiveDictation(connection, got, freshKey(), controller.signal, (text) => {
       if (mine !== token) return
       const preview = job.host.querySelector<HTMLElement>(".voice-live-preview")
       if (!preview) return
       const atBottom = preview.scrollHeight - preview.clientHeight - preview.scrollTop <= 2
-      preview.textContent = text
+      preview.textContent = traditional ? traditionalDictation(text) : text
       if (atBottom) preview.scrollTop = preview.scrollHeight
     })
     if (mine !== token || job.guard() || !connection.current()) {
@@ -450,7 +456,7 @@ function open(job: VoiceJob): void {
     }
     window.removeEventListener("pagehide", cancelWhileConnecting)
     for (const track of got.getAudioTracks()) track.enabled = true
-    begin(got, mine, live)
+    begin(got, mine, live, enginePicker, traditional)
   }, (error) => {
     if (mine !== token) return
     cancel()
@@ -475,9 +481,14 @@ function liveFailure(error: unknown): string {
   return nextWord("voiceRealtimeFailed")
 }
 
-function begin(got: MediaStream, mine: number, live?: Recording["live"]): void {
+function begin(
+  got: MediaStream, mine: number, live?: Recording["live"], enginePicker?: Recording["enginePicker"], traditional = false,
+): void {
   stream = got
-  const take: Recording = { chunks: [], bytes: 0, complete: false, finished: false, limited: false, mime: "", revision: 0, live, retryWithWhisper: !!live }
+  const take: Recording = {
+    chunks: [], bytes: 0, complete: false, finished: false, limited: false, mime: "", revision: 0,
+    live, enginePicker, traditional, retryWithWhisper: !!live,
+  }
   recording = take
   try {
     const current = new MediaRecorder(got)
@@ -703,7 +714,7 @@ function finishLive(take: Recording, answer: Promise<string>): void {
   show()
   void answer.then((text) => {
     if (!current()) return
-    const said = text.trim()
+    const said = (take.traditional ? traditionalDictation(text) : text).trim()
     if (!said) { recover("processing_failed"); speak(S.webVoiceEmpty); return }
     cancel()
     knockTwice()
@@ -1304,11 +1315,16 @@ function show(): void {
     what.appendChild(note)
     box.appendChild(what)
 
-    const sourceLabel = document.createElement("span")
-    sourceLabel.className = "source"
-    sourceLabel.hidden = true
-    box.appendChild(sourceLabel)
-    showSource()
+    const enginePicker = state === "recording" ? recording?.enginePicker : undefined
+    if (enginePicker) {
+      box.appendChild(engineSelect(enginePicker))
+    } else {
+      const sourceLabel = document.createElement("span")
+      sourceLabel.className = "source"
+      sourceLabel.hidden = true
+      box.appendChild(sourceLabel)
+      showSource()
+    }
 
     /**
      * The ways out, in the order this page puts every pair — the one that
@@ -1360,6 +1376,47 @@ function show(): void {
   }
   say()
   changed()
+}
+
+/** Change the settings machine's preference without touching the active take. */
+function engineSelect(picker: NonNullable<Recording["enginePicker"]>): HTMLLabelElement {
+  const control = document.createElement("label")
+  control.className = "voice-engine-control"
+  const caption = document.createElement("span")
+  caption.textContent = nextWord("voiceEngineNextCaption")
+  caption.setAttribute("aria-hidden", "true")
+  const select = document.createElement("select")
+  select.className = "voice-engine-picker"
+  const label = nextWord("voiceEngineNext")
+  select.setAttribute("aria-label", label)
+  select.title = label
+  for (const [value, caption] of [
+    ["whisper", nextWord("voiceEngineWhisper")], ["openai_realtime", nextWord("voiceEngineRealtime")],
+  ]) {
+    const option = document.createElement("option")
+    option.value = value
+    option.textContent = caption
+    select.appendChild(option)
+  }
+  select.value = picker.selected
+  select.addEventListener("change", () => {
+    const selected = select.value
+    if (selected !== "whisper" && selected !== "openai_realtime") return
+    select.disabled = true
+    const say = activeJob?.say ?? host.say
+    const controller = new AbortController()
+    const expiry = setTimeout(() => controller.abort(), VOICE_PREPARE_MS)
+    void writeDictationEngine(picker.connection, selected, freshKey(), controller.signal).then((saved) => {
+      clearTimeout(expiry)
+      if (saved) picker.selected = selected
+      select.value = picker.selected
+      select.disabled = false
+      if (picker.connection.current()) say(nextWord(saved ? "voiceEngineNextSaved" : "voiceEngineChangeFailed"), !saved)
+    })
+  })
+  control.appendChild(caption)
+  control.appendChild(select)
+  return control
 }
 
 /** Update the already-drawn source without rebuilding buttons under a thumb. */

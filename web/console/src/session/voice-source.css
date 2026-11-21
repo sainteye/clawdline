@@ -13,6 +13,31 @@
   display: none;
 }
 
+.voice .voice-engine-control {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 53%;
+  gap: 4px;
+  color: var(--faint);
+  font: 11px/1.4 var(--mono);
+  white-space: nowrap;
+}
+
+.voice .voice-engine-picker {
+  min-width: 0;
+  min-block-size: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 6px;
+  background: var(--card);
+  color: var(--dim);
+  font: 12px/1.4 var(--mono);
+  cursor: pointer;
+}
+
 /* Send while recording: the word with the paper plane Send means elsewhere,
    so the button that delivers the message unread says so before it is
    pressed. Lives here because `legacy/composer.css` is a pinned copy. */

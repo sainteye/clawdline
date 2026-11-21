@@ -1,14 +1,36 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
-import { connectLiveDictation, usesLiveDictation } from "./live-dictation.ts"
+import { connectLiveDictation, readDictationEngine, writeDictationEngine } from "./live-dictation.ts"
 
-test("only a machine that selected OpenAI starts live dictation", async () => {
+test("read the selected engine from the active machine and recognize older daemons", async () => {
   const signal = new AbortController().signal
   const connection = { current: () => true, fetch: async () => Response.json({}) }
-  assert.equal(await usesLiveDictation(connection, signal), false)
+  assert.equal(await readDictationEngine(connection, signal), null)
+  connection.fetch = async () => Response.json({ voice_transcription: "whisper" })
+  assert.equal(await readDictationEngine(connection, signal), "whisper")
   connection.fetch = async () => Response.json({ voice_transcription: "openai_realtime" })
-  assert.equal(await usesLiveDictation(connection, signal), true)
+  assert.equal(await readDictationEngine(connection, signal), "openai_realtime")
+})
+
+test("the recording panel saves the same machine preference with a verified response", async () => {
+  const signal = new AbortController().signal
+  let current = true, calls = 0
+  const connection = {
+    current: () => current,
+    fetch: async (path: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1
+      assert.equal(path, "/v1/settings/voice")
+      assert.equal(init?.method, "POST")
+      assert.equal(new Headers(init?.headers).get("idempotency-key"), "recording-choice")
+      assert.deepEqual(JSON.parse(String(init?.body)), { voice_transcription: "whisper" })
+      return Response.json({ voice_transcription: "whisper" })
+    },
+  }
+  assert.equal(await writeDictationEngine(connection, "whisper", "recording-choice", signal), true)
+  current = false
+  assert.equal(await writeDictationEngine(connection, "whisper", "recording-choice", signal), false)
+  assert.equal(calls, 1)
 })
 
 function fakeRealtime(t: import("node:test").TestContext, direction: RTCRtpTransceiverDirection = "sendrecv") {

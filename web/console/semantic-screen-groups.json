@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13874,
-  "riskKeys": 5917,
-  "nonRiskCount": 7957,
+  "englishContentKeys": 13878,
+  "riskKeys": 5918,
+  "nonRiskCount": 7960,
   "groups": [
     {
       "name": "acp / other",
@@ -4246,7 +4246,7 @@
     },
     {
       "name": "next / other",
-      "count": 1326,
+      "count": 1329,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5494,6 +5494,9 @@
         "next.usageUnattributed",
         "next.usageUnsupported",
         "next.voiceEngineKeyMissing",
+        "next.voiceEngineNext",
+        "next.voiceEngineNextCaption",
+        "next.voiceEngineNextSaved",
         "next.voiceEngineRealtime",
         "next.voiceEngineRealtimeHint",
         "next.voiceEngineWhisper",
