@@ -230,6 +230,7 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalDirectCandidates:     func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectCandidates) },
 		capacity.CloudTerminalDirectNegotiate:      func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectNegotiate) },
 		capacity.CloudTerminalDirectGather:         func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectGather) },
+		capacity.CloudTerminalDirectICERecovery:    func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectICERecovery) },
 		capacity.CloudTerminalDirectMessage:        func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectMessage) },
 		capacity.CloudTerminalDirectChunk:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectChunk) },
 		capacity.CloudTerminalDirectAck:            func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectAck) },
