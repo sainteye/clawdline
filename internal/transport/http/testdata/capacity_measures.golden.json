@@ -2763,6 +2763,21 @@
     "Note": true
   },
   {
+    "Name": "console.whisper_preview_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.whisper_preview_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.whisper_preview_pcm_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "coordinator.aliases",
     "Known": true
   },

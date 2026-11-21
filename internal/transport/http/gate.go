@@ -588,6 +588,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may not start OpenAI voice transcription."
 		}
+	case p == "/v1/voice/preview":
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may not preview voice transcription."
+		}
 	case p == "/v1/settings/copilot":
 		// The voice copilot's settings, carried to a paired phone. Writing them
 		// stores the OpenAI key; a remote device needs Send, as for voice.

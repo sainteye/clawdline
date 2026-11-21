@@ -334,6 +334,7 @@ export type WriteRoute =
   | { op: "copilot-settings-update"; word: Carried<"copilot-settings-update"> }
   | { op: "copilot-session"; word: Carried<"copilot-session"> }
   | { op: "copilot-live"; word: Carried<"copilot-live"> }
+  | { op: "voice-preview"; word: Carried<"voice-preview"> }
   | { op: "voice-live-transcription"; word: Carried<"voice-live-transcription"> }
   | { op: "copilot-briefing"; word: Carried<"copilot-briefing"> }
   | { op: "copilot-decide"; word: Carried<"copilot-decide"> }
@@ -825,6 +826,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "voice" && a === "copilot-session" && segments.length === 2) {
     return { op: "copilot-session", word: "copilot-session" }
   }
+  if (head === "voice" && a === "preview" && segments.length === 2) {
+    return { op: "voice-preview", word: "voice-preview" }
+  }
   if (head === "voice" && a === "live-transcription" && segments.length === 2) {
     return { op: "voice-live-transcription", word: "voice-live-transcription" }
   }
@@ -1130,6 +1134,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "copilot-settings-update":
     case "copilot-session":
     case "copilot-live":
+    case "voice-preview":
     case "voice-live-transcription":
     case "copilot-briefing":
     case "copilot-decide":
@@ -1613,6 +1618,14 @@ export class RelayWriter {
           }, route.persona, key)
         }
         return client.resumePlace(route.place, route.past, route.assistant, key || undefined)
+      }
+      case "voice-preview": {
+        const body = await bodyOf(init)
+        const host = client.voiceHostFor ? await client.voiceHostFor(this.host.machine) : await client.voiceHost?.()
+        const target = host?.machine ?? this.host.machine
+        const commands = declaredCommands(client, target)
+        if (commands && !commands.includes(route.word)) throw failure("cloud_not_carried", route.word, 501)
+        return this.machineWorkV2(client, route.word, { audio: body.audio, rate: body.rate }, headerOf(init, "idempotency-key"), target)
       }
       case "voice": {
         const body = await bodyOf(init)

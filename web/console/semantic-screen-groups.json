@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13878,
-  "riskKeys": 5918,
-  "nonRiskCount": 7960,
+  "englishContentKeys": 13886,
+  "riskKeys": 5921,
+  "nonRiskCount": 7965,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 710,
+      "count": 714,
       "sources": [
         null
       ],
@@ -1023,6 +1023,10 @@
         "capacityRow.console.viewer_health_send_every_seconds.full",
         "capacityRow.console.viewer_health_send_every_seconds.what",
         "capacityRow.console.voice_read_milliseconds.what",
+        "capacityRow.console.whisper_preview_body_bytes.what",
+        "capacityRow.console.whisper_preview_milliseconds.what",
+        "capacityRow.console.whisper_preview_pcm_bytes.full",
+        "capacityRow.console.whisper_preview_pcm_bytes.what",
         "capacityRow.coordinator.aliases.what",
         "capacityRow.deploy.health_seconds.full",
         "capacityRow.diagnostics.api_active.what",
@@ -4246,7 +4250,7 @@
     },
     {
       "name": "next / other",
-      "count": 1329,
+      "count": 1330,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5493,6 +5497,7 @@
         "next.usageTokens",
         "next.usageUnattributed",
         "next.usageUnsupported",
+        "next.voiceAutoPolish",
         "next.voiceEngineKeyMissing",
         "next.voiceEngineNext",
         "next.voiceEngineNextCaption",

@@ -10876,6 +10876,66 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.whisper_preview_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 129024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumWhisperPreviewBodyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.whisper_preview_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumWhisperPreviewMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.whisper_preview_pcm_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 96000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumWhisperPreviewPCMBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "coordinator.aliases",
     "Class": "journal",
     "Unit": "rows",
