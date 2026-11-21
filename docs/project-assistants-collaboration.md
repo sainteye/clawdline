@@ -1,6 +1,6 @@
 # Persistent Bot review exchange
 
-This development source adds the minimal same-Project request/reply path.
+This development source adds the minimal request/reply path between Bots on one machine.
 It is not installed-native, production Cloud, full team/group-room or release
 acceptance. The child sandbox initially blocked `/bin/ps`; Root reran the actual
 ACP/TCP path with authorized process census and repaired the peer's invalid
@@ -13,8 +13,16 @@ Bot key, full Project, conversation, turn, fence, authority and lifetime.
 Model arguments contain no sender identity or machine credential. Admission
 returns a durable queued exchange and wakes the recipient only after commit.
 Directory results contain ID, name and agent, excluding self and hidden Bots.
-Direct IDs must pass the same full Project check, including Project ID rather
-than canonical repository identity alone.
+
+Since 2026-11-21 the directory and admission span every Project and personal
+workspace on the same machine, for ordinary Bots and routine runs alike; before
+that only a designated Lead could reach outside its Project, and only during a
+person's own turn. A routine that had to hand work to a Bot in another
+workspace found an empty directory and stopped. Each side still keeps its own
+fence: the exchange records the sender's Project and the recipient's
+`target_project`, the target's Project is resolved again on admission, and the
+recipient works with its own workspace, memory and permissions. A forwarded
+request still cannot contact another Bot, and hidden Bots remain unreachable.
 
 The feature-owned exchange table and both Bot aggregates are changed in one
 transaction, locking aggregate keys in stable order. Source admission receipts,
@@ -169,7 +177,7 @@ The read-only upstream comparison was `BotConversation.tsx` and
 `bot-exchange.ts` at `9f67eb09084db61b3cca9c84a11bc03df9de29b7`, together
 with `host/src/chat/team.rs` and `team/requests.rs`. Upstream opens peer history
 from a compact chat row and shows authored request/reply rows with status.
-Clawdline keeps its existing same-Project exchange contract and captured
+Clawdline keeps its existing single-machine exchange contract and captured
 transport rather than importing cross-computer directory authority.
 
 Focused Node controls cover both participants, foreign scope, missing/duplicate

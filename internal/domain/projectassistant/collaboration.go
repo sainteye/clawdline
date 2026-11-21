@@ -76,14 +76,12 @@ func (x Exchange) ParticipantProject(key BotKey) ProjectScope {
 	}
 }
 
-// A human designation allows a lead to coordinate same-machine Bots during
-// a user's turn. Peers keep their old scope and never inherit the lead's.
-func MayContactBot(source, target Bot, turn Turn) bool {
-	if source.Key == target.Key || source.Key.MachineID != target.Key.MachineID || source.Hidden || target.Hidden {
-		return false
-	}
-	return source.Project == target.Project ||
-		source.Lead && turn.RoutineRunID == "" && (turn.Origin == UserOrigin || turn.Origin == "")
+// Any visible Bot may ask another visible Bot on the same machine, whichever
+// Project or personal workspace either belongs to. The recipient handles the
+// request with its own workspace, memory and permissions, never the sender's;
+// forwarded requests still cannot contact a further Bot (CheckCollaborationRequest).
+func MayContactBot(source, target Bot) bool {
+	return source.Key != target.Key && source.Key.MachineID == target.Key.MachineID && !source.Hidden && !target.Hidden
 }
 
 // Recipient identifies the execution conversation. Target remains the visible

@@ -546,34 +546,21 @@ func TestCollaborationRestartAndStopDropWaitingReplyWithoutLosingReview(t *testi
 	}
 }
 
-func TestLeadCollaborationKeepsBothWorkspaceFences(t *testing.T) {
+func TestCrossWorkspaceCollaborationKeepsBothWorkspaceFences(t *testing.T) {
 	_, store, _ := testDB(t)
-	leadKey := pa.BotKey{MachineID: "machine", BotID: "personal"}
-	workspace := pa.PersonalScope(pa.WorkspaceForCreate(command(leadKey, pa.CreateOperation, "create")))
-	lead := seedWithScope(t, store, leadKey.BotID, workspace)
+	senderKey := pa.BotKey{MachineID: "machine", BotID: "personal"}
+	workspace := pa.PersonalScope(pa.WorkspaceForCreate(command(senderKey, pa.CreateOperation, "create")))
+	sender := seedWithScope(t, store, senderKey.BotID, workspace)
+	if sender.Lead {
+		t.Fatal("the sender must be an ordinary Bot, not the Lead")
+	}
 	target := seed(t, store, "specialist")
-	fence := populate(t, store, lead, pa.EffectAccepted)
-	request := reviewAdmission(t, store, lead, target, "cross-workspace")
-	request.Exchange.TargetProject = target.Project
-	if _, err := store.AdmitExchange(testContext, request); pa.Code(err) != pa.ScopeDenied {
-		t.Fatalf("ordinary Bot could delegate across workspaces: %v", err)
-	}
-	current, err := store.Bot(testContext, lead.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := current.Version
-	current.Lead, current.Version = true, expected+1
-	if _, err = store.Commit(testContext, app.Mutation{DesignateLead: true, Bot: &current, ExpectedVersion: expected,
-		Command: command(lead.Key, pa.EditOperation, "make-lead"), Receipt: pa.Receipt{ID: "make-lead", State: pa.EffectDelivered},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	fence := populate(t, store, sender, pa.EffectAccepted)
 	directory, err := store.Directory(testContext, fence, "turn", pa.BotDirectoryQuery{})
 	if err != nil || len(directory.Bots) != 1 || directory.Bots[0].ID != target.Key.BotID {
-		t.Fatalf("lead directory: %+v %v", directory, err)
+		t.Fatalf("cross-workspace directory: %+v %v", directory, err)
 	}
-	request = reviewAdmission(t, store, lead, target, "cross-workspace")
+	request := reviewAdmission(t, store, sender, target, "cross-workspace")
 	request.Exchange.TargetProject = target.Project
 	exchange, err := store.AdmitExchange(testContext, request)
 	if err != nil {
@@ -584,11 +571,11 @@ func TestLeadCollaborationKeepsBothWorkspaceFences(t *testing.T) {
 		t.Fatalf("recipient Task: %v %v", worker, err)
 	}
 	active := reviewStart(t, store, worker, exchange.RequestTurnID)
-	if active.Fence.Project != target.Project || active.Fence.Project == lead.Project {
+	if active.Fence.Project != target.Project || active.Fence.Project == sender.Project {
 		t.Fatal("recipient inherited sender workspace")
 	}
 	exchange, err = store.FinishExchange(testContext, reviewFinish(t, store, worker, active, pa.TurnSucceeded), "Synthetic result")
-	if err != nil || exchange.Project != lead.Project || exchange.DestinationProject() != target.Project || exchange.Delivery != "queued" {
-		t.Fatalf("reply did not return to the lead: %+v %v", exchange, err)
+	if err != nil || exchange.Project != sender.Project || exchange.DestinationProject() != target.Project || exchange.Delivery != "queued" {
+		t.Fatalf("reply did not return to the sender: %+v %v", exchange, err)
 	}
 }
