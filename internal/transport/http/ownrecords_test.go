@@ -8,6 +8,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // A task of this daemon's is tied to the session in its child terminal only
@@ -170,5 +171,29 @@ func TestReusedTmuxPaneDoesNotInheritOpenedSessionLabels(t *testing.T) {
 func TestTheEventsPruneKeepsTheDeliveredReceipt(t *testing.T) {
 	if !store.EventKindKeptLatest(eventSessionDelivered) {
 		t.Fatalf("%s is read through LatestEvents and the prune does not keep its newest row", eventSessionDelivered)
+	}
+}
+
+func TestSessionLabelsIdentifyBotDispatchedTasks(t *testing.T) {
+	const title = "重新連線後保留訊息草稿"
+	live := ownrecords.Live{TerminalID: "%1", Assistant: "claude"}
+	for _, tc := range []struct {
+		name, title, schedule, want string
+		owner                       *orchestrator.AssistantOwner
+	}{
+		{"Bot dispatch", title, "", "[Bot Task] " + title, &orchestrator.AssistantOwner{}},
+		{"already marked Bot dispatch", "[Bot Task] " + title, "", "[Bot Task] " + title, &orchestrator.AssistantOwner{}},
+		{"schedule", title, "schedule", "[Task] " + title, nil},
+		{"ordinary dispatch", title, "", title, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := orchestrator.Record{ID: "task", Title: tc.title, Assistant: live.Assistant, ChildTerminalID: live.TerminalID,
+				State: orchestrator.StateBriefed, ScheduleID: tc.schedule, AssistantOwner: tc.owner}
+			snapshot := (ownrecords.Snapshot{}).With(ownrecords.Own{Tasks: ownTasks([]orchestrator.Record{r}, nil)})
+			titles := snapshot.TitleOf(live, "", []ownrecords.Live{live})
+			if got := rowLabel(session.Session{}, titles, ""); got != tc.want {
+				t.Fatalf("Session label = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

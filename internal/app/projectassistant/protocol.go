@@ -53,7 +53,7 @@ type OpenRequest struct {
 
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
-	Dispatch(context.Context, string, string, []string) (pa.WorkLink, error)
+	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)
 	Status(context.Context, string) (pa.WorkLink, error)
 	// Memory returns the Bot's live entries; EditMemory changes them for the
 	// current turn, the call ID making a repeated call the same change.

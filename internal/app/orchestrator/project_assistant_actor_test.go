@@ -77,6 +77,9 @@ func TestBotDispatchLaunchesClaudeInAutoMode(t *testing.T) {
 	if out.Record.PermissionMode != "auto" || !strings.Contains(line, "--permission-mode auto") {
 		t.Fatalf("dispatch did not launch in Auto: state=%s mode=%s command=%s", out.Record.State, out.Record.PermissionMode, line)
 	}
+	if out.Record.Title != "Change only a.go in the isolated worktree." {
+		t.Fatalf("legacy dispatch title = %q", out.Record.Title)
+	}
 }
 
 func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *testing.T) {

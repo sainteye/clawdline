@@ -123,7 +123,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 			check(call("send_message", message), false)
 			message["text"] = "Conflicting text"
 			check(call("send_message", message), true)
-			work := map[string]any{"idempotency_key": "native-work", "brief": "Change only a.go in its isolated worktree.", "claims": []string{"a.go"}}
+			work := map[string]any{"idempotency_key": "native-work", "title": "保留工作樹的驗收紀錄", "brief": "Change only a.go in its isolated worktree.", "claims": []string{"a.go"}}
 			check(call("dispatch_work", work), false)
 			check(call("dispatch_work", work), true)
 			write(f.ID, map[string]string{"stopReason": "end_turn"})
@@ -177,6 +177,9 @@ func TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration(t *test
 	r, _, err := f.o.Broker.Record(ctx, link.TaskID)
 	if err != nil || r.Worktree == nil || r.Worktree.Path == f.repo {
 		t.Fatal("isolated broker work missing", r, err)
+	}
+	if r.Title != "保留工作樹的驗收紀錄" {
+		t.Fatalf("worker Session title = %q", r.Title)
 	}
 	if err = os.WriteFile(filepath.Join(r.Worktree.Path, "a.go"), []byte("package a\n// MCP fixture delivery\n"), 0600); err != nil {
 		t.Fatal(err)

@@ -195,7 +195,8 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Fence         pa.Fence
 		TurnID, Brief string
 		Claims        []string
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims})
+		Title         string `json:",omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -244,6 +245,21 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	return c, nil
 }
 
+func assistantTaskTitle(q pa.WorkRequest) string {
+	if q.Title != "" {
+		return strings.TrimSpace(q.Title)
+	}
+
+	// Older callers supplied only a brief. Use its opening line when it can
+	// serve as a task title, and keep the full brief in the worker instructions.
+	line, _, _ := strings.Cut(strings.TrimSpace(q.Brief), "\n")
+	title := strings.TrimSpace(truncate(strings.TrimSpace(line), titleLimit))
+	if pa.ValidateWorkTitle(title) == nil {
+		return title
+	}
+	return "Complete the scoped Bot request"
+}
+
 // DispatchAssistant is the only Bot dispatch door. It prepares an in-memory
 // validated draft, then enters Dispatch's existing claims/capacity/quota/
 // worktree/durable-before-spawn pipeline. No Session or user run is fabricated.
@@ -260,7 +276,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	id := AssistantTaskID(q.Command)
 	protocol := Protocol
 	d := draft{Protocol: &protocol, TaskID: id, Kind: "implementation", Assistant: c.Assistant, PermissionMode: c.PermissionMode, ProjectDir: c.Project.Directory,
-		Title: "Complete the scoped Bot request", Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes}
+		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes}
 	if c.PermissionMode == "" {
 		return Dispatched{}, assistantFailure(pa.ScopeDenied, "worker_permission")
 	}

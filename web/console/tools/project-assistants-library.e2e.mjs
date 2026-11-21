@@ -90,13 +90,20 @@ try {
   }
   const results=[]
   await send("Browser.setDownloadBehavior",{behavior:"allow",downloadPath:artifacts})
-  for(const [mode,lang,width] of [["local","en",1280],["local","zh-Hant",390],["cloud","en",1280],["cloud","zh-Hant",390],["read","en",390]]){
+  // local/en carries the lost-acknowledgement rename; it runs last so a
+  // failure there cannot hide the other modes' rename/reopen evidence.
+  for(const [mode,lang,width] of [["local","zh-Hant",390],["cloud","en",1280],["cloud","zh-Hant",390],["read","en",390],["local","en",1280]]){
     const {targetId}=await send("Target.createTarget",{url:"about:blank"}),sessionId=await attach(targetId)
     let lastExpression=""
-    const run=async(expression)=>{lastExpression=expression;const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
+    const run=async(expression)=>{lastExpression=expression;const r=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true,userGesture:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value}
     const until=async(expression)=>{const deadline=Date.now()+10000;while(!await run(expression)){if(Date.now()>deadline)throw Error("Timed out waiting for: "+expression);await new Promise(r=>setTimeout(r,50))}}
     const click=async(label)=>run(`(()=>{const button=[...document.querySelectorAll("button")].find(b=>b.textContent===${JSON.stringify(label)});if(!button)throw Error("Missing button: "+${JSON.stringify(label)});button.click()})()`)
     const zh=lang!=="en",close=zh?"關閉":"Close",earlier=zh?"較早訊息":"Earlier messages"
+    // Saved HTML artifacts open in the workspace dialog: its top bar holds the
+    // close button and the title button (aria-label "Rename artifact"). File
+    // viewers keep the separate .pa-output-overlay selectors above and below.
+    const renameTitle=async()=>{const label=zh?"重新命名作品":"Rename artifact";assert.equal(await run('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-bar .pa-artifact-rename > button")?.getAttribute("aria-label")??null'),label,"title button carries the rename name");await run('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-bar .pa-artifact-rename > button").click()');await until('!!document.querySelector(".pa-artifact-rename form input")')}
+    const closeArtifact=async()=>{await run('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-bar > button.pa-circle").click()');await until('!document.querySelector(".pa-artifact-workspace[open]:not([data-closing])")')}
     try {
     await send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:1,mobile:width<700},sessionId)
     const historyBefore=requests.filter(r=>r.mode===mode&&r.path.includes("mode=history")).length
@@ -118,15 +125,15 @@ try {
     assert.equal(await run('document.querySelector(".pa-output-overlay [role=alert]")?.textContent??null'),null,"picture transfer must succeed")
     assert.equal(await run('document.querySelector(".pa-library-picture")?.naturalWidth'),1,"stored PNG decodes")
     await run('document.querySelector(".pa-output-overlay header button").click()')
-    await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
-    await until('!!document.querySelector(".pa-artifact-frame")')
+    await run('(()=>{const card=[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report"));card.focus();card.click()})()')
+    await until('!!document.querySelector(".pa-artifact-workspace[open] .pa-artifact-frame")')
     if(mode!=="read") {
       const artifactBefore=requests.findLast(row=>row.output?.artifact_id)?.output
       assert.ok(artifactBefore?.artifact_id,"capture the actual opened artifact identity")
       const cards=()=>run('[...document.querySelectorAll(".pa-output-card strong")].map(row=>row.textContent)')
       const cardBefore=await cards()
       assert.ok(cardBefore.includes("Interactive report"),JSON.stringify(cardBefore))
-      await click(zh?"重新命名作品":"Rename artifact")
+      await renameTitle()
       await run(`(()=>{const field=document.querySelector(".pa-artifact-rename input");const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(field,${JSON.stringify(zh?"手機改名作品":"Renamed library artifact")});field.dispatchEvent(new Event("input",{bubbles:true}))})()`)
       const unknown=mode==="local"&&!zh,renameStart=requests.filter(r=>r.path.endsWith("/rename")).length
       if(unknown)await fetch(origin+"/fault?kind=unknown")
@@ -135,13 +142,23 @@ try {
         await until('document.querySelector(".pa-artifact-rename [role=alert]")?.textContent.includes("pa_outcome_unknown")')
         assert.equal(await run('document.querySelector(".pa-artifact-rename input").disabled'),true)
         assert.equal(requests.filter(r=>r.path.endsWith("/rename")).length,renameStart+1,"unknown command does not replay automatically")
-        await run('document.querySelector(".pa-output-overlay header button").click()')
-        await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("Interactive report")).click()')
+        await closeArtifact()
+        await until('!document.querySelector(".pa-artifact-workspace")')
+        // The lost acknowledgement hid a committed rename, so the refreshed
+        // card may already show the new title; the person reopens that card.
+        protocolEvents.push({unknownReopenCards:await run('[...document.querySelectorAll(".pa-output-card strong")].map(row=>row.textContent)')})
+        await run('(()=>{const card=[...document.querySelectorAll(".pa-output-card button")].find(b=>/Interactive report|Renamed library artifact/.test(b.textContent));card.focus();card.click()})()')
+        await until('!!document.querySelector(".pa-artifact-workspace[open]")')
+        // A reopened viewer reads the stored output once; a refetch loop is a
+        // product defect, reported with its measured rate instead of a timeout.
+        const outputsAtReopen=requests.filter(r=>r.path.includes("/output?")).length;await new Promise(r=>setTimeout(r,1500))
+        const storm=requests.filter(r=>r.path.includes("/output?")).length-outputsAtReopen
+        if(storm>5){const {data}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,"library-output-storm.png"),Buffer.from(data,"base64"));await writeFile(path.join(artifacts,"library-output-storm.json"),JSON.stringify({action:"lost-ack rename committed, close workspace, reopen artifact card",outputRequestsIn1500ms:storm,heldFormVisible:await run('!!document.querySelector(".pa-artifact-rename form")'),title:await run('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-heading > span:last-child")?.textContent??null')},null,2));throw Error(`Reopening the artifact after a lost-acknowledgement rename refetched /output ${storm} times in 1.5 s`)}
         await until('document.querySelector(".pa-artifact-rename input")?.disabled===true')
         await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
       }
-      await until('document.querySelector(".pa-output-overlay h3")?.textContent==='+JSON.stringify(zh?"手機改名作品":"Renamed library artifact"))
-      await until('[...document.querySelectorAll(".pa-artifact-rename button")].some(button=>button.textContent==='+JSON.stringify(zh?"重新命名作品":"Rename artifact")+')&&!document.querySelector(".pa-artifact-rename [role=alert]")')
+      await until('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-heading > span:last-child")?.textContent==='+JSON.stringify(zh?"手機改名作品":"Renamed library artifact"))
+      await until('document.querySelector(".pa-artifact-bar .pa-artifact-rename > button")?.getAttribute("aria-label")==='+JSON.stringify(zh?"重新命名作品":"Rename artifact")+'&&!document.querySelector(".pa-artifact-rename [role=alert]")')
       if(unknown){const commands=requests.filter(r=>r.path.endsWith("/rename")).slice(renameStart);assert.equal(commands.length,2);assert.equal(commands[0].idempotency,commands[1].idempotency,"explicit retry keeps original intent key")}
 
       const renamed=zh?"手機改名作品":"Renamed library artifact"
@@ -149,23 +166,27 @@ try {
       try{await until('[...document.querySelectorAll(".pa-output-card strong")].some(row=>row.textContent==='+JSON.stringify(renamed)+')')}
       finally{proof.cardAfter=await cards();proof.artifactAfter=requests.findLast(row=>row.output?.artifact_id)?.output;await writeFile(path.join(artifacts,`rename-card-${mode}-${lang}-${width}.json`),JSON.stringify(proof,null,2))}
       assert.equal(proof.artifactAfter.artifact_id,artifactBefore.artifact_id)
-      await run('document.querySelector(".pa-output-overlay header button").click()')
+      await closeArtifact()
       assert.ok((await cards()).includes(renamed),"closing the viewer lost the renamed old-history card")
-      await until('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent==='+JSON.stringify(renamed))
-      proof.focusAfterClose=await run('document.activeElement.closest(".pa-output-card").querySelector("strong").textContent')
-      await run('[...document.querySelectorAll(".pa-output-card button")].find(row=>row.querySelector("strong")?.textContent==='+JSON.stringify(renamed)+').click()')
-      await until('document.querySelector(".pa-output-overlay h3")?.textContent==='+JSON.stringify(renamed))
+      // Focus return is still a gate; it is judged after the reopen/bytes proof
+      // below so one failure does not hide the other evidence.
+      const focusOK=await until('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent==='+JSON.stringify(renamed)).then(()=>true,()=>false)
+      proof.focusAfterClose=await run('document.activeElement?.closest(".pa-output-card")?.querySelector("strong")?.textContent??("not a card: "+(document.activeElement?.tagName??"none")+" "+(document.activeElement?.className??""))')
+      proof.outputRequestsSoFar=requests.filter(r=>r.mode===mode&&r.path.includes("/output?")).length
+      await run('(()=>{const card=[...document.querySelectorAll(".pa-output-card button")].find(row=>row.querySelector("strong")?.textContent==='+JSON.stringify(renamed)+');card.focus();card.click()})()')
+      await until('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-heading > span:last-child")?.textContent==='+JSON.stringify(renamed))
       await until('!!document.querySelector(".pa-artifact-frame")')
       const reopened=requests.findLast(row=>row.output?.artifact_id)?.output
       assert.equal(reopened.artifact_id,artifactBefore.artifact_id)
       assert.equal(reopened.sha256,artifactBefore.sha256,"renaming changed the stored artifact bytes")
       proof.cardAfterReopen=await cards();proof.reopened=reopened
       await writeFile(path.join(artifacts,`rename-card-${mode}-${lang}-${width}.json`),JSON.stringify(proof,null,2))
+      assert.ok(focusOK,"closing the artifact returns focus to its renamed card: "+proof.focusAfterClose)
       const {data:renameShot}=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`rename-${mode}-${lang}-${width}.png`),Buffer.from(renameShot,"base64"))
-      await click(zh?"重新命名作品":"Rename artifact")
+      await renameTitle()
       await run('(()=>{const field=document.querySelector(".pa-artifact-rename input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(field,"Interactive report");field.dispatchEvent(new Event("input",{bubbles:true}))})()')
       await run('document.querySelector(".pa-artifact-rename form").requestSubmit()')
-      await until('document.querySelector(".pa-output-overlay h3")?.textContent==="Interactive report"')
+      await until('document.querySelector(".pa-artifact-workspace[open] .pa-artifact-heading > span:last-child")?.textContent==="Interactive report"')
     } else assert.equal(await run('document.querySelector(".pa-artifact-rename")'),null,"read-only has no rename control")
     const before=await send("Target.getTargets")
     await click(zh?"在瀏覽器開啟":"Open in browser")
@@ -191,7 +212,7 @@ try {
     assert.deepEqual(targetsAfter,[...before.targetInfos.filter(t=>t.type==="page").map(t=>t.targetId),opened.targetId].sort(),"artifact cannot create popups")
     assert.equal(await evaluate('document.body.dataset.compromised'),undefined)
     await send("Target.closeTarget",{targetId:opened.targetId})
-    await run('document.querySelector(".pa-output-overlay header button").click()')
+    await closeArtifact()
     if(mode==="local"&&lang==="en"){
       await fetch(origin+"/fault?kind=delay");await run('[...document.querySelectorAll(".pa-output-card button")].find(b=>b.textContent.includes("result.bin")).click()')
       await until('!!document.querySelector(".pa-output-overlay [role=status]")');await click("Cancel download");await new Promise(r=>setTimeout(r,1400));assert.ok(await run('document.querySelector(".pa-output-overlay").textContent.includes("Download cancelled")'));assert.equal(await run('document.querySelector(".pa-output-overlay .pa-library-actions")'),null)
