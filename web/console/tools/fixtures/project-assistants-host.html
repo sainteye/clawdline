@@ -29,7 +29,8 @@ import "./shell.css"
 import "./sidebar-scroll.css"
 import "./brand-handle.css"
 
-const lang = new URLSearchParams(location.search).get("lang") || "en"
+const params = new URLSearchParams(location.search)
+const lang = params.get("lang") || "en"
 localStorage.setItem("ui_language",lang)
 const originalFetch = window.fetch.bind(window)
 const words = await originalFetch("/catalogs/"+lang+".json").then(answer => answer.json())
@@ -41,8 +42,10 @@ const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic
   acceptance_criteria:"Synthetic only",acceptance_version:1,acceptance_digest:"fixture",gate_snapshot_cycle:0,gate_snapshot_at:null,planning_gate:false,verify_gate:false,
   phase:"unassigned",condition:null,user_action:"",area:"unassigned",deployment_policy:"not_required",review_required:false,owner_session:null,
   created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
+const sourceState = params.get("source")
 const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,name:source.machineName,
-  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:PROJECT_ASSISTANTS_VIEW_API_LEVEL,paired:true,online:true,writable:true}))
+  authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:sourceState === "unsupported" ? PROJECT_ASSISTANTS_API_LEVEL-1 : PROJECT_ASSISTANTS_VIEW_API_LEVEL,
+  paired:sourceState !== "unpaired",online:sourceState !== "offline",writable:true}))
 let statusWaiters = [], holdingStatus = new URLSearchParams(location.search).has("hold-status")
 let listMode = new URLSearchParams(location.search).get("list") || "ready", releaseLists = []
 const transport = grant => async (path,init) => {
@@ -58,6 +61,7 @@ const transport = grant => async (path,init) => {
       await new Promise(resolve => statusWaiters.push(resolve))
       signal.throwIfAborted()
     }
+    if (method === "list" && !feature) return Response.json({contract_version:"project-assistants.v1",error:{code:"pa_disabled",field:"",retry_after_seconds:0}},{status:409})
     if (method === "list" && listMode !== "ready") {
       log.push({method:"list-unavailable",machine:grant.machineID,request:request.fields})
       if (listMode === "denied") return Response.json({contract_version:"project-assistants.v1",error:{code:"pa_scope_denied",field:"",retry_after_seconds:0}},{status:403})

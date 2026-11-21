@@ -15,7 +15,7 @@ import { followLiveRoster } from "./live-roster"
 import { readSnapshotRoster, serialSnapshotRefresh, followSnapshotRoster } from "./snapshot-roster"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
-import { retryableSourceError, shownSourceError } from "./source-errors"
+import { retryableSourceError } from "./source-errors"
 import { matchesRosterQuery, snapshotRosterQuery } from "./roster-search"
 import { firstCallableBot } from "./roster-conversations"
 import { emptyRosterState, getRosterState } from "./roster-state"
@@ -94,6 +94,8 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     setPreferredLead(key)
     try{if(key)localStorage.setItem(leadPreferenceKey,key);else localStorage.removeItem(leadPreferenceKey)}catch{}
   }
+  const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
+  const rosterUnavailable=!rosterLoading&&!statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))
   const towerItems=allItems.filter(i=>!i.bot.hidden&&(!machine||i.bot.key.machine_id===machine))
   // Until the person chooses, a desktop with Bots opens on the tower; a phone opens on the list.
   const botsView:BotsView=unreadOnly?"list":savedView??(!narrow&&towerItems.length>0?"tower":"list")
@@ -101,12 +103,9 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     if(!unreadOnly){setQuery("");setMachine("")}
     setUnreadOnly(!unreadOnly)
   }
-  const tower=botsView==="tower"?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} loading={rosterLoading} sources={sources} current={current} projectName={item=>item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))} projectIcon={item=>projectIcons.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
+  const tower=botsView==="tower"&&(!rosterUnavailable||towerItems.length>0)?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} loading={rosterLoading} sources={sources} current={current} projectName={item=>item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))} projectIcon={item=>projectIcons.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
   const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
-  const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
-  const rosterUnavailable=!rosterLoading&&!statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))
-    &&Object.entries(pages).some(([id,p])=>(!machine||id===machine)&&shownSourceError(p.error)&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision))
   const machineNames=new Map(sources.map(s=>[s.machineID,s.machineName??""] as [string,string]))
   const load=useCallback((append=false)=>loader.current(append),[])
   // Live sources publish absolute unread counts. Snapshot sources read them back
@@ -133,7 +132,25 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
         const own=response.sources.find(s=>s.machine_id===source.machineID)
         const rows=response.items.filter(i=>i.bot.key.machine_id===source.machineID&&canRead(i.source)).map(i=>own?{...i,source:own}:i)
         setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:append?coverage+response.loadedPages:response.loadedPages,statuses:response.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
-      }catch(e){if(!control.signal.aborted){const code=errorCode(e),denied=["pa_revoked","pa_scope_denied","pa_unpaired"].includes(code);if(!retryableSourceError(code))deniedSnapshots.current.add(source);setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:!denied&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?old[source.machineID].items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):[],cursor:!denied&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?old[source.machineID]?.cursor??"":"",loadedPages:old[source.machineID]?.loadedPages,statuses:old[source.machineID]?.statuses.map(s=>({...s,fresh:false,writable:false}))??[],error:code}}))}}
+      } catch (error) {
+        if (control.signal.aborted) return
+        const code = errorCode(error)
+        const denied = ["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(code)
+        if (!retryableSourceError(code)) deniedSnapshots.current.add(source)
+        setPages(old => {
+          const previous = old[source.machineID]
+          const sameSource = !denied && previous?.revision === source.authorizationRevision
+          const sameQuery = sameSource && previous.query === query && previous.requestQuery === requestQuery
+          const stale = {fresh:false,writable:false}
+          return {...old,[source.machineID]:{
+            revision:source.authorizationRevision,query,requestQuery,error:code,
+            items:sameQuery ? previous.items.map(item => ({...item,source:{...item.source,...stale}})) : [],
+            cursor:sameQuery ? previous.cursor : "",
+            loadedPages:sameQuery ? previous.loadedPages : undefined,
+            statuses:sameSource ? previous.statuses.map(status => ({...status,...stale})) : [],
+          }}
+        })
+      }
     }))
     if(!control.signal.aborted)setLoading(false)
     },control.signal)

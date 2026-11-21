@@ -53,7 +53,7 @@ try {
         await check("initial-loading", async () => {
           await page.waitForFunction(() => fixtureHost.log.some(row => row.method === "status-wait"))
           await shortcutsVisible()
-          assert.equal(await bots.isDisabled(), true)
+          assert.equal(await bots.isEnabled(), true)
           assert.equal(await boards.isDisabled(), true)
           assert.equal(await views.isEnabled(), true)
           assert.equal(await bar.locator('[data-reading-state="loading"]').count(), 1)

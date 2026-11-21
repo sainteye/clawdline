@@ -9,10 +9,9 @@ export interface BotOrbProps {
   unread?: number
   pendingPermissions?: number
   mood?: BotMood
-  disabled?: boolean
 }
 
-export function BotOrb({ onOpen, language, unread = 0, pendingPermissions = 0, mood = "idle", disabled }: BotOrbProps) {
+export function BotOrb({ onOpen, language, unread = 0, pendingPermissions = 0, mood = "idle" }: BotOrbProps) {
   const w = words(language), count = unread + pendingPermissions
   const last = useRef(count), [ringing, setRinging] = useState(false)
   useEffect(() => {
@@ -26,7 +25,7 @@ export function BotOrb({ onOpen, language, unread = 0, pendingPermissions = 0, m
   const label = `${w.allBots}${count ? `, ${w.pending}: ${pendingPermissions}, ${w.unread}: ${unread}` : ""}`
 
   return <span className="project-assistants pa-entry pa-dock-entry">
-    <button type="button" className="pa-dock" disabled={disabled} data-ringing={ringing || undefined}
+    <button type="button" className="pa-dock" data-ringing={ringing || undefined}
       aria-label={label} title={w.allBots} onClick={event => onOpen(event.currentTarget)}>
       <BotAvatar appearance={{ shape: "blob", color: "#e39567" }} size={20} mood={mood} />
       {count > 0 && <span key={count} className="pa-dock-badge" aria-hidden="true">{count}</span>}

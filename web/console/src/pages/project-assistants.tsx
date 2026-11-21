@@ -18,7 +18,7 @@ import { followLiveRoster } from "../project-assistants/live-roster.js"
 
 const BADGE_REFRESH_MS = 15_000
 
-// The status-bar entry follows source authority. A typed URL cannot grant access.
+// The status bar opens the window; each source controls access to its own Bots.
 export const page: PageModule = {id:"project-assistants",drawer:false,Component:() => null}
 
 export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, language, onOpenWork}: {
@@ -80,8 +80,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
         if(control.signal.aborted)return
         request.statusPending=false
         const readable = status.sources.some(canRead)
-        // Entry availability comes from source authority, independently of the
-        // paged badge read. A slow or failed list must not hide the way to retry.
+        // Voice shortcuts can use source authority before the paged badge read finishes.
         if (!control.signal.aborted) setMetadata(old => {
           const previous=old[source.machineID]
           return {...old,[source.machineID]:{revision:source.authorizationRevision,readable,
@@ -101,8 +100,8 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
         }
         if (!control.signal.aborted) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
       } catch (error) {
-        // Transport failure keeps the entry, while explicit loss of authority
-        // closes it. Cached work must stop animating after either failed read.
+        // Keep counts through a transport failure. Explicit denials clear them.
+        // Cached work stops animating after either failed read.
         const denied=["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(errorCode(error))
         if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,readable:!denied&&previous.readable,items:denied?[]:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
       } finally {
@@ -139,7 +138,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     return()=>control.abort()
   },[sources,opened,observeSource])
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
-  const admitted = current.some(([,data]) => data.readable)
+  const hasReadableSource = current.some(([,data]) => data.readable)
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.
@@ -189,7 +188,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   useEffect(()=>{
     const follow=()=>{
       const call=location.hash==="#call-bot"
-      if(!admitted||!call&&!botFromFragment(location.hash))return
+      if(call ? !hasReadableSource : !botFromFragment(location.hash))return
       if(noticeOpened.current===location.hash)return
       noticeOpened.current=location.hash
       if(call&&botCallAudioAvailable())setVoiceShortcut(count=>count+1)
@@ -197,18 +196,17 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     }
     follow();window.addEventListener("hashchange",follow)
     return()=>window.removeEventListener("hashchange",follow)
-  },[admitted,sources])
+  },[hasReadableSource])
   useEffect(()=>{
     const call=(event:KeyboardEvent)=>{
-      if(!admitted||event.defaultPrevented||event.repeat||event.isComposing||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=="KeyV"||!botCallAudioAvailable())return
+      if(!hasReadableSource||event.defaultPrevented||event.repeat||event.isComposing||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=="KeyV"||!botCallAudioAvailable())return
       event.preventDefault()
       setVoiceShortcut(count=>count+1)
       if(!openedRef.current)open()
     }
     window.addEventListener("keydown",call)
     return()=>window.removeEventListener("keydown",call)
-  },[admitted,sources])
-  useEffect(() => { if (opened && !admitted) close() },[opened,admitted,close])
+  },[hasReadableSource])
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
@@ -216,5 +214,5 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       viewState={registry.viewState} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
   </section> : null
-  return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} disabled={!admitted} onOpen={open}/>}
+  return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} onOpen={open}/>}
 }

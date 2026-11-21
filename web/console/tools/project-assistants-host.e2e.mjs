@@ -56,9 +56,9 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         const orb = page.getByRole("button",{name:new RegExp("^"+w.all)})
         await orb.waitFor()
         await page.locator("#filter").waitFor()
-        const paneBox=await page.locator("#app .pane-list").boundingBox(),orbBox=await orb.boundingBox()
-        assert.ok(paneBox&&orbBox&&orbBox.x>=paneBox.x&&orbBox.y>=paneBox.y&&orbBox.x+orbBox.width<=paneBox.x+paneBox.width&&orbBox.y+orbBox.height<=paneBox.y+paneBox.height,
-          "The actual orb stays inside the Session-list pane without fixture position overrides")
+        const footerBox=await page.locator(".provider-quota-bar").boundingBox(),orbBox=await orb.boundingBox()
+        assert.ok(footerBox&&orbBox&&orbBox.x>=footerBox.x&&orbBox.y>=footerBox.y&&orbBox.x+orbBox.width<=footerBox.x+footerBox.width&&orbBox.y+orbBox.height<=footerBox.y+footerBox.height,
+          "The Bots dock stays inside the status bar without fixture position overrides")
         await page.evaluate(() => window.fixtureHost.beginSyntheticCall())
         await page.locator(".copilot-bubble").waitFor()
         // Real Session voice controls are retained as DOM nodes through every flip.
@@ -147,14 +147,16 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         const requests = await page.evaluate(() => window.fixtureHost.requests)
         assert.equal(requests.filter(row => /voice|copilot|realtime/.test(row.path) && row.method !== "GET").length,0)
         assert.equal(errors.length,0,errors.join("\n"))
-        // A fresh never-enabled account performs metadata only and has no entry.
+        // A fresh account can enter Bots before any source provides a roster.
         await page.goto(origin+"/?lang="+lang+"&feature=off")
         await page.locator("#filter").waitFor()
         await page.waitForFunction(() => window.fixtureHost.log.filter(row => row.method === "status").length >= 2)
-        assert.equal(await orb.count(),0)
+        assert.equal(await orb.isEnabled(),true)
         assert.equal(await page.evaluate(() => window.fixtureHost.log.filter(row => row.method === "list").length),0)
-        await shot("default-hidden")
-        results.push({name,passed:true,stats,requests,placement:{pane:paneBox,orb:orbBox,inside:true,fixturePositionOverride:false}})
+        await orb.click();await page.locator(".pa-window .pa-empty[role=status]").waitFor()
+        assert.equal(await row().count(),0)
+        await shot("source-unavailable")
+        results.push({name,passed:true,stats,requests,placement:{footer:footerBox,orb:orbBox,inside:true,fixturePositionOverride:false}})
       } catch (error) {await shot("failure");results.push({name,passed:false,error:String(error),errors});throw error}
       finally {await page.close();await browser.close()}
     }

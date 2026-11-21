@@ -1,4 +1,4 @@
-/** Manual footer refresh restores the actual Cloud-style Bots host entry. */
+/** The Cloud-style App host opens Bots independently of source readiness. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
 import {mkdir,mkdtemp,readFile,writeFile,rm,access} from "node:fs/promises"
@@ -42,73 +42,91 @@ async function browser(op,...args){
   else throw Error("Unsupported test operation: "+op)
   operations.push({op,args,result});return result
 }
-async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=await browser("read");if(last.text?.includes(text)===present)return last;await new Promise(r=>setTimeout(r,100))}throw Error(`Text ${text} present=${present}: ${JSON.stringify(last)}`)}
-
-async function until(expression,label){for(let n=0;n<30;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,50))}throw Error(label)}
+async function until(expression,label){for(let n=0;n<90;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,50))}throw Error(label)}
 try{
  await connect()
- for(const language of ["en","zh-Hant"]) for(const listMode of ["ready","failed","hold"]){
-  const zh=language==="zh-Hant",refresh=zh?"更新額度":"Refresh quotas"
-  await browser("open",origin+"/?feature=off&lang="+language+"&list="+listMode)
+ const hasWindow = '!!document.querySelector(".pa-window")'
+ const hasRows = '!!document.querySelector(".pa-window button[data-bot-key]")'
+ const unavailable = '!!document.querySelector(".pa-window .pa-empty[role=status]")'
+ for(const language of ["en","zh-Hant"]){
+  const zh=language==="zh-Hant",orb=zh?"所有 Bots":"All Bots",collapse=zh?"收起 Bots":"Collapse Bots"
+  for(const scenario of ["disabled","offline","unsupported","unpaired","held-list","failed-list","denied-list","revoked"]){
+   const params=new URLSearchParams({lang:language})
+   if(scenario==="disabled")params.set("feature","off")
+   if(["offline","unsupported","unpaired"].includes(scenario))params.set("source",scenario)
+   if(scenario.endsWith("-list"))params.set("list",scenario.split("-")[0]==="held"?"hold":scenario.split("-")[0])
+   if(scenario==="revoked")params.set("hold-status","1")
+   await browser("open",origin+"/?"+params)
+   await browser("viewport",zh?"mobile":"desktop")
+   await until('!!window.fixtureHost&&!!document.querySelector(".pa-dock")',"real status footer did not load")
+   const clicked=await evaluate('(()=>{const button=document.querySelector(".pa-dock");button.click();return !button.disabled})()')
+   assert.equal(clicked,true,scenario+" disabled the Bots dock")
+   await until(hasWindow,scenario+" did not open the Bots window")
+   if(scenario==="held-list"){
+    await until('window.fixtureHost.log.some(r=>r.method==="list-unavailable")',"held list did not start")
+    assert.equal(await evaluate(hasRows),false)
+    await evaluate('window.fixtureHost.listMode("ready")')
+    await until(hasRows,"held list did not populate the open Bots window")
+   }else if(scenario==="revoked"){
+    await until('window.fixtureHost.log.some(r=>r.method==="status-wait")',"status was not held")
+    await evaluate('window.fixtureHost.releaseStatus()')
+    await until(hasRows,"roster did not populate")
+    await evaluate('document.querySelector(".pa-window button[data-bot-key]").click()')
+    await until('!!document.querySelector(".pa-window .pa-chat-header")',"chat did not open")
+    await evaluate('window.fixtureHost.registry.revoke()')
+    await until(unavailable,"revocation did not remove the roster")
+    assert.equal(await evaluate('!!document.querySelector(".pa-window .pa-chat-header")'),false,"revocation kept the chat")
+   }else{
+    await until(unavailable,scenario+" did not show the unavailable roster")
+    assert.equal(await evaluate(hasRows),false)
+   }
+   if(scenario==="failed-list"){
+    await evaluate('window.fixtureHost.listMode("ready")')
+    await until(hasRows,"the open roster did not recover after a transient failure")
+   }
+   assert.equal(await evaluate(hasWindow),true,scenario+" closed the Bots window")
+   await browser("screenshot","--out",path.join(artifacts,language+"-"+scenario+".jpg"))
+   await browser("click",collapse)
+   await until('!document.querySelector(".pa-window")',"the Bots window did not collapse")
+   await until('document.activeElement?.matches(".pa-dock:enabled")',"focus was not restored to the usable Bots dock")
+   assert.deepEqual(await evaluate('({media:window.fixtureHost.stats().mediaOpens,sends:window.fixtureHost.stats().sessionSends})'),{media:0,sends:0})
+   results.push({language,scenario,passed:true})
+   await browser("close");tab=undefined
+  }
+  await browser("open",origin+"/?lang="+language+"&feature=off#bot=bot-0&conversation=chat-0&machine=studio")
   await browser("viewport",zh?"mobile":"desktop")
-  await until('!!window.fixtureHost&&!!document.querySelector(".quota-refresh")',"real status footer did not load")
-  await until('window.fixtureHost.log.filter(r=>r.method==="status").length>=2',"initial source authority was not read")
-  assert.equal(await evaluate('!!document.querySelector(".pa-dock:disabled")'),true)
-  await browser("screenshot","--out",path.join(artifacts,language+"-"+listMode+"-before.jpg"))
-  if(zh){
-   await evaluate('window.fixtureHost.quota("hold")')
-   await browser("click",refresh)
-   await until('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length>=2',"quota hold did not start")
-  }
-  const before=await evaluate('window.fixtureHost.log.filter(r=>r.method==="status").length')
-  const quotas=await evaluate('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length')
-  await evaluate('window.fixtureHost.enableFeature()')
-  const clicked=await browser("click",refresh)
-  assert.equal(clicked.disabled,false,"quota loading blocked recovery of Bots")
-  await until('!!document.querySelector(".pa-dock:enabled")',"manual refresh did not restore Bots before the background timer")
-  assert.ok(await evaluate('window.fixtureHost.log.filter(r=>r.method==="status").length')>before,"refresh did not recheck Bot authority")
-  if(zh)assert.equal(await evaluate('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length'),quotas,"pending quota read duplicated")
-  await browser("screenshot","--out",path.join(artifacts,language+"-"+listMode+"-restored.jpg"))
-  if(listMode!=="ready") {
-   await until('window.fixtureHost.log.some(r=>r.method==="list-unavailable")',"list failure/hold was not exercised")
-   assert.equal(await evaluate('!!document.querySelector(".pa-dock:enabled")'),true,"readable authority was hidden by an unavailable list")
-   await evaluate('window.fixtureHost.listMode("ready")')
-  }
-  await evaluate('document.querySelector(".pa-dock:enabled").click()')
-  await until('!!document.querySelector(".pa-window button[data-bot-key]")',"restored entry did not open the actual roster")
-  assert.deepEqual(await evaluate('({media:window.fixtureHost.stats().mediaOpens,sends:window.fixtureHost.stats().sessionSends})'),{media:0,sends:0})
-  await evaluate('window.fixtureHost.quota("ready");window.fixtureHost.disabled()')
-  await until('!document.querySelector(".pa-window") && !!document.querySelector(".pa-dock:disabled")',"disabled source did not remove access")
-  const deniedReads=await evaluate('window.fixtureHost.log.filter(r=>r.method==="status").length')
-  await browser("click",refresh)
-  await until(`window.fixtureHost.log.filter(r=>r.method==="status").length>${deniedReads}`,"disabled source was not rechecked")
-  assert.equal(await evaluate('!!document.querySelector(".pa-dock:disabled")'),true,"refresh granted access to a disabled source")
-  const listReads=await evaluate('window.fixtureHost.log.filter(r=>r.method==="list-unavailable").length')
-  await evaluate('window.fixtureHost.listMode("denied");window.fixtureHost.enableFeature()')
-  await browser("click",refresh)
-  await until(`window.fixtureHost.log.filter(r=>r.method==="list-unavailable").length>${listReads}`,"explicit list denial did not cross the source client")
-  await until('!!document.querySelector(".pa-dock:disabled")',"explicit source denial retained entry access")
-  results.push({language,listMode,explicitDenialDisabled:true,entryRestored:true,actualRosterOpened:true,quotaPending:zh,disabledRemainsVisible:true,modelRequests:0})
+  await until(hasWindow,"the deep link did not open Bots before source authority")
+  await until(unavailable,"the unauthorized deep link did not show the unavailable roster")
+  assert.equal(await evaluate(hasRows),false)
+  await browser("click",collapse)
+  await until('!document.querySelector(".pa-window")',"the deep-link window did not collapse")
+  assert.equal((await browser("click",orb)).disabled,false)
+  await until(hasWindow,"the dock did not reopen Bots after closing a deep link")
+  results.push({language,scenario:"deep-link",passed:true})
   await browser("close");tab=undefined
  }
+ // The footer can still recheck badge authority while quota and status reads are held.
  await browser("open",origin+"/?feature=off&lang=zh-Hant")
  await browser("viewport","mobile")
- await until('window.fixtureHost?.log.filter(r=>r.method==="status").length>=2',"initial hidden status missing")
- await evaluate('window.fixtureHost.offline();window.fixtureHost.holdStatus();window.fixtureHost.enableFeature()')
+ await until('window.fixtureHost?.log.filter(r=>r.method==="status").length>=2',"initial source status was not read")
+ await evaluate('window.fixtureHost.quota("hold")')
  await browser("click","更新額度")
- await until('window.fixtureHost.log.some(r=>r.method==="status-wait")',"online source did not start")
- const started=await evaluate('window.fixtureHost.log.filter(r=>r.method==="status-wait").length')
+ await until('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length>=2',"quota read was not held")
+ const quotas=await evaluate('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length')
+ await evaluate('window.fixtureHost.holdStatus();window.fixtureHost.enableFeature()')
+ assert.equal((await browser("click","更新額度")).disabled,false)
+ await until('window.fixtureHost.log.filter(r=>r.method==="status-wait").length===2',"refresh did not recheck both sources")
  await browser("click","更新額度")
  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
- assert.equal(await evaluate('window.fixtureHost.log.filter(r=>r.method==="status-wait").length'),started,"refresh restarted an outstanding status read")
+ assert.equal(await evaluate('window.fixtureHost.log.filter(r=>r.method==="status-wait").length'),2,"refresh restarted an outstanding status read")
+ assert.equal(await evaluate('window.fixtureHost.requests.filter(r=>r.path==="/v1/provider-quotas").length'),quotas,"refresh duplicated a pending quota read")
  await evaluate('window.fixtureHost.releaseStatus()')
- await until('!!document.querySelector(".pa-dock:enabled")',"delayed online source failed to restore entry")
+ await until('window.fixtureHost.log.some(r=>r.method==="list")',"badge list did not resume after source status")
  await evaluate('localStorage.setItem("bots_orb_place",JSON.stringify({right:750,bottom:980,docked:false}));location.replace("/?lang=zh-Hant")')
- await until('!!document.querySelector(".pa-dock:enabled")',"status-bar button did not become available after reloading with an old preference")
- assert.ok(await evaluate('(()=>{const b=document.querySelector(".pa-dock:enabled").getBoundingClientRect();return b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight})()'),"restored orb outside phone viewport")
- await evaluate('document.querySelector(".pa-dock:enabled").click()')
- await until('!!document.querySelector(".pa-window button[data-bot-key]")',"phone entry did not open roster")
+ await until('!!document.querySelector(".pa-dock:enabled")',"old preference prevented the dock from opening")
+ assert.ok(await evaluate('(()=>{const b=document.querySelector(".pa-dock").getBoundingClientRect();return b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight})()'),"dock outside phone viewport")
  await browser("close");tab=undefined
+ results.push({language:"zh-Hant",scenario:"footer-refresh",passed:true})
  console.log(JSON.stringify(results))
 }finally{
  if(tab&&send)await browser("close").catch(e=>console.error(e.message))
