@@ -282,6 +282,7 @@ var generatedDecoders = map[string]genDecoder{
 	"verification.note":                        genDecodeVerificationNote,
 	"voice":                                    genDecodeVoice,
 	"voice-live-transcription":                 genDecodeVoiceLiveTranscription,
+	"voice-preview":                            genDecodeVoicePreview,
 	"voice-settings":                           genDecodeVoiceSettings,
 	"voice-settings-update":                    genDecodeVoiceSettingsUpdate,
 	"work-gate-settings":                       genDecodeWorkGateSettings,
@@ -7325,6 +7326,30 @@ func genDecodeVoiceLiveTranscription(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = []byte("{}")
+	return p, req, true
+}
+
+// genDecodeVoicePreview is the `voice-preview` row's decode.
+func genDecodeVoicePreview(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "audio", "rate", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("audio", genRule{kind: "string", nonEmpty: true, maxBytes: 128000}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("rate", genRule{kind: "integer", min: genInt(16000), max: genInt(16000)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/preview"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	req.Body = b.genFields(map[string]genValue{"audio": genValue{from: "audio"}, "rate": genValue{from: "rate"}})
 	return p, req, true
 }
 

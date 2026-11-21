@@ -567,6 +567,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.voice_read_milliseconds` | 120000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
 | `console.voice_recording_bytes` | 16777216 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `console.voice_stop_milliseconds` | 5000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.whisper_preview_body_bytes` | 129024 | `bytes` | `refuse` | `sender, diagnostics` | — |
+| `console.whisper_preview_milliseconds` | 5000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.whisper_preview_pcm_bytes` | 96000 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `coordinator.aliases` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `coordinator.bind_attempts` | 6 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `decisions.open` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // body is one decoded request. It is a map rather than a struct per word
@@ -527,6 +529,7 @@ var cloudDispatchUnpinned = Refusal{Status: 409, Code: "cloud_dispatch_unpinned"
 // voiceRate is the one rate this machine transcribes, as
 // internal/adapters/whisper spells it.
 const voiceRate = 16000
+const voicePreviewEncodedBytes = capacity.WhisperPreviewEncodedBytes
 
 // scheduleMaximumBytes is what one schedule weighs on the wire, matching the
 // local route's own reader (`scheduleBody` in internal/transport/http). This

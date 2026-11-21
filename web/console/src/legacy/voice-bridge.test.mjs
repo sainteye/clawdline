@@ -10,12 +10,23 @@ const source = process.env.VOICE_TEST_REV
   ? execFileSync("git", ["show", `${process.env.VOICE_TEST_REV}:web/console/src/legacy/voice-bridge.ts`], { encoding: "utf8" })
   : readFileSync(new URL("./voice-bridge.ts", import.meta.url), "utf8")
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+const traditionalCode = readFileSync(new URL("../session/traditional-dictation.generated.ts", import.meta.url), "utf8")
+const script = { exports: {} }
+runInNewContext(ts.transpileModule(traditionalCode, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, script)
+
 
 class Element {
   children = []; dataset = {}; style = {}; listeners = {}; attributes = {}; isConnected = true
+  scrollOffset = 0; clientHeight = 0
+  get scrollHeight() { return Math.max(this.clientHeight, this.textContent.split("\n").length * 20) }
+  get scrollTop() { return this.scrollOffset }
+  set scrollTop(value) { this.scrollOffset = Math.min(value, this.scrollHeight - this.clientHeight) }
   set textContent(value) { this.text = value; this.children = [] }
   get textContent() { return (this.text ?? "") + this.children.map(child => child.textContent).join("") }
   appendChild(child) { this.children.push(child); return child }
+  append(...children) { for (const child of children) this.appendChild(typeof child === "string" ? Object.assign(new Element(), { text: child }) : child) }
   setAttribute(key, value) { this.attributes[key] = value }
   removeAttribute(key) { delete this.attributes[key] }
   addEventListener(name, callback) { this.listeners[name] = callback }
@@ -32,6 +43,9 @@ class Element {
 function harness(options = {}) {
   let now = 1000, timerID = 0, opens = 0, posts = 0, contextCloses = 0
   const timers = new Map(), intervals = new Map(), recorders = [], tracks = [], words = [], diagnostics = [], listeners = new Map()
+  const engineWrites = [], polishWrites = []
+  let polish = options.polish ?? false
+  let engine = options.engine ?? (options.live ? "openai_realtime" : null)
   class Recorder {
     state = "inactive"; mimeType = "audio/mp4"; stopCalls = 0
     constructor() { recorders.push(this) }
@@ -47,6 +61,7 @@ function harness(options = {}) {
     finish() { if (!options.emptyStop) this.data("encoded ending"); this.onstop?.() }
   }
   class Context {
+    resume() { return Promise.resolve() }
     decodeAudioData(bytes, ready, fail) {
       options.decoded?.push(new TextDecoder().decode(bytes))
       if (options.decodePending) return new Promise(() => {})
@@ -60,9 +75,9 @@ function harness(options = {}) {
     createBufferSource() { return { connect() {}, start() {} } }
     startRendering() { return Promise.resolve({ getChannelData: () => new Float32Array(16000) }) }
   }
-  const document = { visibilityState: "visible", createElement: () => new Element(), createElementNS: () => new Element(),
+  const document = { visibilityState: "visible", documentElement: { lang: options.lang ?? "en" }, createElement: () => new Element(), createElementNS: () => new Element(),
     addEventListener: (key, callback) => listeners.set(key, callback), removeEventListener: key => listeners.delete(key) }
-  const sandbox = { exports: {}, AbortController, Blob, Uint8Array, Float32Array, DataView, ArrayBuffer, Date: { now: () => now },
+  const sandbox = { exports: {}, AudioWorkletNode: options.preview ? class {} : undefined, AbortController, Blob, Uint8Array, Float32Array, DataView, ArrayBuffer, Date: { now: () => now },
     window: { isSecureContext: true, MediaRecorder: Recorder, AudioContext: Context, OfflineAudioContext: Offline,
       addEventListener: (key, callback) => listeners.set(key, callback), removeEventListener: key => listeners.delete(key) },
     MediaRecorder: Recorder, navigator: { mediaDevices: { getUserMedia: () => {
@@ -77,8 +92,22 @@ function harness(options = {}) {
     require(path) {
       if (path.endsWith("next-strings.js")) return { nextWord: key => english[`next.${key}`] }
       if (path.endsWith("cloud/install.js")) return { captureMachineFetch: () => ({ current: () => true }) }
+      if (path.endsWith("traditional-dictation.generated.js")) return script.exports
+      if (path.endsWith("whisper-preview.js")) return { startWhisperPreview: options.preview }
       if (path.endsWith("live-dictation.js")) return {
-        usesLiveDictation: async () => Boolean(options.live),
+        readDictationSettings: async () => engine ? { engine, polish } : null,
+        writeDictationSetting: async (_, change) => {
+          if ("voice_polish" in change) {
+            polishWrites.push(change.voice_polish)
+            if (options.writePolish && !await options.writePolish(change.voice_polish)) return false
+            polish = change.voice_polish
+            return true
+          }
+          engineWrites.push(change.voice_transcription)
+          if (options.engineWriteFails) return false
+          engine = change.voice_transcription
+          return true
+        },
         connectLiveDictation: options.live,
         LiveDictationError: options.liveError ?? Error,
       }
@@ -88,7 +117,7 @@ function harness(options = {}) {
       if (path.endsWith("failure-text.js")) return { failureSentence: (_, options) => options.sentence || options.fallback }
       if (path.endsWith("pixels.js")) return { drawSpinner() {}, setVoiceSpin() {}, spinPhase: 0 }
       if (path.endsWith("buzz.js")) return { done() {}, tap() {} }
-      if (path.endsWith("compose-text.js")) return { appendGap() {}, appendedText() {} }
+      if (path.endsWith("compose-text.js")) return { appendGap() {}, appendedText: (old, text) => [old, text].filter(Boolean).join(" ") }
       if (path.endsWith("util.js")) return { uuid: () => "test-voice" }
       throw Error(path)
     },
@@ -96,11 +125,11 @@ function harness(options = {}) {
   runInNewContext(code, sandbox)
   const voice = sandbox.exports, box = new Element()
   const sent = [], toasts = [], states = []
-  const job = { pickEngine: Boolean(options.live), host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
+  const job = { pickEngine: Boolean(options.live ?? options.engine), host: box, composer: new Element(), guard: () => !box.isConnected, sink: text => words.push(text),
     send: text => sent.push(text), say: (text, bad) => toasts.push({ text, bad: !!bad }), changed: state => states.push(state),
     transcribe: async (audio, rate) => { posts++; return options.transcribe ? options.transcribe(audio, rate) : { text: "Recovered speech" } } }
   const flush = () => new Promise(resolve => setImmediate(resolve))
-  return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options,
+  return { voice, box, words, sent, toasts, states, job, recorders, tracks, diagnostics, options, engineWrites, polishWrites,
     get posts() { return posts }, get opens() { return opens }, get contextCloses() { return contextCloses },
     async start() { voice.press(job); await flush() },
     // While recording, the control that keeps the words for the box is the
@@ -375,6 +404,130 @@ test("a sent recording that fails while its composer is open stays retryable and
   assert.deepEqual(h.sent, ["Second try"]); assert.deepEqual(h.words, [])
 })
 
+
+test("live dictation follows newly spoken lines and preserves a reader's scroll position", async () => {
+  let update
+  const h = harness({ live: async (_, __, ___, ____, onText) => {
+    update = onText
+    return { finish: async () => "Final draft", close() {} }
+  } })
+  await h.start()
+  const preview = h.box.querySelector(".voice-live-preview")
+  preview.clientHeight = 40
+  const initial = "第一句\n第二句\n第三句\n第四句"
+  update(initial)
+  assert.equal(preview.scrollTop, preview.scrollHeight - preview.clientHeight)
+  preview.scrollTop = 12
+  const extended = initial + "\n第五句\n第六句"
+  update(extended)
+  assert.equal(preview.scrollTop, 12)
+  assert.equal(preview.textContent, extended)
+  preview.scrollTop = preview.scrollHeight - preview.clientHeight
+  update(extended + "\n第七句")
+  assert.equal(preview.scrollTop, preview.scrollHeight - preview.clientHeight)
+})
+
+test("Whisper previews words without changing the draft, and ignores late preview after stopping", async () => {
+  let preview, closes = 0
+  const h = harness({ engine: "whisper", preview: (_, __, ___, ____, _____, onText) => {
+    preview = onText
+    return { close() { closes++ } }
+  } })
+  await h.start()
+  preview("第一段")
+  preview("第二段")
+  assert.match(h.box.querySelector(".voice-live-preview").textContent, /第一段.*第二段/)
+  assert.deepEqual(h.words, [])
+  assert.equal(h.posts, 0)
+  h.click("go")
+  preview("不能覆蓋定稿")
+  await h.flush()
+  assert.deepEqual(h.words, ["Recovered speech"])
+  assert.deepEqual(h.sent, [])
+  assert.ok(closes >= 1)
+  assert.equal(h.posts, 1)
+})
+
+test("the Whisper panel's small correction checkbox is saved before the stopped take is read", async () => {
+  let acknowledge
+  const h = harness({ engine: "whisper", writePolish: () => new Promise(resolve => { acknowledge = resolve }) })
+  assert.equal(h.box.querySelector(".voice-polish-toggle"), null)
+  await h.start()
+  const checkbox = h.box.querySelector(".voice-polish-toggle").children[0]
+  assert.equal(checkbox.type, "checkbox")
+  assert.equal(checkbox.checked, false)
+  checkbox.checked = true
+  checkbox.listeners.change()
+  assert.equal(h.voice.voiceState(), "recording")
+  assert.deepEqual(h.polishWrites, [true])
+  h.click("go")
+  await h.flush()
+  assert.equal(h.posts, 0)
+  acknowledge(true)
+  await h.flush()
+  assert.equal(h.posts, 1)
+  assert.deepEqual(h.words, ["Recovered speech"])
+})
+
+test("the expanded recording panel changes only the next recording's engine", async () => {
+  let liveStops = 0
+  const h = harness({ live: async () => ({
+    finish() { liveStops += 1; return Promise.resolve("Current Realtime draft") },
+    close() {},
+  }) })
+  assert.equal(h.box.querySelector(".voice-engine-picker"), null)
+  await h.start()
+  const picker = h.box.querySelector(".voice-engine-picker")
+  assert.equal(h.box.querySelector(".voice-polish-toggle"), null)
+  assert.equal(picker.value, "openai_realtime")
+  picker.value = "whisper"
+  picker.listeners.change()
+  await h.flush()
+  assert.deepEqual(h.engineWrites, ["whisper"])
+  assert.equal(h.voice.voiceState(), "recording")
+  assert.equal(liveStops, 0)
+  h.click("go")
+  await h.flush()
+  assert.deepEqual(h.words, ["Current Realtime draft"])
+  assert.equal(h.box.querySelector(".voice-engine-picker"), null)
+  await h.start()
+  assert.equal(h.box.querySelector(".voice-engine-picker").value, "whisper")
+  h.click("go")
+  await h.flush()
+  assert.deepEqual(h.words, ["Current Realtime draft", "Recovered speech"])
+})
+
+test("a rejected engine change restores the saved preference without stopping recording", async () => {
+  const h = harness({ engine: "whisper", engineWriteFails: true })
+  await h.start()
+  const picker = h.box.querySelector(".voice-engine-picker")
+  picker.value = "openai_realtime"
+  picker.listeners.change()
+  await h.flush()
+  assert.equal(picker.value, "whisper")
+  assert.equal(h.voice.voiceState(), "recording")
+  assert.equal(h.toasts.at(-1)?.bad, true)
+  h.click("go")
+  await h.flush()
+})
+
+test("Traditional Chinese displays converted Realtime preview and draft while preserving mixed text", async () => {
+  const typed = "录音转写，OpenAI 2026。"
+  for (const [lang, expected] of [["zh-Hant", "錄音轉寫，OpenAI 2026。"], ["zh-Hans", typed], ["en", typed]]) {
+    let preview
+    const h = harness({ lang, live: async (_, __, ___, ____, onText) => {
+      preview = onText
+      return { finish: async () => typed, close() {} }
+    } })
+    await h.start()
+    preview(typed)
+    assert.equal(h.box.querySelector(".voice-live-preview").textContent, expected)
+    h.click("go")
+    await h.flush()
+    assert.deepEqual(h.words, [expected])
+    assert.deepEqual(h.sent, [])
+  }
+})
 
 test("Realtime keeps preview separate and puts the final words into the draft once", async () => {
   let preview, finish, closes = 0

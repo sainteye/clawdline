@@ -11998,6 +11998,20 @@
       "decode": {"reply": "action", "route": {"path": "/v1/voice/live-transcription", "body": {"empty": true}}}
     },
     {
+      "op": "voice-preview",
+      "kind": "command",
+      "write_gate": true,
+      "console": "carried",
+      "console_route": "POST /v1/voice/preview",
+      "console_seam": "writer",
+      "local": {"method": "POST", "device": true},
+      "example": {"audio": "AAAA", "rate": 16000, "request": "req-voice-preview", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["audio", "rate", "request", "session"], "path": "/v1/voice/preview", "local_body": ["audio", "rate"]}
+      ],
+      "decode": {"reply": "action", "fields": {"audio": {"type": "string", "non_empty": true, "max_bytes": 128000, "copies": {"max_bytes": "voicePreviewEncodedBytes"}}, "rate": {"type": "integer", "min": 16000, "max": 16000, "copies": {"min": "voiceRate", "max": "voiceRate"}}}, "route": {"path": "/v1/voice/preview", "body": {"fields": {"audio": {"from": "audio"}, "rate": {"from": "rate"}}}}}
+    },
+    {
       "op": "voice-settings",
       "kind": "read",
       "write_gate": false,

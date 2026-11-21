@@ -5389,10 +5389,10 @@
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
     "web/console/src/cloud/project-assistants.ts": "8fd8be7e71f132d71f1a6c20b091b57b9e43c53053e258ccd4f59f074ee7d8f7",
-    "web/console/src/cloud/relay-writer.ts": "7104dab219dfc0940b63937b49d4fb892faaab6c882e92086a55408ee425bbe2",
+    "web/console/src/cloud/relay-writer.ts": "5bc442a3251939a26e6de82316af42341535e0912b5e773d0391ad1c1646fd2d",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
-    "web/console/src/legacy/voice-bridge.ts": "9e17f14464af0de138d5bc018d2e9a590c03e0193cbd75cd84f70bc1e47fe677",
-    "web/console/src/next-strings.ts": "0222fcf28dee8cb70b8afbbf9211c566ea929d2e209d1bdb0d7ad0572500ed54",
+    "web/console/src/legacy/voice-bridge.ts": "d93f7b8e0d7414eb8d9b1bc7d4f6e26ed3c69b8a4deb706c768d5fa891f4c36b",
+    "web/console/src/next-strings.ts": "96effd08f992fa0de4863c3922fa0f9851f1e62ec6bac83ae2efed300843be47",
     "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
@@ -5439,7 +5439,7 @@
     "web/console/src/session/Composer.tsx": "71334656025bc65a305c4c4f59d9e8a0af651618133205aa5a577c9b6eeb3128",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
-    "web/console/src/session/live-dictation.ts": "c31280ea304fcac6759be10a8331a428bfbc642e94ee930963729d0da8060004",
+    "web/console/src/session/live-dictation.ts": "407b351da94dc60e6ddb3bca47a195140bdd76ec6217199513bce80d7fabcfde",
     "web/console/src/session/pending.ts": "7d1b8eb14bf21dc90a6032ad134a2d7621a4338e066f7499459b17c27cb50cab",
     "web/console/src/session/persist.ts": "5f5a34d27c3c5639d30ae611200bd9dcd091d44ac341cf6dc3b6873227e0fb21",
     "web/console/src/session/rotation.ts": "c9e4972de9837446e6952b174adb4cd02388f1f0a8532330126bb50199523eec",
@@ -5452,7 +5452,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "347e8fdadfda4f5c6def0eacd255b741be7990451d3075ea21223f6f7ac39b89",
-    "zh-Hant": "40bae1cfda6bae0ff0b633ae86829f2a14b3aed43b6625401dae1b9fc7778121"
+    "en": "fcb1c89821b8f32b667a4026d729a753f60ae0ea3482cbeeda242a9d3d7c95c9",
+    "zh-Hant": "17e79fcbaa328dc7b61ea5e4cd987eafea034b34241d4a2bbbec7071a4adde58"
   }
 }

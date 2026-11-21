@@ -2,10 +2,45 @@ import type { captureMachineFetch } from "../cloud/install.js"
 
 export type DictationConnection = ReturnType<typeof captureMachineFetch>
 
-export async function usesLiveDictation(connection: DictationConnection, signal: AbortSignal): Promise<boolean> {
+export type DictationEngine = "whisper" | "openai_realtime"
+
+function engineFrom(value: unknown): DictationEngine | null {
+  return value === "whisper" || value === "openai_realtime" ? value : null
+}
+
+export interface DictationSettings {
+  engine: DictationEngine
+  polish: boolean
+}
+
+export async function readDictationSettings(connection: DictationConnection, signal: AbortSignal): Promise<DictationSettings | null> {
   try {
     const response = await connection.fetch("/v1/settings/voice", { cache: "no-store", signal })
-    return response.ok && (await response.json()).voice_transcription === "openai_realtime"
+    if (!response.ok) return null
+    const result = await response.json()
+    const engine = engineFrom(result.voice_transcription)
+    return engine ? { engine, polish: result.voice_polish === true } : null
+  } catch {
+    return null
+  }
+}
+
+export type DictationChange = { voice_transcription: DictationEngine } | { voice_polish: boolean }
+
+export async function writeDictationSetting(
+  connection: DictationConnection, change: DictationChange, request: string, signal: AbortSignal,
+): Promise<boolean> {
+  if (!connection.current()) return false
+  try {
+    const response = await connection.fetch("/v1/settings/voice", {
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": request },
+      body: JSON.stringify(change), signal,
+    })
+    if (!response.ok) return false
+    const result = await response.json()
+    return "voice_polish" in change
+      ? result.voice_polish === change.voice_polish
+      : engineFrom(result.voice_transcription) === change.voice_transcription
   } catch {
     return false
   }
