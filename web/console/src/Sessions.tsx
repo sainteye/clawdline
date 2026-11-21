@@ -79,6 +79,8 @@ export function SessionsPage({
   fleetDetailPending = false,
   fleetDetailProblem,
   readerMachine,
+  viewPane,
+  viewReturn,
   sessionBoardSource,
 }: {
   rows: SessionRow[]
@@ -129,6 +131,10 @@ export function SessionsPage({
   readerMachine?: string | null
   sessionBoardSource?: SessionBoardSource
   fleetDetailProblem?: FleetDetailProblem | null
+  /** A desktop's pinned view for the Session pane, hidden while a Session is open; null keeps the home screen. */
+  viewPane?: (hidden: boolean) => ReactNode
+  /** The open Session's way back to the pinned view. */
+  viewReturn?: string
 }) {
   // The task list the chips, the indent and the detail header read: the
   // stream's own while it carries one, fetched here while it does not.
@@ -332,6 +338,9 @@ export function SessionsPage({
     if (swipedId && !drawn.some((r) => r.id === swipedId)) swipes.closeOpen()
   }, [drawn, swipedId])
 
+  // The pinned view takes the home screen's place, never an open Session's.
+  const detailBusy = !!open || !!fleetDetailPending
+  const pinnedPane = !terminalMode && paneOpen && viewPane ? viewPane(detailBusy) : null
   return (
     <>
       {/* Before the page, as in `index.html`: the band is news about the Mac,
@@ -344,6 +353,7 @@ export function SessionsPage({
         data-view={terminalMode ? (terminalPane ? "detail" : "list") : view}
         data-pane={terminalMode || paneOpen ? "on" : "off"}
         data-mode={terminalMode ? "terminal" : undefined}
+        data-view-pane={pinnedPane && !detailBusy ? "on" : undefined}
         hidden={!onScreen}
       >
         <section className="pane pane-list">
@@ -429,7 +439,8 @@ export function SessionsPage({
           projectedCoordinatorBound={fleetCoordinatorBound}
           onSent={streamTasks !== null ? undefined : onDid}
           listUnknown={listUnknown || fleetDetailPending} loadingDetail={fleetDetailPending} emptyProblem={fleetDetailProblem}
-          sessionCount={listUnknown ? undefined : rows.length} />
+          sessionCount={listUnknown ? undefined : rows.length} viewReturn={pinnedPane ? viewReturn : undefined} />
+        {pinnedPane}
         {/* In terminal mode the second column is the terminal's, as it is the
             open session's otherwise; the session detail stays mounted, hidden. */}
         {terminalMode && (terminalPane

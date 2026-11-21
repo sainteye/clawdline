@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "com.clawdline.session-orrery",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "hostApi": 1,
   "name": {
     "en": "Session Orrery",

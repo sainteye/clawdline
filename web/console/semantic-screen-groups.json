@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13834,
-  "riskKeys": 5908,
-  "nonRiskCount": 7926,
+  "englishContentKeys": 13840,
+  "riskKeys": 5909,
+  "nonRiskCount": 7931,
   "groups": [
     {
       "name": "acp / other",
@@ -8299,7 +8299,7 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 79,
+      "count": 84,
       "sources": [
         null
       ],
@@ -8317,6 +8317,7 @@
         "viewPlugins.autoUpdate",
         "viewPlugins.available",
         "viewPlugins.back",
+        "viewPlugins.backToView",
         "viewPlugins.cancel",
         "viewPlugins.checkUpdates",
         "viewPlugins.checkingUpdates",
@@ -8346,6 +8347,7 @@
         "viewPlugins.error_update_review_required",
         "viewPlugins.everything",
         "viewPlugins.examplesHint",
+        "viewPlugins.fullscreen",
         "viewPlugins.galaxy",
         "viewPlugins.galaxyHint",
         "viewPlugins.install",
@@ -8361,6 +8363,8 @@
         "viewPlugins.orrery",
         "viewPlugins.orreryHint",
         "viewPlugins.personalize",
+        "viewPlugins.pin",
+        "viewPlugins.pinned",
         "viewPlugins.preset",
         "viewPlugins.previous",
         "viewPlugins.project",
@@ -8375,6 +8379,7 @@
         "viewPlugins.scope",
         "viewPlugins.selected",
         "viewPlugins.source",
+        "viewPlugins.switchView",
         "viewPlugins.territory",
         "viewPlugins.title",
         "viewPlugins.update",

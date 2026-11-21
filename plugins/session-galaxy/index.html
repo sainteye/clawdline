@@ -160,7 +160,7 @@ canvas.scene.dragging { cursor: grabbing; }
 .fallback { position: absolute; inset: 120px 20px 60px; z-index: 2; display: none; color: var(--text-2); }
 .fallback.show { display: block; }
 
-body { margin:0; font-family:var(--font); background:var(--ink) } button { font:inherit;color:inherit } .galaxy { visibility:visible;clip-path:none;transition:none } .g-foot .diag {display:none} .g-foot {max-width:calc(100% - 36px)} .g-foot>span:first-child {overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .g-head {align-items:flex-start} .g-title {min-width:0} .g-title .sub{overflow-wrap:anywhere} .node:focus-visible {outline:2px solid white;outline-offset:2px} .g-foot {color:#aab2d6} .panel .kicker,.facts dt,.why-here {color:#aab2d6}</style><body><section class="galaxy open" id="galaxy" role="dialog" aria-modal="true" aria-labelledby="gTitle" aria-hidden="false">
+body { margin:0; font-family:var(--font); background:var(--ink) } button { font:inherit;color:inherit } .galaxy { visibility:visible;clip-path:none;transition:none } .g-foot .diag {display:none} .g-foot {max-width:calc(100% - 36px)} .g-foot>span:first-child {overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .g-head {align-items:flex-start} .g-title {min-width:0} .g-title .sub{overflow-wrap:anywhere} .node:focus-visible {outline:2px solid white;outline-offset:2px} .g-foot {color:#aab2d6} .panel .kicker,.facts dt,.why-here {color:#aab2d6}</style><style>/* Embedded beside the Session list the host owns removal, so the package's own close is hidden. */body.embedded #btnClose{display:none}</style><body><section class="galaxy open" id="galaxy" role="dialog" aria-modal="true" aria-labelledby="gTitle" aria-hidden="false">
   <canvas class="scene" id="scene" aria-hidden="true"></canvas>
   <div class="nodes" id="nodes"></div>
   <div class="fallback" id="fallback"></div>
@@ -531,7 +531,7 @@ const GalaxyPlugin = (() => {
       const initial = await connected.sessions.subscribe((later) => { if (generation === startGeneration) applySnapshot(later); });
       if (generation !== startGeneration) { connected.dispose(); return; }
       snap = null; selectedRef = null; filterState = null; deselect();
-      view.onContext(applyContext);
+      view.onContext(next => { document.body.classList.toggle('embedded', next.presentation === 'embedded'); applyContext(next); });
       cam.intro = reduced() ? 1 : 2.6; cam.yaw = -0.6 - (reduced() ? 0 : 0.9); cam.dist = 3.25;
       resize(); applySnapshot(initial); setRunning(); if (canDraw) draw(tNow);
       clearTimeout(focusTimer);

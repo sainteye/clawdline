@@ -628,7 +628,8 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   }
 
   const localViewSource = useLocalPluginSource(rows, fleet.live, fleet.loaded, openSession, openId)
-  const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en")
+  const showViewPane = useRef(() => {})
+  const plugins = useViewPlugins(viewPluginSources ?? [localViewSource], document.documentElement.lang || "en", () => showViewPane.current())
   const localBoards = useLocalSessionBoards(fleet.live)
   const boardSource = sessionBoardSource ?? localBoards
   const availableBoardTargets = sessionBoardTargets ?? (boardSource ? [{
@@ -750,6 +751,8 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // never went, and only a `#session=…` address goes: one naming another page
   // is where the reader is.
   // The action's own call can give the detail back before the header redraws.
+  // Pinning a view shows it now: leave the Sessions page's open Session, as its own back button would.
+  showViewPane.current = () => { if (pageRef.current !== "sessions") go("sessions"); if (openRef.current) closeDetail() }
   const closeDetail = (settled = false) => {
     if (!settled && openRef.current && closing()) return
     setOpen(null)
@@ -778,6 +781,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // or for a session: that is answered by the session or by saying it has
   // gone, never by opening a default row in its place.
   const firstList = useRef(true)
+  const pinnedPaneRef = useRef(plugins.pinnedPane); pinnedPaneRef.current = plugins.pinnedPane
   useEffect(() => {
     if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
     if (openRef.current && !rows.some((r) => r.id === openRef.current)) {
@@ -791,7 +795,8 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
         const ordered = L.orderedRows()
         const top = ordered[0]
         if (top) {
-          if (phone() || asked !== "none") setSelected(top.id)
+          // A pinned view is the desk's home: it already puts waiting Sessions in front.
+          if (phone() || asked !== "none" || pinnedPaneRef.current) setSelected(top.id)
           else openSession((ordered.find((row) => row.state === "waiting") ?? top).id, true)
         }
       }
@@ -1407,6 +1412,8 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
         fleetDetailPending={fleetDetailPending}
         readerMachine={fleetReaderMachine}
         fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
+        viewPane={plugins.viewPane}
+        viewReturn={plugins.viewReturn}
       />}
       {cloudPeerAccess && <section id="peer-access" className="page cloud-peer-access-page"
         data-page-view="peer-access" hidden={page !== "peer-access"} aria-labelledby="peer-access-title">

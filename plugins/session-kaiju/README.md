@@ -16,3 +16,7 @@ python3 tools/build-view-plugin-catalog.py
 The package uses the existing 32 MiB archive/expanded profile and unchanged host API v1/read/open permissions. Official installed cards can update it in place. Still/list mode, reduced motion, hidden hosts and disconnection stop movement. Stale or unknown unclassified readings cannot navigate. There are no external resources or native commands. Packages remain browser-local; roster mode lasts for this opening.
 
 See [PROVENANCE.md](PROVENANCE.md) for original assets, source and licenses.
+
+## Version 0.4.0: embedded beside the Session list
+
+When the host reports `presentation: "embedded"` (a desktop has pinned this view beside the Session list), the header, dossier roster and footer are hidden and the city fills the pane: the host's Session list is already the roster. A building's scene label still opens its Session, and Escape only clears a selection. Full screen is unchanged. Older hosts never send the field, so the package keeps its full-screen layout there.

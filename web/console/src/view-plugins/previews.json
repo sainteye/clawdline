@@ -5,8 +5,8 @@
     "src": "/view-plugins/previews/session-galaxy-en-95f163a37c06.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.1",
-    "packageDigest": "af01163c8250b2eb0ec52908e1f559e4340cbb3f8cc9a4df5b6ed72dd374a14f",
+    "packageVersion": "0.2.0",
+    "packageDigest": "fff8bd87beb10fd966b9f5166193cedb37f47c0a5ba8bc351c770fda7c053762",
     "sha256": "95f163a37c06088c68903a1971d43405cb208708cc304a3d239d7a742d65915a"
   },
   {
@@ -15,29 +15,29 @@
     "src": "/view-plugins/previews/session-galaxy-zh-Hant-1f6b299f3321.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.1.1",
-    "packageDigest": "af01163c8250b2eb0ec52908e1f559e4340cbb3f8cc9a4df5b6ed72dd374a14f",
+    "packageVersion": "0.2.0",
+    "packageDigest": "fff8bd87beb10fd966b9f5166193cedb37f47c0a5ba8bc351c770fda7c053762",
     "sha256": "1f6b299f332139bc5eaf5beb550771e266c8dc7d1a2cb7e5d9f18f371a0e2ecb"
   },
   {
     "id": "com.clawdline.session-orrery",
     "language": "en",
-    "src": "/view-plugins/previews/session-orrery-en-878b81a6d124.webp",
+    "src": "/view-plugins/previews/session-orrery-en-69fa51aba025.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.5.0",
-    "packageDigest": "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
-    "sha256": "878b81a6d124b7472be2a7a29832b3b0f13553811878e294a36967f6b726828f"
+    "packageVersion": "0.6.0",
+    "packageDigest": "d61b7d1a37120e67d71f373b6873c608e263fe3037e2b1b00f515ce271f7cce6",
+    "sha256": "69fa51aba025d01aed55b2f03391d62c921c898b57e6429d22ee807842ed5b5b"
   },
   {
     "id": "com.clawdline.session-orrery",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-orrery-zh-Hant-b445bb9c0bd0.webp",
+    "src": "/view-plugins/previews/session-orrery-zh-Hant-44475aad916f.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.5.0",
-    "packageDigest": "b7faab47c0a66ee80f2092179064a187240449f22f7c3011830121598e9e12f9",
-    "sha256": "b445bb9c0bd006cf796358906865aa51ba6684b064e16264f04732f698be5696"
+    "packageVersion": "0.6.0",
+    "packageDigest": "d61b7d1a37120e67d71f373b6873c608e263fe3037e2b1b00f515ce271f7cce6",
+    "sha256": "44475aad916f9d693f1ef4a3926ad2ef96e64196e1c432f9d2730ed69f72091b"
   },
   {
     "id": "com.clawdline.session-night-city",
@@ -62,22 +62,22 @@
   {
     "id": "com.clawdline.session-departures",
     "language": "en",
-    "src": "/view-plugins/previews/session-departures-en-a8066e38265a.webp",
+    "src": "/view-plugins/previews/session-departures-en-b2a70100dd02.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.4.0",
-    "packageDigest": "9d7fdb076b7f6ec6a2b135030ff69a00f6f40e1770a8224542de974d18ce99cd",
-    "sha256": "a8066e38265a9c82d607d14aa9f83b975850d67dfb270a9729b4527ebf352590"
+    "packageVersion": "0.5.0",
+    "packageDigest": "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
+    "sha256": "b2a70100dd027edcc3a1d0a930e20cafdc44a336daf2ba0ee4025888bc4e4abb"
   },
   {
     "id": "com.clawdline.session-departures",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-departures-zh-Hant-473d91e8c997.webp",
+    "src": "/view-plugins/previews/session-departures-zh-Hant-4a587c6ac020.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.4.0",
-    "packageDigest": "9d7fdb076b7f6ec6a2b135030ff69a00f6f40e1770a8224542de974d18ce99cd",
-    "sha256": "473d91e8c9976dceb62a4c3300c503978e4ae9bbf04fdc4c2df6cfbc75489e89"
+    "packageVersion": "0.5.0",
+    "packageDigest": "9ec111fc7ba1a1add34f208cc34273b84cf0b80b7afddb5c583e153be91dec1f",
+    "sha256": "4a587c6ac020d0292b1d50fe8e73ecc2212ff59e650f09e0f49489dc31f6ca6f"
   },
   {
     "id": "com.clawdline.session-territory",
@@ -102,22 +102,22 @@
   {
     "id": "com.clawdline.session-codecraft",
     "language": "en",
-    "src": "/view-plugins/previews/session-codecraft-en-682cfde222b5.webp",
+    "src": "/view-plugins/previews/session-codecraft-en-ec90b52851ec.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.3.1",
-    "packageDigest": "c8b5d040d4ee00827580d1229ccb8994517f45975d77e8272b8c9a6c12c8ee18",
-    "sha256": "682cfde222b52321f60f311b42affd83c2344ba46b7898fdf9716dde4d9852c6"
+    "packageVersion": "0.4.0",
+    "packageDigest": "c58980b1a392eea48c66ae431614af470369ce19cf217847f918b68f49830f4a",
+    "sha256": "ec90b52851ec6fc84d83b155745580a6cf2b8d6642650e89965284ed759a74f2"
   },
   {
     "id": "com.clawdline.session-codecraft",
     "language": "zh-Hant",
-    "src": "/view-plugins/previews/session-codecraft-zh-Hant-191ee7ffe2e5.webp",
+    "src": "/view-plugins/previews/session-codecraft-zh-Hant-ae2cfd5800ba.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.3.1",
-    "packageDigest": "c8b5d040d4ee00827580d1229ccb8994517f45975d77e8272b8c9a6c12c8ee18",
-    "sha256": "191ee7ffe2e53c3c7fb455fc569aa716c509e43cffa6938f3d1d546ef5e00b51"
+    "packageVersion": "0.4.0",
+    "packageDigest": "c58980b1a392eea48c66ae431614af470369ce19cf217847f918b68f49830f4a",
+    "sha256": "ae2cfd5800ba412db4de0a0222fb841f503769c0a68de622bd23c606bb0f4bb4"
   },
   {
     "id": "com.clawdline.session-kaiju",
@@ -125,8 +125,8 @@
     "src": "/view-plugins/previews/session-kaiju-en-ec1b59fcd426.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.3.0",
-    "packageDigest": "96ce297958aed952943fdaa02347306df6d73c1dd24c980e4aa32e5669f29ea2",
+    "packageVersion": "0.4.0",
+    "packageDigest": "1db275a20649b4a72aba5724a59819bc6b8ef1d4eb2663043cc75895d9e85aec",
     "sha256": "ec1b59fcd426ee8d6577b7dc873ab4df5bb9bf4a5624e3272668b6f3f879cec1"
   },
   {
@@ -135,8 +135,8 @@
     "src": "/view-plugins/previews/session-kaiju-zh-Hant-956da0164d63.webp",
     "width": 1600,
     "height": 1000,
-    "packageVersion": "0.3.0",
-    "packageDigest": "96ce297958aed952943fdaa02347306df6d73c1dd24c980e4aa32e5669f29ea2",
+    "packageVersion": "0.4.0",
+    "packageDigest": "1db275a20649b4a72aba5724a59819bc6b8ef1d4eb2663043cc75895d9e85aec",
     "sha256": "956da0164d63570a142db44fd82b3918261ec08707b3d82a395da61142aed953"
   }
 ]

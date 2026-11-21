@@ -126,6 +126,7 @@ export function Detail({
   emptyProblem,
   scanSources,
   sessionCount,
+  viewReturn,
 }: {
   row: SessionRow | null
   readerMachine?: string | null
@@ -148,6 +149,8 @@ export function Detail({
   scanSources?: readonly ScanSource[]
   /** Rows the list holds, for the home screen's first-run words; unknown when left out. */
   sessionCount?: number
+  /** On a desk with a pinned view, the back button returns to it. */
+  viewReturn?: string
 }) {
   const T = L.strings
   // An owned conversation reads the machine's inventory too, only for its
@@ -365,8 +368,9 @@ export function Detail({
           onBack={() => chooseAgent(null)}
         />
       ) : <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
-        <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
-          ‹ {T.webBack}
+        <button className="back" id="back" onClick={onBack} aria-label={viewReturn ?? T.webBackLabel} disabled={ending}
+          data-view-return={viewReturn && row ? "on" : undefined}>
+          ‹ {viewReturn ?? T.webBack}
         </button>
         {loading && <div className="detail-loading-identity" aria-hidden="true">
           <span className="detail-loading-mark" />
