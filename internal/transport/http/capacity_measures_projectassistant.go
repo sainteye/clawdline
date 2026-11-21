@@ -217,6 +217,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsOutputBytes:           pure,
 		capacity.BotsArtifactBytes:         pure,
 		capacity.BotsOutputChunkBytes:      pure,
+		capacity.BotsInlineImageBytes:      pure,
 		capacity.BotsOwnedDescendants:      unobserved,
 		capacity.BotsReadViewCursorBytes:   pure,
 		capacity.BotsNameRunes:             pure,

@@ -145,10 +145,13 @@ func TestCollaborationACPSubprocess(t *testing.T) {
 			} else if role == "A" {
 				log("A input")
 				var page pa.BotDirectoryPage
-				if json.Unmarshal(call("list_bots", map[string]any{}, false), &page) != nil || len(page.Bots) != 1 || page.Bots[0].ID != "review-b" {
+				// Since 40a274993 any visible Bot on this machine is listed,
+				// whatever its Project: review-c is in another Project. The
+				// foreign-source review-d and the sender itself are not.
+				if json.Unmarshal(call("list_bots", map[string]any{}, false), &page) != nil || len(page.Bots) != 2 || page.Bots[0].ID != "review-b" || page.Bots[1].ID != "review-c" {
 					fail(30)
 				}
-				for _, id := range []string{"review-c", "review-d", "review-a"} {
+				for _, id := range []string{"review-d", "review-a"} {
 					call("message_bot", map[string]any{"idempotency_key": id, "target_bot_id": id, "text": "Review."}, true)
 				}
 				call("message_bot", map[string]any{"idempotency_key": "forged", "target_bot_id": "review-b", "text": "Review.", "sender_bot_id": "review-c"}, true)
