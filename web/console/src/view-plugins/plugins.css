@@ -297,3 +297,8 @@
   .vp-review>.vp-art { width:72px;height:72px;border-radius:18px }
   .vp-manager:not(.vp-launcher) .vp-example-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px }
 }
+/* A desk opens the launcher and Manage views as a light modal over the app; a running view still takes the whole screen. */
+.vp-host[data-presentation=modal] { top:max(40px,7vh);bottom:auto;left:0;right:0;margin:0 auto;width:min(980px,calc(100vw - 64px));height:min(780px,calc(100dvh - 2 * max(40px,7vh)));background:var(--bg,#101014);border:1px solid var(--vp-line);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgb(0 0 0 / .5),0 0 0 100vmax rgb(0 0 0 / .45) }
+.vp-host[data-presentation=modal] .vp-bar { padding:10px 14px 10px 20px }
+.vp-host[data-presentation=modal] .vp-manager { padding:22px 24px 24px }
+.vp-host .vp-launch-pin svg { width:16px;height:16px }

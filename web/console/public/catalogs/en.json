@@ -13467,7 +13467,7 @@
   "viewPlugins.lanternDeep": "Lantern Deep",
   "viewPlugins.addLanternDeep": "Install Lantern Deep",
   "viewPlugins.lanternDeepHint": "Sessions wander a hand-painted cavern: fighting, drilling, climbing, or puzzled when they need you.",
-  "viewPlugins.launchHint": "Click a card to open it full screen. Use its corner button to pin it beside the Session list.",
+  "viewPlugins.launchHint": "Click a card to pin it beside the Session list. Use its corner button to open it full screen.",
   "viewPlugins.launchHintPhone": "Tap a card to open it full screen.",
   "viewPlugins.manageInstall": "Manage and install",
   "viewPlugins.disabledHidden": "Disabled views are not shown here: {count}.",

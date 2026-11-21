@@ -112,7 +112,7 @@ export function EmbeddedView({ source, language, pinned, hidden, onFullscreen, o
   </section>
 }
 
-function FullIcon() {
+export function FullIcon() {
   return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
 }
 export function DockIcon({ on }: { on: boolean }) {

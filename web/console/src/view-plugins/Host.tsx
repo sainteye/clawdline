@@ -12,7 +12,7 @@ import { pluginWords, viewHint } from "./words.js"
 import { ViewArtwork, ViewPluginIcon, exampleCover, examplePreview, packageCover, hasCuratedUpdate, curatedPackageIDs, curatedVersion } from "./Artwork.js"
 import { fleetPluginSource } from "./sources.js"
 import { ManageMenu } from "./ManageMenu.js"
-import { DockIcon, EmbeddedView, GearIcon, pinView, useDesk, usePinnedView } from "./Embedded.js"
+import { DockIcon, EmbeddedView, FullIcon, GearIcon, pinView, useDesk, usePinnedView } from "./Embedded.js"
 import { LoadingSkeleton } from "../LoadingSkeleton.js"
 import { useDockMotion } from "../ui/dock-motion.js"
 import "./plugins.css"
@@ -27,6 +27,7 @@ type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string 
 export function useViewPlugins(sources: readonly ViewSource[], language: string, onPinned?: () => void) {
   const pinned = usePinnedView(), desk = useDesk()
   const pinnedRef = useRef(onPinned); pinnedRef.current = onPinned
+  const deskRef = useRef(desk); deskRef.current = desk
   // Pinning closes the full-screen host and shows the pane, even from an open Session.
   // The pane is shown after the host's own history entry is gone, as a plugin navigation is.
   const pinHere = (id: string) => { pinView(id); navigate.current = () => pinnedRef.current?.(); closeRef.current() }
@@ -127,9 +128,13 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
     }
-    window.addEventListener("popstate", pop, true); window.addEventListener("keydown", key, true)
+    // The desk's light modal closes from a press outside it; inert siblings retarget that press to the page.
+    const outside = (e: PointerEvent) => {
+      if (node.dataset.presentation === "modal" && e.target instanceof Node && !node.contains(e.target)) closeRef.current()
+    }
+    window.addEventListener("popstate", pop, true); window.addEventListener("keydown", key, true); window.addEventListener("pointerdown", outside, true)
     return () => {
-      window.removeEventListener("popstate", pop, true); window.removeEventListener("keydown", key, true)
+      window.removeEventListener("popstate", pop, true); window.removeEventListener("keydown", key, true); window.removeEventListener("pointerdown", outside, true)
       for (const [el, inert] of prior) el.inert = inert
       document.body.style.overflow = overflow
     }
@@ -146,7 +151,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       setRows(installed); setBusy(false); setLoading(false)
       const enabled = installed.filter(r => r.enabled), wanted = target && enabled.find(r => r.id === target)
       if (wanted) choose(wanted.active)
-      else if (nextMode === "launch" && !browse && enabled.length === 1) choose(enabled[0].active)
+      // A desk opens the launcher as a light modal; only a phone goes straight to its single view.
+      else if (nextMode === "launch" && !browse && !deskRef.current && enabled.length === 1) choose(enabled[0].active)
     }, e => { if (openedRef.current && generation === operations.current) { setLoadError(code(e)); setBusy(false); setLoading(false) } })
   }
   const reload = () => {
@@ -234,6 +240,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       } catch (error) { lease.release?.(); if (runtime.current === lease) runtime.current = null; throw error }
     })
   }
+  // On a desk, opening a view pins it beside the Session list; full screen is its own deliberate button.
+  const openView = (pkg: ViewPackage) => desk ? pinHere(pkg.manifest.id) : choose(pkg)
   const reviewUpdate = (row: Installed, button: HTMLElement) => {
     reviewOpener.current = button
     return act(async () => {
@@ -247,7 +255,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       await inspect(value.archive, true)
     })
   }
-  const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => openRoot(e.currentTarget, "launch")}>
+  // Once a desk has a pinned view, the status bar entry goes straight back to it; its switcher still browses the rest.
+  const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => desk && pinned ? pinnedRef.current?.() : openRoot(e.currentTarget, "launch")}>
     <ViewPluginIcon />
   </button>
   const enabled = rows.filter(row => row.enabled)
@@ -289,7 +298,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
     const release = updates.catalog?.packages.find(item => item.id === row.id)
     const next = release && newerStableVersion(release.version, row.active.manifest.version) ? release.version : hasCuratedUpdate(row.active) ? curatedVersion(row.id) : undefined
     return <article key={row.id} className="vp-view-card" data-package-id={row.id} data-pinned={here}>
-      <button type="button" className="vp-view-open" disabled={isBusy} onClick={() => choose(row.active)}>
+      <button type="button" className="vp-view-open" disabled={isBusy} onClick={() => openView(row.active)}>
         <span className={`vp-view-thumb${preview ? "" : " vp-view-thumb-cover"}`} aria-hidden="true">
           {preview ? <img src={preview} alt="" decoding="async" /> : art ? <><span className="vp-view-blur" style={{ backgroundImage: `url("${art}")` }} /><img src={art} alt="" /></> : <ViewPluginIcon />}
         </span>
@@ -304,8 +313,8 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
         {next && <span className="vp-badge vp-badge-update">{w.updateBadge.replace("{version}", next)}</span>}
         {!curated && <span className="vp-badge">{w.sideloaded}</span>}
       </span>
-      {desk && <button type="button" className="vp-launch-pin" disabled={isBusy} aria-pressed={here} aria-label={here ? w.unpin : w.pin} title={here ? w.unpin : w.pin}
-        onClick={() => here ? pinView(null) : pinHere(row.id)}><DockIcon on={here} /></button>}
+      {desk && <button type="button" className="vp-launch-pin" disabled={isBusy} aria-label={w.fullscreen} title={w.fullscreen}
+        onClick={() => choose(row.active)}><FullIcon /></button>}
     </article>
   }
   const authorGuide = "https://github.com/sainteye/clawdline/blob/main/docs/plugins/view-plugin-v1.md"
@@ -344,10 +353,10 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
         {status === "updating" && <span className="vp-row-progress" aria-hidden="true"><i /></span>}
       </div>
       <div className="vp-row-actions">
-        <button type="button" className="vp-primary vp-row-open" aria-label={w.open} title={w.open} disabled={isBusy || !row.enabled} onClick={() => choose(row.active)}><span aria-hidden="true">↗</span></button>
+        <button type="button" className="vp-primary vp-row-open" aria-label={w.open} title={w.open} disabled={isBusy || !row.enabled} onClick={() => openView(row.active)}><span aria-hidden="true">↗</span></button>
         <button type="button" role="switch" className="vp-switch-toggle" aria-checked={row.enabled} aria-label={`${row.enabled ? w.disable : w.enable} ${name(row.active, language)}`} title={row.enabled ? w.disable : w.enable} disabled={isBusy} onClick={() => void act(() => enablePackage(row, !row.enabled))}><i /></button>
         <ManageMenu label={w.manage} busy={isBusy} packageId={row.id} icon={<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>} items={[
-          ...(row.enabled ? [{ label: w.open, onSelect: () => choose(row.active) }] : []),
+          ...(row.enabled ? [{ label: desk ? w.pin : w.open, onSelect: () => openView(row.active) }, ...(desk ? [{ label: w.fullscreen, onSelect: () => choose(row.active) }] : [])] : []),
           ...(official ? [{ label: row.official && !row.autoUpdate ? w.autoUpdateOff : w.autoUpdateOn, onSelect: () => void act(() => officialUpdatePolicy(row, !(row.official ? !!row.autoUpdate : true))) }] : []),
           ...(row.previous ? [{ label: `${w.rollback} · ${row.previous.manifest.version}`, onSelect: () => void act(() => rollbackPackage(row)) }] : []),
         ]} remove={{ label: w.remove, cancel: w.cancel, confirm: w.remove,
@@ -356,7 +365,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       </div>
     </article>
   }
-  const content = opened ? createPortal(<div className="vp-host" ref={modal} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
+  const content = opened ? createPortal(<div className="vp-host" ref={modal} data-presentation={desk && !grant ? "modal" : "fullscreen"} role="dialog" aria-modal="true" aria-label={mode === "manage" ? w.title : w.launcher}>
     {grant ? <PluginFrame key={grant.instanceId} grant={grant} source={source} language={language} onClose={close}
       onPin={desk && pinned !== grant.pkg.manifest.id ? () => pinHere(grant.pkg.manifest.id) : undefined}
       onNavigate={fn => { navigate.current = fn }} onFault={error => { setGrant(null); setError(error) }} /> : <>
@@ -377,7 +386,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
             {!(completed && !review && !installing) && <p className="vp-muted">{(review ?? installing)?.official ? w.trustOfficial : w.trustCommunity}</p>}
             {error && (review || installing) && <p className="vp-error" role="alert" tabIndex={-1}>{w.errors[error] || w.unavailable}</p>}
             <div className="vp-actions">{completed && !review && !installing ? <>
-              <button className="vp-primary" disabled={isBusy || !rows.find(row => row.id === completed.manifest.id)?.enabled} onClick={() => choose(completed)}>{w.open} <span aria-hidden="true">↗</span></button>
+              <button className="vp-primary" disabled={isBusy || !rows.find(row => row.id === completed.manifest.id)?.enabled} onClick={() => openView(completed)}>{desk ? w.pin : w.open} <span aria-hidden="true">↗</span></button>
               {mode === "manage" && <button disabled={isBusy} onClick={() => {
                 const card = [...(modal.current?.querySelectorAll<HTMLElement>(".vp-installed") ?? [])].find(el => el.dataset.packageId === completed.manifest.id)
                 if (card) { reveal(card, card.closest(".vp-library")?.querySelector<HTMLElement>(".vp-section-head") ?? undefined); card.querySelector<HTMLButtonElement>(".vp-primary")?.focus({ preventScroll: true }) }
