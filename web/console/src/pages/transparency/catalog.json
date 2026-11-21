@@ -4089,6 +4089,10 @@
         {
           "path": "web/console/src/project-assistants/library-items.ts",
           "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/ImageViewer.tsx",
+          "line": 1
         }
       ],
       "original": [
@@ -5398,9 +5402,10 @@
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
+    "web/console/src/project-assistants/ImageViewer.tsx": "81c1b3f7e72a1237ccf3d758d83f1a817ae76977ade90ac3c7875a22b0d77b76",
     "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
     "web/console/src/project-assistants/NetworkSettings.tsx": "d2c99482a6a84e9fad9fae688f905eb0222d730775446f40cb0faaee05cbffcc",
-    "web/console/src/project-assistants/OutputCard.tsx": "5e3d8a1c60b797900caaebdcec385d9aa79f683c95e388e9777ce51888e7726e",
+    "web/console/src/project-assistants/OutputCard.tsx": "880948ab8e65488241340ecea927be6508ce55abe91101400907b7105f273c09",
     "web/console/src/project-assistants/OutputLibrary.tsx": "aa6c0daa92d485861196ffcb3bba4753c363aac2a939c3fa7569c9fc979fefe2",
     "web/console/src/project-assistants/OutputViewer.tsx": "175f1cd60c5f2d197f627a5fe3d2cc381069ec4b6290cd328e51330d2e11cb4a",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
@@ -5446,7 +5451,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "d0e6edf9d521c0262e81e3244f5b5205217e31ebc7d56f4c13c9b9225d762add",
-    "zh-Hant": "f0294394c2362e84626433401deedae9e2e9edd0d563932409ddf2896aaaf36b"
+    "en": "a9924176449b8c4ab7e1b46bf65d774748b5900ae6fed55e444e06701b63224f",
+    "zh-Hant": "cffbc587d54d8810b90b1a5b3d7f60fa28dd9307f4d51b059c1e907546a70405"
   }
 }

@@ -425,6 +425,15 @@
 .pa-image-preview{display:block;align-self:stretch;min-height:120px;max-height:min(60vh,420px);margin:-.25rem -.25rem .25rem;border-radius:12px;overflow:hidden;background:var(--pa-bg,#111)}
 .pa-image-preview img{display:block;width:100%;height:auto;max-height:min(60vh,420px);object-fit:contain}
 .pa-image-preview:has(img){min-height:0}
+.pa-image-viewer-scrim{background:#000d}
+.pa-image-viewer{position:absolute;inset:0;display:flex;flex-direction:column;background:#000;color:#fff}
+.pa-image-viewer>header{display:flex;align-items:center;gap:8px;padding:max(12px,env(safe-area-inset-top)) 16px 12px}
+.pa-image-viewer>header h3{flex:1;min-width:0;margin:0;font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pa-image-viewer-stage{flex:1;min-height:0;display:grid;place-items:center;overflow:auto;padding:0 0 env(safe-area-inset-bottom)}
+.pa-image-viewer-stage img{display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}
+.pa-image-viewer-stage[data-actual]{place-items:start}
+.pa-image-viewer-stage[data-actual] img{max-width:none;max-height:none;cursor:zoom-out}
+.pa-image-viewer-spinner{width:24px;height:24px}
 .pa-output-scrim { position: fixed; inset: 0; z-index: 1500; background: #0009; }
 .pa-output-overlay{position:absolute;inset:12px;display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;background:var(--pa-bg,#080808);color:inherit;border:1px solid var(--pa-line,#303033);overflow:hidden auto}
 .pa-output-overlay > header {
