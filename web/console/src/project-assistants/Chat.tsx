@@ -498,6 +498,14 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setSettings(false)
     toast(w.settingsSaved)
   }
+  // Reconciliation reads the Bot through the same authorized, epoch- and fence-checked preflight as a write.
+  const checkSettings=async()=>{
+    const fresh=await mutate(async({bot})=>bot)
+    if(!valid())throw failure("pa_read_only")
+    setData(old=>old?{...old,bot:fresh}:old)
+    onBotChanged(fresh)
+    return fresh
+  }
   const saveModel=(original:W.ProjectAssistantBot,model:string)=>editBot({expected_version:original.version,
     name:original.name,appearance:original.appearance,instructions:original.instructions.text,runtime_settings:{model,options:{}}})
   const marker="clawdline.bot-inputs."+draftKey
@@ -1446,7 +1454,7 @@ ${currentDraft}`:submitted)
           <button type="button" className="pa-settings-link" disabled={!canReadActions} onClick={event=>setTemplateOpener(event.currentTarget)}>{w.templateCreate}</button>
           <button type="button" className="pa-settings-link" disabled={!canReadActions||exporting} aria-busy={exporting||undefined} onClick={()=>void exportBot()}>{w.export}</button>
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}
-        </>} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage bare w={w} enabled={enabled} hideDisabled={bot.lead} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList bare w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={saveSettings}/>} children={{
+        </>} teamAvailable={source.canGroups?.()===true} bot={bot} enabled={enabled} manage={source.canManage?.()&&source.setHidden&&source.deleteBot?<BotManage bare w={w} enabled={enabled} hideDisabled={bot.lead} onHide={async()=>{const r=await mutate((_,s)=>source.setHidden!({command:command(key,"visibility"),hidden:true},s));if(valid()){onBotChanged(r.bot);setSettings(false);onBack()}}} onDelete={async()=>{await mutate((_,s)=>source.deleteBot!({command:command(key,"delete")},s));setSettings(false);onDeleted?.()}}/>:undefined} rules={(bot.agent==="claude"||source.canSourceRules?.()===true)&&source.canRules?.()&&source.rules&&source.removeRule?<RuleList bare w={w} enabled={enabled} load={loadRules} remove={async rule=>{await mutate((_,s)=>source.removeRule!({command:command(key,"rule_remove"),rule},s))}}/>:undefined} reason={recoveryRequired?w.unavailable:readOnlyReason(data?.source,w as unknown as Record<string,string>)} w={w} onClose={()=>{setSettingsRevision(n=>n+1);setSettings(false)}} onSave={saveSettings} onCheck={checkSettings}/>} children={{
       details:<><BackgroundList slots={bot.background_threads??3} section="live" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/><Routines key={JSON.stringify([accountKey,readerID,source.authorizationRevision,key.machine_id,key.bot_id])} source={source} mentions={mentions} bot={bot} enabled={enabled} w={w} storageKey={JSON.stringify([accountKey,readerID,key.machine_id,key.bot_id])}/>
         <BackgroundList slots={bot.background_threads??3} section="recent" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/>
       </>,
