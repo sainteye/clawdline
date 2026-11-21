@@ -25,6 +25,14 @@ type resourcePreparationState struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	closed   bool
+	// receipts counts the preparation receipts this broker has written. A
+	// poll notes it before reading receipts; a different count when it goes
+	// to start a preparation means one finished in between, and the next
+	// poll reads that receipt instead of measuring again.
+	receipts uint64
+	// beforeRestart, set only by tests, runs after a poll has read the
+	// receipts and decided to start a preparation, before it does.
+	beforeRestart func()
 }
 type resourcePreparationResult struct {
 	RequestedAt int64                         `json:"requested_at"`
@@ -43,6 +51,9 @@ func preparationIdentity(w store.LeaseRow) string {
 }
 
 func (b *Broker) preparedResourceLease(ctx context.Context, req LeaseRequest, w store.LeaseRow) (bool, error) {
+	b.resourcePreparation.mu.Lock()
+	seen := b.resourcePreparation.receipts
+	b.resourcePreparation.mu.Unlock()
 	cancelled, err := b.Store.LatestEvents(ctx, "resource.preparation.cancelled", []string{req.RequestID})
 	if err != nil {
 		return false, storeError(err)
@@ -89,14 +100,20 @@ func (b *Broker) preparedResourceLease(ctx context.Context, req LeaseRequest, w 
 			}
 		}
 	}
-	b.startResourcePreparation(ctx, w)
+	if hook := b.resourcePreparation.beforeRestart; hook != nil {
+		hook()
+	}
+	b.startResourcePreparation(ctx, w, seen)
 	return false, nil
 }
 
-func (b *Broker) startResourcePreparation(ctx context.Context, w store.LeaseRow) {
+// startResourcePreparation starts the one preparation for w, unless one is
+// running, a grant is in progress, or a receipt was written after the poll
+// that asks noted seen.
+func (b *Broker) startResourcePreparation(ctx context.Context, w store.LeaseRow, seen uint64) {
 	state := &b.resourcePreparation
 	state.mu.Lock()
-	if state.closed || state.running || state.granting != "" {
+	if state.closed || state.running || state.granting != "" || state.receipts != seen {
 		state.mu.Unlock()
 		return
 	}
@@ -147,7 +164,13 @@ func (b *Broker) startResourcePreparation(ctx context.Context, w store.LeaseRow)
 		body, _ := json.Marshal(result)
 		if err := b.Store.Append(rec, store.Event{Kind: "resource.preparation.finished", Subject: w.RequestID, Payload: body}); err != nil {
 			log.Printf("resource preparation receipt unavailable: %v", err)
+			return
 		}
+		// Counted before running is cleared: a poll that read the receipts
+		// before this one existed sees the count move and does not restart.
+		state.mu.Lock()
+		state.receipts++
+		state.mu.Unlock()
 	}()
 }
 
