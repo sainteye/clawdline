@@ -34,7 +34,21 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 		}
 		return got
 	}
+	checkPermission := func(state contract.WorkflowSettingsSnapshot, want string) {
+		t.Helper()
+		if state.CodexPermissionMode == nil || *state.CodexPermissionMode != want {
+			t.Fatalf("Codex Session permission is not %q: %+v", want, state)
+		}
+		if actual := s.starter(startReading{}).CodexSessionPermission(); actual != want {
+			t.Fatalf("new Codex Session reads %q, want %q", actual, want)
+		}
+	}
 	got := call("GET", "")
+	checkPermission(got, projects.CodexSessionPermissionFull)
+	for _, mode := range []string{projects.CodexSessionPermissionAutoReview, projects.CodexSessionPermissionNative, projects.CodexSessionPermissionFull} {
+		checkPermission(call("POST", fmt.Sprintf(`{"codex_permission_mode":%q}`, mode)), mode)
+		checkPermission(call("GET", ""), mode)
+	}
 	if !got.DispatchFullPermission || !got.SessionAutoDiscovery || !got.GeminiStepExplanations {
 		t.Fatalf("defaults: %+v", got)
 	}
@@ -102,7 +116,7 @@ func TestWorkflowSettingsDefaultsAndIndependentPersistentSwitches(t *testing.T) 
 
 func TestWorkflowSettingsRejectUnrelatedOrMalformedChanges(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
-	for _, body := range []string{`{"remote":true}`, `{"iterm_scan":true}`, `{"terminal":"ghostty"}`, `{"terminal":true}`, `{"iterm_integration":"on"}`, `{"session_auto_discovery":"off"}`, `{"dispatch_full_permission":"off"}`} {
+	for _, body := range []string{`{"remote":true}`, `{"iterm_scan":true}`, `{"terminal":"ghostty"}`, `{"terminal":true}`, `{"iterm_integration":"on"}`, `{"session_auto_discovery":"off"}`, `{"dispatch_full_permission":"off"}`, `{"codex_permission_mode":"unsupported"}`, `{"codex_permission_mode":true}`} {
 		r := httptest.NewRequest(http.MethodPost, "/v1/settings/workflow", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

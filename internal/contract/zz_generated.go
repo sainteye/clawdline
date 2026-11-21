@@ -8763,7 +8763,9 @@ type SessionLimits struct {
 // question it is showing; the numbers, the caret, Submit and the steps are
 // always the screen's.
 type SessionMenu struct {
-	Options []SessionMenuOption `json:"options"`
+	// True when the native Codex screen identifies a command approval.
+	CommandApproval bool                `json:"command_approval,omitempty"`
+	Options         []SessionMenuOption `json:"options"`
 
 	// The prose above the rows, or the question as the call asked it. Absent when it
 	// could not be read.
@@ -9413,7 +9415,8 @@ type SettingsRequest struct {
 	CodexDefaultEffort *string `json:"codex_default_effort"`
 
 	// Empty, or a Codex model name used when a new Session does not name one.
-	CodexDefaultModel *string `json:"codex_default_model"`
+	CodexDefaultModel   *string `json:"codex_default_model"`
+	CodexPermissionMode *string `json:"codex_permission_mode"`
 
 	// Whether the terminal selects the tab the bar points at.
 	FollowTarget *bool `json:"follow_target"`
@@ -9671,7 +9674,8 @@ type SettingsSnapshot struct {
 
 	// The model used for a new Codex session when that launch does not name one. Empty
 	// leaves the choice to Codex.
-	CodexDefaultModel *string `json:"codex_default_model"`
+	CodexDefaultModel   *string `json:"codex_default_model"`
+	CodexPermissionMode *string `json:"codex_permission_mode"`
 
 	// False before anything has been written. Every key then has the shell's default.
 	Exists bool `json:"exists"`
@@ -13065,7 +13069,9 @@ const (
 var WorkStateValues = []WorkState{WorkStateReady, WorkStateWorking, WorkStateHolding, WorkStateWaitingYou, WorkStateWaitingSession, WorkStateUnknown, WorkStateMilestoneComplete, WorkStateWorkComplete}
 
 type WorkflowSettingsRequest struct {
-	DispatchFullPermission *bool `json:"dispatch_full_permission"`
+	// Permission mode for new interactive Codex Sessions on the selected machine.
+	CodexPermissionMode    *string `json:"codex_permission_mode"`
+	DispatchFullPermission *bool   `json:"dispatch_full_permission"`
 
 	// Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
 	// user's language.
@@ -13089,7 +13095,10 @@ type WorkflowSettingsRequest struct {
 }
 
 type WorkflowSettingsSnapshot struct {
-	DispatchFullPermission bool `json:"dispatch_full_permission"`
+	// Permission mode for new interactive Codex Sessions. Defaults to full; older
+	// daemons omit this field.
+	CodexPermissionMode    *string `json:"codex_permission_mode"`
+	DispatchFullPermission bool    `json:"dispatch_full_permission"`
 
 	// Whether Gemini (Antigravity) explains its plan and progress step-by-step in the
 	// user's language. True by default.

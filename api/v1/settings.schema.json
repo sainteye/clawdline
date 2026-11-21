@@ -40,6 +40,7 @@
         "gemini_step_explanations": { "type": "boolean", "nullable": true },
         "session_todo_auto_take": { "type": "boolean", "nullable": true },
         "grok_full_permission": { "type": "boolean", "nullable": true },
+        "codex_permission_mode": { "type": "string", "enum": ["full", "auto_review", "native"], "nullable": true },
         "project_assistants_enabled": { "type": "boolean", "nullable": true, "description": "Explicit local-owner Bot opt-in; absent or malformed means false. Actual runtime state and retained history are reported by Bot status." },
         "exists": {
           "description": "False before anything has been written. Every key then has the shell's default.",
@@ -378,6 +379,7 @@
         },
         "antigravity_default_model": {"description": "Native Antigravity model slug. Empty leaves the choice to Antigravity; no fallback to another provider.", "nullable": true, "type": "string"},
         "antigravity_default_effort": {"description": "Native Antigravity effort: low, medium, high, xhigh or max. Empty leaves the choice to Antigravity.", "nullable": true, "type": "string"},
+        "codex_permission_mode": { "type": "string", "enum": ["full", "auto_review", "native"], "nullable": true },
         "codex_default_effort": {
           "description": "Empty, high or xhigh for a new Codex Session.",
           "nullable": true,
@@ -690,6 +692,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "codex_permission_mode": { "type": "string", "enum": ["full", "auto_review", "native"], "nullable": true, "description": "Permission mode for new interactive Codex Sessions. Defaults to full; older daemons omit this field." },
         "terminal": { "type": "string", "enum": ["auto", "iterm", "iterm_native", "tmux"], "nullable": true, "description": "Terminal preference for new Sessions. Older daemons omit this field." },
         "dispatch_full_permission": {
           "type": "boolean",
@@ -726,6 +729,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "codex_permission_mode": { "type": "string", "enum": ["full", "auto_review", "native"], "nullable": true, "description": "Permission mode for new interactive Codex Sessions on the selected machine." },
         "terminal": { "type": "string", "enum": ["auto", "iterm", "iterm_native", "tmux"], "nullable": true, "description": "Terminal preference for new Sessions on the selected machine." },
         "dispatch_full_permission": {
           "type": "boolean",

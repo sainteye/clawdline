@@ -49,7 +49,7 @@ func TestCodexToolApprovalSaysWhatItAsksAndSplitsItsColumns(t *testing.T) {
 	if !ok {
 		t.Fatal("no menu on Codex's tool approval")
 	}
-	if m.Question != "Allow this request?" {
+	if m.CommandApproval || m.Question != "Allow this request?" {
 		t.Fatalf("question %q", m.Question)
 	}
 	if got := labels(m); got != "Allow|Allow for this session|Always allow|Cancel" {
@@ -77,6 +77,18 @@ func TestCodexToolApprovalCarriesItsParameters(t *testing.T) {
 // The command approval's question is the question and the command it asks
 // about, with the command's own line breaks; the two blank rows over it close
 // it off from the turn that ran into it.
+func TestCodexCommandApprovalIsIdentifiedWhenCommandHeaderClips(t *testing.T) {
+	screen := "\n  $ printf fixture\n\n\n" +
+		"› 1. Yes, proceed (y)\n" +
+		"  2. Yes, and don't ask again for commands that start with `printf` (p)\n" +
+		"  3. No, and tell Codex what to do differently (esc)\n\n" +
+		"  Press enter to confirm or esc to cancel"
+	m, ok := ReadMenu(screen, AssistantCodex, false)
+	if !ok || !m.CommandApproval {
+		t.Fatalf("clipped command approval was not identified: %+v", m)
+	}
+}
+
 func TestCodexCommandApprovalSaysTheCommand(t *testing.T) {
 	m, ok := ReadMenu(fixture(t, "menu-codex-command-approval.txt"), AssistantCodex, false)
 	if !ok {
@@ -85,6 +97,9 @@ func TestCodexCommandApprovalSaysTheCommand(t *testing.T) {
 	if !strings.HasPrefix(m.Question, "Would you like to run the following command?\n\nEnvironment: local\n\n$ if [ -d") ||
 		!strings.HasSuffix(m.Question, "npm run build'") || strings.Contains(m.Question, "Show details") {
 		t.Fatalf("question %q", m.Question)
+	}
+	if !m.CommandApproval {
+		t.Fatal("native command approval was not identified")
 	}
 	if m.Options[0].Detail != "" {
 		t.Fatalf("a single-column row grew a detail: %+v", m.Options[0])

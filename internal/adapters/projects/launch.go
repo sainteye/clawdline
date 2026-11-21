@@ -444,6 +444,26 @@ func KnownAntigravityEffort(value string) bool {
 	return false
 }
 
+const (
+	CodexSessionPermissionFull       = "full"
+	CodexSessionPermissionAutoReview = "auto_review"
+	CodexSessionPermissionNative     = "native"
+)
+
+// CodexSessionPermissionArgs applies a machine preference to a new interactive
+// Session. Broker task launches use their own permission policy.
+func CodexSessionPermissionArgs(mode string) []string {
+	switch mode {
+	case CodexSessionPermissionFull:
+		return []string{"--sandbox", "danger-full-access", "--ask-for-approval", "never"}
+	case CodexSessionPermissionAutoReview:
+		return []string{"--sandbox", "workspace-write", "--ask-for-approval", "on-request",
+			"-c", ShellQuoted(`approvals_reviewer="auto_review"`)}
+	default:
+		return nil
+	}
+}
+
 // UpdateCheckArgs keeps Codex from asking, on its first screen, whether to
 // update itself.
 //

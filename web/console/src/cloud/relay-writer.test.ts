@@ -2825,7 +2825,7 @@ test("a readonly viewer's refusal without a status of its own answers 403 viewer
 })
 
 
-test("the website workflow tab carries iTerm2 consent and the terminal choice only to its selected machine", async () => {
+test("the website workflow tab carries its preferences only to the selected machine", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
   assert.equal((await reader.fetch("/v1/settings/workflow")).status, 200)
@@ -2836,6 +2836,8 @@ test("the website workflow tab carries iTerm2 consent and the terminal choice on
   }
   assert.equal((await reader.fetch("/v1/settings/workflow", post({ terminal: "tmux" }))).status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { terminal: "tmux" } }, "action"])
+  assert.equal((await reader.fetch("/v1/settings/workflow", post({ codex_permission_mode: "auto_review" }))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { codex_permission_mode: "auto_review" } }, "action"])
 })
 
 

@@ -10171,6 +10171,10 @@ export interface SessionLimits {
  * numbers, the caret, Submit and the steps are always the screen's.
  */
 export interface SessionMenu {
+  /**
+   * True when the native Codex screen identifies a command approval.
+   */
+  command_approval?: boolean
   options: SessionMenuOption[]
 
   /**
@@ -11025,6 +11029,7 @@ export interface SettingsRequest {
    * Empty, or a Codex model name used when a new Session does not name one.
    */
   codex_default_model: string | null
+  codex_permission_mode: string | null
 
   /**
    * Whether the terminal selects the tab the bar points at.
@@ -11425,6 +11430,7 @@ export interface SettingsSnapshot {
    * Empty leaves the choice to Codex.
    */
   codex_default_model: string | null
+  codex_permission_mode: string | null
 
   /**
    * False before anything has been written. Every key then has the shell's default.
@@ -15432,6 +15438,10 @@ export type WorkState =
 export const WorkStateValues: readonly WorkState[] = ["ready", "working", "holding", "waiting_you", "waiting_session", "unknown", "milestone_complete", "work_complete"] as const
 
 export interface WorkflowSettingsRequest {
+  /**
+   * Permission mode for new interactive Codex Sessions on the selected machine.
+   */
+  codex_permission_mode: string | null
   dispatch_full_permission: boolean | null
 
   /**
@@ -15466,6 +15476,11 @@ export interface WorkflowSettingsRequest {
 }
 
 export interface WorkflowSettingsSnapshot {
+  /**
+   * Permission mode for new interactive Codex Sessions. Defaults to full; older
+   * daemons omit this field.
+   */
+  codex_permission_mode: string | null
   dispatch_full_permission: boolean
 
   /**
