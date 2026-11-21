@@ -174,6 +174,7 @@ export async function openEnvelope(envelope, masterKey, keyOrResolver, probe) {
     mark("decrypt");
     var clear = await subtle().decrypt({ name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce"),
         tagLength: 128 }, key, base64Bytes(envelope.ct, "ct"));
+    mark("decompress");
     return unpackReadPayload(new Uint8Array(clear));
 }
 

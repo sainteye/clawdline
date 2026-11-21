@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,6 +114,11 @@ func openCarrierAnswer(t *testing.T, key domaincloud.ContentKey, connection, sea
 func (f *directFixture) carrier(t *testing.T) (*testBrowser, domaincloud.ContentKey, string) {
 	t.Helper()
 	b, offer := newTestBrowser(t)
+	return f.carrierWithOffer(t, b, offer)
+}
+
+func (f *directFixture) carrierWithOffer(t *testing.T, b *testBrowser, offer string) (*testBrowser, domaincloud.ContentKey, string) {
+	t.Helper()
 	key, err := domaincloud.NewContentKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -152,6 +158,66 @@ func (f *directFixture) carrier(t *testing.T) (*testBrowser, domaincloud.Content
 		time.Sleep(5 * time.Millisecond)
 	}
 	return b, key, connection
+}
+
+type interruptedCarrierSocket struct {
+	net.PacketConn
+	interrupted atomic.Bool
+}
+
+func (s *interruptedCarrierSocket) WriteTo(data []byte, to net.Addr) (int, error) {
+	if s.interrupted.Load() {
+		return len(data), nil
+	}
+	return s.PacketConn.WriteTo(data, to)
+}
+
+func TestACarrierRecoversOnTheSamePeerAfterTemporaryUDPLoss(t *testing.T) {
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket := &interruptedCarrierSocket{PacketConn: conn}
+	mux := webrtc.NewICEUDPMux(nil, socket)
+	t.Cleanup(func() { _ = mux.Close() })
+	b, offer := newTestBrowser(t, func(settings *webrtc.SettingEngine) {
+		settings.SetICEUDPMux(mux)
+	})
+	f := newDirectFixture(t)
+	t.Cleanup(f.l.closeAllDirectPeers)
+	f.carrierWithOffer(t, b, offer)
+	f.l.directMu.Lock()
+	peer := f.l.directPeers["viewer"]
+	f.l.directMu.Unlock()
+	if peer == nil {
+		t.Fatal("the carrier did not reserve its peer")
+	}
+
+	waitICE := func(want webrtc.ICEConnectionState) {
+		t.Helper()
+		deadline := time.Now().Add(8 * time.Second)
+		for peer.pc.ICEConnectionState() != want {
+			if time.Now().After(deadline) {
+				t.Fatalf("ICE is %s, want %s", peer.pc.ICEConnectionState(), want)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	socket.interrupted.Store(true)
+	waitICE(webrtc.ICEConnectionStateDisconnected)
+	// Stay disconnected beyond the old eight-second failure window, then
+	// restore the same UDP path without a new offer or relay socket.
+	time.Sleep(10 * time.Second)
+	socket.interrupted.Store(false)
+	waitICE(webrtc.ICEConnectionStateConnected)
+	if err := f.l.sendCarrierEnvelope("viewer", "t/machine/session", domaincloud.ClassStream,
+		[]byte(`{"read":"after-recovery","status":200}`)); err != nil {
+		t.Fatal(err)
+	}
+	env, body := f.openMaster(t, b.next(t))
+	if env.Seq != 1 || body["read"] != "after-recovery" {
+		t.Fatalf("recovered carrier returned sequence %d with read %v", env.Seq, body["read"])
+	}
 }
 
 // A page with no terminal opens the channel by itself, its answer travels as an

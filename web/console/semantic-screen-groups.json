@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13832,
+  "englishContentKeys": 13834,
   "riskKeys": 5908,
-  "nonRiskCount": 7924,
+  "nonRiskCount": 7926,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 708,
+      "count": 710,
       "sources": [
         null
       ],
@@ -850,6 +850,8 @@
         "capacityRow.cloud.session_row_volatile_seconds.what",
         "capacityRow.cloud.spool_bytes.full",
         "capacityRow.cloud.terminal_direct_candidates.what",
+        "capacityRow.cloud.terminal_direct_ice_recovery_seconds.full",
+        "capacityRow.cloud.terminal_direct_ice_recovery_seconds.what",
         "capacityRow.cloud.terminal_direct_message_bytes.what",
         "capacityRow.cloud.terminal_direct_offers_per_minute.what",
         "capacityRow.cloud.terminal_history_capture_bytes.what",
