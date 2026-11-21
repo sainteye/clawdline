@@ -10812,6 +10812,7 @@
   "next.voiceEngineNextCaption": "Next",
   "next.voiceAutoPolish": "Auto-correct",
   "next.voicePolishChangeFailed": "Could not change automatic correction.",
+  "next.voiceWhisperPreviewUnavailable": "Live preview is unavailable. Stop recording to transcribe the full audio.",
   "notifications.botSound": "Bots completion sound",
   "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "notifications.destinationList": "Opens the list.",

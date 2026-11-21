@@ -5,6 +5,9 @@ import { runInNewContext } from "node:vm"
 // @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
 import { connectLiveDictation, readDictationSettings, writeDictationSetting } from "./live-dictation.ts"
 
+// @ts-expect-error -- Node reads the TypeScript source in its strip-types test runner.
+import { startWhisperPreview } from "./whisper-preview.ts"
+
 test("read the selected engine from the active machine and recognize older daemons", async () => {
   const signal = new AbortController().signal
   const connection = { current: () => true, fetch: async () => Response.json({}) }
@@ -33,6 +36,50 @@ test("the recording panel saves the same machine preference with a verified resp
   current = false
   assert.equal(await writeDictationSetting(connection, { voice_transcription: "whisper" }, "recording-choice", signal), false)
   assert.equal(calls, 1)
+})
+
+test("a transient Whisper preview failure leaves the next window usable", async (t) => {
+  let sendWindow = () => {}
+  let closed = false
+  const original = globalThis.AudioWorkletNode
+  t.after(() => { globalThis.AudioWorkletNode = original })
+  globalThis.AudioWorkletNode = class {
+    port = { onmessage: null as ((event: { data: ArrayBuffer }) => void) | null }
+    constructor() {
+      sendWindow = () => this.port.onmessage?.({ data: new ArrayBuffer(96000) })
+    }
+    connect() {}
+    disconnect() {}
+  } as unknown as typeof AudioWorkletNode
+  const context = {
+    audioWorklet: { addModule: async () => {} }, sampleRate: 48000, state: "running",
+    createMediaStreamSource: () => ({ connect: (node: AudioWorkletNode) => node }),
+    close: async () => { closed = true },
+  } as unknown as AudioContext
+  let requests = 0
+  const connection = {
+    current: () => true,
+    fetch: async () => ++requests === 1
+      ? Response.json({ error: "cloud_reconnecting" }, { status: 503 })
+      : Response.json({ text: "下一段" }),
+  }
+  const words: string[] = []
+  const unavailable: string[] = []
+  const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve))
+  const preview = startWhisperPreview(context, {} as MediaStream, connection,
+    () => "window", () => "AAAA", text => words.push(text), () => unavailable.push("unavailable"))
+  t.after(() => preview.close())
+  await nextTurn()
+  sendWindow()
+  await nextTurn()
+  assert.equal(requests, 1)
+  assert.equal(closed, false)
+  assert.deepEqual(words, [])
+  sendWindow()
+  await nextTurn()
+  assert.equal(requests, 2)
+  assert.deepEqual(words, ["下一段"])
+  assert.deepEqual(unavailable, [])
 })
 
 test("automatic correction saves only the existing correction preference", async () => {

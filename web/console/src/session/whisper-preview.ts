@@ -16,6 +16,7 @@ export function startWhisperPreview(
   requestKey: () => string,
   encode: (audio: Uint8Array) => string,
   preview: (segment: string) => void,
+  unavailable: () => void,
 ): WhisperPreview {
   let node: AudioWorkletNode | undefined
   let request: AbortController | undefined
@@ -48,15 +49,23 @@ export function startWhisperPreview(
         signal: abort.signal,
       })
       if (closed || abort.signal.aborted) return
-      // A busy preview has no effect on the original recording.
-      if (response.status === 429) return
-      if (!response.ok) { close(); return }
+      if (!response.ok) {
+        if (response.status === 429 || response.status === 408) return
+        const refusal = await response.json().catch(() => null) as { error?: string } | null
+        if (closed || abort.signal.aborted) return
+        // A temporary Cloud or inference failure drops this window. The
+        // full recording and the next preview window are still independent.
+        if (response.status >= 500 && response.status !== 501 && refusal?.error !== "no_whisper") return
+        unavailable()
+        close()
+        return
+      }
       const result = await response.json() as { text?: unknown }
       if (!closed && !abort.signal.aborted && connection.current() && typeof result.text === "string" && result.text.trim()) {
         preview(result.text.trim())
       }
     } catch {
-      close()
+      // The network request can be abandoned or interrupted between windows.
     } finally {
       clearTimeout(expiry)
       request = undefined
@@ -68,11 +77,16 @@ export function startWhisperPreview(
 
   void (async () => {
     try {
-      if (!context.audioWorklet || context.sampleRate < RATE) { close(); return }
+      if (!context.audioWorklet || context.sampleRate < RATE) { unavailable(); close(); return }
       // Keep this as a same-origin script in the hosted build as well as in dev.
       await context.audioWorklet.addModule(new URL("./whisper-preview.worklet.js?no-inline", import.meta.url))
       if (closed) return
       node = new AudioWorkletNode(context, "whisper-preview", { channelCount: 1, channelCountMode: "explicit" })
+      node.onprocessorerror = () => {
+        if (closed) return
+        unavailable()
+        close()
+      }
       node.port.onmessage = (event: MessageEvent<unknown>) => {
         const audio = event.data
         if (closed || !(audio instanceof ArrayBuffer) || audio.byteLength !== WINDOW_BYTES) return
@@ -82,7 +96,11 @@ export function startWhisperPreview(
       // The worklet's output is always silence; connect it so the graph
       // continues to pull PCM without playing the microphone to the room.
       context.createMediaStreamSource(stream).connect(node).connect(context.destination)
+      // A microphone route change on WebKit can interrupt the context that the
+      // gesture opened. Resume the same graph after attaching the live stream.
+      if (context.state !== "running") await context.resume()
     } catch {
+      if (!closed) unavailable()
       close()
     }
   })()

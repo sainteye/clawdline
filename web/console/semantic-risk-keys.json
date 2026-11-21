@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13914,
+  "englishKeys": 13915,
   "counts": {
     "negation": 3577,
     "state": 2351,
     "permission": 840,
     "deletion": 320,
-    "uncertainty": 553
+    "uncertainty": 554
   },
-  "unionCount": 5930,
+  "unionCount": 5931,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7560,6 +7560,7 @@
       "next.voiceIncomplete",
       "next.voicePartialWarning",
       "next.voiceRecordingLimit",
+      "next.voiceWhisperPreviewUnavailable",
       "next.voiceWorkBatchHint",
       "notifications.push_on_schedule_failureHint",
       "ops.createUnknown",
@@ -12480,6 +12481,7 @@
     "next.voiceSendNow",
     "next.voiceToolsNoParams",
     "next.voiceToolsNoParamsCount",
+    "next.voiceWhisperPreviewUnavailable",
     "next.voiceWorkBatchHint",
     "next.voiceWorkBatchReview",
     "next.voiceWorkBatchWaiting",
