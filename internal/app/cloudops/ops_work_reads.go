@@ -144,6 +144,7 @@ func init() {
 
 		// The voice cards and a transcription-only client grant for dictation.
 		op{name: "voice-live-transcription"},
+		op{name: "voice-preview"},
 		op{name: "voice-settings", read: true},
 
 		op{name: "voice-settings-update"},

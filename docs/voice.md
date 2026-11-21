@@ -13,13 +13,32 @@ transcription grant from `POST /v1/voice/live-transcription` with Send permissio
 streams the microphone directly to OpenAI over WebRTC after the connection is ready.
 The grant is configured for `gpt-live-transcribe`. OpenAI charges
 [US$0.017 per minute](https://developers.openai.com/api/docs/models/gpt-live-transcribe).
-The picker applies to the next recording.
+The picker applies to the next recording. The same choice is available at the
+top of the expanded recording panel and does not change an active recording.
 
-Partial text appears on the recording row. Stopping closes the microphone and
+Partial text appears in a scrollable preview on the recording row. When the
+console uses Traditional Chinese, the browser applies Whisper's existing
+Traditional Chinese character conversion to both partial and final Realtime
+text. Stopping closes the microphone and
 finalizes the turn, then puts the final text in the draft. The existing explicit
 Send action sends the final text. The browser keeps the current recording in
 memory so it can offer a manual retry with local Whisper if the stream fails.
 LLM cleanup and the local vocabulary run on the Whisper path.
+
+## Live Whisper preview
+
+With Local Whisper selected, the browser starts recording as before. It also
+sends three-second mono audio windows to the paired Whisper host while you
+speak. The host only accepts an optional preview when its dictation queue is
+idle and runs Whisper locally without LLM cleanup. The preview stays in the
+recording panel. Older or busy hosts, and browsers without AudioWorklet, can
+still transcribe the complete recording after Stop. The normal final pass
+uses the complete recording and preserves the existing retry action.
+
+During a Whisper take, the recording panel's **Auto-correct** checkbox writes
+the same **LLM cleanup** setting available in Settings. If you stop while the
+change is saving, the final pass waits for the result. Preview requests never
+run cleanup.
 
 ## LLM cleanup
 

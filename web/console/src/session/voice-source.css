@@ -13,6 +13,41 @@
   display: none;
 }
 
+.voice .voice-engine-control {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 53%;
+  gap: 4px;
+  color: var(--faint);
+  font: 11px/1.4 var(--mono);
+  white-space: nowrap;
+}
+
+.voice .voice-engine-picker {
+  min-width: 0;
+  min-block-size: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 6px;
+  background: var(--card);
+  color: var(--dim);
+  font: 12px/1.4 var(--mono);
+  cursor: pointer;
+}
+
+.voice .voice-polish-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* Send while recording: the word with the paper plane Send means elsewhere,
    so the button that delivers the message unread says so before it is
    pressed. Lives here because `legacy/composer.css` is a pinned copy. */
@@ -69,14 +104,15 @@
 }
 
 .voice .voice-live-preview {
-    flex: 0 0 100%;
-    min-width: 0;
-    color: var(--dim);
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+  flex: 0 0 100%;
+  min-width: 0;
+  max-block-size: min(12rem, 30vh);
+  max-block-size: min(12rem, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--dim);
 }
 
 .voice .voice-live-preview:empty { display: none; }

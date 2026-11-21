@@ -38,6 +38,24 @@ func baseConsoleBounds() []Entry {
 			Sources: []string{"internal/domain/capacity.MaximumStartedSessionFollowSeconds"},
 		},
 		{
+			Name: "console.whisper_preview_pcm_bytes", Class: Buffer, Unit: Bytes,
+			Limit: MaximumWhisperPreviewPCMBytes, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumWhisperPreviewPCMBytes"},
+		},
+		{
+			Name: "console.whisper_preview_body_bytes", Class: Buffer, Unit: Bytes,
+			Limit: MaximumWhisperPreviewBodyBytes, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumWhisperPreviewBodyBytes"},
+		},
+		{
+			Name: "console.whisper_preview_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: MaximumWhisperPreviewMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumWhisperPreviewMilliseconds"},
+		},
+		{
 			Name: "console.voice_recording_bytes", Class: Buffer, Unit: Bytes,
 			Limit: MaximumVoiceRecordingBytes, AtLimit: Refuse,
 			Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,

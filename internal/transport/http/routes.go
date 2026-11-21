@@ -52,7 +52,8 @@ import (
 // Personal Bot workspaces can share a source-owned group from API 105.
 // OpenAI Realtime dictation arrives at API 106.
 // Paged Session message board threads arrive at API 107.
-const APILevel = 107
+// Whisper message dictation previews arrive at API 108.
+const APILevel = 108
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

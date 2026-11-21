@@ -432,6 +432,7 @@ export const CARRIED = {
   // Opt-in message dictation: the settings machine mints a short-lived OpenAI
   // grant for transcription.
   "voice-live-transcription": "POST /v1/voice/live-transcription",
+  "voice-preview": "POST /v1/voice/preview",
   "voice-settings": "GET /v1/settings/voice",
   "voice-settings-update": "POST /v1/settings/voice",
   "work-gate-settings": "GET /v1/settings/work-gates",
