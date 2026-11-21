@@ -116,7 +116,7 @@ function layout() {
       const base = { y: u.y, ch, plat: u.plat || null };
       if (u.kind === "fight") stations.set(u.rows[0].ref, { ...base, mode: "fight", x: u.cx, lane: { cx: u.cx, hw: u.hw } });
       else if (u.kind === "drill") { const id = g.key + ":d" + u.rows[0].ref; ch.dummies.push({ id, x: u.cx + 26, y: u.y }); stations.set(u.rows[0].ref, { ...base, mode: "drill", x: u.cx - 18, dummy: id, dummyX: u.cx + 26 }); }
-      else if (u.kind === "camp") { ch.camps.push({ x: u.cx, y: u.y }); u.rows.forEach((r, k) => { const dx = [-32, 32, 60][k]; stations.set(r.ref, { ...base, mode: "rest", x: u.cx + dx, face: dx < 0 ? 1 : -1 }); }); }
+      else if (u.kind === "camp") { const camp = { x: u.cx, y: u.y, beds: [] }; ch.camps.push(camp); u.rows.forEach((r, k) => { const dx = [-46, 46, 82][k]; if (status(r) === "work_complete") camp.beds.push({ x: u.cx + dx, flip: dx > 0 }); stations.set(r.ref, { ...base, mode: "rest", x: u.cx + dx, face: dx < 0 ? 1 : -1 }); }); }
       else if (u.kind === "roam") u.rows.forEach((r, k) => stations.set(r.ref, { ...base, mode: "roam", x: u.cx + (k ? 30 : -30), range: [u.cx - u.hw, u.cx + u.hw] }));
       else u.rows.forEach((r, k) => stations.set(r.ref, { ...base, mode: "statue", x: u.cx + (k - (u.rows.length - 1) / 2) * 44 }));
     }
@@ -177,8 +177,14 @@ function dust(x, y, n, color) { for (let i = 0; i < n; i++) fx.push({ kind: "dus
 function burst(x, y, color, n) { for (let i = 0; i < n; i++) { const a = Math.random() * TAU, s = 60 + Math.random() * 170; fx.push({ kind: "spark", x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, age: 0, life: .35 + Math.random() * .4, r: 5 + Math.random() * 6, color }); } }
 function slash(c, kind) {
   c.slash = .0001; c.slashKind = kind; squash(c, kind === "down" ? 2.4 : -1.6);
+  if (archer(c)) return;
   const off = kind === "up" ? [0, -62, -Math.PI / 2] : kind === "down" ? [0, 4, Math.PI / 2] : [28 * c.face, -27, 0];
   fx.push({ kind: "arc", c, ox: off[0], oy: off[1], rot: off[2], flip: c.face, age: 0, life: .17 });
+}
+function attack(c, e, kind, kx, ky) {
+  if (!archer(c)) { slash(c, kind); strike(c, e, kx, ky); return; }
+  c.slash = .0001; c.slashKind = kind; squash(c, -1.2);
+  fx.push({ kind: "arrow", x: c.x + c.face * 14, y: c.y - 30, e, c, kx, ky, age: 0, life: 1.2 });
 }
 function jump(c, vy) { c.vy = vy; c.ground = false; squash(c, 3.2); dust(c.x, c.y, 3); }
 function runTo(c, x, speed, dt) {
@@ -226,7 +232,7 @@ function behave(c, dt) {
         const pick = c.seed();
         if (pick < .16 && c.ground) { c.sub = "flick"; c.t = .7; c.swordTo = 1; slash(c, pick < .08 ? "up" : "fwd"); }
         else { c.sub = "walk"; c.goal = lerp(st.range[0], st.range[1], c.seed()); }
-      } else if (c.sub === "walk") { if (runTo(c, c.goal, 58, dt)) { c.sub = "pause"; c.t = 1 + c.seed() * 2.6; c.look = c.seed() < .5 ? 1 : 0; } }
+      } else if (c.sub === "walk") { if (runTo(c, c.goal, 58, dt)) { c.sub = "pause"; c.t = 1 + c.seed() * 2.6; c.look = c.seed() < .5 ? 1 : 0; const r = c.seed(); c.pose = r < .22 ? "look" : r < .32 ? "yawn" : r < .4 ? "wave" : ""; c.poseT = c.pose ? Math.max(1.4, c.t - .3) : 0; if (c.pose) { c.t = Math.max(c.t, 1.8); c.look = 0; } } }
       else if (c.sub === "flick") { c.vx = lerp(c.vx, 0, dt * 12); if (c.t <= 0) { c.sub = "pause"; c.t = .6; c.swordTo = 0; } }
       else { c.vx = lerp(c.vx, 0, Math.min(1, dt * 12)); if (c.look && c.t < .9 && c.t + dt >= .9) c.face = -c.face; }
       break;
@@ -243,27 +249,29 @@ function behave(c, dt) {
       if (e.type === "crawler" && e.state === "approach" && ad > 90) { runTo(c, lane.cx, 110, dt); break; }
       if (e.type === "crawler") {
         if (!c.ground) {
-          if (ad < 20 && c.vy > 40 && c.y > st.y - 64 && c.cd <= 0) { slash(c, "down"); c.vy = -470; c.cd = .35; strike(c, e, 0, 0); }
+          if (ad < 20 && c.vy > 40 && c.y > st.y - 64 && c.cd <= 0) { c.vy = -470; c.cd = .35; attack(c, e, "down", 0, 0); }
           else c.vx = lerp(c.vx, clamp(dx * 4, -210, 210), dt * 6);
-        } else if (e.state === "lunge" && ad < 96) { jump(c, -560); c.vx = sign(dx) * 150; }
-        else if (ad > 42) runTo(c, clamp(e.x - sign(dx) * 34, lane.cx - lane.hw - 6, lane.cx + lane.hw + 6), 160, dt);
+        } else if (e.state === "lunge" && ad < 96 && archer(c)) { if (c.dash <= 0 && c.cd < .3) { c.dash = .15; c.vx = -sign(dx) * 430; dust(c.x, c.y, 3); c.cd = .35; } }
+        else if (e.state === "lunge" && ad < 96) { jump(c, -560); c.vx = sign(dx) * 150; }
+        else if (ad > reach(c) + 8 || (archer(c) && ad < 60 && Math.abs(c.x - lane.cx) < lane.hw - 12)) runTo(c, clamp(e.x - sign(dx) * reach(c), lane.cx - lane.hw - 6, lane.cx + lane.hw + 6), 160, dt);
         else {
           c.vx = lerp(c.vx, 0, dt * 14);
           if (c.cd <= 0 && e.state !== "emerge" && e.state !== "approach") {
-            slash(c, "fwd"); c.cd = .4 + c.seed() * .22; c.step++; strike(c, e, c.face * 150, 0);
-            if (c.enemy && c.step % 3 === 2) { c.dash = .15; c.vx = -c.face * 430; c.cd = .5; dust(c.x, c.y, 3); }
+            c.cd = (archer(c) ? .7 : .4) + c.seed() * .22; c.step++; attack(c, e, "fwd", c.face * 150, 0);
+            if (c.enemy && c.step % 3 === 2 && !archer(c)) { c.dash = .15; c.vx = -c.face * 430; c.cd = .5; dust(c.x, c.y, 3); }
           }
         }
       } else {
         if (e.state === "approach") { runTo(c, lane.cx, 110, dt); break; }
-        if (!c.ground) { if (c.cd <= 0 && Math.hypot(dx, e.y - (c.y - 30)) < 48) { const up = Math.abs(dx) < 16; slash(c, up ? "up" : "fwd"); c.cd = .5; strike(c, e, sign(dx || c.face) * 150, -120); c.vy = Math.min(c.vy, -120); } }
+        if (archer(c)) { if (ad > 150) runTo(c, clamp(e.x - sign(dx) * 110, lane.cx - lane.hw, lane.cx + lane.hw), 160, dt); else { c.vx = lerp(c.vx, 0, dt * 12); if (c.cd <= 0 && c.ground) { c.cd = .8 + c.seed() * .3; attack(c, e, ad < 30 ? "up" : "fwd", sign(dx || c.face) * 120, -90); } } break; }
+        if (!c.ground) { if (c.cd <= 0 && Math.hypot(dx, e.y - (c.y - 30)) < 48 + reach(c) - 34) { const up = Math.abs(dx) < 16; c.cd = .5; attack(c, e, up ? "up" : "fwd", sign(dx || c.face) * 150, -120); c.vy = Math.min(c.vy, -120); } }
         else if (ad > 26) runTo(c, clamp(e.x - sign(dx) * 16, lane.cx - lane.hw, lane.cx + lane.hw), 160, dt);
         else { c.vx = lerp(c.vx, 0, dt * 12); if (c.cd <= 0) { jump(c, -Math.sqrt(2 * G * clamp(st.y - e.y - 26, 30, 110))); c.vx = sign(dx) * 40; c.cd = .12; } }
       }
       break;
     }
     case "drill": {
-      const home = st.x, d = props.get(st.dummy), SEQ = ["slash", "slash", "up", "back", "in", "slash", "slash", "rest"]; c.swordTo = 1;
+      const bow = archer(c), home = bow ? st.dummyX - 96 : st.x, d = props.get(st.dummy), SEQ = bow ? ["shoot", "shoot", "shoot", "rest"] : ["slash", "slash", "up", "back", "in", "slash", "slash", "rest"]; c.swordTo = 1;
       if (c.sub === "start") { if (runTo(c, home, 140, dt)) { c.sub = "seq"; c.step = 0; c.t = .5; c.face = 1; } break; }
       if (c.sub === "leap") {
         if (!c.ground && c.vy > 0 && c.y > st.y - 66 && Math.abs(c.x - st.dummyX) < 22 && c.cd <= 0) { slash(c, "down"); c.vy = -340; c.vx = -120; c.cd = 1; if (d) d.va -= 5; burst(st.dummyX, st.y - 40, [240, 220, 170], 5); c.hit = .05; }
@@ -273,7 +281,8 @@ function behave(c, dt) {
       if (c.dash > 0) break;
       if (c.t > 0) { if (c.step % SEQ.length === 0 || SEQ[(c.step - 1) % SEQ.length] === "rest") runTo(c, home, 90, dt), c.face = Math.abs(c.x - home) < 4 ? 1 : c.face; else c.vx = lerp(c.vx, 0, dt * 14); break; }
       const act = SEQ[c.step++ % SEQ.length]; c.face = 1;
-      if (act === "slash") { if (Math.abs(c.x - home) < 22) { slash(c, "fwd"); if (d) d.va += 7 + c.seed() * 3; burst(st.dummyX - 6, st.y - 36, [240, 220, 170], 4); c.hit = .04; } c.t = .36; }
+      if (act === "shoot") { c.slash = .0001; c.slashKind = "fwd"; fx.push({ kind: "arrow", x: c.x + 14, y: c.y - 30, tx: st.dummyX - 4, ty: st.y - 36, dummy: d, age: 0, life: 1 }); c.t = .75; }
+      else if (act === "slash") { if (Math.abs(c.x - home) < 22) { slash(c, "fwd"); if (d) d.va += 7 + c.seed() * 3; burst(st.dummyX - 6, st.y - 36, [240, 220, 170], 4); c.hit = .04; } c.t = .36; }
       else if (act === "up") { slash(c, "up"); c.t = .5; }
       else if (act === "back") { c.dash = .15; c.vx = -430; c.t = .5; dust(c.x, c.y, 3); }
       else if (act === "in") { c.dash = .15; c.vx = 430; c.t = .2; dust(c.x, c.y, 3); }
@@ -285,15 +294,16 @@ function behave(c, dt) {
       const s = st.shaft, L = s.left + 9, R = s.right - 9; c.plat = { x0: s.right, x1: s.right + 46, y: s.top }; c.swordTo = 0;
       if (c.sub === "start" || c.sub === "base") { if (runTo(c, s.left + 34, 120, dt) && c.ground && c.t <= 0) { jump(c, -590); c.vx = -230; c.face = -1; c.sub = "air"; } }
       else if (c.sub === "air") {
-        if (c.x <= L && c.vx < 0) { c.x = L; c.sub = "cling"; c.face = 1; c.t = .2 + c.seed() * .2; c.vx = 0; c.vy *= .25; squash(c, -2); dust(L - 6, c.y - 20, 2); }
-        else if (c.x >= R && c.vx > 0 && c.y > s.top + 4) { c.x = R; c.sub = "cling"; c.face = -1; c.t = .2 + c.seed() * .2; c.vx = 0; c.vy *= .25; squash(c, -2); dust(R + 6, c.y - 20, 2); }
+        if (c.x <= L && c.x > L - 14 && c.vx < 0) { c.x = L; c.sub = "cling"; c.face = 1; c.t = .2 + c.seed() * .2; c.vx = 0; c.vy *= .25; squash(c, -2); dust(L - 6, c.y - 20, 2); }
+        else if (c.x >= R && c.x < R + 14 && c.vx > 0 && c.y > s.top + 4) { c.x = R; c.sub = "cling"; c.face = -1; c.t = .2 + c.seed() * .2; c.vx = 0; c.vy *= .25; squash(c, -2); dust(R + 6, c.y - 20, 2); }
         else if (c.ground && c.y <= s.top + 1) { c.sub = "top"; c.t = 1.6 + c.seed() * 2; c.vx = 0; }
         else if (c.ground) { c.sub = "base"; c.t = .5; }
+      } else if (c.sub === "vault") { if (c.ground) { if (c.y <= s.top + 1) { c.sub = "top"; c.t = 1.6 + c.seed() * 2; c.vx = 0; } else { c.sub = "base"; c.t = .5; } }
       } else if (c.sub === "cling") {
         c.vy = lerp(c.vy, 46, dt * 8); c.vx = 0; c.ground = false;
         if (Math.random() < dt * 9) dust(c.x - c.face * 8, c.y - 6, 1);
         if (c.y >= -2) { c.sub = "base"; c.t = .4; }
-        else if (c.t <= 0) { const top = c.face === 1 && c.y < s.top + 86; c.vx = c.face * (top ? 250 : 262); c.vy = top ? -610 : -520; c.sub = "air"; squash(c, 3); }
+        else if (c.t <= 0) { const top = c.face === 1 && c.y < s.top + 86; if (top) { const rise = c.y - s.top + 34, vy = Math.sqrt(2 * G * rise), time = vy / G + Math.sqrt(2 * 34 / G); c.vy = -vy; c.vx = (s.right + 22 - c.x) / time; c.sub = "vault"; } else { c.vx = c.face * 262; c.vy = -520; c.sub = "air"; } c.kick = .16; squash(c, 3); }
       } else if (c.sub === "top") {
         if (c.t > .5) { c.vx = lerp(c.vx, 0, dt * 10); if (c.t < 1.2 && c.t + dt >= 1.2) c.face = -c.face; }
         else { c.face = -1; c.vx = -80; if (!c.ground) { c.sub = "fall"; c.vx = -30; } }
@@ -336,9 +346,9 @@ function physics(c, dt) {
   const hemTo = clamp(-c.vx * .04, -11, 11); c.hemv += ((hemTo - c.hem) * 120 - c.hemv * 12) * dt; c.hem += c.hemv * dt;
   c.tilt = lerp(c.tilt, c.tiltTo, Math.min(1, dt * 7));
   c.sword = lerp(c.sword, c.swordTo, Math.min(1, dt * 10));
-  if (c.slash > 0) { c.slash += dt / .2; if (c.slash >= 1) c.slash = 0; }
+  if (c.slash > 0) { c.slash += dt / .27; if (c.slash >= 1) c.slash = 0; }
   if (c.ground && Math.abs(c.vx) > 12) c.run += Math.abs(c.vx) * dt * .085; else c.run = lerp(c.run, Math.round(c.run / Math.PI) * Math.PI, Math.min(1, dt * 10));
-  c.land -= dt; c.blink -= dt; if (c.blink < -.12) c.blink = 1.5 + Math.random() * 4;
+  c.land -= dt; c.kick = (c.kick || 0) - dt; c.poseT = (c.poseT || 0) - dt; c.blink -= dt; if (c.blink < -.12) c.blink = 1.5 + Math.random() * 4;
   c.alpha = Math.min(1, c.alpha + dt * 4);
   for (const g of c.ghosts) g.a -= dt * 2.6; c.ghosts = c.ghosts.filter(g => g.a > 0);
   // scarf: a short verlet ribbon pinned at the neck
@@ -380,6 +390,7 @@ function update(dt) {
     f.age += dt;
     if (f.kind === "dust") { f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= 1 - dt * 3; }
     else if (f.kind === "spark") { f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 420 * dt; f.vx *= 1 - dt * 2; }
+    else if (f.kind === "arrow") { const tx = f.e ? f.e.x : f.tx, ty = f.e ? f.e.y - 14 : f.ty, dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy) || 1, v = 560 * dt; f.dx = dx / d; f.dy = dy / d; if (f.e && (f.e.dead || f.e.state === "dying")) f.age = f.life; else if (d <= v + 8) { f.age = f.life; if (f.e) strike(f.c, f.e, f.kx, f.ky); else { if (f.dummy) f.dummy.va += 6; burst(tx, ty, [240, 220, 170], 4); } } else { f.x += f.dx * v; f.y += f.dy * v; } }
     else if (f.kind === "wisp" && f.age > 0) { const k = clamp(f.age / f.life, 0, 1), tx = f.c.x, ty = f.c.y - 30; f.vx = lerp(f.vx, (tx - f.x) * 9, k * k); f.vy = lerp(f.vy, (ty - f.y) * 9, k * k); f.x += f.vx * dt; f.y += f.vy * dt; }
   }
   fx = fx.filter(f => f.age < f.life);
@@ -486,7 +497,7 @@ function drawGround() {
     for (const pc of ch.pieces) { const img = images[pc.kind]; if (!img) continue; const ht = ({ gate: 250, shell: 130, mushrooms: 120 })[pc.kind] * pc.size * scale, wd = ht * img.width / img.height, px = X(pc.x); ctx.save(); ctx.translate(px, groundY + ht * .04); if (pc.flip) ctx.scale(-1, 1); ctx.globalAlpha = .92; ctx.drawImage(img, -wd / 2, -ht, wd, ht); ctx.restore(); if (pc.kind === "mushrooms") { ctx.globalCompositeOperation = "lighter"; drawGlow(px, groundY - ht * .7, ht * .9, [150, 255, 160], .22 + .05 * Math.sin(now * 1.3 + pc.x)); ctx.globalCompositeOperation = "source-over"; } }
     for (const l of ch.lamps) drawLamp(l, 104, b.lamp, 0);
     if (ch.beacon !== null) drawLamp(ch.beacon, 176, [255, 170, 120], .5 + .5 * Math.sin(now * 2.4));
-    for (const cp of ch.camps) drawCamp(cp.x, cp.y, b);
+    for (const cp of ch.camps) { if (!cp.y) { drawCampProp("tent", cp.x - 96, 0, 92, false); drawCampProp("logpile", cp.x + 92, 0, 22, false); drawCampProp("pot", cp.x + 62, 0, 40, true); } for (const bed of cp.beds) drawCampProp("bedroll", bed.x, cp.y, 13, bed.flip); drawCamp(cp.x, cp.y, b); }
     for (const s of ch.shafts) drawShaft(s, b);
     for (const d of ch.dummies) drawDummy(d, b);
     for (const p of ch.platforms) drawSlab(p, b);
@@ -541,47 +552,97 @@ function drawDummy(d, b) {
   ctx.restore();
 }
 function drawCamp(wx, wy, b) {
+  if (images["camp-fire-1"]) return drawCampfire(wx, wy);
   const x = X(wx), y = Y(wy), flick = .85 + .15 * Math.sin(now * 6 + wx);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 16 * scale, 96 * scale * flick, [255, 190, 120], .42); drawGlow(x, y - 14 * scale, 22 * scale, [255, 240, 210], .9); ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#05080d"; ctx.beginPath(); ctx.moveTo(x - 9 * scale, y + 2); ctx.lineTo(x - 6 * scale, y - 6 * scale); ctx.lineTo(x + 6 * scale, y - 6 * scale); ctx.lineTo(x + 9 * scale, y + 2); ctx.fill();
   ctx.fillStyle = "rgba(255,226,170,.95)"; ctx.beginPath(); ctx.moveTo(x - 4 * scale, y - 7 * scale); ctx.quadraticCurveTo(x - 5 * scale, y - 16 * scale, x + Math.sin(now * 7 + wx) * 1.5 * scale, y - (23 + flick * 4) * scale); ctx.quadraticCurveTo(x + 5 * scale, y - 16 * scale, x + 4 * scale, y - 7 * scale); ctx.fill();
 }
+let fireBox = null;
+function drawCampfire(wx, wy) {
+  if (!fireBox) { const m = measure(images["camp-fire-1"]); fireBox = m; }
+  const x = X(wx), y = Y(wy), flick = .86 + .1 * Math.sin(now * 9 + wx) + .05 * Math.sin(now * 23 + wx), frame = images["camp-fire-" + [1, 2, 1, 3, 4, 3][Math.floor(now * 8 + wx) % 6]], ht = 60 * scale, k = ht / (fireBox.bottom - fireBox.top);
+  ctx.globalCompositeOperation = "lighter"; drawGlow(x, y - 18 * scale, 150 * scale * flick, [255, 170, 90], .5); drawGlow(x, y - 16 * scale, 60 * scale * flick, [255, 220, 160], .55); ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(frame, x - fireBox.cx * k, y - fireBox.bottom * k + 3 * scale, fireBox.size * k, fireBox.size * k);
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 7; i++) { const p = (now * (.32 + i * .037) + i * .31 + wx * .01) % 1, sx = x + (Math.sin(p * 7 + i * 2.1) * 9 + (i - 3) * 2.2) * scale, sy = y - (24 + p * 96) * scale; drawGlow(sx, sy, (4.5 - p * 3) * scale, [255, 190, 100], (1 - p) * .95); }
+  ctx.globalCompositeOperation = "source-over";
+}
+function drawCampProp(kind, wx, wy, ht, flip) {
+  const img = images["camp-" + kind]; if (!img) return;
+  if (!drawCampProp.box) drawCampProp.box = {}; const box = drawCampProp.box[kind] || (drawCampProp.box[kind] = measure(img)), k = ht * scale / (box.bottom - box.top);
+  ctx.save(); ctx.translate(X(wx), Y(wy)); if (flip) ctx.scale(-1, 1); ctx.drawImage(img, -box.cx * k, -box.bottom * k + 2 * scale, box.size * k, box.size * k); ctx.restore();
+}
 function clip(text, n) { const a = Array.from(text); return a.length > n ? a.slice(0, n - 1).join("") + "…" : text; }
 
 function drawBlade(len) { ctx.strokeStyle = "#dfe9f2"; ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(len, 0); ctx.stroke(); ctx.strokeStyle = "#0a0e18"; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.moveTo(3.5, -3.5); ctx.lineTo(3.5, 3.5); ctx.stroke(); }
+const WEAPON = ["bow", "dagger", "longsword", "dagger", "spear", "hammer", "daggers", "axe", "dagger", "greatsword", "scythe", "dagger"];
+const REACH = { bow: 130, spear: 52, greatsword: 50, scythe: 50, longsword: 46, hammer: 40, axe: 38 };
+const reach = c => REACH[WEAPON[c.cast]] || 34, archer = c => WEAPON[c.cast] === "bow";
 const CAST_SIZE = [60, 66, 58, 60, 68, 58, 60, 62, 54, 66, 54, 58], CAST_HAND = [[9, -20], [9, -20], [10, -20], [9, -18], [9, -20], [10, -20], [9, -20], [9, -20], [8, -18], [6, -24], [10, -24], [10, -22]];
 const FRAME_NAMES = ["run-1", "run-2", "run-3", "run-4", "slash-1", "slash-2", "slash-3", "slash-4", "jump", "fall", "cling", "land", "idle-1", "idle-2", "puzzled", "sit"], frameBox = new Map();
 function frameKey(cast, name) { return "f" + String(cast + 1).padStart(2, "0") + "-" + name; }
 // Every frame of one character shares a canvas; the standing frame gives its ground line and size.
-function castBox(cast) {
-  if (frameBox.has(cast)) return frameBox.get(cast);
-  for (const name of FRAME_NAMES) if (!images[frameKey(cast, name)]) return null;
-  const img = images[frameKey(cast, "idle-1")], g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
+const GROUP_REF = { m: "idle-1", a: "look", b: "think" }, GROUP_OF = {};
+for (const n of FRAME_NAMES) GROUP_OF[n] = "m";
+for (const n of ["runb-1", "runb-2", "runb-3", "runb-4", "runb-5", "runb-6", "runb-7", "runb-8", "dash", "slash-up", "slash-down", "victory", "sleep-1", "sleep-2", "yawn", "look"]) GROUP_OF[n] = "a";
+for (const n of ["cut-1", "cut-2", "cut-3", "cut-4", "cut-5", "cut-6", "guard", "wave", "wall-slide", "wall-kick", "think", "shrug", "warm", "drink", "sit-2", "nod"]) GROUP_OF[n] = "b";
+function measure(img) {
+  const g = document.createElement("canvas"); g.width = img.width; g.height = img.height;
   const k = g.getContext("2d"); k.drawImage(img, 0, 0); const a = k.getImageData(0, 0, g.width, g.height).data; let top = g.height, bottom = 0, sum = 0, n = 0;
   for (let y = 0; y < g.height; y++) for (let x = 0; x < g.width; x++) if (a[(y * g.width + x) * 4 + 3] > 40) { if (y < top) top = y; if (y > bottom) bottom = y; if (y > g.height * .55) { sum += x; n++; } }
-  const box = { top, bottom, cx: n ? sum / n : g.width / 2, size: g.width }; frameBox.set(cast, box); return box;
+  return { top, bottom, cx: n ? sum / n : g.width / 2, size: g.width };
+}
+// The standing frame of each sheet gives that sheet's ground line, centre and scale.
+function castBox(cast, group) {
+  const id = cast + (group || "m"); if (frameBox.has(id)) return frameBox.get(id);
+  if (!group || group === "m") for (const name of FRAME_NAMES) if (!images[frameKey(cast, name)]) return null;
+  const img = images[frameKey(cast, GROUP_REF[group || "m"])]; if (!img) return null;
+  const box = measure(img); frameBox.set(id, box); return box;
+}
+const has = (c, name) => !!images[frameKey(c.cast, name)] && !!castBox(c.cast, GROUP_OF[name]);
+const REST_POSES = ["sit", "warm", "sit-2", "drink", "warm", "nod"];
+function pickFrame(c) {
+  const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12, any = (...names) => names.find(n => has(c, n));
+  if (c.slash > 0) {
+    const p = c.slash;
+    if (c.slashKind === "down" && has(c, "slash-down")) return ["slash-down", 0];
+    if (c.slashKind === "up" && has(c, "slash-up")) return ["slash-up", 0];
+    const rot = c.slashKind === "down" ? .75 : c.slashKind === "up" ? -.7 : 0;
+    if (has(c, "cut-6")) return [p < .1 ? "cut-2" : p < .24 ? "cut-3" : p < .46 ? "cut-4" : p < .76 ? "cut-5" : "cut-6", rot];
+    return [p < .14 ? "slash-1" : p < .38 ? "slash-2" : p < .78 ? "slash-3" : "slash-4", rot];
+  }
+  if (c.dash > 0) return [any("dash", "run-1"), 0];
+  if (cling) return [c.kick > 0 ? any("wall-kick", "cling") : c.vy > 26 ? any("wall-slide", "cling") : "cling", 0];
+  if (air) return [c.kick > 0 && has(c, "wall-kick") ? "wall-kick" : c.vy < 60 ? "jump" : "fall", 0];
+  if (c.sit > .5) {
+    if (status(c.row) === "work_complete") return [any(Math.floor(now * .7 + c.x * .01) % 2 ? "sleep-2" : "sleep-1", "sit"), 0];
+    return [any(REST_POSES[Math.floor(now / 4.5 + (hash(c.ref) % 97)) % REST_POSES.length], "sit"), 0];
+  }
+  if (c.land > 0) return ["land", 0];
+  if (moving) return has(c, "runb-8") ? ["runb-" + (1 + (Math.floor(c.run / (Math.PI / 4)) % 8 + 8) % 8), 0] : ["run-" + (1 + (Math.floor(c.run / (Math.PI / 2)) % 4 + 4) % 4), 0];
+  if (c.mode === "ponder") return [c.arm === 2 ? any("shrug", "puzzled") : c.arm === 1 ? "puzzled" : Math.abs(c.tiltTo) > .1 ? any("think", "puzzled") : Math.floor(now * 1.6 + c.x * .013) % 2 ? "idle-2" : "idle-1", 0];
+  if (c.mode === "fight" && c.sub === "flourish" && c.t > .25) return [any("victory", "idle-1"), 0];
+  if (c.mode === "fight" && c.enemy && c.enemy.state === "tele") return [any("guard", "idle-1"), 0];
+  if (c.pose && c.poseT > 0 && has(c, c.pose)) return [c.pose, 0];
+  return [Math.floor(now * 1.6 + c.x * .013) % 2 ? "idle-2" : "idle-1", 0];
 }
 function drawFrames(c, ghost) {
-  const box = castBox(c.cast); if (!box) return false;
+  if (!castBox(c.cast)) return false;
   const ok = live(c.row), state = ok ? status(c.row) : "unknown", x = ghost ? ghost.x : c.x, y = ghost ? ghost.y : c.y, face = ghost ? ghost.face : c.face;
-  const cling = c.mode === "climb" && c.sub === "cling", air = !c.ground && !cling, moving = c.ground && Math.abs(c.vx) > 12;
-  let name, rot = 0;
-  if (c.slash > 0) { const p = c.slash; name = p < .14 ? "slash-1" : p < .38 ? "slash-2" : p < .78 ? "slash-3" : "slash-4"; rot = c.slashKind === "down" ? .75 : c.slashKind === "up" ? -.7 : 0; }
-  else if (cling) name = "cling";
-  else if (air) name = c.vy < 60 ? "jump" : "fall";
-  else if (c.sit > .5) name = "sit";
-  else if (c.land > 0) name = "land";
-  else if (moving) name = "run-" + (1 + (Math.floor(c.run / (Math.PI / 2)) % 4 + 4) % 4);
-  else if (c.mode === "ponder" && (c.arm > 0 || Math.abs(c.tiltTo) > .1)) name = "puzzled";
-  else name = Math.floor(now * 1.6 + c.x * .013) % 2 ? "idle-2" : "idle-1";
-  const key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], k = CAST_SIZE[c.cast] * 1.3 / (box.bottom - box.top), sq = c.sq * .45;
+  const picked = pickFrame(c), name = picked[0], rot = picked[1], box = castBox(c.cast, GROUP_OF[name]);
+  const key = frameKey(c.cast, name), img = ok ? images[key] : grey(key) || images[key], sq = c.sq * .45;
+  // Scale by the sheet's own standing height so every sheet draws the character at one size.
+  const k = CAST_SIZE[c.cast] * 1.3 / (box.bottom - box.top);
   ctx.save(); ctx.translate(X(x), Y(y)); ctx.scale(scale, scale);
   ctx.globalAlpha = ghost ? ghost.a * .45 : c.alpha * (ok ? 1 : .75);
   if (!ghost && state !== "unknown") { const col = EYE[state], s = c.scarf, tail = s[s.length - 1], wx = tail.x - x, wy = tail.y - y - 16 + Math.sin(now * 3 + c.x * .1) * 2.5; ctx.globalCompositeOperation = "lighter"; for (let i = 2; i < s.length; i++) { ctx.globalAlpha = c.alpha * .1 * i; ctx.drawImage(glow(col), s[i].x - x - 5, s[i].y - y - 21, 10, 10); } ctx.globalAlpha = c.alpha; ctx.drawImage(glow(col), wx - 13, wy - 13, 26, 26); ctx.drawImage(glow([255, 255, 255]), wx - 4, wy - 4, 8, 8); ctx.globalCompositeOperation = "source-over"; }
   ctx.scale(face * (1 - sq * .7), 1 + sq);
   if (rot) { ctx.translate(0, -30); ctx.rotate(rot); ctx.translate(0, 30); }
   ctx.drawImage(img, -box.cx * k, -box.bottom * k + 1.5, box.size * k, box.size * k);
-  ctx.restore(); ctx.globalAlpha = 1; return true;
+  ctx.restore(); ctx.globalAlpha = 1;
+  if (!ghost && ok && name.startsWith("sleep")) for (let i = 0; i < 3; i++) { const p = (now * .35 + i / 3 + c.x * .01) % 1, zx = X(x + face * 6 + p * 14 + Math.sin(p * 6 + i) * 3), zy = Y(y - 22 - p * 34); ctx.globalAlpha = Math.sin(p * Math.PI) * .85; ctx.font = "700 " + (7 + p * 7) * scale + "px Georgia,serif"; ctx.textAlign = "center"; ctx.fillStyle = "#dfeaf4"; ctx.fillText("z", zx, zy); }
+  ctx.globalAlpha = 1; return true;
 }
 function drawPuppet(c, ghost) {
   if (drawFrames(c, ghost)) return true;
@@ -735,6 +796,7 @@ function drawFx() {
     const k = clamp(f.age / f.life, 0, 1);
     if (f.kind === "dust") { ctx.fillStyle = rgba(f.color, (1 - k) * .28); ctx.beginPath(); ctx.arc(X(f.x), Y(f.y), f.r * (1 + k * 1.6) * scale, 0, TAU); ctx.fill(); }
     else if (f.kind === "spark") { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), f.r * (1 - k * .6) * scale, f.color, 1 - k); ctx.globalCompositeOperation = "source-over"; }
+    else if (f.kind === "arrow") { const px = X(f.x), py = Y(f.y), ax = (f.dx || 1) * 15 * scale, ay = (f.dy || 0) * 15 * scale; ctx.globalCompositeOperation = "lighter"; drawGlow(px, py, 9 * scale, [255, 240, 200], .5); ctx.globalCompositeOperation = "source-over"; ctx.strokeStyle = "#f2ead8"; ctx.lineWidth = 2 * scale; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(px - ax, py - ay); ctx.lineTo(px, py); ctx.stroke(); ctx.strokeStyle = "rgba(242,234,216,.3)"; ctx.beginPath(); ctx.moveTo(px - ax * 3, py - ay * 3); ctx.lineTo(px - ax, py - ay); ctx.stroke(); }
     else if (f.kind === "ring") { const r = (8 + easeOut(k) * 30) * scale, px = X(f.x), py = Y(f.y); ctx.strokeStyle = "rgba(255,240,215," + (1 - k) + ")"; ctx.lineWidth = (3.2 * (1 - k) + .4) * scale; ctx.lineCap = "round"; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = f.a + i * TAU / 6; ctx.moveTo(px + Math.cos(a) * r * .55, py + Math.sin(a) * r * .55); ctx.lineTo(px + Math.cos(a) * r, py + Math.sin(a) * r); } ctx.stroke(); }
     else if (f.kind === "flash") { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), f.r * (1 + k) * scale, [255, 245, 225], (1 - k) * .9); ctx.globalCompositeOperation = "source-over"; }
     else if (f.kind === "wisp" && f.age > 0) { ctx.globalCompositeOperation = "lighter"; drawGlow(X(f.x), Y(f.y), 12 * scale, [255, 200, 140], 1 - k * .6); drawGlow(X(f.x), Y(f.y), 4 * scale, [255, 255, 255], 1); ctx.globalCompositeOperation = "source-over"; }
@@ -744,6 +806,17 @@ function drawFx() {
       ctx.fillStyle = "#f4fbff"; ctx.beginPath(); ctx.moveTo(Math.cos(-a) * R, Math.sin(-a) * R); ctx.arc(0, 0, R, -a, a); ctx.quadraticCurveTo(R * lerp(.62, 1.02, e), 0, Math.cos(-a) * R, Math.sin(-a) * R); ctx.fill(); ctx.restore(); ctx.globalAlpha = 1;
     }
   }
+}
+function drawFireflies() {
+  const cell = 150, left = cam - W / scale / 2 - 60, right = cam + W / scale / 2 + 60, first = Math.floor(left / cell), last = Math.floor(right / cell);
+  ctx.globalCompositeOperation = "lighter";
+  for (let k = first; k <= last; k++) for (let j = 0; j < 2; j++) {
+    const r = rng(k * 9176 + j * 131 + 7), bx = k * cell + r() * cell, by = -30 - r() * 380, sp = .25 + r() * .35, ph = r() * TAU, rad = 26 + r() * 38, blink = Math.max(0, Math.sin(now * (1.1 + r() * 1.4) + ph));
+    const t = now * sp + ph, wx = bx + Math.sin(t) * rad + Math.sin(t * 2.3 + 1) * rad * .4, wy = by + Math.cos(t * 1.3) * rad * .6 + Math.sin(t * .7) * 12, a = .25 + blink * .75, x = X(wx), y = Y(wy);
+    for (let q = 1; q <= 3; q++) { const tt = t - q * .05, tx = bx + Math.sin(tt) * rad + Math.sin(tt * 2.3 + 1) * rad * .4, ty = by + Math.cos(tt * 1.3) * rad * .6 + Math.sin(tt * .7) * 12; drawGlow(X(tx), Y(ty), 4 * scale, [210, 255, 130], a * .22 / q); }
+    drawGlow(x, y, (9 + blink * 6) * scale, [200, 255, 120], a * .8); drawGlow(x, y, 2.6 * scale, [255, 255, 220], a);
+  }
+  ctx.globalCompositeOperation = "source-over";
 }
 function drawMotes() {
   ctx.globalCompositeOperation = "lighter";
@@ -793,7 +866,7 @@ function draw() {
   for (const c of seen) for (const g of c.ghosts) drawChar(c, g);
   for (const e of enemies) if (e.x > left && e.x < right) drawEnemy(e);
   for (const c of seen) { drawChar(c, null); if (c.mode === "ponder" && live(c.row)) drawQuestion(c); }
-  drawFx(); drawFog(1.1, 6, .16); drawMotes(); drawForeground(); drawTags(seen);
+  drawFx(); drawFog(1.1, 6, .16); drawFireflies(); drawMotes(); drawForeground(); drawTags(seen);
   if (selected) { const c = chars.get(selected); if (c && seen.includes(c)) { const p = .5 + .5 * Math.sin(now * 4); ctx.strokeStyle = "rgba(240,248,255," + (.5 + p * .4) + ")"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(c.sx, c.sy + 2, (17 + p * 2) * scale, 4.5 * scale, 0, 0, TAU); ctx.stroke(); } }
 }
 
