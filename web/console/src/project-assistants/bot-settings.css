@@ -52,3 +52,7 @@
 .project-assistants .pa-agent-picker-error p { flex:1 0 100%;margin:0; }
 .project-assistants .pa-info-agent { display:inline-flex;align-items:center;gap:5px; }
 @media (prefers-reduced-motion: reduce) { .project-assistants .pa-agent-picker-chevron { transition:none; } }
+
+/* An unconfirmed save offers a read-only check; results wrap above the actions on narrow screens. */
+.project-assistants .pa-settings-check-result { flex:0 0 100%;margin:0;font-size:13px;overflow-wrap:anywhere; }
+.project-assistants .pa-settings-savebar .pa-settings-check-saved { flex:0 0 100%; }
