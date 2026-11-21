@@ -77,6 +77,21 @@
       ]
     },
     {
+      "id": "com.clawdline.session-lantern-deep",
+      "version": "0.1.0",
+      "url": "/view-plugins/session-lantern-deep.zip",
+      "sha256": "7e908dce593fa18e98b82cc1c52cd64ebf4a7cf92c6480920ee1498ff1b112cf",
+      "bytes": 263051,
+      "hostApi": 1,
+      "capabilities": [
+        "sessions.read",
+        "sessions.open"
+      ],
+      "knownDigests": [
+        "7e908dce593fa18e98b82cc1c52cd64ebf4a7cf92c6480920ee1498ff1b112cf"
+      ]
+    },
+    {
       "id": "com.clawdline.session-night-city",
       "version": "0.3.0",
       "url": "/view-plugins/session-night-city.zip",

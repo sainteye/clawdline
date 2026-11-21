@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Lantern Deep</title><style>
+:root{color-scheme:dark;font:13px ui-sans-serif,system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;color:#e4edf4;background:#05080d}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#05080d}
+body{position:relative;height:100dvh}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+button{font:inherit;color:inherit;cursor:pointer;border:1px solid rgba(170,200,220,.28);background:rgba(6,10,17,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-radius:999px;min-height:40px;padding:8px 15px;transition:background .16s ease,border-color .16s ease,transform .12s ease}
+button:hover:not(:disabled){background:rgba(26,38,54,.8);border-color:rgba(200,225,240,.5)}
+button:active:not(:disabled){transform:scale(.97)}
+button:focus-visible{outline:2px solid #cfe6f5;outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+h1,h2,h3,p{margin:0}
+.hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:max(14px,env(safe-area-inset-top)) 16px 0;pointer-events:none}
+.hud>*{pointer-events:auto}
+.brand{display:flex;flex-direction:column;gap:3px;pointer-events:none;text-shadow:0 1px 10px #000}
+#title{font:600 17px Georgia,"Songti TC","Noto Serif TC",serif;letter-spacing:.34em;color:#eef5fa}
+#count{font-size:12px;color:#a9bccb;letter-spacing:.04em}
+.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+#needs.hot{border-color:rgba(255,160,130,.7);color:#ffe2d6;background:rgba(60,22,20,.66)}
+#close{width:40px;padding:0;font-size:18px;line-height:1}
+#note{position:absolute;left:50%;top:max(62px,calc(env(safe-area-inset-top) + 62px));transform:translateX(-50%);max-width:calc(100% - 32px);padding:6px 14px;border-radius:999px;background:rgba(6,10,17,.7);border:1px solid rgba(170,200,220,.22);color:#c9d8e4;font-size:12px;text-align:center}
+#area{position:absolute;left:0;right:0;top:19%;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .9s ease,transform .9s ease;text-shadow:0 2px 18px #000,0 0 3px #000}
+#area.on{opacity:1;transform:none}
+#area-name{font:500 clamp(24px,4.6vw,44px) Georgia,"Songti TC","Noto Serif TC",serif;letter-spacing:.18em;color:#f1f6fa;text-align:center;padding:0 18px;max-width:100%;overflow-wrap:anywhere}
+.rule{display:flex;align-items:center;gap:10px;color:#b9cad6;font-size:12px;letter-spacing:.2em}
+.rule::before,.rule::after{content:"";width:clamp(40px,12vw,120px);height:1px;background:linear-gradient(90deg,transparent,rgba(210,228,240,.75))}
+.rule::after{transform:scaleX(-1)}
+#empty{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font:500 16px Georgia,"Songti TC",serif;letter-spacing:.08em;color:#c9d8e4;text-align:center;width:calc(100% - 48px);text-shadow:0 2px 14px #000}
+#hint{position:absolute;left:16px;bottom:max(12px,env(safe-area-inset-bottom));color:rgba(190,208,222,.62);font-size:11.5px;pointer-events:none;max-width:calc(100% - 32px);text-shadow:0 1px 6px #000}
+#card{position:absolute;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(520px,calc(100% - 24px));display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px 10px;padding:12px 12px 12px 18px;border-radius:18px;background:rgba(7,11,18,.84);border:1px solid rgba(190,215,232,.3);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 14px 40px rgba(0,0,0,.55);animation:rise .22s cubic-bezier(.2,.8,.2,1)}
+#card[hidden],#roster[hidden],#note[hidden],#empty[hidden]{display:none}
+@keyframes rise{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+#card-title{font-weight:600;font-size:14px;overflow-wrap:anywhere;grid-column:1}
+#card-meta{color:#a9bccb;font-size:12px;grid-column:1}
+#card-open{grid-column:2;grid-row:1/span 2;background:#e6eff5;color:#0a1019;border-color:#e6eff5;font-weight:600}
+#card-open:hover:not(:disabled){background:#fff;border-color:#fff}
+#card-dismiss{grid-column:3;grid-row:1/span 2;width:40px;padding:0}
+#card-error{grid-column:1/-1;color:#ffb4a6;font-size:12px}
+#card-error:empty{display:none}
+#roster{position:absolute;right:12px;top:max(64px,calc(env(safe-area-inset-top) + 64px));bottom:max(12px,env(safe-area-inset-bottom));width:min(340px,calc(100% - 24px));overflow:auto;padding:14px;border-radius:16px;background:rgba(6,10,17,.9);border:1px solid rgba(170,200,220,.24);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#roster h2{font:600 14px Georgia,"Songti TC",serif;letter-spacing:.14em;margin-bottom:6px}
+#roster h3{font-size:11.5px;color:#9fb3c3;letter-spacing:.08em;margin:14px 0 6px;overflow-wrap:anywhere}
+.row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border-radius:10px;padding:8px 10px;margin-bottom:4px;background:transparent;border-color:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+.row[aria-pressed=true]{background:rgba(40,58,78,.7);border-color:rgba(200,225,240,.4)}
+.dot{flex:none;width:8px;height:8px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.row-text{display:flex;flex-direction:column;min-width:0}.row-title{overflow-wrap:anywhere}.row-meta{color:#9fb3c3;font-size:11.5px}
+body.embedded .brand,body.embedded #list,body.embedded #close,body.embedded #roster,body.embedded #hint{display:none}
+body.embedded .hud{justify-content:flex-end}
+@media (max-width:560px){#title{font-size:14px;letter-spacing:.26em}#hint{display:none}button{padding:8px 12px}}
+@media (prefers-reduced-motion:reduce){#area,#card,button{transition:none;animation:none}}
+</style></head><body>
+<canvas id="stage" aria-hidden="true"></canvas>
+<div id="area" aria-hidden="true"><div id="area-name"></div><div class="rule"><span id="area-count"></span></div></div>
+<p id="empty" hidden></p>
+<div class="hud"><div class="brand"><h1 id="title"></h1><span id="count"></span></div><div class="actions"><button id="needs" type="button"></button><button id="list" type="button" aria-pressed="false"></button><button id="close" type="button">×</button></div></div>
+<p id="note" role="status" hidden></p>
+<p id="hint"></p>
+<section id="roster" hidden></section>
+<section id="card" hidden><div id="card-title"></div><div id="card-meta"></div><button id="card-open" type="button"></button><button id="card-dismiss" type="button" aria-label="×">×</button><p id="card-error" role="alert"></p></section>
+<!-- CLAWDLINE_SDK -->
+<script>
+/*SCENE*/
+</script></body></html>

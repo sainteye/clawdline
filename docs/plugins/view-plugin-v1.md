@@ -2,7 +2,7 @@
 
 Revision 11 describes the **experimental browser-local runtime** implemented in
 `web/console/src/view-plugins`. The supplied packages are Session Galaxy, Session Orrery, Session Night City,
-Session Departures, Session Territory, World of Codecraft and Kaiju City. Public Release acceptance is separate from source and Cloud delivery.
+Session Departures, Session Territory, World of Codecraft, Kaiju City and Lantern Deep. Public Release acceptance is separate from source and Cloud delivery.
 Revision 11 adds the embedded presentation: a desktop can pin a view beside its Session
 list ([Full screen and embedded](#full-screen-and-embedded)). The wire protocol is unchanged.
 The earlier revision proposed machine-owned installation; that transport is deferred.
@@ -47,7 +47,7 @@ cross-tab hints, revoke running grants before rereading the saved archives.
 
 ## Supplied Session views
 
-Explore views offers Galaxy, Orrery, Night City, Departures, Territory, World of Codecraft and Kaiju City. Each
+Explore views offers Galaxy, Orrery, Night City, Departures, Territory, World of Codecraft, Kaiju City and Lantern Deep. Each
 install button opens the standard identity and permission review before saving
 that package in this browser. Open installed views from the bottom status bar;
 multiple enabled packages appear in its picker. A phone must install packages in
@@ -56,7 +56,9 @@ its own browser or PWA, even when another browser already has them.
 Orrery puts attention states on rings, Night City groups Sessions into Project
 buildings, and Departures keeps waiting-for-you rows first with full Unicode
 names. Territory is a Project/Session map and explicitly says that file activity
-is unavailable. Its separate synthetic file renderer is not in the published ZIP;
+is unavailable. Lantern Deep is an original hand-drawn cavern whose wanderers fight,
+drill, patrol, climb or stand puzzled according to each Session's state; its enemies and
+strikes are decoration and measure nothing. Territory's separate synthetic file renderer is not in the published ZIP;
 publication does not add file access, transcript access or a new runtime capability.
 The packages follow host language and keep their text-state and readable-list
 alternatives. User artwork acceptance and public Release acceptance remain separate.

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13865,
+  "englishContentKeys": 13868,
   "riskKeys": 5914,
-  "nonRiskCount": 7951,
+  "nonRiskCount": 7954,
   "groups": [
     {
       "name": "acp / other",
@@ -8313,7 +8313,7 @@
     },
     {
       "name": "viewPlugins / other",
-      "count": 84,
+      "count": 87,
       "sources": [
         null
       ],
@@ -8322,6 +8322,7 @@
         "viewPlugins.addDepartures",
         "viewPlugins.addGalaxy",
         "viewPlugins.addKaiju",
+        "viewPlugins.addLanternDeep",
         "viewPlugins.addNightCity",
         "viewPlugins.addOrrery",
         "viewPlugins.addTerritory",
@@ -8368,6 +8369,8 @@
         "viewPlugins.installed",
         "viewPlugins.kaiju",
         "viewPlugins.kaijuHint",
+        "viewPlugins.lanternDeep",
+        "viewPlugins.lanternDeepHint",
         "viewPlugins.launchEmptyHint",
         "viewPlugins.launcher",
         "viewPlugins.loading",

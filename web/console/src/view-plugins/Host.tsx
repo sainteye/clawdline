@@ -245,6 +245,7 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
   const examples = [
     {id:"session-codecraft", title:w.codecraft, description:w.codecraftHint, action:w.addCodecraft},
     {id:"session-kaiju", title:w.kaiju, description:w.kaijuHint, action:w.addKaiju},
+    {id:"session-lantern-deep", title:w.lanternDeep, description:w.lanternDeepHint, action:w.addLanternDeep},
     {id:"session-galaxy", title:w.galaxy, description:w.galaxyHint, action:w.addGalaxy},
     {id:"session-orrery", title:w.orrery, description:w.orreryHint, action:w.addOrrery},
     {id:"session-night-city", title:w.nightCity, description:w.nightCityHint, action:w.addNightCity},
