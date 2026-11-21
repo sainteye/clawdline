@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13827,
-  "riskKeys": 5906,
-  "nonRiskCount": 7921,
+  "englishContentKeys": 13829,
+  "riskKeys": 5907,
+  "nonRiskCount": 7922,
   "groups": [
     {
       "name": "acp / other",
@@ -6145,7 +6145,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 525,
+      "count": 526,
       "sources": [
         null
       ],
@@ -6385,6 +6385,7 @@
         "projectAssistants.memory_disabled",
         "projectAssistants.memory_isolated",
         "projectAssistants.memory_unknown",
+        "projectAssistants.mentionBots",
         "projectAssistants.messageActions",
         "projectAssistants.model",
         "projectAssistants.more",

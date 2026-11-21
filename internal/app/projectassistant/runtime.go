@@ -1068,6 +1068,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		run.TimeoutSeconds = d.TimeoutSeconds
 		routineRun = &run
 	}
+	if t.RoutineRunID != "" || t.Origin == pa.UserOrigin || t.Origin == "" {
+		input.Text = pa.WithBotMentionHint(input.Text)
+	}
 	if isolatedRoutine && (binding.Agent != effectiveAgent || binding.Revoked) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.Unsupported, "routine_effective_agent")

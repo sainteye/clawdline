@@ -1,0 +1,20 @@
+/* The @ list, the highlight behind a picked @Name, and the chip in a sent message. */
+.project-assistants .pa-composer-wrap { position:relative; }
+.project-assistants .pa-mention-list { position:absolute;bottom:calc(100% + 6px);left:0;right:0;z-index:3;max-height:min(320px,40dvh);overflow:auto;overscroll-behavior:contain;background:var(--pa-card,#141414);border:1px solid var(--pa-line,#303033);border-radius:16px;padding:6px;box-shadow:0 10px 32px #0007; }
+.project-assistants .pa-mention-heading { padding:6px 10px 4px;font-size:12px;color:var(--pa-dim,#99999f); }
+.project-assistants .pa-mention-list button { display:flex;align-items:center;gap:12px;width:100%;min-height:52px;border:0;border-radius:12px;background:transparent;color:inherit;text-align:left;padding:6px 10px;cursor:pointer; }
+.project-assistants .pa-mention-list button[aria-selected="true"] { background:var(--pa-line,#303033); }
+.project-assistants .pa-mention-avatar { position:relative;flex:none;display:inline-flex; }
+.project-assistants .pa-mention-avatar .pa-agent-badge { position:absolute;right:-3px;bottom:-3px; }
+.project-assistants .pa-mention-text { display:flex;flex-direction:column;min-width:0;line-height:1.3; }
+.project-assistants .pa-mention-text strong { font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-mention-text small { display:flex;align-items:center;gap:5px;color:var(--pa-dim,#99999f);font-size:12px;min-width:0; }
+.project-assistants .pa-mention-text small span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-mention-empty { margin:0;padding:10px;color:var(--pa-dim,#99999f);font-size:13px; }
+.project-assistants .pa-editor-mirror.pa-mention-mirror { visibility:visible;color:transparent; }
+.project-assistants .pa-mention-mark { color:transparent;background:#e3956733;border-radius:6px;box-shadow:0 0 0 2px #e3956733; }
+.project-assistants .pa-mention-chip { display:inline-flex;align-items:center;gap:4px;vertical-align:-3px;padding:0 7px 0 3px;border-radius:999px;background:#e3956726;color:#f2b48f;font-weight:600;line-height:22px;white-space:nowrap; }
+.project-assistants .pa-mention-chip:not(:has(svg)) { padding-left:7px; }
+.project-assistants .pa-routine-instruction { position:relative;display:block; }
+.project-assistants .pa-routine-instruction textarea { width:100%; }
+.project-assistants .pa-routine-mentions { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }

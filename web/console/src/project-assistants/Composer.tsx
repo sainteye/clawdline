@@ -4,15 +4,18 @@ import * as L from "../legacy/bridge.js"
 import { toast } from "../overlays/toast.js"
 import { voiceSource } from "../session/voice-source.js"
 import { composerEnter } from "./composer-keyboard"
+import "./bot-mentions.css"
+import { useBotMentions, type BotMentionCandidate } from "./BotMentionField"
 import type { Words } from "./words"
 
 /** Pictures one message may carry; the daemon refuses more. */
 
-export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,onFileError}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;onFileError?:(error:string)=>void}) {
+export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onImages,onRemoveImage,files=[],onFiles,onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,onFileError,mentions}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly string[];onImages?:(files:readonly File[])=>void;onRemoveImage?:(index:number)=>void;files?:readonly {id:string;file:File}[];onFiles?:(files:readonly File[])=>boolean|void;onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;onFileError?:(error:string)=>void;mentions?:readonly BotMentionCandidate[]}) {
   const composing=useRef(false),picker=useRef<HTMLInputElement>(null)
   const voiceRow=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null)
   const mine=useRef(false),gone=useRef(false),latest=useRef({text,onText})
   latest.current={text,onText}
+  const mention=useBotMentions({text,onText,candidates:mentions,editor,w})
   const [voice,setVoice]=useState<V.VoiceState>("off")
   const recording=voice==="recording",voiceBusy=voice!=="off"
   useEffect(()=>{
@@ -59,15 +62,16 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
     {files.length>0&&<div className="pa-input-chips">{files.map(f=><span key={f.id}><span>{f.file.name} · {f.file.size.toLocaleString()} B</span><button type="button" aria-label={w.removeFile+" "+f.file.name} disabled={busy} onClick={()=>onRemoveFile?.(f.id)}>×</button></span>)}</div>}
     {uploading&&<p role="status">{w.uploadingFiles} {uploading} <button type="button" onClick={onCancelUpload}>{w.cancel}</button></p>}
     <div className="voice pa-voice" role="status" hidden ref={voiceRow}/>
+    {mention.picker}
     <form className="pa-composer" onSubmit={e=>{e.preventDefault();if(ready&&!composing.current)onSend()}} onDragOver={e=>{if(onImages||onFiles)e.preventDefault()}} onDrop={drop}>
       {(onImages||onFiles)&&<><button type="button" className="pa-attach" aria-label={onFiles?w.attachFiles:w.attachPicture} title={onFiles?w.attachFiles:w.attachPicture} disabled={disabled||busy} onMouseDown={e=>e.preventDefault()} onClick={()=>picker.current?.click()}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
         <input ref={picker} type="file" accept={onFiles?undefined:"image/png,image/jpeg,image/gif,image/webp"} multiple hidden onChange={e=>{take([...(e.target.files??[])]);e.target.value=""}}/></>}
       {!plain&&<button type="button" className="pa-mic" aria-label={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} title={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} aria-pressed={recording} disabled={recording?false:disabled||busy||voiceBusy||callActive} onMouseDown={e=>e.preventDefault()} onClick={pressVoice}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{recording?<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>:<><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.75 11.75v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18.5V21"/></>}</svg>
       </button>}
-      <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={editor} rows={1} aria-label={w.compose} placeholder={w.compose+"…"} value={text} disabled={disabled&&!draftEditable}
+      <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onImages||onFiles?paste:undefined}
-        onChange={e=>onText(e.target.value)} onKeyDown={e=>{const decision=composerEnter({...e.nativeEvent,key:e.key,shiftKey:e.shiftKey,altKey:e.altKey},composing.current);if(decision==="send"){e.preventDefault();if(ready)onSend()}}}/></div>
+        onKeyDown={e=>{if(mention.keyDown(e))return;const decision=composerEnter({...e.nativeEvent,key:e.key,shiftKey:e.shiftKey,altKey:e.altKey},composing.current);if(decision==="send"){e.preventDefault();if(ready)onSend()}}}/></div>
       <button type={showStop?"button":"submit"} className="pa-send" data-stop={showStop||undefined} data-stop-busy={showStop&&stopBusy||undefined}
         aria-label={showStop?w.stop:w.send} title={showStop?w.stop:w.send} aria-busy={showStop&&stopBusy||undefined}
         disabled={showStop?stopDisabled||busy:!ready} onClick={showStop?onStop:undefined}>{showStop?(stopBusy?<span className="pa-send-spinner" aria-hidden="true"/>:null):"↑"}</button>

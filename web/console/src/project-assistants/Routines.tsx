@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react"
+import { BotMentionText, useBotMentions, type BotMentionCandidate } from "./BotMentionField"
+import { botMentionSegments, botMentionToken } from "./bot-mentions"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { command, errorCode, failure, provablyNotSent } from "./client"
@@ -17,7 +19,7 @@ import {routineWord as tr} from "./routine-words"
 import {currentCatalogTag} from "../catalog"
 import {macKeyboard} from "../shortcuts"
 import "./routine-schedule.css"
-type Props={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;w:Words;storageKey:string}
+type Props={source:SourceClient;bot:W.ProjectAssistantBot;enabled:boolean;w:Words;storageKey:string;mentions?:readonly BotMentionCandidate[]}
 
 export function Routines(props:Props) {
   const capture=useRef({source:props.source,epoch:0})
@@ -248,12 +250,13 @@ function RoutineTriggerEditor({draft, index, count, events, w, onChange, onRemov
   </section>
 }
 
-function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
+function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
   const [page,setPage]=useState<W.ProjectAssistantRoutineListResponse|null>(null),[editing,setEditing]=useState<W.ProjectAssistantRoutineDefinition|null|undefined>(undefined)
   const [closing,setClosing]=useState(false)
   const [mode,setMode]=useState<"schedule"|"webhook"|"advanced">("schedule")
   const [schedule,setSchedule]=useState(()=>newRoutineTriggerDraft())
   const [name,setName]=useState(""),[instruction,setInstruction]=useState(""),[triggers,setTriggers]=useState<RoutineTriggerDraft[]>([]),[timeout,setTimeout]=useState(3600),[active,setActive]=useState(true)
+  const instructionEditor=useRef<HTMLTextAreaElement>(null),instructionMention=useBotMentions({text:instruction,onText:setInstruction,candidates:mentions,editor:instructionEditor,w})
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{id:string;page:W.ProjectAssistantRoutineListResponse}|null>(null),[confirm,setConfirm]=useState<string|null>(null),[held,setHeld]=useState<Intent|null>(null),[journalBlocked,setJournalBlocked]=useState(false)
   const [hookID,setHookID]=useState<string|null>(null)
   const [started,setStarted]=useState(false),[historyOpen,setHistoryOpen]=useState(false)
@@ -398,7 +401,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
       <h3 className="pa-routine-group-title">{tr("later")}</h3>
       <ul className="pa-routine-list">{followUps.map(d=><li key={d.id} className="pa-routine-card pa-routine-follow">
         <span className="pa-routine-follow-icon"><ClockIcon/></span>
-        <div className="pa-routine-follow-text"><p>{d.instruction||d.name}</p><small>{Date.parse(d.next_due)<=Date.now()?tr("followUpDue"):tr("followUpAt").replace("{time}",shortTime(d.next_due))}</small></div>
+        <div className="pa-routine-follow-text"><p>{d.instruction?<BotMentionText text={d.instruction} candidates={mentions}/>:d.name}</p><small>{Date.parse(d.next_due)<=Date.now()?tr("followUpDue"):tr("followUpAt").replace("{time}",shortTime(d.next_due))}</small></div>
         <button type="button" className="pa-routine-icon-button" disabled={!writable||busy} aria-label={`${tr("cancelFollowUp")}: ${d.name}`} title={tr("cancelFollowUp")} onClick={()=>action(d,"delete")}>×</button>
       </li>)}</ul>
     </div>}
@@ -421,7 +424,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey}:Props) {
           </header>
           <fieldset disabled={!writable||busy} aria-labelledby={editorID}>
             <label>{w.name}<input value={name} onChange={event=>setName(event.target.value)} placeholder={tr("nameExample")} required/></label>
-            <label>{w.routineInstruction}<textarea value={instruction} onChange={event=>setInstruction(event.target.value)} placeholder={tr("instructionExample")} required/></label>
+            <label>{w.routineInstruction}<span className="pa-routine-instruction">{instructionMention.picker}<textarea ref={instructionEditor} {...instructionMention.textareaProps} onKeyDown={event=>{instructionMention.keyDown(event)}} placeholder={tr("instructionExample")} required/></span>{botMentionSegments(instruction).some(part=>typeof part!=="string")&&<span className="pa-routine-mentions"><BotMentionText text={botMentionSegments(instruction).filter(part=>typeof part!=="string").map(botMentionToken).join(" ")} candidates={mentions}/></span>}</label>
             <div className="pa-routine-when"><span>{tr("when")}</span><div className="pa-routine-modes" role="group" aria-label={tr("when")}>
               <button type="button" aria-pressed={mode==="schedule"} onClick={()=>setMode("schedule")}>{tr("schedule")}</button>
               {events&&<button type="button" aria-pressed={mode==="webhook"} onClick={()=>setMode("webhook")}>{tr("webhook")}</button>}
