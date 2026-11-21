@@ -183,10 +183,15 @@
 .session-board-dialog .session-board-roster-button {
   display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 5px; font-size: .86em; white-space: nowrap;
 }
-.session-board-roster-button .session-board-avatar,
-.session-board-roster-button .session-board-avatar[data-lead] { width: 26px; height: 26px; }
-.session-board-roster-button .session-board-avatar canvas { max-width: 22px; }
 .session-board-roster-short { display: none; }
+/* The painter writes the canvas size inline; capping only its width would flatten the mark. */
+.session-board-roster-button .session-board-avatar canvas { max-width: none; }
+.session-board-dialog > header { flex-wrap: wrap; container-type: inline-size; }
+@container (max-width: 40rem) {
+  .session-board-header-tools { order: 3; flex: 1 0 100%; justify-content: flex-end; }
+  .session-board-header-tools .session-board-roster-full { display: inline; }
+  .session-board-header-tools .session-board-roster-short { display: none; }
+}
 
 .session-board-pinned {
   display: grid; gap: 4px; margin-block-end: 10px; padding: 8px 10px 10px 12px;
