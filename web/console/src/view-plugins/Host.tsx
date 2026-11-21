@@ -257,8 +257,14 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
       await inspect(value.archive, true)
     })
   }
-  // Once a desk has a pinned view, the status bar entry goes straight back to it; its switcher still browses the rest.
-  const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => desk && pinned ? pinnedRef.current?.() : openRoot(e.currentTarget, "launch")}>
+  // Once a desk has a pinned view, the status bar entry goes straight back to it; when that view is
+  // already on screen, the same press opens Manage views instead of doing nothing.
+  const enter = (button: HTMLElement) => {
+    if (!desk || !pinned) return openRoot(button, "launch")
+    if (document.querySelector("[data-view-pane=on]:not([hidden])")) return openRoot(button, "manage")
+    pinnedRef.current?.()
+  }
+  const entry = <button type="button" className="vp-dock" aria-label={w.entry} title={w.launcher} onClick={e => enter(e.currentTarget)}>
     <ViewPluginIcon />
   </button>
   const enabled = rows.filter(row => row.enabled)
