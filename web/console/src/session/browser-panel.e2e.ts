@@ -223,7 +223,7 @@ before(async () => {
   server = fixture(); await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
   const address = server.address(); origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
   profile = mkdtempSync(join(tmpdir(), "clawdline-browser-panel-"))
-  browserProcess = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
+  browserProcess = spawn(chrome, ["--headless=new", "--disable-features=OmniboxEverywhere", "--remote-debugging-port=0", "--use-mock-keychain", "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
   const endpoint = await new Promise<string>((ok, fail) => {
     let said = ""; const timer = setTimeout(() => { browserProcess.kill(); fail(new Error("Chrome did not start: " + said)) }, 20_000)
     browserProcess.stderr?.on("data", (chunk) => { said += String(chunk); const match = /DevTools listening on (ws:\/\/\S+)/.exec(said); if (match) { clearTimeout(timer); ok(match[1]) } })

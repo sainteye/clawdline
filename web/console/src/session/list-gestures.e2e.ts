@@ -1366,7 +1366,7 @@ before(async () => {
   browserProcess = spawn(chrome, [
     "--headless=new", "--disable-features=OmniboxEverywhere",
     "--remote-debugging-port=0",
-    "--user-data-dir=" + profile,
+    "--use-mock-keychain", "--user-data-dir=" + profile,
     "--no-first-run",
     "--no-default-browser-check",
     "about:blank",

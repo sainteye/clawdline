@@ -168,7 +168,7 @@ async function main() {
     // --holder also loads a second extension that holds chrome.debugger on
     // every tab, as another debugging extension would (the coexist test).
     const exts = [join(here, "extension"), ...(flag("--holder") ? [join(here, "holder")] : [])].join(",")
-    browser = spawn(bin, [`--user-data-dir=${profile}`, `--load-extension=${exts}`,
+    browser = spawn(bin, ["--use-mock-keychain", `--user-data-dir=${profile}`, `--load-extension=${exts}`,
       `--disable-extensions-except=${exts}`, "--no-first-run", "--no-default-browser-check",
       "--window-size=1280,860", `http://127.0.0.1:${PORT}/static`], { stdio: "ignore" })
     const v = spawn(bin, ["--version"]); v.stdout.on("data", (d) => (results.browser = String(d).trim()))

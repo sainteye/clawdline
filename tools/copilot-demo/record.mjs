@@ -194,7 +194,7 @@ const origin = 'http://127.0.0.1:' + server.address().port
   }
 }
 const profile = mkdtempSync(join(tmpdir(), 'clawdline-copilot-demo-'))
-const chrome = spawn(CHROME, ['--headless=new', '--force-device-scale-factor=' + VIEW.deviceScaleFactor, '--remote-debugging-port=0', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
+const chrome = spawn(CHROME, ['--headless=new', '--force-device-scale-factor=' + VIEW.deviceScaleFactor, '--remote-debugging-port=0', '--use-mock-keychain', '--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check',
   '--autoplay-policy=no-user-gesture-required', '--hide-scrollbars', `--window-size=${VIEW.width},${VIEW.height}`, 'about:blank'])
 // Chrome and its profile go away however the recorder ends: an error, a
 // timeout's SIGTERM or Ctrl-C included. On 2026-11-16 another Session found

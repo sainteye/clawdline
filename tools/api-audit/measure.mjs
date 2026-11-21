@@ -29,7 +29,7 @@ mkdirSync(outdir, { recursive: true })
 const origin = new URL(openURL).origin
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const profile = mkdtempSync(join(tmpdir(), "cl-audit-"))
-const proc = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`,
+const proc = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--use-mock-keychain", `--user-data-dir=${profile}`,
   "--no-first-run", "--window-size=1440,900", "about:blank"], { stdio: "ignore" })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let port
