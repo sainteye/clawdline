@@ -11313,6 +11313,12 @@ export interface SettingsRequest {
   voice_stop_seconds: number | null
 
   /**
+   * Message dictation uses local `whisper` by default or `openai_realtime` when
+   * explicitly selected.
+   */
+  voice_transcription: string | null
+
+  /**
    * At most 200 distinct one-line terms of at most 64 characters each.
    */
   voice_vocabulary: string[] | null
@@ -11751,6 +11757,12 @@ export interface SettingsSnapshot {
    * How long a silence ends the whole turn. 0 is off.
    */
   voice_stop_seconds: number | null
+
+  /**
+   * Message dictation uses local `whisper` by default or `openai_realtime` when
+   * explicitly selected.
+   */
+  voice_transcription: string | null
 
   /**
    * The person's own terms, repaired in every transcript and shown to cleanup.

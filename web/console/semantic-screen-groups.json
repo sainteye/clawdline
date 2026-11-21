@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13830,
-  "riskKeys": 5907,
-  "nonRiskCount": 7923,
+  "englishContentKeys": 13845,
+  "riskKeys": 5908,
+  "nonRiskCount": 7937,
   "groups": [
     {
       "name": "acp / other",
@@ -4242,7 +4242,7 @@
     },
     {
       "name": "next / other",
-      "count": 1315,
+      "count": 1323,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5486,13 +5486,21 @@
         "next.usageTokens",
         "next.usageUnattributed",
         "next.usageUnsupported",
+        "next.voiceEngineKeyMissing",
+        "next.voiceEngineRealtime",
+        "next.voiceEngineRealtimeHint",
+        "next.voiceEngineWhisper",
         "next.voiceInstallPromptSetUp",
         "next.voiceInstallPromptTitle",
         "next.voiceMicStopped",
         "next.voicePause",
         "next.voicePaused",
         "next.voicePreparing",
+        "next.voiceRealtimeConnecting",
+        "next.voiceRealtimeSettingChanged",
+        "next.voiceRealtimeUnsupported",
         "next.voiceRetry",
+        "next.voiceRetryWithWhisper",
         "next.voiceStopping",
         "next.voiceTabSettings",
         "next.voiceTabTools",
@@ -8004,7 +8012,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 214,
+      "count": 220,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8178,11 +8186,17 @@
         "transparency.card.voice-list-briefing.title",
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",
+        "transparency.card.voice-polish.summary",
         "transparency.card.voice-polish.title",
         "transparency.card.voice-question-menu.condition",
         "transparency.card.voice-question-menu.how",
         "transparency.card.voice-question-menu.summary",
         "transparency.card.voice-question-menu.title",
+        "transparency.card.voice-realtime-transcription.condition",
+        "transparency.card.voice-realtime-transcription.effect",
+        "transparency.card.voice-realtime-transcription.how",
+        "transparency.card.voice-realtime-transcription.summary",
+        "transparency.card.voice-realtime-transcription.title",
         "transparency.card.voice-session-boards.condition",
         "transparency.card.voice-session-boards.summary",
         "transparency.card.voice-session-boards.title",

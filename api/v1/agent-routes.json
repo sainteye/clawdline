@@ -785,6 +785,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/live-transcription",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/setup",
       "guide": "connect"
     },

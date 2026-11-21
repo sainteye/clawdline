@@ -9593,6 +9593,10 @@ type SettingsRequest struct {
 	// 0 to 300.
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
 
+	// Message dictation uses local `whisper` by default or `openai_realtime` when
+	// explicitly selected.
+	VoiceTranscription *string `json:"voice_transcription"`
+
 	// At most 200 distinct one-line terms of at most 64 characters each.
 	VoiceVocabulary []string `json:"voice_vocabulary"`
 
@@ -9883,6 +9887,10 @@ type SettingsSnapshot struct {
 
 	// How long a silence ends the whole turn. 0 is off.
 	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
+
+	// Message dictation uses local `whisper` by default or `openai_realtime` when
+	// explicitly selected.
+	VoiceTranscription *string `json:"voice_transcription"`
 
 	// The person's own terms, repaired in every transcript and shown to cleanup.
 	// Absent is an empty list.

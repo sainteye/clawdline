@@ -2189,11 +2189,15 @@ test("a phone reads and changes the voice cards on the machine it follows", asyn
   assert.equal(read.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "voice-settings", {}, "read"])
 
-  const write = await reader.fetch("/v1/settings/voice", post({ voice_polish: true, voice_vocabulary: ["Tailscale"] }))
+  const write = await reader.fetch("/v1/settings/voice", post({ voice_transcription: "openai_realtime", voice_polish: true, voice_vocabulary: ["Tailscale"] }))
   assert.equal(write.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "voice-settings-update", {
-    changes: { voice_polish: true, voice_vocabulary: ["Tailscale"] },
+    changes: { voice_transcription: "openai_realtime", voice_polish: true, voice_vocabulary: ["Tailscale"] },
   }, "action"])
+
+  const grant = await reader.fetch("/v1/voice/live-transcription", post({}, { "Idempotency-Key": "dictation-1" }))
+  assert.equal(grant.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "dictation-1", "mac-a", "voice-live-transcription", {}, "action"])
 
   for (const path of ["/v1/settings/voice/extra", "/v1/settings/voice?all=1"]) {
     const res = await reader.fetch(path)

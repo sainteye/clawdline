@@ -372,6 +372,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // The Session list's role rows read their launch snapshots in one batch (session/skill-feed.ts).
   assert.equal(CARRIED["squad-session-snapshots"], "GET /v1/squad/session-snapshots?conversation=")
   // The voice cards on Settings (pages/settings/window/VoiceSettingsCards.tsx).
+  assert.equal(CARRIED["voice-live-transcription"], "POST /v1/voice/live-transcription")
   assert.equal(CARRIED["voice-settings"], "GET /v1/settings/voice")
   assert.equal(CARRIED["voice-settings-update"], "POST /v1/settings/voice")
   // Browser invitations, asked by the machine sheet directly (pages/devices/BrowserInvites.tsx).
@@ -446,7 +447,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.inbox"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards/inbox")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 321)
+  assert.equal(Object.keys(CARRIED).length, 322)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

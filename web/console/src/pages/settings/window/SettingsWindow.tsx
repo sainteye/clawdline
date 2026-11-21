@@ -749,8 +749,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
         <section className="sw-voice-card" aria-labelledby="sw-voice-recognition">
           <h3 className="sw-voice-head" id="sw-voice-recognition">{W.voiceRecognitionTitle}</h3>
           {setupStatus ? <Note dot={ready ? "live" : "warn"}>{setupStatus}</Note> : null}
-          <Row label={W.settingsEngine} first>Whisper</Row>
-          <Row label={W.settingsVoiceLanguage} hint={W.settingsVoiceLanguageHint}>
+          <Row label={W.settingsVoiceLanguage} hint={W.settingsVoiceLanguageHint} first>
             <PopUp
               label={W.settingsVoiceLanguage}
               value={String(now("voice_language"))}

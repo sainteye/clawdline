@@ -22,7 +22,7 @@ func voiceSettingsCall(t *testing.T, s *Server, method, body string) *httptest.R
 	return rec
 }
 
-// The route a paired phone reaches: the five voice keys and what the machine
+// The route a paired phone reaches: the voice keys and what the machine
 // offers for them, and never another setting.
 func TestVoiceSettingsAnswersOnlyTheVoiceCards(t *testing.T) {
 	was := voiceProjectNames
@@ -38,7 +38,7 @@ func TestVoiceSettingsAnswersOnlyTheVoiceCards(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"voice_polish", "voice_polish_assistant", "voice_polish_level", "voice_vocabulary",
+	want := []string{"voice_transcription", "openai_key_set", "voice_polish", "voice_polish_assistant", "voice_polish_level", "voice_vocabulary",
 		"voice_vocabulary_projects", "polish_assistants", "vocabulary_builtin", "vocabulary_projects", "machine"}
 	if len(got) != len(want) {
 		t.Fatalf("answered %d keys: %v", len(got), got)
@@ -48,7 +48,7 @@ func TestVoiceSettingsAnswersOnlyTheVoiceCards(t *testing.T) {
 			t.Errorf("no %s in %v", key, got)
 		}
 	}
-	if got["voice_polish"] != true || got["voice_polish_level"] != "punctuation" || got["voice_polish_assistant"] != nil {
+	if got["voice_transcription"] != "whisper" || got["openai_key_set"] != false || got["voice_polish"] != true || got["voice_polish_level"] != "punctuation" || got["voice_polish_assistant"] != nil {
 		t.Fatalf("values %v", got)
 	}
 	if list, _ := got["voice_vocabulary"].([]any); len(list) != 1 || list[0] != "Tailscale" {
@@ -82,20 +82,23 @@ func TestVoiceSettingsRefusesEveryOtherSetting(t *testing.T) {
 }
 
 func TestVoiceSettingsWriteNeedsLocalOrSendAuthority(t *testing.T) {
-	path := "/v1/settings/voice"
-	readOnly := auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read)}
-	if status, code, _ := writePolicy(http.MethodPost, path, false, readOnly); status != http.StatusForbidden || code != "forbidden" {
-		t.Fatalf("read-capability caller: %d %q", status, code)
-	}
-	for name, verdict := range map[string]auth.Verdict{
-		"paired sender": {Allowed: true, Caps: auth.NewCaps(auth.Read, auth.Send)},
-		"local console": {Allowed: true, Local: true, Caps: auth.NewCaps(auth.Read)},
-	} {
-		if status, code, message := writePolicy(http.MethodPost, path, false, verdict); status != 0 {
-			t.Fatalf("%s: %d %q %q", name, status, code, message)
-		}
-	}
-	if status, _, _ := writePolicy(http.MethodGet, path, false, readOnly); status != 0 {
-		t.Fatalf("a read was treated as a write: %d", status)
+	for _, path := range []string{"/v1/settings/voice", "/v1/voice/live-transcription"} {
+		t.Run(path, func(t *testing.T) {
+			readOnly := auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read)}
+			if status, code, _ := writePolicy(http.MethodPost, path, false, readOnly); status != http.StatusForbidden || code != "forbidden" {
+				t.Fatalf("read-capability caller: %d %q", status, code)
+			}
+			for name, verdict := range map[string]auth.Verdict{
+				"paired sender": {Allowed: true, Caps: auth.NewCaps(auth.Read, auth.Send)},
+				"local console": {Allowed: true, Local: true, Caps: auth.NewCaps(auth.Read)},
+			} {
+				if status, code, message := writePolicy(http.MethodPost, path, false, verdict); status != 0 {
+					t.Fatalf("%s: %d %q %q", name, status, code, message)
+				}
+			}
+			if status, _, _ := writePolicy(http.MethodGet, path, false, readOnly); status != 0 {
+				t.Fatalf("a read was treated as a write: %d", status)
+			}
+		})
 	}
 }
