@@ -88,7 +88,9 @@ function layout() {
   let x = 0;
   groups.forEach((g, index) => {
     const by = {}; for (const s of STATES) by[s] = [];
-    for (const r of g.rows) by[live(r) ? status(r) : "unknown"].push(r);
+    // Freshness only greys and pauses a wanderer: a reading that flickers between
+    // fresh and stale must not move the slabs or send everyone to new places.
+    for (const r of g.rows) by[status(r)].push(r);
     const done = by.milestone_complete.concat(by.work_complete), rnd = rng(hash(g.key) + 17);
     const ch = { key: g.key, label: g.label, index, biome: BIOMES[index % BIOMES.length], hue: SCARF[index % SCARF.length], x0: x, platforms: [], dummies: [], shafts: [], lamps: [], camps: [], pieces: [], beacon: null, count: g.rows.length };
     let at = x + 150; ch.sign = x + 70;
@@ -220,12 +222,12 @@ function behave(c, dt) {
     case "travel": {
       if (c.plat && c.plat !== st.plat) c.plat = null; c.swordTo = 0;
       if (runTo(c, st.x, 300, dt) && c.ground) {
-        if (st.plat && c.y > st.plat.y + 2) { c.plat = st.plat; jump(c, -Math.sqrt(2 * G * (-st.plat.y + 22))); c.mode = "hop"; }
-        else begin(c);
+        if (st.plat && c.y > st.plat.y + 2) { if ((c.hops = (c.hops || 0) + 1) > 2) { burst(c.x, c.y - 26, st.ch.biome.mote, 10); c.x = st.x; c.y = st.y; c.vx = c.vy = 0; c.plat = st.plat; c.ground = true; c.alpha = 0; c.hops = 0; begin(c); } else { c.plat = st.plat; jump(c, -Math.sqrt(2 * G * (-st.plat.y + 22))); c.mode = "hop"; } }
+        else { c.hops = 0; begin(c); }
       }
       break;
     }
-    case "hop": if (c.ground) begin(c); break;
+    case "hop": if (c.ground) { if (st.plat && c.y > st.plat.y + 2) c.mode = "travel"; else { c.hops = 0; begin(c); } } break;
     case "roam": {
       if (c.ground && c.cd <= 0 && c.slash <= 0) for (const w of wildList) { if (w.cool > 0 || w.fade < 1 || w.skin === 1 || w.skin === 3 || Math.abs(w.y - c.y) > 8 || Math.abs(w.x - c.x) > 46) continue; c.face = sign(w.x - c.x); c.swordTo = 1; slash(c, "fwd"); c.cd = 2.6; c.sub = "flick"; c.t = .7; w.hurt = .28; w.flash = .12; w.flee = 1.3; w.face = c.face; c.hit = .05; burst(w.x, w.y - 12, [255, 220, 170], 6); fx.push({ kind: "ring", x: w.x, y: w.y - 12, age: 0, life: .22, a: Math.random() * TAU }); break; }
       if (c.sub === "start" || (c.sub === "pause" && c.t <= 0)) {
@@ -357,6 +359,12 @@ function physics(c, dt) {
   for (let i = 1; i < s.length; i++) { const q = s[i], vx = (q.x - q.px) * .9, vy = (q.y - q.py) * .9; q.px = q.x; q.py = q.y; q.x += vx + Math.sin(now * 2.3 + i + c.x * .01) * 5 * dt - c.face * 14 * dt; q.y += vy + 150 * dt * dt * 6; }
   for (let k = 0; k < 2; k++) for (let i = 1; i < s.length; i++) { const a = s[i - 1], b = s[i], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - 5.2) / d; b.x -= dx * f; b.y -= dy * f; if (b.y > c.y - 1 && c.ground) b.y = c.y - 1; }
 }
+// A wanderer whose reading is stale stops acting but still lands: it never hangs in the air.
+function settle(c, dt) {
+  dropEnemies(c); c.slash = 0; c.dash = 0; c.vx = 0; c.sub = c.mode === "climb" ? "fall" : c.sub;
+  if (c.mode === "climb") c.plat = null;
+  physics(c, dt);
+}
 function updateEnemy(e, dt) {
   e.t += dt; e.flash -= dt; e.next -= dt; e.hurt = (e.hurt || 0) - dt;
   const lane = e.lane;
@@ -379,7 +387,7 @@ function faceEnemy(c) { const e = c.enemy; if (e && !e.dead && e.state !== "dyin
 
 function update(dt) {
   for (const c of chars.values()) {
-    if (!live(c.row)) continue;
+    if (!live(c.row)) { settle(c, dt); continue; }
     behave(c, dt); physics(c, dt); faceEnemy(c);
   }
   for (const e of enemies) updateEnemy(e, dt);

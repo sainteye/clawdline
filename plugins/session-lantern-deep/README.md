@@ -20,7 +20,8 @@ trailing each wanderer carries the state colour, and its behaviour shows the sta
 | `waiting_you` | Stands puzzled under a warm beacon with a floating question mark |
 | `milestone_complete` | Rests by the campfire: sits, warms its hands, eats, drinks, polishes its weapon, gazes up, stretches, dozes |
 | `work_complete` | Sleeps on a bedroll by the campfire |
-| `unknown`, or any stale reading | Stands still and grey, and cannot be opened |
+| `unknown` | Stands still and grey |
+| any stale reading | Keeps its place, turns grey, stops acting and lands if it was in the air; it cannot be opened |
 
 A struck enemy recoils in its own hurt frame with a flash, impact lines and a brief
 hit-stop, and breaks apart over three frames when defeated. A fight keeps two enemies in its lane, the second stepping in when the first falls.
