@@ -502,7 +502,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
           <div id={controlsId} className="pa-tower-controls" hidden={!panelOpen}>{canBuild && layoutSwitch}{lookSwitch}{elevator}</div>
         </div>
         <div className="pa-tower-view" ref={viewRef}>
-        <div className="pa-tower-scene" ref={sceneRef} data-stale={summary.stale || undefined}
+        <div className="pa-tower-scene" ref={sceneRef} data-stale={present.length > 0 && present.every(b => !b.live) || undefined}
           onClick={e => {
             setPanelOpen(false)
             if (picked && !(e.target as HTMLElement).closest(".pa-tower-bot,.pa-tower-card")) setPicked(null)

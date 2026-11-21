@@ -49,7 +49,12 @@ replacement and source-owned revisions, with no List polling. Completed
 snapshots and validated change frames alone advance its applied cursor. A
 partial snapshot restarts fresh; disconnection marks retained rows stale and
 uses the existing 3-second refresh interval only to reconnect. Authority denial
-clears rows and stops; older and Cloud sources retain their snapshot route.
+clears rows and stops. Older and Cloud sources keep one serial snapshot
+refresh per machine. A held request delays that machine's own updates while
+other machines continue on the usual cadence. A failed refresh keeps the last
+readable roster for that machine and marks its rows stale. The tower reports
+stale rows, and dims the background when every Bot on the displayed scene is
+stale.
 
 The client keeps at most the registered `bots.roster_client_rows` (1,000),
 including removal revisions that prevent stale replay from resurrecting a Bot.

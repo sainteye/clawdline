@@ -38,8 +38,9 @@ function controlled(machine:string,live:boolean) {
   }
   return {source,setCode(value:W.ProjectAssistantErrorCode|null){code=value;drop?.()},hold(){hold=true},release(){hold=false;release?.();release=undefined},snapshot:()=>({reads,active,maxActive,streams,maxStreams,cursors})}
 }
-const studio=controlled("studio",true),notebook=controlled("notebook",false)
-const language=new URL(location.href).searchParams.get("lang")??"en"
+const params=new URL(location.href).searchParams
+const studio=controlled("studio",!params.has("snapshots")),notebook=controlled("notebook",false)
+const language=params.get("lang")??"en"
 const sources=[studio.source,notebook.source]
 createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}/>)
 Object.assign(window,{rosterRecovery:{studio,notebook}})

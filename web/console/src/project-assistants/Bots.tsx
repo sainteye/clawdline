@@ -42,7 +42,8 @@ export interface BotsProps {
 interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;loadedPages?:number}
 export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,manageHistory=false,onSelectionChange,voiceShortcut=0}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
-  const [pages,setPages]=useState<Record<string,SourcePage>>({}),[loading,setLoading]=useState(true),[creating,setCreating]=useState(false)
+  const [pages,setPages]=useState<Record<string,SourcePage>>({}),[creating,setCreating]=useState(false)
+  const [snapshotPending,setSnapshotPending]=useState<ReadonlySet<SourceClient>>(()=>new Set(sources))
   const [rosterPrompt,setRosterPrompt]=useState<RosterPrompt|null>(null)
   const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean}|null>(null)
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
@@ -69,7 +70,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const view=useMemo(()=>{if(viewState)return viewState;try{return createViewState(window.localStorage)}catch{return createViewState()}},[viewState,namespace])
   const historyID=useRef(typeof crypto!=="undefined"?crypto.randomUUID():"")
   const lastSelected=useRef<string|null>(null)
-  const loader=useRef<(append?:boolean)=>Promise<void>>(async()=>{})
+  const snapshotLoaders=useRef(new Map<SourceClient,(append?:boolean)=>Promise<void>>())
   const deniedSnapshots=useRef(new Set<SourceClient>())
   const pagesRef=useRef(pages);pagesRef.current=pages
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
@@ -80,7 +81,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
   const hasUnread=allItems.some(i=>!i.bot.hidden&&i.unread_count>0)
-  const rosterLoading=loading||sources.some(s=>livePending[s.machineID])
+  const rosterLoading=sources.some(s=>snapshotPending.has(s)||livePending[s.machineID])
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   // The tower shows every visible Bot of the chosen machine; search narrows only the list.
   const leads=sources.flatMap(source=>allItems.filter(item=>item.bot.key.machine_id===source.machineID&&item.bot.lead&&!item.bot.hidden&&canRead(item.source)))
@@ -107,63 +108,87 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
   const machineNames=new Map(sources.map(s=>[s.machineID,s.machineName??""] as [string,string]))
-  const load=useCallback((append=false)=>loader.current(append),[])
+  const load=useCallback(async(append=false,source?:SourceClient)=>{
+    if(source){await snapshotLoaders.current.get(source)?.(append);return}
+    await Promise.all([...snapshotLoaders.current.values()].map(refresh=>refresh(append)))
+  },[])
   // Live sources publish absolute unread counts. Snapshot sources read them back
   // after the observed cursor is acknowledged, including arrivals during the write.
   const refreshAfterRead=async(source:SourceClient)=>{
-    if(current().includes(source)&&(!source.canRoster?.()||!source.subscribeRoster))await load()
+    if(current().includes(source))await load(false,source)
   }
   const searchProjectNames=query?projectNames:null
   useEffect(()=>{
     const control=new AbortController()
+    const loaders=new Map<SourceClient,(append?:boolean)=>Promise<void>>(),pending=new Set<SourceClient>()
     deniedSnapshots.current.clear()
-    loader.current=serialSnapshotRefresh(async append=>{
-    if(append||!Object.values(pagesRef.current).some(p=>p.query===query))setLoading(true)
-    await Promise.all(current().map(async source=>{
-      if(source.canRoster?.()&&source.subscribeRoster)return
-      if(deniedSnapshots.current.has(source))return
+    for(const source of current()) {
+      if(source.canRoster?.()&&source.subscribeRoster)continue
       const requestQuery=searchProjectNames?snapshotRosterQuery(source.machineID,query,searchProjectNames):""
-      const previous=pagesRef.current[source.machineID],sameQuery=previous?.query===query&&previous.requestQuery===requestQuery,cursor=append&&previous?.revision===source.authorizationRevision&&sameQuery?previous.cursor:""
-      if(append&&!cursor)return
-      try {
-        const coverage=previous?.revision===source.authorizationRevision&&sameQuery?previous.loadedPages??1:1
-        const response=await readSnapshotRoster(source,current,requestQuery,append?1:coverage,control.signal,cursor)
-        if(control.signal.aborted)return
-        const own=response.sources.find(s=>s.machine_id===source.machineID)
-        const rows=response.items.filter(i=>i.bot.key.machine_id===source.machineID&&canRead(i.source)).map(i=>own?{...i,source:own}:i)
-        setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:append?coverage+response.loadedPages:response.loadedPages,statuses:response.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
-      } catch (error) {
-        if (control.signal.aborted) return
-        const code = errorCode(error)
-        const denied = ["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(code)
-        if (!retryableSourceError(code)) deniedSnapshots.current.add(source)
-        setPages(old => {
-          const previous = old[source.machineID]
-          const sameSource = !denied && previous?.revision === source.authorizationRevision
-          const sameQuery = sameSource && previous.query === query && previous.requestQuery === requestQuery
-          const stale = {fresh:false,writable:false}
-          return {...old,[source.machineID]:{
-            revision:source.authorizationRevision,query,requestQuery,error:code,
-            items:sameQuery ? previous.items.map(item => ({...item,source:{...item.source,...stale}})) : [],
-            cursor:sameQuery ? previous.cursor : "",
-            loadedPages:sameQuery ? previous.loadedPages : undefined,
-            statuses:sameSource ? previous.statuses.map(status => ({...status,...stale})) : [],
-          }}
-        })
-      }
-    }))
-    if(!control.signal.aborted)setLoading(false)
-    },control.signal)
-    if(selected||current().every(s=>s.canRoster?.()&&s.subscribeRoster))void load()
+      const previous=pagesRef.current[source.machineID]
+      if(previous?.revision!==source.authorizationRevision||previous.query!==query||previous.requestQuery!==requestQuery)pending.add(source)
+      loaders.set(source,serialSnapshotRefresh(async append=>{
+        if(deniedSnapshots.current.has(source)||!current().includes(source))return
+        const previous=pagesRef.current[source.machineID],sameQuery=previous?.query===query&&previous.requestQuery===requestQuery,cursor=append&&previous?.revision===source.authorizationRevision&&sameQuery?previous.cursor:""
+        if(append&&!cursor)return
+        if(append)setSnapshotPending(old=>new Set(old).add(source))
+        try {
+          const coverage=previous?.revision===source.authorizationRevision&&sameQuery?previous.loadedPages??1:1
+          const response=await readSnapshotRoster(source,current,requestQuery,append?1:coverage,control.signal,cursor)
+          if(control.signal.aborted)return
+          const own=response.sources.find(s=>s.machine_id===source.machineID)
+          const rows=response.items.filter(i=>i.bot.key.machine_id===source.machineID&&canRead(i.source)).map(i=>own?{...i,source:own}:i)
+          setPages(old=>({...old,[source.machineID]:{revision:source.authorizationRevision,query,requestQuery,items:append&&old[source.machineID]?.revision===source.authorizationRevision&&old[source.machineID]?.query===query&&old[source.machineID]?.requestQuery===requestQuery?mergeRoster([old[source.machineID].items,rows]):rows,cursor:response.cursor,loadedPages:append?coverage+response.loadedPages:response.loadedPages,statuses:response.sources.filter(s=>s.machine_id===source.machineID),error:""}}))
+        } catch (error) {
+          if (control.signal.aborted) return
+          const code = errorCode(error)
+          const denied = ["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(code)
+          if (!retryableSourceError(code)) deniedSnapshots.current.add(source)
+          setPages(old => {
+            const previous = old[source.machineID]
+            const sameSource = !denied && previous?.revision === source.authorizationRevision
+            const sameQuery = sameSource && previous.query === query && previous.requestQuery === requestQuery
+            const stale = {fresh:false,writable:false}
+            return {...old,[source.machineID]:{
+              revision:source.authorizationRevision,query,requestQuery,error:code,
+              items:sameQuery ? previous.items.map(item => ({...item,source:{...item.source,...stale}})) : [],
+              cursor:sameQuery ? previous.cursor : "",
+              loadedPages:sameQuery ? previous.loadedPages : undefined,
+              statuses:sameSource ? previous.statuses.map(status => ({...status,...stale})) : [],
+            }}
+          })
+        } finally {
+          if(!control.signal.aborted)setSnapshotPending(old=>{
+            if(!old.has(source))return old
+            const pending=new Set(old)
+            pending.delete(source)
+            return pending
+          })
+        }
+      },control.signal))
+    }
+    snapshotLoaders.current=loaders
+    setSnapshotPending(pending)
+    if(selected)void load()
     return()=>control.abort()
-  },[authorization,query,current,searchProjectNames])
+  },[authorization,query,current,searchProjectNames,load])
   useEffect(()=>{setSelected(null);setPages({});setMachine("");setUnreadOnly(false)},[authorization])
   useEffect(()=>{
-    if(selected||!sources.some(s=>!s.canRoster?.()||!s.subscribeRoster))return
-    const control=new AbortController()
-    followSnapshotRoster(async()=>{await load();if(!current().some(s=>!deniedSnapshots.current.has(s)&&(!s.canRoster?.()||!s.subscribeRoster)))control.abort()},control.signal,EventRefreshMs,document,window,{readOnEntry:true})
-    return()=>control.abort()
-  },[selected,authorization,query,searchProjectNames,load])
+    if(selected)return
+    const observers:AbortController[]=[]
+    // Each source owns its refresh cadence and in-flight read. A slow source
+    // cannot hold up successful machines or cause overlapping retries.
+    for(const [source,refresh] of snapshotLoaders.current) {
+      if(deniedSnapshots.current.has(source))continue
+      const control=new AbortController()
+      observers.push(control)
+      followSnapshotRoster(async()=>{
+        await refresh()
+        if(deniedSnapshots.current.has(source))control.abort()
+      },control.signal,EventRefreshMs,document,window,{readOnEntry:true})
+    }
+    return()=>{for(const control of observers)control.abort()}
+  },[selected,authorization,query,searchProjectNames])
   useEffect(()=>{
     const control=new AbortController()
     setLivePending({})

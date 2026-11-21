@@ -1,7 +1,7 @@
 /** Roster reads recover on both transports without rendering machine status. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
-import {mkdir,writeFile} from "node:fs/promises"
+import {mkdir,readFile,writeFile} from "node:fs/promises"
 import {fileURLToPath,pathToFileURL} from "node:url"
 import path from "node:path"
 import {build} from "esbuild"
@@ -11,15 +11,53 @@ await mkdir(artifacts,{recursive:true})
 const {chromium,webkit}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
 const built=await build({entryPoints:[fileURLToPath(new URL("./roster-recovery.fixture.tsx",import.meta.url))],bundle:true,write:false,outfile:"roster.js",format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(built.outputFiles.map(f=>["/"+path.basename(f.path),f.contents]))
+const pictures=new Map(await Promise.all(["ramen","skyline","rain","platform","building"].map(async name=>[
+  `/${name}.webp`,await readFile(new URL(`./tower/${name}.webp`,import.meta.url)),
+])))
 let forbidden=0
 const server=createServer((req,res)=>{
   const url=new URL(req.url,"http://fixture")
   if(url.pathname.startsWith("/v1/")){forbidden++;res.writeHead(500);res.end("No live API");return}
+  if(pictures.has(url.pathname)){res.setHeader("Content-Type","image/webp");res.end(pictures.get(url.pathname));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
   res.setHeader("Content-Type","text/html");res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font:15px system-ui;background:#080808;color:#fafafa}#app{height:100dvh}</style><link rel="stylesheet" href="/roster.css"><div id="app"></div><script type="module" src="/roster.js"></script>')
 })
 await new Promise(r=>server.listen(0,"127.0.0.1",r))
 const origin=`http://127.0.0.1:${server.address().port}`,results=[]
+async function checkIndependentSnapshots(page, language) {
+  await page.goto(origin+"/?snapshots&lang="+language)
+  await page.evaluate(()=>{
+    window.rosterRecovery.studio.setCode(null)
+    window.rosterRecovery.notebook.setCode(null)
+  })
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:8000})
+  const scene=page.locator(".pa-tower-scene")
+  const toggle=page.getByRole("button",{name:language==="en"?"Tower view":"大樓檢視",exact:true})
+  if(await toggle.getAttribute("aria-pressed")!=="true")await toggle.click()
+  await page.waitForFunction(()=>{
+    const img=document.querySelector(".pa-tower-scene img")
+    return img?.complete&&img.naturalWidth>0
+  },undefined,{timeout:8000})
+  await page.evaluate(()=>window.rosterRecovery.notebook.setCode("pa_offline"))
+  const stale=page.locator(".pa-hud-chip[data-tone=stale]")
+  await stale.waitFor({timeout:6000})
+  const partlyStale=await scene.locator("img").evaluate(img=>getComputedStyle(img).filter)
+  await page.evaluate(()=>window.rosterRecovery.notebook.hold())
+  await page.waitForFunction(()=>window.rosterRecovery.notebook.snapshot().active===1,undefined,{timeout:6000})
+  const reads=await page.evaluate(()=>window.rosterRecovery.studio.snapshot().reads)
+  await page.waitForFunction(n=>window.rosterRecovery.studio.snapshot().reads>n,reads,{timeout:5000})
+    .catch(()=>assert.fail("a stalled snapshot source blocks healthy roster refreshes"))
+  assert.equal(partlyStale,"none","one stale source dims the whole scene")
+  await page.evaluate(()=>{
+    window.rosterRecovery.notebook.setCode(null)
+    window.rosterRecovery.notebook.release()
+  })
+  await stale.waitFor({state:"hidden",timeout:6000})
+  const proof=await page.evaluate(()=>({studio:window.rosterRecovery.studio.snapshot(),notebook:window.rosterRecovery.notebook.snapshot()}))
+  assert.equal(proof.studio.maxActive,1)
+  assert.equal(proof.notebook.maxActive,1)
+  return proof
+}
 try {
   for(const engine of [chromium,webkit])for(const [language,width] of [["zh-Hant",390],["en",1280]]) {
     const browser=await engine.launch({headless:true,...(engine===chromium?{args:["--disable-features=OmniboxEverywhere"]}:{})}),page=await browser.newPage({viewport:{width,height:844}})
@@ -70,8 +108,9 @@ try {
       assert.equal(proof.notebook.maxActive,1)
       assert.equal(proof.studio.cursors[1],"fixture-cursor","automatic recovery preserves the applied cursor")
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
+      const snapshots=await checkIndependentSnapshots(page,language)
       assert.deepEqual(errors,[])
-      results.push({name,...proof})
+      results.push({name,...proof,snapshots})
     }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)});throw error}
     finally{await browser.close()}
   }
