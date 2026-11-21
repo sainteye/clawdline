@@ -21,6 +21,8 @@ const code = (e: unknown) => e instanceof PluginError ? e.code : "storage_unavai
 const name = (p: ViewPackage, language: string) => p.manifest.name[language.startsWith("zh") ? "zh-Hant" : "en"]
 const curatedID = (slug: string) => "com.clawdline." + slug
 const recommendedSlugs = ["session-lantern-deep", "session-departures", "session-codecraft"]
+// Lantern Deep leads every gallery it appears in, at hero size; the rest keep the ordinary card.
+const heroSlug = "session-lantern-deep"
 
 type PackageReview = { archive: ArrayBuffer; pkg: ViewPackage; expected: string | null; official: boolean }
 
@@ -275,9 +277,9 @@ export function useViewPlugins(sources: readonly ViewSource[], language: string,
   const gallery = (items: typeof examples, heading: string, hint?: string) =>
     <section className="vp-examples" aria-label={heading}>
       <div className="vp-section-head"><div><h2>{heading}</h2>{hint && <p>{hint}</p>}</div></div>
-      <div className="vp-example-grid">{items.map(example => {
+      <div className="vp-example-grid">{[...items].sort((a, b) => Number(b.id === heroSlug) - Number(a.id === heroSlug)).map(example => {
         const installed = rows.find(row => row.id === curatedID(example.id)), update = installed && hasCuratedUpdate(installed.active)
-        return <article className="vp-example" key={example.id}>
+        return <article className={`vp-example${example.id === heroSlug ? " vp-example-hero" : ""}`} key={example.id}>
           <ViewArtwork cover={examplePreview(curatedID(example.id), language)} missing={w.coverRequired} preview />
           <div><h3>{example.title}</h3><p>{example.description}</p><button data-unavailable={!!installed && !update} data-fetching={fetching === example.id || undefined} disabled={isBusy || !!installed && !update} onClick={e => void exampleInstall(example.id, e.currentTarget)}>{fetching === example.id ? <><span className="vp-spin" aria-hidden="true" />{w.installingShort}</> : installed ? update ? w.update : w.added : example.action}</button></div>
         </article>

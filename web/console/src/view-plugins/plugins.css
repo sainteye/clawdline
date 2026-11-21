@@ -302,3 +302,17 @@
 .vp-host[data-presentation=modal] .vp-bar { padding:10px 14px 10px 20px }
 .vp-host[data-presentation=modal] .vp-manager { padding:22px 24px 24px }
 .vp-host .vp-launch-pin svg { width:16px;height:16px }
+/* The featured recommendation spans the gallery: a wide preview beside its words. */
+.vp-example-grid .vp-example-hero { grid-column:1/-1;display:flex;flex-direction:row;align-items:stretch }
+.vp-example-hero>.vp-art { flex:0 0 62%;aspect-ratio:8/5;height:auto }
+.vp-example-hero>div:not(.vp-art) { display:flex;flex:1;flex-direction:column;justify-content:center;align-items:flex-start;padding:24px 28px }
+.vp-launcher .vp-example-hero>div:not(.vp-art),.vp-manager .vp-example-hero>div:not(.vp-art) { padding:24px 28px }
+.vp-manager .vp-example-hero h3 { font-size:22px }
+.vp-manager .vp-example-hero p { font-size:14px;min-height:0;margin:8px 0 18px }
+.vp-launcher .vp-example-hero button { margin-top:0 }
+@media(max-width:740px) {
+  .vp-example-grid .vp-example-hero { flex-direction:column }
+  .vp-example-hero>.vp-art { flex:none;width:100% }
+  .vp-launcher .vp-example-hero>div:not(.vp-art),.vp-manager .vp-example-hero>div:not(.vp-art) { padding:14px 16px 16px }
+  .vp-manager .vp-example-hero h3 { font-size:17px }
+}
