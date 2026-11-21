@@ -165,10 +165,9 @@ func TestCollaborationRecipientRosterDoesNotCountExchangeNotices(t *testing.T) {
 					t.Fatalf("recipient unread legacy=%d stream=%d, want %d", legacy, streamed, want)
 				}
 			}
+			// The seeded message is the person's own, which is never unread,
+			// so exchange cards must keep the count at zero.
 			directUnread := int64(0)
-			if !managesTeam {
-				directUnread = 1
-			}
 			assertUnread(directUnread)
 			x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, sender, recipient, "hidden-unread"))
 			if err != nil {

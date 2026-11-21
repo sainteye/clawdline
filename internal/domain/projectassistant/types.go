@@ -299,6 +299,15 @@ const (
 	NoticeMessage    MessageKind = "notice"
 )
 
+// CountsAsUnread reports whether a message raises the unread badge. As in
+// Codync (host/src/store/bots.rs UNREAD_MESSAGE), only what the Bot finished
+// saying to the person counts: a Bot reply or a work result. The person's own
+// message never does, so a chat that is still working shows no badge; host
+// notices are narration.
+func CountsAsUnread(kind MessageKind) bool {
+	return kind == AssistantMessage || kind == WorkMessage
+}
+
 type Message struct {
 	Reactions      []ReactionActor `json:"reactions,omitempty"`
 	Exchange       *Exchange       `json:"exchange,omitempty"`

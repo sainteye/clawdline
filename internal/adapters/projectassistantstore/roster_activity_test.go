@@ -49,7 +49,7 @@ func TestRosterActivityFollowsDurableCurrentTurn(t *testing.T) {
 		return pa.Event{Version: pa.ContractVersion, ID: id, Fence: fence, Kind: pa.TraceUpdated, Trace: &trace}
 	}
 	commit("tool", app.Mutation{Permissions: []pa.PermissionOffer{p}, Events: []pa.Event{event("tool", trace)}})
-	if got := check("working", "Read notes.md"); got.UnreadCount != 1 {
+	if got := check("working", "Read notes.md"); got.UnreadCount != 0 {
 		t.Fatal("activity created an unread message", got.UnreadCount)
 	}
 	if err := db.Close(); err != nil {

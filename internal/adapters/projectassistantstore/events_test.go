@@ -56,7 +56,9 @@ func TestEventsDoNotCountAsUnreadAndDuplicateEventRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := s.ListForReader(testContext, pa.ListBots{MachineID: "machine", PageSize: 1}, "alice")
-	if err != nil || p.Items[0].UnreadCount != 1 {
+	// The person's own message is not unread (Codync counts only finished Bot
+	// messages), and a trace adds nothing.
+	if err != nil || p.Items[0].UnreadCount != 0 {
 		t.Fatalf("trace inflated unread %+v %v", p, err)
 	}
 	before, _ := s.Bot(testContext, b.Key)

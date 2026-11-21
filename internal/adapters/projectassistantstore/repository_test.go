@@ -207,7 +207,7 @@ func TestConcurrentCASHasOneWinner(t *testing.T) {
 func TestReaderIsolationMonotonicCursorsAndPagination(t *testing.T) {
 	_, s, _ := testDB(t)
 	b := seed(t, s, "a")
-	populate(t, s, b, pa.EffectDelivered)
+	commitReply(t, s, b, populate(t, s, b, pa.EffectDelivered), 2)
 	seed(t, s, "b")
 	q := pa.ListBots{MachineID: "machine", PageSize: 1}
 	page, err := s.ListForReader(testContext, q, "alice")
@@ -219,14 +219,14 @@ func TestReaderIsolationMonotonicCursorsAndPagination(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].Bot.Key.BotID != "b" || page.NextCursor != "" {
 		t.Fatalf("second page %+v %v", page, err)
 	}
-	read := pa.ReadCursor{Key: b.Key, ConversationID: b.ConversationID, ReaderID: "alice", MessageSeq: 1}
+	read := pa.ReadCursor{Key: b.Key, ConversationID: b.ConversationID, ReaderID: "alice", MessageSeq: 2}
 	first, err := s.MarkRead(testContext, command(b.Key, pa.ReadOperation, "read1"), read)
 	if err != nil {
 		t.Fatal(err)
 	}
 	read.MessageSeq = 0
 	got, err := s.MarkRead(testContext, command(b.Key, pa.ReadOperation, "read2"), read)
-	if err != nil || got.MessageSeq != 1 {
+	if err != nil || got.MessageSeq != 2 {
 		t.Fatalf("regression %+v %v", got, err)
 	}
 	again, err := s.MarkRead(testContext, command(b.Key, pa.ReadOperation, "read1"), read)
@@ -437,4 +437,50 @@ func TestPrimaryAgentChangesRequireANewerInstructionSnapshot(t *testing.T) {
 	moved.Instructions.Revision++
 	_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.EditOperation, "foreign-primary-project"), ExpectedVersion: saved.Version, Bot: &moved, Receipt: pa.Receipt{ID: "foreign-primary-project", State: pa.EffectAccepted}})
 	requireCode(t, err, pa.ScopeDenied)
+}
+
+// commitReply adds a Bot reply to populate's turn: the kind of message that
+// is unread.
+func commitReply(t *testing.T, s *Store, b pa.Bot, f pa.Fence, seq int64) {
+	t.Helper()
+	current, err := s.Bot(testContext, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := pa.Message{ID: "reply", Fence: f, Seq: seq, TurnID: "turn", Kind: pa.AssistantMessage, Text: "Reply", At: b.CreatedAt}
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "reply"), ExpectedVersion: current.Version, Messages: []pa.Message{m}, Receipt: pa.Receipt{ID: "reply", State: pa.EffectDelivered}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "reply", Fence: f, Kind: pa.MessageCreated, Message: &m}}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// As in Codync, the person's own message and host notices never raise the
+// badge, so a Bot that is still working shows none; its finished reply does,
+// in the list and in the streamed roster alike.
+func TestOnlyFinishedBotMessagesAreUnread(t *testing.T) {
+	db, s, _ := testDB(t)
+	views := newTestViews(t, db)
+	b := seed(t, s, "a")
+	f := populate(t, s, b, pa.EffectDelivered)
+	q := rosterQuery()
+	count := func() (int64, int64) {
+		t.Helper()
+		list, err := s.ListForReader(testContext, pa.ListBots{MachineID: "machine", PageSize: pa.MaxPageRows}, q.ReaderID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		streamed := int64(-1)
+		for _, change := range rosterRead(t, views, q).Frame.Changes {
+			if change.Key == b.Key && change.Summary != nil {
+				streamed = change.Summary.UnreadCount
+			}
+		}
+		return list.Items[0].UnreadCount, streamed
+	}
+	if listed, streamed := count(); listed != 0 || streamed != 0 {
+		t.Fatalf("the person's own message while the Bot works: list=%d stream=%d", listed, streamed)
+	}
+	commitReply(t, s, b, f, 2)
+	if listed, streamed := count(); listed != 1 || streamed != 1 {
+		t.Fatalf("the Bot's reply: list=%d stream=%d", listed, streamed)
+	}
 }
