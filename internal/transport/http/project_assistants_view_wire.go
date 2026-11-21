@@ -20,6 +20,9 @@ func paWireReadHead(v app.ReadViewHead) contract.ProjectAssistantReadViewHead {
 	if v.ContextUsage != nil {
 		out.ContextUsage = &contract.ProjectAssistantContextUsage{Live: v.ContextUsage.Live, TurnID: v.ContextUsage.TurnID, UsedTokens: v.ContextUsage.UsedTokens, WindowTokens: v.ContextUsage.WindowTokens}
 	}
+	if v.ActiveModel != nil {
+		out.ActiveModel = &contract.ProjectAssistantActiveModel{TurnID: v.ActiveModel.TurnID, Name: v.ActiveModel.Name}
+	}
 	return out
 }
 

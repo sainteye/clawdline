@@ -170,6 +170,10 @@ func TestACPTestPeer(t *testing.T) {
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{map[string]string{"name": "compact"}}}})})
 				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "usage_update", "used": 0, "size": 100000}})})
 			}
+			if mode == "native-context" {
+				send(frame{ID: f.ID, Result: json.RawMessage(`{"sessionId":"scripted-session","models":{"currentModelId":"fixture-pro","availableModels":[{"modelId":"fixture-pro","name":"Fixture Pro"}]}}`)})
+				continue
+			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"sessionId": peerSessionID("CLAWDLINE_ACP_NEW_ID")})})
 		case "session/load":
 			if path := os.Getenv("CLAWDLINE_ACP_PARAMS_FILE"); path != "" {

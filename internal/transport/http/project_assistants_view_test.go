@@ -270,10 +270,10 @@ func TestProjectAssistantViewExactCloudByteBoundary(t *testing.T) {
 	}
 }
 
-func TestProjectAssistantViewPublishesOnlyMatchingContextUsage(t *testing.T) {
+func TestProjectAssistantViewPublishesOnlyMatchingNativeContext(t *testing.T) {
 	f, port := paViewFixture(t)
 	port.view.Head.Conversation.ActiveTurnID = "running"
-	state := app.NativeContextState{Fence: port.view.Head.CurrentFence, TurnID: "running", UsageKnown: true, UsedTokens: 0, WindowTokens: 6000}
+	state := app.NativeContextState{Fence: port.view.Head.CurrentFence, TurnID: "running", Model: "Fixture Pro", UsageKnown: true, UsedTokens: 0, WindowTokens: 6000}
 	f.handler = newProjectAssistantHTTP(projectAssistantHTTPOptions{Service: f.service, MachineID: f.key.MachineID,
 		NativeContext: func(_ context.Context, fence pa.Fence) (app.NativeContextState, error) {
 			if fence != port.view.Head.CurrentFence {
@@ -284,25 +284,30 @@ func TestProjectAssistantViewPublishesOnlyMatchingContextUsage(t *testing.T) {
 		Status: func(context.Context) (pa.SourceStatus, error) { return f.source, nil },
 	})
 	path := paViewURL(f.key, f.repo.conversation.ID, pa.ReadViewSnapshot, "", "", 0, 100)
-	read := func() *contract.ProjectAssistantContextUsage {
+	read := func() contract.ProjectAssistantReadViewHead {
 		w := f.request(t, "GET", path, nil)
 		paAssertHTTPContract(t, w, 200, "ProjectAssistantReadViewResponse")
 		var reply contract.ProjectAssistantReadViewResponse
 		if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil {
 			t.Fatal(err)
 		}
-		return reply.Head.ContextUsage
+		return reply.Head
 	}
-	if got := read(); got == nil || *got != (contract.ProjectAssistantContextUsage{Live: true, TurnID: "running", UsedTokens: 0, WindowTokens: 6000}) {
+	if got := read().ContextUsage; got == nil || *got != (contract.ProjectAssistantContextUsage{Live: true, TurnID: "running", UsedTokens: 0, WindowTokens: 6000}) {
 		t.Fatalf("known zero reading was lost: %+v", got)
 	}
+	state.UsageKnown = false
+	if got := read(); got.ContextUsage != nil || got.ActiveModel == nil || *got.ActiveModel != (contract.ProjectAssistantActiveModel{TurnID: "running", Name: "Fixture Pro"}) {
+		t.Fatalf("the observed model was lost without token metadata: %+v", got)
+	}
+	state.UsageKnown = true
 	state.TurnID = "older-turn"
-	if got := read(); got != nil {
-		t.Fatalf("usage from a different execution escaped: %+v", got)
+	if got := read(); got.ContextUsage != nil || got.ActiveModel != nil {
+		t.Fatalf("metadata from a different execution escaped: %+v", got)
 	}
 	port.view.Head.Conversation.ActiveTurnID = ""
 	port.view.Head.ContextUsage = &app.ReadContextUsage{TurnID: "completed", UsedTokens: 42, WindowTokens: 6000}
-	if got := read(); got == nil || *got != (contract.ProjectAssistantContextUsage{TurnID: "completed", UsedTokens: 42, WindowTokens: 6000}) {
+	if got := read().ContextUsage; got == nil || *got != (contract.ProjectAssistantContextUsage{TurnID: "completed", UsedTokens: 42, WindowTokens: 6000}) {
 		t.Fatalf("last source reading was lost: %+v", got)
 	}
 }
