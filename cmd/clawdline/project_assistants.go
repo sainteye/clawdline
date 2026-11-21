@@ -91,8 +91,7 @@ func daemonProjectAssistants(method string, body any) (int, []byte, error) {
 }
 
 // projectAssistantsSwitch turns persistent Bots on or off on this machine.
-// The feature stays off by default and has no switch in the console, so this
-// command is the way a person opts in before it is announced.
+// The same machine-wide setting is available in the console.
 func projectAssistantsSwitch(verb string, stdout, stderr io.Writer, call settingsCall) int {
 	method, body := http.MethodGet, any(nil)
 	if verb != "status" {

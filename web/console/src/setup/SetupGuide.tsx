@@ -31,8 +31,8 @@ import "./setup.css"
  * starts something only this machine can start: its Cloud sign-in, its line,
  * and the pairing invitations a browser or phone opens.
  *
- * The wizard opens by itself once, for a machine whose person has not chosen
- * yet (`setup_mode` empty) and that has no Cloud. The app's Help → Setup Guide…
+ * Older sources open the wizard once, if there is no saved setup choice.
+ * With local-first Bots, Cloud setup stays available from the header. The app's Help → Setup Guide…
  * sends `OPEN_SETUP_EVENT`, and `?setup` in the address opens it for a test.
  */
 export const OPEN_SETUP_EVENT = "clawdline-open-setup"
@@ -58,11 +58,11 @@ function appBridge(): { postMessage: (body: unknown) => void } | null {
   return window.webkit?.messageHandlers?.shellCloudPair ?? null
 }
 
-export function SetupGuide() {
-  return servedHere() ? <Guide /> : null
+export function SetupGuide({ autoOpen }: { autoOpen?: boolean }) {
+  return servedHere() ? <Guide autoOpen={autoOpen} /> : null
 }
 
-function Guide() {
+function Guide({ autoOpen }: { autoOpen?: boolean }) {
   const [status, setStatus] = useState<CloudStatus | MachineOnly | null | undefined>(undefined)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [screen, setScreen] = useState<Screen | null>(null)
@@ -145,10 +145,10 @@ function Guide() {
   }, [show])
 
   useEffect(() => {
-    if (autoOpened.current || !settings || reading.kind !== "known") return
+    if (!autoOpen || autoOpened.current || !settings || reading.kind !== "known") return
     autoOpened.current = true
     if (settings.mode === "" && !reading.cloud && reading.count === 0) show("welcome")
-  }, [settings, reading, show])
+  }, [autoOpen, settings, reading, show])
 
   const firstOpen: Screen = after("welcome")
 

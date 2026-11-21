@@ -18,6 +18,7 @@ import { AgentBadge } from "./AgentMark"
 import "./chat-presentation.css"
 import { LeadStarter } from "./LeadStarter"
 import { showLeadStarter } from "./lead-starter"
+import { LeadSetup, useLeadSetup } from "./LeadSetup"
 import {BotSidePanel,type BotInfoTab} from "./BotSidePanel"
 import {DevServers,DevServerTitle,serverTitle} from "./DevServers"
 import {useDevServerObservation} from "./useDevServerObservation"
@@ -207,6 +208,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const fence=useCallback((d:W.ProjectAssistantGetResponse):W.ProjectAssistantFence=>({key:d.bot.key,project:d.bot.project,conversation_id:d.conversation.id,binding_id:d.conversation.binding_id,generation:d.conversation.generation}),[])
   const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.machineID===key.machine_id&&s.authorizationRevision===grant),[source,current,grant,key.machine_id])
   const enabled=!recoveryRequired&&!!data&&canWrite(data.source)
+  const leadSetupBot=data?.bot
+  const leadSetupEligible=enabled&&!thread&&!!leadSetupBot?.lead&&key.bot_id==="default-lead"&&!leadSetupBot.login_profile
+    &&(leadSetupBot.agent==="claude"||leadSetupBot.agent==="codex")&&data?.conversation.last_message_seq===0
+  const leadSetup=useLeadSetup(source,leadSetupEligible,leadSetupBot?.agent)
   const handoff=useHandoffCard(source,current,head?.current_fence,enabled&&!thread,
     JSON.stringify([head?.current_fence,head?.memory_revision,head?.conversation.active_turn_id,head?.conversation.active_turn_id?"":head?.bot_version]))
   const [editingHandoff,setEditingHandoff]=useState(false)
@@ -508,7 +513,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const plain=artifact
       ?!thread&&!sendAuthorityLost&&handoff.card?.state!=="draft"&&!!artifact.text.trim()
       :canTryText&&!!text.trim()
-    if(!valid()||call.active||busy||sendInFlight.current||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
+    if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||unknown||legacyBlocked()||(!artifact&&filesLost)||editingHandoff||handoff.mutating()
       ||(!artifact&&!text.trim()&&images.length===0&&files.length===0)
       ||(!plain&&(!handoff.ready||handoff.error||!currentData.current)))return refused
     const earlier=view.heldOutcomes.get(draftKey)
@@ -1054,7 +1059,7 @@ ${currentDraft}`:submitted)
     progress:turn=>messages.some(message=>message.turn_id===turn&&message.kind==="assistant")?"replied":
       turns.some(item=>item.id===turn&&["failed","cancelled","unknown"].includes(item.state))?"failed":null
   }
-  const canCall=!thread&&!!callView?.caughtUp&&!busy&&!unknown&&!legacyBlocked()
+  const canCall=!thread&&!leadSetup.blocked&&!!callView?.caughtUp&&!busy&&!unknown&&!legacyBlocked()
     &&!view.heldOutcomes.has(draftKey)&&!parts.queued.length&&!head?.unknown_turn_count
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
   const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
@@ -1214,7 +1219,7 @@ ${currentDraft}`:submitted)
     </div>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{!thread&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
-      {showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
+      {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
       {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
       {(pendingPermissionCount>0||permissionCards.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{permissionCards.map(({summary:row,offer,identity})=><PermissionCard key={identity} startExpanded={row.state==="pending"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={[machineName||source.machineName||key.machine_id,projectName||bot.project.project_id].join(" · ")} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
@@ -1310,8 +1315,11 @@ ${currentDraft}`:submitted)
         <ChatModel bot={bot} source={source} enabled={enabled} activeTurn={!!head?.conversation.active_turn_id}
           reported={live?head?.active_model?.name:undefined} save={saveModel} w={w}/>
       </div>}
+      {leadSetup.show&&leadSetupBot&&<LeadSetup setup={leadSetup} w={w} choose={agent=>editBot({
+        expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
+      })}/>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={leadSetup.blocked||filesLost||editingHandoff||handoff.busy||(!canTryText&&(sendingAccepted||!handoff.ready||!!handoff.error))} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onImages={canAttach?addImages:undefined} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onFiles={canInput?addFiles:undefined} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()} onFileError={setFileError}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}

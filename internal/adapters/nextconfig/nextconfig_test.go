@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-func TestProjectAssistantsRequiresAnExplicitTrue(t *testing.T) {
+func TestProjectAssistantsDefaultsOnAndRespectsSavedSetting(t *testing.T) {
 	f := Open(t.TempDir())
 	v, err := f.Read()
-	if err != nil || v.ProjectAssistantsEnabled() {
-		t.Fatal("fresh source opted in")
+	if err != nil || !v.ProjectAssistantsEnabled() {
+		t.Fatal("fresh source did not enable Bots by default")
 	}
 	for _, raw := range []string{"false", "null", "0", `"true"`, "{}", "true"} {
 		v.Raw["project_assistants_enabled"] = json.RawMessage(raw)

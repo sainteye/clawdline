@@ -125,11 +125,11 @@ func (v Values) SessionTodoAutoTake() bool {
 	return on
 }
 
-// ProjectAssistantsEnabled is an explicit opt-in. Missing, null and malformed
-// values keep Bot execution off.
+// ProjectAssistantsEnabled defaults to on. Saved choices survive upgrades;
+// malformed values never enable execution.
 func (v Values) ProjectAssistantsEnabled() bool {
 	raw, ok := v.Raw["project_assistants_enabled"]
-	return ok && strings.TrimSpace(string(raw)) == "true"
+	return !ok || strings.TrimSpace(string(raw)) == "true"
 }
 
 // DispatchPermission follows the existing machine preference; absent means full.

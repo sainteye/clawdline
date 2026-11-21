@@ -55,22 +55,8 @@ type projectAssistantServer struct {
 	clock             func() time.Time
 	limits            *app.RuntimeLimits
 	beforeViewPublish func()
-}
-
-func (s *Server) projectAssistantIdentity() (adaptercloud.Identity, error) {
-	i, found, err := adaptercloud.NewIdentityStore(filepath.Join(s.cfg.Dir, cloudkeys.DirName)).Load()
-	if err != nil {
-		return i, errors.Join(paHTTPFailure(pa.Unpaired, "source_identity"), err)
-	}
-	if !found {
-		// The existing execution identity seam is test-only. It never enrolls
-		// a machine, reads a hostname, or fabricates an account identity.
-		if s.executionMachineID != "" {
-			return adaptercloud.Identity{MachineID: s.executionMachineID}, nil
-		}
-		return i, paHTTPFailure(pa.Unpaired, "source_identity")
-	}
-	return i, nil
+	firstRun          sync.Mutex
+	firstRunStatus    func(context.Context, pa.Agent) (string, error)
 }
 
 func projectAssistantID() string {
@@ -84,7 +70,7 @@ func projectAssistantID() string {
 
 // Caller holds transition. A failed durable opt-out retains the same Host and
 // its cleanupPending state, so a later Enable cannot silently replay queues.
-func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassistanthost.Host, error) {
+func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup bool) (*projectassistanthost.Host, error) {
 	p := &s.projectAssistants
 	p.mu.RLock()
 	h, stopped := p.host, p.stopped
@@ -93,6 +79,9 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context) (*projectassist
 		return h, paHTTPFailure(pa.Disabled, "server_stopped")
 	}
 	i, err := s.projectAssistantIdentity()
+	if allowLocalSetup && pa.Code(err) == pa.Unpaired && errors.Is(err, errBotSourceNotRegistered) {
+		i, err = s.createLocalBotSource()
+	}
 	if err != nil {
 		return h, err
 	}
@@ -211,7 +200,7 @@ func (s *Server) StartProjectAssistants(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	h, err := s.ensureProjectAssistantHost(ctx)
+	h, err := s.ensureProjectAssistantHost(ctx, v.ProjectAssistantsEnabled())
 	if err != nil {
 		if pa.Code(err) == pa.Unpaired && !v.ProjectAssistantsEnabled() && h == nil {
 			return nil
@@ -332,6 +321,10 @@ func (s *Server) projectAssistantHuman(ctx context.Context, a access, i adapterc
 		return
 	}
 	if sender := cloudtransport.CloudViewerOf(ctx); sender != "" {
+		if !i.Valid() {
+			err = paHTTPFailure(pa.Unpaired, "source_identity")
+			return
+		}
 		grant, e := adaptercloud.NewPinnedStore(filepath.Join(s.cfg.Dir, cloudkeys.DirName)).ProjectAssistantGrant(i.AccountID, sender)
 		if e != nil {
 			err = errors.Join(paHTTPFailure(pa.Revoked, "viewer_grant"), e)
@@ -560,7 +553,10 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 		v, saveErr := s.setBrowserAwareSettings(f, changes)
 		var stopErr error
 		if h == nil && saveErr == nil {
-			h, stopErr = s.ensureProjectAssistantHost(ctx)
+			h, stopErr = s.ensureProjectAssistantHost(ctx, false)
+			if errors.Is(stopErr, errBotSourceNotRegistered) {
+				stopErr = nil
+			}
 		}
 		if h != nil && stopErr == nil {
 			stopErr = h.Disable(ctx)
@@ -570,7 +566,7 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 		}
 		return v, stopErr
 	}
-	h, err := s.ensureProjectAssistantHost(ctx)
+	h, err := s.ensureProjectAssistantHost(ctx, true)
 	if err == nil {
 		err = h.Enable(ctx)
 	}

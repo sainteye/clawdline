@@ -14,14 +14,14 @@ func (h *Host) ensureLead(ctx context.Context) error {
 	if h.o.DefaultLeadAgent == nil {
 		return nil
 	}
+	needed, err := h.store.LeadSetupNeeded(ctx, h.o.MachineID)
+	if err != nil || !needed {
+		return err
+	}
 	now := h.o.Clock()
 	agent := h.o.DefaultLeadAgent(now)
 	if agent == "" {
 		return nil
-	}
-	needed, err := h.store.LeadSetupNeeded(ctx, h.o.MachineID)
-	if err != nil || !needed {
-		return err
 	}
 	provisioner, ok := h.o.Projects.(app.PersonalWorkspaceProvisioner)
 	if !ok {

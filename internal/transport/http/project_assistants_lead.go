@@ -15,7 +15,8 @@ func projectAssistantDefaultLeadAgent(now time.Time) pa.Agent {
 			return agent
 		}
 	}
-	return ""
+	// The lead's workspace and conversation exist before any provider setup.
+	return pa.Codex
 }
 
 func projectAssistantHostTimeZone() string {

@@ -290,7 +290,7 @@ func testBotCloudNormalSourceSpine(t *testing.T, reverse bool) {
 		if e = cloud.NewIdentityStore(keys.Dir()).Save(f.identity); e != nil {
 			t.Fatal(e)
 		}
-		_, e = f.s.settingsFile().Set(map[string]any{cloud.KeyEnabled: true, cloud.KeyAPIBase: backend.URL, cloud.KeyRelayURL: "ws" + strings.TrimPrefix(backend.URL, "http")})
+		_, e = f.s.settingsFile().Set(map[string]any{cloud.KeyEnabled: true, cloud.KeyAPIBase: backend.URL, cloud.KeyRelayURL: "ws" + strings.TrimPrefix(backend.URL, "http"), "project_assistants_enabled": false})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -316,7 +316,7 @@ func testBotCloudNormalSourceSpine(t *testing.T, reverse bool) {
 		var tables int
 		_ = f.s.store.ProjectAssistantDatabase().QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name LIKE 'project_assistant_network_%'`).Scan(&tables)
 		if tables != 0 || f.providerCalls.Load() != 0 {
-			t.Fatal("default-off startup opened Bot network state or provider", tables)
+			t.Fatal("explicitly disabled startup opened Bot network state or provider", tables)
 		}
 		f.enable(t)
 		paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
