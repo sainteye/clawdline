@@ -83,6 +83,7 @@ type directPeer struct {
 	open    bool
 	closed  bool
 	chunkID uint64
+
 	// carrierSeq is this peer's own envelope sequence for Session answers.
 	//
 	// It is separate from the relay's because the browser reads a sender's
@@ -91,7 +92,10 @@ type directPeer struct {
 	// would be read as a replay of a sequence already seen. The terminal
 	// settled this the same way, with a per-connection counter checked on its
 	// own (docs/cloud-terminal-wire.md).
-	carrierSeq uint64
+	// carrierSendMu covers numbering through enqueue so parallel read replies
+	// cannot overtake each other while they are being sealed.
+	carrierSendMu sync.Mutex
+	carrierSeq    uint64
 
 	// sendMu keeps one message's chunks contiguous on the channel.
 	sendMu sync.Mutex
